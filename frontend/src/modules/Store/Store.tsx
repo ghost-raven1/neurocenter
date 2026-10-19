@@ -274,7 +274,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             {target && canManage && referenceBlocker && skillProject(app) !== targetProject?.id && <Text type="secondary">{referenceBlocker}</Text>}
             {target && selected && canManage && <Button size="small" block disabled={!!localBusy || projectLoading || !projectCatalogUsable}
                 onClick={() => { void localPlans.inspect(app); }}>Разрешение версии</Button>}
-            {job&&<Text type={job.state==='failed'?'danger':'secondary'} role="status">{job.message}</Text>}
+            {job&&(job.state!=='succeeded'||!installation)&&<Text type={job.state==='failed'?'danger':'secondary'} role="status">{job.message}</Text>}
             {job?.state==='queued'&&<Button size="small" onClick={()=>{void bridgeApi.cancel(job.id).then(()=>bridge.reload()).catch(cause=>message.error(errorMessage(cause,'Не удалось отменить задание.')));}}>Отменить {job.kind==='uninstall'?'удаление':'установку'}</Button>}
             {!target && level>=3 && <>
                 <Button size="small" block type="primary" disabled={!projectsReady||!!referenceBlocker} title={referenceBlocker ?? undefined} onClick={()=>setPicker({app})}>Добавить в проекты</Button>
