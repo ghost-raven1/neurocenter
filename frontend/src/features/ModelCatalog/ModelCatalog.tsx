@@ -81,6 +81,9 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {viewing && <ModelDetails model={viewing} canManage={isMain} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
             onEdit={() => { setEditing(viewing); setViewId(null); }} onRemove={() => { void mutate(viewing, 'remove'); }} />}
         {isMain && editing && <ModelEditModal key={editing === 'new' ? 'new' : editing.id + ':' + editing.revision} model={editing === 'new' ? undefined : editing}
-            onClose={() => setEditing(null)} onSaved={refresh} />}
+            onClose={() => setEditing(null)} onSaved={async () => {
+                if (editing === 'new') { setQuery(''); setAssignedOnly(false); }
+                await refresh();
+            }} />}
     </div>;
 }
