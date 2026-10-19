@@ -1,225 +1,129 @@
 import { z } from 'zod';
-
-import { tableInfo, enumerateFingerprints, readRowsByIds, contentHash } from '../lib/lancedb.js';
+import { contentHash } from '../lib/lancedb.js';
 import { locateStore } from '../lib/store.js';
 import { readRagProjectIdentity, unverifiedRagProject, verifiedRagProjectIdentity } from '../lib/rag-project-identity.js';
 import { ragStoreBoundary } from '../lib/rag-store-boundary.js';
+import { authorizedFetch } from '../bridge/state.js';
+import { openIndexSnapshot } from '../features/rag-index/snapshot.js';
+import { exportRow } from '../features/rag-index/paths.js';
+import { assertIndexIdle, assertVerifiedIndex, assertSameProfile } from '../features/rag-index/readiness.js';
+import { FINGERPRINT_VERSION, rowFingerprint, indexSnapshotHash, normalizeIndexProfile, type ICanonicalRagRow } from '../features/rag-index/contract.js';
 
-/** Базовый URL rag-сервиса (dev: local :4300). */
-import {authorizedFetch} from '../bridge/state.js';
-/** Дельта больше этого не применяется автоматически (превью + явный maxRows/limit). */
 const AUTO_APPLY_LIMIT = 1000;
-const UPSERT_BATCH = 100;
-const DELETE_BATCH = 500;
-
+const BATCH = 100;
 export const syncRagDbInputSchema = z.object({
-    project: z.string().optional(),
-    projectKey: z.string().optional(),
-    createIfMissing: z.boolean().optional(),
-    dryRun: z.boolean().optional(),
-    scanLimit: z.number().int().positive().optional(),
-    maxRows: z.number().int().positive().optional(),
-    limit: z.number().int().positive().optional(),
+    project: z.string().optional(), projectKey: z.string().optional(), createIfMissing: z.boolean().optional(),
+    dryRun: z.boolean().optional(), scanLimit: z.number().int().positive().optional(),
+    maxRows: z.number().int().positive().optional(), limit: z.number().int().positive().optional(),
 });
 export type TSyncRagDbInput = z.infer<typeof syncRagDbInputSchema>;
+const manifestSchema = z.object({
+    fingerprintVersion: z.literal(1), fingerprints: z.record(z.string().regex(/^[a-f0-9]{64}$/)),
+    rowCount: z.number().int().nonnegative(), incompleteRows: z.number().int().nonnegative(),
+    indexProfile: z.unknown(), complete: z.boolean(), snapshotHash: z.string().nullable(), ids: z.record(z.string()),
+});
 
-interface IRagChunk {
-    id: string;
-    content?: string;
-    contentHash?: string;
-    filePath?: string;
-    description?: string;
-    startLine?: number;
-    endLine?: number;
-    language?: string;
-    kind?: string;
-    role?: string;
-    quirkType?: string;
-    tags?: string;
-    embedding?: number[];
-}
-
-interface ISyncResult {
-    upserted: number;
-    deleted: number;
-}
-
-async function postSync(projectKey: string, chunks: IRagChunk[], deletes: string[], assertIdentity: () => Promise<void>): Promise<ISyncResult> {
-    await assertIdentity();
-    const r = await authorizedFetch('/api/rag/sync', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectKey, chunks, deletes }),
-    });
-    if (!r.ok) {
-        let message='Сервер временно не принимает изменения. Повторите синхронизацию позже.';
-        try{
-            const body=await r.json() as {message?:unknown};
-            if(typeof body?.message==='string'&&body.message.length>0&&body.message.length<=2048){message=body.message;}
-        }catch{/* HTML прокси и внутренние детали сервера не показываются пользователю. */}
-        throw new Error(`Синхронизация остановлена (HTTP ${r.status}). ${message}`);
-    }
-    return (await r.json()) as ISyncResult;
-}
-
-/**
- * Дельта-синхронизация локального rag_db (LanceDB) → develop-базовая копия (Postgres/pgvector).
- * Базовая копия = manifest на сервере (id → sha256); считается добавлено/изменено и удалено.
- *
- * Режимы:
- * - dryRun: только план (без записи, включая создание проекта).
- * - неполный scanLimit: только превью добавлений; удаления неизвестны, запись запрещена.
- * - limit=N: применить НЕ БОЛЕЕ N строк (слайс), вернуть remaining>0 → повторить вызов.
- *   Это делает каждый MCP-вызов коротким (< таймаут хоста) и резюмируемым — для bootstrap.
- * - без limit: если дельта > maxRows (по умолч. 1000) — превью, без применения;
- *   иначе применяет всю дельту.
- *
- * @param input - project, createIfMissing, dryRun, scanLimit, maxRows, limit.
- * @param cwd - базовая директория (opencode cwd).
- * @returns JSON-сводка синхронизации.
- */
-export async function syncRagDb(input: TSyncRagDbInput, cwd: string): Promise<string> {
-    let projectKey: string | undefined = input.projectKey?.trim() || undefined;
-    const resolveIdentity = async () => {
-        return readRagProjectIdentity(
-            { project: input.project, createIfMissing: input.dryRun || input.scanLimit ? false : input.createIfMissing },
-            cwd,
-        );
-    };
+/** Передаёт стабильный полный native-снимок порциями; готовность подтверждает отдельная серверная печать. */
+export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: () => Promise<void> = async () => {}): Promise<string> {
+    const resolveIdentity = () => readRagProjectIdentity({ project: input.project, createIfMissing: input.dryRun || input.scanLimit ? false : input.createIfMissing }, cwd);
     const initial = await resolveIdentity();
-    if (!projectKey) {
-        if (!initial.value.ok || !initial.value.projectKey) {return initial.raw;}
-        projectKey = initial.value.projectKey;
-    }
-    if (!input.dryRun && !verifiedRagProjectIdentity(initial.value, projectKey)) {
-        return unverifiedRagProject();
-    }
+    const projectKey = input.projectKey?.trim() || initial.value.projectKey;
+    if (!projectKey) { return initial.raw; }
+    if (!input.dryRun && !verifiedRagProjectIdentity(initial.value, projectKey)) { return unverifiedRagProject(); }
     const located = await locateStore(input.project, cwd);
-    if (!located.storePath) {
-        return JSON.stringify({
-            ok: false,
-            error: 'store-not-found',
-            message: `rag_db не найден от (${cwd}). Укажи project=путь к корню с opencode-rag.json.`,
-        });
-    }
+    if (!located.storePath) { return JSON.stringify({ ok: false, error: 'store-not-found', message: 'Индекс не найден. Запустите OpenCodeRAG в связанной папке проекта.' }); }
     const { storePath } = located;
     const assertStore = ragStoreBoundary(input.project, cwd, storePath);
     await assertStore();
-    const assertIdentity = async () => {
-        const current = (await resolveIdentity()).value;
-        if (!verifiedRagProjectIdentity(current, projectKey!, initial.value)) {
-            throw new Error('Привязка локального экземпляра изменилась. Синхронизация остановлена до отправки изменений.');
-        }
-        await assertStore();
-    };
-
-    const ti = await tableInfo(storePath);
-    const localIds = new Map<string, string>();
-    for await (const fp of enumerateFingerprints(storePath, input.scanLimit ?? 0)) {
-        localIds.set(fp.id, fp.hash);
-    }
-
-    // Ошибка сервера не означает пустую базу: без достоверного manifest запись запрещена.
-    const response = await authorizedFetch(`/api/rag/manifest?projectKey=${encodeURIComponent(projectKey)}`);
-    if (!response.ok) {throw new Error(`manifest ${response.status}: ${(await response.text()).slice(0, 200)}`);}
-    const manifest = z.object({ ids: z.record(z.string()) }).safeParse(await response.json());
-    if (!manifest.success) {throw new Error('invalid-manifest: expected ids record');}
-    const baseline = manifest.data.ids;
-    const scanComplete = input.scanLimit == null || input.scanLimit >= ti.rowCount;
-    const baselineIdList = Object.keys(baseline);
-
-    const added: string[] = [];
-    const removed: string[] = [];
-    for (const [ id, sha ] of localIds) {if (!baseline[id] || baseline[id] !== sha) {added.push(id);}}
-    if (scanComplete) {
-        for (const id of baselineIdList) {if (!localIds.has(id)) {removed.push(id);}}
-    }
-    const total = added.length + removed.length;
-    const cap = input.maxRows ?? AUTO_APPLY_LIMIT;
-    const dryRun = input.dryRun === true;
-    const limit = input.limit ?? null;
-
-    if (!scanComplete || dryRun || (limit == null && total > cap)) {
-        const preview = {
-            ok: false,
-            dryRun,
-            scanComplete,
-            projectKey,
-            local: localIds.size,
-            baseline: baselineIdList.length,
-            addedCount: added.length,
-            added: added.slice(0, 50),
-            removedCount: scanComplete ? removed.length : null,
-            removed: removed.slice(0, 50),
-            applied: false,
-            note: !scanComplete
-                ? 'partial scan; deletions are unknown; repeat without scanLimit to apply'
-                : dryRun
-                ? 'dry-run; set dryRun=false (and raise maxRows, or pass limit) to apply'
-                : `total changes (${total}) exceed maxRows cap (${cap}); preview only — raise maxRows, or use limit for a bounded slice`,
+    const health = await assertIndexIdle(storePath);
+    const snapshot = await openIndexSnapshot(storePath);
+    try {
+        if (!snapshot.rowCount) { throw new Error('Локальный индекс пуст. Серверная база не изменена; выполните полную индексацию в OpenCode.'); }
+        const indexProfile = await assertVerifiedIndex(located, snapshot.dimension);
+        const assertCurrent = async () => {
+            await authorize();
+            const current = (await resolveIdentity()).value;
+            if (!verifiedRagProjectIdentity(current, projectKey, initial.value)) { throw new Error('Привязка локального экземпляра изменилась. Передача остановлена.'); }
+            await assertStore();
+            if (await assertIndexIdle(storePath) !== health) { throw new Error('Состояние индекса изменилось. Дождитесь индексации и повторите передачу.'); }
+            await snapshot.assertCurrent();
+            const currentLocated = await locateStore(input.project, cwd);
+            assertSameProfile(indexProfile, await assertVerifiedIndex(currentLocated, snapshot.dimension));
         };
-        return JSON.stringify(preview, null, 2);
-    }
-
-    await assertIdentity();
-    const toAdd = limit == null ? added : added.slice(0, limit);
-    const toRemove = limit == null ? removed : removed.slice(0, limit - toAdd.length);
-
-    let upserted = 0;
-    let buffer: IRagChunk[] = [];
-    const flush = async (): Promise<void> => {
-        if (buffer.length === 0) {return;}
-        let res:ISyncResult;
-        try{res=await postSync(projectKey, buffer, [], assertIdentity);}
-        catch(error){
-            if(upserted>0){throw new Error(`${error instanceof Error?error.message:'Не удалось отправить пакет.'} Ранее подтверждено фрагментов: ${upserted}. Повторная синхронизация продолжит с оставшихся изменений.`,{cause:error});}
+        const fingerprints: Record<string, string> = Object.create(null) as Record<string, string>;
+        for await (const source of snapshot.rows(input.scanLimit)) {
+            const row = await exportRow(source, located.root);
+            if (!row.embedding || row.embedding.length !== indexProfile.dimension || row.embedding.some(value => !Number.isFinite(value))) { throw new Error('В индексе есть неполные векторы. Завершите успешную полную индексацию перед передачей.'); }
+            if (Object.hasOwn(fingerprints, row.id)) { throw new Error('В локальном индексе повторяются идентификаторы. Выполните полную индексацию.'); }
+            fingerprints[row.id] = rowFingerprint(row);
+        }
+        await assertCurrent();
+        const response = await authorizedFetch(`/api/rag/manifest?projectKey=${encodeURIComponent(projectKey)}`);
+        if (!response.ok) { throw new Error(`Не удалось прочитать серверную базу (HTTP ${response.status}).`); }
+        const parsed = manifestSchema.safeParse(await response.json());
+        if (!parsed.success) { throw new Error('Сервер не поддерживает проверяемую передачу индекса V1. Обновите сервер перед синхронизацией.'); }
+        const baseline = parsed.data;
+        await assertCurrent();
+        const serverProfile = normalizeIndexProfile(baseline.indexProfile);
+        const legacy = !serverProfile && !baseline.complete && baseline.incompleteRows === baseline.rowCount;
+        if (serverProfile || (baseline.rowCount > 0 && !legacy)) { assertSameProfile(indexProfile, serverProfile); }
+        const added = Object.keys(fingerprints).filter(id => baseline.fingerprints[id] !== fingerprints[id]);
+        const scanComplete = Object.keys(fingerprints).length === snapshot.rowCount;
+        const removed = scanComplete ? Object.keys(baseline.ids).filter(id => !Object.hasOwn(fingerprints, id)) : [];
+        // Unverified legacy rows also need removal/replacement before a complete snapshot can be sealed.
+        const total = added.length + removed.length;
+        const common = { projectKey, fingerprintVersion: FINGERPRINT_VERSION, indexProfile, localCount: snapshot.rowCount, dimension: snapshot.dimension };
+        if (!scanComplete || input.dryRun || (!input.limit && total > (input.maxRows ?? AUTO_APPLY_LIMIT))) {
+            return JSON.stringify({ ...common, ok: false, applied: false, complete: false, dryRun: !!input.dryRun, scanComplete,
+                addedCount: added.length, removedCount: scanComplete ? removed.length : null, remaining: total,
+                note: !scanComplete ? 'Неполное сканирование: запись запрещена.' : 'Предварительный просмотр; задайте limit для передачи порциями.' });
+        }
+        const snapshotHash = indexSnapshotHash(indexProfile, fingerprints);
+        const restored = JSON.parse(health) as { complete?: unknown; snapshotHash?: unknown };
+        if (restored.complete === true && restored.snapshotHash !== snapshotHash) { throw new Error('Восстановленный индекс изменён без полного прохода OpenCodeRAG. Выполните индексацию перед передачей.'); }
+        const selected = added.slice(0, input.limit ?? added.length);
+        const toRemove = removed.slice(0, input.limit == null ? removed.length : Math.max(0, input.limit - selected.length));
+        // Validate every selected ID before the first POST, including before any deletion.
+        const rows: ICanonicalRagRow[] = [];
+        for (let offset = 0; offset < selected.length; offset += BATCH) {
+            for (const source of await snapshot.selected(selected.slice(offset, offset + BATCH))) {
+                const row = await exportRow(source, located.root);
+                if (rowFingerprint(row) !== fingerprints[row.id]) { throw new Error('Фрагмент не соответствует зафиксированному снимку. Передача остановлена.'); }
+                rows.push(row);
+            }
+        }
+        const post = async (chunks: ICanonicalRagRow[], deletes: string[], complete = false) => {
+            await assertCurrent();
+            const result = await authorizedFetch('/api/rag/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+                projectKey, fingerprintVersion: FINGERPRINT_VERSION, indexProfile,
+                snapshot: { hash: snapshotHash, rowCount: snapshot.rowCount, complete },
+                chunks: chunks.map(row => ({ ...row, contentHash: contentHash(row.content) })), deletes,
+            }) });
+            if (!result.ok) {
+                let message = 'Подтверждённые порции сохранены; повторите синхронизацию.';
+                try {
+                    const body = await result.json() as { code?: unknown; message?: unknown };
+                    if (body.code === 'RAG_QUOTA_EXCEEDED' && typeof body.message === 'string' && body.message.length <= 2048) { message = body.message; }
+                } catch { /* Ответы прокси и внутренние детали не показываются. */ }
+                throw new Error(`Передача остановлена (HTTP ${result.status}). ${message}`);
+            }
+            const receipt = await result.json() as { upserted?: number; deleted?: number; complete?: boolean; snapshotHash?: string };
+            if (chunks.length && receipt.upserted !== chunks.length) { throw new Error('Сервер подтвердил не все отправленные фрагменты. Снимок не завершён.'); }
+            if (complete && (receipt.complete !== true || receipt.snapshotHash !== snapshotHash)) { throw new Error('Сервер не подтвердил целостность полного снимка. Повторите синхронизацию.'); }
+            return receipt;
+        };
+        let upserted = 0; let deleted = 0;
+        try {
+            for (let offset = 0; offset < rows.length; offset += BATCH) { upserted += (await post(rows.slice(offset, offset + BATCH), [])).upserted ?? 0; }
+        } catch (error) {
+            if (upserted > 0) { throw new Error(`${error instanceof Error ? error.message : 'Передача остановлена.'} Ранее подтверждено фрагментов: ${upserted}.`, { cause: error }); }
             throw error;
         }
-        upserted += res.upserted ?? 0;
-        buffer = [];
-    };
-    for await (const row of readRowsByIds(storePath, toAdd)) {
-        buffer.push({
-            id: row.id,
-            content: row.content,
-            contentHash: contentHash(row.content ?? ''),
-            filePath: row.filePath ?? undefined,
-            description: row.description ?? undefined,
-            startLine: row.startLine ?? undefined,
-            endLine: row.endLine ?? undefined,
-            language: row.language ?? undefined,
-            kind: row.kind ?? undefined,
-            role: row.role ?? undefined,
-            quirkType: row.quirkType ?? undefined,
-            tags: row.tags ?? undefined,
-            embedding: row.embedding ?? undefined,
-        });
-        if (buffer.length >= UPSERT_BATCH) {await flush();}
-    }
-    await flush();
-
-    // Удаляем только после успешной отправки всех новых строк текущей порции.
-    let deleted = 0;
-    for (let i = 0; i < toRemove.length; i += DELETE_BATCH) {
-        const res = await postSync(projectKey, [], toRemove.slice(i, i + DELETE_BATCH), assertIdentity);
-        deleted += res.deleted ?? 0;
-    }
-
-    await assertIdentity();
-    const remaining = (added.length - toAdd.length) + (removed.length - toRemove.length);
-    return JSON.stringify({
-        ok: true,
-        dryRun: false,
-        scanComplete,
-        projectKey,
-        upserted,
-        deleted,
-        added: added.length,
-        removed: removed.length,
-        applied: true,
-        appliedNow: upserted + deleted,
-        remaining,
-        dimension: ti.dimension,
-        note: remaining > 0 ? `applied ${limit}-slice; call again with limit until remaining=0` : 'sync complete',
-    });
+        for (let offset = 0; offset < toRemove.length; offset += BATCH) { deleted += (await post([], toRemove.slice(offset, offset + BATCH))).deleted ?? 0; }
+        const remaining = total - selected.length - toRemove.length;
+        await assertCurrent();
+        if (remaining === 0) { await post([], [], true); }
+        return JSON.stringify({ ...common, ok: true, applied: true, complete: remaining === 0, scanComplete: true,
+            snapshotHash, upserted, deleted, appliedNow: upserted + deleted, remaining, added: added.length, removed: removed.length });
+    } finally { snapshot.close(); }
 }

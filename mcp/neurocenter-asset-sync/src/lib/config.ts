@@ -7,7 +7,9 @@ import path from 'node:path';
 export interface IRagConfigCore {
     sourceFile: string;
     vectorStorePath: string | null;
-    embedding: { provider: string; model: string; baseUrl: string | null };
+    embedding: { provider: string; model: string; baseUrl: string | null; vectorDimension?: number };
+    /** Только явно заданные публичные поля; секреты не копируются в контракт. */
+    embeddingInput?: Record<string, unknown>;
     retrieval: { topK: number; minScore: number };
     indexing: { includeExtensionsCount: number; excludeDirsCount: number };
     mcpEnabled: boolean;
@@ -30,6 +32,7 @@ interface IRawConfig {
  */
 export async function loadRagConfig(
     configPath: string,
+    projectRoot = path.dirname(configPath),
 ): Promise<IRagConfigCore | null> {
     let raw: string;
     try {
@@ -40,7 +43,8 @@ export async function loadRagConfig(
 
     let parsed: IRawConfig;
     try {
-        parsed = JSON.parse(raw) as IRawConfig;
+        parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as IRawConfig;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return null; }
     } catch {
         return null;
     }
@@ -50,9 +54,9 @@ export async function loadRagConfig(
         ? parsed.vectorStore.path
         : null;
 
-    // vectorStore.path относительно локалоизирующего каталога конфига.
+    // OpenCodeRAG разрешает относительный путь от корня проекта для всех трёх конфигов.
     const resolvedVectorStorePath = vspath
-        ? path.resolve(path.dirname(configPath), vspath)
+        ? path.resolve(projectRoot, vspath)
         : null;
 
     const emb = parsed.embedding ?? {};
@@ -66,7 +70,9 @@ export async function loadRagConfig(
             provider: typeof emb.provider === 'string' ? emb.provider : '',
             model: typeof emb.model === 'string' ? emb.model : '',
             baseUrl: typeof emb.baseUrl === 'string' ? emb.baseUrl : null,
+            vectorDimension: typeof emb.vectorDimension === 'number' ? emb.vectorDimension : undefined,
         },
+        embeddingInput: Object.fromEntries(['provider', 'model', 'baseUrl', 'vectorDimension'].filter(key => Object.hasOwn(emb, key)).map(key => [key, emb[key]])),
         retrieval: {
             topK: typeof ret.topK === 'number' ? ret.topK : 0,
             minScore: typeof ret.minScore === 'number' ? ret.minScore : 0,

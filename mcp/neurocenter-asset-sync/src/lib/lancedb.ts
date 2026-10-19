@@ -10,7 +10,7 @@ export async function localRagStatus(): Promise<{ ragSupported: boolean; ragErro
     try { await loadNative(); return { ragSupported: true }; }
     catch { return { ragSupported: false, ragError: 'Локальная LanceDB недоступна для этой ОС или архитектуры. Установка скиллов, MCP и плагинов остаётся доступной.' }; }
 }
-async function connectStore(storePath: string) {
+export async function connectStore(storePath: string) {
     let module: typeof import('@lancedb/lancedb');
     try { module = await loadNative(); }
     catch { throw new Error('Нативная LanceDB недоступна. Проверьте поддержку ОС и архитектуры в автономном пакете MCP.'); }
@@ -64,18 +64,20 @@ export function contentHash(content: string): string {
 export async function tableInfo(storePath: string): Promise<ITableInfo> {
     const db = await connectStore(storePath);
     const table = await db.openTable(TABLE);
-    const schema = await table.schema();
-    let dimension: number | null = null;
-    const fields: ITableField[] = schema.fields.map((f) => {
-        const t = f.type as IArrowTypeLike;
-        const listSize = typeof t?.listSize === 'number' ? t.listSize : null;
-        if (f.name === 'embedding' && listSize != null) {
-            dimension = listSize;
-        }
-        return { name: f.name, type: t ? String(t) : 'unknown', listSize };
-    });
-    const rowCount = await table.countRows();
-    return { dimension, rowCount, fields };
+    try {
+        const schema = await table.schema();
+        let dimension: number | null = null;
+        const fields: ITableField[] = schema.fields.map((f) => {
+            const t = f.type as IArrowTypeLike;
+            const listSize = typeof t?.listSize === 'number' ? t.listSize : null;
+            if (f.name === 'embedding' && listSize != null) {
+                dimension = listSize;
+            }
+            return { name: f.name, type: t ? String(t) : 'unknown', listSize };
+        });
+        const rowCount = await table.countRows();
+        return { dimension, rowCount, fields };
+    } finally { table.close(); db.close(); }
 }
 
 /**
@@ -136,7 +138,7 @@ export interface IChunkRow {
     embedding: number[] | null;
 }
 
-const ROW_COLUMNS = [
+export const ROW_COLUMNS = [
     'id',
     'content',
     'description',
@@ -214,7 +216,7 @@ export async function* enumerateRows(
 }
 
 /** Маппит сырой строки Arrow в IChunkRow (общий для enumerateRows/readRowsByIds). */
-function mapRow(r: Record<string, unknown>): IChunkRow {
+export function mapRow(r: Record<string, unknown>): IChunkRow {
     return {
         id: String(r.id),
         content: String(r.content ?? ''),
@@ -257,31 +259,36 @@ export async function writeRows(
     dimension?:number,
 ): Promise<IWriteResult> {
     const db = await connectStore(storePath);
+    let opened: import('@lancedb/lancedb').Table | undefined;
+    try {
+        if (rows.length === 0) {
+            return { written: 0, deleted: 0, created: false };
+        }
 
-    if (rows.length === 0) {
-        return { written: 0, deleted: 0, created: false };
-    }
+        if (!(await db.tableNames()).includes(TABLE)) {
+            const vector=rows.find(row=>Array.isArray(row.embedding)&&row.embedding.length)?.embedding as number[]|undefined;
+            opened = await db.createTable(TABLE, rows,{schema:chunkSchema(dimension||vector?.length||0)});
+            return { written: rows.length, deleted: 0, created: true };
+        }
 
-    if (!(await db.tableNames()).includes(TABLE)) {
-        const vector=rows.find(row=>Array.isArray(row.embedding)&&row.embedding.length)?.embedding as number[]|undefined;
-        await db.createTable(TABLE, rows,{schema:chunkSchema(dimension||vector?.length||0)});
-        return { written: rows.length, deleted: 0, created: true };
-    }
+        const table = await db.openTable(TABLE);
+        opened = table;
+        const actualDimension = ((await table.schema()).fields.find(field => field.name === 'embedding')?.type as IArrowTypeLike)?.listSize;
+        if (dimension && actualDimension !== dimension) { throw new Error('Размерность записываемого индекса отличается от локальной таблицы.'); }
+        let builder = table
+            .mergeInsert('id')
+            .whenMatchedUpdateAll()
+            .whenNotMatchedInsertAll();
+        if (deleteNotMatched) {
+            builder = builder.whenNotMatchedBySourceDelete();
+        }
+        const res = await builder.execute(rows);
 
-    const table = await db.openTable(TABLE);
-    const builder = table
-        .mergeInsert('id')
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll();
-    if (deleteNotMatched) {
-        builder.whenNotMatchedBySourceDelete();
-    }
-    const res = await builder.execute(rows);
-
-    const n = res?.numInsertedRows ?? 0;
-    const u = res?.numUpdatedRows ?? 0;
-    const d = res?.numDeletedRows ?? 0;
-    return { written: n + u, deleted: d, created: false };
+        const n = res?.numInsertedRows ?? 0;
+        const u = res?.numUpdatedRows ?? 0;
+        const d = res?.numDeletedRows ?? 0;
+        return { written: n + u, deleted: d, created: false };
+    } finally { opened?.close(); db.close(); }
 }
 
 /**

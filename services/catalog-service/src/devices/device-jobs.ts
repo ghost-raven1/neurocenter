@@ -29,6 +29,8 @@ import { authorizeMcpConfigurationSave } from './mcp-config-permit';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
+import { assertRagJobBinding, RAG_JOB_KINDS } from './rag-job-binding';
+import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId"`;
 
 /** Очередь с арендой: потеря worker не превращается в успех или повторную запись без проверки. */
@@ -53,7 +55,7 @@ export class DeviceJobs {
         const pkg=job.payload.package as {manifest?:{sha256?:string}}|undefined;
         const manifest=(job.payload.installSet as {manifest?:string}|undefined)?.manifest ?? pkg?.manifest?.sha256;
         if (job.kind === 'install' && (!job.payload.planId || !pkg?.manifest?.sha256)) { throw new ConflictException('Старое задание не содержит одобренного плана. Подготовьте установку заново.'); }
-        return this.create(actor,{deviceId:job.device_id,projectId:job.project_id||undefined,kind:job.kind,requestKey,assetId:job.payload.assetId as string|undefined,assetKind:job.payload.assetKind as string|undefined,version:job.payload.version as number|undefined,folderName:job.payload.folderName as string|undefined,...(['install','uninstall','inspect-installation'].includes(job.kind)?{expectedManifest:manifest,expectedBindingId:job.payload.bindingId as string|undefined}:{}),...(job.kind==='install'?{planId:job.payload.planId as string,planRevision:job.payload.planRevision as number}:{})});
+        return this.create(actor,{deviceId:job.device_id,projectId:job.project_id||undefined,kind:job.kind,requestKey,assetId:job.payload.assetId as string|undefined,assetKind:job.payload.assetKind as string|undefined,version:job.payload.version as number|undefined,folderName:job.payload.folderName as string|undefined,...(['install','uninstall','inspect-installation'].includes(job.kind)?{expectedManifest:manifest,expectedBindingId:job.payload.bindingId as string|undefined}:{}),...(RAG_JOB_KINDS.includes(job.kind)?{expectedBindingId:job.payload.bindingId as string|undefined}:{}),...(job.kind==='install'?{planId:job.payload.planId as string,planRevision:job.payload.planRevision as number}:{})});
     }
     private async permission(device: Device, role: string, projectId?: string, minimum = 2) {
         const claims = await this.store.access.claims(device.email);
@@ -138,6 +140,9 @@ export class DeviceJobs {
             throw new ConflictException('Локальная LanceDB недоступна на выбранном компьютере. Проверьте ОС и архитектуру автономного пакета MCP.');
         }
         assertManagedBridge(device.report);
+        if (RAG_JOB_KINDS.includes(input.kind)) {
+            payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId)};
+        }
         if (input.kind === 'open-local-recovery-folder') {
             assertLocalFeature(device.report,'local-change-plan-v1');
             const bindingId=managedBinding(device.report,input.projectId); assertExpectedBinding(bindingId,input.expectedBindingId,true);
@@ -266,6 +271,7 @@ export class DeviceJobs {
         }
         try {
             assertManagedBridge(device.report);
+            if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
             await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
@@ -293,11 +299,12 @@ export class DeviceJobs {
             }
         } catch {
             // Отказ до выдачи задания — серверное решение, локальная запись ещё не началась.
-            const message = job.kind === 'inspect-installation' ? 'Проверка файлов недоступна: доступ или версия MCP изменились.'
+            const legacyRag = isLegacyRagJob(job);
+            const message = legacyRag ? RAG_UPGRADE_MESSAGE : job.kind === 'inspect-installation' ? 'Проверка файлов недоступна: доступ или версия MCP изменились.'
                 : 'Действие недоступно: доступ, привязка, одобрение или версия MCP изменились.';
-            await transitionDeviceJobs(this.store.pool,`UPDATE bridge_jobs SET state='failed',message=$4,result=NULL,updated_at=now()
+            await transitionDeviceJobs(this.store.pool,`UPDATE bridge_jobs SET state='failed',message=$4,result=${legacyRag?'$5':'NULL'},updated_at=now()
                 WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now() RETURNING *`,
-            [job.id,device.id,job.lease,message],{state:'FAILED',message});
+            [job.id,device.id,job.lease,message,...(legacyRag?[RAG_UPGRADE_RESULT]:[])],{state:'FAILED',message});
             return null;
         }
         await notifyDeviceOperations();
@@ -315,6 +322,7 @@ export class DeviceJobs {
             );
         }
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
+        if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }

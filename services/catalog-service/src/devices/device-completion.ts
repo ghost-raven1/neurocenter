@@ -11,6 +11,8 @@ import {installationRefs,verifyInstallationSet,type IInstallationSet} from './in
 import { assertInstallationInspection } from './installation-inspection';
 import { CONFIGURATION_KINDS, assertConfigurationReport } from './mcp-config-reports';
 import type { IPackage } from '../catalog/bundle-package';
+import { assertRagJobResult, isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
+import { RAG_JOB_KINDS } from './rag-job-binding';
 
 export interface DeviceCompletion {
     lease: string;
@@ -41,6 +43,16 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         );
         const job = rows[0];
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
+        // Потерянный ACK уже принятого legacy-результата не превращается в повторную запись индекса.
+        if (RAG_JOB_KINDS.includes(job.kind) && job.state===input.state && isDeepStrictEqual(job.result ?? {},input.result)) {
+            await client.query('COMMIT'); return {ok:true,repeated:true};
+        }
+        // Старый непроверенный успех получает ACK как отказ; очередь других действий продолжает работать.
+        if (isLegacyRagJob(job) && input.state==='succeeded' && input.result.projectId===job.project_id && input.result.ok===true
+            && (['running','reconciling'].includes(job.state) || job.state==='failed' && isDeepStrictEqual(job.result,RAG_UPGRADE_RESULT))) {
+            input = {...input,state:'failed',message:RAG_UPGRADE_MESSAGE,result:RAG_UPGRADE_RESULT};
+        }
+        assertRagJobResult(job,input.result,input.state==='failed');
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
         if (![...LOCAL_PREPARATIONS,'scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {

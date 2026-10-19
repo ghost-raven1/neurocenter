@@ -69,7 +69,6 @@ describe('Подтверждение результата MCP после обр�
     });
     it.each([
         ['choose-root', { root: '/проекты' }], ['bind-project', { projectId: 'project' }],
-        ['sync-rag', { projectId: 'project', ok: true }], ['restore-rag', { projectId: 'project', ok: true }],
     ])('Потерянный результат %s сверяется после истечения аренды', async (kind, outcome) => {
         query.mockImplementation(async (sql: string) => ({ rows: sql.startsWith('SELECT') ? [{ ...row, kind, payload: {} }] : [] }));
         await expect(completeDeviceJob(pool, 'computer', 'job', { ...input, result: outcome as Record<string, unknown> })).resolves.toMatchObject({ ok: true });

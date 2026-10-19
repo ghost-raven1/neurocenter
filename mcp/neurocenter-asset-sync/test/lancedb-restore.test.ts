@@ -59,4 +59,12 @@ describe('Первое скачивание LanceDB с пустыми полям
         await writeRows(root, [{ ...row, embedding: null }], false, 3);
         expect((await tableInfo(root)).dimension).toBe(3);
     });
+    it('Зеркальная запись использует возвращённый immutable builder и удаляет отсутствующие строки', async () => {
+        await writeRows(root, [row, { ...row, id: 'obsolete' }], false, 3);
+        const result = await writeRows(root, [{ ...row, id: 'replacement' }], true, 3);
+        expect(result).toMatchObject({ written: 1, deleted: 2 });
+        expect((await tableInfo(root)).rowCount).toBe(1);
+        const values = []; for await (const value of readRowsByIds(root, ['a', 'obsolete', 'replacement'])) { values.push(value.id); }
+        expect(values).toEqual(['replacement']);
+    });
 });

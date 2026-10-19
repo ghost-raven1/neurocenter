@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { syncRagDb } from '../src/tools/sync-rag-db.js';
 import { writeRows } from '../src/lib/lancedb.js';
 import { workspaceFixture } from './bridge-fixture.js';
+import { readyIndex, metadata } from './rag-index-fixture.js';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof import('../src/bridge/state.js')>(), authorizedFetch: transport.fetch }));
@@ -16,10 +17,11 @@ describe('Границы локального источника RAG при от
     beforeEach(async () => {
         fixture = await workspaceFixture(); store = path.join(fixture.root, '.opencode/rag_db'); sent.length = 0;
         await writeRows(store, [row('own-row')], false, 3);
+        await readyIndex(fixture.root);
         transport.fetch.mockReset().mockImplementation(async (_url: string, init?: RequestInit) => {
-            if (!init) { return Response.json({ ids: {} }); }
+            if (!init) { return Response.json(metadata([])); }
             const body = JSON.parse(String(init.body)); sent.push(body);
-            return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length });
+            return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length, complete: body.snapshot.complete, snapshotHash: body.snapshot.hash });
         });
     });
     afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await fs.rm(fixture.temporary, { recursive: true, force: true }); });
@@ -42,7 +44,7 @@ describe('Границы локального источника RAG при от
 
     it('Подтверждённый локальный индекс отправляется по обычному протоколу', async () => {
         expect(JSON.parse(await syncRagDb({ project: fixture.root }, fixture.root))).toMatchObject({ ok: true, upserted: 1 });
-        expect(sent).toMatchObject([{ projectKey: 'test-project', chunks: [{ id: 'own-row' }], deletes: [] }]);
+        expect(sent).toMatchObject([{ projectKey: 'test-project', chunks: [{ id: 'own-row' }], deletes: [] }, { chunks: [], deletes: [], snapshot: { complete: true } }]);
     });
 
     it.each(['config', 'symlink'])('Подмена источника через %s после manifest запрещает отправку', async mode => {
@@ -54,7 +56,7 @@ describe('Границы локального источника RAG при от
             } else {
                 await fs.rm(store, { recursive: true }); await fs.symlink(other, store, 'dir');
             }
-            return Response.json({ ids: {} });
+            return Response.json(metadata([]));
         });
         await expect(syncRagDb({ project: fixture.root }, fixture.root)).rejects.toThrow(/Путь локального индекса изменился|симлинк/);
         expect(sent).toEqual([]); expect(transport.fetch).toHaveBeenCalledTimes(1);

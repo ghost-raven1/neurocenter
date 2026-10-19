@@ -14,6 +14,7 @@ try {
     execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', path.join(root, 'tsconfig.json'), '--outDir', path.join(stage, 'dist')], { cwd: root, stdio: 'inherit' });
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     await fs.copyFile(path.join(root, '../../services/shared/runtime-artifacts.cjs'), path.join(stage, 'dist/shared/runtime-artifacts.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/rag-index-contract.cjs'), path.join(stage, 'dist/shared/rag-index-contract.cjs'));
     const digest = createHash('sha256');
     const files = (await fs.readdir(path.join(stage, 'dist'), { recursive: true })).sort();
     for (const file of files) {

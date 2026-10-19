@@ -9,6 +9,7 @@ import { verifyBridgeBuild } from '../bridge-build-integrity.mjs';
 
 const bridge = fileURLToPath(new URL('../../mcp/neurocenter-asset-sync/', import.meta.url));
 const shared = fileURLToPath(new URL('../../services/shared/runtime-artifacts.cjs', import.meta.url));
+const ragContract = fileURLToPath(new URL('../../services/shared/rag-index-contract.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function fixture(source) {
@@ -17,6 +18,7 @@ async function fixture(source) {
     await fs.mkdir(root, { recursive: true });
     await fs.mkdir(path.join(workspace, 'services/shared'), { recursive: true });
     await fs.copyFile(shared, path.join(workspace, 'services/shared/runtime-artifacts.cjs'));
+    await fs.copyFile(ragContract, path.join(workspace, 'services/shared/rag-index-contract.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
     await fs.copyFile(path.join(bridge, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'));
@@ -32,6 +34,7 @@ test('Чистая сборка убирает удалённый инструм
     const build = JSON.parse(await fs.readFile(path.join(f.root, 'dist/build.json'), 'utf8'));
     assert.match(build.buildId, /^[a-f0-9]{64}$/);
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/runtime-artifacts.cjs'), 'utf8'), await fs.readFile(shared, 'utf8'));
+    assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/rag-index-contract.cjs'), 'utf8'), await fs.readFile(ragContract, 'utf8'));
 });
 test('Ошибка компиляции сохраняет предыдущую рабочую сборку', async () => {
     const f = await fixture('export const value: number = "ошибка";'); assert.notEqual(f.run().status, 0);

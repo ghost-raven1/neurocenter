@@ -17,15 +17,10 @@ import {
     commitProjectBinding,
     recoverPendingWorkspaceIdentity,
     workspaceReport,
-    projectFolder,
     projectBindingId,
     type WorkspaceBindingMode,
     type WorkspaceBindingPreparation,
 } from './workspace.js';
-import { restoreRagDb } from '../tools/restore-rag-db.js';
-import { syncRagDb } from '../tools/sync-rag-db.js';
-import { locateStore } from '../lib/store.js';
-import { safeTarget } from './workspace.js';
 import { install, installSet } from './installer.js';
 import { packageRef, sortedRefs, type InstallSet } from './install-set.js';
 import {uninstall} from './uninstaller.js';
@@ -46,6 +41,7 @@ import { openLocalChangeReport } from './local-change-report.js';
 import { CONFIGURATION_KINDS, runMcpConfigurationJob,prepareJobMcpLaunchers,type ConfigurationPayload } from './mcp-configuration-worker.js';
 import { prepareJobRuntimeArtifacts } from './job-runtime-artifacts.js';
 import { recoverRuntimePreparations, runtimePreparationCompletion } from './runtime-preparation-intent.js';
+import { runRagBridgeJob } from './rag-worker.js';
 import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
 
 interface Job {
@@ -150,7 +146,7 @@ export async function runWorker(): Promise<void> {
                     const result = await api(`jobs/${current.id}/authorize`, {
                         lease: current.lease,
                     });
-                    if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
+                    if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
                         throw new Error('Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.');
                     }
                     return result;
@@ -232,66 +228,10 @@ export async function runWorker(): Promise<void> {
                                 : (current.kind === 'install' ? install : uninstall)(
                                     current.project_id || '', current.payload.package!, authorize, update,
                                 ));
-                    } else if (
-                        ['restore-rag', 'sync-rag'].includes(current.kind)
-                    ) {
-                        const projectId = current.project_id || '';
-                        const folder = await projectFolder(projectId);
-                        const located = await locateStore(folder, folder);
-                        const store =
-                            located.storePath ||
-                            path.join(folder, '.opencode/rag_db');
-                        const relative = path
-                            .relative(folder, store)
-                            .split(path.sep)
-                            .join('/');
-                        if (
-                            relative.startsWith('../') ||
-                            path.isAbsolute(relative) ||
-                            !relative
-                        ) {
-                            throw new Error(
-                                'LanceDB должна находиться внутри привязанной папки проекта.',
-                            );
-                        }
-                        await safeTarget(folder, relative);
-                        if (current.kind === 'restore-rag') {
-                            await fs.mkdir(store, { recursive: true });
-                        }
-                        const raw = await jobContext.run(
-                            { id: current.id, lease: current.lease },
-                            async () =>
-                                current.kind === 'restore-rag'
-                                    ? await restoreRagDb(
-                                          {
-                                              projectKey: projectId,
-                                              project: folder,
-                                          },
-                                          folder,
-                                      )
-                                    : await syncRagDb(
-                                          {
-                                              projectKey: projectId,
-                                              project: folder,
-                                          },
-                                          folder,
-                                      ),
-                        );
-                        const parsed = JSON.parse(raw) as {
-                            ok?: boolean;
-                            error?: string;
-                            message?: string;
-                            dryRun?: boolean;
-                            preview?: boolean;
-                        };
-                        if (!parsed.ok || parsed.dryRun || parsed.preview) {
-                            throw new Error(
-                                parsed.message ||
-                                    parsed.error ||
-                                    'Синхронизация требует проверки плана в MCP. Изменения не подтверждены.',
-                            );
-                        }
-                        result = { ...parsed, projectId };
+                    } else if (['restore-rag','sync-rag'].includes(current.kind)) {
+                        result = await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runRagBridgeJob({
+                            kind:current.kind as 'restore-rag'|'sync-rag',projectId:current.project_id || '',bindingId:current.payload.bindingId || '',
+                        },async()=>{await authorize();},update));
                     } else {
                         throw new Error('Неизвестное задание MCP.');
                     }

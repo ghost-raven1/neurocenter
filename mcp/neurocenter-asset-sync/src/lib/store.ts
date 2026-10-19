@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { loadRagConfig, type IRagConfigCore } from './config.js';
+import { safeTarget } from '../bridge/workspace-paths.js';
 
 export interface IStoreLocateResult {
     root: string;
@@ -10,7 +11,7 @@ export interface IStoreLocateResult {
     storePath: string | null;
 }
 
-const CONFIG_FILE = 'opencode-rag.json';
+export const RAG_CONFIG_PATHS = ['opencode-rag.json', '.opencode/opencode-rag.json', '.opencode/rag.json'];
 const DEFAULT_STORE_SUBPATH = path.join('.opencode', 'rag_db');
 
 async function statSafe(p: string): Promise<{ file: boolean; dir: boolean } | null> {
@@ -34,6 +35,7 @@ async function statSafe(p: string): Promise<{ file: boolean; dir: boolean } | nu
 export async function locateStore(
     hint: string | undefined,
     cwd: string,
+    allowMissing = false,
 ): Promise<IStoreLocateResult> {
     const entry =
     typeof hint === 'string' && hint.trim() !== ''
@@ -46,11 +48,14 @@ export async function locateStore(
         baseDir = entryStat.dir ? entry : path.dirname(entry);
     }
 
-    // Конфиг — только прямо в корне.
-    const configCandidate = path.join(baseDir, CONFIG_FILE);
-    const configStat = await statSafe(configCandidate);
-    const configPath = configStat?.file ? configCandidate : null;
-    const config = configPath ? await loadRagConfig(configPath) : null;
+    // Приоритет совпадает с native OpenCodeRAG; вверх по дереву не поднимаемся.
+    let configPath: string | null = null;
+    for (const relative of RAG_CONFIG_PATHS) {
+        const candidate = path.join(baseDir, relative);
+        if ((await statSafe(candidate))?.file) { configPath = await safeTarget(baseDir, relative); break; }
+    }
+    const config = configPath ? await loadRagConfig(configPath, baseDir) : null;
+    if (configPath && !config) { throw new Error('Конфигурация OpenCodeRAG повреждена. Исправьте её перед передачей индекса.'); }
 
     // Store: сначала из конфига, затем дефолтный .opencode/rag_db в корне,
     // либо сама точка входа (если указали каталог store напрямую).
@@ -58,7 +63,7 @@ export async function locateStore(
     if (!storePath) {
         const defaultCandidate = path.join(baseDir, DEFAULT_STORE_SUBPATH);
         const defaultStat = await statSafe(defaultCandidate);
-        if (defaultStat?.dir) {
+        if (defaultStat?.dir || allowMissing) {
             storePath = defaultCandidate;
         } else if (
             entryStat?.dir &&
@@ -69,7 +74,7 @@ export async function locateStore(
         }
     }
 
-    const root = configPath ? path.dirname(configPath) : baseDir;
+    const root = baseDir;
 
     return { root, configPath, config, storePath };
 }

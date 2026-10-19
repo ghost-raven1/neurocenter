@@ -1,195 +1,156 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
-
-import { writeRows, enumerateIds, deleteIds } from '../lib/lancedb.js';
+import { writeRows } from '../lib/lancedb.js';
 import { locateStore } from '../lib/store.js';
 import { readRagProjectIdentity, unverifiedRagProject, verifiedRagProjectIdentity } from '../lib/rag-project-identity.js';
 import { ragStoreBoundary } from '../lib/rag-store-boundary.js';
 import { withWorkspaceIdentityLock } from '../bridge/workspace-identity-state.js';
+import { safeTarget } from '../bridge/workspace-paths.js';
+import { authorizedFetch } from '../bridge/state.js';
+import { assertIndexIdle, localIndexProfile, localEmbeddingIdentity, assertSameProfile } from '../features/rag-index/readiness.js';
+import { FINGERPRINT_VERSION, normalizeIndexProfile, normalizeChunkRow, rowFingerprint, indexSnapshotHash, type IIndexProfile } from '../features/rag-index/contract.js';
+import { importRow, exportRow } from '../features/rag-index/paths.js';
+import { openIndexSnapshot } from '../features/rag-index/snapshot.js';
+import { readBoundedUtf8 } from '../bridge/read-bounded.js';
+import { reserveRestoreIndex } from '../features/rag-index/restore-lock.js';
 
-/** Базовый URL rag-сервиса (dev: local :4300). */
-import {authorizedFetch} from '../bridge/state.js';
-/** Размер страницы при скачивании develop-индекса (OOM-защита). */
 const PAGE_LIMIT = 1000;
-
-export const restoreRagDbInputSchema = z.object({
-    projectKey: z.string().min(1),
-    project: z.string().optional(),
-});
+export const restoreRagDbInputSchema = z.object({ projectKey: z.string().min(1), project: z.string().optional() });
 export type TRestoreRagDbInput = z.infer<typeof restoreRagDbInputSchema>;
+const sourceSchema = z.object({
+    projectKey: z.string(), fingerprintVersion: z.literal(1), complete: z.literal(true), indexState: z.literal('ready'),
+    snapshotHash: z.string().regex(/^[a-f0-9]{64}$/), indexProfile: z.unknown(), rowCount: z.number().int().positive(),
+    incompleteRows: z.literal(0),
+});
 
-interface IRagChunkRow {
-    id: string;
-    content: string;
-    description?: string | null;
-    filePath?: string | null;
-    startLine?: number | null;
-    endLine?: number | null;
-    language?: string | null;
-    kind?: string | null;
-    role?: string | null;
-    quirkType?: string | null;
-    tags?: string | null;
-    embedding?: number[] | null;
-}
-
-interface IChunksPage {
-    projectKey: string;
-    count: number;
-    dimension: number;
-    offset: number;
-    limit: number;
-    hasMore: boolean;
-    chunks: IRagChunkRow[];
-}
-
-/**
- * Обратная синхронизация: скачивает develop-индекс из postgres/pgvector
- * СТРАНИЦАМИ (`GET /api/rag/chunks?limit=&offset=`) и записывает в локальную
- * LanceDB-базу проекта (store из `locateStore`).
- *
- * Алгоритм (память ≤ 1 страница за раз):
- * 1. каждую страницу merge-insert без удаления (update совпавших + вставка новых);
- * 2. параллельно собирает Set всех серверных id (лёгкие строки, не векторы);
- * 3. один финальный проход: удаляет локальные id, отсутствующие на сервере
- *    → локальная база становится точным «слепком» серверного индекса.
- *
- * Если скачивание прервано ошибкой — до записи доходят только завершённые
- * страницы, удаление не выполняется (база не теряет данные).
- *
- * @param input - projectKey (обязателен), project (путь к корню/стану).
- * @param cwd - базовая директория.
- * @returns JSON-сводка восстановления.
- */
-export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string): Promise<string> {
+/** Загружает проверенный снимок в соседний staging и заменяет индекс только после полной проверки. */
+export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, authorize: () => Promise<void> = async () => {}): Promise<string> {
     const projectKey = input.projectKey.trim();
-    if (!projectKey) {
-        return JSON.stringify({ ok: false, error: 'projectKey required' });
-    }
     const initial = await readRagProjectIdentity({ project: input.project }, cwd);
     if (!verifiedRagProjectIdentity(initial.value, projectKey)) { return unverifiedRagProject(); }
-
-    const located = await locateStore(input.project, cwd);
-    if (!located.storePath) {
-        return JSON.stringify({
-            ok: false,
-            error: 'store-not-found',
-            message: `rag_db не найден от (${cwd}). Укажи project=путь к корню с opencode-rag.json.`,
-        });
-    }
+    const located = await locateStore(input.project, cwd, true);
+    if (!located.storePath) { throw new Error('Не определена папка локального индекса.'); }
     const { storePath } = located;
-    const assertStore = ragStoreBoundary(input.project, cwd, storePath);
-    const assertIdentity = async (): Promise<void> => {
+    let lock: Awaited<ReturnType<typeof reserveRestoreIndex>> | undefined;
+    const assertStore = ragStoreBoundary(input.project, cwd, storePath, true);
+    const assertIdentity = async () => {
+        await authorize();
         const current = await readRagProjectIdentity({ project: input.project }, cwd);
-        if (!verifiedRagProjectIdentity(current.value, projectKey, initial.value)) {
-            throw new Error('Привязка локального экземпляра изменилась. Скачивание остановлено до следующей записи или удаления.');
-        }
+        if (!verifiedRagProjectIdentity(current.value, projectKey, initial.value)) { throw new Error('Привязка локального экземпляра изменилась. Восстановление остановлено.'); }
         await assertStore();
+        await lock?.assert();
+        await assertIndexIdle(storePath, true, lock?.raw);
     };
-
-    const serverIds = new Set<string>();
+    await assertIdentity();
+    let oldDimension: number | undefined;
+    let previous: Awaited<ReturnType<typeof openIndexSnapshot>> | undefined;
+    try { await fs.lstat(path.join(storePath, 'chunks.lance')); previous = await openIndexSnapshot(storePath); oldDimension = previous.dimension; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
+    let expected: z.infer<typeof sourceSchema> | undefined;
+    let indexProfile: IIndexProfile | null = null;
+    let stage: string | undefined;
+    let runtimeOverrides: string | null = null;
+    const readOverrides = async () => {
+        try { return await readBoundedUtf8(await safeTarget(storePath, 'runtime-overrides.json'), 1024 * 1024); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { return null; } throw error; }
+    };
     let offset = 0;
-    let written = 0;
-    let created = false;
-    let dimension = 0;
-    let sawPage = false;
-    // Источник оборвался на пустой странице с hasMore=true (гонка с concurrent-записью)
-    // → зеркалирование недопустимо (partial set удалит лишнее).
-    let incomplete = false;
-
-    for (;;) {
-        await assertIdentity();
-        const r = await authorizedFetch(
-            `/api/rag/chunks?projectKey=${encodeURIComponent(projectKey)}&limit=${PAGE_LIMIT}&offset=${offset}`,
-        );
-        if (!r.ok) {
-            return JSON.stringify({
-                ok: false,
-                error: `chunks ${r.status}`,
-                projectKey,
-                written,
-                message: `Скачивание остановлено (HTTP ${r.status}). Ранее записано фрагментов: ${written}. Подтверждённые страницы сохранены; повторите скачивание после восстановления доступа.`,
-            });
-        }
-        const body = (await r.json()) as IChunksPage;
-        if (body.projectKey !== projectKey) { throw new Error('Сервер вернул базу знаний другого проекта. Скачивание остановлено.'); }
-        const chunks = body.chunks ?? [];
-        if (chunks.length > 0) {
-            sawPage = true;
-            dimension = body.dimension || dimension;
-            const rows: Record<string, unknown>[] = chunks.map(c => ({
-                id: c.id,
-                content: c.content ?? '',
-                description: c.description ?? null,
-                filePath: c.filePath ?? null,
-                startLine: c.startLine ?? null,
-                endLine: c.endLine ?? null,
-                language: c.language ?? null,
-                kind: c.kind ?? null,
-                role: c.role ?? null,
-                quirkType: c.quirkType ?? null,
-                tags: c.tags ?? null,
-                embedding: c.embedding ?? null,
-            }));
-            for (const c of chunks) {serverIds.add(c.id);}
-            const res = await withWorkspaceIdentityLock(async () => {
-                await assertIdentity();
-                return writeRows(storePath, rows, false,dimension);
-            });
-            written += res.written;
-            created = created || res.created;
-        }
-        offset += PAGE_LIMIT;
-        if (body.hasMore && chunks.length === 0) {
-            incomplete = true;
-            break;
-        }
-        if (!body.hasMore || chunks.length === 0) {break;}
-    }
-
-    // Mirror-delete — только при полностью скачанном непустом источнике.
-    // Пустой/неполный источник → без удаления (локальная база не теряется).
-    if (incomplete) {
-        return JSON.stringify({
-            ok: false,
-            error: 'incomplete-source',
-            projectKey,
-            written,
-            note: 'источник оборван (hasMore + пустая страница); зеркальный cleanup пропущен, повтори restore',
-        });
-    }
-    if (!sawPage) {
-        return JSON.stringify({
-            ok: false,
-            error: 'empty-source',
-            projectKey,
-            note: 'develop-индекс пуст; локальная база НЕ очищена (защита от случайного стирания)',
-        });
-    }
-
-    // Финальный зеркальный cleanup: удаляем локальные id, которых нет на сервере.
-    let deleted = 0;
-    const toDelete: string[] = [];
-    await assertIdentity();
-    for await (const id of enumerateIds(storePath)) {
-        if (!serverIds.has(id)) {toDelete.push(id);}
-    }
-    if (toDelete.length > 0) {
-        deleted = await withWorkspaceIdentityLock(async () => {
+    const fingerprints: Record<string, string> = Object.create(null) as Record<string, string>;
+    try {
+        for (;;) {
             await assertIdentity();
-            return deleteIds(storePath, toDelete);
+            await previous?.assertCurrent();
+            const response = await authorizedFetch(`/api/rag/chunks?projectKey=${encodeURIComponent(projectKey)}&limit=${PAGE_LIMIT}&offset=${offset}`);
+            if (!response.ok) { throw new Error(`Восстановление остановлено (HTTP ${response.status}). Исходный локальный индекс сохранён.`); }
+            const raw: unknown = await response.json();
+            const metadata = sourceSchema.safeParse(raw);
+            const page = z.object({ chunks: z.array(z.unknown()), hasMore: z.boolean() }).safeParse(raw);
+            if (!metadata.success || !page.success) { throw new Error('Серверная копия не является завершённым проверенным снимком V1. Сначала выполните полную синхронизацию.'); }
+            const current = metadata.data;
+            if (current.projectKey !== projectKey) { throw new Error('Сервер вернул индекс другого проекта.'); }
+            const profile = normalizeIndexProfile(current.indexProfile);
+            if (!profile) { throw new Error('Профиль серверной модели не подтверждён.'); }
+            if (!expected) {
+                indexProfile = profile;
+                assertSameProfile(await localIndexProfile(located, oldDimension ?? profile.dimension), profile);
+                expected = current;
+                // Создание staging разрешено только после проверки профиля и источника.
+                await assertIdentity();
+                lock = await reserveRestoreIndex(located.root, storePath);
+                await assertIdentity();
+                await fs.mkdir(path.dirname(storePath), { recursive: true });
+                const parentRelative = path.relative(located.root, path.dirname(storePath)).split(path.sep).join('/');
+                const parent = parentRelative ? await safeTarget(located.root, parentRelative) : located.root;
+                stage = await fs.mkdtemp(path.join(parent, '.neurocenter-rag-restore-'));
+            } else {
+                assertSameProfile(indexProfile!, profile);
+                if (current.snapshotHash !== expected.snapshotHash || current.rowCount !== expected.rowCount) { throw new Error('Серверный снимок изменился во время скачивания. Локальный индекс сохранён.'); }
+            }
+            if (!page.data.chunks.length) { throw new Error('Сервер вернул неполный или пустой снимок. Локальный индекс сохранён.'); }
+            const rows: Record<string, unknown>[] = [];
+            for (const value of page.data.chunks) {
+                const row = normalizeChunkRow(value);
+                if (!row.embedding || row.embedding.length !== profile.dimension || Object.hasOwn(fingerprints, row.id)) { throw new Error('Серверный снимок содержит неполные векторы или повторные идентификаторы.'); }
+                fingerprints[row.id] = rowFingerprint(row);
+                rows.push({ ...await importRow(row, located.root) });
+            }
+            await assertIdentity();
+            await writeRows(stage!, rows, false, profile.dimension);
+            offset += rows.length;
+            if (offset > expected.rowCount || (page.data.hasMore && offset >= expected.rowCount)) { throw new Error('Количество фрагментов не соответствует снимку.'); }
+            if (!page.data.hasMore) { break; }
+        }
+        if (!expected || !indexProfile || offset !== expected.rowCount || indexSnapshotHash(indexProfile, fingerprints) !== expected.snapshotHash) { throw new Error('Полнота серверного снимка не подтверждена. Локальный индекс сохранён.'); }
+        // Проверяем записанный LanceDB, включая float32 и перебазированные пути, а не только входящие JSON.
+        const staged = await openIndexSnapshot(stage!);
+        try {
+            const actual: Record<string, string> = Object.create(null) as Record<string, string>;
+            for await (const value of staged.rows()) { const row = await exportRow(value, located.root); actual[row.id] = rowFingerprint(row); }
+            if (staged.rowCount !== offset || indexSnapshotHash(indexProfile, actual) !== expected.snapshotHash) { throw new Error('Проверка записанного LanceDB не пройдена. Исходный индекс сохранён.'); }
+        } finally { staged.close(); }
+        await assertIdentity();
+        const check = await authorizedFetch(`/api/rag/manifest?projectKey=${encodeURIComponent(projectKey)}`);
+        const latest = check.ok ? sourceSchema.safeParse(await check.json()) : null;
+        if (!latest?.success || latest.data.snapshotHash !== expected.snapshotHash || latest.data.rowCount !== expected.rowCount) { throw new Error('Снимок изменился перед сохранением. Повторите восстановление.'); }
+        assertSameProfile(indexProfile, normalizeIndexProfile(latest.data.indexProfile));
+        // Runtime-настройки принадлежат целевой папке, а не скачиваемому индексу.
+        runtimeOverrides = await readOverrides();
+        if (runtimeOverrides !== null) { await fs.writeFile(path.join(stage!, 'runtime-overrides.json'), runtimeOverrides); }
+        await fs.writeFile(path.join(stage!, 'neurocenter-restored.json'), JSON.stringify({ fingerprintVersion: 1, complete: true, indexProfile, snapshotHash: expected.snapshotHash, rowCount: offset }));
+        const targetIdentity = await localEmbeddingIdentity(await locateStore(input.project, cwd, true), oldDimension ?? indexProfile.dimension);
+        assertSameProfile(indexProfile, targetIdentity.profile);
+        await fs.writeFile(path.join(stage!, 'neurocenter-index-profile.json'), JSON.stringify({ schemaVersion: 1, state: 'ready', profile: indexProfile, embeddingSignature: targetIdentity.signature }));
+        await lock!.place(stage!);
+        const backup = stage! + '-previous';
+        lock!.track(backup);
+        await withWorkspaceIdentityLock(async () => {
+            await assertIdentity(); // binding-aware lease check immediately before local commit
+            const currentTarget = await localEmbeddingIdentity(await locateStore(input.project, cwd, true), oldDimension ?? indexProfile!.dimension);
+            assertSameProfile(indexProfile!, currentTarget.profile);
+            if (currentTarget.signature !== targetIdentity.signature) { throw new Error('Подключение к модели изменилось перед сохранением. Повторите восстановление.'); }
+            if (await readOverrides() !== runtimeOverrides) { throw new Error('Настройки индекса изменились перед сохранением. Повторите восстановление.'); }
+            if (!previous) {
+                try { await fs.lstat(path.join(storePath, 'chunks.lance')); throw new Error('Локальный индекс появился во время скачивания. Повторите восстановление.'); }
+                catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
+            }
+            await previous?.assertCurrent();
+            await lock!.assert(stage!);
+            previous?.close(); previous = undefined;
+            let moved = false;
+            try { await fs.rename(storePath, backup); moved = true; }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
+            try { await fs.rename(stage!, storePath); }
+            catch (error) { if (moved) { await fs.rename(backup, storePath); } throw error; }
+            stage = undefined;
         });
+        await fs.rm(backup, { recursive: true, force: true });
+        return JSON.stringify({ ok: true, applied: true, complete: true, remaining: 0, projectKey, fingerprintVersion: FINGERPRINT_VERSION,
+            indexProfile, snapshotHash: expected.snapshotHash, sourceCount: offset, written: offset, dimension: indexProfile.dimension,
+            note: 'Семантический индекс восстановлен. OpenCode пересоздаст служебные индексы при следующем запуске.' });
+    } finally {
+        previous?.close();
+        try { await lock?.release(); }
+        finally { if (stage) { await fs.rm(stage, { recursive: true, force: true }); } }
     }
-    await assertIdentity();
-
-    return JSON.stringify({
-        ok: true,
-        projectKey,
-        storePath,
-        sourceCount: serverIds.size,
-        written,
-        deleted,
-        created,
-        dimension,
-        note: 'локальная LanceDB восстановлена из develop-индекса (pgvector), зеркально',
-    });
 }
