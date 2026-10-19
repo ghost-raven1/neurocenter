@@ -1,20 +1,6 @@
-/** Ограничивает и время, и размер JSON-ответа, включая чтение тела. */
-export async function requestJson(url, {body, timeout = 5000, limit = 1024 * 1024} = {}) {
-    const response = await fetch(url, {method: body === undefined ? 'GET' : 'POST', redirect: 'error',
-        signal: AbortSignal.timeout(timeout), ...(body === undefined ? {} : {headers: {'content-type': 'application/json'}, body: JSON.stringify(body)})});
-    let size = 0;
-    const chunks = [];
-    for await (const chunk of response.body) {
-        size += chunk.length;
-        if (size > limit) throw new Error('Ответ модельного сервиса превышает допустимый размер.');
-        chunks.push(chunk);
-    }
-    let value;
-    try {value = JSON.parse(Buffer.concat(chunks).toString('utf8'));}
-    catch {throw new Error(response.ok ? 'Модельный сервис вернул некорректный JSON.' : `Ollama: HTTP ${response.status}.`);}
-    if (!response.ok || value.error) throw new Error(`Ollama: HTTP ${response.status}. ${String(value.error || 'Запрос отклонён.').slice(0, 300)}`);
-    return value;
-}
+import {requestJson} from '../models/http.mjs';
+
+export {requestJson};
 
 /** Принимает только полный набор конечных ненулевых float32-векторов нужной размерности. */
 export function validateVectors(value, dimension, count) {
@@ -38,11 +24,14 @@ export async function pullModel(config, progress = () => {}) {
     const decoder = new TextDecoder();
     let pending = '', received = 0, success = false;
     function line(raw) {
+        if (Buffer.byteLength(raw, 'utf8') > 65536) throw new Error('Слишком длинная запись состояния загрузки.');
         if (!raw.trim()) return;
-        const value = JSON.parse(raw);
+        let value;
+        try {value = JSON.parse(raw);} catch {throw new Error('Загрузка модели: некорректная запись состояния.');}
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Загрузка модели: некорректная запись состояния.');
         if (value.error) throw new Error('Загрузка модели: ' + String(value.error).slice(0, 300));
         progress(value);
-        if (value.status === 'success') success = true;
+        success = value.status === 'success';
     }
     for await (const chunk of response.body) {
         received += chunk.length;
@@ -50,10 +39,9 @@ export async function pullModel(config, progress = () => {}) {
         pending += decoder.decode(chunk, {stream: true});
         let end;
         while ((end = pending.indexOf('\n')) !== -1) {
-            if (end > 65536) throw new Error('Слишком длинная запись состояния загрузки.');
             line(pending.slice(0, end)); pending = pending.slice(end + 1);
         }
-        if (pending.length > 65536) throw new Error('Слишком длинная запись состояния загрузки.');
+        if (Buffer.byteLength(pending, 'utf8') > 65536) throw new Error('Слишком длинная запись состояния загрузки.');
     }
     pending += decoder.decode(); line(pending);
     if (!success) throw new Error(`Загрузка модели прервана. Повторите ${config.upCommand || 'npm run embedding:up'} для продолжения.`);
@@ -63,6 +51,7 @@ export async function pullModel(config, progress = () => {}) {
 export async function probeModel(config) {
     const value = await requestJson(config.baseUrl + '/api/embed', {timeout: 120000,
         body: {model: config.lock.model, input: ['Локальная проверка поиска по проекту.', 'Local project knowledge search.'], truncate: false, keep_alive: '1m'}});
+    if (Object.hasOwn(value, 'model') && value.model !== config.lock.model) throw new Error('Модельный сервис вернул ответ другой embedding-модели.');
     validateVectors(value, config.lock.dimension, 2);
     return {dimension: config.lock.dimension, vectors: 2};
 }

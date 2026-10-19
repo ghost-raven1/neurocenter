@@ -63,6 +63,7 @@ npm run vision:describe -- ./image.png 'Что изображено на кар�
 | `scripts/catalog-plugins/` | Общая упаковка и публикация инструментов |
 | `scripts/embedding/` | Запуск, проверка и закреплённая версия локальной модели |
 | `scripts/vision/` | Закреплённая vision-модель и обработка изображений |
+| `scripts/models/` | Общие команды, HTTP-клиент и отметки готовности моделей |
 | `scripts/production/` | Настройка, обслуживание, backup/restore и обновление |
 | `docs/` | Архитектура, контракты, runbooks и история проверок |
 
@@ -72,6 +73,7 @@ npm run vision:describe -- ./image.png 'Что изображено на кар�
 - [Упаковка инструментов](scripts/catalog-plugins/README.md).
 - [Локальная модель эмбеддингов](docs/local-embedding.md).
 - [Локальная обработка изображений](docs/local-vision.md).
+- [Повторный аудит хостинга моделей](docs/model-runtime-refactor-2026-10-19.md).
 - [Production-настройка](docs/production-setup.md), [восстановление](docs/production-recovery.md), [обновление](docs/production-update.md).
 - [Обслуживание](docs/maintenance-schedule.md), [внешние копии](docs/external-backups.md), [ресурсы](docs/capacity-admission.md).
 - [Последняя локальная приёмка настроек проектов](docs/project-settings-audit-2026-10-19.md).

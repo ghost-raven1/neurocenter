@@ -1,10 +1,13 @@
 import {spawn} from 'node:child_process';
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {createReadStream,constants} from 'node:fs';
-import {mkdir,readFile,writeFile,rename,rm,lstat,statfs,open} from 'node:fs/promises';
+import {mkdir,readFile,rm,lstat,statfs,open} from 'node:fs/promises';
 import path from 'node:path';
 import {lockedModel} from './config.mjs';
 import {requestJson, pullModel, probeModel} from './client.mjs';
+import {readReceipt,writeReceipt,verifiedReceipt} from '../models/readiness.mjs';
+
+export {verifiedReceipt} from '../models/readiness.mjs';
 
 /** Docker вызывается без shell и не читает production-конфигурацию приложения. */
 export async function docker(config, args, {inherit = false, timeout = 120000} = {}) {
@@ -81,21 +84,6 @@ export async function verifyModelFiles(config) {
     }
 }
 
-async function atomicReceipt(config, value) {
-    const temporary = config.receipt + '.' + randomUUID() + '.next';
-    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', {mode: 0o600, flag: 'wx'});
-    await rename(temporary, config.receipt);
-}
-
-/** Статусы моделей независимы: vision требует проверки картинки, embedding — размерности. */
-export function verifiedReceipt(config, receipt) {
-    const checkedAt = typeof receipt?.checkedAt === 'string' ? Date.parse(receipt.checkedAt) : NaN;
-    return Number.isFinite(checkedAt) && checkedAt <= Date.now() && new Date(checkedAt).toISOString() === receipt.checkedAt
-        && receipt?.model === config.lock.model && receipt?.manifestSha256 === config.lock.manifestSha256 && receipt?.image === config.lock.image
-        && (config.capability === 'vision' ? receipt.capability === 'vision' && receipt.visionVerified === true
-            : Number.isSafeInteger(config.lock.dimension) && receipt.dimension === config.lock.dimension);
-}
-
 /** Сохраняет отметку готовности только после SHA и содержательной пробы выбранной модели. */
 export async function check(config, probe = probeModel) {
     await managedContainer(config);
@@ -108,7 +96,7 @@ export async function check(config, probe = probeModel) {
     const receipt = {model: config.lock.model, manifestSha256: config.lock.manifestSha256, image: config.lock.image,
         ...(config.capability === 'vision' ? {capability: 'vision', visionVerified: true, observation: result.observation} : {dimension: result.dimension}),
         checkedAt: new Date().toISOString()};
-    await atomicReceipt(config, receipt);
+    await writeReceipt(config, receipt);
     return receipt;
 }
 
@@ -117,13 +105,13 @@ export async function status(config) {
     await managedContainer(config);
     const version = await requestJson(config.baseUrl + '/api/version');
     const tags = await requestJson(config.baseUrl + '/api/tags');
-    let receipt;
-    try {receipt = JSON.parse(await readFile(config.receipt, 'utf8'));} catch (error) {if (error.code !== 'ENOENT') throw error;}
+    const {receipt, issue} = await readReceipt(config);
     const installed = lockedModel(tags, config.lock);
     const checked = installed && verifiedReceipt(config, receipt);
     return {state: checked ? 'verified' : installed ? 'unchecked' : 'missing', version: version.version,
         model: config.lock.model, capability: config.capability, dimension: config.lock.dimension, url: config.baseUrl + '/api',
-        checkedAt: checked ? receipt.checkedAt : null, data: config.data};
+        checkedAt: checked ? receipt.checkedAt : null, data: config.data,
+        ...(issue ? {verificationIssue: issue} : {})};
 }
 
 /** Один управляющий процесс на checkout; после аварии незанятый PID можно безопасно заменить. */
@@ -144,14 +132,22 @@ export async function withControlLock(config, action) {
         }
         try {
             await recovery.writeFile(String(process.pid));
-            const lockInfo = await lstat(filename);
-            if (!lockInfo.isFile() || lockInfo.isSymbolicLink() || lockInfo.size > 32) throw new Error('Недопустимый файл блокировки data/embedding/control.lock.');
-            const pid = Number(await readFile(filename, 'utf8'));
-            if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Некорректная блокировка data/embedding/control.lock. Проверьте незавершённую операцию.');
-            let active = true;
-            try {process.kill(pid, 0);} catch (probe) {if (probe.code === 'ESRCH') active = false; else throw probe;}
-            if (active) throw new Error('Подготовка модели уже выполняется. Дождитесь её завершения.');
-            await rm(filename); handle = await open(filename, 'wx', 0o600);
+            try {
+                const lockInfo = await lstat(filename);
+                if (!lockInfo.isFile() || lockInfo.isSymbolicLink() || lockInfo.size > 32) throw new Error('Недопустимый файл блокировки data/embedding/control.lock.');
+                const pid = Number(await readFile(filename, 'utf8'));
+                if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Некорректная блокировка data/embedding/control.lock. Проверьте незавершённую операцию.');
+                let active = true;
+                try {process.kill(pid, 0);} catch (probe) {if (probe.code === 'ESRCH') active = false; else throw probe;}
+                if (active) throw new Error('Подготовка модели уже выполняется. Дождитесь её завершения.');
+                await rm(filename);
+            } catch (failure) {if (failure.code !== 'ENOENT') throw failure;}
+            // Предыдущий владелец мог штатно завершиться до чтения его блокировки.
+            try {handle = await open(filename, 'wx', 0o600);}
+            catch (failure) {
+                if (failure.code !== 'EEXIST') throw failure;
+                throw new Error('Подготовка модели уже выполняется. Дождитесь её завершения.');
+            }
         } finally {await recovery.close(); await rm(recoveryFile, {force: true});}
     }
     try {await handle.writeFile(String(process.pid)); await handle.close(); return await action();}

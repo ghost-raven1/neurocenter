@@ -1,5 +1,5 @@
 import {lockedModel} from '../embedding/config.mjs';
-import {requestJson} from '../embedding/client.mjs';
+import {requestJson} from '../models/http.mjs';
 import {managedContainer} from '../embedding/runtime.mjs';
 import {visionFixture} from './image-fixture.mjs';
 
@@ -38,9 +38,9 @@ export function visionResult(value, model, protocol) {
 }
 
 /** Вызывает только принадлежащий проекту runtime и закреплённую vision-модель. */
-export async function visionChat(config, input) {
+export async function visionChat(config, input, ensureManaged = managedContainer) {
     const request = visionRequest(config, input);
-    await managedContainer(config);
+    await ensureManaged(config);
     const tags = await requestJson(config.baseUrl + '/api/tags');
     if (!lockedModel(tags, config.lock)) throw new Error('Vision-модель не подготовлена. Выполните npm run vision:up.');
     const value = await requestJson(request.url, {body: request.body, timeout: request.timeout});
@@ -48,12 +48,13 @@ export async function visionChat(config, input) {
 }
 
 /** Проверка требует прочитать число и цвет собственной картинки, не перечисленные в вопросе. */
-export async function probeVision(config) {
+export async function probeVision(config, ensureManaged = managedContainer) {
     const metadata = await requestJson(config.baseUrl + '/api/show', {body: {model: config.lock.model}, timeout: 30000});
-    if (!metadata.capabilities?.includes('vision')) throw new Error('Модель не заявляет поддержку изображений.');
-    const result = await visionChat(config, {image: visionFixture(), question: observationQuestion, format: observationSchema, maxTokens: 64});
+    if (!Array.isArray(metadata.capabilities) || !metadata.capabilities.includes('vision')) throw new Error('Модель не заявляет поддержку изображений.');
+    const result = await visionChat(config, {image: visionFixture(), question: observationQuestion, format: observationSchema, maxTokens: 64}, ensureManaged);
     let observation;
     try {observation = JSON.parse(result.text);} catch {throw new Error('Модель не распознала тестовую картинку в заданном формате.');}
-    if (result.truncated || observation.number !== '42' || observation.color !== 'red') throw new Error('Модель неверно распознала число или цвет тестовой картинки.');
+    if (result.truncated || !observation || typeof observation !== 'object' || Array.isArray(observation)
+        || Object.keys(observation).length !== 2 || observation.number !== '42' || observation.color !== 'red') throw new Error('Модель неверно распознала число или цвет тестовой картинки.');
     return {visionVerified: true, observation};
 }
