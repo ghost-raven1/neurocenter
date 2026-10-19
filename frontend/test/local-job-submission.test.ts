@@ -69,6 +69,7 @@ describe('Отправка локального задания не ждёт ф�
         expect(render().error).toMatch(/Не удалось подготовить запрос к мосту/);
         expect(render().error).not.toContain('crypto');
         expect(bridgeApi.create).not.toHaveBeenCalled();
+        expect(render().canRetry(input)).toBe(false);
         expect(await render().submit(input)).toBe(job);
         expect(render()).toMatchObject({busy: false, error: '', job});
         expect(bridgeApi.create).toHaveBeenCalledOnce();
@@ -115,7 +116,10 @@ describe('Отправка локального задания не ждёт ф�
         const {render} = setup();
         expect(await render().submit(input)).toBeUndefined();
         expect(render()).toMatchObject({busy: false, error: 'Соединение прервано'});
+        expect(render().canRetry(input)).toBe(true);
+        expect(render().canRetry({...input,folderName:'Другая папка'})).toBe(false);
         expect(await render().submit(input)).toBe(job);
+        expect(render().canRetry(input)).toBe(false);
         expect(await render().submit(input)).toBe(job);
         const keys = vi.mocked(bridgeApi.create).mock.calls.map(([request]) => request.requestKey);
         expect(keys[0]).toBe(keys[1]);
@@ -129,5 +133,38 @@ describe('Отправка локального задания не ждёт ф�
         const completed = {...job, state: 'succeeded', message: 'Папка проверена'};
         bridge.jobs = [completed];
         expect(render().job).toBe(completed);
+    });
+
+    it.each([400, 403, 409])('Окончательный отказ HTTP %s освобождает исходный ключ для нового намерения', async status => {
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce({isAxiosError: true, response: {status, data: {message: 'Запрос не принят'}}});
+        const {render} = setup();
+        await render().submit(input);
+        expect(render().canRetry(input)).toBe(false);
+        expect(render().error).toBe('Запрос не принят');
+        expect(await render().submit(input)).toBe(job);
+        const requests = vi.mocked(bridgeApi.create).mock.calls;
+        expect(requests[1][0].requestKey).not.toBe(requests[0][0].requestKey);
+    });
+
+    it.each([401, 408, 429, 500, 503])('Ответ HTTP %s не отбрасывает ключ неподтверждённого POST', async status => {
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce({isAxiosError: true, response: {status, data: {message: 'Ответ не подтверждён'}}});
+        const {render} = setup();
+        await render().submit(input);
+        expect(render().canRetry(input)).toBe(true);
+        expect(await render().submit(input)).toBe(job);
+        const requests = vi.mocked(bridgeApi.create).mock.calls;
+        expect(requests[1][0].requestKey).toBe(requests[0][0].requestKey);
+    });
+
+    it.each([400, 403, 409])('После потерянного ACK поздний HTTP %s сохраняет прежнее намерение', async status => {
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ принятого POST потерян'))
+            .mockRejectedValueOnce({isAxiosError: true, response: {status, data: {message: 'Доступ или условия изменились'}}});
+        const {render} = setup();
+        await render().submit(input);
+        await render().submit(input);
+        expect(render().canRetry(input)).toBe(true);
+        // После восстановления прав/условий сервер возвращает исходный job по прежнему ключу.
+        expect(await render().submit(input)).toBe(job);
+        expect(new Set(vi.mocked(bridgeApi.create).mock.calls.map(([request]) => request.requestKey)).size).toBe(1);
     });
 });

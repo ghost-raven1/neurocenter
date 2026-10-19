@@ -21,6 +21,11 @@ const hooks = vi.hoisted(() => {
             }];
         },
         useRef<T>(initial: T) { return (slots[cursor++] ??= {value: {current: initial}}).value; },
+        useMemo<T>(factory:()=>T,dependencies:unknown[]) {
+            const index=cursor++,previous=slots[index];
+            if(!previous||previous.dependencies?.length!==dependencies.length||dependencies.some((value,item)=>!Object.is(value,previous.dependencies![item])))slots[index]={value:factory(),dependencies};
+            return slots[index].value;
+        },
         useEffect(effect: () => void | (() => void), dependencies?: unknown[]) {
             const index = cursor++;
             const previous = slots[index];
@@ -35,18 +40,19 @@ const ui = vi.hoisted(() => ({
     buttons: new Map<string, {onClick?: () => void; disabled?: boolean}>(),
     checkbox: undefined as {checked: boolean; disabled: boolean; onChange: (event: {target: {checked: boolean}}) => void} | undefined,
     modes: [] as string[],
-    operation: {job: undefined as IBridgeJob | undefined, busy: false, error: '', setError: vi.fn(), submit: vi.fn()},
+    operation: {job: undefined as IBridgeJob | undefined, busy: false, error: '', setError: vi.fn(), submit: vi.fn(), canRetry:()=>false},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(),
-    useState: hooks.useState, useRef: hooks.useRef, useEffect: hooks.useEffect,
+    useState: hooks.useState, useRef: hooks.useRef, useEffect: hooks.useEffect, useMemo:hooks.useMemo,
 }));
 vi.mock('../src/features/McpBridge/useLocalJob', () => ({useLocalJob: () => ui.operation}));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({scope:'fixture',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/McpBridge/api', () => ({bridgeApi: {cancel: vi.fn()}}));
 vi.mock('antd', async () => {
     const {createElement: h} = await import('react');
     const content = ({children}: {children?: ReactNode}) => children;
     return {
-        Modal: content, Space: content, Steps: () => null,
+        Modal: content, Space: content, Collapse:Object.assign(content,{Panel:content}),
         Descriptions: Object.assign(content, {Item: content}), Typography: {Paragraph: content, Text: content},
         Alert: ({message, description, action}: {message: ReactNode; description?: ReactNode; action?: ReactNode}) => h('div', null, message, description, action),
         Select: (props: {'aria-label': string; value: string}) => {
@@ -92,7 +98,7 @@ function completePreparation(token = 'b'.repeat(64)) {
     render(); render();
 }
 async function checkFolder() {
-    button('Проверить выбранную папку').onClick!();
+    button(ui.buttons.has('Повторить проверку')?'Повторить проверку':'Проверить папку').onClick!();
     await vi.waitFor(() => expect(ui.operation.submit).toHaveBeenCalled());
     await Promise.resolve();
 }
@@ -110,36 +116,31 @@ beforeEach(() => {
 afterEach(() => { hooks.dispose(); });
 
 describe('Повторная проверка папки после отказа привязки', () => {
-    it('После отказа подтверждения требует новую проверку и отдельное согласие', async () => {
+    it('После отказа подтверждения требует новую проверку и новую явную финальную кнопку', async () => {
         render(); await checkFolder(); completePreparation();
-        ui.checkbox!.onChange({target: {checked: true}}); render();
-        expect(button('Подтвердить привязку').disabled).toBe(false);
-        button('Подтвердить привязку').onClick!();
+        expect(ui.checkbox).toBeUndefined();
+        expect(button('Связать папку').disabled).toBe(false);
+        button('Связать папку').onClick!();
         await vi.waitFor(() => expect(ui.operation.submit).toHaveBeenCalledTimes(2));
         ui.operation.job = {...ui.operation.job!, state: 'failed', message: 'Папка изменилась. Проверьте её заново.'};
         expect(render()).toContain(ui.operation.job.message);
-        expect(button('Подтвердить привязку').disabled).toBe(true);
-        button('Подтвердить привязку').onClick!();
-        expect(ui.operation.submit).toHaveBeenCalledTimes(2);
-        button('Проверить папку заново').onClick!(); render();
-        expect(ui.buttons.has('Подтвердить привязку')).toBe(false);
-        expect(button('Проверить выбранную папку').disabled).toBe(false);
+        expect(ui.buttons.has('Связать папку')).toBe(false);
+        expect(button('Повторить проверку').disabled).toBe(false);
         await checkFolder();
         expect(ui.operation.submit).toHaveBeenCalledTimes(3);
         expect(ui.operation.submit.mock.calls[2][0]).toEqual({
             kind: 'prepare-bind-project', deviceId: bridge.device.id, projectId: project.id, folderName, bindingMode: 'new',
         });
         completePreparation('c'.repeat(64));
-        expect(ui.checkbox!.checked).toBe(false);
-        expect(button('Подтвердить привязку').disabled).toBe(true);
+        expect(ui.checkbox).toBeUndefined();
+        expect(button('Связать папку').disabled).toBe(false);
     });
 
     it('После отказа проверки оставляет папку и режим для новой подготовки', async () => {
         render(); await checkFolder();
         ui.operation.job = {...ui.operation.job!, state: 'failed', message: 'Папка недоступна. Проверьте доступ на компьютере.'};
         expect(render()).toContain(ui.operation.job.message);
-        button('Проверить папку заново').onClick!(); render();
-        expect(button('Проверить выбранную папку').disabled).toBe(false);
+        expect(button('Повторить проверку').disabled).toBe(false);
         await checkFolder();
         expect(ui.operation.submit).toHaveBeenCalledTimes(2);
         expect(ui.operation.submit.mock.calls[1][0]).toEqual(ui.operation.submit.mock.calls[0][0]);

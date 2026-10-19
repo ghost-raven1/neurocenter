@@ -8,10 +8,11 @@ import type { useBridge } from '../src/features/McpBridge/useBridge';
 
 const ui = vi.hoisted(() => ({
     buttons: new Map<string, {onClick?: () => void; disabled?: boolean}>(),
-    operation: {job: undefined as IBridgeJob | undefined, busy: false, error: '', setError: vi.fn(), submit: vi.fn()},
+    operation: {job: undefined as IBridgeJob | undefined, busy: false, error: '', setError: vi.fn(), submit: vi.fn(), canRetry:()=>false},
 }));
 
 vi.mock('../src/features/McpBridge/useLocalJob', () => ({useLocalJob: () => ui.operation}));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope:'fixture',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/McpBridge/api', () => ({bridgeApi: {cancel: vi.fn()}}));
 vi.mock('antd', async importOriginal => {
     const actual = await importOriginal<typeof import('antd')>();
@@ -46,7 +47,7 @@ function pending(state: string): IBridgeJob {
     return {id: 'previous-check', deviceId: bridge.device.id, projectId: 'project', kind: 'prepare-bind-project', state,
         message: 'Мост проверяет выбранную ранее папку', createdAt: '2026-10-19T00:00:00Z', updatedAt: '2026-10-19T00:00:00Z'};
 }
-const checkButton = () => ui.buttons.get('Проверить выбранную папку');
+const checkButton = () => ui.buttons.get('Проверить папку');
 
 beforeEach(() => {
     vi.clearAllMocks(); ui.buttons.clear(); bridge = fixture(); ui.operation.job = undefined; ui.operation.busy = false; ui.operation.error = '';

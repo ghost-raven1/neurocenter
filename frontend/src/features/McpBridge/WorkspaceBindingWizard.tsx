@@ -1,107 +1,62 @@
-import { Alert, Button, Checkbox, Descriptions, Modal, Select, Space, Steps, Typography } from 'antd';
-import { useEffect, useRef, useState } from 'react';
-import { bridgeApi, type IBridgeJobDraft } from './api';
-import type { IWorkspacePreparation, TWorkspaceBindingMode } from './operationTypes';
-import type { useBridge } from './useBridge';
-import { useLocalJob } from './useLocalJob';
-import { isPending } from './installationHelpers';
-import { workspaceBlocker } from './readiness';
-import { matchingWorkspacePreparation, workspaceBindingNotice, workspaceModeDescriptions, workspaceModeLabels, workspaceSnapshot, workspaceSource } from './workspaceBinding';
+import {Alert,Button,Collapse,Modal,Select,Space,Typography} from 'antd';
+import type {useBridge} from './useBridge';
+import type {TWorkspaceBindingMode} from './operationTypes';
+import {workspaceBindingNotice,workspaceModeDescriptions,workspaceModeLabels} from './workspaceBinding';
+import {useWorkspaceBinding} from './useWorkspaceBinding';
 import './localOperations.less';
 
-type WorkspaceDraft = Extract<IBridgeJobDraft, {kind:'prepare-bind-project'|'bind-project'}>;
-/** Привязка проходит preview: код папки сам по себе не подтверждает локальный экземпляр. */
-export function WorkspaceBindingWizard({bridge, project, canManage = false, onClose}: {bridge: ReturnType<typeof useBridge>; project: {id:string;name:string}; canManage?:boolean; onClose():void}) {
-    const binding = bridge.device?.report.bindings?.find(item => item.projectId === project.id);
-    const [folderName, setFolderName] = useState(binding?.folderName);
-    const [mode, setMode] = useState<TWorkspaceBindingMode>(binding?.identityStatus === 'legacy' ? 'adopt-legacy' : 'new');
-    const [request, setRequest] = useState<{input:WorkspaceDraft;snapshot:string;deviceName:string;sourceFolderName?:string;jobId?:string}>();
-    const [prepared, setPrepared] = useState<{value:IWorkspacePreparation;jobId:string;expiresAt:number}>();
-    const [now,setNow] = useState(Date.now());
-    const [confirmed, setConfirmed] = useState(false);
-    const operation = useLocalJob(bridge);
-    const latest = useRef({bridge,project,canManage}); latest.current = {bridge,project,canManage};
-    const readError = bridge.errors.devices || bridge.errors.jobs;
-    const blocker = !canManage ? 'Для привязки нужна роль разработчика в этом проекте.' : workspaceBlocker(bridge.device) || readError || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь актуальных данных компьютера и очереди.' : '');
-    const otherPending = bridge.jobs.find(job => job.deviceId === bridge.device?.id && isPending(job) && job.id !== operation.job?.id
-        && (job.kind === 'choose-root' || job.projectId === project.id));
-    const stale = !!request && request.snapshot !== workspaceSnapshot(bridge.device, project.id);
-    const expired = !!prepared && (!Number.isFinite(prepared.expiresAt) || prepared.expiresAt <= now);
-    const pending = isPending(operation.job); const locked = operation.busy || pending;
-    const needsRecheck = operation.job?.kind === 'bind-project' && operation.job.state === 'failed';
-    const bindingNotice = workspaceBindingNotice(binding);
-    useEffect(() => {
-        if (operation.job?.kind === 'prepare-bind-project' && operation.job.state === 'succeeded' && request?.jobId === operation.job.id) {
-            const value = matchingWorkspacePreparation(operation.job.result, request.input);
-            if (value) { setPrepared({value,jobId:operation.job.id,expiresAt:Date.parse(operation.job.updatedAt)+15*60000}); }
-            else { operation.setError('Ответ моста не соответствует выбранной папке. Подготовьте проверку заново.'); }
-        }
-        if (operation.job?.kind === 'bind-project' && operation.job.state === 'succeeded') { onClose(); }
-    }, [operation.job?.id,operation.job?.state,operation.job?.result,request]);
-    useEffect(() => { const timer = setInterval(() => setNow(Date.now()),1000); return () => clearInterval(timer); },[]);
-    const reset = () => { setPrepared(undefined); setRequest(undefined); setConfirmed(false); operation.setError(''); };
-    const prepare = async () => {
-        const current = latest.current;
-        if (!current.canManage || !current.bridge.device || workspaceBlocker(current.bridge.device) || !current.bridge.devicesReady || !current.bridge.jobsReady || !folderName || locked || otherPending) { return; }
-        try {
-            const source = workspaceSource(current.bridge.device.report.bindings?.find(item => item.projectId === current.project.id), mode);
-            const input: WorkspaceDraft = {kind:'prepare-bind-project',deviceId:current.bridge.device.id,projectId:current.project.id,folderName,bindingMode:mode,...source};
-            setPrepared(undefined); setConfirmed(false);
-            setRequest({input,snapshot:workspaceSnapshot(current.bridge.device,current.project.id),deviceName:current.bridge.device.name,
-                ...(mode !== 'new' && mode !== 'resume' ? {sourceFolderName:current.bridge.device.report.bindings?.find(item => item.projectId === current.project.id)?.folderName} : {})});
-            const job = await operation.submit(input);
-            if (job) { setRequest(previous => previous && previous.input === input ? {...previous,jobId:job.id} : previous); }
-        } catch (cause) { operation.setError(cause instanceof Error ? cause.message : 'Не удалось подготовить привязку.'); }
-    };
-    const commit = async () => {
-        const current = latest.current;
-        if (!current.canManage || !prepared || !request || !confirmed || locked || needsRecheck || workspaceBlocker(current.bridge.device) || !current.bridge.devicesReady || !current.bridge.jobsReady
-            || Date.now() >= prepared.expiresAt || request.snapshot !== workspaceSnapshot(current.bridge.device,current.project.id) || otherPending) { return; }
-        await operation.submit({...request.input,kind:'bind-project',preparationJobId:prepared.jobId,expectedPreparation:prepared.value.preparation});
-    };
-    const sourceError = (() => { try { workspaceSource(binding,mode); return ''; } catch (cause) { return (cause as Error).message; } })();
-    const cancel = (id: string) => {
-        void bridgeApi.cancel(id).then(() => bridge.reload()).catch(() => operation.setError('Не удалось отменить задание. Обновите данные и повторите отмену.'));
-    };
-    return <Modal open title={`Папка проекта «${project.name}»`} onCancel={() => { if (!operation.busy) { onClose(); } }} footer={null} width={640}>
+const labels:Record<TWorkspaceBindingMode,string>={new:'Связать папку','new-copy':'Связать как отдельную копию',
+    'adopt-legacy':'Подтвердить старую привязку',transfer:'Подтвердить перенос',resume:'Вернуться к папке'};
+
+/** Проверка начинается явным выбором папки; конкретная финальная кнопка подтверждает действие. */
+export function WorkspaceBindingWizard({bridge,project,canManage=false,onClose}:{bridge:ReturnType<typeof useBridge>;project:{id:string;name:string};canManage?:boolean;onClose():void}) {
+    const state=useWorkspaceBinding({bridge,project,canManage,onClose});
+    const folders=bridge.device?.report.folders||[],root=bridge.device?.report.root;
+    const notice=workspaceBindingNotice(state.binding);
+    const ready=!!state.preparation&&!state.stale&&!state.expired&&!state.failedCommit;
+    const checkLabel=state.locked?'Проверяем папку…':state.retryPrepare?'Повторить отправленный запрос':state.request?'Повторить проверку':'Проверить папку';
+    return <Modal open title={`Связать папку с проектом «${project.name}»`} onCancel={()=>{if(!state.busy)onClose();}} footer={null} width={640}>
         <Space direction="vertical" size={16} className="local-operation">
-            <Steps size="small" current={prepared ? 2 : request ? 1 : 0} items={[{title:'Папка'},{title:'Проверка моста'},{title:'Подтверждение'}]} />
-            {bindingNotice && <Alert type="warning" showIcon message={bindingNotice} />}
-            {!prepared && <>
-                <Typography.Paragraph>Выберите папку на компьютере «{bridge.device?.name}». Мост проверит её перед привязкой.</Typography.Paragraph>
-                <Select aria-label="Локальная папка проекта" style={{width:'100%'}} value={folderName} disabled={locked}
-                    placeholder="Выберите папку из общей папки проектов" onChange={value => { setFolderName(value); reset(); }}
-                    options={(bridge.device?.report.folders || []).map(value => ({value,label:value}))} />
-                <Select aria-label="Действие с папкой" style={{width:'100%'}} value={mode} disabled={locked}
-                    onChange={value => { setMode(value); reset(); }} options={Object.entries(workspaceModeLabels).map(([value,label]) => ({value,label}))} />
-                <Typography.Text type="secondary">{workspaceModeDescriptions[mode]}</Typography.Text>
-                {sourceError && <Alert type="info" showIcon message={sourceError} />}
-                <Button type="primary" disabled={!!blocker || !!sourceError || !folderName || locked || !!otherPending} loading={operation.busy || pending}
-                    onClick={() => { void prepare(); }}>Проверить выбранную папку</Button>
+            <Typography.Text>Компьютер: <strong>{bridge.device?.name||'Не выбран'}</strong></Typography.Text>
+            <Typography.Text>Общая папка: <Typography.Text code className="local-operation__hash">{root||'Не выбрана'}</Typography.Text></Typography.Text>
+            {notice&&<Alert type="warning" showIcon message={notice}/>}
+            {folders.length>0?<Select aria-label="Локальная папка проекта" style={{width:'100%'}} value={state.folderName} disabled={state.selectionLocked}
+                showSearch optionFilterProp="label" placeholder="Выберите папку проекта" onChange={state.chooseFolder}
+                options={folders.map(value=>({value,label:value}))}/>:<Alert type="info" showIcon message={root?'В общей папке пока нет папок проектов':'Сначала выберите общую папку проектов'}
+                description={root?'Создайте подпапку проекта на выбранном компьютере, затем обновите список.':'Закройте это окно и выберите общую папку через мост в разделе «Проекты».'}
+                action={root?<Button loading={bridge.loading} onClick={()=>{void state.refresh();}}>Обновить список</Button>:<Button onClick={onClose}>К выбору общей папки</Button>}/>}
+            <Collapse ghost><Collapse.Panel header="Другие действия с папкой" key="advanced">
+                <Space direction="vertical" size={8} style={{width:'100%'}}>
+                    <Select aria-label="Действие с папкой" style={{width:'100%'}} value={state.mode} disabled={state.selectionLocked}
+                        onChange={state.chooseMode} options={Object.entries(workspaceModeLabels).map(([value,label])=>({value,label:value==='new'?'Обычная привязка':label}))}/>
+                    <Typography.Text type="secondary">{workspaceModeDescriptions[state.mode]}</Typography.Text>
+                    <Typography.Text type="secondary">Эти действия не копируют и не перемещают файлы. Выберите уже подготовленную папку.</Typography.Text>
+                </Space>
+            </Collapse.Panel></Collapse>
+            {state.sourceError&&<Alert type="info" showIcon message={state.sourceError}/>}
+            {ready&&state.request&&<>
+                {state.request.sourceFolderName&&<Typography.Text>Прежняя папка: <strong>{state.request.sourceFolderName}</strong></Typography.Text>}
+                <Alert type="info" showIcon message="Папка и экземпляр проверены"
+                    description={state.preparation!.requiresFileVerification?'При подтверждении мост дополнительно сверит файлы. До этого они не считаются проверенными.':'При подтверждении мост повторно проверит папку и сохранит привязку.'}/>
             </>}
-            {prepared && request && <>
-                <Descriptions size="small" column={1} bordered>
-                    <Descriptions.Item label="Компьютер">{request.deviceName}</Descriptions.Item>
-                    <Descriptions.Item label="Папка">{prepared.value.folderName}</Descriptions.Item>
-                    <Descriptions.Item label="Действие">{workspaceModeLabels[prepared.value.mode]}</Descriptions.Item>
-                    {(request.sourceFolderName || prepared.value.sourceFolderName) && <Descriptions.Item label="Прежняя папка">{request.sourceFolderName || prepared.value.sourceFolderName}</Descriptions.Item>}
-                </Descriptions>
-                <Alert type="info" showIcon message="Папка проверена мостом" description={workspaceModeDescriptions[prepared.value.mode]} />
-                <Checkbox checked={confirmed} onChange={event => setConfirmed(event.target.checked)} disabled={locked || stale || expired || needsRecheck}>Подтверждаю выбранную папку и действие с её экземпляром</Checkbox>
-                <Space wrap><Button onClick={reset} disabled={locked}>Изменить выбор</Button><Button type="primary" disabled={!confirmed || stale || expired || !!blocker || !!otherPending || locked || needsRecheck}
-                    loading={operation.busy || operation.job?.kind === 'bind-project' && pending} onClick={() => { void commit(); }}>Подтвердить привязку</Button></Space>
-            </>}
-            {stale && <Alert type="warning" showIcon message="Компьютер или исходная привязка изменились. Подготовьте действие заново." />}
-            {expired && <Alert type="warning" showIcon message="Проверка папки устарела через 15 минут. Измените выбор и повторите проверку." />}
-            {blocker && <Alert type="warning" showIcon message={blocker}
-                action={readError || !bridge.devicesReady || !bridge.jobsReady ? <Button size="small" loading={bridge.loading} onClick={() => { void bridge.reload(); }}>Обновить данные</Button> : undefined} />}
-            {otherPending && <Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." description={otherPending.message}
-                action={otherPending.state === 'queued' ? <Button size="small" onClick={() => cancel(otherPending.id)}>Отменить</Button> : undefined} />}
-            {operation.job && <Alert role="status" type={operation.job.state === 'failed' ? 'error' : 'info'} showIcon message={operation.job.message}
-                action={operation.job.state === 'queued' ? <Button size="small" onClick={() => cancel(operation.job!.id)}>Отменить</Button>
-                    : operation.job.state === 'failed' && ['prepare-bind-project','bind-project'].includes(operation.job.kind)
-                        ? <Button size="small" onClick={reset} disabled={locked}>Проверить папку заново</Button> : undefined} />}
-            {operation.error && <Alert type="error" role="alert" showIcon message={operation.error} />}
+            {(state.retryPrepare||state.retryCommit)&&<Alert type="warning" showIcon message="Ответ на отправленный запрос ещё не подтверждён"
+                description="Повтор использует исходный ключ и получает результат прежнего запроса, не создавая второе действие."/>}
+            <Space wrap>
+                {state.retryCommit?<Button type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>Проверить отправленную привязку</Button>
+                    :ready?<Button type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>{labels[state.mode]}</Button>
+                        :<Button type="primary" disabled={!!state.blocker||!!state.sourceError||!state.folderName||state.locked||!!state.otherPending}
+                            loading={state.locked} onClick={()=>{void state.prepare();}}>{checkLabel}</Button>}
+                <Button disabled={state.busy} onClick={onClose}>Закрыть</Button>
+            </Space>
+            {state.stale&&<Alert type="warning" showIcon message="Компьютер или исходная привязка изменились. Повторите проверку папки."/>}
+            {state.expired&&<Alert type="warning" showIcon message="Проверка папки устарела через 15 минут. Повторите её перед привязкой."/>}
+            {state.blocker&&<Alert type="warning" showIcon message={state.blocker}
+                action={bridge.errors.devices||bridge.errors.jobs||!bridge.devicesReady||!bridge.jobsReady?<Button size="small" loading={bridge.loading} onClick={()=>{void state.refresh();}}>Обновить данные</Button>:undefined}/>}
+            {state.otherPending&&<Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." description={state.otherPending.message}/>}
+            {(state.pendingJob||state.job&&!(ready&&state.job.kind==='prepare-bind-project'&&state.job.state==='succeeded'))&&<Alert role="status" type={state.job?.state==='failed'?'error':'info'} showIcon message={(state.pendingJob||state.job)!.message}
+                action={state.pendingJob?.state==='queued'?<Button size="small" disabled={state.busy||!!state.blocker} loading={state.cancelling===state.pendingJob.id}
+                    onClick={()=>{void state.cancel(state.pendingJob!.id);}}>Отменить</Button>:undefined}/>}
+            {state.error&&<Alert type="error" role="alert" showIcon message={state.error}/>}
         </Space>
     </Modal>;
 }
