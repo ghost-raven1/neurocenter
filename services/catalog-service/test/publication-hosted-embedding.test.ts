@@ -33,6 +33,21 @@ describe('Публикация приватного подключения мо�
         const input = source(kind), { localUi: _ui, ...extra } = input.config.extra;
         expect(() => validatePublication({ ...input, config: { ...input.config, extra } })).toThrow('hostedEmbedding');
     });
+    it.each(['mcp', 'plugin'] as const)('Сохраняет объявление независимых подключений профиля 2 для %s в SHA пакета', kind => {
+        const input = source(kind);
+        const result = validatePublication({ ...input, config: { ...input.config, extra: { ...input.config.extra,
+            hostedEmbedding: { schemaVersion: 1, profileSchemaVersion: 2 } } } });
+        expect(result.config?.extra?.hostedEmbedding).toEqual({ schemaVersion: 1, profileSchemaVersion: 2 });
+        const pkg = buildPackage({ id: 'ai-plug-rag-hosted', kind, name: result.name, version: 2 }, [], '', result.config);
+        expect(verifyPackage(pkg)).toBe(true);
+        expect(() => assertInstallablePackage(pkg)).not.toThrow();
+        expect(pkg.config?.extra?.hostedEmbedding).toEqual({ schemaVersion: 1, profileSchemaVersion: 2 });
+    });
+    it.each([undefined, null, 1, 3, '2', true])('Не принимает неподдерживаемую версию приватного профиля: %j', profileSchemaVersion => {
+        const input = source();
+        expect(() => validatePublication({ ...input, config: { ...input.config, extra: { ...input.config.extra,
+            hostedEmbedding: { schemaVersion: 1, profileSchemaVersion } } } })).toThrow();
+    });
     it('Не заменяет проверку закреплённого runtime и не включает поддержку в старом пакете', () => {
         const input = source(), { runtimeArtifacts: _artifacts, ...extra } = input.config.extra;
         expect(() => validatePublication({ ...input, config: { ...input.config, extra } })).toThrow();

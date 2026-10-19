@@ -35,6 +35,15 @@ describe('Подключение модели использует точный 
         await assertHostedRagJob(embedding,installations,plans,device,{kind:input.kind,project_id:'project',payload:payload!});
         expect(delivery).toHaveBeenCalledWith('plan','project','plugin','rag',2,1,manifest);
     });
+    it('Пакет с независимыми подключениями получает capability и проходит создание и повторную авторизацию задания', async () => {
+        const independent = {...pkg, config: {extra: {...pkg.config.extra, hostedEmbedding: {schemaVersion:1,profileSchemaVersion:2}}}};
+        inspectionPackage.mockResolvedValue(independent);delivery.mockResolvedValue({package:independent});
+        expect(supportsHostedRag(independent)).toBe(true);
+        const payload=await hostedRagJobPayload(embedding,installations,plans,device,input);
+        expect(payload?.package).toEqual(independent);
+        await expect(assertHostedRagJob(embedding,installations,plans,device,{kind:input.kind,project_id:'project',payload:payload!})).resolves.toBeUndefined();
+        expect(requireCurrent).toHaveBeenCalledTimes(2);
+    });
     it.each([{expectedEmbeddingRevision:0},{expectedEmbeddingRevision:1.5},{expectedEmbeddingPin:'invalid'},{url:'https://outside.example'},{apiKey:'private'}])('Отвергает неточный выбор и произвольные параметры %j', async changed => {
         await expect(hostedRagJobPayload(embedding,installations,plans,device,{...input,...changed})).rejects.toHaveProperty('status',400);
         expect(requireCurrent).not.toHaveBeenCalled();
@@ -62,7 +71,9 @@ describe('Подключение модели использует точный 
         await assertHostedRagJob(embedding,installations,plans,device,{kind:'install',project_id:'project',payload:{}});
         expect(requireCurrent).not.toHaveBeenCalled();
     });
-    it.each([null,{schemaVersion:2},{schemaVersion:1,url:'https://outside.example'}])('Metadata не расширяет контракт %j', descriptor => {
+    it.each([null,{schemaVersion:2},{schemaVersion:1,url:'https://outside.example'},
+        {schemaVersion:1,profileSchemaVersion:undefined},{schemaVersion:1,profileSchemaVersion:1},{schemaVersion:1,profileSchemaVersion:'2'},
+        {schemaVersion:1,profileSchemaVersion:3},{schemaVersion:1,profileSchemaVersion:2,url:'https://outside.example'}])('Metadata не расширяет контракт %j', descriptor => {
         expect(supportsHostedRag({config:{extra:{hostedEmbedding:descriptor}}})).toBe(false);
     });
     it('Подтверждение принимает только публичный факт точного подключения', () => {

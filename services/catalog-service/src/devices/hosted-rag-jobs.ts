@@ -18,7 +18,9 @@ const fields = ['deviceId','projectId','kind','requestKey','assetId','assetKind'
 export function supportsHostedRag(pkg: {config?: {extra?: Record<string, unknown>} | null}): boolean {
     const descriptor = pkg.config?.extra?.hostedEmbedding;
     return !!descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor)
-        && Object.keys(descriptor).length === 1 && (descriptor as {schemaVersion?: unknown}).schemaVersion === 1;
+        && Object.keys(descriptor).every(key => ['schemaVersion','profileSchemaVersion'].includes(key))
+        && (descriptor as {schemaVersion?: unknown}).schemaVersion === 1
+        && (!('profileSchemaVersion' in descriptor) || descriptor.profileSchemaVersion === 2);
 }
 
 export async function hostedRagJobPayload(embedding: ProjectEmbeddingService, installations: DeviceInstallations,
