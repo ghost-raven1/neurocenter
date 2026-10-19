@@ -1,3 +1,4 @@
+import {readHostedRagEmbedding} from '../rag-hosted/profile.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +55,8 @@ export async function assertIndexIdle(storePath: string, restore = false, ownedL
     }
     return JSON.stringify([status, manifest, provenance]);
 }
-async function managedNative(root: string): Promise<{embedding:ManagedRagEmbedding}|undefined> {
+async function managedNative(root: string): Promise<{embedding:ManagedRagEmbedding;hosted?:boolean}|undefined> {
+    const hosted=await readHostedRagEmbedding(root);if(hosted)return {embedding:hosted,hosted:true};
     const directory = await safeTarget(root, '.opencode/neurocenter/receipts');
     let files: string[];
     try { files = await fs.readdir(directory); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { return undefined; } throw error; }
@@ -94,8 +96,8 @@ export async function localEmbeddingIdentity(located: IStoreLocateResult, dimens
     }
     const overrides = located.storePath ? await json(located.storePath, 'runtime-overrides.json') : null;
     const runtime = overrides?.embedding as { provider?: unknown; model?: unknown; baseUrl?: unknown } | undefined;
-    if (profile && runtime) { profile = normalizeIndexProfile({ ...profile, provider: runtime.provider ?? profile.provider, model: runtime.model ?? profile.model }); }
-    if (runtime?.baseUrl !== undefined) {
+    if (profile && runtime && !managed?.hosted) { profile = normalizeIndexProfile({ ...profile, provider: runtime.provider ?? profile.provider, model: runtime.model ?? profile.model }); }
+    if (runtime?.baseUrl !== undefined && !managed?.hosted) {
         if (typeof runtime.baseUrl !== 'string') { throw new Error('Некорректный адрес embedding-модели в настройках OpenCodeRAG.'); }
         baseUrl = runtime.baseUrl;
     }

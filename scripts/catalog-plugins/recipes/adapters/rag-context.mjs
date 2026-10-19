@@ -32,7 +32,7 @@ export async function checkedWorkspacePath(root, requested) {
 export async function readRagConfiguration(root, env = process.env, { ui = false } = {}) {
     const source = findConfigFile(root);
     if (source) await checkedWorkspacePath(root, source);
-    const cfg = managedRagConfiguration(source ? loadConfig(source) : structuredClone(DEFAULT_CONFIG), readProjectRagConfiguration(source));
+    const cfg = managedRagConfiguration(source ? loadConfig(source) : structuredClone(DEFAULT_CONFIG), readProjectRagConfiguration(source), root);
     const provider = env.NEUROCENTER_RAG_EMBEDDING_PROVIDER || cfg.embedding.provider || 'ollama';
     if (!['ollama', 'openai'].includes(provider)) throw new Error('Выберите протокол эмбеддингов ollama или openai.');
     const baseUrl = env.NEUROCENTER_RAG_EMBEDDING_URL || cfg.embedding.baseUrl;
@@ -46,7 +46,7 @@ export async function readRagConfiguration(root, env = process.env, { ui = false
     // Дополнительные модели не вызываются неявно: wizard настраивает только эмбеддинги.
     if (!ui) for (const name of ['description', 'imageDescription', 'decision', 'reranking']) cfg[name] = { ...cfg[name], enabled: false };
     await checkedWorkspacePath(root, cfg.vectorStore.path);
-    return applyLocalRuntimeProfile(cfg);
+    return managedRagConfiguration(applyLocalRuntimeProfile(cfg), cfg, root);
 }
 
 /** Провайдер вызывается только при явном запросе поиска или индексирования. */

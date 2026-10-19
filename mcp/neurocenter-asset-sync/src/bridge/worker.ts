@@ -48,6 +48,7 @@ import { runRagBridgeJob } from './rag-worker.js';
 import { recoverRagRestores } from '../features/rag-index/restore-recovery.js';
 import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
 import { workspaceBindingFailureResult } from './workspace-binding-error.js';
+import { connectHostedRag, startHostedRagConnections, stopHostedRagConnections, type HostedSelection } from '../features/rag-hosted/index.js';
 
 interface Job {
     id: string;
@@ -57,7 +58,7 @@ interface Job {
     payload: ProjectLocalPayload & ConfigurationPayload & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;
-        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[] };
+        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection };
 }
 
 /** Один worker на профиль и площадку; WS будит очередь, heartbeat страхует разрыв транспорта. */
@@ -129,6 +130,7 @@ export async function runWorker(): Promise<void> {
             await recoverFileJobs();
             await recoverRuntimePreparations();
             await recoverRagRestores();
+            await startHostedRagConnections();
             await deliverCompletions();
             await heartbeat();
             while (!stopped) {
@@ -152,7 +154,7 @@ export async function runWorker(): Promise<void> {
                     const result = await api(`jobs/${current.id}/authorize`, {
                         lease: current.lease,
                     });
-                    if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
+                    if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
                         throw new Error('Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.');
                     }
                     return result;
@@ -193,6 +195,10 @@ export async function runWorker(): Promise<void> {
                         result = await prepareLocalChange(current.project_id || '',current.payload.package,current.payload.installSet,authorize);
                     } else if(current.kind==='open-rag-ui'&&current.payload.package){
                         result=await openRagUi({projectId:current.project_id||'',bindingId:current.payload.bindingId||'',instanceId:current.payload.instanceId||'',pkg:current.payload.package},async()=>{await authorize();});
+                    } else if(current.kind==='connect-rag-model'&&current.payload.package&&current.payload.embedding){
+                        await update(20,'Проверяем выбранную модель и доступ через мост.');
+                        result=await connectHostedRag(current.project_id||'',current.payload.bindingId||'',current.payload.instanceId||'',
+                            current.payload.package,current.payload.embedding,async()=>{await authorize();});
                     } else if (current.kind === 'open-local-recovery-folder') {
                         await authorize(); await openLocalRecoveryFolder(current.project_id || '');
                         result = {projectId:current.project_id,bindingId:current.payload.bindingId,opened:true};
@@ -270,6 +276,7 @@ export async function runWorker(): Promise<void> {
                                 : current.kind === 'prepare-local-change' ? 'Сравнение подготовлено. Проверьте изменения перед восстановлением.'
                                 : current.kind === 'open-local-change-report' ? 'Полное сравнение открыто на подключённом компьютере.'
                                 : current.kind === 'open-rag-ui' ? 'Локальный интерфейс готов; отдельное окно запрошено на компьютере.'
+                                : current.kind === 'connect-rag-model' ? 'Подключение модели проверено. Перезапустите OpenCode; индекс проверяется отдельно.'
                                 : current.kind === 'open-local-recovery-folder' ? 'Резервные копии открыты на подключённом компьютере.'
                                 : ['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? 'Одобренные файлы восстановлены; локальный вариант сохранён.'
                                 : current.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена.'
@@ -310,7 +317,7 @@ export async function runWorker(): Promise<void> {
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
                         } : workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
-                            state: 'failed', result, message: [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui'].includes(current.kind)
+                            state: 'failed', result, message: [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });
                     }
                     await deliverCompletions();
@@ -341,7 +348,7 @@ export async function runWorker(): Promise<void> {
         stopped = true;
         clearInterval(timer);
         socket.disconnect();
-        void closeRagUis().then(()=>readBoundedUtf8(lock, 4096))
+        void Promise.all([closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })

@@ -8,8 +8,8 @@ import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi'].includes(key))) {
-        throw new BadRequestException('В extra поддерживаются только runtimeArtifacts, localConfiguration и localUi. Зависимости задаются отдельно.');
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding'].includes(key))) {
+        throw new BadRequestException('В extra поддерживаются только runtimeArtifacts, localConfiguration, localUi и hostedEmbedding. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
     try {
@@ -18,7 +18,13 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
         if (transport === 'remote' && artifacts.length) { throw new Error('Удалённому MCP не нужен локальный готовый комплект.'); }
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
         const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
-        return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}) };
+        const hosted = source.hostedEmbedding;
+        if (hosted !== undefined && (!hosted || typeof hosted !== 'object' || Array.isArray(hosted)
+            || Object.keys(hosted).length !== 1 || (hosted as {schemaVersion?: unknown}).schemaVersion !== 1 || !ui)) {
+            throw new Error('hostedEmbedding поддерживает только schemaVersion: 1 в закреплённом OpenCodeRAG с localUi.');
+        }
+        return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
+            ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1}} : {}) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
 }
 

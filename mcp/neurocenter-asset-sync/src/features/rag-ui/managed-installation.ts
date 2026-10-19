@@ -7,9 +7,10 @@ import {inspectInstallation} from '../../bridge/installation-inspection.js';
 import {configurationConnection,launcherDescriptorKey,type LauncherDescriptor} from '../local-configuration/launcher-descriptor.js';
 import {readPrivateConfiguration} from '../local-configuration/private-store.js';
 import {localRagUi} from './contract.js';
+import {readHostedRagEmbedding} from '../rag-hosted/profile.js';
 import {readMcpConfiguration} from '../local-configuration/index.js';
 
-export interface ManagedRagEmbedding {provider?:string;model?:string;baseUrl?:string}
+export interface ManagedRagEmbedding {provider?:string;model?:string;baseUrl?:string;vectorDimension?:number}
 /** Default-профиль доказывается текущей private-квитанцией launcher, а не размерностью или именем инструмента. */
 export async function managedRagMcpEmbedding(root:string,projectId:string,key:string,source:unknown):Promise<ManagedRagEmbedding|undefined>{
     const receipt=source as Receipt|undefined;
@@ -25,6 +26,7 @@ export async function managedRagMcpEmbedding(root:string,projectId:string,key:st
             ||!isDeepStrictEqual(configurationConnection(root,pkg),receipt.config.value))return undefined;
         const inspection=await inspectInstallation(projectId,pkg);
         if(inspection.state!=='checked'||inspection.status!=='synced')return undefined;
+        const hosted=await readHostedRagEmbedding(root,projectId);if(hosted)return hosted;
         const configuration=await readMcpConfiguration(projectId,pkg,undefined,async()=>{});
         const env={...process.env,...configuration.env};
         return {...env.NEUROCENTER_RAG_EMBEDDING_PROVIDER?{provider:env.NEUROCENTER_RAG_EMBEDDING_PROVIDER}:{},

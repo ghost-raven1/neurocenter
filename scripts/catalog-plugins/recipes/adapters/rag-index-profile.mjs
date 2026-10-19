@@ -1,3 +1,4 @@
+import {hostedRagIdentity} from './rag-hosted.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +13,7 @@ const readJson = async file => JSON.parse(await fs.readFile(file, 'utf8').catch(
 
 /** Runtime-переключение подключения требует нового embedder, а не смены подписи старых векторов. */
 async function identity(config, storePath, dimension, embedder) {
-    const overrides = await readJson(path.join(storePath, 'runtime-overrides.json'));
+    const overrides = hostedRagIdentity(config) ? null : await readJson(path.join(storePath, 'runtime-overrides.json'));
     const embedding = { ...config.embedding };
     for (const key of ['provider', 'model', 'baseUrl']) {
         if (overrides?.embedding?.[key] !== undefined) embedding[key] = overrides.embedding[key];

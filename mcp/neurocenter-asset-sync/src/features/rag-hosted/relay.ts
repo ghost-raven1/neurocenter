@@ -1,0 +1,54 @@
+import http from 'node:http';
+import {timingSafeEqual} from 'node:crypto';
+import {hub,readState,type Credentials} from '../../bridge/state.js';
+import {assertHostedInstallation,type HostedProfile} from './profile.js';
+const budget=1024*1024;
+export interface HostedRelay {profile:HostedProfile;close:()=>Promise<void>}
+export function validateVectors(value:unknown,profile:HostedProfile,count:number):void {
+    const result=value as {model?:unknown;data?:Array<{index?:unknown;embedding?:unknown}>}|null;
+    if(result?.model!==profile.selection.profile.model||!Array.isArray(result.data)||result.data.length!==count
+        ||result.data.some((row,index)=>row.index!==index||!Array.isArray(row.embedding)||row.embedding.length!==profile.selection.profile.dimension
+            ||!row.embedding.every(n=>typeof n==='number'&&Number.isFinite(Math.fround(n)))||!row.embedding.some(n=>n!==0)))throw new Error('Серверная модель вернула неподтверждённые векторы.');
+}
+/** DeviceBearer читается заново; в HTTP-ответы дочернего процесса он не попадает. */
+export async function inferHosted(source:HostedProfile,input:string|string[],signal:AbortSignal):Promise<unknown> {
+    const profile=structuredClone(source);
+    await assertHostedInstallation(profile);
+    const credentials=await readState<Credentials>('credentials');if(!credentials?.token)throw new Error('Компьютер не подключён.');
+    const response=await fetch(hub()+'/api/device-channel/embedding',{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+credentials.token},
+        body:JSON.stringify({projectId:profile.projectId,bindingId:profile.bindingId,instanceId:profile.instanceId,expectedRevision:profile.selection.revision,expectedModelPin:profile.selection.modelPin,model:profile.selection.profile.model,input}),signal});
+    const length=Number(response.headers.get('content-length'));if(length>64*65535*24){await response.body?.cancel();throw new Error('Ответ модели превышает лимит.');}
+    if(!response.ok){await response.body?.cancel();throw Object.assign(new Error('Серверная модель недоступна или подключение изменилось. Проверьте модель и права на проект.'),{status:response.status});}
+    // Векторы ограничены числом входов и размерностью; тело читается с отдельным лимитом.
+    const limit=(Array.isArray(input)?input.length:1)*profile.selection.profile.dimension*32+65536;const reader=response.body?.getReader();if(!reader)throw new Error('Пустой ответ модели.');
+    const chunks:Uint8Array[]=[];let size=0;try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new Error('Ответ модели превышает лимит.');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
+    const result=JSON.parse(Buffer.concat(chunks).toString('utf8'));validateVectors(result,profile,Array.isArray(input)?input.length:1);return result;
+}
+function generation(profile:HostedProfile):string{return JSON.stringify([profile.server,profile.root,profile.projectId,profile.bindingId,profile.instanceId,profile.pkg.manifest?.sha256,profile.selection.revision,profile.selection.modelPin,profile.selection.profile,profile.relay]);}
+export async function createHostedRelay(profile:HostedProfile):Promise<HostedRelay> {
+    const relay:HostedRelay={profile:structuredClone(profile),close:async()=>{for(const controller of active)controller.abort();await new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();});}};
+    const active=new Set<AbortController>();let busy=false;
+    const server=http.createServer(async(req,res)=>{
+        const profile=structuredClone(relay.profile),started=generation(profile);
+        const assertCurrent=()=>{if(generation(relay.profile)!==started)throw Object.assign(new Error('Подключение изменилось.'),{status:409});};
+        const send=(status:number,message:string)=>{if(!res.destroyed){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify({error:{message}}));}};
+        if(req.method!=='POST'||req.url!=='/v1/embeddings'){send(404,'Маршрут недоступен.');return;}
+        if(req.headers.origin||req.headers.host!==`127.0.0.1:${profile.relay.port}`){send(403,'Доступ из браузера запрещён.');return;}
+        const token=Buffer.from(String(req.headers.authorization||''));const expected=Buffer.from('Bearer '+profile.relay.key);
+        if(token.length!==expected.length||!timingSafeEqual(token,expected)){send(401,'Требуется локальное подключение RAG.');return;}
+        if(busy){send(429,'Дождитесь завершения предыдущего запроса.');return;}
+        busy=true;const controller=new AbortController();active.add(controller);const disconnected=()=>controller.abort();res.on('close',disconnected);
+        try{
+            const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>budget)throw new Error('Слишком большой запрос.');chunks.push(chunk);}
+            const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {model?:unknown;input?:unknown;input_type?:unknown};const inputs=Array.isArray(body.input)?body.input:[body.input];
+            if(body.model!==profile.selection.profile.model||!inputs.length||inputs.length>64||inputs.some(input=>typeof input!=='string'||!input.trim())||Object.keys(body).some(key=>!['model','input','input_type'].includes(key))) {send(400,'Проверьте модель и входные данные.');return;}
+            assertCurrent();const result=await inferHosted(profile,body.input as string|string[],AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]));
+            assertCurrent();if(!res.destroyed){res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(result));}
+        }catch(error){send((error as {status?:number}).status===409?409:503,'Модель недоступна. Проверьте подключение и настройку проекта.');}
+        finally{res.off('close',disconnected);active.delete(controller);busy=false;}
+    });
+    server.requestTimeout=125000;server.headersTimeout=10000;server.maxConnections=4;
+    await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(profile.relay.port,'127.0.0.1',()=>{server.off('error',reject);resolve();});});
+    profile.relay.port=(server.address() as {port:number}).port;relay.profile.relay.port=profile.relay.port;
+    return relay;
+}

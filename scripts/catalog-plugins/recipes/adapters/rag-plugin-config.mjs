@@ -1,3 +1,5 @@
+import { applyHostedRagConfiguration } from './rag-hosted.mjs';
+export { applyHostedRagConfiguration } from './rag-hosted.mjs';
 import { applyLocalRuntimeProfile } from './rag-local-runtime.mjs';
 import { readFileSync } from 'node:fs';
 import { managedEmbeddingConfiguration } from '../../../../services/shared/rag-index-contract.cjs';
@@ -12,7 +14,7 @@ export function readProjectRagConfiguration(file) {
 }
 
 /** Сохраняет конфиг проекта; новый проект использует локальную модель без дополнительных моделей. */
-export function managedRagConfiguration(config, rawConfiguration = {}) {
+export function managedRagConfiguration(config, rawConfiguration = {}, root) {
     let managed = structuredClone(config);
     // Старые вызывающие стороны передавали Boolean; true сохраняет весь явно переданный config.
     const raw = rawConfiguration === true ? config : rawConfiguration || {};
@@ -28,5 +30,5 @@ export function managedRagConfiguration(config, rawConfiguration = {}) {
         managed[name] = { ...managed[name], enabled: raw[name]?.enabled ?? false };
     }
     managed.autoUpdate = { ...managed.autoUpdate, enabled: false, autoInstall: false };
-    return applyLocalRuntimeProfile(managed);
+    return applyHostedRagConfiguration(applyLocalRuntimeProfile(managed), root);
 }

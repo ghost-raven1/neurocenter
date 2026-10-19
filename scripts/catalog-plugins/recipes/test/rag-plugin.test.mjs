@@ -94,7 +94,7 @@ await swapStoreDirectories(tempStorePath, options.storePath);`;
             await assert.rejects(applyManagedPluginCompatibility(root), /инициализации/);
             assert.equal(await fs.readFile(file, 'utf8'), source);
         }
-        const source = `before\n${init}\npersistProbedDimension(configPath, vectorDimension);
+        const source = `before\n${init}\nconst effectiveCfg = applyRuntimeOverrides(cfg, overrides);\npersistProbedDimension(configPath, vectorDimension);
 const embedder = createEmbedder(effectiveCfg);
 const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
     retrieve,
@@ -116,10 +116,10 @@ after`;
             assert.equal(await fs.readFile(file, 'utf8'), source);
         }
         await fs.writeFile(pipelineFile, pipeline);
-        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 3, file: 'upstream/dist/plugin.js', files: ['upstream/dist/plugin.js', 'upstream/dist/indexer/pipeline.js'] });
+        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 4, file: 'upstream/dist/plugin.js', files: ['upstream/dist/plugin.js', 'upstream/dist/indexer/pipeline.js'] });
         const patched = await fs.readFile(file, 'utf8');
-        assert.match(patched, /^import \{ managedRagConfiguration, readProjectRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
-        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), readProjectRagConfiguration\(findConfigFile\(input.directory\)\)\)/);
+        assert.match(patched, /^import \{ managedRagConfiguration, readProjectRagConfiguration, applyHostedRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
+        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), readProjectRagConfiguration\(findConfigFile\(input.directory\)\), input.directory\)/);
         assert.ok(!patched.includes('persistProbedDimension(configPath, vectorDimension);'));
         assert.match(patched, /protectedEmbedder\(createEmbedder/);
         assert.match(patched, /protectedNativeStore\(createVectorStore/);
