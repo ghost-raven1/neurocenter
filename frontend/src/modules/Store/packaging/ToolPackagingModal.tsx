@@ -1,6 +1,7 @@
 import { Alert, Button, Collapse, Form, Input, Modal, Progress, Radio, Select, Space, Typography } from 'antd';
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
+import { useAuthRequestOwner } from '../../../features/UserBlock/useAuthRequestOwner';
 import { packagingEntrypoints, readPackagingFiles } from './sourceFiles';
 import { readPackagingArchive } from './sourceArchive';
 import { SourceFilesPicker } from './SourceFilesPicker';
@@ -16,11 +17,12 @@ import type { PackagingFilesResult } from './sourceFiles';
 import type { PackagingKind } from './types';
 import './ToolPackaging.less';
 
-interface Props { open: boolean; scope: string; onClose: () => void; onPublished: (id: string) => Promise<void> }
+interface Props { open: boolean; scope: string; projectId?: string; onClose: () => void; onPublished: (id: string, current: () => boolean) => Promise<void> }
 const { Text, Paragraph } = Typography;
 
 /** Упаковка и публикация выполняются одной серверной операцией, с возобновляемым прогрессом. */
-export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublished }) => {
+export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose, onPublished }) => {
+    const { captureOwner } = useAuthRequestOwner();
     const [source, setSource] = useState<'npm' | 'files' | 'repository'>('npm');
     const [specifier, setSpecifier] = useState('');
     const [repositoryUrl, setRepositoryUrl] = useState('');
@@ -36,7 +38,6 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
     const [entrypoint, setEntrypoint] = useState('');
     const [reading, setReading] = useState(false);
     const [preparing, setPreparing] = useState(false);
-    const [opening, setOpening] = useState(false);
     const [error, setError] = useState('');
     const archiveRequest = useRef<AbortController>();
     const alive = useRef(true);
@@ -46,6 +47,12 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
     const npm = useNpmMetadata(specifier);
     const repository = useRepositoryMetadata({ url: repositoryUrl, ref: repositoryRef, subdirectory, entrypoint: repositoryEntrypoint });
     const build = useToolBuild(scope);
+    // Возврат к той же форме после смены контекста не возобновляет прежний GET карточки.
+    const openingView = useMemo(() => ({ request: undefined as symbol | undefined }), [open, scope, projectId, captureOwner, build.job?.id, build.job?.result?.catalogId]);
+    const currentOpeningView = useRef(openingView);
+    currentOpeningView.current = openingView;
+    const [openingRequest, setOpeningRequest] = useState<typeof openingView>();
+    const opening = openingRequest === openingView && !!openingView.request;
     const busy = build.submitting || build.active || preparing || reading;
     const candidates = useMemo(() => packagingEntrypoints(uploaded?.files ?? [], kind), [uploaded, kind]);
     const metadata = source === 'npm' ? npm.metadata : source === 'repository' ? repository.metadata : undefined;
@@ -108,14 +115,21 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
         finally { if (alive.current) setPreparing(false); }
     };
     const openPublished = async (): Promise<void> => {
-        if (!build.job?.result || opening) return;
-        setOpening(true); setError('');
-        try { await onPublished(build.job.result.catalogId); }
-        catch (cause) { if (alive.current) setError(errorMessage(cause, 'Инструмент опубликован. Не удалось открыть карточку — обновите каталог.')); }
-        finally { if (alive.current) setOpening(false); }
+        const owns = captureOwner();
+        if (!open || !build.job?.result || openingView.request || !owns()) return;
+        const request = Symbol();
+        openingView.request = request;
+        const current = () => alive.current && owns() && currentOpeningView.current === openingView && openingView.request === request;
+        setOpeningRequest(openingView); setError('');
+        try { await onPublished(build.job.result.catalogId, current); }
+        catch (cause) { if (current()) setError(errorMessage(cause, 'Инструмент опубликован. Не удалось открыть карточку — обновите каталог.')); }
+        finally { if (current()) { openingView.request = undefined; setOpeningRequest(undefined); } }
     };
+    const invalidateOpening = (): void => { openingView.request = undefined; setOpeningRequest(undefined); };
+    const close = (): void => { invalidateOpening(); onClose(); };
+    const reset = (): void => { invalidateOpening(); setError(''); build.reset(); };
 
-    return <Modal open={open} title="Упаковать инструмент" width={680} footer={null} onCancel={onClose} className="tool-packaging" style={{ top: 32 }}>
+    return <Modal open={open} title="Упаковать инструмент" width={680} footer={null} onCancel={close} className="tool-packaging" style={{ top: 32 }}>
         <Paragraph type="secondary">Добавьте npm-пакет, репозиторий GitHub, папку или архив исходников. Система соберёт автономный комплект и добавит его в каталог для установки через мост.</Paragraph>
         {build.unresolved && <Alert className="tool-packaging__error" type="warning" showIcon message="Результат первого запроса ещё неизвестен"
             description={<>
@@ -128,9 +142,9 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
             <Paragraph>{build.job?.message ?? 'Загружаем состояние сборки…'}</Paragraph>
             {build.job?.state === 'FAILED' && <Alert type="error" showIcon message={build.job.error || 'Сборка не завершена. Исходники сохранены, можно повторить.'} />}
             <Space wrap className="tool-packaging__actions">
-                <Button onClick={onClose}>Скрыть</Button>
+                <Button onClick={close}>Скрыть</Button>
                 {build.job?.state === 'SUCCEEDED' && <Button type="primary" loading={opening} onClick={() => { void openPublished(); }}>Открыть в каталоге</Button>}
-                {build.job && !build.active && <Button onClick={build.reset}>{build.job.state === 'FAILED' ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
+                {build.job && !build.active && <Button onClick={reset}>{build.job.state === 'FAILED' ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
             </Space>
         </div> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy}>
             <Form.Item label="Источник"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value); setError(''); }} options={[{ label: 'npm-пакет', value: 'npm' }, { label: 'Репозиторий GitHub', value: 'repository' }, { label: 'Файлы или архив', value: 'files' }]} optionType="button" className="tool-packaging__sources" /></Form.Item>
@@ -166,7 +180,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
                 <Form.Item label="Название в каталоге"><Input aria-label="Название в каталоге" value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={suggestedName || 'Название из пакета'} /></Form.Item>
                 <Form.Item label="Описание"><Input.TextArea aria-label="Описание инструмента" rows={2} value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} placeholder={metadata?.description || 'Кратко опишите инструмент'} /></Form.Item>
             </Collapse.Panel></Collapse>
-            <Space wrap className="tool-packaging__actions"><Button onClick={onClose}>Закрыть</Button><Button type="primary" htmlType="submit" loading={preparing || build.submitting} disabled={busy || (source === 'npm' ? !specifier.trim() : source === 'repository' ? !repositoryUrl.trim() : !uploaded?.files.length || !entrypoint)}>{build.unresolved ? 'Повторить запрос' : 'Упаковать и добавить'}</Button></Space>
+            <Space wrap className="tool-packaging__actions"><Button onClick={close}>Закрыть</Button><Button type="primary" htmlType="submit" loading={preparing || build.submitting} disabled={busy || (source === 'npm' ? !specifier.trim() : source === 'repository' ? !repositoryUrl.trim() : !uploaded?.files.length || !entrypoint)}>{build.unresolved ? 'Повторить запрос' : 'Упаковать и добавить'}</Button></Space>
         </Form>}
         {(error || build.error) && <Alert className="tool-packaging__error" type="error" role="alert" showIcon message={error || build.error} />}
     </Modal>;
