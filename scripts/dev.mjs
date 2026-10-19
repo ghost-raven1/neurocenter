@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { createServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
-import {devProcessIdentity, devServiceEntry, ownsDevProcess} from './workspace/dev-processes.mjs';
+import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -60,9 +61,20 @@ function entryFor(service) {
 }
 
 function readProcesses() {
-    try { return JSON.parse(readFileSync(stateFile, 'utf8')); }
+    try {
+        const records = JSON.parse(readFileSync(stateFile, 'utf8'));
+        if (!Array.isArray(records) || records.some(record => !record || typeof record !== 'object'
+            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !services.some(service => service.name === record.name))) {
+            throw new SyntaxError('Ожидается список PID сервисов');
+        }
+        return records;
+    }
     catch (error) {
         if (error.code === 'ENOENT') { return []; }
+        if (error instanceof SyntaxError) {
+            output.warning('Список PID повреждён; ищем сервисы по их командам и рабочим каталогам.');
+            return [];
+        }
         throw error;
     }
 }
@@ -91,14 +103,33 @@ function signalProcess(pid, signal) {
 }
 
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
-async function stop(saved = readProcesses()) {
-    const records = saved.filter(ownsProcess);
+async function stop(saved) {
+    const known = saved ?? readProcesses();
+    const discovered = saved ? [] : discoverDevProcesses(root, services, known.map(record => record.pid));
+    const records = [...new Map([...known, ...discovered].map(record => [record.pid, record])).values()].filter(ownsProcess);
     for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
     const deadline = Date.now() + 5000;
     while (records.some(ownsProcess) && Date.now() < deadline) { await delay(100); }
     for (const record of records.filter(ownsProcess)) { signalProcess(record.pid, 'SIGKILL'); }
+    const killedDeadline = Date.now() + 2000;
+    while (records.some(ownsProcess) && Date.now() < killedDeadline) { await delay(50); }
+    const remaining = records.filter(ownsProcess);
+    if (remaining.length) { throw new Error(`Не удалось остановить сервисы (PID: ${remaining.map(record => record.pid).join(', ')}). Перезапуск отменён.`); }
     rmSync(stateFile, { force: true });
     return records.length;
+}
+
+/** Проверяем освобождение адресов до запуска новых процессов; чужие сервисы не останавливаем. */
+async function assertServicePortsAvailable() {
+    await Promise.all(services.map(service => new Promise((resolve, reject) => {
+        const host = service.name === 'frontend' ? '127.0.0.1' : process.env.BIND_HOST || '127.0.0.1';
+        const server = createServer();
+        server.once('error', error => reject(new Error(error.code === 'EADDRINUSE'
+            ? `${service.label} (:${service.port}): порт ${host}:${service.port} занят другим процессом. Новые сервисы не запущены.`
+            : `${service.label} (:${service.port}): не удалось проверить порт (${error.code || error.message}).`)));
+        server.once('listening', () => server.close(error => error ? reject(error) : resolve()));
+        server.listen({host, port: service.port, exclusive: true});
+    })));
 }
 
 /** Проверяем JSON health сервисов и компиляцию Less интерфейса, а не только выдачу HTML. */
@@ -132,6 +163,7 @@ async function start() {
     output.success('PostgreSQL готов');
     next('Остановка прежних локальных процессов');
     await stop();
+    await assertServicePortsAvailable();
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(logDir, { recursive: true });
 

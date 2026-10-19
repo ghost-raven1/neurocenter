@@ -83,6 +83,7 @@ async function fixture(t, mode) {
     await fs.writeFile(hook, `
         import fs from 'node:fs';
         import childProcess from 'node:child_process';
+        import {EventEmitter} from 'node:events';
         import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
         import {syncBuiltinESMExports} from 'node:module';
         const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
@@ -101,6 +102,24 @@ async function fixture(t, mode) {
             }
             return writeFileSync.call(this,filename,...args);
         };
+        net.createServer=()=>{
+            const server=new EventEmitter();
+            server.listen=options=>{
+                record({kind:'port-probe',...options});
+                if(options.host!=='127.0.0.1'||!options.exclusive||![22222,4100,4200,4300,4000,5173].includes(options.port)){
+                    record({kind:'unexpected-probe'});throw Error('REAL_PORT_BIND_FORBIDDEN');
+                }
+                queueMicrotask(()=>{
+                    if(process.env.DEV_START_MODE==='port-conflict'&&options.port===4100){
+                        server.emit('error',Object.assign(new Error('fixture occupied port'),{code:'EADDRINUSE'}));
+                    }else server.emit('listening');
+                });
+                return server;
+            };
+            server.close=callback=>{queueMicrotask(()=>callback?.());return server;};
+            server.unref=()=>server;
+            return server;
+        };
         globalThis.fetch=async input=>{
             const url=new URL(input);
             record({kind:'health-start',port:url.port,path:url.pathname,search:url.search});
@@ -113,6 +132,7 @@ async function fixture(t, mode) {
                 : new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
         };
         http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;
+        net.Server.prototype.listen=deny;
         syncBuiltinESMExports();
     `);
     const env = {
@@ -134,7 +154,7 @@ async function fixture(t, mode) {
         }).finally(() => clearTimeout(timer));
         const events = await eventsFrom(calls);
         assert.equal(status.signal, null, stdout + stderr);
-        assert.ok(events.every(event => event.kind !== 'unexpected-network'));
+        assert.ok(events.every(event => !['unexpected-network', 'unexpected-probe'].includes(event.kind)));
         assert.ok(events.filter(event => event.kind === 'docker').every(event => !event.args.includes('down')));
         assert.doesNotMatch(stderr, /REAL_NETWORK_FORBIDDEN/);
         for (const child of events.filter(event => event.kind === 'child-spawn')) {
@@ -178,5 +198,17 @@ test('Ошибка записи состояния после запуска п�
     assert.doesNotMatch(result.stdout, /Готов к работе/);
     assert.equal(result.events.filter(event => event.kind === 'state-write-error').length, 1);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
+});
+
+test('Занятый порт объясняется до запуска сервисов и проверки HTTP', async t => {
+    const f = await fixture(t, 'port-conflict'), result = await f.run();
+    assert.equal(result.code, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /Каталог/);
+    assert.match(result.stderr, /4100/);
+    assert.match(result.stderr, /занят/);
+    assert.doesNotMatch(result.stdout, /Готов к работе/);
+    assert.ok(result.events.some(event => event.kind === 'port-probe' && event.port === 4100));
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
 });
