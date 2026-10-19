@@ -5,8 +5,9 @@ import type { DeviceArtifacts } from '../src/devices/device-artifacts';
 import type { DeviceInstallations } from '../src/devices/device-installations';
 import type { InstallPlans } from '../src/devices/install-plans';
 
-const {enqueue}=vi.hoisted(()=>({enqueue:vi.fn()}));
+const {enqueue,requireFlag}=vi.hoisted(()=>({enqueue:vi.fn(),requireFlag:vi.fn()}));
 vi.mock('../src/devices/device-enqueue',()=>({enqueueDeviceJob:enqueue}));
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeatureEnabled:requireFlag}));
 const bindingId='b'.repeat(64);
 const actor={email:'developer@example.test',activeRole:'Разработчик'};
 const device:Device={id:'computer',email:actor.email,role:actor.activeRole,name:'Мост',fingerprint:'a'.repeat(64),last_seen:null,revoked:false,
@@ -21,13 +22,19 @@ describe('Задания знаний закреплены за выбранно
     const job={id:'job',device_id:device.id,email:actor.email,role:actor.activeRole,project_id:'project',kind:'sync-rag',state:'running',
         lease:'lease',lease_until:new Date(Date.now()+60000),payload:{bindingId}};
     beforeEach(()=>{
-        vi.restoreAllMocks();query.mockReset();owned.mockReset();claims.mockReset();enqueue.mockReset();
+        vi.restoreAllMocks();query.mockReset();owned.mockReset();claims.mockReset();enqueue.mockReset();requireFlag.mockReset().mockResolvedValue(undefined);
         owned.mockResolvedValue(device);enqueue.mockResolvedValue({id:'created'});
         query.mockImplementation(async(sql:string)=>({rows:[],rowCount:sql==='SELECT 1 FROM projects WHERE id=$1'?1:0}));
         claims.mockResolvedValue({email:actor.email,userRoles:[actor.activeRole],projects:[{projectId:'project',projectName:'Проект',role:actor.activeRole}]});
         vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true}));
     });
     afterEach(()=>vi.unstubAllGlobals());
+    it('Выключенная синхронизация не создаёт новое задание через повтор старого',async()=>{
+        requireFlag.mockRejectedValue(Object.assign(new Error('Синхронизация отключена'),{status:403}));
+        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT * FROM bridge_jobs WHERE id=')?[{...job,state:'failed'}]:[],rowCount:sql==='SELECT 1 FROM projects WHERE id=$1'?1:0}));
+        await expect(service.retry(actor,'job',input.requestKey)).rejects.toHaveProperty('status',403);
+        expect(requireFlag).toHaveBeenCalledWith('rag_sync');expect(enqueue).not.toHaveBeenCalled();
+    });
     it.each(['sync-rag','restore-rag'])('Создание %s сохраняет точный отпечаток папки',async kind=>{
         await expect(service.create(actor,{...input,kind})).resolves.toEqual({id:'created'});
         expect(enqueue).toHaveBeenCalledWith(store.pool,expect.any(String),expect.objectContaining({kind,payload:{bindingId}}),expect.any(Function));

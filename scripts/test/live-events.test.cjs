@@ -3,6 +3,14 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { LiveService } = require(path.join(process.env.GATEWAY_TEST_DIST || path.resolve('services/api-gateway/dist'),'live/live.service.js'));
 
+test('Переключение функции обновляет экран и историю без приватных данных',()=>{
+    const events=[],live=new LiveService();
+    live.attach({emit:(event,payload)=>events.push({event,payload})});
+    live.mutation('/api/feature-flags/model_hosting','admin@example.test',{enabled:false,updatedBy:'private@example.test'},'PATCH');
+    assert.deepEqual(events[0].payload.sections,['maintenance','catalog','knowledge','projects','audit']);
+    assert.equal(JSON.stringify(events).includes('private@example.test'),false);
+});
+
 for (const [method, route] of [
     ['POST', '/api/projects/prj-qa/members'],
     ['PATCH', '/api/projects/prj-qa/members/u-qa'],

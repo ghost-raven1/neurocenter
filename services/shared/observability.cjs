@@ -5,7 +5,7 @@ const {renderMaintenanceMetrics}=require('./maintenance-metrics.cjs');
 
 const buckets=[0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30];
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
-const services=new Set(['oauth2-bridge','api-gateway','catalog-service','skills-service','rag-sync-service']);
+const services=new Set(['oauth2-bridge','api-gateway','catalog-service','skills-service','rag-sync-service','feature-flags-service']);
 
 /** Фиксированные группы исключают почту, ID проектов, коды OAuth и произвольные URL из меток. */
 function group(url){

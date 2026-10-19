@@ -27,6 +27,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === '/api/projects') { return read || main; }
     if (route === '/api/projects/import-local') { return main; }
     if (route.startsWith('/api/platform/users')) { return main; }
+    if (route === '/api/feature-flags/evaluated') { return read; }
+    if (route === '/api/feature-flags' || route.startsWith('/api/feature-flags/')) { return main; }
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
     if (route === '/api/models') { return read || main; }

@@ -31,6 +31,7 @@ import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
 import { assertRagJobBinding, RAG_JOB_KINDS } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
+import {requireFeatureEnabled} from '../features/require-feature-enabled';
 const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId"`;
 
 /** Очередь с арендой: потеря worker не превращается в успех или повторную запись без проверки. */
@@ -135,6 +136,7 @@ export class DeviceJobs {
             delete previous.rows[0].request_hash;
             return previous.rows[0];
         }
+        if(input.kind==='sync-rag')await requireFeatureEnabled('rag_sync');
         let payload: Record<string, unknown> = {};
         if (['restore-rag', 'sync-rag'].includes(input.kind) && device.report.ragSupported === false) {
             throw new ConflictException('Локальная LanceDB недоступна на выбранном компьютере. Проверьте ОС и архитектуру автономного пакета MCP.');

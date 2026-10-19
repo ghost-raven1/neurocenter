@@ -9,6 +9,7 @@ import { AuthGuardService, IAuthPayload } from '../auth/auth-guard.service';
 import {LiveService} from '../live/live.service';
 import { forwardRuntimeArtifact } from './runtime-artifact-stream';
 import { forwardBackupDownload } from './backup-download-stream';
+import {featureFlagFailure,requiredFeatureFlag} from '../features/feature-flag-gate';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -24,6 +25,7 @@ export class ProxyService {
     private readonly catalogUrl: string;
     private readonly skillsUrl: string;
     private readonly ragUrl: string;
+    private readonly featureFlagsUrl:string;
     private readonly http: AxiosInstance;
     private readonly pairLimits=new Map<string,{count:number;until:number}>();
 
@@ -31,6 +33,7 @@ export class ProxyService {
         this.catalogUrl = (configService.get<string>('CATALOG_SERVICE_URL') || 'http://localhost:4100').replace(/\/+$/, '');
         this.skillsUrl = (configService.get<string>('SKILLS_SERVICE_URL') || 'http://localhost:4200').replace(/\/+$/, '');
         this.ragUrl = (configService.get<string>('RAG_SERVICE_URL') || 'http://localhost:4300').replace(/\/+$/, '');
+        this.featureFlagsUrl=(configService.get<string>('FEATURE_FLAGS_SERVICE_URL')||'http://localhost:4400').replace(/\/+$/,'');
         this.http = axios.create({ timeout: 30000, validateStatus: () => true });
     }
 
@@ -51,7 +54,9 @@ export class ProxyService {
         }
 
         const path = req.path;
-        const upstreamBase = path.startsWith('/api/rag')
+        const upstreamBase = /^\/api\/feature-flags(?:\/|$)/.test(path)
+            ? this.featureFlagsUrl
+            : path.startsWith('/api/rag')
             ? this.ragUrl
             : path.startsWith('/api/skills')
               ? this.skillsUrl
@@ -80,6 +85,12 @@ export class ProxyService {
                 res.status(decision.status === 403 ? 403 : 503).json({message:'Не удалось проверить доступ к ресурсу.'}); return;
             }
             if (!decision.data.allowed) { res.status(403).json({message:'Активная роль не разрешает это действие в данном проекте.'}); return; }
+            const flag=requiredFeatureFlag(method,path,req.body);
+            if(flag) {
+                const failure=await featureFlagFailure(this.http,this.featureFlagsUrl,flag);
+                if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
+            }
+            if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
             if(['GET','HEAD'].includes(method)&&/\/backups\/[^/]+\/download\/*$/.test(path)){
                 await forwardBackupDownload(this.http,`${upstreamBase}${path}`,this.buildHeaders(req.headers,auth),req,res);return;
             }
