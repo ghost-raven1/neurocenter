@@ -10,6 +10,14 @@ export interface IAccessClaims {
     skillPaths: string[];
 }
 export interface IPlatformUser { email: string; displayName: string; isMainAdmin: boolean; enabled: boolean; createdAt: string }
+export interface IPlatformUserWrite {
+    email?: unknown;
+    displayName?: unknown;
+    isMainAdmin?: unknown;
+    enabled?: unknown;
+    createOnly?: unknown;
+    expected?: {displayName:string;isMainAdmin:boolean;enabled:boolean};
+}
 export interface IAccessActor { email: string; activeRole: string }
 
 /** Неизвестная роль и отсутствие участия не дают даже права чтения. */

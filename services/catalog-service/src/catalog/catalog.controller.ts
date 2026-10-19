@@ -211,6 +211,8 @@ export class CatalogController {
         if (list.some(m => m.principalName.toLowerCase() === principalName.toLowerCase())) {
             throw new ConflictException(`Сотрудник ${principalName} уже в проекте`);
         }
+        const actor = this.actor(req).email;
+        await this.access.ensureProjectUser({email:principalName,displayName:body.displayName}, actor);
         const member: IProjectMember = {
             userId: `u-${principalName}`,
             principalName,
@@ -218,8 +220,6 @@ export class CatalogController {
             role: body.role || T_DEFAULT_MEMBER_ROLE,
             addedAt: new Date().toISOString(),
         };
-        const actor = this.actor(req).email;
-        await this.access.save({email:principalName,displayName:body.displayName}, actor);
         return this.catalog.addProjectMember(id, member, actor);
     }
 

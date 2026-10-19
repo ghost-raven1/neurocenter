@@ -13,7 +13,7 @@ const request = (activeRole = 'Главный админ') => ({ headers: {
 
 describe('Исполнитель изменения проектных ролей', () => {
     const catalog = { listProjectMembers: vi.fn(), addProjectMember: vi.fn(), updateProjectMemberRole: vi.fn(), removeProjectMember: vi.fn() };
-    const access = { save: vi.fn() };
+    const access = { ensureProjectUser: vi.fn() };
     let controller: CatalogController;
 
     beforeEach(() => {
@@ -28,7 +28,7 @@ describe('Исполнитель изменения проектных роле�
         catalog.listProjectMembers.mockResolvedValue([]);
         const body = { principalName: member.principalName, role: 'Наблюдатель', actor: 'forged@example.invalid' };
         await controller.addProjectMember('prj-qa', body, request());
-        expect(access.save).toHaveBeenCalledWith({ email: member.principalName, displayName: undefined }, actor);
+        expect(access.ensureProjectUser).toHaveBeenCalledWith({ email: member.principalName, displayName: undefined }, actor);
         expect(catalog.addProjectMember).toHaveBeenCalledWith('prj-qa', expect.objectContaining({ principalName: member.principalName }), actor);
     });
 
@@ -42,6 +42,6 @@ describe('Исполнитель изменения проектных роле�
     it('Проверка прав происходит до сохранения и аудита даже для повторного запроса', async () => {
         await expect(controller.updateProjectMember('prj-qa', member.userId, { role: 'Наблюдатель' }, request('Наблюдатель'))).rejects.toMatchObject({ status: 403 });
         expect(catalog.updateProjectMemberRole).not.toHaveBeenCalled();
-        expect(access.save).not.toHaveBeenCalled();
+        expect(access.ensureProjectUser).not.toHaveBeenCalled();
     });
 });

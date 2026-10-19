@@ -72,7 +72,7 @@ const MembersTab: FC<{ project: IProjectDetail }> = ({ project }) => {
         try {
             const addPayload: IProjectMemberAdd = {
                 principalName,
-                displayName: name.trim() || principalName,
+                displayName: name.trim() || undefined,
                 role,
             };
 

@@ -1,6 +1,6 @@
 import {createPool} from '../database/pool';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { IAccessClaims, IPlatformUser, normalizeEmail, ROLES } from './access.model';
+import { IAccessClaims, IPlatformUser, IPlatformUserWrite, normalizeEmail, ROLES } from './access.model';
 import {setupSecurityEvents,securityEvent} from './security-events';
 
 /** Хранит пользователей по почте; проектные назначения остаются в project_members. */
@@ -32,7 +32,16 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
         return rows as IPlatformUser[];
     }
 
-    async save(input: { email?: unknown; displayName?: unknown; isMainAdmin?: unknown; enabled?: unknown; createOnly?: unknown; expected?: {displayName:string;isMainAdmin:boolean;enabled:boolean} },actor='system:administration'): Promise<IPlatformUser> {
+    save(input:IPlatformUserWrite,actor='system:administration'):Promise<IPlatformUser> {
+        return this.writeUser(input,actor,'save');
+    }
+
+    /** Проектное назначение создаёт только отсутствующий аккаунт, сохраняя существующий профиль и права. */
+    ensureProjectUser(input:Pick<IPlatformUserWrite,'email'|'displayName'>,actor:string):Promise<IPlatformUser> {
+        return this.writeUser({email:input.email,displayName:input.displayName},actor,'create-if-missing');
+    }
+
+    private async writeUser(input:IPlatformUserWrite,actor:string,mode:'save'|'create-if-missing'):Promise<IPlatformUser> {
         if (!input || typeof input !== 'object' || Array.isArray(input)) { throw new BadRequestException('Передайте данные пользователя.'); }
         if (input.displayName !== undefined && (typeof input.displayName !== 'string' || input.displayName.trim().length > 128 || /[\x00-\x1f\x7f]/.test(input.displayName))) { throw new BadRequestException('Имя пользователя: строка до 128 символов без управляющих знаков.'); }
         let email: string;
@@ -47,6 +56,11 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
             // Сериализация защищает последнего администратора от двух одновременных отзывов.
             await client.query("SELECT pg_advisory_xact_lock(72465381)");
             const current = await client.query('SELECT * FROM platform_users WHERE email=$1 FOR UPDATE', [email]);
+            if(mode==='create-if-missing'&&current.rows[0]) {
+                const user=current.rows[0];
+                await client.query('COMMIT');
+                return {email:user.email,displayName:user.display_name,isMainAdmin:user.is_main_admin,enabled:user.enabled,createdAt:user.created_at};
+            }
             if (input.createOnly && current.rows[0]) { throw new ConflictException('Пользователь с этой почтой уже добавлен. Откройте его настройки.'); }
             if (input.expected && (!current.rows[0] || current.rows[0].display_name!==input.expected.displayName || current.rows[0].is_main_admin!==input.expected.isMainAdmin || current.rows[0].enabled!==input.expected.enabled)) {
                 throw new ConflictException('Пользователя уже изменили. Обновите список и откройте актуальные настройки; введённый текст остался в форме.');
