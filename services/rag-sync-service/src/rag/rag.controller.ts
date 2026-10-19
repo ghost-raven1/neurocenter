@@ -43,8 +43,8 @@ export class RagController {
     @Get('manifest')
     public async manifest(@Query('projectKey') projectKey: string | undefined) {
         const pk = requireProjectKey(projectKey);
-        const ids = await this.ragService.manifest(pk);
-        return { projectKey: pk, count: Object.keys(ids).length, ids };
+        const manifest = await this.ragService.manifest(pk);
+        return { projectKey: pk, count: Object.keys(manifest.ids).length, ...manifest };
     }
 
     /**
@@ -94,18 +94,15 @@ export class RagController {
     ) {
         const pk = requireProjectKey(projectKey);
         const {limit:lim,offset:off}=ragPagination(limit,offset);
-        const [rows, total] = await Promise.all([
-            this.ragService.rowsPage(pk, lim, off),
-            this.ragService.count(pk),
-        ]);
+        const {chunks,...summary}=await this.ragService.exportPage(pk,lim,off);
         return {
             projectKey: pk,
-            count: total,
-            dimension: rows[0]?.embedding?.length ?? 0,
+            ...summary,
+            count: summary.rowCount,
             offset: off,
             limit: lim,
-            hasMore: off + rows.length < total,
-            chunks: rows,
+            hasMore: off + chunks.length < summary.rowCount,
+            chunks,
         };
     }
 
@@ -171,7 +168,7 @@ export class RagController {
         await assertMinLevel(req, pk, 2);
         const chunks = body.chunks===undefined ? [] : body.chunks;
         const deletes = body.deletes===undefined ? [] : body.deletes;
-        const result = await this.ragService.applyDelta(pk, chunks, deletes);
+        const result = await this.ragService.applyDelta(pk, chunks, deletes,body.indexProfile,body.snapshot);
         return { projectKey: pk, ...result };
     }
 

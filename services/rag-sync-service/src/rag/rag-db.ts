@@ -1,9 +1,12 @@
 import {createPool} from '../database/pool';
 import { Pool } from 'pg';
-import {ServiceUnavailableException} from '@nestjs/common';
+import {BadRequestException,ServiceUnavailableException} from '@nestjs/common';
 import {setupRagQuota,ragQuotaPolicy,ragQuota,mapRagQuotaError,reserveLegacyRagQuota,type IRagQuota,type IRagQuotaUpdate} from './quota/rag-quota';
 import {RAG_WRITE_LOCK} from './quota/rag-quota-schema';
 import {reserveCapacity} from '../../../shared/capacity.cjs';
+import {normalizeChunkRow,rowFingerprint} from '../../../shared/rag-index-contract.cjs';
+import {RAG_INDEX_SCHEMA,readIndexManifest,readIndexSummary,bindIndexProfile,invalidateIndexSeal,sealIndex,requireUsableVectors,validateIndexWrite,
+    type IRagIndexWrite,type IRagIndexManifest,type IRagIndexSummary} from './rag-index-state';
 
 export interface IRagDbConfig {
     url: string;
@@ -28,23 +31,11 @@ export interface IUpsertRow {
     tags: string | null;
     contentHash: string;
     embedding: number[] | null;
+    syncHash?:string|null;
 }
 
-interface IManifestRow {
-    id: string;
-    content_hash: string;
-}
-
-interface ISummaryRow {
-    n: number;
-    ts: string | null;
-}
-
-export interface IRagProjectSummary {
+export interface IRagProjectSummary extends IRagIndexSummary {
     projectKey: string;
-    rowCount: number;
-    lastSyncedAt: string | null;
-    dimension: number;
 }
 
 interface IListProjectRow {
@@ -110,6 +101,7 @@ export class RagDb {
              );
              CREATE INDEX IF NOT EXISTS rag_chunks_project_idx ON rag_chunks (project_key);
              CREATE INDEX IF NOT EXISTS rag_chunks_hash_idx ON rag_chunks (project_key, content_hash);
+             ${RAG_INDEX_SCHEMA}
              ${vectorIndex}`,
         );
         await setupRagQuota(this.pool,this.quotaPolicy);
@@ -131,16 +123,8 @@ export class RagDb {
      * @param projectKey - ключ проекта.
      * @returns {Promise<Record<string, string>>}
      */
-    public async manifest(projectKey: string): Promise<Record<string, string>> {
-        const res = await this.pool.query(
-            'SELECT id, content_hash FROM rag_chunks WHERE project_key = $1',
-            [projectKey],
-        );
-        const map: Record<string, string> = Object.create(null) as Record<string,string>;
-        for (const r of res.rows as IManifestRow[]) {
-            map[r.id] = r.content_hash;
-        }
-        return map;
+    public manifest(projectKey: string): Promise<IRagIndexManifest> {
+        return readIndexManifest(this.pool,projectKey,this.config.dim);
     }
 
     /**
@@ -151,17 +135,8 @@ export class RagDb {
      */
     public async summary(
         projectKey: string,
-    ): Promise<{ rowCount: number; lastSyncedAt: string | null; dimension: number }> {
-        const res = await this.pool.query(
-            'SELECT count(*)::int AS n, max(updated_at) AS ts FROM rag_chunks WHERE project_key = $1',
-            [projectKey],
-        );
-        const row = res.rows[0] as ISummaryRow | undefined;
-        return {
-            rowCount: row ? row.n : 0,
-            lastSyncedAt: row?.ts ?? null,
-            dimension: this.config.dim,
-        };
+    ): Promise<IRagIndexSummary> {
+        return readIndexSummary(this.pool,projectKey,this.config.dim);
     }
 
     /**
@@ -175,12 +150,7 @@ export class RagDb {
             'FROM rag_chunks GROUP BY project_key ORDER BY project_key',
         );
         const rows = res.rows as IListProjectRow[];
-        return rows.map((r) => ({
-            projectKey: r.project_key,
-            rowCount: r.n,
-            lastSyncedAt: r.ts ?? null,
-            dimension: this.config.dim,
-        }));
+        return Promise.all(rows.map(async r=>({projectKey:r.project_key,...await this.summary(r.project_key)})));
     }
 
     /**
@@ -228,7 +198,12 @@ export class RagDb {
         projectKey: string,
         upserts: IUpsertRow[],
         deletes: string[],
-    ): Promise<{ upserted: number; deleted: number }> {
+        write:IRagIndexWrite={indexProfile:null},
+    ): Promise<{ upserted: number; deleted: number }&IRagIndexSummary> {
+        write=validateIndexWrite(write.indexProfile,write.snapshot,this.config.dim);
+        if(write.snapshot?.complete&&(upserts.length||deletes.length)){throw new BadRequestException('Подтверждение снимка передаётся отдельным пустым пакетом после всех изменений.');}
+        if(write.indexProfile){requireUsableVectors(upserts,write.indexProfile.dimension);}
+        const normalized=upserts.map(row=>({...row,...normalizeChunkRow(row),syncHash:write.indexProfile?rowFingerprint(row):null}));
         // Перезапись строк/индексов и WAL требуют запаса сверх логической квоты RAG.
         const estimate=Math.max(16*1024**2,Buffer.byteLength(JSON.stringify(upserts),'utf8')*6);
         const releaseCapacity=await reserveCapacity({resource:'postgres',bytes:estimate});
@@ -241,6 +216,8 @@ export class RagDb {
             await client.query("SET LOCAL lock_timeout='10s'");
             await client.query('LOCK TABLE rag_chunks IN ROW EXCLUSIVE MODE');
             await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
+            await bindIndexProfile(client,projectKey,write.indexProfile);
+            if(!write.snapshot?.complete){await invalidateIndexSeal(client,projectKey);}
 
             if (deletes.length > 0) {
                 const delRes = await client.query(
@@ -251,14 +228,17 @@ export class RagDb {
             }
 
             const BATCH = 50;
-            for (let i = 0; i < upserts.length; i += BATCH) {
-                const batch: IUpsertRow[] = upserts.slice(i, i + BATCH);
+            for (let i = 0; i < normalized.length; i += BATCH) {
+                const batch: IUpsertRow[] = normalized.slice(i, i + BATCH);
                 const { sql, params } = buildUpsert(projectKey, batch);
                 const insRes = await client.query(sql, params);
                 upserted += insRes.rowCount ?? batch.length;
             }
 
+            if(write.snapshot?.complete){await sealIndex(client,projectKey,this.config.dim,write);}
+            const summary=await readIndexSummary(client,projectKey,this.config.dim);
             await client.query('COMMIT');
+            return {upserted,deleted,...summary};
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
             throw mapRagQuotaError(error);
@@ -266,7 +246,6 @@ export class RagDb {
             try{client.release();}finally{releaseCapacity();}
         }
 
-        return { upserted, deleted };
     }
 
     /**
@@ -389,18 +368,18 @@ function buildUpsert(
             `(${push(r.id)},${push(projectKey)},${push(r.filePath)},${push(r.content)},` +
             `${push(r.description)},${push(r.startLine)},${push(r.endLine)},${push(r.language)},` +
             `${push(r.kind)},${push(r.role)},${push(r.quirkType)},${push(r.tags)},` +
-            `${push(r.contentHash)},(${push(emb)})::vector)`
+            `${push(r.contentHash)},(${push(emb)})::vector,${push(r.syncHash??null)})`
         );
     });
     const sql =
         `INSERT INTO rag_chunks (id, project_key, file_path, content, description, ` +
-        `start_line, end_line, language, kind, role, quirk_type, tags, content_hash, embedding) ` +
+        `start_line, end_line, language, kind, role, quirk_type, tags, content_hash, embedding, sync_hash) ` +
         `VALUES ${tuples.join(', ')} ` +
         `ON CONFLICT (id, project_key) DO UPDATE SET ` +
         `file_path = EXCLUDED.file_path, content = EXCLUDED.content, description = EXCLUDED.description, ` +
         `start_line = EXCLUDED.start_line, end_line = EXCLUDED.end_line, language = EXCLUDED.language, ` +
         `kind = EXCLUDED.kind, role = EXCLUDED.role, quirk_type = EXCLUDED.quirk_type, ` +
         `tags = EXCLUDED.tags, content_hash = EXCLUDED.content_hash, ` +
-        `embedding = EXCLUDED.embedding, updated_at = now()`;
+        `embedding = EXCLUDED.embedding, sync_hash = EXCLUDED.sync_hash, updated_at = now()`;
     return { sql, params };
 }

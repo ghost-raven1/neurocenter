@@ -14,7 +14,7 @@ WORKDIR /app/mcp/neurocenter-asset-sync
 RUN npm ci --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общий TAR-парсер и его типы уже во время собственной сборки.
-COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts /app/services/shared/
+COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts services/shared/rag-index-contract.cjs services/shared/rag-index-contract.d.cts /app/services/shared/
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 

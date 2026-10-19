@@ -28,7 +28,7 @@ describe('Валидация полной дельты RAG до записи',()
     });
 });
 describe('Пагинация RAG',()=>{
-    const rowsPage=vi.fn(async()=>[]);const controller=new RagController({rowsPage,count:async()=>0} as unknown as RagService);
+    const exportPage=vi.fn(async()=>({chunks:[],rowCount:0,dimension:2560}));const controller=new RagController({exportPage} as unknown as RagService);
     it.each([['1.5','0'],['-1','0'],['NaN','0'],['Infinity','0'],['1','-1'],['1','0.5'],['1','Infinity']])('Неверные limit=%s offset=%s возвращают 400',async(limit,offset)=>{await expect(controller.chunks('project',limit,offset)).rejects.toMatchObject({status:400});});
     it('Применяет целые значения по умолчанию и ограничение размера страницы',async()=>{expect(await controller.chunks('project','3000',undefined)).toMatchObject({limit:2000,offset:0});});
 });

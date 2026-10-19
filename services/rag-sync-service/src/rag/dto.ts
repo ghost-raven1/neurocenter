@@ -21,4 +21,6 @@ export interface ISyncBody {
     projectKey: string;
     chunks?: ISyncChunk[];
     deletes?: string[];
+    indexProfile?:unknown;
+    snapshot?:unknown;
 }

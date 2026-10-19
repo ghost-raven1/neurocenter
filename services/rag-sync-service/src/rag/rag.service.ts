@@ -1,10 +1,12 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 
 import { ProjectDatabases, projectDatabaseName } from './project-databases';
 import { type IUpsertRow, type IRagProjectSummary } from './rag-db';
 import { type ISyncChunk } from './dto';
 import {validateDelta} from './rag-validation';
+import {normalizeChunkRow,rowFingerprint} from '../../../shared/rag-index-contract.cjs';
+import {validateIndexWrite,requireUsableVectors} from './rag-index-state';
 import {validateRagQuotaUpdate,type IRagQuotaUpdate} from './quota/rag-quota';
 
 
@@ -20,7 +22,7 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
      * @param projectKey - ключ проекта.
      * @returns {Promise<Record<string, string>>}
      */
-    async manifest(projectKey: string): Promise<Record<string, string>> {
+    async manifest(projectKey: string) {
         return this.databases.withProject(projectKey,(db,id)=>db.manifest(id));
     }
 
@@ -76,10 +78,16 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         projectKey: string,
         chunks: ISyncChunk[],
         deletes: string[],
-    ): Promise<{ upserted: number; deleted: number }> {
-        const delta=validateDelta(chunks,deletes,Number(process.env.RAG_DIM||2560));
-        const upserts: IUpsertRow[] = delta.chunks.map(toRow);
-        return this.databases.withProject(projectKey,(db,id)=>db.applyDelta(id,upserts,delta.deletes));
+        indexProfile?:unknown,
+        snapshot?:unknown,
+    ) {
+        const dimension=Number(process.env.RAG_DIM||2560);
+        const write=validateIndexWrite(indexProfile,snapshot,dimension);
+        const delta=validateDelta(chunks,deletes,dimension);
+        if(write.snapshot?.complete&&(delta.chunks.length||delta.deletes.length)){throw new BadRequestException('Подтверждение снимка передаётся отдельным пустым пакетом после всех изменений.');}
+        if(write.indexProfile){requireUsableVectors(delta.chunks.map(row=>({embedding:row.embedding??null})),dimension);}
+        const upserts: IUpsertRow[] = delta.chunks.map(row=>toRow(row,!!write.indexProfile));
+        return this.databases.withProject(projectKey,(db,id)=>db.applyDelta(id,upserts,delta.deletes,write));
     }
 
     /**
@@ -111,6 +119,14 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         return this.databases.withProject(projectKey,(db,id)=>db.rowsPage(id,limit,offset));
     }
 
+    /** Экспорт содержит подтверждённое состояние снимка; новый мост проверяет его до записи. */
+    async exportPage(projectKey:string,limit:number,offset:number){
+        return this.databases.withProject(projectKey,async(db,id)=>{
+            const [rows,summary]=await Promise.all([db.rowsPage(id,limit,offset),db.summary(id)]);
+            return {chunks:rows,...summary};
+        });
+    }
+
     /** Имя серверной базы проекта без пароля и строки подключения. */
     async databaseInfo(projectKey:string):Promise<{databaseName:string;projectId:string}> {
         return this.databases.withProject(projectKey,async (_db,id)=>({databaseName:projectDatabaseName(id),projectId:id}));
@@ -118,35 +134,14 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
 }
 
 /**
- * Убирает из текста байт, недопустимые для PG UTF8 (NUL и прочие control-символы),
- * кроме переноса строки/таба.
+ * Сохраняет legacy sha(content), добавляя независимый полный hash проверенного фрагмента.
  */
-function cleanText(v: string | null | undefined): string | null {
-    if (v == null) {
-        return v as null;
-    }
-
-    return v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-}
-
-function toRow(c: ISyncChunk): IUpsertRow {
-    const content = cleanText(c.content) ?? '';
+function toRow(c: ISyncChunk,verified:boolean): IUpsertRow {
+    const normalized=normalizeChunkRow(c);
     return {
-        id: c.id,
-        filePath: cleanText(c.filePath) ?? '',
-        content,
-        description: cleanText(c.description),
-        startLine: c.startLine ?? null,
-        endLine: c.endLine ?? null,
-        language: cleanText(c.language),
-        kind: cleanText(c.kind) ?? '',
-        role: cleanText(c.role),
-        quirkType: cleanText(c.quirkType),
-        tags: cleanText(c.tags),
-        // Хэш считается от ОЧИЩЕННОГО (как хранится) контента, а не от клиентского:
-        // иначе cleanText меняет content, hash остаётся «от оригинала» → chunk
-        // вечно помечается «изменённым» на каждой синхронизации.
-        contentHash: createHash('sha256').update(content, 'utf8').digest('hex'),
-        embedding: c.embedding ?? null,
+        ...normalized,
+        // Legacy manifest остаётся совместимым; полный fingerprint учитывает векторы отдельно.
+        contentHash: createHash('sha256').update(normalized.content, 'utf8').digest('hex'),
+        syncHash:verified?rowFingerprint(normalized):null,
     };
 }
