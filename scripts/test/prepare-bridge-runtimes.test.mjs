@@ -38,8 +38,12 @@ async function fixture(t) {
     await fs.mkdir(path.join(root, 'scripts'), {recursive: true});
     await fs.mkdir(path.join(bridge, 'dist'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['prepare-bridge-runtimes.mjs', 'bridge-runtime-release.mjs', 'release-request.mjs', ...contextScripts]) {
+    for (const file of ['prepare-bridge-runtimes.mjs', 'prepare-bridge-installers.mjs', 'bridge-runtime-release.mjs', 'release-request.mjs', ...contextScripts]) {
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
+    }
+    await fs.mkdir(path.join(root, 'bridge-dist'), {recursive: true});
+    for (const file of ['install.sh', 'install.ps1']) {
+        await fs.copyFile(path.join(repository, 'bridge-dist', file), path.join(root, 'bridge-dist', file));
     }
     await fs.mkdir(path.join(root, 'services/api-gateway'), {recursive: true});
     await fs.copyFile(path.join(repository, 'services/api-gateway/Dockerfile'), path.join(root, 'services/api-gateway/Dockerfile'));
@@ -253,6 +257,8 @@ test('Проверенный кеш текущего хоста и Linux x64 н�
     const result = await f.run();
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.events, []);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='9\.8\.7'$/m);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.ps1'), 'utf8'), /^\$Version = '9\.8\.7'$/m);
 });
 
 test('BRIDGE_RUNTIME_TARGETS выбирает только явно указанный готовый пакет', async t => {
@@ -305,6 +311,7 @@ test('Нативная сборка использует отдельный вы
     const archive = path.join(f.runtime, archiveName('darwin-arm64'));
     assert.equal((await fs.readFile(archive + '.sha256', 'utf8')).trim(), hash(await fs.readFile(archive)));
     assert.equal(JSON.parse(await fs.readFile(archive + '.json', 'utf8')).buildId, buildId);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='9\.8\.7'$/m);
 });
 
 test('Сбой нативного сборщика после записи кандидата сохраняет предыдущий пакет', async t => {

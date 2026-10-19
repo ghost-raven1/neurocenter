@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {verifyBridgeBuild} from './bridge-build-integrity.mjs';
 import {opencodeVersion, opencodePackageName} from './opencode-platforms.mjs';
 import {bridgeRuntimeCached, hydrateBridgeRuntimeRelease, publishBridgeRuntimeFiles, readBridgeRuntimeRelease} from './bridge-runtime-release.mjs';
+import {prepareBridgeInstallers} from './prepare-bridge-installers.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
@@ -101,7 +102,7 @@ async function main() {
             throw new Error(`Мост ${target}: нативная упаковка требует Node.js 24. Запустите эту команду через Node.js 24; текущая версия ${process.versions.node}.`);
         }
     }
-    if (!missing.length) { return; }
+    if (!missing.length) { await prepareBridgeInstallers({directory: root}); return; }
     await fs.mkdir(output, {recursive: true});
     await fs.mkdir(path.join(root, '.run'), {recursive: true});
     const lock = path.join(root, '.run/bridge-runtimes.lock');
@@ -147,6 +148,7 @@ async function main() {
     } finally {
         await fs.rmdir(lock);
     }
+    await prepareBridgeInstallers({directory: root});
 }
 
 main().catch(error => { console.error(`Ошибка подготовки моста: ${error.message}`); process.exitCode = 1; });

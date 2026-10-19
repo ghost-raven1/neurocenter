@@ -16,10 +16,12 @@ test('Оба установщика, протокол и lock-файл разд�
     const powershell = await fs.readFile(new URL('../../bridge-dist/install.ps1', import.meta.url), 'utf8');
     const protocol = await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/src/bridge/protocol.ts', import.meta.url), 'utf8');
     const lock = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package-lock.json', import.meta.url), 'utf8'));
+    const release = JSON.parse(await fs.readFile(new URL('../../scripts/bridge-runtime-release.json', import.meta.url), 'utf8'));
     assert.equal(/^VERSION='([^']+)'/m.exec(bash)?.[1], version);
     assert.equal(/^\$Version = '([^']+)'/m.exec(powershell)?.[1], version);
     assert.equal(/BRIDGE_VERSION = '([^']+)'/.exec(protocol)?.[1], version);
     assert.equal(lock.version, version); assert.equal(lock.packages[''].version, version);
+    assert.equal(release.version, version);
 });
 async function fixture(platform = 'Darwin', arch = 'arm64', libc = 'glibc') {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-offline-installer-')); roots.push(root);
