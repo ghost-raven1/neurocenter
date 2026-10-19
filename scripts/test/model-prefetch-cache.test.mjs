@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {access,readFile,writeFile,mkdir,readdir,symlink,copyFile} from 'node:fs/promises';
+import {access,readFile,writeFile,mkdir,readdir,symlink,copyFile,cp} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -77,6 +77,7 @@ test('Символическая ссылка источника отклоня�
 test('Настоящий CLI использует предзагрузку offline и активирует комплект в отдельном томе без npm',async t=>{
     const f=await fixture(t),scripts=fileURLToPath(new URL('../models/',import.meta.url));
     for(const filename of await readdir(scripts))if(filename.endsWith('.mjs'))await copyFile(path.join(scripts,filename),path.join(f.root,'scripts/models',filename));
+    await copyFile(fileURLToPath(new URL('../release-request.mjs',import.meta.url)),path.join(f.root,'scripts/release-request.mjs'));
     const preload=path.join(f.root,'deny-network.mjs');await writeFile(preload,'globalThis.fetch=()=>{throw new Error("Сетевой запрос запрещён проверкой")};');
     const entry=path.join(f.root,'scripts/models/bundle-cli.mjs');
     for(const downloadOnly of [true,false]) {
@@ -88,4 +89,15 @@ test('Настоящий CLI использует предзагрузку offli
             else assert.equal(sha(await readFile(path.join(f.directory,file.path))),file.sha256);
         }
     }
+});
+
+test('Production COPY включает зависимости операторского CLI без npm и запуска контейнеров',async t=>{
+    const f=await assetFixture(t),repository=fileURLToPath(new URL('../../',import.meta.url)),image=path.join(f.root,'image');
+    const dockerfile=await readFile(path.join(repository,'services/catalog-service/Dockerfile'),'utf8');
+    for(const [,source,destination] of dockerfile.matchAll(/^COPY (scripts\/\S+) (\/tools\/scripts\/\S+)$/gm)) {
+        const target=path.join(image,destination);await mkdir(path.dirname(target),{recursive:true});
+        await cp(path.join(repository,source),target,{recursive:true});
+    }
+    const result=spawnSync(process.execPath,[path.join(image,'tools/scripts/models/bundle-cli.mjs'),'--help'],{encoding:'utf8',timeout:5000});
+    assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/Использование/);
 });

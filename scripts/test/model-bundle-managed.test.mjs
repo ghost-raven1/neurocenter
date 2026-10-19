@@ -40,6 +40,24 @@ async function fixture(action) {
     try{await action({root,directory,first,second,active,contents,bundle});}finally{await rm(root,{recursive:true,force:true});}
 }
 
+/** Отдельный процесс обрывается до очистки журнала, минуя catch/finally активации. */
+async function crashActivation(root,directory,tags,committed=false) {
+    const filename=path.join(root,'interrupted-tags.json');await writeFile(filename,JSON.stringify(tags));
+    const module=fileURLToPath(new URL('../models/bundle-managed.mjs',import.meta.url));
+    const result=spawnSync(process.execPath,['--input-type=module','-e',`
+        import fs from 'node:fs/promises';import {syncBuiltinESMExports} from 'node:module';
+        const committed=process.argv[4]==='true',unlink=fs.unlink;
+        fs.unlink=async(filename,...args)=>{
+            if(committed&&filename.endsWith('/.bundle-managed/pending.json'))process.exit(83);
+            return unlink(filename,...args);
+        };syncBuiltinESMExports();
+        const {activateManagedModelBundle}=await import(process.argv[1]);
+        await activateManagedModelBundle(process.argv[2],JSON.parse(await fs.readFile(process.argv[3],'utf8')),
+            {onBytes:()=>{if(!committed)process.exit(83);}});
+    `,module,directory,filename,String(committed)],{encoding:'utf8',timeout:5000});
+    assert.equal(result.status,83,result.stderr);
+}
+
 test('Новая SHA прежнего тега обновляется только после полного скачивания; предыдущие blobs остаются',async()=>fixture(async({directory,first,second,active,contents})=>{
     await first.run();const previous=await active(),before=await contents();
     await second.run({downloadOnly:true});assert.deepEqual(await contents(),before);assert.deepEqual(await active(),previous);
@@ -94,22 +112,51 @@ test('Ошибка после первого переключённого тег
     assert.deepEqual(await contents(),before);assert.deepEqual(await active(),pointer);await first.run({verifyOnly:true});
 }));
 
-test('Прерванный процесс оставляет журнал; verify и предзагрузка не меняют теги, sync восстанавливает комплект',async()=>fixture(async({root,directory,first,second,contents,active})=>{
+test('Прерванный процесс оставляет журнал; offline CLI восстанавливает прежний комплект до предзагрузки',async()=>fixture(async({root,directory,first,second,contents,active})=>{
     await first.run();const before=await contents(),pointer=await active();
     // Все новые blobs готовы до имитации аварии процесса во время смены двух тегов.
     for(const [digest,bytes] of second.bytes)await writeFile(path.join(directory,'models/blobs/sha256-'+digest),bytes);
-    const tags=path.join(root,'tags.json');await writeFile(tags,JSON.stringify(second.tags));
-    const module=fileURLToPath(new URL('../models/bundle-managed.mjs',import.meta.url));
-    const result=spawnSync(process.execPath,['--input-type=module','-e',`
-        import {readFile} from 'node:fs/promises';
-        const {activateManagedModelBundle}=await import(process.argv[1]);
-        await activateManagedModelBundle(process.argv[2],JSON.parse(await readFile(process.argv[3],'utf8')),{onBytes:()=>process.exit(83)});
-    `,module,directory,tags],{encoding:'utf8',timeout:5000});
-    assert.equal(result.status,83,result.stderr);const partial=await contents();assert.notDeepEqual(partial,before);
-    await assert.rejects(first.run({verifyOnly:true}),/не завершено/);assert.deepEqual(await contents(),partial);
-    await assert.rejects(first.run({downloadOnly:true}),/не завершено/);assert.deepEqual(await contents(),partial);
-    await recoverManagedModelBundle(directory);assert.deepEqual(await contents(),before);assert.deepEqual(await active(),pointer);
+    await crashActivation(root,directory,second.tags);const partial=await contents();assert.notDeepEqual(partial,before);
+    for(const mode of [{verifyOnly:true},{downloadOnly:true}]) {
+        await assert.rejects(first.run(mode),error=>error.code==='MODEL_RECOVERY_REQUIRED'&&/--recover-only/.test(error.message));
+        assert.deepEqual(await contents(),partial);
+    }
+    const preload=path.join(root,'deny-network.mjs');await writeFile(preload,'globalThis.fetch=()=>{throw new Error("Сеть при восстановлении запрещена")};');
+    const cli=fileURLToPath(new URL('../models/bundle-cli.mjs',import.meta.url));
+    const recovered=spawnSync(process.execPath,['--import',preload,cli,'--recover-only','--directory',directory],{encoding:'utf8',timeout:5000});
+    assert.equal(recovered.status,0,recovered.stderr);assert.deepEqual(JSON.parse(recovered.stdout),{ok:true,recovered:true});
+    assert.deepEqual(await contents(),before);assert.deepEqual(await active(),pointer);
     await first.run({verifyOnly:true});await assert.rejects(access(path.join(directory,'.bundle-managed/pending.json')));
+    await second.run({downloadOnly:true});assert.deepEqual(await contents(),before);assert.deepEqual(await active(),pointer);
+    await second.run();await second.run({verifyOnly:true});
+}));
+
+test('Восстановление без журнала не создаёт каталог и не меняет готовую поставку',async()=>fixture(async({root,directory,first,contents,active})=>{
+    const missing=path.join(root,'absent');assert.deepEqual(await recoverManagedModelBundle(missing),{ok:true,recovered:false});
+    await assert.rejects(access(missing),{code:'ENOENT'});
+    await first.run();const before=await contents(),pointer=await active();
+    assert.deepEqual(await recoverManagedModelBundle(directory),{ok:true,recovered:false});
+    assert.deepEqual(await contents(),before);assert.deepEqual(await active(),pointer);
+}));
+
+test('Восстановление не затирает неизвестные изменения после обрыва и сохраняет журнал',async()=>fixture(async({root,directory,first,second,active,contents})=>{
+    await first.run();const pointer=await active();
+    for(const [digest,bytes] of second.bytes)await writeFile(path.join(directory,'models/blobs/sha256-'+digest),bytes);
+    await crashActivation(root,directory,second.tags);
+    await writeFile(path.join(directory,first.tags[1].path),'USER MODIFIED TAG');const partial=await contents();
+    await assert.rejects(recoverManagedModelBundle(directory),{code:'MODEL_MANAGED_CONFLICT'});
+    assert.deepEqual(await contents(),partial);assert.deepEqual(await active(),pointer);
+    await access(path.join(directory,'.bundle-managed/pending.json'));
+}));
+
+test('После фиксации нового указателя восстановление только очищает журнал и сохраняет новый комплект',async()=>fixture(async({root,directory,first,second,active,contents})=>{
+    await first.run();const previous=await active();
+    for(const [digest,bytes] of second.bytes)await writeFile(path.join(directory,'models/blobs/sha256-'+digest),bytes);
+    await crashActivation(root,directory,second.tags,true);const pointer=await active(),before=await contents();
+    assert.notEqual(pointer.revision,previous.revision);await access(path.join(directory,'.bundle-managed/pending.json'));
+    assert.deepEqual(await recoverManagedModelBundle(directory),{ok:true,recovered:true});
+    assert.deepEqual(await active(),pointer);assert.deepEqual(await contents(),before);
+    await second.run({verifyOnly:true});await assert.rejects(access(path.join(directory,'.bundle-managed/pending.json')),{code:'ENOENT'});
 }));
 
 test('Пользовательские файлы и отдельные модели сохраняются при обновлении и возврате',async()=>fixture(async({directory,first,second})=>{

@@ -5,6 +5,7 @@ import {isDeepStrictEqual} from 'node:util';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {opencodeVersion} from './opencode-platforms.mjs';
+import {requestRelease} from './release-request.mjs';
 
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const targets = ['darwin-arm64','darwin-x64','linux-arm64','linux-x64','linux-arm64-musl','linux-x64-musl','windows-arm64','windows-x64'];
@@ -107,7 +108,7 @@ async function downloadArchive(artifact, filename, request, {signal: cancellatio
     let response, current = artifact.url;
     const signal = AbortSignal.any([AbortSignal.timeout(10 * 60 * 1000),...(cancellation?[cancellation]:[])]);
     for (let hop = 0; hop < 4; hop++) {
-        response = await request(githubDownload(current), {redirect: 'manual', signal});
+        response = await requestRelease(githubDownload(current),request,{signal});
         if (![301,302,303,307,308].includes(response.status)) { break; }
         const location = response.headers.get('location'); await response.body?.cancel();
         if (!location || hop === 3) { throw new Error('GitHub не выдал архив автономного моста.'); }
@@ -118,7 +119,10 @@ async function downloadArchive(artifact, filename, request, {signal: cancellatio
     if (response.headers.get('content-length') !== null && response.headers.get('content-length') !== String(expected.bytes)) {
         await response.body.cancel(); throw new Error('Размер архива моста не совпал с закреплённой описью.');
     }
-    const file = await fs.open(filename, 'wx', 0o600), reader = response.body.getReader(), digest = createHash('sha256'); let bytes = 0;
+    let file;
+    try {file=await fs.open(filename,'wx',0o600);}
+    catch(error) {await response.body.cancel().catch(()=>undefined);throw error;}
+    const reader = response.body.getReader(), digest = createHash('sha256'); let bytes = 0;
     try {
         while (true) {
             signal.throwIfAborted();const chunk = await reader.read(); if (chunk.done) { break; }

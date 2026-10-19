@@ -2,6 +2,7 @@ import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {mkdir,lstat,open,link,unlink,statfs} from 'node:fs/promises';
 import path from 'node:path';
+import {requestRelease} from '../release-request.mjs';
 
 /** Проверяется весь путь от корня файловой системы до хранилища, до чтения и создания каталогов. */
 export async function safeDirectory(root,relative='',create=false) {
@@ -83,7 +84,7 @@ export async function downloadPart(url,target,part,{fetch:request=fetch,signal,o
     const deadline=AbortSignal.any([AbortSignal.timeout(15*60*1000),...(signal?[signal]:[])]);
     for(let hop=0;hop<4;hop++) {
         allowedRedirect(current);
-        response=await request(current,{redirect:'manual',signal:deadline});
+        response=await requestRelease(current,request,{signal:deadline});
         if(![301,302,303,307,308].includes(response.status))break;
         const location=response.headers.get('location');await response.body?.cancel();
         if(!location||hop===3)throw new Error('Не удалось получить часть поставки модели с GitHub.');

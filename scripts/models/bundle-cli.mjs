@@ -1,11 +1,11 @@
 import path from 'node:path';
 import {realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {packModelBundle,hydrateModelBundle,readModelBundle,rollbackManagedModelBundle} from './bundle.mjs';
+import {packModelBundle,hydrateModelBundle,readModelBundle,rollbackManagedModelBundle,recoverManagedModelBundle} from './bundle.mjs';
 import {modelBundleFailure} from './bundle-errors.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only | --rollback | --adopt-from-git <commit|ORIG_HEAD>] [--manifest <опись>] [--source-directory <предзагрузка>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
+const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only | --recover-only | --rollback | --adopt-from-git <commit|ORIG_HEAD>] [--manifest <опись>] [--source-directory <предзагрузка>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
 const usageError=(message='Некорректные параметры команды.')=>Object.assign(new Error(message+'\n'+usage),{code:'MODEL_BUNDLE_USAGE'});
 
 function formatBytes(bytes) {
@@ -39,7 +39,7 @@ export async function runModelBundleCli(args=process.argv.slice(2)) {
     if(args.some(arg=>['--help','-h','—help'].includes(arg))) {console.log(usage);return;}
     const options={directory:path.join(root,'data/embedding'),manifest:fileURLToPath(new URL('./bundle-release.json',import.meta.url))};
     const values={'--directory':'directory','--manifest':'manifest','--output':'output','--base-url':'baseUrl','--adopt-from-git':'adoptFromGit','--source-directory':'sourceDirectory'};
-    const flags={'--download-only':'downloadOnly','--verify-only':'verifyOnly','--pack':'pack','--rollback':'rollback'};const seen=new Set();
+    const flags={'--download-only':'downloadOnly','--verify-only':'verifyOnly','--pack':'pack','--rollback':'rollback','--recover-only':'recoverOnly'};const seen=new Set();
     for(let index=0;index<args.length;index++) {
         const key=args[index];if(seen.has(key))throw usageError('Параметр указан повторно.');seen.add(key);
         if(Object.hasOwn(flags,key))options[flags[key]]=true;
@@ -47,12 +47,16 @@ export async function runModelBundleCli(args=process.argv.slice(2)) {
         else throw usageError();
     }
     if(options.pack) {
-        if(!options.output||!options.baseUrl||options.downloadOnly||options.verifyOnly||options.rollback||options.adoptFromGit||options.sourceDirectory||seen.has('--manifest'))throw usageError();
+        if(!options.output||!options.baseUrl||options.downloadOnly||options.verifyOnly||options.rollback||options.recoverOnly||options.adoptFromGit||options.sourceDirectory||seen.has('--manifest'))throw usageError();
         const manifest=await packModelBundle({...options,directory:path.resolve(options.directory),output:path.resolve(options.output)});
         console.log(JSON.stringify({ok:true,packed:true,files:manifest.files.length,parts:manifest.files.flatMap(file=>file.parts||[]).length}));return;
     }
-    if(options.output||options.baseUrl||[options.downloadOnly,options.verifyOnly,options.rollback,options.adoptFromGit].filter(Boolean).length>1)throw usageError();
-    if(options.sourceDirectory&&(options.verifyOnly||options.rollback||options.adoptFromGit))throw usageError();
+    if(options.output||options.baseUrl||[options.downloadOnly,options.verifyOnly,options.rollback,options.recoverOnly,options.adoptFromGit].filter(Boolean).length>1)throw usageError();
+    if(options.sourceDirectory&&(options.verifyOnly||options.rollback||options.recoverOnly||options.adoptFromGit))throw usageError();
+    if(options.recoverOnly) {
+        if(seen.has('--manifest'))throw usageError();
+        console.log(JSON.stringify(await recoverManagedModelBundle(path.resolve(options.directory))));return;
+    }
     if(options.adoptFromGit) {
         if(seen.has('--manifest'))throw usageError();
         const {adoptModelBundleFromGit}=await import('./bundle-git-adoption.mjs');

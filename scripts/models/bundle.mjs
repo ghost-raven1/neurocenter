@@ -5,7 +5,7 @@ import path from 'node:path';
 import {MAX_PART_BYTES,lockedFiles,modelLocks,releaseBaseUrl,validateModelBundle} from './bundle-manifest.mjs';
 import {safeDirectory,verifyFile,promote,ensureSpace,downloadPart} from './bundle-files.mjs';
 import {preflightModelDirectories,preflightModelTargets} from './bundle-preflight.mjs';
-export {rollbackManagedModelBundle} from './bundle-managed.mjs';
+export {rollbackManagedModelBundle,recoverManagedModelBundle} from './bundle-managed.mjs';
 import {managedModelState,managedTagPresent,recoverManagedModelBundle,activateManagedModelBundle,adoptManagedModelBundle} from './bundle-managed.mjs';
 
 /** Пакуются только публичные закреплённые blobs; ключи Ollama и прочие файлы каталога не читаются. */

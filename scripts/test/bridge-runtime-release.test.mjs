@@ -55,6 +55,33 @@ test('Явный выбор платформы не скачивает оста�
     await assert.rejects(fs.access(path.join(f.output, f.release.artifacts[0].file)), {code: 'ENOENT'});
 });
 
+test('Временный отказ GitHub повторяет архив, а проверенный кеш затем доступен без сети',async t=>{
+    const f=await fixture(t),artifact=f.release.artifacts[0];let requests=0,cancelled=0;
+    const fetch=async()=>{
+        if(++requests===1)return new Response(new ReadableStream({cancel(){cancelled++;}}),{status:502,headers:{'retry-after':'0'}});
+        return new Response(f.payloads.get(artifact.url));
+    };
+    const options={targets:[artifact.metadata.target],fetch};
+    assert.deepEqual((await f.hydrate(options)).downloaded,[artifact.metadata.target]);
+    assert.equal(requests,2);assert.equal(cancelled,1);
+    assert.deepEqual((await f.hydrate(options)).downloaded,[]);assert.equal(requests,2);
+});
+
+test('Отказ записи архива освобождает HTTP-поток и не повторяет сетевой запрос',async t=>{
+    const f=await fixture(t),artifact=f.release.artifacts[0],open=fs.open;let requests=0,cancelled=0;
+    const response=new Response(new ReadableStream({start(controller){controller.enqueue(f.payloads.get(artifact.url));},cancel(){cancelled++;}}));
+    fs.open=async(filename,...options)=>{
+        if(filename.endsWith(artifact.file))throw Object.assign(new Error('fixture ENOSPC'),{code:'ENOSPC'});
+        return open(filename,...options);
+    };
+    try {
+        await assert.rejects(f.hydrate({targets:[artifact.metadata.target],fetch:async()=>{requests++;return response;}}),{code:'ENOSPC'});
+        assert.equal(cancelled,1);assert.equal(response.body.locked,false);
+    }finally{fs.open=open;await response.body.cancel().catch(()=>{});}
+    assert.equal(requests,1);
+    assert.equal((await fs.readdir(f.output)).some(file=>file.startsWith('.bridge-release-')),false);
+});
+
 test('Несовпадение версии корневого пакета запрещает загрузку старого release', async t => {
     const f = await fixture(t);
     await fs.writeFile(path.join(f.directory, 'mcp/neurocenter-asset-sync/package.json'), JSON.stringify({version: '9.8.8'}));

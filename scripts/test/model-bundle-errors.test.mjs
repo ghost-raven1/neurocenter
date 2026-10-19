@@ -53,3 +53,10 @@ test('Конфликт прежнего тега предлагает регис
     const failed=modelBundleFailure({code:'MODEL_GIT_ADOPTION',message:'PRIVATE repo path'});
     assert.equal(failed.code,'MODEL_GIT_ADOPTION');assert.match(failed.message,/commit-предок HEAD/);assert.doesNotMatch(failed.message,/PRIVATE/);
 });
+
+test('Незавершённое переключение сохраняет конкретную команду восстановления в JSON',()=>{
+    const result=modelBundleFailure({code:'MODEL_RECOVERY_REQUIRED',message:'PRIVATE /models/token'});
+    assert.equal(result.code,'MODEL_RECOVERY_REQUIRED');assert.match(result.message,/npm run models:prepare -- --recover-only/);
+    assert.doesNotMatch(result.message,/PRIVATE|token|models:sync/);
+    assert.deepEqual(modelBundleFailure(JSON.parse(JSON.stringify(result))),result);
+});

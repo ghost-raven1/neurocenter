@@ -38,7 +38,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(root, 'scripts'), {recursive: true});
     await fs.mkdir(path.join(bridge, 'dist'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['prepare-bridge-runtimes.mjs', 'bridge-runtime-release.mjs', ...contextScripts]) {
+    for (const file of ['prepare-bridge-runtimes.mjs', 'bridge-runtime-release.mjs', 'release-request.mjs', ...contextScripts]) {
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
     }
     await fs.mkdir(path.join(root, 'services/api-gateway'), {recursive: true});

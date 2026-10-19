@@ -26,6 +26,10 @@ async function fixture(action) {
             return {ok:true,downloadOnly:!!options.downloadOnly,verifyOnly:!!options.verifyOnly,models:2,files:9,bytes:1234};
         }
         export async function rollbackManagedModelBundle(){return {ok:true,rolledBack:true,models:2,revision:'fixture'};}
+        export async function recoverManagedModelBundle(directory){
+            if(!directory.endsWith('destination'))throw new Error('Неверный каталог восстановления CLI');
+            return {ok:true,recovered:true};
+        }
         export async function packModelBundle(){throw new Error('Упаковка не вызывается в этой проверке.');}
     `);
     await writeFile(path.join(directory,'bundle-git-adoption.mjs'),`export async function adoptModelBundleFromGit({reference}){
@@ -59,7 +63,9 @@ test('Справка с флагом verify и длинным тире откр�
 }));
 
 test('Неверные параметры CLI показывают справку вместо ошибки описи моделей',async()=>fixture(async({run})=>{
-    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--rollback','--verify-only'],['--rollback','--manifest','missing'],['--adopt-from-git'],['--adopt-from-git','ORIG_HEAD','--verify-only'],['--adopt-from-git','ORIG_HEAD','--manifest','missing'],['--source-directory','cache','--verify-only'],['--source-directory','cache','--rollback'],['--source-directory','cache','--adopt-from-git','ORIG_HEAD'],['--pack'],['--verify-only','--verify-only']]) {
+    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--rollback','--verify-only'],['--rollback','--manifest','missing'],['--adopt-from-git'],['--adopt-from-git','ORIG_HEAD','--verify-only'],['--adopt-from-git','ORIG_HEAD','--manifest','missing'],['--source-directory','cache','--verify-only'],['--source-directory','cache','--rollback'],['--source-directory','cache','--adopt-from-git','ORIG_HEAD'],['--pack'],['--verify-only','--verify-only'],
+        ...['--verify-only','--download-only','--rollback','--pack'].map(flag=>['--recover-only',flag]),
+        ...['--manifest','--source-directory','--adopt-from-git'].map(flag=>['--recover-only',flag,'unused'])]) {
         const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
         assert.equal(result.status,1);const report=JSON.parse(result.stdout);
         assert.equal(report.error.code,'MODEL_BUNDLE_USAGE');
@@ -100,6 +106,11 @@ for(const preserve of [false,true])test(`CLI через symlink выполняе
 test('CLI возврата использует сохранённую поставку без чтения новой описи',async()=>fixture(async({run})=>{
     const result=run(['--rollback'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
     assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,rolledBack:true,models:2,revision:'fixture'});
+}));
+
+test('CLI восстановления использует только сохранённый журнал без чтения новой описи',async()=>fixture(async({run})=>{
+    const result=run(['--recover-only','--directory','destination'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
+    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,recovered:true});
 }));
 
 

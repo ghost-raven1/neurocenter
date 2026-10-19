@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, copyFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, copyFile, writeFile, realpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -144,13 +144,23 @@ test('Обычная ошибка с завершённой очисткой о�
 
 /** Настоящий setup CLI работает в изолированном checkout, без Docker и сети. */
 async function setupFixture(t, failSync = false, failModels = false) {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'neurocenter-catalog-setup-'));
+    const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'neurocenter-catalog-setup-')));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const scripts = path.join(directory, 'scripts/production'), config = path.join(directory, 'config'), calls = path.join(directory, 'calls.jsonl');
     await mkdir(scripts, { recursive: true }); await mkdir(config);
     await writeFile(path.join(config, '.env'), "NEUROCENTER_RELEASE='fixture'\n");
     await writeFile(path.join(config, 'tls'), 'fixture');
     for (const file of ['setup.mjs', 'sync-catalog.mjs', 'sync-models.mjs', 'owned-sync-container.mjs']) { await copyFile(path.join(root, 'scripts/production', file), path.join(scripts, file)); }
+    // Настоящая проверка host-кэша использует всю цепочку импортов описи поставки.
+    for (const file of ['scripts/assets/environment.mjs', 'scripts/assets/supply.mjs',
+        'scripts/models/bundle-files.mjs', 'scripts/models/bundle-manifest.mjs', 'scripts/models/model-registry.mjs',
+        'scripts/bridge-runtime-release.mjs', 'scripts/opencode-platforms.mjs', 'scripts/release-request.mjs',
+        'scripts/catalog-plugins/release-cache.mjs', 'services/shared/runtime-artifacts.cjs']) {
+        const target = path.join(directory, file); await mkdir(path.dirname(target), { recursive: true });
+        await copyFile(path.join(root, file), target);
+    }
+    const preload = path.join(directory, 'deny-network.mjs');
+    await writeFile(preload, 'globalThis.fetch=()=>{throw new Error("Сеть запрещена в production setup fixture")};');
     await writeFile(path.join(scripts, 'configuration.mjs'), 'export const ensureMetricsToken=async()=>{}; export const configureProduction=async()=>{};');
     await writeFile(path.join(scripts, 'compose-client.mjs'), `
         import fs from 'node:fs';
@@ -176,8 +186,9 @@ async function setupFixture(t, failSync = false, failModels = false) {
         export const saveDiagnostic=async()=>{};
         export const docker=async()=>'';
     `);
-    const result = spawnSync(process.execPath, [path.join(scripts, 'setup.mjs'), 'up', '--directory', config, '--project-name', 'fixture'],
-        { encoding: 'utf8', env: { ...process.env, CATALOG_SETUP_CALLS: calls, CATALOG_SETUP_FAIL: String(failSync), MODEL_SETUP_FAIL: String(failModels) }, timeout: 10000 });
+    const result = spawnSync(process.execPath, ['--import', preload, path.join(scripts, 'setup.mjs'), 'up', '--directory', config, '--project-name', 'fixture'],
+        { encoding: 'utf8', env: { ...process.env, MODEL_STORAGE_PATH: path.join(directory, 'absent-model-cache'),
+            CATALOG_SETUP_CALLS: calls, CATALOG_SETUP_FAIL: String(failSync), MODEL_SETUP_FAIL: String(failModels) }, timeout: 10000 });
     assert.equal(result.error, undefined);
     const events = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
     return { result, events };

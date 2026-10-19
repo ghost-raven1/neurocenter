@@ -17,8 +17,14 @@ async function fixture(t, mode = 'ready') {
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs',
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/catalog-startup.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
+    }
+    await fs.mkdir(path.join(checkout, 'scripts/assets'));
+    await fs.copyFile(path.join(root, 'scripts/assets/startup.mjs'), path.join(checkout, 'scripts/assets/startup.mjs'));
+    for (const directory of ['models', 'embedding', 'vision']) {
+        await fs.cp(path.join(root, 'scripts', directory), path.join(checkout, 'scripts', directory), {recursive: true});
     }
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const config = '{"credsStore":"own-fixture","currentContext":"own-context"}\n';
@@ -65,13 +71,13 @@ async function fixture(t, mode = 'ready') {
     return {checkout, dockerConfig, run};
 }
 
-test('dev install проверяет готовый Compose до установки всех семи пакетов', async t => {
+test('dev install проверяет готовый Compose до установки всех пакетов', async t => {
     const f = await fixture(t), result = await f.run();
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.events.slice(0, 3).map(event => event.args), [
         ['--version'], ['compose', 'version', '--short'], ['compose', 'up', '--help'],
     ]);
-    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(7).fill('npm')]);
+    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length).fill('npm')]);
     const npm = result.events.filter(event => event.kind === 'npm');
     assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), [...workspacePackages].sort());
     for (const event of npm) {

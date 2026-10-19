@@ -101,7 +101,7 @@ export async function managedTagPresent(directory,tag,state) {
 async function assertLease(directory) {
     const token=leases.get(directory);if(!token)return;
     const owner=await maybeJson(directory,'activation.lock/owner.json');
-    if(owner?.token!==token)throw new Error('Блокировка активации моделей потеряна. Повторите models:sync.');
+    if(owner?.token!==token)throw new Error('Блокировка активации моделей потеряна. Повторите npm run models:prepare.');
 }
 
 /** Загрузка не блокируется. В разных Docker PID namespaces живость определяется по heartbeat. */
@@ -139,7 +139,7 @@ async function exclusive(directory,action) {
                     }else stale=Date.now()-(await lstat(path.join(lock,'owner.json'))).mtimeMs>leaseTimeout;
                     if(stale&&(await maybeJson(directory,'activation.lock/owner.json'))?.token===owner.token) {await rm(lock,{recursive:true});continue;}
                 }
-                if(Date.now()>deadline)throw new Error('Активация моделей уже выполняется. Дождитесь завершения и повторите models:sync.');
+                if(Date.now()>deadline)throw new Error('Активация моделей уже выполняется. Дождитесь завершения и повторите npm run models:prepare.');
                 await new Promise(resolve=>setTimeout(resolve,50));
             }
         }
@@ -170,7 +170,7 @@ async function assertBlobs(directory,tags) {
 }
 
 async function recover(directory) {
-    const journal=await maybeJson(directory,'pending.json');if(!journal)return;
+    const journal=await maybeJson(directory,'pending.json');if(!journal)return false;
     if(!plain(journal)||journal.schemaVersion!==1||!Array.isArray(journal.changes)||!journal.changes.length)throw invalid();
     validatePointer(journal.next);if(journal.previous!==null)validatePointer(journal.previous);
     const paths=new Set();
@@ -199,13 +199,14 @@ async function recover(directory) {
         }
     }
     await assertLease(directory);await unlink(path.join(directory,managed,'pending.json'));await syncFolder(path.join(directory,managed));
+    return true;
 }
 
 /** Неполное переключение восстанавливается до следующей проверки готовности; предзагрузка теги не меняет. */
 export async function recoverManagedModelBundle(directory,{verifyOnly=false,downloadOnly=false}={}) {
-    if(!await maybeJson(directory,'pending.json'))return;
-    if(verifyOnly||downloadOnly)throw new Error('Предыдущее переключение моделей не завершено. Выполните models:sync для восстановления согласованного комплекта.');
-    return exclusive(directory,()=>recover(directory));
+    if(!await maybeJson(directory,'pending.json'))return {ok:true,recovered:false};
+    if(verifyOnly||downloadOnly)throw Object.assign(new Error('Предыдущее переключение моделей не завершено. Выполните npm run models:prepare -- --recover-only для восстановления согласованного комплекта.'),{code:'MODEL_RECOVERY_REQUIRED'});
+    return exclusive(directory,async()=>({ok:true,recovered:await recover(directory)}));
 }
 
 async function activate(directory,tags,{onBytes=()=>{}}={}) {
@@ -245,7 +246,7 @@ export const activateManagedModelBundle=(directory,tags,options)=>exclusive(dire
 export async function adoptManagedModelBundle(directory,tags,{sourceCommit}={}) {
     if(sourceCommit!==undefined&&!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sourceCommit))throw invalid();
     return exclusive(directory,async()=>{
-        if(await maybeJson(directory,'pending.json'))throw new Error('Перед регистрацией комплекта выполните models:sync для завершения переключения.');
+        if(await maybeJson(directory,'pending.json'))throw Object.assign(new Error('Перед регистрацией комплекта выполните npm run models:prepare -- --recover-only для завершения переключения.'),{code:'MODEL_RECOVERY_REQUIRED'});
         for(const tag of tags)if(!await matches(directory,tag))return false;
         const state=await managedModelState(directory),next=revision(tags);
         if(state.pointer)return state.pointer.revision===next.id;

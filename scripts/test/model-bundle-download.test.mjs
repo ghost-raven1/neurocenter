@@ -68,3 +68,77 @@ test('Отказ записи прерывает настоящий HTTP-отв�
     }finally{clearTimeout(timeout);}
     assert.equal(await readFile(target,'utf8'),'USER DATA');
 });
+
+test('Краткий сетевой отказ повторяет запрос части и сохраняет проверенные байты',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const target=path.join(root,'part');let requests=0;
+    await downloadPart(url,target,part,{fetch:async()=>{
+        if(++requests===1)throw new TypeError('fetch failed');
+        return new Response(bytes);
+    }});
+    assert.equal(requests,2);assert.deepEqual(await readFile(target),bytes);
+});
+
+test('Временный отказ CDN освобождает ответ и повторяет только разрешённый адрес',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const cdn='https://release-assets.githubusercontent.com/fixture';let cancelled=0;const requests=[];
+    await downloadPart(url,path.join(root,'part'),part,{fetch:async address=>{
+        requests.push(address);
+        if(requests.length===1)return new Response(null,{status:302,headers:{location:cdn}});
+        if(requests.length===2)return new Response(new ReadableStream({cancel(){cancelled++;}}),{status:503,headers:{'retry-after':'0'}});
+        return new Response(bytes);
+    }});
+    assert.deepEqual(requests,[url,cdn,cdn]);assert.equal(cancelled,1);
+});
+
+test('Исчерпанные временные отказы ограничены тремя запросами и не создают часть',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const target=path.join(root,'part');let requests=0,cancelled=0;
+    await assert.rejects(downloadPart(url,target,part,{fetch:async()=>{
+        requests++;return new Response(new ReadableStream({cancel(){cancelled++;}}),{status:429,headers:{'retry-after':'0'}});
+    }}),/HTTP 429/);
+    assert.equal(requests,3);assert.equal(cancelled,3);await assert.rejects(access(target),{code:'ENOENT'});
+});
+
+test('Отмена во время временного отказа не запускает повтор и не создаёт файл',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const target=path.join(root,'part'),controller=new AbortController();let requests=0;
+    await assert.rejects(downloadPart(url,target,part,{signal:controller.signal,fetch:async()=>{
+        requests++;controller.abort();throw new TypeError('fetch failed');
+    }}),{name:'AbortError'});
+    assert.equal(requests,1);await assert.rejects(access(target),{code:'ENOENT'});
+});
+
+test('Отмена после освобождения временного ответа прерывает ожидание повтора',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const controller=new AbortController();let requests=0;
+    await assert.rejects(downloadPart(url,path.join(root,'part'),part,{signal:controller.signal,fetch:async()=>{
+        requests++;
+        return new Response(new ReadableStream({cancel(){controller.abort();}}),{status:503,headers:{'retry-after':'60'}});
+    }}),{name:'AbortError'});
+    assert.equal(requests,1);
+});
+
+test('Постоянный сетевой отказ ограничен тремя попытками без частичных файлов',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));let requests=0;
+    const target=path.join(root,'part');
+    await assert.rejects(downloadPart(url,target,part,{fetch:async()=>{requests++;throw new TypeError('fetch failed');}}),/fetch failed/);
+    assert.equal(requests,3);await assert.rejects(access(target),{code:'ENOENT'});
+});
+
+for(const status of [403,404])test(`Постоянный отказ HTTP ${status} не повторяется`,async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    let requests=0;
+    await assert.rejects(downloadPart(url,path.join(root,'part'),part,{fetch:async()=>{
+        requests++;return new Response(null,{status});
+    }}),new RegExp(`HTTP ${status}`));
+    assert.equal(requests,1);
+});
+
+test('Ошибка SHA не вызывает повторную загрузку повреждённой части',async t=>{
+    const root=await mkdtemp(path.join(tmpdir(),'nc-model-retry-'));t.after(()=>rm(root,{recursive:true,force:true}));let requests=0;
+    await assert.rejects(downloadPart(url,path.join(root,'part'),{...part,sha256:'0'.repeat(64)},{fetch:async()=>{
+        requests++;return new Response(bytes);
+    }}),/SHA/);
+    assert.equal(requests,1);
+});

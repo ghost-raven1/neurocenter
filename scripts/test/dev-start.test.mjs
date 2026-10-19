@@ -47,12 +47,21 @@ async function fixture(t, mode) {
     }
     for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     await fs.mkdir(path.join(checkout,'scripts/assets'));
+    await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
     await fs.writeFile(path.join(checkout,'scripts/assets/cli.mjs'), `
+        import {appendFileSync} from 'node:fs';
+        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'assets-sync'})+'\\n');
         if(process.env.DEV_START_MODE==='assets-error'){console.error('fixture assets failed');process.exit(37);}
         console.log(JSON.stringify({ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)}));`);
     await fs.writeFile(path.join(checkout,'scripts/models/bundle-cli.mjs'), `
-        import {appendFileSync} from 'node:fs';
+        import {appendFileSync,rmSync} from 'node:fs';
+        if(process.argv.includes('--recover-only')){
+            appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-recovery'})+'\\n');
+            if(process.env.DEV_START_MODE==='assets-recover-error')process.exit(38);
+            rmSync(process.argv[3]+'/.bundle-managed/pending.json');
+            console.log(JSON.stringify({ok:true,recovered:true}));process.exit(0);
+        }
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-bundle',directory:process.argv[3]})+'\\n');
         if(process.env.DEV_START_MODE==='model-bundle-error')process.exit(34);
         if(process.env.DEV_START_MODE==='model-bundle-disk-error'){
@@ -280,6 +289,31 @@ test('Ошибка общей поставки останавливает зап
     assert.equal(await fs.readFile(filename, 'utf8'), state);
     assert.equal(result.events.filter(event => event.kind === 'npm' || event.kind === 'child-spawn').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('up') && !event.args.includes('--help')).length, 0);
+});
+
+test('CLI запуска восстанавливает прерванную активацию раньше предзагрузки и сборки', async t => {
+    const f = await fixture(t, 'assets-recover'), managed = path.join(f.checkout, 'data/embedding/.bundle-managed');
+    await fs.mkdir(managed, {recursive: true}); await fs.writeFile(path.join(managed, 'pending.json'), '{}');
+    const result = await f.run();
+    assert.equal(result.code, 1); assert.match(result.stderr, /Каталог/); // Дальше завершается отдельный тестовый сервис.
+    assert.match(result.stdout, /Восстановлен согласованный комплект/);
+    const recovery = result.events.findIndex(event => event.kind === 'model-recovery');
+    const assets = result.events.findIndex(event => event.kind === 'assets-sync');
+    const build = result.events.findIndex(event => event.kind === 'npm');
+    assert.ok(recovery >= 0 && assets > recovery && build > assets);
+    await assert.rejects(fs.access(path.join(managed, 'pending.json')), {code: 'ENOENT'});
+});
+
+test('CLI не запускает предзагрузку и сборку, если журнал моделей нельзя восстановить', async t => {
+    const f = await fixture(t, 'assets-recover-error'), managed = path.join(f.checkout, 'data/embedding/.bundle-managed');
+    await fs.mkdir(managed, {recursive: true}); await fs.writeFile(path.join(managed, 'pending.json'), '{}');
+    await fs.mkdir(path.join(f.checkout, '.run')); const state = '[{"name":"catalog","pid":99999999}]\n';
+    await fs.writeFile(path.join(f.checkout, '.run/processes.json'), state);
+    const result = await f.run();
+    assert.equal(result.code, 1); assert.match(result.stderr, /Не удалось восстановить.*recover-only/);
+    assert.equal(await fs.readFile(path.join(f.checkout, '.run/processes.json'), 'utf8'), state);
+    assert.equal(result.events.filter(event => ['assets-sync', 'npm', 'child-spawn'].includes(event.kind)).length, 0);
+    assert.equal(await fs.readFile(path.join(managed, 'pending.json'), 'utf8'), '{}');
 });
 
 test('Ошибка поставки весов сохраняет прежние сервисы и не запускает пустой хостинг', async t => {

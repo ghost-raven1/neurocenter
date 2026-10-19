@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {access,readFile,writeFile,lstat,readdir,mkdir,symlink} from 'node:fs/promises';
+import {access,readFile,writeFile,lstat,readdir,mkdir,symlink,copyFile} from 'node:fs/promises';
 import path from 'node:path';
 import {assetFixture,clone} from './assets-sync.fixture.mjs';
 import {readAssetSupply,assetDirectories} from '../assets/sync.mjs';
@@ -28,6 +28,29 @@ test('Повтор и verify выполняют SHA без сети; verify не
     const verified=await f.run({verifyOnly:true,fetch:()=>assert.fail('Сеть в verify запрещена')});
     assert.equal(verified.verifyOnly,true);assert.deepEqual(await readFile(f.receipt),before);assert.equal((await lstat(f.receipt)).mtimeMs,stat.mtimeMs);
     assert.deepEqual(await readdir(path.join(f.root,'.run')),files);
+});
+
+test('После аварии активации offline recovery снимает блокировку предзагрузки всей поставки',async t=>{
+    const f=await assetFixture(t),prepared=await f.run(),directory=prepared.directories.models,before=await readFile(f.receipt);
+    for(const file of f.bundle.files.filter(item=>item.parts)) {
+        await mkdir(path.dirname(path.join(directory,file.path)),{recursive:true});
+        await copyFile(path.join(directory,'.bundle-cache/blobs',file.sha256),path.join(directory,file.path));
+    }
+    const module=fileURLToPath(new URL('../models/bundle-managed.mjs',import.meta.url)),tags=f.bundle.files.filter(item=>item.inlineBase64);
+    const crashed=spawnSync(process.execPath,['--input-type=module','-e',`
+        const {activateManagedModelBundle}=await import(process.argv[1]);
+        await activateManagedModelBundle(process.argv[2],JSON.parse(process.argv[3]),{onBytes:()=>process.exit(83)});
+    `,module,directory,JSON.stringify(tags)],{encoding:'utf8',timeout:5000});
+    assert.equal(crashed.status,83,crashed.stderr);const requests=f.calls.length;
+    await assert.rejects(f.run(),{code:'MODEL_RECOVERY_REQUIRED'});assert.deepEqual(await readFile(f.receipt),before);
+    // Verify подтверждает только prefetch SHA-blobs; оно не устраняет незавершённую активацию.
+    assert.equal((await f.run({verifyOnly:true})).mode,'prefetch');await access(path.join(directory,'.bundle-managed/pending.json'));
+    const preload=path.join(f.root,'deny-network.mjs');await writeFile(preload,'globalThis.fetch=()=>{throw new Error("Сеть при восстановлении запрещена")};');
+    const cli=fileURLToPath(new URL('../models/bundle-cli.mjs',import.meta.url));
+    const recovered=spawnSync(process.execPath,['--import',preload,cli,'--recover-only','--directory',directory],{encoding:'utf8',timeout:5000});
+    assert.equal(recovered.status,0,recovered.stderr);assert.deepEqual(JSON.parse(recovered.stdout),{ok:true,recovered:true});
+    for(const tag of tags)await assert.rejects(access(path.join(directory,tag.path)),{code:'ENOENT'});
+    assert.equal((await f.run()).ok,true);assert.equal(f.calls.length,requests);
 });
 
 test('Проверка отсутствующей поставки не создаёт файлы и не обращается к сети',async t=>{

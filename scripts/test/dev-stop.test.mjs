@@ -35,6 +35,7 @@ async function fixture(t) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
+    await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
     for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
