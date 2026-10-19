@@ -67,12 +67,12 @@ export default defineConfig((configEnv) => {
         server: {
             host: '127.0.0.1',
             port: 5173,
-            // Dev сохраняет inline-пролог React Refresh; production CSP задаётся в nginx.conf.
+            // React Refresh использует inline-пролог, а переподключение Vite — blob-worker; production CSP задаётся в nginx.conf.
             headers: {
                 'X-Content-Type-Options':'nosniff',
                 'X-Frame-Options':'DENY',
                 'Referrer-Policy':'no-referrer',
-                'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+                'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
             },
             proxy: {
                 '/auth': { ...shared, target: authTarget },

@@ -87,13 +87,18 @@ async function stop() {
     return records.length;
 }
 
-/** Один снимок готовности: HTTP и JSON health проверяются отдельно для каждого сервиса. */
-async function health() {
+/** Проверяем JSON health сервисов и компиляцию Less интерфейса, а не только выдачу HTML. */
+async function health(deadline = Infinity) {
     return Promise.all(services.map(async service => {
-        const suffix = service.name === 'frontend' ? '/' : '/health';
+        const frontend = service.name === 'frontend';
+        const suffix = frontend ? '/node_modules/antd/dist/antd.less?direct' : '/health';
         try {
-            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal: AbortSignal.timeout(1000) });
-            const ok = response.ok && (service.name === 'frontend' || (await response.json()).ok === true);
+            const timeout = Math.max(1, Math.min(frontend ? 10000 : 1000, deadline - Date.now()));
+            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal: AbortSignal.timeout(timeout) });
+            const ok = response.ok && (frontend
+                ? response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/css'
+                    && (await response.text()).trim().length > 0
+                : (await response.json()).ok === true);
             return { ...service, ok };
         } catch { return { ...service, ok: false }; }
     }));
@@ -162,7 +167,7 @@ async function start() {
         const deadline = Date.now() + 45000;
         while (Date.now() < deadline) {
             if (records.some(record => !ownsProcess(record))) { throw new Error(`Сервис завершился при запуске. Логи: ${logDir}`); }
-            const results = await health();
+            const results = await health(deadline);
             if (results.every(service => service.ok)) {
                 for (const service of results) { output.service(service); }
                 output.heading('Готов к работе');

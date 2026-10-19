@@ -38,9 +38,17 @@ async function fixture(t, mode = 'ready') {
         import {syncBuiltinESMExports} from 'node:module';
         const record=value=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
+        const timeout=AbortSignal.timeout.bind(AbortSignal);
+        AbortSignal.timeout=ms=>{record({kind:'timeout',ms});return timeout(ms);};
         globalThis.fetch=async input=>{
-            const url=new URL(input); record({kind:'health',port:url.port,path:url.pathname});
+            const url=new URL(input); record({kind:'health',port:url.port,path:url.pathname,search:url.search});
             if(!['22222','4100','4200','4300','4000','5173'].includes(url.port))return deny();
+            if(url.port==='5173'){
+                const mode=process.env.DEV_CLI_MODE;
+                if(mode==='frontend-error')return new Response('Process.cwd failed with error',{status:500});
+                if(mode==='frontend-html')return new Response('<!doctype html><html></html>',{headers:{'Content-Type':'text/html'}});
+                return new Response(mode==='frontend-empty'?' \\n ':'.ant-btn { color: #1677ff; }',{headers:{'Content-Type':'text/css; charset=utf-8'}});
+            }
             const ok=process.env.DEV_CLI_MODE!=='unavailable'||url.port!=='4300';
             return new Response(JSON.stringify({ok}),{status:ok?200:503,headers:{'Content-Type':'application/json'}});
         };
@@ -100,9 +108,33 @@ test('Статус показывает адреса всех сервисов �
     for (const port of [22222, 4100, 4200, 4300, 4000, 5173]) assert.ok(result.stdout.includes(String(port)), String(port));
     assert.match(result.stdout, /готов/);
     assert.equal(result.stderr, '');
-    assert.deepEqual(result.events.map(event => event.port).sort(), ['22222', '4000', '4100', '4200', '4300', '5173']);
+    const requests = result.events.filter(event => event.kind === 'health');
+    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4200', '4300', '5173']);
+    assert.deepEqual(requests.find(event => event.port === '5173'), {
+        kind: 'health', port: '5173', path: '/node_modules/antd/dist/antd.less', search: '?direct',
+    });
+    assert.ok(requests.filter(event => event.port !== '5173').every(event => event.path === '/health' && event.search === ''));
+    assert.deepEqual(result.events.filter(event => event.kind === 'timeout').map(event => event.ms).sort((a, b) => a - b),
+        [1000, 1000, 1000, 1000, 1000, 10000]);
     await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
 });
+
+for (const [mode, description] of [
+    ['frontend-error', 'ошибку компиляции Less'],
+    ['frontend-html', 'HTML с кодом 200 вместо CSS'],
+    ['frontend-empty', 'пустой CSS'],
+]) {
+    test('Статус отклоняет ' + description + ', даже когда все серверные сервисы готовы', async t => {
+        const f = await fixture(t, mode), result = await f.run('status');
+        assert.equal(result.status, 1);
+        assert.match(result.stdout, /Веб-интерфейс[^\n]*недоступен/);
+        for (const label of ['Вход и сессии', 'Каталог', 'Скиллы', 'Базы знаний', 'API']) {
+            assert.match(result.stdout, new RegExp(label + '[^\\n]*готов'));
+        }
+        assert.match(result.stderr, /Готово сервисов: 5\/6/);
+        await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+    });
+}
 
 test('Недоступный сервис остаётся заметен и сохраняет ненулевой код status', async t => {
     const f = await fixture(t, 'unavailable'), result = await f.run('status');
