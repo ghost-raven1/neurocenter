@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 
 /** Версия клиента и явно поддерживаемый контракт доставки заданий. */
-export const BRIDGE_VERSION = '0.9.6';
+export const BRIDGE_VERSION = '0.9.7';
 export const BRIDGE_PROTOCOL = 2;
 export const BRIDGE_CAPABILITIES = ['durable-completions', 'managed-installations', 'package-v3', 'package-v4', 'package-v5', 'runtime-artifacts-v1', 'local-mcp-config-v1', 'install-set-v1', 'installation-inspection-v1', 'workspace-instance-v1', 'local-change-plan-v1', 'runtime-probe-v1', 'project-inventory-v1', 'adopt-installation-v1', 'local-recovery-v1', 'project-rag-sync-v1', 'opencode-rag-ui-v1'];
 
