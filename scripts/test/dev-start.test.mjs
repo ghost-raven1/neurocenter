@@ -48,6 +48,11 @@ async function fixture(t, mode) {
         await fs.mkdir(path.join(checkout,'scripts',directory),{recursive:true});
         for(const file of await fs.readdir(path.join(root,'scripts',directory)))await fs.copyFile(path.join(root,'scripts',directory,file),path.join(checkout,'scripts',directory,file));
     }
+    await fs.writeFile(path.join(checkout,'scripts/models/bundle-cli.mjs'), `
+        import {appendFileSync} from 'node:fs';
+        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-bundle',directory:process.argv[3]})+'\\n');
+        if(process.env.DEV_START_MODE==='model-bundle-error')process.exit(34);
+        console.log(JSON.stringify({ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:4427274223}));`);
     await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
     await fs.writeFile(path.join(checkout, 'scripts/package-bridge.sh'), '#!/bin/bash\nexit 0\n', {mode: 0o700});
     await fs.writeFile(path.join(checkout, 'scripts/prepare-bridge-runtimes.mjs'), `
@@ -234,6 +239,21 @@ test('Ошибка подготовки автономного моста сох
     assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'docker'
         && event.args[0] === 'compose' && event.args[1] === 'up' && !event.args.includes('--help')).length, 0);
+});
+
+test('Ошибка поставки весов сохраняет прежние сервисы и не запускает пустой хостинг', async t => {
+    const f = await fixture(t, 'model-bundle-error');
+    await fs.mkdir(path.join(f.checkout, '.run'));
+    const state = '[{"name":"catalog","pid":99999999}]\n';
+    const stateFile = path.join(f.checkout, '.run/processes.json');
+    await fs.writeFile(stateFile, state);
+    const result = await f.run();
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /модели не подготовлены/);
+    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
+    assert.equal(result.events.filter(event => event.kind === 'model-bundle').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('embedding')).length, 0);
 });
 
 test('Сервис, завершившийся во время проверки HTTP, не объявляется готовым', async t => {

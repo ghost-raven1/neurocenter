@@ -17,7 +17,21 @@ x-runtime: &runtime
   NEUROCENTER_METRICS_TOKEN_FILE: /run/secrets/metrics_token
 
 services:
-  # Веса скачиваются только по действию администратора в каталоге моделей.
+  # Одноразовая подготовка закреплённого комплекта: приложение не стартует с пустым томом моделей.
+  model-volume-init:
+    <<: *service
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/catalog-service/Dockerfile}
+    restart: 'no'
+    read_only: true
+    cap_drop: [ALL]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 32
+    command: [node, /tools/scripts/models/bundle-cli.mjs, --directory, /models]
+    volumes: [model-weights:/models]
+
+  # Пользователь запускает уже подготовленную модель; API runtime остаётся внутренним.
   model-runtime:
     <<: *service
     image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
@@ -34,6 +48,8 @@ services:
       OLLAMA_MAX_QUEUE: '8'
       OLLAMA_KEEP_ALIVE: 5m
     volumes: [model-weights:/root/.ollama]
+    depends_on:
+      model-volume-init: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, ollama, list]
       interval: 10s

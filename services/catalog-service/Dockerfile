@@ -20,6 +20,9 @@ RUN npm prune --omit=dev --no-audit --no-fund
 
 # Сервер и операторский CLI используют общий сборщик и закреплённый catalog-release.json.
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
+COPY scripts/models/ /tools/scripts/models/
+COPY scripts/embedding/model.lock.json /tools/scripts/embedding/model.lock.json
+COPY scripts/vision/model.lock.json /tools/scripts/vision/model.lock.json
 COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mjs
 RUN mkdir -p /tools/services && ln -s /app /tools/services/catalog-service && ln -s /shared /tools/services/shared
 

@@ -28,8 +28,10 @@ async function postgresContainer(client){
     if(!found?.State.Running){throw new Error('PostgreSQL не запущен');}return found;
 }
 
-function volumeNames(config){
-    const names=Object.fromEntries(['postgres',...volumeKeys].map(key=>[key,config.volumes?.[key]?.name]));
+export function volumeNames(config){
+    // Веса воспроизводятся из релиза, но уже существующий целевой том нельзя незаметно присоединить к восстановлению.
+    const keys=['postgres',...volumeKeys,...(config.volumes?.['model-weights']?['model-weights']:[])];
+    const names=Object.fromEntries(keys.map(key=>[key,config.volumes?.[key]?.name]));
     if(Object.values(names).some(name=>typeof name!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(name))){throw new Error('Нужны именованные production-тома');}return names;
 }
 
@@ -109,7 +111,7 @@ async function backupOperation({directory,projectName,files=[],destination,offli
     return maintenanceLock(client,helperImage,'backup',async()=>{
         const states=await containers(client);const applications=states.filter(item=>applicationServices.includes(item.Config.Labels['com.docker.compose.service']));
         if(applications.length!==applicationServices.length||applications.some(item=>item.Image!==images[item.Config.Labels['com.docker.compose.service']])){throw new Error('Образы контейнеров и выбранный production-релиз расходятся');}
-        const unexpected=states.filter(item=>item.State.Running&&!applicationServices.includes(item.Config.Labels['com.docker.compose.service'])&&!['postgres','capacity-collector'].includes(item.Config.Labels['com.docker.compose.service']));
+        const unexpected=states.filter(item=>item.State.Running&&!applicationServices.includes(item.Config.Labels['com.docker.compose.service'])&&!['postgres','capacity-collector','model-runtime'].includes(item.Config.Labels['com.docker.compose.service']));
         if(unexpected.length){throw new Error('В проекте запущены посторонние сервисы');}
         const postgres=states.find(item=>item.Config.Labels['com.docker.compose.service']==='postgres');
         if(!postgres?.State.Running){throw new Error('PostgreSQL не запущен');}
@@ -154,9 +156,10 @@ async function backupOperation({directory,projectName,files=[],destination,offli
     });
 }
 
-async function assertNewTarget(client,names){
-    const volumes=(await docker(['volume','ls','--format','{{.Name}}'])).split('\n');
-    if((await containers(client)).length||Object.values(names).some(name=>volumes.includes(name))){throw new Error('Восстановление разрешено только в новый Compose-проект без существующих контейнеров и томов');}
+export async function assertNewTarget(client,names,injected={}){
+    const deps={docker,containers,...injected};
+    const volumes=(await deps.docker(['volume','ls','--format','{{.Name}}'])).split('\n');
+    if((await deps.containers(client)).length||Object.values(names).some(name=>volumes.includes(name))){throw new Error('Восстановление разрешено только в новый Compose-проект без существующих контейнеров и томов');}
 }
 
 /** Восстановление никогда не удаляет или перезаписывает существующий рабочий стек. */

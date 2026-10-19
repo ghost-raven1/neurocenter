@@ -6,6 +6,7 @@ import path from 'node:path';
 import {configureProduction,ensureMetricsToken} from './configuration.mjs';
 import {composeClient,composeConfiguration,maintenanceLock} from './compose-client.mjs';
 import {runCatalogSync} from './sync-catalog.mjs';
+import {runModelBundleSync} from './sync-models.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const args=process.argv.slice(2);const mode=args[0]||'configure';
@@ -56,6 +57,7 @@ async function main() {
         if(mode==='up'){
             await compose(['up','-d','--wait','capacity-collector']);
             await runCatalogSync(client);
+            await runModelBundleSync(client);
             await compose(['up','-d','--wait']);
         }
     });

@@ -1,4 +1,20 @@
 services:
+  # Комплект моделей входит в релиз; до запуска runtime проверяются и подготавливаются локальные веса.
+  model-volume-init:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    restart: 'no'
+    init: true
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 32
+    command: [node, /tools/scripts/models/bundle-cli.mjs, --directory, /models]
+    volumes: ['./data/embedding:/models']
+
   # Управление моделями идёт через каталог; API runtime не публикуется наружу.
   model-runtime:
     image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
@@ -16,6 +32,9 @@ services:
       OLLAMA_MAX_QUEUE: '8'
       OLLAMA_KEEP_ALIVE: 5m
     volumes: ['./data/embedding:/root/.ollama']
+    depends_on:
+      model-volume-init:
+        condition: service_completed_successfully
     healthcheck:
       test: [CMD, ollama, list]
       interval: 10s

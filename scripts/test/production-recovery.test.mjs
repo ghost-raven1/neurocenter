@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {applicationServices,composeClient,saveDiagnostic} from '../production/compose-client.mjs';
 import {copyTree,inventory,transferVolumes,volumeKeys} from '../production/recovery-files.mjs';
 import {writeManifest,verifyBackup,validateManifest} from '../production/recovery-manifest.mjs';
-import {assertExternalDestination} from '../production/recovery.mjs';
+import {assertExternalDestination,assertNewTarget,volumeNames} from '../production/recovery.mjs';
 
 const image='sha256:'+'a'.repeat(64);
 const metadata=()=>({createdAt:'2026-10-17T00:00:00.000Z',postgresMajor:16,postgresImage:image,images:Object.fromEntries(applicationServices.map(key=>[key,image])),quiesced:true,
@@ -23,6 +23,23 @@ async function fixture(action){
         const receipt=await writeManifest(backup,metadata());await action({root,backup,...receipt});
     }finally{await rm(root,{recursive:true,force:true});}
 }
+
+test('Существующий целевой том моделей отклоняется до создания PostgreSQL и записи файлов',async()=>{
+    const volumes=Object.fromEntries(['postgres',...volumeKeys,'model-weights'].map(key=>[key,{name:'fixture-'+key}]));
+    const names=volumeNames({volumes});assert.equal(names['model-weights'],'fixture-model-weights');
+    const calls=[];
+    await assert.rejects(assertNewTarget({run:async command=>{calls.push(command);throw new Error('Запись не должна запускаться');}},names,{
+        docker:async command=>{calls.push(command);assert.deepEqual(command,['volume','ls','--format','{{.Name}}']);return 'fixture-model-weights';},
+        containers:async()=>[],
+    }),/новый Compose-проект/);
+    assert.deepEqual(calls,[['volume','ls','--format','{{.Name}}']]);
+    assert.ok(!volumeKeys.includes('model-weights'),'Воспроизводимые веса не раздувают согласованную копию пользовательских данных');
+});
+test('Неверное имя необязательного тома моделей не обходит проверку fresh target',()=>{
+    const volumes=Object.fromEntries(['postgres',...volumeKeys].map(key=>[key,{name:'fixture-'+key}]));
+    assert.ok(!Object.hasOwn(volumeNames({volumes}),'model-weights'));
+    assert.throws(()=>volumeNames({volumes:{...volumes,'model-weights':{name:'../existing'}}}),/именованные production-тома/);
+});
 
 test('Полный комплект проверяется по внешней квитанции и всем файлам',async()=>fixture(async({backup,sha256,manifest})=>{
     assert.deepEqual(await verifyBackup(backup,sha256),manifest);assert.ok(manifest.entries.some(entry=>entry.path==='files/skills/инструкция.md'));

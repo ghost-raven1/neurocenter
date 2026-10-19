@@ -7,11 +7,12 @@ import path from 'node:path';
 import {applicationServices,composeClient,composeConfiguration,containers,docker,serviceImageIds,repositoryRoot,saveDiagnostic} from './compose-client.mjs';
 import {withQuiescedProductionBackup} from './recovery.mjs';
 import {runCatalogSync} from './sync-catalog.mjs';
+import {runModelBundleSync} from './sync-models.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const imagePattern=/^sha256:[a-f0-9]{64}$/;
 const releasePattern=/^[a-z0-9][a-z0-9._-]{0,63}$/;
-const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,runCatalogSync,withBackup:withQuiescedProductionBackup};
+const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,runCatalogSync,runModelBundleSync,withBackup:withQuiescedProductionBackup};
 const sameImages=(left,right)=>applicationServices.every(service=>left?.[service]===right?.[service]);
 
 /** План привязан к точным образам и квитанции репетиции, а не к подвижной метке latest. */
@@ -45,7 +46,7 @@ function releaseOf(text){
 }
 function topology(config){
     const value=structuredClone(config);
-    for(const service of [...applicationServices,'database-init','bootstrap-admin','capacity-collector']){if(value.services?.[service]){delete value.services[service].image;}}
+    for(const service of [...applicationServices,'database-init','bootstrap-admin','capacity-collector','model-volume-init']){if(value.services?.[service]){delete value.services[service].image;}}
     return value;
 }
 async function privateFile(filename){
@@ -99,7 +100,7 @@ export async function preflightUpdate(options,injected={}){
     const sql="SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM catalog_schema_migrations;";
     const applied=JSON.parse(await deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input:sql}));
     assertMigrationPrefix(applied,plan.catalogMigrations);
-    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector']};
+    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector'],hasModelBundle:!!targetConfig.services['model-volume-init']};
 }
 
 /** Одна квитанция не допускает повтор миграций после успеха или неопределённого прерывания. */
@@ -129,7 +130,7 @@ export async function updateProduction(options,injected={}){
     await writeFile(filename,JSON.stringify(journal,null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
     const save=async state=>{journal.state=state;await atomicWrite(filename,JSON.stringify(journal,null,2)+'\n');};
     const pinnedFile=path.join(folder,plan.id+'.compose.json');
-    const pinned={services:Object.fromEntries([...applicationServices,'database-init','bootstrap-admin',...(checked.hasCapacityCollector?['capacity-collector']:[])].map(service=>[service,{image:plan.targetImages[applicationServices.includes(service)?service:'catalog-service']}]))};
+    const pinned={services:Object.fromEntries([...applicationServices,'database-init','bootstrap-admin',...(checked.hasCapacityCollector?['capacity-collector']:[]),...(checked.hasModelBundle?['model-volume-init']:[])].map(service=>[service,{image:plan.targetImages[applicationServices.includes(service)?service:'catalog-service']}]))};
     let targetStarted=false;let failureRecorded=false;
     const recordFailure=async cause=>{
         failureRecorded=true;journal.failurePhase=journal.state;journal.failedAt=new Date().toISOString();
@@ -146,6 +147,7 @@ export async function updateProduction(options,injected={}){
                 if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены после preflight');}
                 // Большие архивы загружаются до остановки приложений; БД каталога ещё не меняется.
                 journal.catalogDownload=await deps.runCatalogSync(target,{downloadOnly:true});
+                if(checked.hasModelBundle){journal.modelDownload=await deps.runModelBundleSync(target,{downloadOnly:true});}
             },
             afterBackup:async(receipt,{remainingMs})=>{
                 try{
@@ -153,6 +155,7 @@ export async function updateProduction(options,injected={}){
                     if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены во время копирования');}
                     await save('applying');targetStarted=true;
                     journal.catalog=await deps.runCatalogSync(target,{timeout:remainingMs()});
+                    if(checked.hasModelBundle){journal.models=await deps.runModelBundleSync(target,{timeout:remainingMs()});}
                     await target.run(['up','-d','--no-build','--pull','never','--wait',...applicationServices,...(checked.hasCapacityCollector?['capacity-collector']:[])],{timeout:remainingMs()});
                     await assertLive(target,plan.targetImages,plan.postgresImage,deps);remainingMs();
                     const current=await privateFile(path.join(directory,'.env'));

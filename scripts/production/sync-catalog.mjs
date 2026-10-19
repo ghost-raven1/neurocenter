@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { composeClient, composeConfiguration, docker, maintenanceLock, repositoryRoot, saveDiagnostic } from './compose-client.mjs';
+import { stopOwnedSyncContainer } from './owned-sync-container.mjs';
 
 export const bundledCatalogManifest = '/tools/scripts/catalog-plugins/catalog-release.json';
 
@@ -19,22 +20,6 @@ export function parseCatalogSyncArguments(args) {
         options[field] = args[++index];
     }
     return options;
-}
-
-/** После таймаута Docker CLI сам контейнер ещё может работать: удаляем только свой ID с меткой. */
-async function stopCatalogSync(name, token, runDocker) {
-    const owned = async () => {
-        const output = await runDocker(['ps', '--all', '--no-trunc', '--filter', `name=^/${name}$`,
-            '--filter', `label=neurocenter.catalog-sync=${token}`, '--format', '{{.ID}}'], { timeout: 60000 });
-        if (!output.trim()) { return ''; }
-        if (!/^[a-f0-9]{64}$/.test(output.trim())) { throw new Error('Не подтверждён контейнер синхронизации.'); }
-        return output.trim();
-    };
-    const id = await owned();
-    if (!id) { return; }
-    try { await runDocker(['rm', '--force', id], { timeout: 60000 }); }
-    catch (error) { if (await owned()) { throw error; } }
-    if (await owned()) { throw new Error('Контейнер синхронизации продолжает работать.'); }
 }
 
 /** В setup/update блокировку уже держит вызывающий сценарий; вложенная блокировка не нужна. */
@@ -54,7 +39,7 @@ export async function runCatalogSync(client, { dryRun = false, downloadOnly = fa
             : !Array.isArray(result.tools))) { throw new Error('Синхронизация каталога не подтвердила результат.'); }
         return result;
     } catch (error) {
-        try { await stopCatalogSync(name, token, deps.docker); }
+        try { await stopOwnedSyncContainer(name, 'neurocenter.catalog-sync', token, deps.docker); }
         catch {
             const cleanupError = new Error('Не подтверждена остановка контейнера синхронизации. Блокировка обслуживания сохранена; проверьте контейнер ' + name + '.');
             cleanupError.retainMaintenanceLock = true;

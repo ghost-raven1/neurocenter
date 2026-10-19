@@ -119,14 +119,14 @@ test('Обычная ошибка с завершённой очисткой о�
 });
 
 /** Настоящий setup CLI работает в изолированном checkout, без Docker и сети. */
-async function setupFixture(t, failSync = false) {
+async function setupFixture(t, failSync = false, failModels = false) {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'neurocenter-catalog-setup-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const scripts = path.join(directory, 'scripts/production'), config = path.join(directory, 'config'), calls = path.join(directory, 'calls.jsonl');
     await mkdir(scripts, { recursive: true }); await mkdir(config);
     await writeFile(path.join(config, '.env'), "NEUROCENTER_RELEASE='fixture'\n");
     await writeFile(path.join(config, 'tls'), 'fixture');
-    for (const file of ['setup.mjs', 'sync-catalog.mjs']) { await copyFile(path.join(root, 'scripts/production', file), path.join(scripts, file)); }
+    for (const file of ['setup.mjs', 'sync-catalog.mjs', 'sync-models.mjs', 'owned-sync-container.mjs']) { await copyFile(path.join(root, 'scripts/production', file), path.join(scripts, file)); }
     await writeFile(path.join(scripts, 'configuration.mjs'), 'export const ensureMetricsToken=async()=>{}; export const configureProduction=async()=>{};');
     await writeFile(path.join(scripts, 'compose-client.mjs'), `
         import fs from 'node:fs';
@@ -137,6 +137,10 @@ async function setupFixture(t, failSync = false) {
             if(command.includes('dist/builtin-catalog/sync.cli.js')){
                 if(process.env.CATALOG_SETUP_FAIL==='true')throw Error('fixture catalog failed');
                 return JSON.stringify({ok:true,dryRun:false,tools:[]});
+            }
+            if(command.includes('/tools/scripts/models/bundle-cli.mjs')){
+                if(process.env.MODEL_SETUP_FAIL==='true')throw Error('fixture models failed');
+                return JSON.stringify({ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:4400000000});
             }
             return '';
         }});
@@ -149,7 +153,7 @@ async function setupFixture(t, failSync = false) {
         export const docker=async()=>'';
     `);
     const result = spawnSync(process.execPath, [path.join(scripts, 'setup.mjs'), 'up', '--directory', config, '--project-name', 'fixture'],
-        { encoding: 'utf8', env: { ...process.env, CATALOG_SETUP_CALLS: calls, CATALOG_SETUP_FAIL: String(failSync) }, timeout: 10000 });
+        { encoding: 'utf8', env: { ...process.env, CATALOG_SETUP_CALLS: calls, CATALOG_SETUP_FAIL: String(failSync), MODEL_SETUP_FAIL: String(failModels) }, timeout: 10000 });
     assert.equal(result.error, undefined);
     const events = (await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse);
     return { result, events };
@@ -161,12 +165,20 @@ test('Первый production-запуск готовит PostgreSQL и сбор
     assert.deepEqual(events.slice(0, 4), ['lock', ['up', '-d', '--wait', 'postgres'],
         ['--profile', 'setup', 'run', '--rm', 'database-init'], ['up', '-d', '--wait', 'capacity-collector']]);
     assert.ok(events[4].includes('dist/builtin-catalog/sync.cli.js'));
-    assert.deepEqual(events.slice(5), [['up', '-d', '--wait'], 'unlock']);
+    assert.ok(events[5].includes('/tools/scripts/models/bundle-cli.mjs'));
+    assert.deepEqual(events.slice(6), [['up', '-d', '--wait'], 'unlock']);
 });
 
 test('Ошибка каталога при первом production-запуске не запускает приложения', async t => {
     const { result, events } = await setupFixture(t, true);
     assert.equal(result.status, 1); assert.match(result.stderr, /catalog failed/);
+    assert.ok(!events.some(event => Array.isArray(event) && event.length === 3 && event[0] === 'up'));
+    assert.equal(events.at(-1), 'unlock');
+});
+
+test('Ошибка комплекта моделей при первом production-запуске не выдаёт пустой runtime за готовый', async t => {
+    const { result, events } = await setupFixture(t, false, true);
+    assert.equal(result.status, 1); assert.match(result.stderr, /models failed/);
     assert.ok(!events.some(event => Array.isArray(event) && event.length === 3 && event[0] === 'up'));
     assert.equal(events.at(-1), 'unlock');
 });

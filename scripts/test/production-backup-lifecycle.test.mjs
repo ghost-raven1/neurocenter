@@ -69,6 +69,18 @@ test('Ошибка до паузы не останавливает прилож�
     await assert.rejects(withQuiescedProductionBackup(f.options,{beforePause:()=>{throw new Error('дрейф');},afterBackup:()=>{}},f.deps),/дрейф/);
     assert.equal(f.isRunning(),true);assert.deepEqual(f.events,['lock','unlock']);assert.deepEqual(await readdir(f.root),[]);
 }));
+test('Управляемый runtime моделей не мешает копии БД и пользовательских данных',async()=>fixture(async f=>{
+    const previous=f.deps.containers;
+    f.deps.containers=async(...args)=>[...await previous(...args),{Id:'model-runtime',Config:{Labels:{'com.docker.compose.service':'model-runtime'}},State:{Running:true},Mounts:[]}];
+    const receipt=await backupProduction(f.options,f.deps);
+    assert.equal(receipt.ok,true);assert.equal(f.isRunning(),true);assert.ok(f.events.includes('copy'));
+}));
+test('Незавершённая подготовка весов блокирует копию до остановки приложений',async()=>fixture(async f=>{
+    const previous=f.deps.containers;
+    f.deps.containers=async(...args)=>[...await previous(...args),{Id:'model-volume-init',Config:{Labels:{'com.docker.compose.service':'model-volume-init'}},State:{Running:true},Mounts:[]}];
+    await assert.rejects(backupProduction(f.options,f.deps),/посторонние сервисы/);
+    assert.deepEqual(f.events,['lock','unlock']);assert.equal(f.isRunning(),true);
+}));
 test('Отмена файлового помощника дожидается подтверждённого удаления контейнера',async()=>{
     const events=[];let release;const gate=new Promise(resolve=>{release=resolve;});let finished=false;
     const command=volumeTransfer('backup','/fixture',Object.fromEntries(volumeKeys.map(key=>[key,key])),image,async()=>{events.push('copy');throw new Error('timeout');},async args=>{
