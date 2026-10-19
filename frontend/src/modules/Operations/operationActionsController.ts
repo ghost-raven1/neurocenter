@@ -77,9 +77,9 @@ export function createOperationActionsController(options: IControllerOptions) {
                 || pending.has(id) || confirmations.has(id)) { return; }
 
             const request = start(id);
-            const key = retryKeys.get(id) ?? options.requestKey();
-            retryKeys.set(id, key);
             try {
+                const key = retryKeys.get(id) ?? options.requestKey();
+                retryKeys.set(id, key);
                 const job = await options.retry(operation.resourceId, key);
                 // Ответ подтверждает результат; ошибка следующего GET не должна повторять POST с тем же ключом.
                 if (pending.get(id) === request && retryKeys.get(id) === key) { retryKeys.delete(id); }

@@ -51,6 +51,19 @@ function setup() {
 }
 
 describe('Действия очереди принадлежат текущему пользователю', () => {
+    it('Ошибка подготовки ключа повтора снимает блокировку и допускает новую попытку', async () => {
+        const { controller, options, busy } = setup();
+        options.requestKey.mockReset().mockImplementationOnce(() => { throw new Error('Не удалось подготовить повтор'); })
+            .mockReturnValue('fresh-key');
+        await expect(controller.retry(operation)).resolves.toBeUndefined();
+        expect(busy()).toEqual([]);
+        expect(options.error).toHaveBeenCalledWith('Не удалось подготовить повтор');
+        expect(options.retry).not.toHaveBeenCalled();
+        await controller.retry(operation);
+        expect(options.retry).toHaveBeenCalledWith(operation.resourceId, 'fresh-key');
+        expect(busy()).toEqual([]);
+    });
+
     it('Не повторяет старую передачу, для которой нужно открыть базу знаний и выбрать текущую папку', async () => {
         const { controller, options } = setup();
         await controller.retry({ ...operation, type: 'SYNC', error: 'Синхронизация требует проверки плана в MCP. Изменения не подтверждены.' });
