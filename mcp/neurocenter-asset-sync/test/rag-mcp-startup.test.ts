@@ -5,7 +5,7 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {artifactFixture} from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import {workspaceFixture} from './bridge-fixture.js';
 import {canonicalV4,type Package} from '../src/bridge/package.js';
-import {hash,writeState} from '../src/bridge/state.js';
+import {hash,hub,writeState} from '../src/bridge/state.js';
 import {projectBindingId,projectInstanceId} from '../src/bridge/workspace.js';
 import {runtimeArtifactTarget} from '../src/features/runtime-artifacts/model.js';
 import {ensureRuntimeArtifact} from '../src/features/runtime-artifacts/cache.js';
@@ -17,13 +17,17 @@ import {saveConfiguration} from '../src/features/local-configuration/state.js';
 import {getMcpConfigurationStatus,readMcpConfiguration,prepareMcpConfigurationLauncher} from '../src/features/local-configuration/index.js';
 import {localIndexProfile} from '../src/features/rag-index/readiness.js';
 import {locateStore} from '../src/lib/store.js';
-import {receiptPath} from '../src/bridge/installation-receipt.js';
+import {assetKey,receiptPath} from '../src/bridge/installation-receipt.js';
 import {openRagUi,closeRagUis} from '../src/features/rag-ui/index.js';
 import {startRagUiProcess} from '../src/features/rag-ui/process.js';
 import {openRagBrowserWindow} from '../src/features/rag-ui/browser-window.js';
 vi.mock('../src/features/runtime-probe/mcp.js',()=>({probeMcp:vi.fn()}));
 vi.mock('../src/features/rag-ui/process.js',()=>({startRagUiProcess:vi.fn()}));
 vi.mock('../src/features/rag-ui/browser-window.js',()=>({openRagBrowserWindow:vi.fn()}));
+import {managedRagMcpEmbedding} from '../src/features/rag-ui/managed-installation.js';
+import {profileKey} from '../src/features/rag-hosted/profile.js';
+import {writePrivateConfiguration} from '../src/features/local-configuration/private-store.js';
+import {setPackage,rehashPackage} from './install-set-fixture.js';
 const noop=async()=>{};
 describe('Установленный RAG MCP запускается без ручной настройки и сохраняет явные параметры',()=>{
     let fixture:Awaited<ReturnType<typeof workspaceFixture>>,pkg:Package,binding:string;
@@ -40,6 +44,14 @@ describe('Установленный RAG MCP запускается без ру�
         vi.mocked(probeMcp).mockResolvedValue({tools:3,resources:0,prompts:0});
     });
     afterEach(async()=>{await closeRagUis();vi.restoreAllMocks();vi.unstubAllEnvs();await fs.rm(fixture.temporary,{recursive:true,force:true});});
+    it('Готовность конкретного MCP не заимствует hosted-профиль соседнего плагина',async()=>{
+        pkg.plugin.version++;pkg.config!.extra!.hostedEmbedding={schemaVersion:1,profileSchemaVersion:2};rehash();await prepareMcpConfigurationLauncher('test-project',pkg,undefined,noop);await install('test-project',pkg,noop,noop);
+        const other=setPackage('hosted-neighbor','plugin');other.schemaVersion=5;other.config!.extra={hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2}};rehashPackage(other);await install('test-project',other,noop,noop);
+        const instance=await projectInstanceId('test-project'),pin='a'.repeat(64),own={revision:1,modelPin:pin,profile:{provider:'openai',model:'neurocenter/own/sha256/'+pin,dimension:3}},neighbor={revision:2,modelPin:'b'.repeat(64),profile:{provider:'openai',model:'neurocenter/other/sha256/'+'b'.repeat(64),dimension:3}};
+        await writePrivateConfiguration(profileKey(hub(),fixture.root,instance),{schemaVersion:2,server:hub(),root:fixture.root,projectId:'test-project',bindingId:binding,instanceId:instance,relay:{port:34567},grants:[{pkg,selection:own,key:'c'.repeat(64)},{pkg:other,selection:neighbor,key:'d'.repeat(64)}]},undefined);
+        const receipt=JSON.parse(await fs.readFile(fixture.root+'/'+receiptPath(pkg),'utf8'));
+        expect((await managedRagMcpEmbedding(fixture.root,'test-project',assetKey(pkg),receipt))?.model).toBe(own.profile.model);
+    });
     it('Initialize/list не требует модели и оставляет defaults только в памяти CLI',async()=>{
         const before=await fs.readFile(fixture.root+'/opencode.json','utf8');
         await expect(probeInstalledRagMcp('test-project',binding,pkg,noop)).resolves.toEqual({tools:3,resources:0,prompts:0});

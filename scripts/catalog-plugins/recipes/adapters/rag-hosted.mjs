@@ -7,6 +7,7 @@ import {embeddingSignature,normalizeIndexProfile} from '../../../../services/sha
 const hostedIdentity=Symbol.for('neurocenter.hosted-rag');
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const failure=()=>new Error('Приватное подключение OpenCodeRAG повреждено или изменилось. Подключите модель проекта повторно через мост.');
+function indexProfile(value){try{return normalizeIndexProfile(value);}catch{throw failure();}}
 function json(file,missing=false){try{const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>8*1024*1024)throw failure();return JSON.parse(fs.readFileSync(file,'utf8'));}catch(error){if(missing&&error.code==='ENOENT')return undefined;throw failure();}}
 function checkedDirectory(directory,privateMode=false){const stat=fs.lstatSync(directory);if(!stat.isDirectory()||stat.isSymbolicLink()||privateMode&&process.platform!=='win32'&&((stat.mode&0o077)!==0||stat.uid!==process.getuid?.()))throw failure();return stat;}
 function readPrivate(file){
@@ -39,7 +40,23 @@ function registeredHosted(state,key,root,instanceId){
  const registry=json(path.join(state,'rag-hosted-connections.json'),true);if(registry===undefined)return false;
  if(!Array.isArray(registry)||registry.length>128||registry.some(key=>typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key)))throw failure();
  if(registry.includes(key))return true;
- return registry.some(saved=>{const prior=readPrivate(path.join(state,'local-configuration',saved+'.json'));return prior?.schemaVersion===1&&(prior.root===root||prior.instanceId===instanceId);});
+ return registry.some(saved=>{const prior=readPrivate(path.join(state,'local-configuration',saved+'.json'));return [1,2].includes(prior?.schemaVersion)&&(prior.root===root||prior.instanceId===instanceId);});
+}
+function grants(value){
+ const expected=['schemaVersion','server','root','projectId','bindingId','instanceId','relay',...(value.schemaVersion===1?['pkg','selection']:['grants'])];
+ if(Object.keys(value).length!==expected.length||!expected.every(key=>Object.hasOwn(value,key)))throw failure();
+ if(![1,2].includes(value.schemaVersion)||!value.relay||Object.keys(value.relay).sort().join(',')!==(value.schemaVersion===1?'key,port':'port')||!Number.isSafeInteger(value.relay.port)||value.relay.port<1||value.relay.port>65535)throw failure();
+ const entries=value.schemaVersion===1?[{pkg:value.pkg,selection:value.selection,key:value.relay.key}]:value.grants;
+ if(!Array.isArray(entries)||!entries.length||entries.length>16)throw failure();
+ const ids=new Set(),keys=new Set();
+ for(const grant of entries){
+  if(!grant||Object.keys(grant).sort().join(',')!=='key,pkg,selection')throw failure();
+  const {pkg,selection,key}=grant,profile=indexProfile(selection?.profile),identity=pkg?.plugin?.kind+':'+pkg?.plugin?.id;
+  if(typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key)||keys.has(key)||ids.has(identity)||!['mcp','plugin'].includes(pkg?.plugin?.kind)||typeof pkg.plugin.id!=='string'||!pkg.plugin.id||!Number.isSafeInteger(pkg.plugin.version)||pkg.plugin.version<1||!/^[a-f0-9]{64}$/.test(pkg.manifest?.sha256)||pkg.config?.extra?.hostedEmbedding?.schemaVersion!==1||!Array.isArray(pkg.config.extra.runtimeArtifacts)
+   ||value.schemaVersion===2&&pkg.config.extra.hostedEmbedding.profileSchemaVersion!==2||!Number.isSafeInteger(selection?.revision)||selection.revision<1||!/^[a-f0-9]{64}$/.test(selection.modelPin)||profile?.provider!=='openai'||!/^neurocenter\/[A-Za-z0-9._-]+\/sha256\/[a-f0-9]{64}$/.test(profile.model)||!profile.model.endsWith('/sha256/'+selection.modelPin))throw failure();
+  ids.add(identity);keys.add(key);
+ }
+ return entries;
 }
 /** Закреплённый адаптер выводит private-store из своего артефакта, а не из env дочернего процесса. */
 export function applyHostedRagConfiguration(config,root){
@@ -54,14 +71,13 @@ export function applyHostedRagConfiguration(config,root){
  const key=sha(JSON.stringify([marker.server,root,marker.instanceId]));
  const requirePrevious=()=>hadHostedIndex||registeredHosted(state,key,root,marker.instanceId);
  try{checkedDirectory(state);checkedDirectory(path.dirname(artifact));checkedDirectory(artifact);checkedDirectory(directory,true);}catch(error){if(error.code==='ENOENT'&&!requirePrevious())return config;throw failure();}
- const value=readPrivate(path.join(directory,key+'.json'));if(!value){if(requirePrevious())throw failure();return config;}
- const {selection,relay,pkg}=value;const profile=normalizeIndexProfile(selection?.profile);
- if(value.schemaVersion!==1||value.server!==marker.server||value.root!==root||value.projectId!==marker.projectId||value.instanceId!==marker.instanceId||!Number.isSafeInteger(selection?.revision)||selection.revision<1||!/^[a-f0-9]{64}$/.test(selection.modelPin)||profile?.provider!=='openai'||!profile.model.endsWith('/sha256/'+selection.modelPin)
-  ||!Number.isSafeInteger(relay?.port)||relay.port<1||relay.port>65535||!/^[a-f0-9]{64}$/.test(relay.key)||pkg?.config?.extra?.hostedEmbedding?.schemaVersion!==1||!pkg.config.extra.runtimeArtifacts?.some(entry=>entry.sha256===path.basename(artifact)))throw failure();
- const receipt=json(path.join(root,'.opencode/neurocenter/receipts',sha(pkg.plugin.kind+':'+pkg.plugin.id).slice(0,24)+'.json'),true);
- if(receipt?.manifest!==pkg.manifest.sha256||receipt?.version!==pkg.plugin.version)throw failure();
+ const value=readPrivate(path.join(directory,key+'.json'));if(value===undefined){if(requirePrevious())throw failure();return config;}
+ if(!value||value.server!==marker.server||value.root!==root||value.projectId!==marker.projectId||value.instanceId!==marker.instanceId||typeof value.bindingId!=='string'||!value.bindingId)throw failure();
+ const candidates=grants(value).filter(({pkg})=>pkg.config.extra.runtimeArtifacts.some(entry=>entry.sha256===path.basename(artifact))).filter(({pkg})=>{const receipt=json(path.join(root,'.opencode/neurocenter/receipts',sha(pkg.plugin.kind+':'+pkg.plugin.id).slice(0,24)+'.json'),true);return receipt?.manifest===pkg.manifest.sha256&&receipt?.version===pkg.plugin.version;});
+ if(candidates.length!==1)throw failure();
+ const {selection,key:localKey}=candidates[0],profile=normalizeIndexProfile(selection.profile),relay=value.relay;
  const baseUrl=`http://127.0.0.1:${relay.port}/v1`;const result=structuredClone(config);
- result.embedding={...result.embedding,provider:'openai',model:profile.model,vectorDimension:profile.dimension,baseUrl,apiKey:relay.key,timeoutMs:120000};
+ result.embedding={...result.embedding,provider:'openai',model:profile.model,vectorDimension:profile.dimension,baseUrl,apiKey:localKey,timeoutMs:120000};
  result.indexing={...result.indexing,embedBatchSize:8,embedConcurrency:1};
  // Hosted-индекс обновляется только явно: запуск OpenCode не даёт согласия на индексацию.
  result.openCode={...result.openCode,autoIndex:{...result.openCode?.autoIndex,enabled:false}};

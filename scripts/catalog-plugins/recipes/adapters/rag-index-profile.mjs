@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { embeddingSignature, normalizeIndexProfile } from '../../../../services/shared/rag-index-contract.cjs';
 
 const filename = 'neurocenter-index-profile.json';
-const indexError = () => new Error('Ошибка локального индекса. Модель или подключение изменились: перезапустите OpenCode и выполните полное индексирование; при отключённой автоиндексации включите её для перестроения.');
+const indexError = () => new Error('Ошибка локального индекса. Модель или подключение изменились: перезапустите OpenCode и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.');
 const readJson = async file => JSON.parse(await fs.readFile(file, 'utf8').catch(error => {
     if (error.code === 'ENOENT') return 'null';
     throw error;

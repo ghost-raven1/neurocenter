@@ -36,7 +36,7 @@ export async function assertIndexIdle(storePath: string, restore = false, ownedL
     if (restore) { return JSON.stringify(status); }
     const provenance = await json(storePath, 'neurocenter-index-profile.json');
     if (provenance?.schemaVersion !== 1 || provenance.state !== 'ready') {
-        throw new Error('Происхождение векторов не подтверждено. Обновите OpenCodeRAG и дождитесь полной автоматической переиндексации.');
+        throw new Error('Происхождение векторов не подтверждено. Обновите OpenCodeRAG и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.');
     }
     const proof = await json(storePath, 'neurocenter-restored.json');
     if (!status && proof?.fingerprintVersion === 1 && proof.complete === true) { return JSON.stringify({ ...proof, provenance }); }

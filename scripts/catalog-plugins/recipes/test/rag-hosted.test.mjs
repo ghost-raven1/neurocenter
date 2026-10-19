@@ -13,7 +13,7 @@ async function fixture(){
  const temp=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'rag-hosted-adapter-')));const server='https://fixture.example.test';const artifact=path.join(temp,'private',sha(server).slice(0,20),'runtime-artifacts','a'.repeat(64));const root=path.join(temp,'project');await fs.mkdir(artifact,{recursive:true});await fs.mkdir(path.join(root,'.opencode/neurocenter/receipts'),{recursive:true});
  await fs.writeFile(path.join(artifact,'rag-hosted.mjs'),(await fs.readFile(new URL('../adapters/rag-hosted.mjs',import.meta.url),'utf8')).replace('../../../../services/shared/rag-index-contract.cjs','./rag-index-contract.cjs'));await fs.copyFile(new URL('../../../../services/shared/rag-index-contract.cjs',import.meta.url),path.join(artifact,'rag-index-contract.cjs'));
  const instanceId='fixture-instance',projectId='fixture-project';const modelPin='b'.repeat(64);const profile={provider:'openai',model:'neurocenter/model-fixture/sha256/'+modelPin,dimension:3};
- const pkg={plugin:{id:'rag-fixture',kind:'plugin',version:1},manifest:{sha256:'c'.repeat(64)},config:{extra:{hostedEmbedding:{schemaVersion:1},runtimeArtifacts:[{sha256:'a'.repeat(64)}]}}};
+ const pkg={plugin:{id:'rag-fixture',kind:'plugin',version:1},manifest:{sha256:'c'.repeat(64)},config:{extra:{hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2},runtimeArtifacts:[{sha256:'a'.repeat(64)}]}}};
  await fs.writeFile(path.join(root,'.opencode/neurocenter.json'),JSON.stringify({version:2,server,instanceId,projectId}));await fs.writeFile(path.join(root,'.opencode/neurocenter/receipts',sha('plugin:rag-fixture').slice(0,24)+'.json'),JSON.stringify({version:1,manifest:pkg.manifest.sha256}));
  const privateDir=path.join(temp,'private',sha(server).slice(0,20),'local-configuration');await fs.mkdir(privateDir,{mode:0o700});const file=path.join(privateDir,sha(JSON.stringify([server,root,instanceId]))+'.json');
  const record={schemaVersion:1,server,root,projectId,instanceId,bindingId:'binding-fixture',pkg,selection:{revision:1,modelPin,profile},relay:{port:34567,key:'d'.repeat(64)}};
@@ -69,4 +69,40 @@ test('Удаление marker до первой индексации не пре
 test('Обычный проект с повреждённым provenance сохраняет возможность явного native rebuild',async()=>{
  const f=await fixture();try{await fs.rm(f.file);await fs.rm(path.join(path.dirname(path.dirname(f.file)),'rag-hosted-connections.json'));const store=path.join(f.root,'.rag');await fs.mkdir(store);await fs.writeFile(path.join(store,'neurocenter-index-profile.json'),'{bad');const config={embedding:{provider:'ollama',model:'ordinary'},vectorStore:{path:'.rag'},openCode:{autoIndex:{enabled:false}}};assert.deepEqual(f.adapter.applyHostedRagConfiguration(config,f.root),config);
  }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+
+test('MCP и plugin выбирают собственный exact-grant одного приватного подключения',async()=>{
+ const f=await fixture();try{const state=path.dirname(path.dirname(f.file)),original=path.join(state,'runtime-artifacts','a'.repeat(64)),second=path.join(state,'runtime-artifacts','e'.repeat(64));await fs.cp(original,second,{recursive:true});
+ const pkg=structuredClone(f.record.pkg);pkg.plugin={...pkg.plugin,id:'mcp-fixture',kind:'mcp'};pkg.manifest.sha256='f'.repeat(64);pkg.config.extra.runtimeArtifacts=[{sha256:'e'.repeat(64)}];await fs.writeFile(path.join(f.root,'.opencode/neurocenter/receipts',sha('mcp:mcp-fixture').slice(0,24)+'.json'),JSON.stringify({version:1,manifest:pkg.manifest.sha256}));
+ const {pkg:previous,selection,relay,...common}=f.record;await fs.writeFile(f.file,JSON.stringify({...common,schemaVersion:2,relay:{port:relay.port},grants:[{pkg:previous,selection,key:relay.key},{pkg,selection,key:'9'.repeat(64)}]}));
+ const other=await import(pathToFileURL(path.join(second,'rag-hosted.mjs')).href);const first=f.adapter.applyHostedRagConfiguration({},f.root),next=other.applyHostedRagConfiguration({},f.root);assert.equal(first.embedding.apiKey,relay.key);assert.equal(next.embedding.apiKey,'9'.repeat(64));assert.equal(first.embedding.baseUrl,next.embedding.baseUrl);assert.equal(first.openCode.autoIndex.enabled,false);assert.equal(next.openCode.autoIndex.enabled,false);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+async function pair(f){
+ const state=path.dirname(path.dirname(f.file)),original=path.join(state,'runtime-artifacts','a'.repeat(64)),second=path.join(state,'runtime-artifacts','e'.repeat(64));await fs.cp(original,second,{recursive:true});
+ const pkg=structuredClone(f.record.pkg);pkg.plugin={...pkg.plugin,id:'mcp-fixture',kind:'mcp'};pkg.manifest.sha256='f'.repeat(64);pkg.config.extra.runtimeArtifacts=[{sha256:'e'.repeat(64)}];const receipt=path.join(f.root,'.opencode/neurocenter/receipts',sha('mcp:mcp-fixture').slice(0,24)+'.json');await fs.writeFile(receipt,JSON.stringify({version:1,manifest:pkg.manifest.sha256}));
+ const {pkg:previous,selection,relay,...common}=f.record,record={...common,schemaVersion:2,relay:{port:relay.port},grants:[{pkg:previous,selection,key:relay.key},{pkg,selection,key:'9'.repeat(64)}]};await fs.writeFile(f.file,JSON.stringify(record));return {record,receipt,other:await import(pathToFileURL(path.join(second,'rag-hosted.mjs')).href)};
+}
+test('Удалённый или обновлённый соседний receipt не блокирует собственный grant и не даёт заимствовать его',async()=>{
+ const f=await fixture();try{const p=await pair(f);await fs.rm(p.receipt);assert.equal(f.adapter.applyHostedRagConfiguration({},f.root).embedding.apiKey,f.record.relay.key);assert.throws(()=>p.other.applyHostedRagConfiguration({},f.root),/Приватное/);await fs.writeFile(p.receipt,JSON.stringify({version:2,manifest:p.record.grants[1].pkg.manifest.sha256}));assert.equal(f.adapter.applyHostedRagConfiguration({},f.root).embedding.apiKey,f.record.relay.key);assert.throws(()=>p.other.applyHostedRagConfiguration({},f.root),/Приватное/);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+test('Соседние grants сохраняют отдельные model pin и revision без автоматического переноса согласия',async()=>{
+ const f=await fixture();try{const p=await pair(f);p.record.grants[1].selection={revision:2,modelPin:'8'.repeat(64),profile:{provider:'openai',model:'neurocenter/other/sha256/'+'8'.repeat(64),dimension:4}};await fs.writeFile(f.file,JSON.stringify(p.record));assert.equal(f.adapter.applyHostedRagConfiguration({},f.root).embedding.model,f.record.selection.profile.model);const config=p.other.applyHostedRagConfiguration({},f.root);assert.equal(config.embedding.model,p.record.grants[1].selection.profile.model);assert.equal(config.embedding.vectorDimension,4);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+for(const fault of ['empty','duplicate-key','duplicate-pkg','unknown-field','legacy-marker','invalid-profile'])test('Некорректные schema2 grants отвергаются целиком: '+fault,async()=>{
+ const f=await fixture();try{const p=await pair(f),g=p.record.grants;if(fault==='empty')p.record.grants=[];if(fault==='duplicate-key')g[1].key=g[0].key;if(fault==='duplicate-pkg')g[1].pkg=g[0].pkg;if(fault==='unknown-field')Object.assign(g[1],{secretAlias:'bad'});if(fault==='legacy-marker')delete g[1].pkg.config.extra.hostedEmbedding.profileSchemaVersion;if(fault==='invalid-profile')g[1].selection.profile.dimension=0;await fs.writeFile(f.file,JSON.stringify(p.record));assert.throws(()=>f.adapter.applyHostedRagConfiguration({},f.root),/Приватное/);assert.throws(()=>p.other.applyHostedRagConfiguration({},f.root),/Приватное/);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+test('Одинаковые байты двух разных exact-grants не выбираются по случайному порядку',async()=>{
+ const f=await fixture();try{const p=await pair(f);p.record.grants[1].pkg.config.extra.runtimeArtifacts=f.record.pkg.config.extra.runtimeArtifacts;await fs.writeFile(f.file,JSON.stringify(p.record));assert.throws(()=>f.adapter.applyHostedRagConfiguration({},f.root),/Приватное/);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+test('Старый schema1 с marker1 сохраняет прежние ключ и адрес',async()=>{
+ const f=await fixture();try{delete f.record.pkg.config.extra.hostedEmbedding.profileSchemaVersion;await fs.writeFile(f.file,JSON.stringify(f.record));const before=await fs.readFile(f.file,'utf8'),config=f.adapter.applyHostedRagConfiguration({},f.root);assert.equal(config.embedding.apiKey,f.record.relay.key);assert.equal(config.embedding.baseUrl,'http://127.0.0.1:'+f.record.relay.port+'/v1');assert.equal(await fs.readFile(f.file,'utf8'),before);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+for(const value of [null,false,[]])test('Присутствующий не-объект private JSON не включает local defaults: '+JSON.stringify(value),async()=>{
+ const f=await fixture();try{await fs.writeFile(f.file,JSON.stringify(value));assert.throws(()=>f.adapter.applyHostedRagConfiguration({},f.root),/Приватное/);}finally{await fs.rm(f.temp,{recursive:true,force:true});}
 });

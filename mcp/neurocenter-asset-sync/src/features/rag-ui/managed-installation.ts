@@ -26,7 +26,7 @@ export async function managedRagMcpEmbedding(root:string,projectId:string,key:st
             ||!isDeepStrictEqual(configurationConnection(root,pkg),receipt.config.value))return undefined;
         const inspection=await inspectInstallation(projectId,pkg);
         if(inspection.state!=='checked'||inspection.status!=='synced')return undefined;
-        const hosted=await readHostedRagEmbedding(root,projectId);if(hosted)return hosted;
+        const hosted=await readHostedRagEmbedding(root,projectId,pkg);if(hosted)return hosted;
         const configuration=await readMcpConfiguration(projectId,pkg,undefined,async()=>{});
         const env={...process.env,...configuration.env};
         return {...env.NEUROCENTER_RAG_EMBEDDING_PROVIDER?{provider:env.NEUROCENTER_RAG_EMBEDDING_PROVIDER}:{},
