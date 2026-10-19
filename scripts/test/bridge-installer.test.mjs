@@ -44,6 +44,14 @@ case "$1" in
                 printf '%s' '{"ok":false,"error":"На компьютере выполняется задание"}'
                 exit 1
             fi
+            if [ -n "\${TEST_UPGRADE_RESULT:-}" ]; then printf '%s' "$TEST_UPGRADE_RESULT";
+            elif [ -n "\${TEST_UPGRADE_PAUSED:-}" ]; then printf '{"ok":true,"paused":%s}' "$TEST_UPGRADE_PAUSED";
+            else printf '%s' '{"ok":true}'; fi
+        elif [ "$2" = --finish-upgrade ]; then
+            if [ "\${TEST_FAIL_FINISH:-0}" = 1 ]; then
+                printf '%s' '{"ok":false,"error":"Подключение не настроено"}'
+                exit 1
+            fi
             printf '%s' '{"ok":true}'
         elif [ "$2" = --init ]; then
             if [ -n "\${TEST_INIT_GATE:-}" ]; then
@@ -127,6 +135,57 @@ test('Незавершённое задание запрещает замену 
     assert.equal(retry.status, 0, retry.stderr);
     assert.equal(JSON.parse(await fs.readFile(path.join(f.env.INSTALL_DIR, 'package.json'), 'utf8')).version, version);
 });
+test('Обновление без подключения не требует снятия отсутствующей паузы перед подключением', async () => {
+    const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
+    await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+    const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_FINISH: '1' });
+    assert.equal(result.status, 0, result.stderr);
+    const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
+    assert.match(attempts, /--prepare-upgrade/);
+    assert.match(attempts, /--init/);
+    assert.match(attempts, /--connect-open/);
+    assert.doesNotMatch(attempts, /--finish-upgrade/);
+    assert.match(result.stdout, /Готово! MCP установлен и подключён/);
+});
+for (const paused of ['true', '']) {
+    test(`Обновление снимает паузу перед подключением, ${paused ? 'пауза подтверждена' : 'старый ответ без признака паузы'}`, async () => {
+        const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
+        await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+        const result = f.run({ TEST_UPGRADE_PAUSED: paused });
+        assert.equal(result.status, 0, result.stderr);
+        const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
+        assert.equal(attempts.match(/--finish-upgrade/g)?.length, 1);
+        assert.ok(attempts.indexOf('--prepare-upgrade') < attempts.indexOf('--init'));
+        assert.ok(attempts.indexOf('--init') < attempts.indexOf('--finish-upgrade'));
+        assert.ok(attempts.indexOf('--finish-upgrade') < attempts.indexOf('--connect-open'));
+    });
+}
+test('Сбой регистрации без паузы не запускает снятие паузы при откате', async () => {
+    const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
+    await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+    await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
+    const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_INIT: '1', TEST_FAIL_FINISH: '1' });
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /Конфигурация OpenCode недоступна/);
+    assert.doesNotMatch(result.stderr, /Не удалось снять паузу|очередь не подтвердила/);
+    const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
+    assert.match(attempts, /--init/);
+    assert.doesNotMatch(attempts, /--finish-upgrade|--connect-open/);
+    assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR, 'previous'), 'utf8'), 'сохранить');
+});
+for (const upgrade of [{ ok: false, error: 'Обновление отклонено' }, { paused: false }]) {
+    test(`Неподтверждённая подготовка не заменяет мост: ${JSON.stringify(upgrade)}`, async () => {
+        const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
+        await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+        await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
+        const result = f.run({ TEST_UPGRADE_RESULT: JSON.stringify(upgrade) });
+        assert.notEqual(result.status, 0, result.stdout);
+        assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR, 'previous'), 'utf8'), 'сохранить');
+        const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
+        assert.match(attempts, /--prepare-upgrade/);
+        assert.doesNotMatch(attempts, /--init|--finish-upgrade|--connect-open/);
+    });
+}
 for (const field of ['version', 'buildId']) {
     test(`Несогласованное поле ${field} архива отклоняется до замены и регистрации`, async () => {
         const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);

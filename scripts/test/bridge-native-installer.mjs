@@ -26,6 +26,8 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const deviceId = randomUUID();
 let candidateHash, pairStarts = 0, heartbeat, corruptChecksum = false, server, child, origin, fatal;
 let expectedEntryInode, paused = false, pauseObservations = 0;
+let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
+const rejectedRoutes = [];
 const cases = [];
 async function waitFor(predicate, label, timeout = 10000) {
     const deadline = Date.now() + timeout;
@@ -41,6 +43,24 @@ async function installer(env, script) {
         child.once('error', error => { clearTimeout(timeout); reject(error); });
         child.once('close', code => { clearTimeout(timeout); child = undefined; resolve({ code, output }); });
     });
+}
+/** Завершаем только worker одноразового профиля после проверки владельца и entry. */
+async function stopFixtureWorker(profile) {
+    const lock = path.join(profile, 'worker.lock');
+    await waitFor(() => fs.access(lock).then(() => true, () => false), 'блокировка worker одноразового профиля');
+    const pid = Number(await fs.readFile(lock, 'utf8'));
+    assert.ok(Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid);
+    const command = execFileSync('ps', ['-p', String(pid), '-o', 'uid=', '-o', 'args='], { encoding: 'utf8' }).trim();
+    const owner = /^(\d+)\s+([\s\S]*)$/.exec(command);
+    assert.equal(Number(owner?.[1]), process.getuid());
+    assert.ok(owner?.[2].includes(entry) && /--worker(?:\s|$)/.test(owner[2]), 'PID должен принадлежать worker одноразового профиля');
+    process.kill(pid, 'SIGTERM');
+    await waitFor(() => {
+        try { process.kill(pid, 0); return false; }
+        catch (error) { if (error.code === 'ESRCH') return true; throw error; }
+    }, 'завершение worker одноразового профиля');
+    await assert.rejects(fs.access(lock), { code: 'ENOENT' });
+    return pid;
 }
 try {
     const bin = path.join(temporary, 'system-bin'); await fs.mkdir(bin);
@@ -73,14 +93,20 @@ try {
             } else if (route === 'pair/poll') {
                 assert.equal(body.deviceCode, 'a'.repeat(64)); data = { state: 'connected', deviceId, email: 'native-fixture@example.test' };
             } else {
-                if (digest(token) !== candidateHash) { response.writeHead(401).end('{}'); return; }
+                if (digest(token) !== candidateHash) { rejectedRoutes.push(route); response.writeHead(401).end('{}'); return; }
                 if (route === 'identity') data = { id: deviceId, email: 'native-fixture@example.test', role: 'Разработчик' };
                 else if (route === 'heartbeat') { heartbeat = body; data = { ok: true }; }
                 else if (route === 'worker/pause') {
                     if (expectedEntryInode) assert.equal((await fs.stat(entry)).ino, expectedEntryInode, 'Пауза должна предшествовать замене файла');
-                    pauseObservations++; paused = true; data = { activeJobs: 0 };
+                    pauseObservations++; paused = true; data = { activeJobs };
                 }
                 else if (route === 'worker/resume') { paused = false; data = { ok: true }; }
+                else if (savedCompletion && route === `jobs/${savedCompletion.id}/complete`) {
+                    assert.deepEqual(body, savedCompletion); completionDeliveries++; activeJobs = 0; data = { ok: true };
+                }
+                else if (savedCompletion && route.startsWith(`jobs/${savedCompletion.id}/`)) {
+                    repeatedActionRequests++; response.writeHead(409).end('{}'); return;
+                }
                 else if (route === 'jobs/claim') data = null;
                 else { response.writeHead(404).end('{}'); return; }
             }
@@ -117,11 +143,56 @@ try {
         assert.ok(pauseObservations > 0); assert.equal(paused, false);
         await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
     });
+    await check('Мёртвый worker с серверным заданием обновляется и доставляет сохранённый результат без повторной записи файлов', async () => {
+        const stoppedPid = await stopFixtureWorker(profile);
+        // Восстанавливаем именно stale PID после аварии, не создавая чужой процесс.
+        await fs.writeFile(path.join(profile, 'worker.lock'), String(stoppedPid), { mode: 0o600 });
+        const completedFile = path.join(temporary, 'уже установленный инструмент.txt');
+        const content = 'Файловое действие уже выполнено; повторять его нельзя.';
+        await fs.writeFile(completedFile, content);
+        const before = await fs.stat(completedFile);
+        savedCompletion = { id: randomUUID(), lease: randomUUID(), deviceId, state: 'succeeded',
+            message: 'Файлы установлены', result: { files: 1, changed: 1, digest: digest(content) } };
+        const outbox = path.join(profile, 'completions', savedCompletion.id + '.json');
+        await fs.mkdir(path.dirname(outbox), { recursive: true, mode: 0o700 });
+        await fs.writeFile(outbox, JSON.stringify(savedCompletion), { mode: 0o600 });
+        activeJobs = 1; heartbeat = undefined;
+        const upgraded = await installer(env, script); assert.equal(upgraded.code, 0, upgraded.output);
+        await waitFor(() => completionDeliveries === 1 && !!heartbeat, 'доставка сохранённого результата новым worker');
+        await waitFor(() => fs.access(outbox).then(() => false, error => { if (error.code === 'ENOENT') return true; throw error; }), 'подтверждение доставки в outbox');
+        assert.equal(activeJobs, 0); assert.equal(completionDeliveries, 1); assert.equal(repeatedActionRequests, 0);
+        const after = await fs.stat(completedFile);
+        assert.equal(await fs.readFile(completedFile, 'utf8'), content);
+        assert.equal(after.ino, before.ino); assert.equal(after.mtimeMs, before.mtimeMs);
+        assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 1);
+        assert.equal(paused, false); await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+    });
+    await check('Просроченный ключ без worker не блокирует обновление и доходит до повторного подключения', async () => {
+        await stopFixtureWorker(profile);
+        const oldCredentials = JSON.parse(await fs.readFile(path.join(profile, 'credentials.json'), 'utf8'));
+        candidateHash = digest('отозванный одноразовый ключ'); heartbeat = undefined;
+        const pausesBefore = pauseObservations; const rejectedBefore = rejectedRoutes.length;
+        const repaired = await installer(env, script); assert.equal(repaired.code, 0, repaired.output);
+        assert.match(repaired.output, /Подключение ждёт подтверждения/);
+        await waitFor(() => !!heartbeat && pairStarts === 2, 'подключение и heartbeat после замены просроченного ключа');
+        const fresh = JSON.parse(await fs.readFile(path.join(profile, 'credentials.json'), 'utf8'));
+        assert.notEqual(fresh.token, oldCredentials.token); assert.equal(fresh.deviceId, deviceId);
+        assert.equal(digest(fresh.token), candidateHash);
+        const denied = rejectedRoutes.slice(rejectedBefore);
+        assert.ok(denied.includes('worker/pause')); assert.ok(denied.includes('identity'));
+        assert.ok(!denied.includes('worker/resume'), 'Без установленной паузы не нужен resume с отозванным ключом');
+        assert.equal(pauseObservations, pausesBefore); assert.equal(paused, false);
+        assert.equal(completionDeliveries, 1); assert.equal(repeatedActionRequests, 0);
+        assert.equal(await fs.readFile(config, 'utf8'), installedConfig);
+        await assert.rejects(fs.access(path.join(profile, 'pair.json')), { code: 'ENOENT' });
+        await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        installedMtime = (await fs.stat(entry)).mtimeMs;
+    });
     await check('Неверная SHA256 реального архива оставляет установленный MCP и настройки неизменными', async () => {
         corruptChecksum = true;
         const rejected = await installer(env, script); assert.notEqual(rejected.code, 0); assert.ok(rejected.output.includes('Контрольная сумма'));
         assert.equal((await fs.stat(entry)).mtimeMs, installedMtime); assert.equal(await fs.readFile(config, 'utf8'), installedConfig);
-        assert.equal(pairStarts, 1);
+        assert.equal(pairStarts, 2);
     });
     await check('Более новая версия запрещает понижение без замены программы и настроек', async () => {
         corruptChecksum = false;
@@ -134,7 +205,7 @@ try {
             assert.ok(rejected.output.includes('Автоматическое понижение версии MCP запрещено'), rejected.output);
             assert.equal(JSON.parse(await fs.readFile(manifest, 'utf8')).version, futureVersion);
             assert.equal(digest(await fs.readFile(entry)), beforeEntry); assert.equal((await fs.stat(entry)).mtimeMs, beforeMtime);
-            assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 1);
+            assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 2);
             assert.deepEqual((await fs.readdir(path.dirname(installDirectory))).filter(name => name.startsWith('.neurocenter-previous.')).sort(), beforeBackups);
         } finally { await fs.writeFile(manifest, original); }
     });
@@ -152,7 +223,7 @@ try {
         assert.equal(JSON.parse(await fs.readFile(path.join(installDirectory, 'runtime.json'), 'utf8')).buildId, metadata.buildId);
         await assert.rejects(fs.access(path.join(installDirectory, sentinel)), { code: 'ENOENT' });
         assert.equal((await fs.lstat(config)).isDirectory(), true); assert.deepEqual(await fs.readdir(config), []);
-        assert.equal(await fs.readFile(savedConfig, 'utf8'), installedConfig); assert.equal(pairStarts, 1);
+        assert.equal(await fs.readFile(savedConfig, 'utf8'), installedConfig); assert.equal(pairStarts, 2);
         const previous = [];
         for (const name of (await fs.readdir(path.dirname(installDirectory))).filter(name => name.startsWith('.neurocenter-previous.'))) {
             const directory = path.join(path.dirname(installDirectory), name);

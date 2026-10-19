@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +41,7 @@ describe('Безопасная подготовка замены установ�
     });
     afterEach(async () => {
         Object.defineProperty(process, 'platform', platform);
-        vi.useRealTimers(); vi.restoreAllMocks();
+        vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals();
         await fs.rm(directory, { recursive: true, force: true });
     });
     it('Та же сборка останавливается, а пауза удерживается до завершения замены файлов', async () => {
@@ -99,16 +100,82 @@ describe('Безопасная подготовка замены установ�
     });
     it('Отсутствие worker и локальных ключей не требует API', async () => {
         await fs.rm(lock); vi.mocked(readState).mockResolvedValue(undefined);
-        await prepareWorkerUpgrade(installed);
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: false });
         expect(api).not.toHaveBeenCalled(); expect(process.kill).not.toHaveBeenCalled();
     });
     it('Сохранённое подключение ставит паузу даже без worker.lock', async () => {
         await fs.rm(lock);
-        await prepareWorkerUpgrade(installed);
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: true });
         expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(['worker/pause']);
         expect(process.kill).not.toHaveBeenCalled();
         await finishWorkerUpgrade();
         expect(api).toHaveBeenLastCalledWith('worker/resume');
+    });
+    it.each(['отсутствует', 'завершён'])('Сверка сервера не блокирует установку, когда worker %s; локальные результаты сохранены', async owner => {
+        if (owner === 'отсутствует') { await fs.rm(lock); }
+        else { stopped = true; }
+        const completion = path.join(directory, 'completions', 'saved.json');
+        const journal = path.join(directory, 'workspace-identity-pending.json');
+        await fs.mkdir(path.dirname(completion));
+        await fs.writeFile(completion, 'сохранённое подтверждение');
+        await fs.writeFile(journal, 'сохранённый журнал');
+        vi.mocked(api).mockResolvedValue({ activeJobs: 1 });
+        vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(30000);
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: true });
+        expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(['worker/pause']);
+        expect(signals).not.toContain('SIGTERM'); expect(execute).not.toHaveBeenCalled();
+        await expect(fs.stat(lock)).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(await fs.readFile(completion, 'utf8')).toBe('сохранённое подтверждение');
+        expect(await fs.readFile(journal, 'utf8')).toBe('сохранённый журнал');
+    });
+    it.each([401, 403])('Отказ HTTP %s без worker позволяет перейти к восстановлению подключения', async status => {
+        await fs.rm(lock);
+        vi.mocked(api).mockRejectedValue(Object.assign(new Error('Подключение недействительно'), { status }));
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: false });
+        expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(['worker/pause']);
+        expect(process.kill).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+    });
+    it('Подмена завершённого PID не удаляет блокировку нового worker', async () => {
+        vi.mocked(process.kill).mockImplementationOnce(() => {
+            writeFileSync(lock, String(pid + 1));
+            throw Object.assign(new Error('Отсутствует'), { code: 'ESRCH' });
+        });
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('блокировки MCP изменился');
+        expect(await fs.readFile(lock, 'utf8')).toBe(String(pid + 1));
+        expect(api).not.toHaveBeenCalled(); expect(signals).not.toContain('SIGTERM');
+    });
+    it.each([200, 401, 403])('Новый worker во время HTTP %s останавливает подготовку и сохраняет новую блокировку', async status => {
+        await fs.rm(lock);
+        vi.mocked(api).mockImplementation(async route => {
+            if (route === 'worker/pause') {
+                await fs.writeFile(lock, String(pid + 1));
+                if (status !== 200) { throw Object.assign(new Error('Подключение недействительно'), { status }); }
+                return { activeJobs: 1 };
+            }
+            return { ok: true };
+        });
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('блокировки MCP изменился');
+        expect(await fs.readFile(lock, 'utf8')).toBe(String(pid + 1));
+        expect(process.kill).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+        expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(status === 200
+            ? ['worker/pause', 'worker/resume'] : ['worker/pause']);
+    });
+    it.each([401, 403])('Отказ HTTP %s живого worker сохраняет запрет обновления', async status => {
+        vi.mocked(api).mockRejectedValue(Object.assign(new Error('Подключение недействительно'), { status }));
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('Подключение недействительно');
+        expect(signals).not.toContain('SIGTERM'); expect(await fs.readFile(lock, 'utf8')).toBe(String(pid));
+    });
+    it.each([Object.assign(new Error('Сервис недоступен'), { status: 503 }), new Error('Сеть недоступна')])('Сбой связи без worker не разрешает замену: %s', async error => {
+        await fs.rm(lock); vi.mocked(api).mockRejectedValue(error);
+        await expect(prepareWorkerUpgrade(installed)).rejects.toBe(error);
+        expect(process.kill).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+        expect(api).toHaveBeenLastCalledWith('worker/resume');
+    });
+    it.each([undefined, null, {}, { activeJobs: -1 }, { activeJobs: '1' }])('Неподтверждённая очередь без worker останавливает установку: %j', async response => {
+        await fs.rm(lock); vi.mocked(api).mockResolvedValue(response);
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('Сервер не подтвердил состояние очереди');
+        expect(api).toHaveBeenLastCalledWith('worker/resume');
+        expect(process.kill).not.toHaveBeenCalled();
     });
     it('Завершение установки без ключей не обращается к API', async () => {
         vi.mocked(readState).mockResolvedValue(undefined);
@@ -147,5 +214,13 @@ describe('Безопасная подготовка замены установ�
         vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(60000);
         await expect(waitForWorkerInstallation(entry)).resolves.toBe(false);
         expect(readState).not.toHaveBeenCalled(); expect(api).not.toHaveBeenCalled();
+    });
+    it.each([401, 403, 503])('API сохраняет HTTP %s отдельно от сообщения ошибки', async status => {
+        vi.stubEnv('NEUROCENTER_BRIDGE_HOME', directory); vi.stubEnv('NEUROCENTER_URL', 'http://127.0.0.1:1');
+        const fetch = vi.fn(async () => new Response(JSON.stringify({ message: 'Исходная причина отказа' }), { status }));
+        vi.stubGlobal('fetch', fetch);
+        const actual = await vi.importActual<typeof import('../src/bridge/state.js')>('../src/bridge/state.js');
+        await expect(actual.api('worker/pause')).rejects.toMatchObject({ message: 'Исходная причина отказа', status });
+        expect(fetch).toHaveBeenCalledOnce();
     });
 });

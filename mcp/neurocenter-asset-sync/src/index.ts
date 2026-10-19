@@ -79,11 +79,12 @@ const server = new McpServer({ name: 'neurocenter-asset-sync', version: BRIDGE_V
 const cwd = process.cwd();
 if (['--prepare-upgrade', '--finish-upgrade'].includes(process.argv[2] || '')) {
     try {
-        if (process.argv[2] === '--prepare-upgrade') { await prepareWorkerUpgrade(process.argv[3] || ''); }
+        let prepared: {paused?: boolean} = {};
+        if (process.argv[2] === '--prepare-upgrade') { prepared = await prepareWorkerUpgrade(process.argv[3] || ''); }
         else { await finishWorkerUpgrade(); }
-        process.stdout.write(JSON.stringify({ ok: true }) + '\n');
-    } catch {
-        process.stdout.write(JSON.stringify({ ok: false, error: 'Не удалось безопасно остановить установленный мост. Дождитесь завершения заданий, проверьте подключение и повторите установку.' }) + '\n');
+        process.stdout.write(JSON.stringify({ ok: true, ...prepared }) + '\n');
+    } catch (cause) {
+        process.stdout.write(JSON.stringify({ ok: false, error: errMsg(cause) }) + '\n');
         process.exit(1);
     }
     process.exit(0);

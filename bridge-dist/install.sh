@@ -123,9 +123,9 @@ if [ -e "$INSTALL_DIR" ]; then
     UPGRADE_ENTRY="$STAGING_DIR/package/dist/index.js"
     if ! "$NODE" "$STAGING_DIR/package/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js" > "$STAGING_DIR/upgrade.json"; then
         show_result error "$STAGING_DIR/upgrade.json" || true
-        fail 'Обновление отложено. Файлы предыдущего моста сохранены; завершите задания или восстановите связь и повторите установку.'
+        fail 'Обновление не выполнено. Файлы предыдущего моста сохранены. Причина указана выше.'
     fi
-    UPGRADE_PREPARED='1'
+    UPGRADE_PREPARED="$("$NODE" -e 'const fs=require("node:fs");const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(result.ok!==true)process.exit(1);process.stdout.write(result.paused===false?"0":"1")' "$STAGING_DIR/upgrade.json")" || fail 'Мост не подтвердил подготовку обновления. Файлы не заменены.'
 fi
 PREVIOUS_DIR=''
 if [ -e "$INSTALL_DIR" ]; then

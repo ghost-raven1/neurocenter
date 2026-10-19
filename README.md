@@ -76,6 +76,7 @@ npm run vision:describe -- ./image.png 'Что изображено на кар�
 - [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
 - [Упаковка инструментов](scripts/catalog-plugins/README.md).
 - [Установка Docker Compose](docs/compose-install.md).
+- [Обновление и восстановление подключения моста](docs/bridge-upgrade-recovery.md).
 - [Локальная модель эмбеддингов](docs/local-embedding.md).
 - [Локальная обработка изображений](docs/local-vision.md).
 - [Повторный аудит хостинга моделей](docs/model-runtime-refactor-2026-10-19.md).

@@ -64,11 +64,11 @@ export async function api<T>(route: string, input?: unknown, tokenOverride?: str
     });
     const data = (await response.json()) as { message?: unknown };
     if (!response.ok) {
-        throw new Error(
+        throw Object.assign(new Error(
             typeof data.message === 'string'
                 ? data.message
                 : `Сервер MCP: HTTP ${response.status}`,
-        );
+        ), { status: response.status });
     }
     return data as T;
 }

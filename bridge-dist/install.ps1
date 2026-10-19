@@ -50,9 +50,10 @@ try {
         $PreviousCompatible = [version]$Existing.version -ge [version]'0.9.0'
         $UpgradeNode = $Node
         $UpgradeEntry = Join-Path $Package 'dist/index.js'
-        & $Node (Join-Path $Package 'dist/index.js') --prepare-upgrade (Join-Path $InstallDir 'dist/index.js')
-        if ($LASTEXITCODE -ne 0) { throw 'Обновление отложено. Файлы предыдущего моста сохранены; завершите задания или восстановите связь и повторите установку.' }
-        $UpgradePrepared = $true
+        $UpgradeJson = & $Node (Join-Path $Package 'dist/index.js') --prepare-upgrade (Join-Path $InstallDir 'dist/index.js')
+        $Upgrade = $UpgradeJson | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $Upgrade.ok -ne $true) { throw "Обновление не выполнено. Файлы предыдущего моста сохранены. $($Upgrade.error)" }
+        $UpgradePrepared = $Upgrade.paused -ne $false
         Move-Item $InstallDir $Previous
     }
     try { Move-Item $Package $InstallDir } catch { if (Test-Path $Previous) { Move-Item $Previous $InstallDir }; throw }

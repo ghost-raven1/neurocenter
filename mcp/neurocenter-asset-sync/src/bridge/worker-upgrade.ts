@@ -38,7 +38,7 @@ async function assertWorker(pid: number, index: string): Promise<void> {
         throw new Error('PID блокировки принадлежит другому процессу. Обновление остановлено без завершения этого процесса.');
     }
 }
-async function stopWorker(index: string, force: boolean): Promise<void> {
+async function stopWorker(index: string, force: boolean): Promise<boolean> {
     const lock = path.join(stateDir(), 'worker.lock');
     const raw = await readLock(lock);
     let pid: number | undefined;
@@ -46,23 +46,37 @@ async function stopWorker(index: string, force: boolean): Promise<void> {
         pid = Number(raw);
         if (!Number.isSafeInteger(pid) || pid < 2 || pid === process.pid) { throw new Error('Повреждена блокировка локального MCP.'); }
         if (!alive(pid)) {
-            if (await readLock(lock) === raw) { await fs.rm(lock, { force: true }); }
+            if (await readLock(lock) !== raw) { throw new Error('Владелец блокировки MCP изменился. Повторите обновление.'); }
+            await fs.rm(lock, { force: true });
             pid = undefined;
         }
     }
-    if (!pid && (!force || !await readState<Credentials>('credentials'))) { return; }
+    if (!pid && (!force || !await readState<Credentials>('credentials'))) { return false; }
     if (!force) {
         const version = await readState<{ pid: number; version: string; buildId?: string }>('worker-version');
-        if (version && version.pid === pid && version.version === BRIDGE_VERSION && version.buildId === await bridgeBuildId()) { return; }
+        if (version && version.pid === pid && version.version === BRIDGE_VERSION && version.buildId === await bridgeBuildId()) { return false; }
     }
     let paused = false; let completed = false;
     try {
         const until = Date.now() + 30000;
         for (;;) {
             paused = true;
-            const status = await api<{ activeJobs: number }>('worker/pause');
-            if (!Number.isSafeInteger(status.activeJobs) || status.activeJobs < 0) { throw new Error('Сервер не подтвердил состояние очереди MCP. Обновление остановлено.'); }
-            if (status.activeJobs === 0) { break; }
+            let status: { activeJobs: number };
+            try { status = await api<{ activeJobs: number }>('worker/pause'); }
+            catch (error) {
+                const denied = (error as { status?: number } | null)?.status;
+                if (!pid && (denied === 401 || denied === 403)) {
+                    // Без worker недействующий ключ должен дойти до повторного подключения.
+                    paused = false;
+                    if (await readLock(lock)) { throw new Error('Владелец блокировки MCP изменился. Повторите обновление.'); }
+                    return false;
+                }
+                throw error;
+            }
+            if (!status || !Number.isSafeInteger(status.activeJobs) || status.activeJobs < 0) { throw new Error('Сервер не подтвердил состояние очереди MCP. Обновление остановлено.'); }
+            if (!pid && await readLock(lock)) { throw new Error('Владелец блокировки MCP изменился. Повторите обновление.'); }
+            // Серверная сверка переживает процесс: её журналы обработает установленный worker.
+            if (!pid || status.activeJobs === 0) { break; }
             if (Date.now() >= until) { throw new Error('Обновление MCP отложено: на компьютере есть незавершённое задание. Дождитесь результата и повторите подключение.'); }
             await wait(500);
         }
@@ -78,6 +92,7 @@ async function stopWorker(index: string, force: boolean): Promise<void> {
             if (await readLock(lock) === raw) { await fs.rm(lock, { force: true }); }
         }
         completed = true;
+        return paused;
     } finally {
         if (paused && (!force || !completed)) { await api('worker/resume').catch(() => undefined); }
     }
@@ -87,11 +102,11 @@ export async function ensureCurrentWorker(): Promise<void> {
     await stopWorker(fileURLToPath(new URL('../index.js', import.meta.url)), false);
 }
 /** Установщик останавливает старый worker до замены файлов, даже при той же версии сборки. */
-export async function prepareWorkerUpgrade(installedEntry: string): Promise<void> {
+export async function prepareWorkerUpgrade(installedEntry: string): Promise<{ paused: boolean }> {
     if (!installedEntry || !path.isAbsolute(installedEntry) || path.normalize(installedEntry) !== installedEntry) {
         throw new Error('Для обновления нужен абсолютный путь установленного dist/index.js.');
     }
-    await stopWorker(installedEntry, true);
+    return { paused: await stopWorker(installedEntry, true) };
 }
 /** Завершаем паузу после размещения файлов либо после отката установщика. */
 export async function finishWorkerUpgrade(): Promise<void> {
