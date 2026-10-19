@@ -94,6 +94,7 @@ export interface IBridgeInstallation {
     configurationObservedAt?: string;
     configuration?: IMcpConfigurationStatus;
     ragUi?: { supported: true; mode: 'web' };
+    hostedEmbedding?: { supported: true };
 }
 interface IBridgeJobInputBase {
     deviceId: string;
@@ -110,6 +111,9 @@ interface IBridgeJobInputBase {
 export type IBridgeJobInput = IBridgeJobInputBase & (
     {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
         expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}
+    | {kind: 'connect-rag-model'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
+        expectedManifest: string; expectedBindingId: string; expectedInstanceId: string;
+        expectedEmbeddingRevision: number; expectedEmbeddingPin: string}
     | {kind: 'uninstall' | 'inspect-installation'; assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string}
     | {kind: 'prepare-bind-project' | 'bind-project'; projectId: string; folderName: string; bindingMode: TWorkspaceBindingMode;
         expectedBindingId?: string; expectedInstanceId?: string; preparationJobId?: string; expectedPreparation?: string}

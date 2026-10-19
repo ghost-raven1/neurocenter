@@ -11,6 +11,8 @@ vi.mock('react-redux',()=>({useSelector:(select:(state:unknown)=>unknown)=>selec
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:vi.fn()}));
 vi.mock('../src/features/McpBridge/KnowledgeSync',()=>({KnowledgeSync:({projectId,serverReady}:{projectId:string;serverReady?:boolean})=>
     createElement('div',{'data-knowledge-sync':projectId,'data-server-ready':serverReady===undefined?'unknown':String(serverReady)})}));
+vi.mock('../src/features/ProjectEmbedding/ProjectEmbedding',()=>({ProjectEmbedding:({projectId}:{projectId:string})=>
+    createElement('div',{'data-project-embedding':projectId})}));
 const summary:IRagSummary={projectKey:'project',rowCount:3,dimension:4,lastSyncedAt:null,usableVectorCount:3,incompleteRows:0,
     fingerprintVersion:1,indexProfile:{provider:'ollama',model:'fixture',dimension:4},complete:true,indexState:'ready',snapshotHash:'a'.repeat(64)};
 
@@ -20,6 +22,10 @@ describe('Подготовка знаний не зависит от досту�
         expect(html).toContain('Установить OpenCodeRAG');expect(html).toContain('data-knowledge-sync="project"');
         expect(html).toContain('Настройка модели и индекса');expect(html).not.toContain('Заиндексирован');
         expect(html).toContain('data-server-ready="unknown"');
+        expect(html).toContain('data-project-embedding="project"');
+        expect(html).toContain('с локальной моделью автоматическая индексация включена по умолчанию');
+        expect(html).toContain('После подключения серверной модели выполните полное индексирование явно');
+        expect(html).toContain('подключение само не запускает индексацию');
         expect(html).toContain('закройте OpenCode');
     });
     it('Одни серверные строки не подтверждают работоспособность модели или индекса',()=>{

@@ -13,6 +13,7 @@ import {RagQuotaMeter} from '../features/RagQuota/RagQuotaMeter';
 import {projectRagCatalogUrl,projectRagSetupUrl} from '../projectNavigation';
 import {ragSummaryState} from './ragSummaryState';
 import {projectReadUnavailable} from '../projectReadError';
+import { ProjectEmbedding } from '../../../features/ProjectEmbedding/ProjectEmbedding';
 import './RagTab.less';
 const { Paragraph, Text } = Typography;
 
@@ -53,13 +54,14 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             </Row>
 
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
+            <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} />
             <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
                 <Paragraph>Для поиска в OpenCode установите нативный плагин OpenCodeRAG в связанную папку проекта, запустите сервис эмбеддингов и дождитесь индексации.</Paragraph>
                 {canWrite ? <Space wrap>
                     <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
                     <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
                 </Space> : <Text type="secondary">Попросите разработчика или администратора проекта подготовить локальный индекс.</Text>}
-                <Paragraph type="secondary" className="project-rag__help">Если плагин уже установлен, откройте OpenCode в связанной папке. Для нового проекта автоматическая индексация включена; существующий opencode-rag.json сохраняется. Установка и диагностика запуска не подтверждают готовность модели и индекса.</Paragraph>
+                <Paragraph type="secondary" className="project-rag__help">Если плагин уже установлен, откройте OpenCode в связанной папке. Для нового проекта с локальной моделью автоматическая индексация включена по умолчанию. После подключения серверной модели выполните полное индексирование явно; подключение само не запускает индексацию. Существующий opencode-rag.json сохраняется. Установка и диагностика запуска не подтверждают готовность модели и индекса.</Paragraph>
             </Card>
             <Spin spinning={loading}>
                 {summary ? (

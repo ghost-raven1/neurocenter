@@ -14,6 +14,7 @@ import type { IPackage } from '../catalog/bundle-package';
 import { assertRagJobResult, isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import { RAG_JOB_KINDS } from './rag-job-binding';
 import { workspaceFailureMessage } from './workspace-failure';
+import { HOSTED_RAG_KIND, assertHostedRagResult } from './hosted-rag-jobs';
 
 export interface DeviceCompletion {
     lease: string;
@@ -86,6 +87,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                 ||input.result.note!=='Локальный интерфейс готов; система приняла запрос на отдельное окно браузера.')
                 throw new ConflictException('Открытие интерфейса не передаёт локальные адреса, секреты и пути.');
         }
+        if (job.kind === HOSTED_RAG_KIND) assertHostedRagResult(input.result,job.payload,input.state==='failed');
         if (job.kind === 'open-local-recovery-folder') {
             const fields=['projectId','bindingId','opened'];
             if (input.state === 'failed' ? Object.keys(input.result).length !== 0 : Object.keys(input.result).length !== fields.length
@@ -118,8 +120,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                 }
             }
         }
-        const known = [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
-        const matching = job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
+        const known = [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
+        const matching = job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
             ? typeof input.result.root === 'string' && input.result.root.length > 0 && input.result.root.length <= 4096
             : input.result.projectId === job.project_id && ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','inspect-installation'].includes(job.kind) || input.result.ok === true);
         // Действующая аренда подтверждает исполнителя, но не принадлежность результата исходному проекту.
@@ -178,6 +180,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'
             : job.kind === 'open-rag-ui' ? input.state === 'failed' ? 'Интерфейс OpenCodeRAG не открыт. Проверьте папку, обновление инструмента и браузер на компьютере.' : 'Локальный интерфейс готов; отдельное окно запрошено на компьютере.'
+            : job.kind === HOSTED_RAG_KIND ? input.state === 'failed' ? 'Модель не подключена. Проверьте хостинг, выбранную модель и версию OpenCodeRAG.' : 'Подключение модели проверено. Перезапустите OpenCode; индекс проверяется отдельно.'
             : job.kind === 'open-local-change-report' ? input.state === 'failed' ? 'Сравнение не открыто. Проверьте подключённый компьютер.' : 'Полное сравнение открыто только на подключённом компьютере.'
             : job.kind === 'open-local-recovery-folder' ? input.state === 'failed' ? 'Папка резервных копий не открыта.' : 'Резервные копии открыты на подключённом компьютере.'
             : LOCAL_PREPARATIONS.includes(job.kind) ? input.state === 'failed' ? 'Сравнение не выполнено. Локальные файлы сохранены.' : 'План изменений подготовлен. Проверьте его перед применением.'

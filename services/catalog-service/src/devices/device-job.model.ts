@@ -36,4 +36,6 @@ export interface JobInput {
     recoveryId?: string; restorePaths?: string[];
     configurationPreparationJobId?: string; expectedConfigurationSchemaDigest?: string;
     expectedConfigurationRevisions?: Array<{assetId:string;manifest:string;revision:string|null}>;
+    expectedEmbeddingRevision?: number;
+    expectedEmbeddingPin?: string;
 }

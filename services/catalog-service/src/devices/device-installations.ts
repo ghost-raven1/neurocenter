@@ -14,6 +14,7 @@ import { verifyInstallationSet, packageDependencies, type IInstallationSet } fro
 import { installedGraph } from './installed-graph';
 import { configurationSchemaDigest } from './mcp-config-reports';
 import { readConfigurationState } from './mcp-config-status';
+import { supportsHostedRag } from './hosted-rag-jobs';
 
 const latest = `WITH installed_events AS (
     SELECT j.*,member AS installed_package,j.payload->>'bindingId' AS installed_binding,
@@ -165,7 +166,7 @@ export class DeviceInstallations {
             }
             let ragUi: {supported:true;mode:'web'}|undefined;
             try{if(localRagUi({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig}))ragUi={supported:true,mode:'web'};}catch{/* Неизвестный descriptor не обещает интерфейс. */}
-            return { ...item,...(ragUi?{ragUi}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
+            return { ...item,...(ragUi?{ragUi}:{}),...(ragUi&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
                 ...(!item.bindingId ? { legacyBinding: true } : {}),
                 ...(verifiedInspection ? { inspection:verifiedInspection } : {}),
                 ...(verifiedRuntime && isCurrentBinding ? {runtime:verifiedRuntime} : {}),

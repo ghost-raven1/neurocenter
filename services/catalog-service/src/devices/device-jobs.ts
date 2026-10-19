@@ -35,6 +35,8 @@ import { assertRagJobBinding, RAG_JOB_KINDS } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import {ragUiJobPayload,assertRagUiJob} from './rag-ui-jobs';
 import {requireFeatureEnabled} from '../features/require-feature-enabled';
+import { ProjectEmbeddingService } from '../models/project-embedding.service';
+import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
 const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId"`;
 
 /** Очередь с арендой: потеря worker не превращается в успех или повторную запись без проверки. */
@@ -45,6 +47,7 @@ export class DeviceJobs {
         _artifacts: DeviceArtifacts,
         private readonly installations:DeviceInstallations,
         private readonly plans: InstallPlans,
+        private readonly embedding: ProjectEmbeddingService,
     ) {}
     /** Повтор создаёт новое задание через обычные проверки, сохраняя исходную запись журнала. */
     async retry(actor:IAccessActor,id:string,requestKey:string){
@@ -101,6 +104,7 @@ export class DeviceJobs {
                 'open-local-change-report',
                 'open-local-recovery-folder',
                 'open-rag-ui',
+                HOSTED_RAG_KIND,
                 'probe-runtime',
                 'install',
                 'uninstall',
@@ -144,9 +148,11 @@ export class DeviceJobs {
             payload={bindingId};
         }
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
+        const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
         const configuration=await mcpConfigurationJobPayload(this.store,this.installations,this.plans,device,input);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(ragUi){payload=ragUi;}
+        if(hostedRag){payload=hostedRag;}
+        else if(ragUi){payload=ragUi;}
         else if(configuration){payload=configuration;}
         else if (projectLocal) { payload=projectLocal; }
         else if (['prepare-local-change','apply-local-change','open-local-change-report','probe-runtime'].includes(input.kind)) {
@@ -272,6 +278,7 @@ export class DeviceJobs {
             await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
+            await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
             if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
             if (!job.payload.localPlanPurpose && ['prepare-local-change','apply-local-change','open-local-change-report','probe-runtime'].includes(job.kind)) {
                 assertLocalFeature(device.report,job.kind === 'probe-runtime' ? 'runtime-probe-v1' : 'local-change-plan-v1');
@@ -324,6 +331,7 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
+        await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
         if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
         if (!job.payload.localPlanPurpose && ['prepare-local-change','apply-local-change','open-local-change-report','probe-runtime'].includes(job.kind)) {
             assertLocalFeature(device.report,job.kind === 'probe-runtime' ? 'runtime-probe-v1' : 'local-change-plan-v1');
@@ -394,7 +402,7 @@ export class DeviceJobs {
         );
         if (Buffer.byteLength(JSON.stringify(input.result ?? null)) > 10000) { throw new BadRequestException('Промежуточный результат превышает допустимый размер.'); }
         let progressMessage = input.message;
-        if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui'].includes(selected.rows[0]?.kind)) {
+        if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
             progressMessage = 'MCP выполняет проверенное действие.';
         }
