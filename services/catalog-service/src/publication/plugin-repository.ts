@@ -30,7 +30,7 @@ export class PluginRepository {
         const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
         const [count, rows] = await Promise.all([
             this.pool.query(`SELECT count(*)::int AS n FROM ai_plugins ${clause}`, params),
-            this.pool.query(`SELECT * FROM ai_plugins ${clause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, size, (page - 1) * size]),
+            this.pool.query(`SELECT * FROM ai_plugins ${clause} ORDER BY created_at DESC,id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, size, (page - 1) * size]),
         ]);
         return { items: rows.rows.map(toPlugin), page, size, total: Number(count.rows[0].n) };
     }

@@ -13,6 +13,7 @@ import { isMainAdmin, roleLevel } from './rbac';
 import {assertProjectCatalogAsset} from '../devices/project-skill';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import type { IOperationReadScope } from '../operations/operation.types';
+import { fetchSkillReferences, resolveSkillReference } from '../access/skill-reference';
 
 /**
  * Сервис каталога: PG-backed проекты (реальные) + идемпотентная схема при старте.
@@ -296,8 +297,14 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     /**
      * Добавить глобальную ассету в проект (админ проекта).
      */
-    addProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<void> {
+    async addProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<void> {
         assertProjectCatalogAsset(assetKind,assetId,projectId);
+        if (assetKind === 'skill') {
+            const canonical = resolveSkillReference(assetId, await fetchSkillReferences());
+            if (!canonical) { throw new BadRequestException('Скилл отсутствует или его короткое имя неоднозначно. Выберите существующий скилл по полному пути.'); }
+            assetId = canonical;
+            assertProjectCatalogAsset(assetKind,assetId,projectId);
+        }
         return this.db.addProjectAsset(projectId, assetId, assetKind, actor);
     }
 

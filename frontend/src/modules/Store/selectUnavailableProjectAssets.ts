@@ -6,5 +6,5 @@ import { isToolInProject, skillProject } from './storeHelpers';
 export function unavailableProjectAssets(assets: readonly IProjectAsset[], catalog: readonly IStoreApp[], projectId: string): IProjectAsset[] {
     const unique = new Map(assets.map(asset => [asset.assetKind + ':' + asset.assetId, asset]));
     return [...unique.values()].filter(asset => !catalog.some(app => app.kind === asset.assetKind
-        && (skillProject(app) ? app.id === asset.assetId && skillProject(app) === projectId : isToolInProject(app, projectId, [asset]))));
+        && (skillProject(app) ? app.id === asset.assetId && skillProject(app) === projectId : isToolInProject(app, projectId, [asset], catalog))));
 }

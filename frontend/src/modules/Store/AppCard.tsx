@@ -63,6 +63,8 @@ export interface IStoreApp {
     origin: string;
     /** Путь скилла в каталоге (для резолва content). */
     path?: string;
+    /** Техническое имя скилла; отображаемое название не определяет проектное назначение. */
+    skillSlug?: string;
     /** Конфиг MCP (из каталога). */
     config?: Record<string, unknown>;
     /** Файлы плагина (из каталога) — для one-click установки дерева. */

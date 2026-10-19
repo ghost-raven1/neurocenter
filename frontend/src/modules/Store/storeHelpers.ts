@@ -24,18 +24,50 @@ export function canEditTool(user: Parameters<typeof projectRoleLevel>[0], app: P
 /** Транслит/ascii-слог имени (совпадает c backend slugify). */
 export const slug = (s: string): string => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
-/** Совпадение имени с общим скиллом не делает чужой проектный скилл частью выбранного каталога. */
-export function isToolInProject(
-    app: Pick<IStoreApp, 'kind' | 'id' | 'name' | 'path'>,
+type StoreTool = Pick<IStoreApp, 'kind' | 'id' | 'name' | 'path' | 'skillSlug'>;
+type ProjectAssetReference = Pick<IProjectAsset, 'assetKind' | 'assetId'>;
+const validSkillPath = (value: string): boolean => value.length > 0 && value.length <= 240
+    && value.split('/').every(part => /^[a-z0-9][a-z0-9_-]*$/.test(part));
+
+/** Как и на сервере: точный путь важнее старого slug, неоднозначное короткое имя не разрешается. */
+export function resolveStoreSkillReference(reference: string, catalog: readonly StoreTool[]): string | undefined {
+    if (!validSkillPath(reference)) { return undefined; }
+    const skills = catalog.filter(app => app.kind === 'skill');
+    if (skills.some(app => (app.path ?? app.id) === reference)) { return reference; }
+    if (reference.includes('/') || reference === 'project' || reference.startsWith('project-')) { return undefined; }
+    const candidates = new Set(skills.flatMap(app => {
+        const path = app.path ?? app.id;
+        const parts = path.split('/');
+        if (!validSkillPath(path) || parts[0] === 'project' || parts[0].startsWith('project-')) { return []; }
+        return app.skillSlug === reference || parts[parts.length - 1] === reference ? [path] : [];
+    }));
+    return candidates.size === 1 ? [...candidates][0] : undefined;
+}
+
+/** Возвращает исходную ссылку, чтобы снятие старого назначения удаляло именно его ID. */
+export function projectAssetForTool(
+    app: StoreTool,
     projectId: string | undefined,
-    assets: ReadonlyArray<Pick<IProjectAsset, 'assetKind' | 'assetId'>>,
+    assets: readonly ProjectAssetReference[],
+    catalog: readonly StoreTool[] = [app],
+): ProjectAssetReference | undefined {
+    if (!projectId || (skillProject(app) && skillProject(app) !== projectId)) { return undefined; }
+    return assets.find(asset => asset.assetKind === app.kind && (app.kind === 'skill'
+        ? resolveStoreSkillReference(asset.assetId, catalog) === (app.path ?? app.id)
+        : asset.assetId === app.id));
+}
+
+/** Собственные проектные скиллы доступны по роли; общие требуют однозначного назначения. */
+export function isToolInProject(
+    app: StoreTool,
+    projectId: string | undefined,
+    assets: readonly ProjectAssetReference[],
+    catalog: readonly StoreTool[] = [app],
 ): boolean {
     if (!projectId) { return false; }
     const owner = skillProject(app);
     if (owner) { return owner === projectId; }
-    return assets.some(asset => asset.assetKind === app.kind && (app.kind === 'skill'
-        ? asset.assetId === slug(app.name) || asset.assetId === (app.path ?? app.name)
-        : asset.assetId === app.id));
+    return projectAssetForTool(app, projectId, assets, catalog) !== undefined;
 }
 
 /** Маппинг MCP/плагина каталога в карточку витрины. */
@@ -61,6 +93,7 @@ export const fromSkill = (s: ISkillListSummary): IStoreApp => ({
     tags: s.meta.tags ?? [],
     origin: s.meta.slug ?? s.path,
     path: s.path,
+    skillSlug: s.meta.slug,
 });
 
 /** Подпись типа приложения. */

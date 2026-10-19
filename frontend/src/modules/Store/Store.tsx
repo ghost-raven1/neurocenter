@@ -12,7 +12,7 @@ import { isMainAdminRole, roleLevel, projectRoleLevel } from '../../features/Use
 import { RootState } from '../../store';
 
 import AppCard, { type IStoreApp, type TStoreKind } from './AppCard';
-import { slug, fromPlugin, fromSkill, pluralProjects, skillProject, canEditTool, projectSkillReferenceBlocker, isToolInProject } from './storeHelpers';
+import { fromPlugin, fromSkill, pluralProjects, skillProject, canEditTool, projectSkillReferenceBlocker, isToolInProject, projectAssetForTool } from './storeHelpers';
 import StoreCreateModal from './StoreCreateModal';
 import StoreDetailsModal from './StoreDetailsModal';
 import StoreEditModal from './StoreEditModal';
@@ -39,6 +39,7 @@ import { createProjectCatalogBatchController } from './projectCatalogBatch';
 import UnavailableProjectAssets from './UnavailableProjectAssets';
 import { unavailableProjectAssets } from './selectUnavailableProjectAssets';
 import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
+import { loadCompletePluginCatalog } from './loadCompletePluginCatalog';
 
 const { Text, Paragraph } = Typography;
 
@@ -128,7 +129,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         canApprove: canManage,
         captureOwner,
         prepareCatalog: (app, current) => prepareProjectCatalogInstall({
-            inProject: isToolInProject(app, targetProject?.id, assets), canManage, current,
+            inProject: isToolInProject(app, targetProject?.id, assets, catalog), canManage, current,
             add: () => bffApi.addProjectAsset(target!, { assetId: app.id, assetKind: app.kind }),
             refresh: loadProject,
         }),
@@ -157,24 +158,30 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     }, [projects, projectsReady, accessKey, embedded, presetTarget, requestedTarget, history, location.search, location.hash]);
 
     const loadCatalog = useCallback(async (): Promise<void> => {
+        const isOwnerCurrent = captureOwner();
+        if (!isOwnerCurrent()) { return; }
         const request = ++catalogRequest.current;
+        const isCurrent = (): boolean => request === catalogRequest.current && isOwnerCurrent();
         setLoading(true);
         setLoadError(false);
         try {
             const [plugins, skills] = await Promise.all([
-                bffApi.listAiPlugins(),
+                loadCompletePluginCatalog(bffApi.listAiPlugins, isCurrent),
                 bffApi.listSkills({}),
             ]);
-            const nextCatalog=[
-                ...((plugins.items ?? [])).map(fromPlugin),
+            if (!isCurrent() || plugins === null) { return; }
+            const nextCatalog = [
+                ...plugins.map(fromPlugin),
                 ...((skills ?? [])).map(fromSkill),
-            ];if(request !== catalogRequest.current){return;}setCatalog(nextCatalog);setViewApp(previous=>previous?(nextCatalog.find(item=>item.id===previous.id&&item.kind===previous.kind)||previous):null);
+            ];
+            setCatalog(nextCatalog);
+            setViewApp(previous => previous ? (nextCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous) : null);
         } catch {
-            if (request === catalogRequest.current) { setLoadError(true); setCatalog([]); }
+            if (isCurrent()) { setLoadError(true); setCatalog([]); }
         } finally {
-            if (request === catalogRequest.current) { setLoading(false); }
+            if (isCurrent()) { setLoading(false); }
         }
-    }, [accessKey]);
+    }, [accessKey, captureOwner]);
 
     useEffect(() => {
         void loadCatalog();
@@ -186,7 +193,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const openEdit = (app: IStoreApp): void => setEditApp(app);
 
     const isInProject = useCallback((app: IStoreApp): boolean =>
-        isToolInProject(app, targetProject?.id, assets), [ assets, targetProject ]);
+        isToolInProject(app, targetProject?.id, assets, catalog), [ assets, targetProject, catalog ]);
 
     const shown = useMemo(() => {
         const base = (embedded || !canBrowseCommon) ? catalog.filter(isInProject) : catalog;
@@ -211,7 +218,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         if (blocker) { message.warning(blocker); return; }
         setInstalling(app.id);
         try {
-            const assetId=assets.find(item=>item.assetKind===app.kind && (item.assetId===app.id || item.assetId===slug(app.name)))?.assetId ?? app.id;
+            const assetId = action === 'uninstall' ? projectAssetForTool(app, targetProject.id, assets, catalog)?.assetId ?? app.id : app.id;
             if(action==='install'){await bffApi.addProjectAsset(target,{assetId,assetKind:app.kind});}
             else{await bffApi.removeProjectAsset(target,{assetId,assetKind:app.kind});}
             if (!isCurrent()) { return; }
@@ -219,7 +226,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             await loadProject();
         }catch(error){if(isCurrent()){message.error(errorMessage(error,'Не удалось изменить каталог проекта'));}}
         finally{if(isCurrent()){setInstalling(null);}}
-    },[target,targetProject,canManage,assets,loadProject,projectCatalogUsable,projectLoading,captureOwner]);
+    },[target,targetProject,canManage,assets,catalog,loadProject,projectCatalogUsable,projectLoading,captureOwner]);
 
     // При открытии окна установки сбрасываем выбор проектов.
     useEffect(() => {
@@ -352,7 +359,8 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
             {!loading && !loadError && projectCatalogUsable && targetProject && <UnavailableProjectAssets
                 key={JSON.stringify([accessKey, targetProject.id])} projectId={targetProject.id} canManage={canManage}
-                assets={unavailableProjectAssets(assets, catalog, targetProject.id)} onRemoved={loadProject} />}
+                assets={unavailableProjectAssets(assets, catalog, targetProject.id)} onRemoved={loadProject}
+                onRecheck={async () => { await Promise.all([loadCatalog(), loadProject()]); }} />}
 
             { loading
                 ? <Spin style={{ display: 'block', margin: '60px auto' }} />
