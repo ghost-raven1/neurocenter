@@ -44,4 +44,5 @@ export interface IOperationRow {
     error: string | null;
     log: IOperationDetail['log'] | string | null;
     retries: number;
+    bridge_job_kind?: string;
 }

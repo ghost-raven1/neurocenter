@@ -15,6 +15,7 @@ const operation: IOperation = {
     resourceType: 'bridge', resourceId: '12345678-1234-1234-1234-123456789abc',
     actor: user.email, projectId: 'prj-example', type: 'INSTALL', state: 'FAILED',
     percent: 50, bytesDone: 0, bytesTotal: 0, startedAt: null, finishedAt: null, error: 'Сбой',
+    bridgeJob: {kind:'install',retrySupported:true,minimumLevel:2},
 };
 const job = { id: 'new-job', state: 'queued', message: '' } as IBridgeJob;
 
@@ -153,6 +154,14 @@ describe('Действия очереди принадлежат текущем�
         expect(options.cancel).not.toHaveBeenCalled();
     });
 
+    it('Уничтожает подтверждение после выхода, пока отправленная отмена ещё ожидает ответ', async () => {
+        const pending=deferred<void>();const {controller,options,dialogs,setUser}=setup();
+        options.cancel.mockReturnValueOnce(pending.promise);controller.cancel({...operation,state:'QUEUED'});
+        const request=dialogs[0].confirm();setUser(null);controller.dispose();
+        expect(dialogs[0].destroy).toHaveBeenCalledOnce();pending.resolve();await request;
+        expect(options.success).not.toHaveBeenCalled();expect(options.reload).not.toHaveBeenCalled();
+    });
+
     it('Не создаёт два подтверждения и два запроса отмены для одного задания', async () => {
         const pending = deferred<void>();
         const { controller, options, dialogs } = setup();
@@ -169,6 +178,16 @@ describe('Действия очереди принадлежат текущем�
         pending.resolve();
         await request;
         expect(options.success).toHaveBeenCalledWith('Задание в очереди отменено');
+    });
+
+    it('Завершение прежней отмены не удаляет новое подтверждение после повторного монтирования', async () => {
+        const pending=deferred<void>();const {controller,options,dialogs}=setup();
+        const queued={...operation,state:'QUEUED'} as IOperation;
+        options.cancel.mockReturnValueOnce(pending.promise);controller.cancel(queued);
+        const request=dialogs[0].confirm();controller.dispose();controller.activate();controller.cancel(queued);
+        pending.resolve();await request;controller.cancel(queued);
+        expect(dialogs).toHaveLength(2);expect(options.success).not.toHaveBeenCalled();
+        controller.dispose();expect(dialogs[1].destroy).toHaveBeenCalledOnce();
     });
 
     it('Отказ сервера для уже начатой работы не выдаётся за успешную отмену', async () => {

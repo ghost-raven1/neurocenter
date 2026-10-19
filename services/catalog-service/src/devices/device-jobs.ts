@@ -30,6 +30,7 @@ import { authorizeMcpConfigurationSave } from './mcp-config-permit';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
+import { deviceJobRetryPolicy } from './device-job-retry';
 import { assertRagJobBinding, RAG_JOB_KINDS } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import {ragUiJobPayload,assertRagUiJob} from './rag-ui-jobs';
@@ -51,7 +52,7 @@ export class DeviceJobs {
         const {rows}=await this.store.pool.query('SELECT * FROM bridge_jobs WHERE id=$1 AND email=$2',[id,actor.email]);
         const job=rows[0] as Job|undefined;
         if(!job){throw new NotFoundException('Задание не найдено в вашем профиле.');}
-        if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','probe-runtime','open-rag-ui'].includes(job.kind)) {
+        if (!deviceJobRetryPolicy(job.kind).retrySupported) {
             throw new ConflictException('Откройте мастер или проверку инструмента заново: повтор требует актуальной папки и нового подтверждения.');
         }
         if(!['failed','cancelled'].includes(job.state)){throw new ConflictException('Повтор доступен только для неуспешного или отменённого задания.');}

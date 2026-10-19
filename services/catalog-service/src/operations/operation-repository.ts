@@ -14,6 +14,23 @@ function readScopeCondition(scope: IOperationReadScope, params: unknown[]): stri
 export class OperationRepository {
     constructor(private readonly pool: Pool) {}
 
+    /** Метаданные берём из личного задания, сверяя владельца и проект; обычный журнал не затрагивает очередь. */
+    private async withBridgeJobs(rows: IOperationRow[]): Promise<IOperationRow[]> {
+        const ids = [...new Set(rows.filter(row => row.resource_type === 'bridge'
+            && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(row.resource_id))
+            .map(row => row.resource_id))];
+        if (!ids.length) { return rows; }
+        const jobs = await this.pool.query<{ id: string; email: string; project_id: string | null; kind: string }>(
+            'SELECT id, email, project_id, kind FROM bridge_jobs WHERE id = ANY($1::text[])', [ids],
+        );
+        const byId = new Map(jobs.rows.map(job => [job.id, job]));
+        return rows.map(row => {
+            const job = row.resource_type === 'bridge' ? byId.get(row.resource_id) : undefined;
+            return job && job.email === row.actor && job.project_id === row.project_id
+                ? { ...row, bridge_job_kind: job.kind } : row;
+        });
+    }
+
     /** Фильтр проекта не заменяет scope; undefined scope используется только для главного администратора. */
     async list(page: number, size: number, projectIds?: string[], state?: string, scope?: IOperationReadScope): Promise<IOperationPage> {
         const offset = (page - 1) * size;
@@ -44,8 +61,9 @@ export class OperationRepository {
                 [...filterParams, size, offset],
             ),
         ]);
+        const rows = await this.withBridgeJobs(rowsResult.rows);
         return {
-            items: rowsResult.rows.map(toOperation),
+            items: rows.map(toOperation),
             page,
             size,
             total: totalResult.rows[0].n,
@@ -62,7 +80,7 @@ export class OperationRepository {
         const params: unknown[] = [operationId];
         const condition = scope ? ` AND ${readScopeCondition(scope, params)}` : '';
         const result = await this.pool.query<IOperationRow>('SELECT * FROM operations WHERE operation_id = $1' + condition, params);
-        const row = result.rows[0];
+        const [row] = await this.withBridgeJobs(result.rows);
         return row ? toOperationDetail(row) : null;
     }
 

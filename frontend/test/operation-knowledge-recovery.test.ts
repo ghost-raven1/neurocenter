@@ -18,6 +18,7 @@ const operation: IOperation = {
     actor: user.email, projectId: 'prj-example', type: 'SYNC', state: 'FAILED',
     percent: 0, bytesDone: 0, bytesTotal: 0, startedAt: null, finishedAt: null,
     error: 'Синхронизация требует проверки плана в MCP. Изменения не подтверждены.',
+    bridgeJob: { kind: 'sync-rag', retrySupported: true, minimumLevel: 2 },
 };
 const actions = { isBusy: () => false, retry: vi.fn(), cancel: vi.fn() };
 

@@ -315,6 +315,7 @@ export interface IOperation {
     startedAt: string | null;
     finishedAt: string | null;
     error: string | null;
+    bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
 }
 
 /** Детали операции. */

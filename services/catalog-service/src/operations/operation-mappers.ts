@@ -1,4 +1,5 @@
 import type { IOperation, IOperationDetail } from '../catalog/dto';
+import { deviceJobRetryPolicy } from '../devices/device-job-retry';
 import type { IOperationRow } from './operation.types';
 
 export function toOperation(row: IOperationRow): IOperation {
@@ -16,6 +17,7 @@ export function toOperation(row: IOperationRow): IOperation {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         error: row.error,
+        ...(row.bridge_job_kind ? { bridgeJob: deviceJobRetryPolicy(row.bridge_job_kind) } : {}),
     };
 }
 

@@ -108,9 +108,8 @@ export function createOperationActionsController(options: IControllerOptions) {
                 if (confirmations.get(id)?.token === token) { confirmations.delete(id); }
             };
             const confirmation = options.confirmCancel(async () => {
-                close();
-                if (!isCurrent() || !operationActionPermissions(operation, options.getUser()).cancel
-                    || pending.has(id)) { return; }
+                if (pending.has(id)) { return; }
+                if (!isCurrent() || !operationActionPermissions(operation, options.getUser()).cancel) { close(); return; }
                 const request = start(id);
                 try {
                     // Сервер отменяет атомарно только QUEUED; уже начатая работа вернёт отказ.
@@ -122,6 +121,7 @@ export function createOperationActionsController(options: IControllerOptions) {
                     if (isCurrent()) { options.error(errorMessage(failure, 'Не удалось отменить задание.')); }
                 } finally {
                     finish(id, request);
+                    close();
                 }
             }, close);
             confirmations.set(id, { ...confirmation, token });
