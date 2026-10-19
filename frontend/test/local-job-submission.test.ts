@@ -58,9 +58,22 @@ function setup(reload = vi.fn<() => Promise<void>>().mockResolvedValue(undefined
 }
 
 beforeEach(() => { vi.clearAllMocks(); vi.mocked(bridgeApi.create).mockResolvedValue(job); });
-afterEach(() => { hooks.dispose(); });
+afterEach(() => { hooks.dispose(); vi.restoreAllMocks(); });
 
 describe('Отправка локального задания не ждёт фонового чтения списков', () => {
+    it('Отказ генерации ключа показывает причину и освобождает действие для повторной отправки', async () => {
+        vi.spyOn(crypto, 'randomUUID').mockImplementationOnce(() => { throw new TypeError('crypto.randomUUID unavailable'); });
+        const {render} = setup();
+        await expect(render().submit(input)).resolves.toBeUndefined();
+        expect(render()).toMatchObject({busy: false});
+        expect(render().error).toMatch(/Не удалось подготовить запрос к мосту/);
+        expect(render().error).not.toContain('crypto');
+        expect(bridgeApi.create).not.toHaveBeenCalled();
+        expect(await render().submit(input)).toBe(job);
+        expect(render()).toMatchObject({busy: false, error: '', job});
+        expect(bridgeApi.create).toHaveBeenCalledOnce();
+    });
+
     it('Возвращает созданное задание и снимает занятость, пока перечитывание ещё ожидает ответ', async () => {
         const refresh = deferred<void>();
         const reload = vi.fn(() => refresh.promise);

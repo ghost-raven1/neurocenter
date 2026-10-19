@@ -13,6 +13,7 @@ import { InstallationReadinessStatus } from './InstallationReadinessStatus';
 import { runtimeConfigurationChanged } from './runtimeConfiguration';
 import { installationProgress } from './installationProgress';
 import { errorMessage } from '../../common/utils/errorMessage';
+import { createBridgeRequestKey } from './bridgeRequestKey';
 import './LocalInstallations.less';
 
 interface IProps {
@@ -72,10 +73,10 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
             || installationBlocker(current.bridge.device) || pendingLocalJob(current.bridge.jobs,row) || removalLock.current) { return; }
         removalLock.current = true; setRemovalBusy(true); setRemovalError('');
         const operationScope = scopeRef.current;
-        const key = JSON.stringify([installationIdentity(row), row.version, row.manifest]);
-        const requestKey = removalKeys.current.get(key) || crypto.randomUUID();
-        removalKeys.current.set(key, requestKey);
         try {
+            const key = JSON.stringify([installationIdentity(row), row.version, row.manifest]);
+            const requestKey = removalKeys.current.get(key) || createBridgeRequestKey();
+            removalKeys.current.set(key, requestKey);
             await bridgeApi.create(installationRequest('uninstall', row, requestKey));
             removalKeys.current.delete(key);
             if (active.current && scopeRef.current === operationScope) { setSelected(undefined); await current.bridge.reload(); }
@@ -97,10 +98,10 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
         const rowKey = installationIdentity(row);
         setInspectionBusy(rowKey); setInspectionError(undefined);
         const operationScope = scopeRef.current;
-        const key = JSON.stringify([rowKey, row.version, row.manifest]);
-        const requestKey = inspectionKeys.current.get(key) || crypto.randomUUID();
-        inspectionKeys.current.set(key, requestKey);
         try {
+            const key = JSON.stringify([rowKey, row.version, row.manifest]);
+            const requestKey = inspectionKeys.current.get(key) || createBridgeRequestKey();
+            inspectionKeys.current.set(key, requestKey);
             await bridgeApi.create(installationRequest('inspect-installation', row, requestKey));
             inspectionKeys.current.delete(key);
             if (active.current && scopeRef.current === operationScope) { await current.bridge.reload(); }

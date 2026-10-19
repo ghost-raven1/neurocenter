@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { bridgeApi, type IBridgeJob, type IBridgeJobDraft } from './api';
 import type { useBridge } from './useBridge';
 import { errorMessage } from '../../common/utils/errorMessage';
+import { createBridgeRequestKey } from './bridgeRequestKey';
 
 /** Повтор после сетевой ошибки использует прежний requestKey и не создаёт второй запуск. */
 export function useLocalJob(bridge: ReturnType<typeof useBridge>) {
@@ -13,8 +14,8 @@ export function useLocalJob(bridge: ReturnType<typeof useBridge>) {
     const submit = async (input: IBridgeJobDraft): Promise<IBridgeJob | undefined> => {
         if (!mounted.current || lock.current) { return; }
         lock.current = true; setBusy(true); setError('');
-        const key = JSON.stringify(input); const requestKey = keys.current.get(key) || crypto.randomUUID(); keys.current.set(key, requestKey);
         try {
+            const key = JSON.stringify(input); const requestKey = keys.current.get(key) || createBridgeRequestKey(); keys.current.set(key, requestKey);
             const job = await bridgeApi.create({ ...input, requestKey } as Parameters<typeof bridgeApi.create>[0]);
             keys.current.delete(key);
             if (mounted.current) {

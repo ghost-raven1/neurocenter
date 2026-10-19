@@ -9,18 +9,29 @@ function deferred<T>() {
     const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
     return { promise, resolve, reject };
 }
-function harness() {
+function harness(newKey?: () => string) {
     const fixture = ragUiFixture(), draft = ragUiRequest(fixture.item, fixture.binding);
     const state = { scope: 'owner:folder', owner: true, writes: [] as IRagUiLaunchState[] };
     const create = vi.fn(async () => fixture.job()), reload = vi.fn(async () => undefined);
     let key = 0;
     const controller = createRagUiLaunchController({ getScope: () => state.scope, captureOwner: () => () => state.owner,
-        create, reload, newKey: () => `request-${++key}`, onChange: next => state.writes.push(next) });
+        create, reload, newKey: newKey ?? (() => `request-${++key}`), onChange: next => state.writes.push(next) });
     controller.activate();
     return { ...fixture, draft, state, create, reload, controller, last: () => state.writes.at(-1)! };
 }
 
 describe('Запуск окна OpenCodeRAG принадлежит исходной сессии и папке', () => {
+    it('Отказ подготовки ключа не оставляет невидимую блокировку и позволяет повторить открытие', async () => {
+        const newKey = vi.fn<() => string>().mockImplementationOnce(() => { throw new TypeError('UUID unavailable'); }).mockReturnValue('request-retry');
+        const h = harness(newKey);
+        await expect(h.controller.submit(h.draft)).resolves.toBeUndefined();
+        expect(h.last().busy).toBe(false); expect(h.last().error).toMatch(/Не удалось подготовить запрос к мосту/);
+        expect(h.last().error).not.toContain('UUID'); expect(h.create).not.toHaveBeenCalled();
+        await h.controller.submit(h.draft);
+        expect(h.create).toHaveBeenCalledExactlyOnceWith({...h.draft, requestKey: 'request-retry'});
+        expect(h.last()).toMatchObject({busy: false, error: '', submitted: {id: 'job-one'}});
+    });
+
     it('Двойное нажатие отправляет одно задание, ответ сразу освобождает кнопку без ожидания reload', async () => {
         const h = harness(), post = deferred<IBridgeJob>(), refresh = deferred<void>();
         h.create.mockReturnValue(post.promise); h.reload.mockReturnValue(refresh.promise);

@@ -1,6 +1,7 @@
 import { errorMessage } from '../../../common/utils/errorMessage';
 import type { IBridgeJob } from '../api';
 import type { IRagUiDraft, IRagUiRequest } from './ragUiState';
+import { createBridgeRequestKey } from '../bridgeRequestKey';
 
 export interface IRagUiLaunchState { scope: string; busy: boolean; error: string; submitted?: IBridgeJob; }
 interface IOptions {
@@ -25,9 +26,10 @@ export function createRagUiLaunchController(options: IOptions) {
             const sequence = ++serial;
             const current = (): boolean => active && epoch === capturedEpoch && serial === sequence && owns() && options.getScope() === scope;
             const token = Symbol('open-rag-ui'); lock = token;
-            const signature = JSON.stringify(input), requestKey = keys.get(signature) || (options.newKey ?? (() => crypto.randomUUID()))();
-            keys.set(signature, requestKey); update({ busy: true, error: '' });
+            update({ busy: true, error: '' });
             try {
+                const signature = JSON.stringify(input), requestKey = keys.get(signature) || createBridgeRequestKey(options.newKey);
+                keys.set(signature, requestKey);
                 const job = await options.create({ ...input, requestKey });
                 if (!job || typeof job.id !== 'string' || job.kind !== 'open-rag-ui' || job.deviceId !== input.deviceId
                     || job.projectId !== input.projectId || job.bindingId !== input.expectedBindingId || job.assetId !== input.assetId
