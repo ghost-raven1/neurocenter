@@ -53,6 +53,12 @@ describe('Открытие RAG UI не выполняет произвольны
         await closeOwnRagUi(input.projectId);expect(stop).toHaveBeenCalledWith({force:false,timeoutMs:120000});
         await openRagUi(input,async()=>{});expect(startRagUiProcess).toHaveBeenCalledTimes(2);
     });
+    it('Exit UI без close удаляет сессию: восстановление не ждёт 120 секунд и новое окно запускает сервер заново',async()=>{
+        vi.useFakeTimers();await openRagUi(input,async()=>{});child.emit('exit',0);
+        await closeOwnRagUi(input.projectId);expect(stop).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
+        expect(child.listenerCount('exit')).toBe(0);expect(child.listenerCount('close')).toBe(0);
+        await openRagUi(input,async()=>{});expect(startRagUiProcess).toHaveBeenCalledTimes(2);
+    });
     it('Новая привязка не получает старый процесс или окно',async()=>{
         await expect(openRagUi({...input,bindingId:'f'.repeat(64)},async()=>{})).rejects.toThrow('изменилась');expect(startRagUiProcess).not.toHaveBeenCalled();
     });

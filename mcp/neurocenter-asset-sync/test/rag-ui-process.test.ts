@@ -8,6 +8,7 @@ const url='http://127.0.0.1:49152/#neurocenter-token='+'a'.repeat(48);
 const ready={type:'neurocenter-rag-ui-ready',url,port:49152};
 class Child extends EventEmitter{
     pid=12345;connected=true;stdout=new PassThrough();stderr=new PassThrough();
+    exitCode:number|null=null;signalCode:NodeJS.Signals|null=null;
     disconnect=vi.fn(()=>{this.connected=false;this.emit('close',0);});kill=vi.fn();
 }
 describe('Локальный UI принадлежит мосту и подтверждает готовность только по IPC',()=>{
@@ -34,6 +35,27 @@ describe('Локальный UI принадлежит мосту и подтв�
     it('Раннее завершение не становится успешным открытием окна',async()=>{
         const pending=startRagUiProcess('/managed/opencode-rag.mjs',['ui'],'/owned/project',{}).catch(error=>error);
         child.emit('close',1);child.emit('exit',1);expect((await pending).message).toContain('до готовности');
+    });
+    it('Фактический exit без close освобождает graceful restore, потоки и ожидание без kill',async()=>{
+        child.disconnect.mockImplementation(()=>{child.connected=false;});
+        const pending=startRagUiProcess('/managed/opencode-rag.mjs',['ui'],'/owned/project',{});child.emit('message',ready);const session=await pending;
+        const stopped=session.stop({force:false,timeoutMs:120000});child.exitCode=0;child.emit('exit',0);await stopped;
+        expect(child.stdout.destroyed).toBe(true);expect(child.stderr.destroyed).toBe(true);expect(vi.getTimerCount()).toBe(0);
+        expect(child.listenerCount('exit')).toBe(0);expect(child.listenerCount('close')).toBe(0);
+        expect(process.kill).not.toHaveBeenCalled();expect(child.kill).not.toHaveBeenCalled();
+    });
+    it('Уже установленный exitCode не заставляет ждать close или посылать сигнал старому PID',async()=>{
+        child.disconnect.mockImplementation(()=>{child.connected=false;});
+        const pending=startRagUiProcess('/managed/opencode-rag.mjs',['ui'],'/owned/project',{});child.emit('message',ready);const session=await pending;
+        child.exitCode=0;await session.stop({force:false,timeoutMs:120000});
+        expect(vi.getTimerCount()).toBe(0);expect(process.kill).not.toHaveBeenCalled();expect(child.stdout.destroyed).toBe(true);
+    });
+    it('Startup exit без close сразу отклоняет готовность и не оставляет handles или IPC listener',async()=>{
+        child.disconnect.mockImplementation(()=>{child.connected=false;});
+        const pending=startRagUiProcess('/managed/opencode-rag.mjs',['ui'],'/owned/project',{}).catch(error=>error);
+        child.exitCode=1;child.emit('exit',1);expect((await pending).message).toContain('до готовности');
+        expect(vi.getTimerCount()).toBe(0);expect(child.listenerCount('message')).toBe(0);expect(child.listenerCount('exit')).toBe(0);expect(child.listenerCount('close')).toBe(0);
+        expect(child.stdout.destroyed).toBe(true);expect(child.stderr.destroyed).toBe(true);expect(process.kill).not.toHaveBeenCalled();
     });
     it('Зависший после disconnect процесс получает ограниченное завершение своей группы',async()=>{
         child.disconnect.mockImplementation(()=>{child.connected=false;});

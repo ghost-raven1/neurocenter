@@ -57,7 +57,12 @@ export async function openRagUi(input:{projectId:string;bindingId:string;instanc
         const process=await startRagUiProcess(uiArtifact.entrypoint,descriptor.args,root,env);
         const timer=setInterval(()=>{void identity().catch(async()=>{const current=sessions.get(input.projectId);if(current?.process===process){sessions.delete(input.projectId);clearInterval(timer);await process.stop();}});},15000);
         timer.unref();session={key,root,process,timer};sessions.set(input.projectId,session);
-        process.child.once('close',()=>{clearInterval(timer);if(sessions.get(input.projectId)?.process===process)sessions.delete(input.projectId);});
+        const forget=()=>{
+            process.child.off('exit',forget);process.child.off('close',forget);clearInterval(timer);
+            if(sessions.get(input.projectId)?.process===process)sessions.delete(input.projectId);
+        };
+        process.child.once('exit',forget);process.child.once('close',forget);
+        if(process.child.exitCode!=null||process.child.signalCode!=null)forget();
     }else reused=true;
     try{await authorize();await identity();await openRagBrowserWindow(session.process.url);}
     catch(error){if(!reused){sessions.delete(input.projectId);clearInterval(session.timer);await session.process.stop();}throw error;}
