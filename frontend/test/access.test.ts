@@ -4,6 +4,8 @@ import { accessEmail, applyGrantChange, grantChanges, grantMap, platformUserPayl
 import reducer from '../src/modules/Access/redux/reducers';
 import { fetchDecisions } from '../src/modules/Access/redux/actions';
 import type { IAccessProjectRef } from '../src/core/api/interfaces';
+import { authInit } from '../src/features/UserBlock/redux/actions';
+import type { IAuthMe } from '../src/core/interfaces';
 
 vi.mock('../src/core/api/base', () => ({ default: { get: vi.fn() } }));
 
@@ -82,9 +84,11 @@ describe('Пользователи по электронной почте', () =
 
 describe('Права после смены активной роли', () => {
     const payload = { decisions: [{ scope: 'platform', scopeId: 'all', actions: ['platform.admin'], decisionId: 'main', policyRevision: 1, ttlSeconds: 0 }], externalServiceUrl: null };
+    const auth:IAuthMe={user:{id:'admin',email:'admin@example.test',principalName:'admin',displayName:'Администратор',activeRole:'Главный админ',userRoles:['Главный админ'],routePermissions:['access'],projectRoles:[]},policies:{access:['read']}};
+    const initial=()=>reducer(reducer(undefined,authInit.pending('auth',undefined)),authInit.fulfilled(auth,'auth',undefined));
 
     it('Медленный ответ предыдущей роли не заменяет актуальные права', () => {
-        let state = reducer(undefined, fetchDecisions.pending('old', 'project'));
+        let state = reducer(initial(), fetchDecisions.pending('old', 'project'));
         state = reducer(state, fetchDecisions.pending('current', 'project'));
         state = reducer(state, fetchDecisions.fulfilled(payload, 'old', 'project'));
         expect(state.decisions).toEqual([]);
@@ -95,7 +99,7 @@ describe('Права после смены активной роли', () => {
     });
 
     it('Сетевой отказ показан явно и не оставляет старые права на экране', () => {
-        let state = reducer(undefined, fetchDecisions.pending('first', 'project'));
+        let state = reducer(initial(), fetchDecisions.pending('first', 'project'));
         state = reducer(state, fetchDecisions.fulfilled(payload, 'first', 'project'));
         state = reducer(state, fetchDecisions.pending('refresh', 'project'));
         state = reducer(state, fetchDecisions.rejected(null, 'refresh', 'project', 'Нет связи с сервером'));

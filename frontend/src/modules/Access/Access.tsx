@@ -26,8 +26,8 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 /** Участники, назначения по проектам и фактические права текущей роли. */
-const Access = (): JSX.Element => {
-    const { scope: accessScope } = useAuthRequestOwner();
+const AccessContent = (): JSX.Element => {
+    const { scope: accessScope, captureOwner } = useAuthRequestOwner();
     const dispatch = useAppDispatch();
     const { decisions, loading: decisionsLoading, error: decisionsError } = useSelector((state: RootState) => state.access);
     const currentUser = useSelector((state: RootState) => state.userBlock.user);
@@ -42,15 +42,16 @@ const Access = (): JSX.Element => {
     const requestRef = useRef(0);
 
     const loadUsers = useCallback(async (): Promise<void> => {
+        const owns=captureOwner();if(!owns()){return;}
         const request = ++requestRef.current;
         setUsersLoading(true); setUsersError('');
         try {
             const result = await bffApi.getAccessUsers();
-            if (request === requestRef.current) { setUsers(result.users); }
+            if (owns() && request === requestRef.current) { setUsers(result.users); }
         } catch (error: unknown) {
-            if (request === requestRef.current) { setUsersError(errorMessage(error, 'Не удалось загрузить назначения. Проверьте соединение и повторите попытку.')); }
-        } finally { if (request === requestRef.current) { setUsersLoading(false); } }
-    }, []);
+            if (owns() && request === requestRef.current) { setUsersError(errorMessage(error, 'Не удалось загрузить назначения. Проверьте соединение и повторите попытку.')); }
+        } finally { if (owns() && request === requestRef.current) { setUsersLoading(false); } }
+    }, [captureOwner]);
 
     const refresh = useCallback((): void => { void loadUsers(); void dispatch(fetchDecisions('project')); }, [loadUsers, dispatch]);
     useSectionUpdates(['access', 'projects'], refresh);
@@ -107,6 +108,12 @@ const Access = (): JSX.Element => {
         </Card>
         <AccessGrantModal key={accessScope} open={modal.open} principalName={modal.principalName} onClose={() => setModal(previous => ({ ...previous, open: false }))} onSaved={(email, complete) => { void loadUsers(); if (complete && email === currentUser?.email?.toLowerCase()) { void dispatch(authInit()); } }} />
     </div>;
+};
+
+/** Новые полномочия получают свои списки и формы до отрисовки прежних назначений. */
+const Access = (): JSX.Element => {
+    const { scope } = useAuthRequestOwner();
+    return <AccessContent key={scope} />;
 };
 
 export default Access;
