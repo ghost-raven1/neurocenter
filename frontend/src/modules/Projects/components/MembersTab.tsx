@@ -107,6 +107,7 @@ const MembersTab: FC<{ project: IProjectDetail }> = ({ project }) => {
     const removeMember = useCallback((member: IProjectMember): void => {
         const isCurrent = captureOwner();
         if (!isCurrent() || !canManage) { return; }
+        let removing = false;
         const confirmation = Modal.confirm({
             title: `Удалить «${member.principalName}» из проекта?`,
             content: 'Сотрудник потеряет доступ к проекту.',
@@ -115,15 +116,18 @@ const MembersTab: FC<{ project: IProjectDetail }> = ({ project }) => {
             cancelText: 'Отмена',
             afterClose: () => { confirmations.current.delete(confirmation); },
             onOk: async () => {
-                if (!isCurrent()) { return; }
+                if (removing || !isCurrent()) { return; }
+                removing = true;
                 try {
                     await bffApi.removeProjectMember(project.id, member.userId, member.role);
                     if (!isCurrent()) { return; }
                     message.success('Сотрудник удалён');
                     load();
                 } catch (err) {
-                    if (isCurrent()) { message.error(errMsg(err)); }
-                }
+                    if (!isCurrent()) { return; }
+                    message.error(errMsg(err));
+                    throw err; // Отклонённый Promise сохраняет подтверждение для повторной попытки.
+                } finally { removing = false; }
             },
         });
         confirmations.current.add(confirmation);
