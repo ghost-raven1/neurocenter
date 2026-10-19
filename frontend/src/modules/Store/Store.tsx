@@ -42,6 +42,7 @@ import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
 import { loadCompletePluginCatalog } from './loadCompletePluginCatalog';
 import { CatalogTabs } from './CatalogTabs';
 import { catalogSection } from './catalogSection';
+import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
 
 const { Text, Paragraph } = Typography;
 
@@ -80,9 +81,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     const [catalog, setCatalog] = useState<IStoreApp[]>([]);
     const requestedTarget = presetTarget ?? storeProjectQuery(location.search);
-    const targetProject = projectsReady ? projects.find(project => project.name === requestedTarget || project.id === requestedTarget) : undefined;
+    const selectedTarget = selectStoreTarget(projectsReady ? projects : [], requestedTarget, user);
+    const targetProject = selectedTarget.project;
     const target = targetProject?.name ?? null;
-    const projectLevel = projectsReady ? projectRoleLevel(user,target) : 0;
+    const projectLevel = projectsReady ? selectedTarget.level : 0;
     const canManage = projectLevel >= 3;
     const canInstall = projectLevel >= 2;
     const { assets, loading: projectLoading, ready: projectCatalogReady, error: projectCatalogError, refresh: loadProject } = useProjectCatalog(targetProject?.id, accessKey);
@@ -132,7 +134,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         captureOwner,
         prepareCatalog: (app, current) => prepareProjectCatalogInstall({
             inProject: isToolInProject(app, targetProject?.id, assets, catalog), canManage, current,
-            add: () => bffApi.addProjectAsset(target!, { assetId: app.id, assetKind: app.kind }),
+            add: () => bffApi.addProjectAsset(...storeProjectAssetRequest(targetProject!, app)),
             refresh: loadProject,
         }),
         isPending: app => isPending(assetJobFor(app)) || !!localActionFor(app),
@@ -152,12 +154,12 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         projectsInitialized.current = true;
         if (embedded || presetTarget || requestedTarget !== null) { return; }
         const saved = readSavedTarget();
-        const initial = projects.find(project => project.name === saved || project.id === saved)
+        const initial = selectStoreTarget(projects, saved, user).project
             ?? (projects.length === 1 ? projects[0] : undefined);
         if (initial) {
-            history.replace(storeQueryUrl(location.search, { project: initial.name }, location.hash));
+            history.replace(storeQueryUrl(location.search, { project: initial.id }, location.hash));
         }
-    }, [projects, projectsReady, accessKey, embedded, presetTarget, requestedTarget, history, location.search, location.hash]);
+    }, [projects, projectsReady, accessKey, embedded, presetTarget, requestedTarget, history, location.search, location.hash, user]);
 
     const loadCatalog = useCallback(async (): Promise<void> => {
         const isOwnerCurrent = captureOwner();
@@ -197,19 +199,14 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const isInProject = useCallback((app: IStoreApp): boolean =>
         isToolInProject(app, targetProject?.id, assets, catalog), [ assets, targetProject, catalog ]);
 
-    const shown = useMemo(() => {
-        const base = (embedded || !canBrowseCommon) ? catalog.filter(isInProject) : catalog;
-        return base
-            .filter(a => (filter === 'all' || a.kind === filter))
-            .filter(a => !installedOnly || (!!target && isInProject(a)))
-            .filter(a => (search
-                ? `${a.name} ${a.description}`.toLowerCase().includes(search.toLowerCase())
-                : true));
-    }, [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly ]);
+    const shown = useMemo(() => visibleStoreApps(catalog, {
+        projectOnly: !!embedded || !canBrowseCommon, projectSelected: !!target,
+        kind: filter, query: search, inProject: isInProject, installedOnly,
+    }), [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly ]);
 
-    const switchTarget = useCallback((name: string | null): void => {
-        try { if (name) { localStorage.setItem('neurocenter.install-project', name); } else { localStorage.removeItem('neurocenter.install-project'); } } catch { /* Хранилище браузера может быть недоступно. */ }
-        history.replace(storeQueryUrl(location.search, { project: name, query: search }, location.hash));
+    const switchTarget = useCallback((projectId: string | null): void => {
+        try { if (projectId) { localStorage.setItem('neurocenter.install-project', projectId); } else { localStorage.removeItem('neurocenter.install-project'); } } catch { /* Хранилище браузера может быть недоступно. */ }
+        history.replace(storeQueryUrl(location.search, { project: projectId, query: search }, location.hash));
     }, [ history, location.search, location.hash, search ]);
 
     const doInstall = useCallback(async (app:IStoreApp,action:'install'|'uninstall'='install'):Promise<void>=>{
@@ -221,8 +218,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         setInstalling(app.id);
         try {
             const assetId = action === 'uninstall' ? projectAssetForTool(app, targetProject.id, assets, catalog)?.assetId ?? app.id : app.id;
-            if(action==='install'){await bffApi.addProjectAsset(target,{assetId,assetKind:app.kind});}
-            else{await bffApi.removeProjectAsset(target,{assetId,assetKind:app.kind});}
+            const request = storeProjectAssetRequest(targetProject, app, assetId);
+            if(action==='install'){await bffApi.addProjectAsset(...request);}
+            else{await bffApi.removeProjectAsset(...request);}
             if (!isCurrent()) { return; }
             message.success(action==='install'?'Добавлено в каталог проекта':'Убрано из каталога проекта');
             await loadProject();
@@ -244,8 +242,8 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         if (!isCurrent()) { return; }
         const blocker = projectSkillReferenceBlocker(picker.app);
         if (blocker) { message.warning(blocker); return; }
-        if (pickerSelected.some(name => {
-            const project = projects.find(item => item.name === name || item.id === name);
+        if (pickerSelected.some(projectId => {
+            const project = projects.find(item => item.id === projectId);
             return !project || projectRoleLevel(user, project.id) < 3;
         })) {
             message.warning('Выберите проекты, в которых вы управляете каталогом.');
@@ -253,11 +251,11 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         }
         await pickerBatch.run({
             projects: pickerSelected,
-            add: proj => bffApi.addProjectAsset(proj,{assetId:picker.app.id,assetKind:picker.app.kind}),
+            add: projectId => bffApi.addProjectAsset(...storeProjectAssetRequest({ id: projectId }, picker.app)),
             isOwnerCurrent: isCurrent,
             onBusyChange: setPickerConfirming,
             onCompleted: async ({ ok, fail }, isCurrentBatch) => {
-                if (target && pickerSelected.includes(target)) { await loadProject(); }
+                if (targetProject && pickerSelected.includes(targetProject.id)) { await loadProject(); }
                 if (!isCurrentBatch()) { return; }
                 message[fail === 0 ? 'success' : 'warning'](
                     `Добавлено в каталоги: ${ok} из ${pickerSelected.length} ${pluralProjects(pickerSelected.length)}${fail ? `, ошибок: ${fail}` : ''}`,
@@ -265,7 +263,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 if(fail===0){setPicker(null);}
             },
         });
-    }, [ projectsReady, picker, pickerSelected, projects, user, target, loadProject, captureOwner, pickerBatch ]);
+    }, [ projectsReady, picker, pickerSelected, projects, user, targetProject, loadProject, captureOwner, pickerBatch ]);
 
 
     // Детали — кликом по карточке (onView); кнопки действий — в одну строку, равной ширины.
@@ -321,7 +319,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 <div><Text strong>Каталог проекта</Text><Paragraph type="secondary">{!projectsReady
                     ? projectsLoading ? 'Загружаем доступные проекты…' : 'Загрузите список проектов, чтобы продолжить.'
                     : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог инструменты и модели.'}</Paragraph></div>
-                {!embedded && <Select aria-label="Каталог проекта" placeholder="Выберите проект" value={projectsReady ? target ?? undefined : undefined} loading={projectsLoading} disabled={!projectsReady} allowClear showSearch optionFilterProp="label" onChange={(name?: string) => switchTarget(name ?? null)} options={projects.map(project => ({value:project.name,label:project.name}))} style={{width:260,maxWidth:'100%'}} />}
+                {!embedded && <Select aria-label="Каталог проекта" placeholder="Выберите проект" value={projectsReady ? targetProject?.id : undefined} loading={projectsLoading} disabled={!projectsReady} allowClear showSearch optionFilterProp="label" onChange={(projectId?: string) => switchTarget(projectId ?? null)} options={projects.map(project => ({value:project.id,label:project.name}))} style={{width:260,maxWidth:'100%'}} />}
             </div>
             {projectLoadError && <Alert className="store__projects-error" type={projectsReady?'warning':'error'} showIcon
                 message={projectsReady?'Не удалось обновить проекты':'Не удалось загрузить проекты'}
@@ -417,7 +415,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                                         placeholder="Проекты"
                                         value={ pickerSelected }
                                         onChange={ (v: string[]) => setPickerSelected(v) }
-                                        options={projects.filter(p=>projectRoleLevel(user,p.id)>=3).map(p=>({label:p.name,value:p.name,disabled:!!projectSkillReferenceBlocker(picker.app,p.id)}))}
+                                        options={projects.filter(p=>projectRoleLevel(user,p.id)>=3).map(p=>({label:p.name,value:p.id,disabled:!!projectSkillReferenceBlocker(picker.app,p.id)}))}
                                     />
                                 </div>
                             );

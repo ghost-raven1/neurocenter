@@ -144,7 +144,7 @@ const ProjectDetail: FC = () => {
     const items = [
         { key: 'overview', label: 'Обзор', children: overviewTab },
         { key: 'members', label: 'Сотрудники', children: <MembersTab project={selected} /> },
-        { key: 'store', label: 'Каталог', children: <Store presetTarget={ selected.name } embedded /> },
+        { key: 'store', label: 'Каталог', children: <Store presetTarget={ selected.id } embedded /> },
         { key: 'rag', label: 'База знаний', children: <RagTab projectKey={selected.id} /> },
         { key: 'backups', label: 'Резервные копии', children: <ProjectBackups key={selected.id} projectKey={selected.id} /> },
         { key: 'quotas', label: 'Квоты', children: <RagQuotaPanel key={selected.id} projectKey={selected.id} /> },
