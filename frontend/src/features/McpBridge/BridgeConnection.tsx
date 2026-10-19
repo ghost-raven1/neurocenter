@@ -29,6 +29,9 @@ export const BridgeConnection: FC<{
     const [disconnectError, setDisconnectError] = useState('');
     const history=useHistory();
     const blocker = connectionBlocker(device);
+    const statusUnverified = !devicesReady || !!errors.devices;
+    const lastSeen = device?.lastSeen ? new Date(device.lastSeen) : null;
+    const validLastSeen = lastSeen && Number.isFinite(lastSeen.getTime()) ? lastSeen : null;
     return (
         <Space direction="vertical" className="bridge-connection" style={{ width: '100%' }}>
             <Space wrap className="bridge-connection__controls">
@@ -43,7 +46,7 @@ export const BridgeConnection: FC<{
                         className="bridge-connection__device-select"
                         options={devices.map((item) => ({
                             value: item.id,
-                            label: `${item.name} · ${item.online ? 'на связи' : 'не в сети'}`,
+                            label: `${item.name} · ${statusUnverified ? 'статус не проверен' : item.online ? 'мост на связи' : 'мост не в сети'}`,
                         }))}
                     />
                 ) : connection === 'loading' ? <Space><Spin size="small" /><Typography.Text type="secondary" role="status">Проверяем подключение…</Typography.Text></Space>
@@ -89,11 +92,15 @@ export const BridgeConnection: FC<{
                     {device.report.root || 'Папка проектов ещё не выбрана'} ·
                     роль моста: {device.role}
                     {device.report.bridgeVersion ? ` · версия моста: ${device.report.bridgeVersion}` : ' · версия моста не передана'}
-                    {!device.online
+                    {!statusUnverified && !device.online
                         ? ' · задания останутся в очереди до подключения моста'
                         : ''}
                 </Typography.Text>
             )}
+            {device && <Typography.Text type="secondary">
+                {validLastSeen ? <>Последний ответ моста: <time dateTime={validLastSeen.toISOString()}>{validLastSeen.toLocaleString('ru-RU')}</time></> : 'Ответов моста ещё нет'}
+            </Typography.Text>}
+            {device && !compact && <Typography.Text type="secondary">Фоновый мост работает независимо от окна OpenCode.</Typography.Text>}
             {connection === 'empty' && (
                 <>
                     <Alert type="info" showIcon message="Подключите этот компьютер"
@@ -106,7 +113,7 @@ export const BridgeConnection: FC<{
             {device?.report.bindings?.some(binding => binding.identityStatus === 'legacy') && <Alert type="warning" showIcon message="Есть старая привязка папки. На странице «Проекты» откройте мастер и подтвердите её после проверки файлов." />}
             {device?.report.bindings?.some(binding => binding.valid === false && binding.identityStatus !== 'legacy') && <Alert type="warning" showIcon message="Некоторые папки проектов перемещены или не подтверждены. Откройте мастер на странице «Проекты» для проверки копии или переноса." />}
             {!!device?.report.previousDeviceCompletions && <Alert type="warning" showIcon message="Есть неподтверждённые операции прежнего подключения. Локальные файлы сохранены; проверьте их перед повторной установкой." />}
-            {blocker && <Alert type="warning" showIcon message={blocker}
+            {!statusUnverified && blocker && <Alert type="warning" showIcon message={blocker}
                 action={history.location.pathname === '/start' ? undefined : <Button onClick={() => history.push('/start?step=1')}>Начало работы</Button>} />}
             {readErrors.length > 0 && <Alert type="warning" showIcon
                 message={readErrors.length === 1 ? readErrors[0] : 'Не все данные удалось загрузить'}

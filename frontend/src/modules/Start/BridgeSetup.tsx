@@ -51,9 +51,9 @@ export const BridgeSetup=({origin,windows:browserWindows,onCopy}:{origin:string;
         {bridge.devices.length>0?<>
             <Alert type={!needsReconnect&&!needsUpdate&&bridge.devicesReady&&device?.online?'success':'warning'} showIcon
                 message={!bridge.devicesReady?'Не удалось обновить статус':!device?'Выберите компьютер':needsReconnect?'Подтвердите подключение заново':needsUpdate?'Обновите мост':device.online?`${device.name} — на связи`:'Компьютер подключён, но сейчас не отвечает'}
-                description={!device?'У вас несколько подключений. Выберите компьютер, на котором будете работать.':needsReconnect
+                description={!bridge.devicesReady?'Текущий статус моста не подтверждён. Обновите данные, чтобы проверить соединение. Сохранённое подключение не требует повторной установки.':!device?'У вас несколько подключений. Выберите компьютер, на котором будете работать.':needsReconnect
                     ?roleLevel(device.role)<2?'Для изменения проектов выберите на сайте назначенную вам роль разработчика или администратора и подтвердите подключение. Переустановка моста для этого не нужна.':'Продлите подключение установленного моста и подтвердите доступ в браузере. Файлы и история сохранятся.'
-                    :needsUpdate?'Для новых возможностей обновите программу командой ниже. Установщик сохранит файлы и историю.':device.online?'Мост уже подключён. Следующий шаг — выбрать общую папку и связать проект.':'Запустите установленный мост командой подключения. Повторная установка обычно не нужна.'}/>
+                    :needsUpdate?'Для новых возможностей обновите программу командой ниже. Установщик сохранит файлы и историю.':device.online?'Мост работает в фоне, даже когда окно OpenCode закрыто. Следующий шаг — выбрать общую папку и связать проект.':'Запустите установленный мост командой подключения. Повторная установка обычно не нужна.'}/>
             <Space wrap>
                 <Button type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push('/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</Button>
                 <Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button>

@@ -63,7 +63,7 @@ export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>
                 <Typography.Paragraph type="secondary">Отпечаток: <Typography.Text code style={{overflowWrap:'anywhere'}}>{info.fingerprint}</Typography.Text></Typography.Paragraph>
             </>}
             {phase==='waiting'&&!error&&<Alert type="info" showIcon message="Подтверждено. Дожидаемся ответа компьютера…" description="Мост подключится автоматически. Повторять установку или вводить код не нужно."/>}
-            {phase==='connected'&&<Alert type="success" showIcon message="Компьютер на связи" description="Теперь выберите общую папку проектов. После привязки папки инструменты устанавливаются одним нажатием."/>}
+            {phase==='connected'&&<Alert type="success" showIcon message="Подключение подтверждено" description="Теперь выберите общую папку проектов. После привязки папки инструменты устанавливаются одним нажатием."/>}
         </>}
         {error&&<Alert role="alert" type={phase==='waiting'?'warning':'error'} showIcon message={error}
             description={phase==='error'&&info?'Если мост подключён к другому профилю, войдите в тот профиль. Для переноса сначала отключите компьютер там, затем заново выполните команду подключения.':undefined}/>}

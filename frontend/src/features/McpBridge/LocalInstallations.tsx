@@ -58,8 +58,8 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
     const selectedCurrent = removalSelection(selected, items, device);
     const selectedJob = selected ? latestAssetJob(jobs, selected) : undefined;
     const removalBlocker = installationBlocker(device);
-    const inspectBlocker = inspectionBlocker(device);
-    const inspectNotice = inspectionNotice(device, connectionNoticeVisible);
+    const inspectBlocker = bridge.devicesReady ? inspectionBlocker(device) : '';
+    const inspectNotice = bridge.devicesReady ? inspectionNotice(device, connectionNoticeVisible) : '';
     const latestRemoval = jobs.find(job => job.deviceId === device.id && job.projectId === projectId && job.kind === 'uninstall');
     const recoveryPath = typeof latestRemoval?.result?.recoveryPath === 'string' ? latestRemoval.result.recoveryPath : undefined;
     const removedName = catalog.find(app => app.id === latestRemoval?.assetId && app.kind === latestRemoval?.assetKind)?.name || latestRemoval?.assetId || 'Инструмент';
@@ -201,7 +201,7 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
             <Typography.Paragraph>Компьютер: <strong>{selected?.deviceName}</strong>. Папка проекта: <strong>{selected?.folderName}</strong>.</Typography.Paragraph>
             <Typography.Paragraph>Удалится версия {selected?.version} и её подключение OpenCode. Инструмент останется в каталоге команды. Изменённые вручную файлы остановят удаление; резервная копия сохранится локально.</Typography.Paragraph>
             {selected && !selectedCurrent && <Alert type="warning" showIcon message="Установка или привязка изменилась. Закройте окно и выберите актуальную запись." />}
-            {!device.online && <Alert type="info" showIcon message="Мост не в сети. Задание дождётся его подключения." />}
+            {bridge.devicesReady && !device.online && <Alert type="info" showIcon message="Мост не в сети. Задание дождётся его подключения." />}
             {removalError && <Alert role="alert" type="error" showIcon message={removalError} />}
         </Modal>
     </Card>;

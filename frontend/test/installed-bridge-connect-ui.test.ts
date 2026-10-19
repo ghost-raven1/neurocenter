@@ -63,6 +63,7 @@ describe('Подключение компьютера с уже установл
     it('Подключённый актуальный мост сразу разрешает переход к папкам', () => {
         select([device()]); const html = setup();
         expect(html).toContain('Рабочий компьютер — на связи');
+        expect(html).toContain('Мост работает в фоне, даже когда окно OpenCode закрыто');
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(false);
         expect(html).toContain('Обновить мост');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);

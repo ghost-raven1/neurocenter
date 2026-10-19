@@ -58,6 +58,21 @@ describe('Общее предупреждение готовности ката�
         expect(button(html,'Проверить файлы')).toContain('disabled');
         expect(button(html,'Удалить с компьютера')).not.toContain('disabled');
     });
+    it('Неподтверждённый статус блокирует проверку файлов без утверждения, что компьютер выключен',()=>{
+        const state={...bridge({...device,online:false}),devicesReady:false,
+            error:'Не удалось загрузить список компьютеров.',
+            errors:{devices:'Не удалось загрузить список компьютеров.',jobs:'',installations:''}};
+        const html=renderToStaticMarkup(createElement(MemoryRouter,null,createElement(Fragment,null,
+            createElement(BridgeConnection,{bridge:state,compact:true}),
+            createElement(ProjectInstallationReadiness,{bridge:state,projectId:'project',canInstall:true}),
+            createElement(LocalInstallations,{bridge:state,projectId:'project',canManage:true,canInspect:true,connectionNoticeVisible:true,catalog:[],approved:new Set<string>()}))));
+        const inspection=button(html,'Проверить файлы');
+        expect(inspection).toContain('disabled');
+        expect(inspection).toContain('title="Дождитесь загрузки подключения и очереди."');
+        expect(inspection).not.toContain('включите компьютер');
+        expect(alerts(html).some(text=>text.includes('не в сети')||text.includes('включите компьютер'))).toBe(false);
+        expect(html).not.toContain('Компьютер и папка готовы');
+    });
     it('Выключенный старый компьютер сохраняет отдельную причину проверки',()=>{
         const target={...device,online:false,report:{...device.report,capabilities:[]}};
         expect(connectionBlocker(target)).toContain('Обновите');

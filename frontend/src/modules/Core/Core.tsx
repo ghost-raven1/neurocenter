@@ -108,7 +108,10 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                         <span className="app__location-separator">/</span><Typography.Text strong>{selected?.label ?? 'Нейроцентр'}</Typography.Text>
                     </div>
                     <Space size={16}>
-                        <span className="app__live" title={live?'Изменения поступают в реальном времени':'Соединение восстанавливается. После подключения статусы обновятся.'}><Badge status={live?'success':'warning'}/><span className="app__live-label">{live?'На связи':'Переподключение'}</span></span>
+                        <span className="app__live" role="status" aria-label={live?'Онлайн-обновления сайта подключены. Статус моста смотрите в списке компьютеров.':'Обновления: нет связи. Статус моста смотрите в списке компьютеров.'}
+                            title={live?'Канал событий сайта подключён. Статус моста смотрите в списке компьютеров.':'Канал событий сайта восстанавливается. После подключения данные обновятся. Статус моста смотрите в списке компьютеров.'}>
+                            <Badge status={live?'success':'warning'}/><span className="app__live-label" aria-hidden="true">{live?'Онлайн-обновления':'Обновления: нет связи'}</span>
+                        </span>
                         <OperationsButton triggerRef={operationsTrigger} open={operationsVisible} onClick={() => setOpsOpen(true)} />
                         <div className="app__role"><RoleSwitcher /></div>
                         <UserInfo />

@@ -8,6 +8,7 @@ import {CONNECTED_DEVICE_EVENT} from './pairingProgress';
 import { authDataScope } from '../UserBlock/authDataScope';
 
 const emptyErrors = (): TBridgeErrors => ({ devices: '', jobs: '', installations: '' });
+const STATUS_MAX_AGE_MS = 30000;
 
 /** Личные статусы MCP обновляются событиями, после reconnect читается сохранённая очередь. */
 export function useBridge() {
@@ -24,6 +25,8 @@ export function useBridge() {
     const [errors, setErrors] = useState<TBridgeErrors>(emptyErrors);
     const [loaded, setLoaded] = useState({ devices: false, jobs: false, installations: false });
     const [loading, setLoading] = useState(true);
+    const [devicesCheckedAt, setDevicesCheckedAt] = useState<number>();
+    const [, expireStatus] = useState(0);
     const generation = useRef(0);
     const reload = useCallback(async () => {
         if (!email || scopeRef.current !== scope) { return; }
@@ -33,6 +36,7 @@ export function useBridge() {
             if (seq !== generation.current || scopeRef.current !== scope) { return; }
             if (result.ok) {
                 save(result.data);
+                if (resource === 'devices') { setDevicesCheckedAt(Date.now()); }
                 setLoaded(previous => ({ ...previous, [resource]: true }));
                 setErrors(previous => ({ ...previous, [resource]: '' }));
             } else {
@@ -56,6 +60,12 @@ export function useBridge() {
         }
     }, [email, scope]);
     useEffect(() => {
+        if (devicesCheckedAt === undefined) { return; }
+        // Даже зависший запрос не оставляет подтверждённый online у старого снимка.
+        const timer = setTimeout(() => expireStatus(value => value + 1), Math.max(0, devicesCheckedAt + STATUS_MAX_AGE_MS - Date.now()));
+        return () => clearTimeout(timer);
+    }, [devicesCheckedAt]);
+    useEffect(() => {
         generation.current++;
         setOwner(scope);
         setDevices([]);
@@ -63,6 +73,7 @@ export function useBridge() {
         setInstallations([]);
         setErrors(emptyErrors());
         setLoaded({ devices: false, jobs: false, installations: false });
+        setDevicesCheckedAt(undefined);
         setLoading(true);
         try {
             setSelected(
@@ -90,6 +101,13 @@ export function useBridge() {
         socket.on('connect', refresh);
         const paired=(event:Event):void=>{const id=(event as CustomEvent<string>).detail;if(typeof id==='string'){setSelected(id);refresh();}};
         window.addEventListener(CONNECTED_DEVICE_EVENT,paired);
+        const resume = (): void => {
+            if (document.visibilityState !== 'visible') { return; }
+            if (timer) { clearTimeout(timer); }
+            void reload();
+        };
+        window.addEventListener('focus', resume);
+        document.addEventListener('visibilitychange', resume);
         // Вкладка, открытая после сна компьютера, проверяет и online TTL, и очередь.
         const fallback = setInterval(() => {
             if (document.visibilityState === 'visible') {
@@ -105,6 +123,8 @@ export function useBridge() {
             socket.off('bridge:changed', refresh);
             socket.off('connect', refresh);
             window.removeEventListener(CONNECTED_DEVICE_EVENT,paired);
+            window.removeEventListener('focus', resume);
+            document.removeEventListener('visibilitychange', resume);
         };
     }, [email, reload]);
     const choose = (id: string): void => {
@@ -116,12 +136,15 @@ export function useBridge() {
         }
     };
     const current = owner === scope;
-    const visibleDevices = current ? devices : [];
+    // Срок снимка считается от получения ответа: часы сервера и браузера могут различаться.
+    const statusAge = devicesCheckedAt === undefined ? Infinity : Date.now() - devicesCheckedAt;
+    const statusFresh = statusAge >= 0 && statusAge < STATUS_MAX_AGE_MS;
+    const devicesReady = current && loaded.devices && !errors.devices && statusFresh;
+    const visibleDevices = current ? devicesReady ? devices : devices.map(item => ({ ...item, online: false })) : [];
     const device = visibleDevices.find((item) => item.id === selected) || (visibleDevices.length === 1 ? visibleDevices[0] : undefined);
-    const devicesReady = current && loaded.devices && !errors.devices;
     const jobsReady = current && loaded.jobs && !errors.jobs;
     const installationsReady = current && loaded.installations && !errors.installations;
-    const visibleErrors = current ? errors : emptyErrors();
+    const visibleErrors = current ? { ...errors, devices: errors.devices || (loaded.devices && !statusFresh ? 'Статус подключения устарел. Проверьте подключение снова.' : '') } : emptyErrors();
     const error = visibleErrors.devices || visibleErrors.jobs || visibleErrors.installations;
     return { devices: visibleDevices, device, jobs: current ? jobs : [], installations: current ? installations : [], error, errors: visibleErrors,
         devicesReady, jobsReady, installationsReady, loading: !current || loading, reload, choose };

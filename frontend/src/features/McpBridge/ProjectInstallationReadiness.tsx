@@ -8,7 +8,7 @@ export function ProjectInstallationReadiness({bridge,projectId,canInstall}: {
     bridge:ReturnType<typeof useBridge>; projectId:string; canInstall:boolean;
 }) {
     const history = useHistory();
-    if (!bridge.device) { return null; }
+    if (!bridge.device || !bridge.devicesReady) { return null; }
     const blocker = connectionBlocker(bridge.device);
     // BridgeConnection уже показывает общий шаг подготовки компьютера.
     if (blocker && canInstall) { return null; }
