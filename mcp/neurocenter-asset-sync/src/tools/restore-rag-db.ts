@@ -14,6 +14,7 @@ import { importRow, exportRow } from '../features/rag-index/paths.js';
 import { openIndexSnapshot } from '../features/rag-index/snapshot.js';
 import { readBoundedUtf8 } from '../bridge/read-bounded.js';
 import { reserveRestoreIndex } from '../features/rag-index/restore-lock.js';
+import { commitRagRestore } from '../features/rag-index/restore-recovery.js';
 
 const PAGE_LIMIT = 1000;
 export const restoreRagDbInputSchema = z.object({ projectKey: z.string().min(1), project: z.string().optional() });
@@ -122,8 +123,9 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
         assertSameProfile(indexProfile, targetIdentity.profile);
         await fs.writeFile(path.join(stage!, 'neurocenter-index-profile.json'), JSON.stringify({ schemaVersion: 1, state: 'ready', profile: indexProfile, embeddingSignature: targetIdentity.signature }));
         await lock!.place(stage!);
-        const backup = stage! + '-previous';
-        lock!.track(backup);
+        const result = { ok: true, applied: true, complete: true, remaining: 0, projectKey, fingerprintVersion: FINGERPRINT_VERSION,
+            indexProfile, snapshotHash: expected.snapshotHash, sourceCount: offset, written: offset, dimension: indexProfile.dimension,
+            note: 'Семантический индекс восстановлен. OpenCode пересоздаст служебные индексы при следующем запуске.' };
         await withWorkspaceIdentityLock(async () => {
             await assertIdentity(); // binding-aware lease check immediately before local commit
             const currentTarget = await localEmbeddingIdentity(await locateStore(input.project, cwd, true), oldDimension ?? indexProfile!.dimension);
@@ -137,17 +139,11 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
             await previous?.assertCurrent();
             await lock!.assert(stage!);
             previous?.close(); previous = undefined;
-            let moved = false;
-            try { await fs.rename(storePath, backup); moved = true; }
-            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
-            try { await fs.rename(stage!, storePath); }
-            catch (error) { if (moved) { await fs.rename(backup, storePath); } throw error; }
+            try { await commitRagRestore({ root: located.root, store: storePath, stage: stage!, lock: lock!.raw, overrides: runtimeOverrides, identity: initial.value, result }); }
+            catch (error) { if ((error as { restoreRecoveryPending?: boolean }).restoreRecoveryPending) { stage = undefined; } throw error; }
             stage = undefined;
         });
-        await fs.rm(backup, { recursive: true, force: true });
-        return JSON.stringify({ ok: true, applied: true, complete: true, remaining: 0, projectKey, fingerprintVersion: FINGERPRINT_VERSION,
-            indexProfile, snapshotHash: expected.snapshotHash, sourceCount: offset, written: offset, dimension: indexProfile.dimension,
-            note: 'Семантический индекс восстановлен. OpenCode пересоздаст служебные индексы при следующем запуске.' });
+        return JSON.stringify(result);
     } finally {
         previous?.close();
         try { await lock?.release(); }

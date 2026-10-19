@@ -8,6 +8,7 @@ import * as lance from '../src/lib/lancedb.js';
 import { readState, writeState } from '../src/bridge/state.js';
 import { workspaceFixture } from './bridge-fixture.js';
 import { readyIndex, row, metadata, profile } from './rag-index-fixture.js';
+import { locateStore } from '../src/lib/store.js';
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof import('../src/bridge/state.js')>(), authorizedFetch: transport.fetch }));
 
@@ -117,6 +118,30 @@ describe('Атомарное восстановление RAG в подтвер�
             return rename(from, to);
         });
         await expect(run()).rejects.toThrow('fixture rename failed'); expect(await ids()).toEqual(['local-original']);
+        expect((await fs.readdir(path.dirname(store))).filter(name => name.startsWith('.neurocenter-rag-restore-'))).toEqual([]);
+    });
+    it('Повторная ошибка rollback сохраняет intent и допускает восстановление без новой передачи в том же процессе', async () => {
+        const rename = fs.rename;
+        const failure = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+            if (String(from).includes('.neurocenter-rag-restore-') && to === store) { throw new Error('Отказ переключения и отката'); }
+            return rename(from, to);
+        });
+        await expect(run()).rejects.toMatchObject({ restoreRecoveryPending: true });
+        failure.mockRestore(); transport.fetch.mockClear();
+        await locateStore(fixture.root, fixture.root); await locateStore(fixture.root, fixture.root);
+        expect(await ids()).toEqual(['local-original']); expect(transport.fetch).not.toHaveBeenCalled();
+        expect((await fs.readdir(path.dirname(store))).filter(name => name.startsWith('.neurocenter-rag-restore-'))).toEqual([]);
+    });
+    it('Ошибка очистки после commit сохраняет новый индекс и завершается чтением без повторной загрузки', async () => {
+        const remove = fs.rm;
+        const failure = vi.spyOn(fs, 'rm').mockImplementation(async (file, options) => {
+            if (String(file).endsWith('-previous')) { throw new Error('Резервная папка временно занята'); }
+            return remove(file, options);
+        });
+        await expect(run()).rejects.toMatchObject({ restoreRecoveryPending: true });
+        failure.mockRestore(); transport.fetch.mockClear();
+        await locateStore(fixture.root, fixture.root);
+        expect(await ids()).toEqual(['server-row']); expect(transport.fetch).not.toHaveBeenCalled();
         expect((await fs.readdir(path.dirname(store))).filter(name => name.startsWith('.neurocenter-rag-restore-'))).toEqual([]);
     });
     it('Текущие runtime-настройки сохраняются, служебная история native-прохода не подделывается', async () => {

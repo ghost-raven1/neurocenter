@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { loadRagConfig, type IRagConfigCore } from './config.js';
 import { safeTarget } from '../bridge/workspace-paths.js';
+import { recoverRagRestore } from '../features/rag-index/restore-recovery.js';
 
 export interface IStoreLocateResult {
     root: string;
@@ -47,6 +48,7 @@ export async function locateStore(
     if (entryStat) {
         baseDir = entryStat.dir ? entry : path.dirname(entry);
     }
+    await recoverRagRestore(baseDir);
 
     // Приоритет совпадает с native OpenCodeRAG; вверх по дереву не поднимаемся.
     let configPath: string | null = null;

@@ -45,6 +45,7 @@ import { CONFIGURATION_KINDS, runMcpConfigurationJob,prepareJobMcpLaunchers,type
 import { prepareJobRuntimeArtifacts } from './job-runtime-artifacts.js';
 import { recoverRuntimePreparations, runtimePreparationCompletion } from './runtime-preparation-intent.js';
 import { runRagBridgeJob } from './rag-worker.js';
+import { recoverRagRestores } from '../features/rag-index/restore-recovery.js';
 import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
 import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 
@@ -127,6 +128,7 @@ export async function runWorker(): Promise<void> {
             await recoverPendingWorkspaceIdentity();
             await recoverFileJobs();
             await recoverRuntimePreparations();
+            await recoverRagRestores();
             await deliverCompletions();
             await heartbeat();
             while (!stopped) {
