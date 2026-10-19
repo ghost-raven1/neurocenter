@@ -21,6 +21,8 @@ const manifestSchema = z.object({
     fingerprintVersion: z.literal(1), fingerprints: z.record(z.string().regex(/^[a-f0-9]{64}$/)),
     rowCount: z.number().int().nonnegative(), incompleteRows: z.number().int().nonnegative(),
     indexProfile: z.unknown(), complete: z.boolean(), snapshotHash: z.string().nullable(), ids: z.record(z.string()),
+    usableVectorCount: z.number().int().nonnegative().optional(),
+    indexState: z.enum(['unverified', 'syncing', 'ready']).optional(),
 });
 
 /** Передаёт стабильный полный native-снимок порциями; готовность подтверждает отдельная серверная печать. */
@@ -66,7 +68,11 @@ export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: 
         await assertCurrent();
         const serverProfile = normalizeIndexProfile(baseline.indexProfile);
         const legacy = !serverProfile && !baseline.complete && baseline.incompleteRows === baseline.rowCount;
-        if (serverProfile || (baseline.rowCount > 0 && !legacy)) { assertSameProfile(indexProfile, serverProfile); }
+        // Только согласованная пустая копия допускает первую порцию с другой моделью; сервер повторно проверяет её под write-lock.
+        const emptyBaseline = baseline.rowCount === 0 && baseline.usableVectorCount === 0 && baseline.incompleteRows === 0
+            && Object.keys(baseline.ids).length === 0 && Object.keys(baseline.fingerprints).length === 0
+            && baseline.complete === false && baseline.snapshotHash === null && baseline.indexState === 'syncing';
+        if (!emptyBaseline && (serverProfile || (baseline.rowCount > 0 && !legacy))) { assertSameProfile(indexProfile, serverProfile); }
         const added = Object.keys(fingerprints).filter(id => baseline.fingerprints[id] !== fingerprints[id]);
         const scanComplete = Object.keys(fingerprints).length === snapshot.rowCount;
         const removed = scanComplete ? Object.keys(baseline.ids).filter(id => !Object.hasOwn(fingerprints, id)) : [];

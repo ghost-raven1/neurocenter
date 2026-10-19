@@ -78,14 +78,21 @@ export async function readIndexSummary(db:Queryable,projectKey:string,dimension:
 }
 
 /** Вызывается только под общим RAG_WRITE_LOCK, до изменения строк или состояния. */
-export async function bindIndexProfile(db:Queryable,projectKey:string,profile:IIndexProfile|null):Promise<void>{
+export async function bindIndexProfile(db:Queryable,projectKey:string,write:IRagIndexWrite,upsertCount=0):Promise<void>{
+    const profile=write.indexProfile;
     const {rows}=await db.query('SELECT index_profile FROM rag_index_state WHERE project_key=$1 FOR UPDATE',[projectKey]);
     const bound=normalizeIndexProfile(rows[0]?.index_profile);
     if(bound&&!profile){throw new ConflictException('Обновите мост: этот индекс уже привязан к проверенному профилю модели. Старая синхронизация без indexProfile запрещена.');}
-    if(bound&&JSON.stringify(bound)!==JSON.stringify(profile)){throw new ConflictException('Индекс привязан к другой модели, провайдеру или размерности. Изменение модели требует отдельной согласованной перестройки индекса.');}
-    if(profile&&!bound){
+    const different=!!bound&&JSON.stringify(bound)!==JSON.stringify(profile);
+    if(different){
+        const firstRows=upsertCount>0&&write.snapshot&&write.snapshot.rowCount>0&&!write.snapshot.complete;
+        const empty=firstRows?await db.query('SELECT EXISTS(SELECT 1 FROM rag_chunks WHERE project_key=$1) AS has_rows',[projectKey]):null;
+        if(empty?.rows[0]?.has_rows!==false){throw new ConflictException('Индекс привязан к другой модели, провайдеру или размерности. Изменение модели требует отдельной согласованной перестройки индекса.');}
+    }
+    if(profile&&(!bound||different)){
         await db.query(`INSERT INTO rag_index_state(project_key,index_profile) VALUES($1,$2::jsonb)
-            ON CONFLICT(project_key) DO UPDATE SET index_profile=EXCLUDED.index_profile`,[projectKey,JSON.stringify(profile)]);
+            ON CONFLICT(project_key) DO UPDATE SET index_profile=EXCLUDED.index_profile,
+            complete=false,snapshot_hash=NULL,snapshot_rows=NULL,updated_at=now()`,[projectKey,JSON.stringify(profile)]);
     }
 }
 

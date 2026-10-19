@@ -216,7 +216,7 @@ export class RagDb {
             await client.query("SET LOCAL lock_timeout='10s'");
             await client.query('LOCK TABLE rag_chunks IN ROW EXCLUSIVE MODE');
             await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
-            await bindIndexProfile(client,projectKey,write.indexProfile);
+            await bindIndexProfile(client,projectKey,write,normalized.length);
             if(!write.snapshot?.complete){await invalidateIndexSeal(client,projectKey);}
 
             if (deletes.length > 0) {

@@ -84,6 +84,50 @@ describe('Безопасная передача проверенного RAG-с�
         transport.fetch.mockResolvedValue(Response.json({ ...metadata(Object.values(server)), indexProfile: { ...profile, model: 'different' } }));
         await expect(run()).rejects.toThrow('Модели'); expect(requests).toEqual([]);
     });
+    const emptyBoundManifest = () => ({ ...metadata([], false), indexProfile: { ...profile, model: 'previous-model' },
+        usableVectorCount: 0, indexState: 'syncing' });
+    it('Пустой согласованный серверный профиль меняется только первой непустой порцией', async () => {
+        server = {};
+        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
+        expect(JSON.parse(await run())).toMatchObject({ complete: true, upserted: 2, deleted: 0 });
+        expect(requests.map(body => [body.chunks.length, body.deletes.length, body.snapshot.complete])).toEqual([[2, 0, false], [0, 0, true]]);
+        expect(requests[0]).toMatchObject({ indexProfile: profile, snapshot: { rowCount: 2, complete: false } });
+    });
+    it('Смена пустого профиля передаёт две непустые порции до отдельного seal', async () => {
+        await writeRows(store, Array.from({ length: 101 }, (_, index) => row(String(index))), true, 3);
+        server = {};
+        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
+        expect(JSON.parse(await run())).toMatchObject({ complete: true, upserted: 101, deleted: 0 });
+        expect(requests.map(body => [body.chunks.length, body.snapshot.complete])).toEqual([[100, false], [1, false], [0, true]]);
+        expect(requests.every(body => JSON.stringify(body.indexProfile) === JSON.stringify(profile))).toBe(true);
+    });
+    it('Следующий ограниченный проход использует уже сменившийся профиль без новых полей старого manifest', async () => {
+        server = {};
+        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
+        expect(JSON.parse(await run({ limit: 1 }))).toMatchObject({ complete: false, upserted: 1, remaining: 1 });
+        expect(JSON.parse(await run({ limit: 1 }))).toMatchObject({ complete: true, upserted: 1, remaining: 0 });
+        expect(requests.map(body => [body.chunks.length, body.snapshot.complete])).toEqual([[1, false], [1, false], [0, true]]);
+    });
+    it.each([
+        { rowCount: 1 }, { ids: { ghost: 'old-content' } }, { fingerprints: { ghost: 'a'.repeat(64) } },
+        { usableVectorCount: 1 }, { usableVectorCount: undefined }, { incompleteRows: 1 },
+        { complete: true }, { snapshotHash: 'a'.repeat(64) }, { indexState: 'ready' }, { indexState: undefined },
+    ])('Противоречивый пустой manifest %j не разрешает смену модели', async patch => {
+        transport.fetch.mockResolvedValue(Response.json({ ...emptyBoundManifest(), ...patch }));
+        await expect(run()).rejects.toThrow('Модели');
+        expect(requests).toEqual([]);
+    });
+    it('Гонка с первым серверным писателем возвращает 409 без автоматического повтора и seal', async () => {
+        transport.fetch.mockImplementation(async (_route, options) => {
+            if (!options) { return Response.json(emptyBoundManifest()); }
+            requests.push(JSON.parse(String(options.body)));
+            return Response.json({ message: 'Другой профиль уже записал первую строку.' }, { status: 409 });
+        });
+        await expect(run()).rejects.toThrow('409');
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({ snapshot: { complete: false } });
+        expect(transport.fetch).toHaveBeenCalledTimes(2);
+    });
     it('Непроверенные legacy-строки полностью переотправляются и устаревшие удаляются', async () => {
         const implementation = transport.fetch.getMockImplementation()!;
         transport.fetch.mockImplementation(async (route, options) => !options

@@ -64,8 +64,8 @@ describe('Профиль проверяется до изменения данн
     });
     it('Привязанный профиль отвергает старый мост и иную модель без UPDATE/DELETE',async()=>{
         const query=vi.fn(async()=>({rows:[{index_profile:profile}]}));
-        await expect(bindIndexProfile({query} as never,'p',null)).rejects.toMatchObject({status:409});
-        await expect(bindIndexProfile({query} as never,'p',{...profile,model:'other'})).rejects.toMatchObject({status:409});
+        await expect(bindIndexProfile({query} as never,'p',{indexProfile:null})).rejects.toMatchObject({status:409});
+        await expect(bindIndexProfile({query} as never,'p',{indexProfile:{...profile,model:'other'}})).rejects.toMatchObject({status:409});
         expect(query.mock.calls.every(([sql])=>String(sql).startsWith('SELECT'))).toBe(true);
     });
     it('Валидные ненулевые float32 остаются допустимыми',()=>{expect(()=>requireUsableVectors([{embedding:[0.1,0,0]}],3)).not.toThrow();});
