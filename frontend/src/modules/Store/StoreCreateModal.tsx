@@ -36,6 +36,13 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
     const bundled = kind === 'plugin' || kind === 'mcp' && mode === 'bundle';
     const reading = resourcesBusy || dependenciesBusy;
 
+    /** Правка пакета отзывает старую ошибку и исчезнувшую точку входа, сохраняя остальные поля. */
+    const changeFiles = (next: IPublicationFile[]): void => {
+        setFiles(next); setError('');
+        const entrypoint = form.getFieldValue('entrypoint');
+        if (entrypoint && !next.some(file => file.path === entrypoint)) { form.setFieldsValue({entrypoint: undefined}); }
+    };
+
     const submit = async (values: IPublicationDraft): Promise<void> => {
         if (submitting.current || reading) { return; }
         const isCurrent = captureOwner();
@@ -63,7 +70,7 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
 
     return <Modal open={open} title="Добавить в общий магазин" width={760} style={{top:24}} footer={null}
         onCancel={()=>{if(!submitting.current && !reading){onClose();}}} closable={!busy && !reading} maskClosable={!busy && !reading} keyboard={!busy && !reading}>
-        <Form name="store-create" form={form} layout="vertical" scrollToFirstError={{block:'center'}} disabled={busy || reading} initialValues={{kind:'mcp',mode:'remote'}} onFinish={values=>{void submit(values);}}>
+        <Form name="store-create" form={form} layout="vertical" scrollToFirstError={{block:'center'}} disabled={busy || reading} initialValues={{kind:'mcp',mode:'remote'}} onValuesChange={()=>setError('')} onFinish={values=>{void submit(values);}}>
             <Form.Item name="kind" label="Что добавляем"><Radio.Group options={[{value:'mcp',label:'MCP'},{value:'plugin',label:'Плагин'},{value:'skill',label:'Скилл'}]} /></Form.Item>
             <Form.Item name="name" label="Название" rules={[{required:true,whitespace:true,message:'Введите название'},{max:128,message:'До 128 символов'}]} extra="Можно по-русски. Название не обязано совпадать с именем папки."><Input placeholder="Например, Проверка кода" /></Form.Item>
             <Form.Item name="description" label="Описание" rules={[{required:true,whitespace:true,message:'Расскажите, для чего нужен инструмент'},{max:kind==='skill'?1024:2000,message:'Описание слишком длинное'}]}><Input.TextArea rows={2} placeholder="Что делает инструмент и когда его использовать" /></Form.Item>
@@ -87,7 +94,7 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
                 </>}
             </>}
             {bundled && <>
-                <Form.Item label="Файлы пакета"><PublicationFiles files={files} onChange={setFiles} disabled={busy || reading} /></Form.Item>
+                <Form.Item label="Файлы пакета"><PublicationFiles files={files} onChange={changeFiles} disabled={busy || reading} /></Form.Item>
                 <Form.Item name="entrypoint" label="Файл запуска" rules={[{required:true,message:'Укажите файл запуска из пакета'}]}><Select placeholder="Сначала добавьте файлы" options={files.filter(file=>file.path).map(file=>({value:file.path,label:file.path}))} /></Form.Item>
                 <Alert type="info" showIcon message={kind==='mcp'?'Нужен подготовленный JS-пакет. Node.js и зависимости не устанавливаются этой формой автоматически.':'Нужны готовые файлы плагина. Сборка исходников и загрузка npm-зависимостей этой формой не выполняются.'} />
             </>}
