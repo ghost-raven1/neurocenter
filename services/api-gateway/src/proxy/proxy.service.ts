@@ -146,16 +146,39 @@ export class ProxyService {
                 if(limit.count>maximum){res.status(429).json({message:'Слишком много попыток подключения. Повторите через минуту.'});return;}
             }
         }
+        if(suffix==='embedding'){await this.deviceEmbedding(req,res);return;}
         const auth=publicPair?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
         if(!publicPair&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
         try{
             const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/${suffix}`,req.body,{
-                ...(suffix==='embedding'?{timeout:120000,maxContentLength:8*1024*1024}:{}),
                 headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',...(!publicPair||suffix==='pair/start'?{authorization:req.headers.authorization}:{})}});
             res.status(response.status).json(response.data===''?null:response.data);
             if(response.status>=200&&response.status<300&&auth&&!suffix.startsWith('embedding')){this.live.bridge(auth.email,auth.deviceId,/^jobs\//.test(suffix)?suffix.split('/')[1]:undefined);}
             if(response.status>=200&&response.status<300&&/\/(progress|complete)$/.test(suffix)&&['succeeded','failed'].includes(String((req.body as {state?:unknown})?.state))){this.live.sections(['knowledge','projects','operations','audit']);}
         }catch{res.status(502).json({message:'Сервис подключений недоступен.'});}
+    }
+
+    /** Закрытие клиента отменяет только его embedding, включая ожидание проверки Bearer. */
+    private async deviceEmbedding(req:Request,res:Response):Promise<void>{
+        const abort=new AbortController(),disconnected=()=>abort.abort();
+        const closed=()=>{if(!res.writableEnded)abort.abort();};
+        const open=()=>!abort.signal.aborted&&!res.destroyed&&!res.writableEnded;
+        req.on('aborted',disconnected);res.on('close',closed);
+        try{
+            if(req.aborted||res.destroyed)abort.abort();
+            if(!open())return;
+            let auth:IAuthPayload|null;
+            try{auth=await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);}
+            catch(error){if(!open())return;throw error;}
+            if(!open())return;
+            if(!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+            try{
+                const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`,req.body,{
+                    timeout:120000,maxContentLength:8*1024*1024,signal:abort.signal,
+                    headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',authorization:req.headers.authorization}});
+                if(open())res.status(response.status).json(response.data===''?null:response.data);
+            }catch{if(open())res.status(502).json({message:'Сервис подключений недоступен.'});}
+        }finally{req.removeListener('aborted',disconnected);res.removeListener('close',closed);}
     }
 
     private buildHeaders(headers: Record<string, unknown>, auth: IAuthPayload): Record<string, string> {
