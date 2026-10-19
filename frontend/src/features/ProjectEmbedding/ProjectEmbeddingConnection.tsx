@@ -64,6 +64,6 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent}
         {pending && !isPending(job) && <Typography.Text type="secondary">Дождитесь завершения текущего действия с папкой. Если ответ был потерян, затем проверьте отправленное подключение.</Typography.Text>}
         {operation.error && <Alert role="alert" type="error" showIcon message={operation.error} />}
         {success && <Alert role="status" type="info" showIcon message="Подключение модели проверено"
-            description="Перезапустите OpenCode. Индекс не изменён и его готовность не подтверждена. Если профиль модели изменился, автоматическая индексация отключена: полную переиндексацию запускайте отдельно после проверки настроек и сохранения нужной копии." />}
+            description="Перезапустите OpenCode. Индекс не изменён и его готовность не подтверждена. Для серверной модели автоматическая индексация отключена: полную переиндексацию запускайте отдельно после проверки настроек и сохранения нужной копии." />}
     </Space>;
 }

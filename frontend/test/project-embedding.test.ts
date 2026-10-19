@@ -149,7 +149,7 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         current.bridge.jobs=[job({state:'succeeded',result:result()})];expect(render()).not.toContain('Подключение модели проверено');
         vi.mocked(bridgeApi.create).mockResolvedValueOnce(current.bridge.jobs[0]);button('Проверить отправленное подключение').onClick!();await settle();
         expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(vi.mocked(bridgeApi.create).mock.calls[0][0]);
-        expect(render()).toContain('Перезапустите OpenCode');expect(render()).toContain('Индекс не изменён');expect(render()).toContain('автоматическая индексация отключена');
+        expect(render()).toContain('Перезапустите OpenCode');expect(render()).toContain('Индекс не изменён');expect(render()).toContain('Для серверной модели автоматическая индексация отключена');
     });
     it('Чужая pending mutation и незавершённое подключение не дают создать новую операцию',()=>{
         mode='action';current.bridge.jobs=[job({kind:'bind-project'})];consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();

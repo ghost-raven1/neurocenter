@@ -63,8 +63,8 @@ export function applyHostedRagConfiguration(config,root){
  const baseUrl=`http://127.0.0.1:${relay.port}/v1`;const result=structuredClone(config);
  result.embedding={...result.embedding,provider:'openai',model:profile.model,vectorDimension:profile.dimension,baseUrl,apiKey:relay.key,timeoutMs:120000};
  result.indexing={...result.indexing,embedBatchSize:8,embedConcurrency:1};
- // Подключение не даёт согласия на перестроение прежнего индекса при следующем запуске OpenCode.
- if(provenance?.schemaVersion!==1||provenance.state!=='ready'||provenance.embeddingSignature!==embeddingSignature(profile,baseUrl))result.openCode={...result.openCode,autoIndex:{...result.openCode?.autoIndex,enabled:false}};
+ // Hosted-индекс обновляется только явно: запуск OpenCode не даёт согласия на индексацию.
+ result.openCode={...result.openCode,autoIndex:{...result.openCode?.autoIndex,enabled:false}};
  Object.defineProperty(result,hostedIdentity,{value:embeddingSignature(profile,baseUrl),enumerable:true,configurable:true});
  return result;
 }

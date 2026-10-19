@@ -7,7 +7,7 @@ import { applyManagedPipeline } from './rag-managed-pipeline.mjs';
 
 export const RAG_HOSTED_EMBEDDING = Object.freeze({ schemaVersion: 1 });
 export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.6`;
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.7`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
 const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
 // V2/TUI зависимости исключены; настоящий Web UI уже собран в закреплённом upstream-архиве.

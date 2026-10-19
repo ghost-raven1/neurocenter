@@ -23,8 +23,13 @@ async function fixture(){
 test('Приватный hosted-профиль применяется без project secret и без автоматической смены индекса',async()=>{
  const f=await fixture();try{const config={embedding:{provider:'ollama',model:'old'},indexing:{embedBatchSize:100,embedConcurrency:3},vectorStore:{path:'.rag'},openCode:{autoIndex:{enabled:true}}};
  const result=f.adapter.applyHostedRagConfiguration(config,f.root);assert.equal(result.embedding.model,f.record.selection.profile.model);assert.equal(result.embedding.apiKey,f.record.relay.key);assert.equal(result.embedding.timeoutMs,120000);assert.equal(result.indexing.embedBatchSize,8);assert.equal(result.indexing.embedConcurrency,1);assert.equal(result.openCode.autoIndex.enabled,false);assert.equal(config.embedding.model,'old');
- await fs.mkdir(path.join(f.root,'.rag'));await fs.writeFile(path.join(f.root,'.rag/neurocenter-index-profile.json'),JSON.stringify({schemaVersion:1,state:'ready',profile:f.record.selection.profile,embeddingSignature:embeddingSignature(f.record.selection.profile,'http://127.0.0.1:34567/v1')}));
- assert.equal(f.adapter.applyHostedRagConfiguration(config,f.root).openCode.autoIndex.enabled,true);
+ }finally{await fs.rm(f.temp,{recursive:true,force:true});}
+});
+test('Совместимый готовый hosted-индекс не даёт согласия на автоматическую индексацию при запуске',async()=>{
+ const f=await fixture();try{const config={embedding:{provider:'ollama',model:'old'},vectorStore:{path:'.rag'},openCode:{autoIndex:{enabled:true}}};const store=path.join(f.root,'.rag');await fs.mkdir(store);const before=JSON.stringify({schemaVersion:1,state:'ready',profile:f.record.selection.profile,embeddingSignature:embeddingSignature(f.record.selection.profile,'http://127.0.0.1:34567/v1')});await fs.writeFile(path.join(store,'neurocenter-index-profile.json'),before);
+ const result=f.adapter.applyHostedRagConfiguration(config,f.root);assert.equal(result.openCode.autoIndex.enabled,false);assert.equal(config.openCode.autoIndex.enabled,true);assert.equal(await fs.readFile(path.join(store,'neurocenter-index-profile.json'),'utf8'),before);
+ const clone=structuredClone(result);clone.openCode.autoIndex.enabled=true;assert.equal(f.adapter.preserveHostedRagConfiguration(result,clone).openCode.autoIndex.enabled,false);
+ const ordinary={embedding:{model:'ordinary'},openCode:{autoIndex:{enabled:true}}};assert.equal(f.adapter.preserveHostedRagConfiguration(ordinary,structuredClone(ordinary)).openCode.autoIndex.enabled,true);
  }finally{await fs.rm(f.temp,{recursive:true,force:true});}
 });
 test('Небезопасный приватный файл и обновлённый receipt не откатываются на defaults',async()=>{
