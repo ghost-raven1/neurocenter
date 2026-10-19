@@ -61,7 +61,8 @@ async function invoke(profile, args, env = {}, importOnly = false) {
 
 for (const profile of ['embedding', 'vision']) {
     test(`${profile}: справка и command --help не читают конфигурацию и не выполняют действие`, async () => {
-        for (const args of [['--help'], ['-h'], ['up', '--help'], ['check', '--help'], ['status', '--help'], ['down', '--help'], ['down', '-h']]) {
+        for (const args of [['--help'], ['-h'], ['—help'], ['up', '--help'], ['check', '--help'], ['status', '--help'], ['down', '--help'], ['down', '-h'],
+            ['up', '—help'], ['check', '—help'], ['status', '—help'], ['down', '—help']]) {
             const result = await invoke(profile, args, {EMBEDDING_PORT: 'invalid'});
             assert.equal(result.status, 0, args.join(' ')); assert.match(result.stdout, new RegExp(`${profile}:up`));
             assert.match(result.stdout, /общий|Общий/); assert.equal(result.stderr, ''); assert.deepEqual(result.events, []);
@@ -69,7 +70,8 @@ for (const profile of ['embedding', 'vision']) {
     });
 
     test(`${profile}: неизвестные и лишние аргументы отклоняются до конфигурации`, async () => {
-        for (const args of [[], ['unknown'], ['down', '--unknown'], ['down', 'extra'], ['up', '--unexpected'], ['down', '--help', 'extra'], ['unknown', '--help']]) {
+        for (const args of [[], ['unknown'], ['down', '--unknown'], ['down', 'extra'], ['up', '--unexpected'], ['down', '--help', 'extra'], ['unknown', '--help'],
+            ['down', '—help', 'extra'], ['unknown', '—help']]) {
             const result = await invoke(profile, args, {EMBEDDING_PORT: 'invalid'});
             assert.equal(result.status, 1); assert.match(result.stderr, /Использование|Справка/);
             assert.equal(result.stdout, ''); assert.deepEqual(result.events, []);

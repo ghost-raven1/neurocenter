@@ -257,8 +257,9 @@ async function main() {
     const args = process.argv.slice(2);
     const command = args[0];
     const commands = ['install', 'build', 'check', 'up', 'down', 'status', 'tail'];
-    if (!args.length || args.length === 1 && ['--help', '-h', 'help'].includes(command)
-        || args.length === 2 && commands.includes(command) && ['--help', '-h'].includes(args[1])) {
+    const helpFlags = ['--help', '-h', '—help'];
+    if (!args.length || args.length === 1 && (command === 'help' || helpFlags.includes(command))
+        || args.length === 2 && commands.includes(command) && helpFlags.includes(args[1])) {
         output.help();
         return;
     }

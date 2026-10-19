@@ -2,7 +2,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const commands = ['up', 'check', 'status', 'down'];
-const helpFlags = ['--help', '-h'];
+const helpFlags = ['--help', '-h', '—help'];
 const usage = profile => `Использование: npm run ${profile}:up | ${profile}:check | ${profile}:status | ${profile}:down`;
 
 async function execute(profile, args) {

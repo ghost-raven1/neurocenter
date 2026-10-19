@@ -14,7 +14,10 @@ async function fixture(action) {
     await mkdir(directory);await mkdir(cwd);
     for(const file of ['bundle-cli.mjs','bundle-errors.mjs'])await copyFile(path.join(scripts,file),path.join(directory,file));
     await writeFile(path.join(directory,'bundle.mjs'),`
-        export async function readModelBundle(){return {};}
+        export async function readModelBundle(){
+            if(process.env.MODEL_CLI_FIXTURE_FAILURE==='access')throw Object.assign(new Error('PRIVATE_TOKEN_AND_PATH'),{code:'EACCES'});
+            return {};
+        }
         export async function hydrateModelBundle(options){
             if(process.env.MODEL_CLI_FIXTURE_FAILURE==='network')throw new TypeError('fetch failed',
                 {cause:Object.assign(new Error('PRIVATE_TOKEN_AND_PATH'),{code:'ENOTFOUND'})});
@@ -33,6 +36,26 @@ test('Успешный CLI оставляет в stdout один JSON, а про
     const result=run();assert.equal(result.status,0,result.stderr);
     assert.deepEqual(JSON.parse(result.stdout),{ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:1234});
     assert.equal(result.stdout.trim().split('\n').length,1);assert.match(result.stderr,/Модели готовы/);
+}));
+
+test('Справка с флагом verify и длинным тире открывается до чтения описи и подготовки',async()=>fixture(async({run})=>{
+    for(const args of [['--help'],['—help'],['--verify-only','--help'],['--verify-only','—help'],
+        ['--download-only','-h'],['--pack','--help'],['--directory','missing','--manifest','missing','--help']]) {
+        const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
+        assert.equal(result.status,0,args.join(' ')+': '+result.stderr);
+        assert.match(result.stdout,/Использование:.*bundle-cli/);
+        assert.equal(result.stderr,'');assert.doesNotMatch(result.stdout,/"ok"|PRIVATE/);
+    }
+}));
+
+test('Неверные параметры CLI показывают справку вместо ошибки описи моделей',async()=>fixture(async({run})=>{
+    for(const args of [['--unknown'],['--directory'],['--verify-only','--download-only'],['--pack'],['--verify-only','--verify-only']]) {
+        const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
+        assert.equal(result.status,1);const report=JSON.parse(result.stdout);
+        assert.equal(report.error.code,'MODEL_BUNDLE_USAGE');
+        assert.match(result.stderr,/Использование:.*bundle-cli/);
+        assert.doesNotMatch(result.stderr,/Опись моделей не соответствует|PRIVATE/);
+    }
 }));
 
 for(const [mode,code] of [['access','EACCES'],['network','MODEL_NETWORK']])test(`Отказ CLI ${mode} возвращает безопасную причину в JSON и stderr`,async()=>fixture(async({run})=>{

@@ -6,6 +6,7 @@ import {modelBundleFailure} from './bundle-errors.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only] [--manifest <опись>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
+const usageError=(message='Некорректные параметры команды.')=>Object.assign(new Error(message+'\n'+usage),{code:'MODEL_BUNDLE_USAGE'});
 
 function formatBytes(bytes) {
     const units=['Б','КиБ','МиБ','ГиБ'];let index=0,value=bytes;
@@ -34,22 +35,23 @@ export function modelBundleProgressReporter(write=value=>console.error(value),no
 
 /** CLI не принимает произвольные файлы весов и не исполняет команды из поставки. */
 export async function runModelBundleCli(args=process.argv.slice(2)) {
-    if(args.length===1&&['--help','-h'].includes(args[0])) {console.log(usage);return;}
+    // npm run models:verify уже добавляет --verify-only перед пользовательским --help.
+    if(args.some(arg=>['--help','-h','—help'].includes(arg))) {console.log(usage);return;}
     const options={directory:path.join(root,'data/embedding'),manifest:fileURLToPath(new URL('./bundle-release.json',import.meta.url))};
     const values={'--directory':'directory','--manifest':'manifest','--output':'output','--base-url':'baseUrl'};
     const flags={'--download-only':'downloadOnly','--verify-only':'verifyOnly','--pack':'pack'};const seen=new Set();
     for(let index=0;index<args.length;index++) {
-        const key=args[index];if(seen.has(key))throw new Error('Параметр указан повторно.\n'+usage);seen.add(key);
+        const key=args[index];if(seen.has(key))throw usageError('Параметр указан повторно.');seen.add(key);
         if(flags[key])options[flags[key]]=true;
         else if(values[key]&&args[index+1]&&!args[index+1].startsWith('--'))options[values[key]]=args[++index];
-        else throw new Error(usage);
+        else throw usageError();
     }
     if(options.pack) {
-        if(!options.output||!options.baseUrl||options.downloadOnly||options.verifyOnly||seen.has('--manifest'))throw new Error(usage);
+        if(!options.output||!options.baseUrl||options.downloadOnly||options.verifyOnly||seen.has('--manifest'))throw usageError();
         const manifest=await packModelBundle({...options,directory:path.resolve(options.directory),output:path.resolve(options.output)});
         console.log(JSON.stringify({ok:true,packed:true,files:manifest.files.length,parts:manifest.files.flatMap(file=>file.parts||[]).length}));return;
     }
-    if(options.output||options.baseUrl||options.downloadOnly&&options.verifyOnly)throw new Error(usage);
+    if(options.output||options.baseUrl||options.downloadOnly&&options.verifyOnly)throw usageError();
     const manifest=await readModelBundle(path.resolve(options.manifest));
     const report=await hydrateModelBundle({...options,directory:path.resolve(options.directory),manifest,onProgress:modelBundleProgressReporter()});
     console.log(JSON.stringify(report));
@@ -64,6 +66,8 @@ function isEntrypoint() {
 if(isEntrypoint()) {
     runModelBundleCli().catch(error=>{
         const failure=modelBundleFailure(error);
-        console.error(failure.message);console.log(JSON.stringify({ok:false,error:failure}));process.exitCode=1;
+        console.error(failure.message);
+        if(failure.code==='MODEL_BUNDLE_USAGE')console.error(usage);
+        console.log(JSON.stringify({ok:false,error:failure}));process.exitCode=1;
     });
 }

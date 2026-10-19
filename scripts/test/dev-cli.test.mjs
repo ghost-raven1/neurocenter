@@ -73,7 +73,7 @@ async function fixture(t, mode = 'ready') {
     return {checkout, logs, run};
 }
 
-for (const args of [[], ['--help'], ['help'], ['-h'], ['down', '--help']]) {
+for (const args of [[], ['--help'], ['—help'], ['help'], ['-h'], ['down', '--help'], ['up', '—help']]) {
     test(`CLI ${args.join(' ') || 'без аргументов'} показывает справку без запуска сервисов`, async t => {
         const f = await fixture(t), result = await f.run(...args);
         assert.equal(result.status, 0, result.stderr);
