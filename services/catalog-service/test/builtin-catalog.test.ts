@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
 import { artifactFixture } from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import { validateBuiltinManifest } from '../src/builtin-catalog/manifest';
-import { builtinCardHash, planBuiltinTool, type IBuiltinReceipt } from '../src/builtin-catalog/planning';
+import { builtinCardHash, BuiltinCatalogConflict, planBuiltinTool, type IBuiltinReceipt } from '../src/builtin-catalog/planning';
 import { cacheBuiltinArtifacts } from '../src/builtin-catalog/download';
 import { syncBuiltinCatalog } from '../src/builtin-catalog/sync';
 import { PluginRepository } from '../src/publication/plugin-repository';
 import { RuntimeArtifacts } from '../src/runtime-artifacts/runtime-artifacts';
 import { publicationHash } from '../src/publication/publication-validation';
 import type { IAiPlugin } from '../src/catalog/dto';
+import { BuiltinCatalogFailure, builtinCatalogError, builtinCatalogWarnings } from '../src/builtin-catalog/diagnostics';
 
 const { archive, descriptor } = artifactFixture();
 const release = 'catalog-2026-10-19.1';
@@ -72,6 +73,10 @@ describe('План миграции существующих карточек б
     it.each([
         { args: ['@modelcontextprotocol/server-memory'] }, { args: ['-y', '@modelcontextprotocol/server-memory@1.0.0'] },
         { args: ['--yes', '@modelcontextprotocol/server-memory'] },
+        { args: ['-y', '@modelcontextprotocol/server-memory@latest'] },
+        { args: ['@modelcontextprotocol/server-memory@next'] },
+        { args: ['@modelcontextprotocol/server-memory@^1.0.0'] },
+        { args: ['@modelcontextprotocol/server-memory@>=1.0.0 <2.0.0'] },
     ])('Узнаёт старый npx с единственным известным пакетом: $args', ({ args }) => {
         const plan = planBuiltinTool(tool(), card({ config: { transport: 'stdio', command: 'npx', args } }));
         expect(plan.action).toBe('update'); expect(plan.patch).toMatchObject({ expectedVersion: 1, config: tool().publication.config });
@@ -80,7 +85,7 @@ describe('План миграции существующих карточек б
     it.each([
         { command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory', '--custom'] },
         { command: 'npx', args: ['unknown-package'] },
-        { command: 'npx', args: ['@modelcontextprotocol/server-memory@latest'] },
+        { command: 'npx', args: ['@modelcontextprotocol/server-memory@https://unknown.test/file.tgz'] },
         { command: 'uvx', args: ['@modelcontextprotocol/server-memory'] },
         { command: 'node', env: { CUSTOM: 'my-value' } },
         { command: 'node', extra: { localConfiguration: { custom: true } } },
@@ -133,6 +138,17 @@ describe('Неизменяемый кеш готовых архивов', () => 
         await expect(cacheBuiltinArtifacts(tool().artifacts, root, request)).rejects.toThrow(/SHA-256/);
         expect(request).not.toHaveBeenCalled(); expect(await fs.readFile(filename)).toEqual(Buffer.alloc(archive.length));
     });
+    it('Обрыв ответа после заголовков получает безопасную причину и не оставляет готовый архив', async () => {
+        const root = await directory();
+        const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error('https://private:secret@host')); } });
+        const request = vi.fn(async () => new Response(stream));
+        let failure: unknown;
+        try { await cacheBuiltinArtifacts(tool().artifacts, root, request as typeof fetch); }
+        catch (error) { failure = error; }
+        expect(builtinCatalogError(failure)).toContain('Загрузка готового комплекта прервана');
+        expect(builtinCatalogError(failure)).not.toContain('secret');
+        expect(await fs.readdir(root)).toEqual([]);
+    });
 });
 
 describe('Все подготовленные конфликты останавливают публикацию до карточек', () => {
@@ -178,6 +194,97 @@ describe('Все подготовленные конфликты останав�
         expect(query.mock.calls.filter(([sql]) => sql === 'ROLLBACK')).toHaveLength(1);
         expect(query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
         expect(query.mock.calls.some(([sql]) => sql.endsWith('ORDER BY id FOR UPDATE'))).toBe(true);
+    });
+});
+
+describe('Частичное обновление встроенного каталога при запуске разработки', () => {
+    it('Пропускает изменённую карточку и её архив, остальные карточки записывает одной транзакцией', async () => {
+        const root = await directory(); vi.stubEnv('RUNTIME_ARTIFACT_DIR', root);
+        const otherFixture = artifactFixture([{ path: 'runtime/other.mjs', content: 'export const other = true;' }]);
+        const conflicting = { ...rawTool, key: 'other', publication: { ...rawTool.publication, name: 'Other MCP',
+            config: { transport: 'stdio' as const, extra: { runtimeArtifacts: [otherFixture.descriptor] } } },
+        artifacts: [{ descriptor: otherFixture.descriptor, url: `https://github.com/ghost-raven1/neurocenter/releases/download/${release}/${otherFixture.descriptor.sha256}.tar.gz` }] };
+        const query = vi.fn(async () => ({ rows: [] })), lease = { query, release: vi.fn() };
+        const pool = { query, connect: async () => lease } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockImplementation(async name => name === 'Other MCP' ? card({ name: 'Other MCP', origin: 'untrusted' }) : null);
+        const create = vi.spyOn(PluginRepository.prototype, 'create').mockImplementation(async (publication, _author, finish, client) => {
+            const saved = card({ name: publication.name, config: publication.config ?? null });
+            await finish?.(client!, saved); return saved;
+        });
+        const update = vi.spyOn(PluginRepository.prototype, 'update'), importer = vi.spyOn(RuntimeArtifacts.prototype, 'importArchive').mockResolvedValue({} as never);
+        const request = vi.fn(async () => new Response(archive));
+        const result = await syncBuiltinCatalog(input([rawTool, conflicting]), { pool, skipConflicts: true, fetch: request as typeof fetch });
+        expect(result).toMatchObject({ ok: true, dryRun: false, partial: true, conflicts: [{ key: 'other', name: 'Other MCP', reason: expect.stringContaining('изменена пользователем') }],
+            tools: [{ key: 'memory', action: 'create' }] });
+        expect(request).toHaveBeenCalledOnce(); expect(request.mock.calls[0][0]).toBe(rawTool.artifacts[0].url);
+        expect(importer).toHaveBeenCalledOnce(); expect(create).toHaveBeenCalledOnce(); expect(update).not.toHaveBeenCalled();
+        expect(query.mock.calls.filter(([sql]) => sql === 'BEGIN')).toHaveLength(1);
+        expect(query.mock.calls.filter(([sql]) => sql === 'COMMIT')).toHaveLength(1);
+        expect(query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO builtin_catalog_receipts'))).toHaveLength(1);
+    });
+
+    it('Если все карточки конфликтуют, не скачивает архивы и не меняет карточки или квитанции', async () => {
+        const query = vi.fn(async () => ({ rows: [] }));
+        const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockResolvedValue(card({ origin: 'untrusted' }));
+        const create = vi.spyOn(PluginRepository.prototype, 'create'), update = vi.spyOn(PluginRepository.prototype, 'update'), request = vi.fn();
+        const result = await syncBuiltinCatalog(input(), { pool, skipConflicts: true, fetch: request });
+        expect(result).toMatchObject({ ok: true, partial: true, conflicts: [{ key: 'memory' }], tools: [] });
+        expect(create).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled(); expect(request).not.toHaveBeenCalled();
+        expect(query.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO builtin_catalog_receipts'))).toBe(false);
+    });
+
+    it('Изменение карточки во время подготовки пропускается без записи квитанции', async () => {
+        const root = await directory(); vi.stubEnv('RUNTIME_ARTIFACT_DIR', root);
+        const query = vi.fn(async () => ({ rows: [] }));
+        const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockResolvedValueOnce(card()).mockResolvedValue(card({ description: 'Конкурентная правка' }));
+        vi.spyOn(RuntimeArtifacts.prototype, 'importArchive').mockResolvedValue({} as never);
+        const update = vi.spyOn(PluginRepository.prototype, 'update');
+        const result = await syncBuiltinCatalog(input(), { pool, skipConflicts: true, fetch: vi.fn(async () => new Response(archive)) as typeof fetch });
+        expect(result).toMatchObject({ partial: true, conflicts: [{ reason: expect.stringContaining('во время подготовки') }], tools: [] });
+        expect(update).not.toHaveBeenCalled();
+        expect(query.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO builtin_catalog_receipts'))).toBe(false);
+    });
+
+    it('Карточка с другим регистром названия обнаруживается до создания дубликата', async () => {
+        const query = vi.fn(async (sql: string) => ({ rows: sql.startsWith('SELECT id FROM ai_plugins WHERE lower(name)') ? [{ id: 'ai-plug-existing' }] : [] }));
+        const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockImplementation(async key => key === 'ai-plug-existing' ? card({ name: 'mcp memory', origin: 'untrusted' }) : null);
+        const create = vi.spyOn(PluginRepository.prototype, 'create'), request = vi.fn();
+        const result = await syncBuiltinCatalog(input(), { pool, skipConflicts: true, fetch: request });
+        expect(result).toMatchObject({ partial: true, conflicts: [{ key: 'memory' }], tools: [] });
+        expect(create).not.toHaveBeenCalled(); expect(request).not.toHaveBeenCalled();
+    });
+
+    it('Не скрывает сбой БД под видом пользовательского конфликта', async () => {
+        const query = vi.fn(async () => ({ rows: [] }));
+        const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockRejectedValue(new Error('База недоступна'));
+        await expect(syncBuiltinCatalog(input(), { pool, skipConflicts: true })).rejects.toThrow('База недоступна');
+    });
+
+    it('Пропуск конфликтов не скрывает сетевой отказ и несовместим с режимами без записи', async () => {
+        const root = await directory(); vi.stubEnv('RUNTIME_ARTIFACT_DIR', root);
+        const query = vi.fn(async () => ({ rows: [] }));
+        const pool = { query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool;
+        vi.spyOn(PluginRepository.prototype, 'get').mockResolvedValue(null);
+        const create = vi.spyOn(PluginRepository.prototype, 'create');
+        await expect(syncBuiltinCatalog(input(), { pool, skipConflicts: true, fetch: vi.fn().mockRejectedValue(new Error('Сеть недоступна')) })).rejects.toThrow('сеть недоступна');
+        expect(create).not.toHaveBeenCalled();
+        for (const option of [{ dryRun: true }, { downloadOnly: true }]) {
+            await expect(syncBuiltinCatalog(input(), { ...option, skipConflicts: true })).rejects.toThrow('только при обновлении');
+        }
+    });
+
+    it('Диагностика показывает конфликт и код БД, сохраняя строки подключения и параметры в тайне', () => {
+        const conflict = new BuiltinCatalogConflict(tool(), 'собственная настройка требует проверки.');
+        expect(builtinCatalogError(conflict)).toContain('Встроенный каталог: «MCP Memory»');
+        expect(builtinCatalogWarnings([conflict.conflict])[0]).toContain('npm run tools:sync');
+        const output = builtinCatalogError(Object.assign(new Error('postgresql://user:private@host/db'), { code: '28P01' }));
+        expect(output).toContain('28P01'); expect(output).not.toContain('private'); expect(output).not.toContain('postgresql:');
+        expect(builtinCatalogError(new Error('https://private:secret@host'))).not.toContain('secret');
+        expect(builtinCatalogError(new BuiltinCatalogFailure('Не удалось скачать готовый комплект (HTTP 404).'))).toContain('HTTP 404');
     });
 });
 

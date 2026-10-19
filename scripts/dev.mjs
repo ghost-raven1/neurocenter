@@ -8,6 +8,7 @@ import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
 import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
+import {syncStartupCatalog} from './workspace/catalog-startup.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -165,13 +166,10 @@ async function start() {
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
     output.success('PostgreSQL готов');
     next('Обновление встроенного каталога инструментов');
-    run(node, [path.join(root, 'services/catalog-service/dist/builtin-catalog/sync.cli.js'),
-        path.join(root, 'scripts/catalog-plugins/catalog-release.json')], root, {
-        ...process.env,
-        CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+    syncStartupCatalog({ node, root, output, environment: {
+        ...process.env, CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
         RUNTIME_ARTIFACT_DIR: path.resolve(root, process.env.RUNTIME_ARTIFACT_DIR || 'data/runtime-artifacts'),
-    });
-    output.success('Каталог инструментов синхронизирован');
+    } });
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();

@@ -41,7 +41,7 @@ async function fixture(t, mode) {
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin);
     for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs',
-        'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
+        'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/catalog-startup.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
@@ -53,8 +53,9 @@ async function fixture(t, mode) {
     await fs.mkdir(path.join(checkout, 'services/catalog-service/dist/builtin-catalog'), {recursive: true});
     await fs.writeFile(path.join(checkout, 'services/catalog-service/dist/builtin-catalog/sync.cli.js'), `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'catalog-sync',
-            manifest:process.argv[2],artifactDir:process.env.RUNTIME_ARTIFACT_DIR})+'\\n');
-        if(process.env.DEV_START_MODE==='catalog-error')process.exit(32);`);
+            manifest:process.argv[2],mode:process.argv[3],artifactDir:process.env.RUNTIME_ARTIFACT_DIR})+'\\n');
+        if(process.env.DEV_START_MODE==='catalog-error')process.exit(32);
+        console.log(JSON.stringify({ok:true,tools:[],partial:false,conflicts:[]}));`);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -193,7 +194,7 @@ test('Запуск называет завершившийся сервис, п�
         < result.events.findIndex(event => event.kind === 'child-spawn'));
 });
 
-test('Ошибка обновления каталога останавливает запуск до остановки прежних процессов', async t => {
+test('Ошибка поставки каталога показывает причину и не блокирует запуск сервисов', async t => {
     const f = await fixture(t, 'catalog-error');
     await fs.mkdir(path.join(f.checkout, '.run'));
     const state = '[{"name":"catalog","pid":99999999}]\n';
@@ -201,11 +202,17 @@ test('Ошибка обновления каталога останавлива�
     await fs.writeFile(stateFile, state);
     const result = await f.run();
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /32/);
-    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
+    assert.match(result.stdout, /Код завершения: 32/);
+    assert.match(result.stderr, /запуск приложения продолжится/);
+    assert.match(result.stdout, /npm run tools:sync/);
+    assert.notEqual(await fs.readFile(stateFile, 'utf8').catch(error => {
+        if (error.code === 'ENOENT') return ''; throw error;
+    }), state);
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
-    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'port-probe').length, 0);
+    assert.equal(result.events.find(event => event.kind === 'catalog-sync').mode, '--skip-conflicts');
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 6);
+    assert.ok(result.events.some(event => event.kind === 'health-start'));
+    assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
 });
 
 test('Ошибка подготовки автономного моста сохраняет состояние работающего стека', async t => {

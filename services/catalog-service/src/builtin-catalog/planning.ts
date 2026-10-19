@@ -5,6 +5,17 @@ import type { IBuiltinTool } from './manifest';
 
 export interface IBuiltinReceipt { tool_key: string; asset_id: string; release: string; publication_hash: string; card_hash: string }
 export interface IBuiltinPlan { tool: IBuiltinTool; current: IAiPlugin | null; receipt?: IBuiltinReceipt; action: 'create' | 'update' | 'unchanged'; patch?: IAiPluginUpdate }
+export interface IBuiltinConflict { key: string; name: string; reason: string }
+
+/** Только ожидаемый конфликт пользовательской карточки можно пропустить при запуске разработки. */
+export class BuiltinCatalogConflict extends Error {
+    readonly conflict: IBuiltinConflict;
+    constructor(tool: IBuiltinTool, reason: string) {
+        super(`«${tool.publication.name}»: ${reason}`);
+        this.name = 'BuiltinCatalogConflict';
+        this.conflict = { key: tool.key, name: tool.publication.name, reason };
+    }
+}
 
 /** Отпечаток исключает время чтения, но фиксирует все редактируемые данные и номер версии. */
 export function builtinCardHash(card: IAiPlugin): string {
@@ -30,7 +41,7 @@ function legacyNpx(tool: IBuiltinTool, config: IAiPluginConfig): boolean {
     const args = [...config.args];
     if (args[0] === '-y' || args[0] === '--yes') { args.shift(); }
     if (args.length !== 1) { return false; }
-    const match = /^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)(?:@(\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?))?$/i.exec(args[0]);
+    const match = /^((?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)(?:@([a-z0-9*~^<>=|.+ -]+))?$/i.exec(args[0]);
     return !!match && !!tool.legacyPackages?.includes(match[1]);
 }
 
@@ -48,7 +59,7 @@ function compatibleConfig(tool: IBuiltinTool, card: IAiPlugin): boolean {
 
 /** Все конфликты планируются до скачивания и до первой новой версии карточки. */
 export function planBuiltinTool(tool: IBuiltinTool, card: IAiPlugin | null, receipt?: IBuiltinReceipt): IBuiltinPlan {
-    const conflict = (): never => { throw new Error(`«${tool.publication.name}»: карточка изменена пользователем или её источник не подтверждён. Сохраните настройки и исправьте конфликт поставки вручную.`); };
+    const conflict = (): never => { throw new BuiltinCatalogConflict(tool, 'карточка изменена пользователем или её источник не подтверждён. Сохраните настройки и исправьте конфликт поставки вручную.'); };
     if (receipt) {
         if (!card || card.id !== receipt.asset_id || builtinCardHash(card) !== receipt.card_hash) { conflict(); }
         if (publicationHash(tool.publication) === receipt.publication_hash) { return { tool, current: card, receipt, action: 'unchanged' }; }
