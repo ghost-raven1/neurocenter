@@ -9,6 +9,7 @@
 - Установка, настройка, диагностика и восстановление через локальный MCP-мост.
 - Синхронизация проектных баз знаний LanceDB ↔ PostgreSQL/pgvector.
 - Локальная модель эмбеддингов с отдельным API и весами внутри проекта.
+- Локальная обработка изображений: описание, чтение надписей и ответы на вопросы.
 - Роли, отзыв доступа, журнал операций и транзакционный аудит изменений.
 - Полные резервные комплекты, расписание обслуживания, S3-доставка и контроль ресурсов.
 
@@ -41,6 +42,15 @@ npm run embedding:up
 
 Веса скачиваются в `data/embedding/`; API — `http://127.0.0.1:11435`, модель — `qwen3-embedding:4b`. Глобальный Ollama не требуется. Проверка: `npm run embedding:check`; остановка с сохранением весов: `npm run embedding:down`. [Подключение OpenCodeRAG и ограничения](docs/local-embedding.md).
 
+Для обработки изображений:
+
+```sh
+npm run vision:up
+npm run vision:describe -- ./image.png 'Что изображено на картинке?'
+```
+
+Модель `qwen3-vl:2b-instruct` использует тот же проектный runtime и каталог весов. Доступны Ollama и OpenAI-совместимый API. Проверка — `npm run vision:check`. Команды `vision:down` и `embedding:down` останавливают общий контейнер для обеих моделей, сохраняя веса. [Подключение и ограничения](docs/local-vision.md).
+
 В `bridge-dist/` хранятся исходники установщиков. Переносимый пакет моста создаётся при dev-сборке. Для автономной установки без Node/npm отдельно подготовьте архивы нужных платформ через `node scripts/package-bridge-runtime.mjs`; [формат и ограничения](docs/runtime-artifacts-0.9.md). Готовые бинарные архивы в этот Git-репозиторий не включены.
 
 ## Структура
@@ -52,6 +62,7 @@ npm run embedding:up
 | `mcp/neurocenter-asset-sync/` | Локальный MCP и worker |
 | `scripts/catalog-plugins/` | Общая упаковка и публикация инструментов |
 | `scripts/embedding/` | Запуск, проверка и закреплённая версия локальной модели |
+| `scripts/vision/` | Закреплённая vision-модель и обработка изображений |
 | `scripts/production/` | Настройка, обслуживание, backup/restore и обновление |
 | `docs/` | Архитектура, контракты, runbooks и история проверок |
 
@@ -60,6 +71,7 @@ npm run embedding:up
 - [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
 - [Упаковка инструментов](scripts/catalog-plugins/README.md).
 - [Локальная модель эмбеддингов](docs/local-embedding.md).
+- [Локальная обработка изображений](docs/local-vision.md).
 - [Production-настройка](docs/production-setup.md), [восстановление](docs/production-recovery.md), [обновление](docs/production-update.md).
 - [Обслуживание](docs/maintenance-schedule.md), [внешние копии](docs/external-backups.md), [ресурсы](docs/capacity-admission.md).
 - [Последняя локальная приёмка настроек проектов](docs/project-settings-audit-2026-10-19.md).

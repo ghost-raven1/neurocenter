@@ -22,7 +22,7 @@ async function main() {
         if (value.state !== 'verified') process.exitCode = 1;
     } else if (command === 'down') {
         await withControlLock(config, () => compose(config, ['down'], {inherit: true}));
-        console.log('Проектный сервис остановлен. Веса сохранены в data/embedding.');
+        console.log('Общий хостинг embedding и vision остановлен. Все веса сохранены в data/embedding.');
     } else {
         throw new Error('Использование: npm run embedding:up | embedding:status | embedding:check | embedding:down');
     }

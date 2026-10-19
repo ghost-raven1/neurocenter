@@ -56,14 +56,14 @@ export function assertManagedContainer(config, container) {
 export async function managedContainer(config) {
     await dataDirectory(config);
     const id = await compose(config, ['ps', '--quiet', 'embedding']);
-    if (!id) throw new Error('Проектная модель остановлена. Выполните npm run embedding:up.');
+    if (!id) throw new Error(`Проектная модель остановлена. Выполните ${config.upCommand}.`);
     const [container] = JSON.parse(await docker(config, ['inspect', id]));
     return assertManagedContainer(config, container);
 }
 
 /** Проверяет весь закреплённый комплект на диске, не загружая веса в память Node. */
 export async function verifyModelFiles(config) {
-    await dataDirectory(config, 'models/manifests/registry.ollama.ai/library/qwen3-embedding');
+    await dataDirectory(config, path.relative(config.data, path.dirname(config.manifest)));
     await dataDirectory(config, 'models/blobs');
     const manifestInfo = await lstat(config.manifest);
     if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || manifestInfo.size > 128 * 1024) throw new Error('Недопустимый файл манифеста модели.');
@@ -87,16 +87,27 @@ async function atomicReceipt(config, value) {
     await rename(temporary, config.receipt);
 }
 
-/** Сохраняет отметку готовности только после проверки файлов и реальных векторов. */
-export async function check(config) {
+/** Статусы моделей независимы: vision требует проверки картинки, embedding — размерности. */
+export function verifiedReceipt(config, receipt) {
+    const checkedAt = typeof receipt?.checkedAt === 'string' ? Date.parse(receipt.checkedAt) : NaN;
+    return Number.isFinite(checkedAt) && checkedAt <= Date.now() && new Date(checkedAt).toISOString() === receipt.checkedAt
+        && receipt?.model === config.lock.model && receipt?.manifestSha256 === config.lock.manifestSha256 && receipt?.image === config.lock.image
+        && (config.capability === 'vision' ? receipt.capability === 'vision' && receipt.visionVerified === true
+            : Number.isSafeInteger(config.lock.dimension) && receipt.dimension === config.lock.dimension);
+}
+
+/** Сохраняет отметку готовности только после SHA и содержательной пробы выбранной модели. */
+export async function check(config, probe = probeModel) {
     await managedContainer(config);
     await rm(config.receipt, {force: true});
     const tags = await requestJson(config.baseUrl + '/api/tags');
-    if (!lockedModel(tags, config.lock)) throw new Error('Закреплённая модель не подготовлена или заменена. Выполните npm run embedding:up.');
+    if (!lockedModel(tags, config.lock)) throw new Error(`Закреплённая модель не подготовлена или заменена. Выполните ${config.upCommand}.`);
     await verifyModelFiles(config);
-    const probe = await probeModel(config);
+    const result = await probe(config);
+    if (config.capability === 'vision' ? result.visionVerified !== true : result.dimension !== config.lock.dimension) throw new Error('Содержательная проверка модели не пройдена.');
     const receipt = {model: config.lock.model, manifestSha256: config.lock.manifestSha256, image: config.lock.image,
-        dimension: probe.dimension, checkedAt: new Date().toISOString()};
+        ...(config.capability === 'vision' ? {capability: 'vision', visionVerified: true, observation: result.observation} : {dimension: result.dimension}),
+        checkedAt: new Date().toISOString()};
     await atomicReceipt(config, receipt);
     return receipt;
 }
@@ -109,9 +120,9 @@ export async function status(config) {
     let receipt;
     try {receipt = JSON.parse(await readFile(config.receipt, 'utf8'));} catch (error) {if (error.code !== 'ENOENT') throw error;}
     const installed = lockedModel(tags, config.lock);
-    const checked = installed && receipt?.manifestSha256 === config.lock.manifestSha256 && receipt?.dimension === config.lock.dimension && receipt?.image === config.lock.image;
+    const checked = installed && verifiedReceipt(config, receipt);
     return {state: checked ? 'verified' : installed ? 'unchecked' : 'missing', version: version.version,
-        model: config.lock.model, dimension: config.lock.dimension, url: config.baseUrl + '/api',
+        model: config.lock.model, capability: config.capability, dimension: config.lock.dimension, url: config.baseUrl + '/api',
         checkedAt: checked ? receipt.checkedAt : null, data: config.data};
 }
 
@@ -148,7 +159,7 @@ export async function withControlLock(config, action) {
 }
 
 /** Повторный запуск использует проверенные веса; сбой загрузки допускает продолжение. */
-export async function up(config, progress) {
+export async function up(config, progress, probe = probeModel) {
     return withControlLock(config, async () => {
         await rm(config.receipt, {force: true});
         let cached = true;
@@ -167,6 +178,6 @@ export async function up(config, progress) {
         await compose(config, ['up', '-d', '--wait', '--wait-timeout', '90', 'embedding'], {inherit: true, timeout: 10 * 60 * 1000});
         await managedContainer(config);
         if (!cached) await pullModel(config, progress);
-        return check(config);
+        return check(config, probe);
     });
 }

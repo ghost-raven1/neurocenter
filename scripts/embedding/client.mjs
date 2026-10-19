@@ -6,12 +6,12 @@ export async function requestJson(url, {body, timeout = 5000, limit = 1024 * 102
     const chunks = [];
     for await (const chunk of response.body) {
         size += chunk.length;
-        if (size > limit) throw new Error('Ответ сервиса эмбеддингов превышает допустимый размер.');
+        if (size > limit) throw new Error('Ответ модельного сервиса превышает допустимый размер.');
         chunks.push(chunk);
     }
     let value;
     try {value = JSON.parse(Buffer.concat(chunks).toString('utf8'));}
-    catch {throw new Error(response.ok ? 'Сервис эмбеддингов вернул некорректный JSON.' : `Ollama: HTTP ${response.status}.`);}
+    catch {throw new Error(response.ok ? 'Модельный сервис вернул некорректный JSON.' : `Ollama: HTTP ${response.status}.`);}
     if (!response.ok || value.error) throw new Error(`Ollama: HTTP ${response.status}. ${String(value.error || 'Запрос отклонён.').slice(0, 300)}`);
     return value;
 }
@@ -56,7 +56,7 @@ export async function pullModel(config, progress = () => {}) {
         if (pending.length > 65536) throw new Error('Слишком длинная запись состояния загрузки.');
     }
     pending += decoder.decode(); line(pending);
-    if (!success) throw new Error('Загрузка модели прервана. Повторите embedding:up для продолжения.');
+    if (!success) throw new Error(`Загрузка модели прервана. Повторите ${config.upCommand || 'npm run embedding:up'} для продолжения.`);
 }
 
 /** Проверка отправляет только два синтетических текста и не сохраняет сами векторы. */
