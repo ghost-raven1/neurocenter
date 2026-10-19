@@ -22,7 +22,7 @@ test('Все встроенные инструменты являются рец
     assert.equal(validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag')).targets.length, 7);
     assert.equal(recipes.find(recipe => recipe.key === 'project-context').revision, '1.0.1-pack.1');
     assert.equal(recipes.find(recipe => recipe.key === 'git-context').revision, '1.0.0-pack.1');
-    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.3');
+    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.4');
 });
 
 test('Общий dry-run проверяет семь рецептов и не создаёт output или сетевую сессию', async () => {

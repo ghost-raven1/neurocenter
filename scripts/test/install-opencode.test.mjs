@@ -38,11 +38,30 @@ for(const [os,arch,binary] of [['Darwin','arm64','opencode'],['Darwin','x86_64',
     });
 }
 
-test('Ключ записывается без повторного sk- и с корректным экранированием',async()=>{
+test('Переданный ключ не сохраняется и не печатается до выбора провайдера',async()=>{
     const f=await fixture(); const key='sk-example"\\key';
     const result=f.run(undefined,{OPENCODE_API_KEY:key}); assert.equal(result.status,0,result.stderr);
-    const auth=JSON.parse(await readFile(path.join(f.env.OPENCODE_AUTH_DIR,'auth.json'),'utf8'));
-    assert.equal(auth.openwebui.key,key); assert.ok(!result.stdout.includes(key));
+    await assert.rejects(readFile(path.join(f.env.OPENCODE_AUTH_DIR,'auth.json')),{code:'ENOENT'});
+    assert.deepEqual(JSON.parse(await readFile(path.join(f.env.OPENCODE_CONFIG_DIR,'opencode.jsonc'),'utf8')),{
+        $schema:'https://opencode.ai/config.json'
+    });
+    assert.ok(!result.stdout.includes(key)); assert.ok(!result.stderr.includes(key));
+    assert.ok(result.stdout.includes('OPENCODE_API_KEY не сохранён: выберите провайдера через opencode auth login.'));
+    assert.ok(result.stdout.includes('Провайдер и модель установщиком не настраиваются.'));
+});
+
+test('Переданный ключ не заменяет существующую авторизацию',async()=>{
+    const f=await fixture(); const key='sk-replacement"\\key';
+    await mkdir(f.env.OPENCODE_AUTH_DIR);
+    const auth='{"another-provider":{"type":"api","key":"existing-fixture-key"}}';
+    await writeFile(path.join(f.env.OPENCODE_AUTH_DIR,'auth.json'),auth);
+    const result=f.run(undefined,{OPENCODE_API_KEY:key}); assert.equal(result.status,0,result.stderr);
+    assert.equal(await readFile(path.join(f.env.OPENCODE_AUTH_DIR,'auth.json'),'utf8'),auth);
+    for(const secret of [key,'existing-fixture-key']) {
+        assert.ok(!result.stdout.includes(secret)); assert.ok(!result.stderr.includes(secret));
+    }
+    assert.ok(result.stdout.includes('Существующие ключи авторизации сохранены. Для смены ключа: opencode auth login'));
+    assert.ok(result.stdout.includes('OPENCODE_API_KEY не сохранён: выберите провайдера через opencode auth login.'));
 });
 
 test('Повторный запуск не дублирует PATH и учитывает существующий opencode.json',async()=>{
