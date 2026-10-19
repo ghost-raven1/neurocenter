@@ -7,6 +7,6 @@ describe('API проверки привязанной установки',()=>{
     beforeEach(()=>{vi.clearAllMocks();});
     it.each(['inspect-installation','uninstall'] as const)('Передаёт точную привязку без подстановки текущей папки: %s',async kind=>{
         const input={kind,deviceId:'device',projectId:'project',assetId:'ai-plug-helper',assetKind:'mcp',expectedManifest:'a'.repeat(64),expectedBindingId:'b'.repeat(64),requestKey:'request'};
-        await bridgeApi.create(input); expect(api.post).toHaveBeenCalledExactlyOnceWith('/api/device-jobs',input);
+        await bridgeApi.create(input); expect(api.post).toHaveBeenCalledExactlyOnceWith('/api/device-jobs',input,{timeout:10000});
     });
 });

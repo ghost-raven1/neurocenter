@@ -28,6 +28,6 @@ describe('Контракт API разрешения установки', () => {
     it('Передаёт в очередь идентичность одобренного состояния плана', async () => {
         const input = { deviceId: 'computer', projectId: 'project', kind: 'install' as const, requestKey: 'request', planId: 'plan', planRevision: 3 };
         await bridgeApi.create(input);
-        expect(api.post).toHaveBeenCalledExactlyOnceWith('/api/device-jobs', input);
+        expect(api.post).toHaveBeenCalledExactlyOnceWith('/api/device-jobs', input,{timeout:10000});
     });
 });

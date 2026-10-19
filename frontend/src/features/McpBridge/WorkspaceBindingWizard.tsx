@@ -21,7 +21,8 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
     const [confirmed, setConfirmed] = useState(false);
     const operation = useLocalJob(bridge);
     const latest = useRef({bridge,project,canManage}); latest.current = {bridge,project,canManage};
-    const blocker = !canManage ? 'Для привязки нужна роль разработчика в этом проекте.' : workspaceBlocker(bridge.device) || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь актуальных данных компьютера и очереди.' : '');
+    const readError = bridge.errors.devices || bridge.errors.jobs;
+    const blocker = !canManage ? 'Для привязки нужна роль разработчика в этом проекте.' : workspaceBlocker(bridge.device) || readError || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь актуальных данных компьютера и очереди.' : '');
     const otherPending = bridge.jobs.find(job => job.deviceId === bridge.device?.id && isPending(job) && job.id !== operation.job?.id
         && (job.kind === 'choose-root' || job.projectId === project.id));
     const stale = !!request && request.snapshot !== workspaceSnapshot(bridge.device, project.id);
@@ -57,6 +58,9 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
         await operation.submit({...request.input,kind:'bind-project',preparationJobId:prepared.jobId,expectedPreparation:prepared.value.preparation});
     };
     const sourceError = (() => { try { workspaceSource(binding,mode); return ''; } catch (cause) { return (cause as Error).message; } })();
+    const cancel = (id: string) => {
+        void bridgeApi.cancel(id).then(() => bridge.reload()).catch(() => operation.setError('Не удалось отменить задание. Обновите данные и повторите отмену.'));
+    };
     return <Modal open title={`Папка проекта «${project.name}»`} onCancel={() => { if (!operation.busy) { onClose(); } }} footer={null} width={640}>
         <Space direction="vertical" size={16} className="local-operation">
             <Steps size="small" current={prepared ? 2 : request ? 1 : 0} items={[{title:'Папка'},{title:'Проверка моста'},{title:'Подтверждение'}]} />
@@ -86,10 +90,12 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
             </>}
             {stale && <Alert type="warning" showIcon message="Компьютер или исходная привязка изменились. Подготовьте действие заново." />}
             {expired && <Alert type="warning" showIcon message="Проверка папки устарела через 15 минут. Измените выбор и повторите проверку." />}
-            {blocker && <Alert type="warning" showIcon message={blocker} />}
-            {otherPending && <Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." />}
+            {blocker && <Alert type="warning" showIcon message={blocker}
+                action={readError || !bridge.devicesReady || !bridge.jobsReady ? <Button size="small" loading={bridge.loading} onClick={() => { void bridge.reload(); }}>Обновить данные</Button> : undefined} />}
+            {otherPending && <Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." description={otherPending.message}
+                action={otherPending.state === 'queued' ? <Button size="small" onClick={() => cancel(otherPending.id)}>Отменить</Button> : undefined} />}
             {operation.job && <Alert role="status" type={operation.job.state === 'failed' ? 'error' : 'info'} showIcon message={operation.job.message}
-                action={operation.job.state === 'queued' ? <Button size="small" onClick={() => { void bridgeApi.cancel(operation.job!.id).then(() => bridge.reload()).catch(() => operation.setError('Не удалось отменить проверку.')); }}>Отменить</Button> : undefined} />}
+                action={operation.job.state === 'queued' ? <Button size="small" onClick={() => cancel(operation.job!.id)}>Отменить</Button> : undefined} />}
             {operation.error && <Alert type="error" role="alert" showIcon message={operation.error} />}
         </Space>
     </Modal>;

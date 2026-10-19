@@ -17,7 +17,13 @@ export function useLocalJob(bridge: ReturnType<typeof useBridge>) {
         try {
             const job = await bridgeApi.create({ ...input, requestKey } as Parameters<typeof bridgeApi.create>[0]);
             keys.current.delete(key);
-            if (mounted.current) { setSubmitted(job); await bridge.reload(); }
+            if (mounted.current) {
+                setSubmitted(job);
+                // Принятый POST не зависит от скорости чтения очереди и списка установок.
+                void bridge.reload().catch(() => {
+                    if (mounted.current) { setError('Задание принято, но не удалось обновить его состояние. Обновите данные.'); }
+                });
+            }
             return job;
         } catch (cause) { if (mounted.current) { setError(errorMessage(cause, 'Не удалось передать действие мосту.')); } }
         finally { lock.current = false; if (mounted.current) { setBusy(false); } }

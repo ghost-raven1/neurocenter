@@ -140,15 +140,15 @@ export const bridgeApi = {
     devices: async (signal?:AbortSignal): Promise<IBridgeDevice[]> =>
         (await api.get<IBridgeDevice[]>('/api/devices',{signal,timeout:10000})).data,
     jobs: async (): Promise<IBridgeJob[]> =>
-        (await api.get<IBridgeJob[]>('/api/device-jobs')).data,
+        (await api.get<IBridgeJob[]>('/api/device-jobs',{timeout:10000})).data,
     installations: async (): Promise<IBridgeInstallation[]> =>
-        (await api.get<IBridgeInstallation[]>('/api/device-installations'))
+        (await api.get<IBridgeInstallation[]>('/api/device-installations',{timeout:10000}))
             .data,
     create: async (input: IBridgeJobInput): Promise<IBridgeJob> =>
-        (await api.post<IBridgeJob>('/api/device-jobs', input)).data,
+        (await api.post<IBridgeJob>('/api/device-jobs', input,{timeout:10000})).data,
     retry:async(id:string,requestKey:string):Promise<IBridgeJob> => (await api.post<IBridgeJob>('/api/device-jobs/'+encodeURIComponent(id)+'/retry',{requestKey})).data,
     cancel: async (id: string): Promise<void> => {
-        await api.delete('/api/device-jobs/' + encodeURIComponent(id));
+        await api.delete('/api/device-jobs/' + encodeURIComponent(id),{timeout:10000});
     },
     revoke: async (id: string): Promise<void> => {
         await api.delete('/api/devices/' + encodeURIComponent(id));
