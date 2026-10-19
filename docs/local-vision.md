@@ -6,6 +6,8 @@
 
 Из корня репозитория, при работающем Docker с Compose v2 и Node.js 24+:
 
+Если Compose ещё не установлен, выполните `npm run compose:install` или общий `scripts/dev.sh install`. [Порядок установки](compose-install.md).
+
 ```sh
 npm run vision:up
 npm run vision:status

@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "check": "node scripts/workspace/check.mjs",
+    "compose:install": "node scripts/install-compose.mjs",
     "embedding:up": "node scripts/embedding/cli.mjs up",
     "embedding:status": "node scripts/embedding/cli.mjs status",
     "embedding:check": "node scripts/embedding/cli.mjs check",

@@ -17,7 +17,7 @@
 
 ## Быстрый старт
 
-Нужны **Node.js 24+**, npm, Docker с Compose v2; dev-скрипты рассчитаны на macOS/Linux. Порт 5432 должен быть свободен.
+Нужны **Node.js 24+**, npm и установленный Docker CLI/Engine; dev-скрипты рассчитаны на macOS/Linux. Compose устанавливается автоматически. Порт 5432 должен быть свободен.
 
 ```sh
 git clone https://github.com/ghost-raven1/neurocenter.git
@@ -27,6 +27,8 @@ node -e "require('node:fs').appendFileSync('.env','\nNEUROCENTER_INTERNAL_TOKEN=
 scripts/dev.sh install
 scripts/dev.sh up
 ```
+
+`install` сохраняет рабочий `docker compose` v2 или новее. Если плагина нет или он не поддерживает `up --wait`, скачивается закреплённый Compose 2.40.3 с проверкой SHA-256. Отдельная установка: `npm run compose:install`. Docker Engine устанавливается заранее; для `up` он должен быть запущен. [Платформы, повтор и восстановление при сбое](docs/compose-install.md).
 
 Случайный внутренний ключ создаётся один раз в локальном `.env` и используется всеми сервисами; не публикуйте этот файл.
 
@@ -71,6 +73,7 @@ npm run vision:describe -- ./image.png 'Что изображено на кар�
 
 - [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
 - [Упаковка инструментов](scripts/catalog-plugins/README.md).
+- [Установка Docker Compose](docs/compose-install.md).
 - [Локальная модель эмбеддингов](docs/local-embedding.md).
 - [Локальная обработка изображений](docs/local-vision.md).
 - [Повторный аудит хостинга моделей](docs/model-runtime-refactor-2026-10-19.md).

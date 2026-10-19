@@ -10,6 +10,8 @@
 - Зарегистрированное веб-приложение Blitz: client ID, client secret, разрешения `openid profile email`, callback `https://<площадка>/auth/callback` и logout return `https://<площадка>/`.
 - Blitz должен передавать устойчивый `sub`/`uid`, корпоративную почту и доверенные сведения профиля. Почта первого администратора должна совпадать с этой учётной записью.
 
+Плагин Compose можно подготовить командой `npm run compose:install` из корня checkout. Она сохраняет подходящий установленный Compose v2 или новее; Docker Engine устанавливается отдельно. [Платформы и проверка загрузки](compose-install.md).
+
 Базовые пути и `client_secret_basic`/PKCE сверены с [официальным руководством Blitz](https://docs.identityblitz.com/latest/integration-guide/oidc-web.html). Приёмку конкретной версии корпоративного IdP всё равно нужно выполнить на настоящем входе.
 
 ## Настройка без секретов в репозитории

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
+import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -84,6 +85,7 @@ async function health() {
 }
 
 async function start() {
+    checkCompose();
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
     forPackages('build');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
@@ -169,7 +171,8 @@ async function main() {
 
     const command = process.argv[2];
     if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); }
-    else if ([ 'install', 'build' ].includes(command)) { forPackages(command); }
+    else if (command === 'install') { await ensureCompose(); forPackages(command); }
+    else if (command === 'build') { forPackages(command); }
     else if (command === 'up') { await start(); }
     else if (command === 'down') { await stop(); console.log('Сервисы остановлены.'); }
     else if (command === 'status') {
