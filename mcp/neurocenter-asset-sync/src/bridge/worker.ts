@@ -101,14 +101,22 @@ export async function runWorker(): Promise<void> {
         auth: { token: credentials.token },
         reconnection: true,
     });
-    const heartbeat = async (): Promise<void> => {
-        const fresh = await readState<Credentials>('credentials');
-        if (fresh && fresh.token !== credentials?.token) {
-            credentials = fresh;
-            socket.auth = { token: fresh.token };
-            socket.disconnect().connect();
-        }
-        await api('heartbeat', await workspaceReport());
+    let heartbeatPending: Promise<void> | undefined;
+    const heartbeat = (): Promise<void> => {
+        if (stopped) { return Promise.resolve(); }
+        if (heartbeatPending) { return heartbeatPending; }
+        heartbeatPending = (async () => {
+            const fresh = await readState<Credentials>('credentials');
+            if (stopped) { return; }
+            if (fresh && fresh.token !== credentials?.token) {
+                credentials = fresh;
+                socket.auth = { token: fresh.token };
+                socket.disconnect().connect();
+            }
+            const report = await workspaceReport();
+            if (!stopped) { await api('heartbeat', report); }
+        })().finally(() => { heartbeatPending = undefined; });
+        return heartbeatPending;
     };
     const drain = async (): Promise<void> => {
         if (running || stopped) {
@@ -121,9 +129,11 @@ export async function runWorker(): Promise<void> {
             await recoverRuntimePreparations();
             await deliverCompletions();
             await heartbeat();
-            let job: Job | null;
-            while ((job = await api<Job | null>('jobs/claim')) !== null) {
-                const current = job;
+            while (!stopped) {
+                const claimant = credentials!;
+                const deviceId = claimant.deviceId;
+                const current = await api<Job | null>('jobs/claim', undefined, claimant.token);
+                if (!current) { break; }
                 let lastPercent: number | undefined;
                 let lastMessage = 'MCP выполняет задание';
                 const update = (percent: number, message: string) => {
@@ -157,11 +167,11 @@ export async function runWorker(): Promise<void> {
                     await authorize();
                     let result: unknown;
                     if(CONFIGURATION_KINDS.includes(current.kind)){
-                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId:credentials!.deviceId},()=>
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>
                             runMcpConfigurationJob(current,authorize,()=>api('configuration-authorize',{jobId:current.id})));
                     }else if (PROJECT_LOCAL_KINDS.includes(current.kind)) {
                         if(current.kind==='apply-adopt-installation'&&current.payload.package)await prepareJobMcpLaunchers(current.project_id??'',current.payload.package,current.payload.installSet,authorize);
-                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId:credentials!.deviceId},()=>runProjectLocalJob(current,authorize,update));
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runProjectLocalJob(current,authorize,update));
                     } else if (current.kind === 'choose-root') {
                         const selected = await chooseRoot();
                         result = { root: selected.root };
@@ -171,7 +181,7 @@ export async function runWorker(): Promise<void> {
                             expectedBindingId:current.payload.expectedBindingId,expectedInstanceId:current.payload.expectedInstanceId});
                         if (current.kind === 'prepare-bind-project') { result = prepared; }
                         else {
-                            result = await jobContext.run({id:current.id,lease:current.lease,deviceId:credentials!.deviceId},() =>
+                            result = await jobContext.run({id:current.id,lease:current.lease,deviceId},() =>
                                 commitProjectBinding(prepared,async context => {
                                     await authorize();
                                     return verifyWorkspaceInstallations(context,current.payload.installations ?? [],authorize);
@@ -188,11 +198,11 @@ export async function runWorker(): Promise<void> {
                         result = {projectId:current.project_id,bindingId:current.payload.bindingId,changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest,opened:true};
                     } else if (current.kind === 'apply-local-change' && current.payload.package) {
                         await prepareJobMcpLaunchers(current.project_id??'',current.payload.package,current.payload.installSet,authorize);
-                        result = await jobContext.run({id:current.id,lease:current.lease,deviceId:credentials!.deviceId},() =>
+                        result = await jobContext.run({id:current.id,lease:current.lease,deviceId},() =>
                             applyLocalChange(current.project_id || '',current.payload.package!,{planId:current.payload.changePlanId || '',
                                 revision:current.payload.changePlanRevision ?? 1,digest:current.payload.expectedChangeDigest || '',
                                 expectedBindingId:current.payload.bindingId || '',installSet:current.payload.installSet},authorize,update,
-                                packages=>prepareJobRuntimeArtifacts(packages,authorize,(_percent,message)=>update(45,message),{repairCorrupt:true,intent:runtimePreparationCompletion(current,credentials!.deviceId)})));
+                                packages=>prepareJobRuntimeArtifacts(packages,authorize,(_percent,message)=>update(45,message),{repairCorrupt:true,intent:runtimePreparationCompletion(current,deviceId)})));
                     } else if (current.kind === 'probe-runtime' && current.payload.package) {
                         const pkg = current.payload.package;
                         result = await runRuntimeProbe({projectId:current.project_id || '',bindingId:current.payload.bindingId || '',
@@ -213,10 +223,10 @@ export async function runWorker(): Promise<void> {
                             if (root.kind !== pkg.plugin.kind || root.id !== pkg.plugin.id || root.version !== pkg.plugin.version
                                 || root.manifest !== pkg.manifest.sha256) { throw new Error('Корневой пакет не совпадает с набором установки.'); }
                         }
-                        if(current.kind==='install')await jobContext.run({id:current.id,lease:current.lease,deviceId:credentials!.deviceId},()=>
-                            prepareJobRuntimeArtifacts(current.payload.installSet?.packages??[current.payload.package!],authorize,update,{intent:runtimePreparationCompletion(current,credentials!.deviceId)}));
+                        if(current.kind==='install')await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>
+                            prepareJobRuntimeArtifacts(current.payload.installSet?.packages??[current.payload.package!],authorize,update,{intent:runtimePreparationCompletion(current,deviceId)}));
                         if(current.kind==='install')await prepareJobMcpLaunchers(current.project_id??'',current.payload.package,current.payload.installSet,authorize);
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId: credentials!.deviceId }, () =>
+                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
                             current.kind === 'install' && current.payload.installSet
                                 ? installSet(current.project_id || '', current.payload.installSet, authorize, update)
                                 : (current.kind === 'install' ? install : uninstall)(
@@ -290,7 +300,7 @@ export async function runWorker(): Promise<void> {
                     const hasRequirements=!!(requirements?.mcp?.length||requirements?.plugins?.length);
                     await saveCompletion({
                         id: current.id,
-                        deviceId: credentials!.deviceId,
+                        deviceId,
                         lease: current.lease,
                         state: 'succeeded',
                         message:
@@ -338,7 +348,7 @@ export async function runWorker(): Promise<void> {
                             bindingId: current.payload.bindingId, unchanged: true,
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
                         } : {};
-                        await saveCompletion({ id: current.id, lease: current.lease, deviceId: credentials!.deviceId,
+                        await saveCompletion({ id: current.id, lease: current.lease, deviceId,
                             state: 'failed', result, message: [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });
                     }
@@ -355,7 +365,10 @@ export async function runWorker(): Promise<void> {
         }
     };
     const timer = setInterval(() => {
-        void drain();
+        // Долгое задание сохраняет очередь последовательной, но не приостанавливает присутствие компьютера.
+        if (running) {
+            void heartbeat().catch(error => process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n'));
+        } else { void drain(); }
     }, 15000);
     socket.on('connect', () => {
         void drain();

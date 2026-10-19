@@ -35,10 +35,44 @@ export default async function probe(input) {
     } catch (error) {
         if (error && ['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'].includes(error.code) || error instanceof Error && /Cannot find (?:package|module)/.test(error.message)) state = 'dependency-required';
     }
-    await fs.writeFile(${JSON.stringify(marker)}, JSON.stringify({state}), {flag:'wx',mode:0o600});
+    await fs.writeFile(${JSON.stringify(marker + '.tmp')}, JSON.stringify({state}), {flag:'wx',mode:0o600});
+    await fs.rename(${JSON.stringify(marker + '.tmp')}, ${JSON.stringify(marker)});
     return {};
 }
 `;
+}
+
+/** Завершённый init подтверждается отдельно от фоновых watchers; собственная группа всегда останавливается. */
+async function initializationState(profile: ProbeProfile, scope: ProbeScope, binary: string, marker: string, authorize: () => Promise<void>): Promise<unknown> {
+    const child = await scope.start(binary, ['debug', 'config'], profile.project, profile.env, authorize);
+    let bytes = 0; let exited = false; let exitCode: number | null = null; let failure: ProbeError | undefined;
+    const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
+    child.once('exit', code => { exited = true; exitCode = code; });
+    child.once('error', () => { failure = new ProbeError('unsupported', 'runtime-unavailable'); });
+    const receive = (chunk: Buffer): void => {
+        bytes += chunk.length;
+        if (bytes > 256 * 1024) { failure = new ProbeError('failed', 'output-limit'); scope.stop(child); }
+    };
+    child.stdout.on('data', receive); child.stderr.on('data', receive);
+    let state: unknown;
+    try {
+        while (true) {
+            scope.remaining();
+            if (failure) { throw failure; }
+            if (exited && exitCode !== 0) { throw new ProbeError('failed', 'plugin-initialization-failed'); }
+            try { state = (JSON.parse(await scope.wait(readBoundedUtf8(marker, 128))) as { state?: unknown }).state; break; }
+            catch (error) {
+                if (failure) { throw failure; }
+                if (error instanceof ProbeError) { throw error; }
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || exited) { throw new ProbeError('failed', 'plugin-initialization-failed'); }
+            }
+            await scope.wait(new Promise(resolve => setTimeout(resolve, 25)));
+        }
+        if (failure) { throw failure; }
+        if (exited && exitCode !== 0) { throw new ProbeError('failed', 'plugin-initialization-failed'); }
+    } finally { scope.stop(child); await scope.wait(closed); }
+    if (failure) { throw failure; }
+    return state;
 }
 
 export async function probePlugin(pkg: Package, profile: ProbeProfile, scope: ProbeScope, binary: string, authorize: () => Promise<void>): Promise<void> {
@@ -52,11 +86,7 @@ export async function probePlugin(pkg: Package, profile: ProbeProfile, scope: Pr
     const wrapper = path.join(profile.root, `probe-plugin-${assetKey(pkg)}.mjs`);
     await fs.writeFile(wrapper, wrapperSource(pathToFileURL(artifact?.entrypoint ?? path.join(profile.packageDirectory(pkg), entrypoint!)).href, marker));
     await configurePlugin(profile, wrapper);
-    const exit = await scope.command(binary, ['debug', 'config'], profile.project, profile.env, authorize);
-    if (exit.code !== 0) { throw new ProbeError('failed', 'plugin-initialization-failed'); }
-    let state: unknown;
-    try { state = (JSON.parse(await readBoundedUtf8(marker, 128)) as { state?: unknown }).state; }
-    catch { throw new ProbeError('failed', 'plugin-initialization-failed'); }
+    const state = await initializationState(profile, scope, binary, marker, authorize);
     if (state === 'dependency-required') { throw new ProbeError('needs_configuration', 'dependency-required'); }
     if (state !== 'passed') { throw new ProbeError('failed', 'plugin-initialization-failed'); }
     if ((await fs.readdir(path.join(profile.config, 'node_modules'))).length) { throw new ProbeError('unsupported', 'dependency-required'); }
