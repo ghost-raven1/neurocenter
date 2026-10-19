@@ -20,14 +20,16 @@ export class OperationRepository {
             && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(row.resource_id))
             .map(row => row.resource_id))];
         if (!ids.length) { return rows; }
-        const jobs = await this.pool.query<{ id: string; email: string; project_id: string | null; kind: string }>(
-            'SELECT id, email, project_id, kind FROM bridge_jobs WHERE id = ANY($1::text[])', [ids],
+        const jobs = await this.pool.query<{ id: string; email: string; project_id: string | null; kind: string; project_exists: boolean }>(
+            `SELECT id, email, project_id, kind,
+                EXISTS (SELECT 1 FROM projects WHERE projects.id=bridge_jobs.project_id) AS project_exists
+             FROM bridge_jobs WHERE id = ANY($1::text[])`, [ids],
         );
         const byId = new Map(jobs.rows.map(job => [job.id, job]));
         return rows.map(row => {
             const job = row.resource_type === 'bridge' ? byId.get(row.resource_id) : undefined;
             return job && job.email === row.actor && job.project_id === row.project_id
-                ? { ...row, bridge_job_kind: job.kind } : row;
+                ? { ...row, bridge_job_kind: job.kind, bridge_job_project_exists: job.project_exists } : row;
         });
     }
 

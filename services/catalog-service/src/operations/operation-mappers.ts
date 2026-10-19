@@ -3,6 +3,10 @@ import { deviceJobRetryPolicy } from '../devices/device-job-retry';
 import type { IOperationRow } from './operation.types';
 
 export function toOperation(row: IOperationRow): IOperation {
+    const retryPolicy = row.bridge_job_kind ? deviceJobRetryPolicy(row.bridge_job_kind) : undefined;
+    // Удаление проекта сохраняет историю, но исключает невыполнимый повтор из неё.
+    const retryTargetExists = row.bridge_job_project_exists === true
+        || (row.project_id === null && row.bridge_job_kind === 'choose-root');
     return {
         operationId: row.operation_id,
         type: row.type as IOperation['type'],
@@ -17,7 +21,7 @@ export function toOperation(row: IOperationRow): IOperation {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         error: row.error,
-        ...(row.bridge_job_kind ? { bridgeJob: deviceJobRetryPolicy(row.bridge_job_kind) } : {}),
+        ...(retryPolicy ? { bridgeJob: { ...retryPolicy, retrySupported: retryPolicy.retrySupported && retryTargetExists } } : {}),
     };
 }
 

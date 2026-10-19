@@ -13,9 +13,9 @@ const row={operation_id:'bridge-'+jobId,type:'VERIFY',resource_type:'bridge',res
 
 describe('Возможность повтора берётся из исходного задания моста',()=>{
     const query=vi.fn(),repository=new OperationRepository({query} as unknown as Pool);
-    let jobs:Array<{id:string;email:string;project_id:string|null;kind:string}>;
+    let jobs:Array<{id:string;email:string;project_id:string|null;kind:string;project_exists?:boolean}>;
     beforeEach(()=>{
-        vi.resetAllMocks();jobs=[{id:jobId,email:actor,project_id:projectId,kind:'inspect-installation'}];
+        vi.resetAllMocks();jobs=[{id:jobId,email:actor,project_id:projectId,kind:'inspect-installation',project_exists:true}];
         query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM bridge_jobs')?jobs:
             sql.includes('count(*)')?[{n:1,active:0,active_percent:0,running:0,queued:0}]:[row]}));
     });
@@ -39,10 +39,26 @@ describe('Возможность повтора берётся из исходн
         jobs=[];expect(await repository.get(row.operation_id)).not.toHaveProperty('bridgeJob');
     });
 
+    it.each([false,undefined])('История удалённого проекта остаётся доступной без ложного повтора: %s',async exists=>{
+        jobs[0].project_exists=exists;
+        expect(await repository.get(row.operation_id)).toMatchObject({operationId:row.operation_id,projectId,
+            bridgeJob:{kind:'inspect-installation',retrySupported:false,minimumLevel:1}});
+        const page=await repository.list(1,10);
+        expect(page.total).toBe(1);
+        expect(page.items[0]).toMatchObject({operationId:row.operation_id,projectId,
+            bridgeJob:{kind:'inspect-installation',retrySupported:false,minimumLevel:1}});
+    });
+
     it('Личное задание без проекта сохраняет возможность повторного выбора корневой папки',async()=>{
-        jobs[0]={...jobs[0],project_id:null,kind:'choose-root'};
+        jobs[0]={...jobs[0],project_id:null,kind:'choose-root',project_exists:false};
         query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM bridge_jobs')?jobs:[{...row,project_id:null}]}));
         expect(await repository.get(row.operation_id)).toMatchObject({bridgeJob:{kind:'choose-root',retrySupported:true,minimumLevel:2}});
+    });
+
+    it('Проектное задание без проекта не разрешает повтор как выбор корневой папки',async()=>{
+        jobs[0]={...jobs[0],project_id:null,kind:'sync-rag',project_exists:false};
+        query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM bridge_jobs')?jobs:[{...row,project_id:null}]}));
+        expect(await repository.get(row.operation_id)).toMatchObject({bridgeJob:{kind:'sync-rag',retrySupported:false,minimumLevel:2}});
     });
 
     it('Обычная операция не читает очередь моста',async()=>{
@@ -55,6 +71,7 @@ describe('Возможность повтора берётся из исходн
         await repository.list(1,10);
         const calls=query.mock.calls.filter(([sql])=>sql.includes('FROM bridge_jobs'));
         expect(calls).toHaveLength(1);expect(calls[0][1]).toEqual([[jobId]]);expect(calls[0][0]).not.toContain('payload');
+        expect(calls[0][0]).toContain('EXISTS (SELECT 1 FROM projects');
     });
 
     it.each(['open-local-recovery-folder','future-kind'])('Действие %s не повторяется без актуального сценария',async kind=>{
