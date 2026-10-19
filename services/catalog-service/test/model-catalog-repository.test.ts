@@ -133,7 +133,9 @@ describe('Транзакционный каталог моделей', () => {
         expect(schema).toContain('model_catalog(lower(name))');
         const seeds = query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO model_catalog'));
         expect(seeds).toHaveLength(2);
-        expect(seeds.every(([sql]) => sql.includes('ON CONFLICT(id) DO NOTHING'))).toBe(true);
+        expect(seeds.every(([sql]) => sql.includes('ON CONFLICT(id) DO UPDATE SET descriptor='))).toBe(true);
+        expect(seeds.every(([sql]) => sql.includes("jsonb_build_object('description',model_catalog.descriptor->'description')"))).toBe(true);
+        expect(seeds.every(([sql]) => !sql.includes('SET name=') && sql.includes("model_catalog.descriptor->>'model'=EXCLUDED.descriptor->>'model'"))).toBe(true);
         expect(query.mock.calls.some(([sql]) => sql.includes('project_assets'))).toBe(false);
     });
 });

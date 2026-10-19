@@ -5,6 +5,8 @@ import path from 'node:path';
 import {MAX_PART_BYTES,lockedFiles,modelLocks,releaseBaseUrl,validateModelBundle} from './bundle-manifest.mjs';
 import {safeDirectory,verifyFile,promote,ensureSpace,downloadPart} from './bundle-files.mjs';
 import {preflightModelDirectories,preflightModelTargets} from './bundle-preflight.mjs';
+export {rollbackManagedModelBundle} from './bundle-managed.mjs';
+import {managedModelState,managedTagPresent,recoverManagedModelBundle,activateManagedModelBundle,adoptManagedModelBundle} from './bundle-managed.mjs';
 
 /** Пакуются только публичные закреплённые blobs; ключи Ollama и прочие файлы каталога не читаются. */
 export async function packModelBundle({directory,output,baseUrl,locks,partBytes=MAX_PART_BYTES}) {
@@ -83,6 +85,8 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
     locks??=await modelLocks();validateModelBundle(manifest,locks);
     if(downloadOnly&&verifyOnly)throw new Error('Выберите один режим поставки моделей.');
     directory=await safeDirectory(directory,'',!verifyOnly);
+    await recoverManagedModelBundle(directory,{downloadOnly,verifyOnly});
+    const managed=await managedModelState(directory);
     const report={ok:true,downloadOnly,verifyOnly,models:locks.length,files:manifest.files.length,bytes:manifest.files.reduce((sum,file)=>sum+file.size,0)};
     const blobs=manifest.files.filter(file=>file.parts),tags=manifest.files.filter(file=>file.inlineBase64);
     await onProgress({stage:'inspecting',message:'Проверяем наличие закреплённых файлов моделей.',completed:0,total:manifest.files.length,unit:'files'});
@@ -92,11 +96,19 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
     for(const file of manifest.files) {
         const relative=path.posix.dirname(file.path);let parent=true;
         try {await safeDirectory(directory,relative);} catch(error) {if(error.code==='ENOENT')parent=false;else throw error;}
-        if(parent&&await verifyFile(path.join(directory,file.path),file,{onBytes:checked}))present.add(file.path);
+        if(parent&&(file.inlineBase64
+            ?await managedTagPresent(directory,file,managed)&&await verifyFile(path.join(directory,file.path),file,{onBytes:checked})
+            :await verifyFile(path.join(directory,file.path),file,{onBytes:checked})))present.add(file.path);
         else if(verifyOnly)throw new Error('В проекте отсутствует часть закреплённого комплекта моделей.');
     }
     const ready=()=>onProgress({stage:'ready',message:downloadOnly?'Предзагрузка закреплённых моделей завершена.':'Все закреплённые модели находятся в проекте.',completed:report.bytes,total:report.bytes});
-    if(verifyOnly||present.size===manifest.files.length) {await ready();return report;}
+    if(verifyOnly||present.size===manifest.files.length) {
+        if(!verifyOnly) {
+            const adopted=await adoptManagedModelBundle(directory,tags);
+            if(!downloadOnly&&!adopted)await activateManagedModelBundle(directory,tags);
+        }
+        await ready();return report;
+    }
     if(!downloadOnly)await preflightModelTargets(directory,manifest.files.filter(file=>!present.has(file.path)));
     const missingBytes=blobs.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0);
     if(missingBytes) {
@@ -111,7 +123,7 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
         if(await verifyFile(cache,file,{onBytes:checkedCache}))cached.set(file.path,cache);
         else {required+=file.size;largest=Math.max(largest,file.size);}
     }
-    if(downloadOnly&&required===0) {await ready();return report;}
+    if(downloadOnly&&required===0) {await adoptManagedModelBundle(directory,tags);await ready();return report;}
     if(required) {
         try {await safeDirectory(directory,'.bundle-cache/parts');} catch(error) {if(error.code!=='ENOENT')throw error;}
     }
@@ -168,22 +180,15 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
             // Удаляются только собственные проверенные части после успешной сборки полного SHA-файла.
             for(const part of new Set(parts))try {await unlink(part);} catch(error) {if(error.code!=='ENOENT')throw error;}
         }
-        if(downloadOnly) {await ready();return report;}
+        if(downloadOnly) {await adoptManagedModelBundle(directory,tags);await ready();return report;}
         await activated(0);
         for(const file of blobs) {
             if(present.has(file.path))continue;
             await safeDirectory(directory,path.posix.dirname(file.path),true);
             await promote(cached.get(file.path),path.join(directory,file.path),file,{onBytes:activated});
         }
-        // До этого момента Ollama не видит новых тегов и продолжает использовать прежний комплект.
-        for(const file of tags) {
-            if(present.has(file.path))continue;
-            await safeDirectory(directory,path.posix.dirname(file.path),true);
-            const temporary=path.join(staging,file.sha256+'.manifest');
-            const handle=await open(temporary,'wx',0o600);
-            try {await handle.writeFile(Buffer.from(file.inlineBase64,'base64'));await handle.sync();} finally {await handle.close();}
-            await promote(temporary,path.join(directory,file.path),file,{onBytes:activated});
-        }
+        // Все blobs проверены до переключения; журнал позволяет восстановить прежний комплект после обрыва.
+        await activateManagedModelBundle(directory,tags,{onBytes:activated});
         await ready();
         return report;
     } finally {if(staging)await rm(staging,{recursive:true,force:true});}

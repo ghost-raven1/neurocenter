@@ -3,6 +3,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import { builtinModels } from './builtin-models';
+import { modelSupplySeeds } from './model-supply-seed';
 import type { IModel, IModelDescriptor, IProjectModel } from './model.types';
 import { validateModelCreate, validateModelDelete, validateModelUpdate } from './model-validation';
 
@@ -28,8 +29,18 @@ export async function setupModelsSchema(pool: Pool): Promise<void> {
             model_id TEXT NOT NULL REFERENCES model_catalog(id) ON DELETE RESTRICT,
             added_by TEXT NOT NULL, added_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(project_id,model_id)
         ); CREATE INDEX IF NOT EXISTS project_models_model ON project_models(model_id)`);
-        for (const item of builtinModels) {
-            await client.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3::jsonb) ON CONFLICT(id) DO NOTHING',
+        // Соседний экземпляр сервиса не создаст одноимённую карточку между проверкой и INSERT.
+        await client.query('LOCK TABLE model_catalog IN SHARE ROW EXCLUSIVE MODE');
+        const current = await client.query<IModelRow>('SELECT id,name,descriptor FROM model_catalog');
+        for (const item of modelSupplySeeds(builtinModels, current.rows)) {
+            await client.query(`INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3::jsonb)
+                ON CONFLICT(id) DO UPDATE SET descriptor=EXCLUDED.descriptor || jsonb_build_object('description',model_catalog.descriptor->'description'),
+                    revision=model_catalog.revision+1,updated_at=now()
+                WHERE model_catalog.descriptor->>'model'=EXCLUDED.descriptor->>'model'
+                    AND model_catalog.descriptor->>'capability'=EXCLUDED.descriptor->>'capability'
+                    AND model_catalog.descriptor->'dimension'=EXCLUDED.descriptor->'dimension'
+                    AND (model_catalog.descriptor->>'source' IS DISTINCT FROM 'builtin'
+                        OR model_catalog.descriptor->>'manifestSha256' IS DISTINCT FROM EXCLUDED.descriptor->>'manifestSha256')`,
                 [item.id, item.name, JSON.stringify(item.descriptor)]);
         }
         await client.query('COMMIT');

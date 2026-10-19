@@ -45,3 +45,11 @@ test('Неизвестное исключение и поддельная пуб
         const failure=modelBundleFailure(error);assert.ok(failure.message);assert.doesNotMatch(failure.message,/PRIVATE|token|hidden/);
     }
 });
+
+
+test('Конфликт прежнего тега предлагает регистрацию из Git без раскрытия исходной ошибки',()=>{
+    const result=modelBundleFailure({code:'MODEL_MANAGED_CONFLICT',message:'PRIVATE /models/token'});
+    assert.equal(result.code,'MODEL_MANAGED_CONFLICT');assert.match(result.message,/--adopt-from-git ORIG_HEAD/);assert.doesNotMatch(result.message,/PRIVATE|token/);
+    const failed=modelBundleFailure({code:'MODEL_GIT_ADOPTION',message:'PRIVATE repo path'});
+    assert.equal(failed.code,'MODEL_GIT_ADOPTION');assert.match(failed.message,/commit-предок HEAD/);assert.doesNotMatch(failed.message,/PRIVATE/);
+});

@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {readFile} from 'node:fs/promises';
+import {registryModelLocks,modelName} from './model-registry.mjs';
 
 export const MAX_PART_BYTES=1024**3;
 const digest=/^[a-f0-9]{64}$/;
@@ -7,18 +7,19 @@ const record=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>Object.keys(value).every(key=>keys.includes(key));
 export const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 
-export async function modelLocks() {
-    return Promise.all(['../embedding/model.lock.json','../vision/model.lock.json'].map(relative=>readFile(new URL(relative,import.meta.url),'utf8').then(JSON.parse)));
+export async function modelLocks(registry) {
+    return registryModelLocks(registry);
 }
 
-/** Только файлы двух закреплённых моделей; пользовательские ключи, скрипты и настройки не входят в поставку. */
+/** Только файлы закреплённых моделей; пользовательские ключи, скрипты и настройки не входят в поставку. */
 export function lockedFiles(locks) {
     const files=new Map();
     for(const lock of locks) {
-        if(!record(lock)||!digest.test(lock.manifestSha256)||!/^\w[\w.-]*:[\w.-]+$/.test(lock.model)||/[\r\n]/.test(lock.model)
+        if(!record(lock)||!digest.test(lock.manifestSha256)||!modelName.test(lock.model)||/[\x00-\x20\x7f]/.test(lock.model)
             ||!record(lock.manifest)||!Array.isArray(lock.manifest.layers))throw new Error('Некорректный model.lock.json.');
-        const [name,tag]=lock.model.split(':');
-        files.set(`models/manifests/registry.ollama.ai/library/${name}/${tag}`,{sha256:lock.manifestSha256,manifest:true,model:lock.model});
+        const [name,tag]=lock.model.split(':'),manifestPath=`models/manifests/registry.ollama.ai/${name.includes('/')?name:'library/'+name}/${tag}`;
+        if(files.has(manifestPath))throw new Error('Повторяющийся тег модели в поставке.');
+        files.set(manifestPath,{sha256:lock.manifestSha256,manifest:true,model:lock.model});
         for(const item of [lock.manifest.config,...lock.manifest.layers]) {
             if(!record(item)||!/^sha256:[a-f0-9]{64}$/.test(item.digest)||!Number.isSafeInteger(item.size)||item.size<1||item.size>64*1024**3)throw new Error('Некорректный размер или SHA файла model.lock.json.');
             const filename='models/blobs/'+item.digest.replace(':','-');const current=files.get(filename);
@@ -63,4 +64,10 @@ export function validateModelBundle(value,locks) {
         }
     }
     return value;
+}
+
+/** Полный протокол готовности выводится из текущей описи, без фиксированного числа моделей или файлов. */
+export function modelBundleSummary(manifest,locks) {
+    validateModelBundle(manifest,locks);
+    return {models:locks.length,files:manifest.files.length,bytes:manifest.files.reduce((sum,file)=>sum+file.size,0)};
 }

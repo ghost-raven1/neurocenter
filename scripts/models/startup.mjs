@@ -5,6 +5,9 @@ import {configuration} from '../embedding/config.mjs';
 import {dataDirectory} from '../embedding/runtime.mjs';
 import {runModelStartupProcess} from './startup-process.mjs';
 import {modelBundleFailure} from './bundle-errors.mjs';
+import {readModelBundle} from './bundle.mjs';
+import {modelLocks,modelBundleSummary} from './bundle-manifest.mjs';
+import {fileURLToPath} from 'node:url';
 
 /** Подробности команды остаются в закрытом файле; исключения и настройки не печатаются в общий вывод. */
 async function saveRuntimeDiagnostic(root,result) {
@@ -34,7 +37,7 @@ const waiting = (output,label) => elapsed => output.info(label,`Прошло ${M
 export function modelRuntimeEnvironment(root,environment=process.env) {
     const config=configuration(environment,root);
     return {MODEL_RUNTIME_URL:environment.MODEL_RUNTIME_URL||config.baseUrl,
-        MODEL_STORAGE_PATH:environment.MODEL_STORAGE_PATH||config.data};
+        MODEL_STORAGE_PATH:config.data};
 }
 
 /** Встроенные веса входят в поставку и готовятся до запуска runtime; пользовательские модели добавляются отдельно. */
@@ -43,6 +46,7 @@ export async function startModelRuntime({root,environment=process.env,output},ru
         output.info('Хостинг моделей','Отключён настройкой MODEL_HOSTING_ENABLED');return {ok:true,disabled:true};
     }
     const config=configuration(environment,root);
+    const expected=modelBundleSummary(await readModelBundle(fileURLToPath(new URL('./bundle-release.json',import.meta.url))),await modelLocks());
     await dataDirectory(config,'',true);
     output.info('Проверка и подготовка весов','Проверяем SHA-256 полного комплекта; отсутствующие части загрузятся с продолжением из кеша.');
     const prepared=await run(process.execPath,[path.join(root,'scripts/models/bundle-cli.mjs'),'--directory',config.data],
@@ -52,7 +56,7 @@ export async function startModelRuntime({root,environment=process.env,output},ru
     let bundle;
     try {bundle=JSON.parse(prepared.stdout);} catch { /* Неподтверждённая поставка не считается готовой. */ }
     if(prepared.error||prepared.status!==0||bundle?.ok!==true||bundle.downloadOnly!==false||bundle.verifyOnly!==false
-        ||bundle.models!==2||bundle.files!==9||!Number.isSafeInteger(bundle.bytes)||bundle.bytes<1) {
+        ||bundle.models!==expected.models||bundle.files!==expected.files||bundle.bytes!==expected.bytes) {
         const failure=modelBundleFailure(prepared.error?.code==='ETIMEDOUT'?{code:'MODEL_BUNDLE_TIMEOUT'}:
             prepared.error||bundle?.error||{code:prepared.status===0?'MODEL_BUNDLE_PROTOCOL':'MODEL_BUNDLE_FAILED'});
         output.warning(failure.message);
@@ -63,13 +67,13 @@ export async function startModelRuntime({root,environment=process.env,output},ru
         output.info('Повторить только подготовку','npm run models:prepare');
         throw new Error(`Встроенные модели не подготовлены: ${failure.message} Прежние сервисы не остановлены.`);
     }
-    output.success('Обе встроенные модели находятся в проекте; файлы проверены по SHA-256');
+    output.success(`Все модели поставки находятся в проекте: ${expected.models}; файлы проверены по SHA-256`);
     output.info('Запуск контейнера моделей','Ожидаем Docker и готовность runtime. Первая загрузка образа может занять несколько минут; предел ожидания — 10 минут.');
     let result;
     try {
         result=await run('docker',['compose','--project-directory',root,'--project-name',config.project,
             '-f',path.join(root,'compose.embedding.yml'),'up','-d','--wait','--wait-timeout','90','embedding'],
-            {cwd:root,env:{...environment,EMBEDDING_PORT:String(config.port)},encoding:'utf8',maxBuffer:2*1024*1024,timeout:10*60*1000,
+            {cwd:root,env:{...environment,EMBEDDING_PORT:String(config.port),MODEL_STORAGE_PATH:config.data},encoding:'utf8',maxBuffer:2*1024*1024,timeout:10*60*1000,
                 onTick:waiting(output,'Docker: запуск хостинга')});
         assertNotCancelled(result);
         if(result.error||result.status!==0)throw new Error('Не удалось подготовить контейнер моделей.');

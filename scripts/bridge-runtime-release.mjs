@@ -103,9 +103,9 @@ function githubDownload(value) {
     return url.href;
 }
 
-async function downloadArchive(artifact, filename, request) {
+async function downloadArchive(artifact, filename, request, {signal: cancellation,onBytes=()=>{}}={}) {
     let response, current = artifact.url;
-    const signal = AbortSignal.timeout(10 * 60 * 1000);
+    const signal = AbortSignal.any([AbortSignal.timeout(10 * 60 * 1000),...(cancellation?[cancellation]:[])]);
     for (let hop = 0; hop < 4; hop++) {
         response = await request(githubDownload(current), {redirect: 'manual', signal});
         if (![301,302,303,307,308].includes(response.status)) { break; }
@@ -121,10 +121,10 @@ async function downloadArchive(artifact, filename, request) {
     const file = await fs.open(filename, 'wx', 0o600), reader = response.body.getReader(), digest = createHash('sha256'); let bytes = 0;
     try {
         while (true) {
-            const chunk = await reader.read(); if (chunk.done) { break; }
+            signal.throwIfAborted();const chunk = await reader.read(); if (chunk.done) { break; }
             bytes += chunk.value.length;
             if (bytes > expected.bytes) { throw new Error('Архив моста превысил закреплённый размер.'); }
-            digest.update(chunk.value); await file.writeFile(chunk.value);
+            digest.update(chunk.value); await file.writeFile(chunk.value);await onBytes(chunk.value.length);
         }
         if (bytes !== expected.bytes || digest.digest('hex') !== expected.sha256) { throw new Error('Размер или SHA-256 архива моста не совпали с закреплённой описью.'); }
         await file.sync();
@@ -133,7 +133,7 @@ async function downloadArchive(artifact, filename, request) {
 
 /** Загружает только закреплённые архивы; служебные sidecar создаются из доверенной описи до публикации. */
 export async function hydrateBridgeRuntimeRelease({directory = repository, release, targets: selected, fetch: request = globalThis.fetch,
-    lock = true, publish = publishBridgeRuntimeFiles} = {}) {
+    lock = true, publish = publishBridgeRuntimeFiles,signal,onProgress=()=>{}} = {}) {
     const pinned = validateBridgeRuntimeRelease(release || await readBridgeRuntimeRelease({directory}));
     const manifest = JSON.parse(await fs.readFile(path.join(directory, 'mcp/neurocenter-asset-sync/package.json'), 'utf8'));
     if (manifest.version !== pinned.version) { throw new Error('Версия пакета моста отличается от закреплённого release. Подготовьте согласованную поставку.'); }
@@ -145,6 +145,7 @@ export async function hydrateBridgeRuntimeRelease({directory = repository, relea
     const output = path.join(directory, 'bridge-dist/runtime');
     const missing = [];
     for (const artifact of artifacts) {
+        signal?.throwIfAborted();
         if (!await bridgeRuntimeCached({directory: output, target: artifact.metadata.target, version: pinned.version, buildId: pinned.buildId, metadata: artifact.metadata})) { missing.push(artifact); }
     }
     const result = {version: pinned.version, buildId: pinned.buildId, targets: artifacts.map(item => item.metadata.target), downloaded: []};
@@ -159,15 +160,20 @@ export async function hydrateBridgeRuntimeRelease({directory = repository, relea
         await fs.mkdir(output, {recursive: true});
         temporary = await fs.mkdtemp(path.join(output, '.bridge-release-'));
         const candidate = path.join(temporary, 'result'); await fs.mkdir(candidate);
+        let completed=0;const total=missing.reduce((sum,item)=>sum+item.metadata.bytes,0);
         for (const artifact of missing) {
+            signal?.throwIfAborted();
             // Другой процесс мог закончить подготовку между проверкой кеша и получением блокировки.
             if (await bridgeRuntimeCached({directory: output, target: artifact.metadata.target, version: pinned.version, buildId: pinned.buildId, metadata: artifact.metadata})) { continue; }
-            await downloadArchive(artifact, path.join(candidate, artifact.file), request);
+            await downloadArchive(artifact, path.join(candidate, artifact.file), request,{signal,onBytes:async bytes=>{
+                completed+=bytes;await onProgress({section:'bridge',stage:'downloading',message:'Загружаем автономный мост.',completed,total});
+            }});
             await fs.writeFile(path.join(candidate, artifact.file + '.json'), JSON.stringify(artifact.metadata, null, 2) + '\n', {flag: 'wx'});
             await fs.writeFile(path.join(candidate, artifact.file + '.sha256'), artifact.metadata.sha256 + '\n', {flag: 'wx'});
             result.downloaded.push(artifact.metadata.target);
         }
         const files = missing.filter(item => result.downloaded.includes(item.metadata.target)).flatMap(item => triplet(item.file));
+        signal?.throwIfAborted();
         if (files.length) { await publish({candidate, previous: path.join(temporary, 'previous'), directory: output, files}); }
         return result;
     } catch (error) { keepTemporary = error.keepTemporary === true; throw error; }

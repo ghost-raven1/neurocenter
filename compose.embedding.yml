@@ -19,7 +19,7 @@ services:
     ports:
       - '127.0.0.1:${EMBEDDING_PORT:-11435}:11434'
     volumes:
-      - ./data/embedding:/root/.ollama
+      - ${MODEL_STORAGE_PATH:-./data/embedding}:/root/.ollama
     healthcheck:
       test: [CMD, ollama, list]
       interval: 10s

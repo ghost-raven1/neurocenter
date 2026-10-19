@@ -8,11 +8,26 @@ const report = downloadOnly => ({ ok: true, downloadOnly, verifyOnly: false, mod
 test('Подготовка моделей использует только выбранный том и свежий init-образ без зависимостей', async () => {
     const calls = [];
     const result = await runModelBundleSync({ run: async (...args) => { calls.push(args); return JSON.stringify(report(true)); } },
-        { downloadOnly: true, timeout: 5000 }, { uuid: () => 'fixture' });
+        { downloadOnly: true, timeout: 5000 }, { uuid: () => 'fixture',prefetchedModelDirectory:async()=>null });
     assert.equal(result.models, 2);
     assert.deepEqual(calls, [[['run', '--rm', '--no-deps', '-T', '--pull', 'never', '--name', 'neurocenter-model-bundle-fixture',
         '--label', 'neurocenter.model-bundle=fixture', 'model-volume-init', 'node', modelBundleCli,
         '--directory', '/models', '--download-only'], { timeout: 5000 }]]);
+});
+
+test('Production использует host-предзагрузку только через read-only bind, сохраняя отдельный том моделей',async()=>{
+    let command;
+    await runModelBundleSync({run:async args=>{command=args;return JSON.stringify(report(true));}},
+        {downloadOnly:true},{uuid:()=>'fixture',prefetchedModelDirectory:async()=>'/srv/Нейроцентр, модели/cache'});
+    assert.equal(command[command.indexOf('--volume')+1],'/srv/Нейроцентр, модели/cache:/prefetch:ro');
+    assert.equal(command[command.indexOf('--source-directory')+1],'/prefetch');
+    assert.equal(command[command.indexOf('--directory')+1],'/models');
+    assert.ok(command.includes('model-volume-init'));assert.ok(command.includes('--download-only'));
+});
+
+test('Неоднозначный bind-путь останавливается до запуска контейнера',async()=>{
+    await assert.rejects(runModelBundleSync({run:()=>assert.fail('Контейнер не должен запускаться')},{},
+        {prefetchedModelDirectory:async()=>'/srv/cache:unsafe'}),/host-путь/);
 });
 
 test('Активация комплекта не получает режим download-only и подтверждается полным отчётом', async () => {

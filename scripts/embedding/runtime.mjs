@@ -11,7 +11,7 @@ export {verifiedReceipt} from '../models/readiness.mjs';
 
 /** Docker вызывается без shell и не читает production-конфигурацию приложения. */
 export async function docker(config, args, {inherit = false, timeout = 120000} = {}) {
-    const child = spawn('docker', args, {cwd: config.root, env: {...process.env, EMBEDDING_PORT: String(config.port)}, stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe']});
+    const child = spawn('docker', args, {cwd: config.root, env: {...process.env, EMBEDDING_PORT: String(config.port), MODEL_STORAGE_PATH: config.data}, stdio: inherit ? 'inherit' : ['ignore', 'pipe', 'pipe']});
     let output = '', diagnostic = '';
     const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
     try {
@@ -32,7 +32,9 @@ export const compose = (config, args, options) => docker(config,
 /** Не позволяет смонтировать вместо проектных данных симлинк на пользовательский Ollama. */
 export async function dataDirectory(config, relative = '', create = false) {
     let current = config.root;
-    for (const part of ['data', 'embedding', ...relative.split('/').filter(Boolean)]) {
+    const parts = [...path.relative(config.root, config.data).split(path.sep).filter(Boolean), ...relative.split('/').filter(Boolean)];
+    if (!parts.length || parts.some(part => part === '.' || part === '..' || part.includes('\\'))) throw new Error('Каталог моделей должен находиться внутри проекта.');
+    for (const part of parts) {
         current = path.join(current, part);
         if (create) {
             try {await mkdir(current, {mode: 0o700});} catch (error) {if (error.code !== 'EEXIST') throw error;}

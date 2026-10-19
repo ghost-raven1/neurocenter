@@ -45,10 +45,12 @@ async function fixture(t, mode) {
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/catalog-startup.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
-    for(const directory of ['models','embedding']) {
-        await fs.mkdir(path.join(checkout,'scripts',directory),{recursive:true});
-        for(const file of await fs.readdir(path.join(root,'scripts',directory)))await fs.copyFile(path.join(root,'scripts',directory,file),path.join(checkout,'scripts',directory,file));
-    }
+    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    await fs.mkdir(path.join(checkout,'scripts/assets'));
+    await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
+    await fs.writeFile(path.join(checkout,'scripts/assets/cli.mjs'), `
+        if(process.env.DEV_START_MODE==='assets-error'){console.error('fixture assets failed');process.exit(37);}
+        console.log(JSON.stringify({ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)}));`);
     await fs.writeFile(path.join(checkout,'scripts/models/bundle-cli.mjs'), `
         import {appendFileSync} from 'node:fs';
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-bundle',directory:process.argv[3]})+'\\n');
@@ -123,7 +125,7 @@ async function fixture(t, mode) {
         const spawn=childProcess.spawn;
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
-            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')?'model-child-spawn':'child-spawn',pid:child.pid,entry});
+            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry});
             return child;
         };
         const writeFileSync=fs.writeFileSync;
@@ -266,6 +268,18 @@ test('Ошибка подготовки автономного моста сох
     assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'docker'
         && event.args[0] === 'compose' && event.args[1] === 'up' && !event.args.includes('--help')).length, 0);
+});
+
+test('Ошибка общей поставки останавливает запуск до сборки и сохраняет прежние процессы', async t => {
+    const f = await fixture(t, 'assets-error');
+    await fs.mkdir(path.join(f.checkout, '.run'));
+    const state = '[{"name":"catalog","pid":99999999}]\n', filename = path.join(f.checkout, '.run/processes.json');
+    await fs.writeFile(filename, state);
+    const result = await f.run();
+    assert.equal(result.code, 1); assert.match(result.stderr, /Поставка проекта не подготовлена/);
+    assert.equal(await fs.readFile(filename, 'utf8'), state);
+    assert.equal(result.events.filter(event => event.kind === 'npm' || event.kind === 'child-spawn').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('up') && !event.args.includes('--help')).length, 0);
 });
 
 test('Ошибка поставки весов сохраняет прежние сервисы и не запускает пустой хостинг', async t => {

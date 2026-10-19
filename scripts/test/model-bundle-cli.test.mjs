@@ -25,8 +25,18 @@ async function fixture(action) {
             options.onProgress({stage:'ready',message:'Модели готовы.',completed:9,total:9,unit:'files'});
             return {ok:true,downloadOnly:!!options.downloadOnly,verifyOnly:!!options.verifyOnly,models:2,files:9,bytes:1234};
         }
+        export async function rollbackManagedModelBundle(){return {ok:true,rolledBack:true,models:2,revision:'fixture'};}
         export async function packModelBundle(){throw new Error('Упаковка не вызывается в этой проверке.');}
     `);
+    await writeFile(path.join(directory,'bundle-git-adoption.mjs'),`export async function adoptModelBundleFromGit({reference}){
+        if(reference!=='ORIG_HEAD')throw new Error('Неверная ссылка передана CLI');
+        return {ok:true,adopted:true,sourceCommit:'fixture',models:2,files:9};
+    }`);
+    await writeFile(path.join(directory,'bundle-manifest.mjs'),`export const modelLocks=async()=>[{fixture:true}];export const validateModelBundle=()=>{};`);
+    await writeFile(path.join(directory,'prefetch-cache.mjs'),`export async function copyPrefetchedModels({source,directory,locks,onProgress}){
+        if(!source.endsWith('prefetch')||!directory.endsWith('destination')||!locks[0].fixture)throw new Error('Неверная предзагрузка CLI');
+        onProgress({stage:'copying',message:'Предзагрузка использована.',completed:1,total:1});
+    }`);
     const entry=path.join(directory,'bundle-cli.mjs');
     const run=(args=[],options={})=>spawnSync(process.execPath,[entry,...args],{cwd,env:process.env,encoding:'utf8',timeout:3000,...options});
     try {await action({root,directory,cwd,entry,run});} finally {await rm(root,{recursive:true,force:true});}
@@ -49,7 +59,7 @@ test('Справка с флагом verify и длинным тире откр�
 }));
 
 test('Неверные параметры CLI показывают справку вместо ошибки описи моделей',async()=>fixture(async({run})=>{
-    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--pack'],['--verify-only','--verify-only']]) {
+    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--rollback','--verify-only'],['--rollback','--manifest','missing'],['--adopt-from-git'],['--adopt-from-git','ORIG_HEAD','--verify-only'],['--adopt-from-git','ORIG_HEAD','--manifest','missing'],['--source-directory','cache','--verify-only'],['--source-directory','cache','--rollback'],['--source-directory','cache','--adopt-from-git','ORIG_HEAD'],['--pack'],['--verify-only','--verify-only']]) {
         const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
         assert.equal(result.status,1);const report=JSON.parse(result.stdout);
         assert.equal(report.error.code,'MODEL_BUNDLE_USAGE');
@@ -85,3 +95,20 @@ for(const preserve of [false,true])test(`CLI через symlink выполняе
         assert.equal(result.status,0,result.stderr);
         assert.deepEqual(JSON.parse(result.stdout),{ok:true,downloadOnly:false,verifyOnly:true,models:2,files:9,bytes:1234});
     }));
+
+
+test('CLI возврата использует сохранённую поставку без чтения новой описи',async()=>fixture(async({run})=>{
+    const result=run(['--rollback'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
+    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,rolledBack:true,models:2,revision:'fixture'});
+}));
+
+
+test('CLI регистрации по Git не читает актуальную опись и передаёт ссылку доказательства',async()=>fixture(async({run})=>{
+    const result=run(['--adopt-from-git','ORIG_HEAD'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
+    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,adopted:true,sourceCommit:'fixture',models:2,files:9});
+}));
+
+test('CLI использует каталог предзагрузки перед штатной подготовкой',async()=>fixture(async({run})=>{
+    const result=run(['--source-directory','prefetch','--directory','destination']);assert.equal(result.status,0,result.stderr);
+    assert.equal(JSON.parse(result.stdout).ok,true);assert.match(result.stderr,/Предзагрузка использована/);assert.match(result.stderr,/Модели готовы/);
+}));

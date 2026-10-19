@@ -10,6 +10,7 @@ import {createDevOutput} from './workspace/dev-output.mjs';
 import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
 import {syncStartupCatalog} from './workspace/catalog-startup.mjs';
 import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
+import {prepareStartupAssets} from './assets/startup.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -158,10 +159,12 @@ async function health(deadline = Infinity, cancellation) {
 }
 
 async function start() {
-    const next = progress(packages.length + 9);
+    const next = progress(packages.length + 10);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
+    next('Проверка поставки проекта');
+    await prepareStartupAssets({root,output,environment:process.env});
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
     forPackages('build', next);
     next('Запуск PostgreSQL');
