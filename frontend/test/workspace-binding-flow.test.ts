@@ -113,6 +113,59 @@ describe('Обычная привязка папки: явный выбор и �
         bridge.device.requiresReconnect=true;render();bridge.device.requiresReconnect=false;render();
         expect(bridgeApi.create).not.toHaveBeenCalled();expect(button('Проверить папку').disabled).toBe(false);
     });
+    it('Нетронутый preset после reload следует завершившейся привязке из нового отчёта без отправки jobs',async()=>{
+        bridge.jobs=[{id:'accepted-before-reload',deviceId:bridge.device.id,projectId:project.id,kind:'bind-project',state:'queued',
+            message:'Привязка ожидает мост',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
+        render();expect(folder().value).toBe('Папка А');expect(button('Проверить папку').disabled).toBe(true);
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б',bindingId:'c'.repeat(64)};
+        bridge.jobs[0]={...bridge.jobs[0],state:'succeeded',message:'Привязка сохранена'};render();
+        expect(folder().value).toBe('Папка Б');expect(button('Проверить папку').disabled).toBe(false);
+        expect(bridgeApi.create).not.toHaveBeenCalled();expect(ui.close).not.toHaveBeenCalled();
+        button('Проверить папку').onClick!();await settle();
+        expect(bridgeApi.create).toHaveBeenCalledOnce();expect(vi.mocked(bridgeApi.create).mock.calls[0][0]).toMatchObject({kind:'prepare-bind-project',folderName:'Папка Б'});
+    });
+    it('Поздний первый отчёт привязки предзаполняет нетронутую папку без автоматической проверки',()=>{
+        const binding=bridge.device.report.bindings![0];bridge.device.report.bindings=[];render();expect(folder().value).toBeUndefined();
+        bridge.device.report.bindings=[{...binding,folderName:'Папка Б'}];render();
+        expect(folder().value).toBe('Папка Б');expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Явное изменение режима без request сохраняет draft при обновлении текущей привязки',()=>{
+        bridge.device.online=false;render();mode().onChange('resume');render();
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б'};render();
+        expect(folder().value).toBe('Папка А');expect(mode().value).toBe('resume');expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Явный выбор прежнего значения preset сохраняет намерение даже без отправки запроса',()=>{
+        bridge.device.online=false;render();folder().onChange('Папка А');render();
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б'};render();
+        expect(folder().value).toBe('Папка А');expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Явно выбранная папка и проверенный preview не заменяются новым report',async()=>{
+        await prepareSelected();bridge.jobs[0]={...bridge.jobs[0],message:'Папка проверена. Подтвердите действие в мастере.'};
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка А',bindingId:'c'.repeat(64)};
+        const html=render();expect(folder().value).toBe('Папка Б');expect(html).toContain('Повторите проверку папки');
+        expect(html).not.toContain('Папка проверена. Подтвердите действие в мастере.');
+        expect(bridgeApi.create).toHaveBeenCalledOnce();expect(ui.buttons.has('Связать папку')).toBe(false);
+    });
+    it('Явная проверка preset сохраняет выбранную папку, пока report меняется до ответа',async()=>{
+        const response=deferred<IBridgeJob>();vi.mocked(bridgeApi.create).mockReturnValueOnce(response.promise);
+        render();button('Проверить папку').onClick!();bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б'};render();
+        expect(folder().value).toBe('Папка А');response.resolve(accepted(vi.mocked(bridgeApi.create).mock.calls[0][0]));await settle();
+        expect(folder().value).toBe('Папка А');expect(bridgeApi.create).toHaveBeenCalledOnce();
+    });
+    it('Неопределённая проверка preset сохраняет исходную папку при новом report',async()=>{
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ потерян'));render();button('Проверить папку').onClick!();await settle();
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б'};render();
+        expect(folder().value).toBe('Папка А');expect(button('Повторить отправленный запрос').disabled).toBe(false);
+        expect(bridgeApi.create).toHaveBeenCalledOnce();
+    });
+    it.each(['владелец','проект','компьютер'])('Явный draft не переносится через смену %s A→B→A',change=>{
+        bridge.device.online=false;render();mode().onChange('resume');render();
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],folderName:'Папка Б'};
+        if(change==='владелец'){switchScope('owner-b');switchScope('owner-a');}
+        else if(change==='проект'){project={id:'project-b',name:'Проект Б'};render();project={id:'project-a',name:'Проект А'};render();}
+        else {bridge.device={...bridge.device,id:'computer-b'};render();bridge.device={...bridge.device,id:'computer-a'};render();}
+        expect(folder().value).toBe('Папка Б');expect(mode().value).toBe('new');expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
     it('Один явный выбор проверяет именно новую папку, финальная кнопка создаёт одну привязку',async()=>{
         await prepareSelected();
         expect(bridgeApi.create).toHaveBeenCalledOnce();expect(vi.mocked(bridgeApi.create).mock.calls[0][0]).toMatchObject({
@@ -187,10 +240,25 @@ describe('Неопределённый ответ и поздние резуль
         let original!:IBridgeJob;
         vi.mocked(bridgeApi.create).mockImplementationOnce(async input=>{original=accepted(input);throw new Error('Ответ потерян');});
         render();folder().onChange('Папка Б');await settle();
-        expect(button('Повторить отправленный запрос')).toMatchObject({disabled:false,loading:false});expect(folder().disabled).toBe(true);
+        expect(button('Повторить отправленный запрос')).toMatchObject({disabled:false,loading:false});expect(folder().disabled).toBe(false);
         vi.mocked(bridgeApi.create).mockResolvedValueOnce(original);button('Повторить отправленный запрос').onClick!();await settle();
         const calls=vi.mocked(bridgeApi.create).mock.calls;expect(calls[1][0]).toEqual(calls[0][0]);expect(bridge.jobs).toHaveLength(1);
         complete();expect(button('Связать папку').disabled).toBe(false);expect(ui.close).not.toHaveBeenCalled();
+    });
+    it('После неопределённого ответа проверки и source409 явный новый выбор использует свежую привязку',async()=>{
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Соединение прервано до приёма запроса'));
+        render();mode().onChange('transfer');await settle();
+        const original=vi.mocked(bridgeApi.create).mock.calls[0][0];
+        bridge.device.report.bindings![0]={...bridge.device.report.bindings![0],bindingId:'c'.repeat(64)};render();
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce({isAxiosError:true,response:{status:409,data:{message:'Исходная папка или экземпляр изменились'}}});
+        button('Повторить отправленный запрос').onClick!();await settle();
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(original);
+        expect(render()).toContain('Выберите актуальную папку или действие в этом окне для новой проверки');
+        expect(folder().disabled).toBe(false);expect(mode().disabled).toBe(false);
+        folder().onChange('Папка Б');await settle();
+        const fresh=vi.mocked(bridgeApi.create).mock.calls[2][0];
+        expect(fresh).toMatchObject({kind:'prepare-bind-project',folderName:'Папка Б',bindingMode:'transfer',expectedBindingId:'c'.repeat(64)});
+        expect(fresh.requestKey).not.toBe(original.requestKey);expect(ui.close).not.toHaveBeenCalled();
     });
     it.each(['bind-project','choose-root'])('Lost ACK не обходит другое действие %s',async kind=>{
         vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ потерян'));render();folder().onChange('Папка Б');await settle();
@@ -206,6 +274,7 @@ describe('Неопределённый ответ и поздние резуль
         await prepareSelected();let committed!:IBridgeJob;
         vi.mocked(bridgeApi.create).mockImplementationOnce(async input=>{committed=accepted(input);throw new Error('Ответ привязки потерян');});
         button('Связать папку').onClick!();await settle();expect(button('Проверить отправленную привязку').disabled).toBe(true);
+        expect(folder().disabled).toBe(true);expect(mode().disabled).toBe(true);
         bridge.jobs[1]={...committed,state:'succeeded'};bridge.device.report.root='/fixture/changed';vi.advanceTimersByTime(16*60000);render();
         expect(button('Проверить отправленную привязку').disabled).toBe(false);vi.mocked(bridgeApi.create).mockResolvedValueOnce(bridge.jobs[1]);
         button('Проверить отправленную привязку').onClick!();await settle();
@@ -221,6 +290,17 @@ describe('Неопределённый ответ и поздние резуль
         vi.mocked(bridgeApi.create).mockResolvedValueOnce(bridge.jobs[1]);button('Проверить отправленную привязку').onClick!();await settle();
         const calls=vi.mocked(bridgeApi.create).mock.calls;expect(calls[3][0]).toEqual(calls[2][0]);expect(calls[2][0]).toEqual(calls[1][0]);
         expect(ui.close).toHaveBeenCalledOnce();expect(bridge.jobs).toHaveLength(2);
+    });
+    it('Не предлагает новую проверку и старый prepare status при уточнении уже отправленной привязки',async()=>{
+        await prepareSelected();bridge.jobs[0]={...bridge.jobs[0],message:'Папка проверена. Подтвердите действие.'};render();
+        vi.mocked(bridgeApi.create).mockImplementationOnce(async input=>{accepted(input);throw new Error('Ответ потерян');});
+        button('Связать папку').onClick!();await settle();
+        bridge.jobs[1]={...bridge.jobs[1],state:'succeeded'};bridge.device.report.root='/fixture/changed';vi.advanceTimersByTime(16*60000);
+        const html=render();expect(button('Проверить отправленную привязку').disabled).toBe(false);
+        expect(html).toContain('уточнить результат исходного запроса');
+        expect(html).not.toContain('Повторите проверку папки');expect(html).not.toContain('Повторите её перед привязкой');
+        expect(html).not.toContain('Папка проверена. Подтвердите действие.');
+        expect(folder().disabled).toBe(true);expect(mode().disabled).toBe(true);expect(bridgeApi.create).toHaveBeenCalledTimes(2);
     });
     it.each(['владелец','проект','компьютер'])('Поздний prepare после смены %s A→B→A не возвращает старый preview',async change=>{
         const response=deferred<IBridgeJob>();vi.mocked(bridgeApi.create).mockReturnValueOnce(response.promise);

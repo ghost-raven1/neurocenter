@@ -48,12 +48,15 @@ export function WorkspaceBindingWizard({bridge,project,canManage=false,onClose}:
                             loading={state.locked} onClick={()=>{void state.prepare();}}>{checkLabel}</Button>}
                 <Button disabled={state.busy} onClick={onClose}>Закрыть</Button>
             </Space>
-            {state.stale&&<Alert type="warning" showIcon message="Компьютер или исходная привязка изменились. Повторите проверку папки."/>}
-            {state.expired&&<Alert type="warning" showIcon message="Проверка папки устарела через 15 минут. Повторите её перед привязкой."/>}
+            {state.stale&&<Alert type="warning" showIcon message={state.retryCommit
+                ?'Компьютер или исходная привязка изменились. Нажмите «Проверить отправленную привязку», чтобы уточнить результат исходного запроса.'
+                :state.retryPrepare?'Компьютер или исходная привязка изменились. Выберите актуальную папку или действие в этом окне для новой проверки.'
+                :'Компьютер или исходная привязка изменились. Повторите проверку папки.'}/>}
+            {state.expired&&!state.retryCommit&&<Alert type="warning" showIcon message="Проверка папки устарела через 15 минут. Повторите её перед привязкой."/>}
             {state.blocker&&<Alert type="warning" showIcon message={state.blocker}
                 action={bridge.errors.devices||bridge.errors.jobs||!bridge.devicesReady||!bridge.jobsReady?<Button size="small" loading={bridge.loading} onClick={()=>{void state.refresh();}}>Обновить данные</Button>:undefined}/>}
             {state.otherPending&&<Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." description={state.otherPending.message}/>}
-            {(state.pendingJob||state.job&&!(ready&&state.job.kind==='prepare-bind-project'&&state.job.state==='succeeded'))&&<Alert role="status" type={state.job?.state==='failed'?'error':'info'} showIcon message={(state.pendingJob||state.job)!.message}
+            {(state.pendingJob||state.job&&!(state.job.kind==='prepare-bind-project'&&state.job.state==='succeeded'))&&<Alert role="status" type={state.job?.state==='failed'?'error':'info'} showIcon message={(state.pendingJob||state.job)!.message}
                 action={state.pendingJob?.state==='queued'?<Button size="small" disabled={state.busy||!!state.blocker} loading={state.cancelling===state.pendingJob.id}
                     onClick={()=>{void state.cancel(state.pendingJob!.id);}}>Отменить</Button>:undefined}/>}
             {state.error&&<Alert type="error" role="alert" showIcon message={state.error}/>}

@@ -37,8 +37,10 @@ export function useWorkspaceBinding({bridge, project, canManage, onClose}: Props
     const latestView = useRef(view);
     latestView.current = view;
     const binding = bridge.device?.report.bindings?.find(item => item.projectId === project.id);
-    const [draft, setDraft] = useState({view, folderName: binding?.folderName, mode: 'new' as TWorkspaceBindingMode});
-    const selection = draft.view === view ? draft : {view, folderName: binding?.folderName, mode: 'new' as TWorkspaceBindingMode};
+    const [draft, setDraft] = useState({view, folderName: binding?.folderName, mode: 'new' as TWorkspaceBindingMode, touched: false});
+    // Нетронутый preset следует текущему отчёту; явный выбор и начатый запрос фиксируют draft.
+    const selection = draft.view === view && draft.touched ? draft
+        : {view, folderName: binding?.folderName, mode: 'new' as TWorkspaceBindingMode, touched: false};
     const [savedRequest, setRequest] = useState<Request>();
     const request = savedRequest?.view === view ? savedRequest : undefined;
     const requestRef = useRef(request);
@@ -80,7 +82,8 @@ export function useWorkspaceBinding({bridge, project, canManage, onClose}: Props
     const orphanPrepare = retryPrepare ? pendingFor(latest.current, false) : undefined;
     const pendingJob = [commitJob, prepareJob, otherPending, orphanPrepare].find(isPending);
     const locked = busy || isPending(prepareJob) || isPending(commitJob);
-    const selectionLocked = locked || retryPrepare || retryCommit;
+    // Неопределённая проверка только читает папку: новый явный выбор может отозвать её preview.
+    const selectionLocked = locked || retryCommit;
     const readError = bridge.errors.devices || bridge.errors.jobs;
     const blocker = !canManage ? 'Для привязки нужна роль разработчика в этом проекте.' : workspaceBlocker(bridge.device)
         || readError || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь актуальных данных компьютера и очереди.' : '');
@@ -130,6 +133,7 @@ export function useWorkspaceBinding({bridge, project, canManage, onClose}: Props
         if (!folderName || !canStart(live) || locked || pendingFor(live) || action.current?.view === view) { return; }
         const running = begin();
         if (!running) { return; }
+        setDraft({view, folderName, mode, touched: true});
         try {
             const existing = requestRef.current;
             const retry = existing && operation.canRetry(existing.input);
@@ -158,7 +162,7 @@ export function useWorkspaceBinding({bridge, project, canManage, onClose}: Props
         if (selectionLocked || action.current?.view === view) { return; }
         requestRef.current = undefined;
         setRequest(undefined);
-        setDraft({view, folderName, mode});
+        setDraft({view, folderName, mode, touched: true});
         setNotice({view, text: ''});
         operation.setError('');
         if (folderName) { void prepare(folderName, mode); }
