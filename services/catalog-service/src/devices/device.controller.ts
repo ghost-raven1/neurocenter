@@ -20,6 +20,7 @@ import {DeviceInstallations} from './device-installations';
 import { completeDeviceJob, type DeviceCompletion } from './device-completion';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { approvedRuntimeArtifact } from './runtime-job-artifact';
+import {DeviceEmbeddingService} from '../models/device-embedding.service';
 
 /** Browser управляет только своими устройствами; channel принимает только секрет привязанного MCP. */
 @Controller()
@@ -29,6 +30,7 @@ export class DeviceController {
         private readonly jobs: DeviceJobs,
         private readonly installations:DeviceInstallations,
         private readonly runtimeArtifacts:RuntimeArtifacts,
+        private readonly embedding:DeviceEmbeddingService,
     ) {}
     private actor(req: Request): IAccessActor {
         assertInternal(req.headers['x-neurocenter-internal']);
@@ -127,6 +129,16 @@ export class DeviceController {
     }
     @Post('internal/device-channel/configuration-authorize') async configurationAuthorize(@Req() req:Request,@Body() input:unknown){
         return this.jobs.authorizeConfiguration(await this.device(req),input);
+    }
+    @Post('internal/device-channel/embedding/context') async embeddingContext(@Req() req:Request,@Body() input:unknown){
+        return this.embedding.context(await this.device(req),input);
+    }
+    @Post('internal/device-channel/embedding') async embeddings(@Req() req:Request,@Body() input:unknown){
+        const device=await this.device(req);const abort=new AbortController();
+        const disconnected=()=>abort.abort();const closed=()=>{if(!req.res?.writableEnded)abort.abort();};
+        req.on('aborted',disconnected);req.res?.on('close',closed);
+        try{if(req.aborted||req.res?.destroyed)abort.abort();return await this.embedding.embed(device,input,abort.signal);}
+        finally{req.removeListener('aborted',disconnected);req.res?.removeListener('close',closed);}
     }
     /** Только архив одобренной установки или явно подтверждённого восстановления runtime этого устройства. */
     @Get('internal/device-channel/jobs/:id/runtime/:sha256') async runtimeArtifact(@Req() req:Request,@Res({passthrough:true})res:Response,@Param('id')id:string,@Param('sha256')sha256:string){

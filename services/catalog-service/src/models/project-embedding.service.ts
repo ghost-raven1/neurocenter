@@ -1,0 +1,32 @@
+import {ConflictException,Injectable,type OnModuleInit} from '@nestjs/common';
+import type {Request} from 'express';
+import {ModelsService} from './models.service';
+import {ProjectEmbeddingRepository} from './project-embedding.repository';
+import {projectEmbeddingDimension,projectEmbeddingUpdate} from './project-embedding.validation';
+import type {IConfiguredProjectEmbedding,IProjectEmbeddingSelection} from './project-embedding.types';
+
+/** Внутренние callers сначала проверяют права проекта; сервис не зависит от устройств и очереди. */
+@Injectable()
+export class ProjectEmbeddingService implements OnModuleInit {
+    private readonly repository:ProjectEmbeddingRepository;
+    constructor(private readonly models:ModelsService){this.repository=new ProjectEmbeddingRepository(models.pool);}
+    async onModuleInit():Promise<void>{await this.models.ready();await this.repository.setup();}
+    read(projectId:string):Promise<IProjectEmbeddingSelection>{return this.repository.read(projectId,projectEmbeddingDimension());}
+    async get(request:Request,id:string):Promise<IProjectEmbeddingSelection>{
+        const project=await this.models.resolveProject(request,id,1);return this.read(project.id);
+    }
+    async update(request:Request,id:string,input:unknown):Promise<IProjectEmbeddingSelection>{
+        const body=projectEmbeddingUpdate(input);const actor=await this.models.actor(request);
+        const project=await this.models.resolveProject(request,id,3,actor);
+        return this.repository.update(project.id,body,actor.email,projectEmbeddingDimension(),()=>this.models.resolveProject(request,project.id,3));
+    }
+    /** Возврат старого контекста не перенаправляет запрос после CAS-смены модели или снятия назначения. */
+    async requireCurrent(projectId:string,expectedRevision?:number,expectedModelPin?:string):Promise<IConfiguredProjectEmbedding>{
+        const selection=await this.read(projectId);
+        if(selection.blocker||!selection.model||!selection.modelPin||!selection.profile)throw new ConflictException(selection.blocker||'Embedding-модель проекта не настроена.');
+        if(expectedRevision!==undefined&&selection.revision!==expectedRevision||expectedModelPin!==undefined&&selection.modelPin!==expectedModelPin){
+            throw new ConflictException('Выбор embedding-модели изменился. Перечитайте подключение; прежний индекс не перестраивается автоматически.');
+        }
+        return selection as IConfiguredProjectEmbedding;
+    }
+}

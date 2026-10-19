@@ -130,7 +130,7 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
         if(publicPair){
             const now=Date.now();for(const [key,value] of this.pairLimits){if(value.until<now){this.pairLimits.delete(key);}}
             const address=String(req.socket.remoteAddress);
@@ -149,9 +149,11 @@ export class ProxyService {
         const auth=publicPair?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
         if(!publicPair&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
         try{
-            const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/${suffix}`,req.body,{headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',...(!publicPair||suffix==='pair/start'?{authorization:req.headers.authorization}:{})}});
+            const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/${suffix}`,req.body,{
+                ...(suffix==='embedding'?{timeout:120000,maxContentLength:8*1024*1024}:{}),
+                headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',...(!publicPair||suffix==='pair/start'?{authorization:req.headers.authorization}:{})}});
             res.status(response.status).json(response.data===''?null:response.data);
-            if(response.status>=200&&response.status<300&&auth){this.live.bridge(auth.email,auth.deviceId,/^jobs\//.test(suffix)?suffix.split('/')[1]:undefined);}
+            if(response.status>=200&&response.status<300&&auth&&!suffix.startsWith('embedding')){this.live.bridge(auth.email,auth.deviceId,/^jobs\//.test(suffix)?suffix.split('/')[1]:undefined);}
             if(response.status>=200&&response.status<300&&/\/(progress|complete)$/.test(suffix)&&['succeeded','failed'].includes(String((req.body as {state?:unknown})?.state))){this.live.sections(['knowledge','projects','operations','audit']);}
         }catch{res.status(502).json({message:'Сервис подключений недоступен.'});}
     }

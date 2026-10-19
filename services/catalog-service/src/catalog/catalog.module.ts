@@ -21,6 +21,9 @@ import { ModelHostingController } from '../models/hosting.controller';
 import { ModelHostingService } from '../models/hosting.service';
 import { ModelInferenceController } from '../models/inference.controller';
 import { OllamaClient } from '../models/ollama-client';
+import {ProjectEmbeddingService} from '../models/project-embedding.service';
+import {ProjectEmbeddingController} from '../models/project-embedding.controller';
+import {DeviceEmbeddingService} from '../models/device-embedding.service';
 
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
@@ -31,5 +34,5 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * Модуль каталога: проекты — PG-backed (БД `catalog`), остальное — mock.
  */
-@Module({ controllers: [MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController], providers: [MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
+@Module({ controllers: [MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
 export class CatalogModule {}
