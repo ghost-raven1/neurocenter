@@ -45,12 +45,50 @@ test('Локальный CPU-профиль применяется и к уже 
     assert.equal(managed.openCode.autoIndex.enabled, false);
 });
 
+test('Частичный config с одним vectorStore получает локальную модель и автоиндексацию без изменения объекта', () => {
+    const effective = configuration();
+    effective.vectorStore = { path: '.local/knowledge' };
+    const raw = { vectorStore: { path: '.local/knowledge' } };
+    const managed = managedRagConfiguration(effective, raw);
+    assert.equal(managed.embedding.model, 'qwen3-embedding:4b');
+    assert.equal(managed.embedding.baseUrl, 'http://127.0.0.1:11435/api');
+    assert.equal(managed.embedding.vectorDimension, 2560);
+    assert.equal(managed.openCode.autoIndex.enabled, true);
+    assert.equal(managed.vectorStore.path, '.local/knowledge');
+    for (const name of ['description', 'imageDescription', 'decision', 'reranking']) assert.equal(managed[name].enabled, false);
+    assert.deepEqual(raw, { vectorStore: { path: '.local/knowledge' } });
+});
+
+test('Частичная custom модель сохраняется без выдуманной размерности; явные false и функции остаются', () => {
+    const raw = { embedding: { model: 'custom', baseUrl: 'http://localhost:1234/v1', provider: 'openai' },
+        openCode: { autoIndex: { enabled: false } }, description: { enabled: true } };
+    const managed = managedRagConfiguration(configuration(), raw);
+    assert.equal(managed.embedding.model, 'custom');assert.equal(managed.embedding.baseUrl, raw.embedding.baseUrl);
+    assert.equal(managed.embedding.vectorDimension, undefined);assert.equal(managed.openCode.autoIndex.enabled, false);
+    assert.equal(managed.description.enabled, true);assert.equal(managed.reranking.enabled, false);
+    const localOpenai = managedRagConfiguration(configuration(), { embedding: { provider: 'openai' } });
+    assert.equal(localOpenai.embedding.baseUrl, 'http://127.0.0.1:11435/v1');assert.equal(localOpenai.embedding.vectorDimension, 2560);
+    assert.equal(localOpenai.embedding.apiKey, 'local');
+    const configured = configuration();configured.embedding.apiKey = 'fixture-explicit-key';
+    assert.equal(managedRagConfiguration(configured, { embedding: { provider: 'openai' } }).embedding.apiKey, 'fixture-explicit-key');
+    assert.equal(managedRagConfiguration(configuration(), { embedding: { provider: 'openai', baseUrl: 'http://localhost:1234/v1' } }).embedding.apiKey, undefined);
+});
+
 test('Адаптер меняет ровно одну известную инициализацию upstream, неизвестный исходник остаётся нетронут', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rag-plugin-patch-'));
     const file = path.join(root, 'upstream/dist/plugin.js');
+    const pipelineFile = path.join(root, 'upstream/dist/indexer/pipeline.js');
+    const pipeline = `return await runIndexPassInner(options, logger);
+if (!tempStoreWroteChunks) {
+await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), "utf-8");
+logger.debug(\`Could not write index lock file: \${err.message} — concurrent-pass protection disabled\`);
+await fs.unlink(lockPath);
+await swapStoreDirectories(tempStorePath, options.storePath);`;
     const init = 'const cfg = await getConfig(input.directory);';
     try {
         await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.mkdir(path.dirname(pipelineFile), { recursive: true });
+        await fs.writeFile(pipelineFile, pipeline);
         for (const source of ['export default async function() {}', init + '\n' + init, init]) {
             await fs.writeFile(file, source);
             await assert.rejects(applyManagedPluginCompatibility(root), /инициализации/);
@@ -62,6 +100,9 @@ const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
     retrieve,
 };
 output: "Search failed. The index may need to be rebuilt.",
+const storePath = path.resolve(input.directory, cfg.vectorStore.path);
+notifiedUpdateDirs.clear();
+    destroyAllPooledConnections();
 after`;
         for (const changed of ['const embedder = createEmbedder(effectiveCfg);', 'const store = createVectorStore(effectiveCfg, storePath, vectorDimension);', '    retrieve,\n};']) {
             await fs.writeFile(file, source.replace(changed, 'changed'));
@@ -69,15 +110,27 @@ after`;
             assert.equal(await fs.readFile(file, 'utf8'), source.replace(changed, 'changed'));
         }
         await fs.writeFile(file, source);
-        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 2, file: 'upstream/dist/plugin.js' });
+        for (const changed of ['return await runIndexPassInner(options, logger);', 'if (!tempStoreWroteChunks) {', 'await fs.unlink(lockPath);']) {
+            await fs.writeFile(pipelineFile, pipeline.replace(changed, 'changed'));
+            await assert.rejects(applyManagedPluginCompatibility(root), /инициализации/);
+            assert.equal(await fs.readFile(file, 'utf8'), source);
+        }
+        await fs.writeFile(pipelineFile, pipeline);
+        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 3, file: 'upstream/dist/plugin.js', files: ['upstream/dist/plugin.js', 'upstream/dist/indexer/pipeline.js'] });
         const patched = await fs.readFile(file, 'utf8');
-        assert.match(patched, /^import \{ managedRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
-        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), Boolean\(findConfigFile\(input.directory\)\)\)/);
+        assert.match(patched, /^import \{ managedRagConfiguration, readProjectRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
+        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), readProjectRagConfiguration\(findConfigFile\(input.directory\)\)\)/);
         assert.ok(!patched.includes('persistProbedDimension(configPath, vectorDimension);'));
         assert.match(patched, /protectedEmbedder\(createEmbedder/);
         assert.match(patched, /protectedNativeStore\(createVectorStore/);
         assert.match(patched, /retrieve: strictRetriever\(retrieve\)/);
         assert.match(patched, /output: nativeSearchFailure\(err\)/);
+        const guardedPipeline = await fs.readFile(pipelineFile, 'utf8');
+        assert.match(guardedPipeline, /withManagedIndexProfile\(options, next => runIndexPassInner/);
+        assert.match(guardedPipeline, /stats\.extractionFailures > 0/);
+        assert.match(guardedPipeline, /acquireManagedIndexLock\(lockPath\)/);
+        assert.match(guardedPipeline, /releaseManagedIndexLock\(lockPath\)/);
+        assert.match(guardedPipeline, /COPYFILE_EXCL/);
         assert.ok(patched.endsWith('after'));
         await assert.rejects(applyManagedPluginCompatibility(root), /инициализации/);
         assert.equal(await fs.readFile(file, 'utf8'), patched);

@@ -33,6 +33,7 @@ for (const tool of manifest.tools) {
             if (tool.key === 'opencode-rag-plugin') {
                 assert.ok(entries.includes('rag-plugin.mjs'));
                 assert.ok(entries.includes('rag-plugin-config.mjs'));
+                for (const helper of ['rag-index-profile.mjs', 'rag-index-lock.mjs', 'rag-index-contract.cjs']) assert.ok(entries.includes(helper));
                 assert.ok(entries.includes('node_modules/@opencode-ai/plugin/package.json'));
             }
         } else {

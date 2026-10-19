@@ -26,7 +26,7 @@ test('Все встроенные инструменты являются рец
     assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.4');
     const ragPlugin = validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag-plugin'));
     assert.equal(ragPlugin.kind, 'plugin');
-    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.3');
+    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.4');
     assert.equal(ragPlugin.targets.length, 7);
     assert.ok(!ragPlugin.targets.includes('darwin-x64'));
     assert.throws(() => validateRecipe({ ...ragPlugin, kind: 'mcp' }), /подключается как plugin/);
@@ -47,7 +47,7 @@ test('Общий dry-run проверяет восемь рецептов и н�
 
 test('Закреплённый GitHub OpenCodeRAG использует те же семь платформ совместимого плагина', () => {
     const { url, commit, entrypoint } = ragSource.RAG_PLUGIN_SOURCE;
-    const input = { schemaVersion: 1, key: 'github-rag', name: 'GitHub RAG', kind: 'plugin', revision: '2.4.4-plugin.pack.3',
+    const input = { schemaVersion: 1, key: 'github-rag', name: 'GitHub RAG', kind: 'plugin', revision: '2.4.4-plugin.pack.4',
         description: 'Совместимая поставка', source: { type: 'repository', url, commit, entrypoint } };
     assert.equal(validateRecipe(input).targets.length, 7);
     assert.equal(validateRecipe({ ...input, source: { ...input.source, url: 'https://github.com/MrDoe/OpenCodeRAG' } }).targets.length, 7);
