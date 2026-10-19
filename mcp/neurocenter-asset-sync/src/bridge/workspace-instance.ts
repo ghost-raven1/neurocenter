@@ -5,6 +5,7 @@ import { hash, hub, readState, stateDir, type Workspace } from './state.js';
 import { safeTarget, workspaceDirectory as directory } from './workspace-paths.js';
 import { commitWorkspaceIdentity, optionalText, readInstanceRegistry, recoverWorkspaceIdentity, registryFile, saveWorkspaceBindingCompletion, UUID, withWorkspaceIdentityLock } from './workspace-identity-state.js';
 import { WorkspaceIdentityError, type PhysicalDirectory, type VerifyWorkspaceFiles, type WorkspaceBindingInput, type WorkspaceBindingPreparation, type WorkspaceBindingResult, type WorkspaceInstance, type WorkspaceMarker } from './workspace-instance.model.js';
+import { WorkspaceBindingError, workspaceBindingFailure } from './workspace-binding-error.js';
 
 export type { VerifyWorkspaceFiles, WorkspaceBindingInput, WorkspaceBindingMode, WorkspaceBindingPreparation, WorkspaceBindingResult, WorkspaceFileVerification } from './workspace-instance.model.js';
 const markerRelative = '.opencode/neurocenter.json';
@@ -23,13 +24,15 @@ async function markerAt(folder: string): Promise<{ marker?: WorkspaceMarker; raw
             || typeof marker.server !== 'string' || typeof marker.projectId !== 'string' || !marker.projectId
             || marker.version === 2 && (typeof marker.instanceId !== 'string' || !UUID.test(marker.instanceId))) { throw new Error(); }
         return { marker, raw, file };
-    } catch { throw new WorkspaceIdentityError('unavailable', 'Привязка локального проекта повреждена или недоступна.'); }
+    } catch (error) {
+        throw new WorkspaceBindingError(workspaceBindingFailure(error) === 'permission-denied' ? 'permission-denied' : 'marker-invalid', 'Привязка локального проекта повреждена или недоступна.');
+    }
 }
 
 async function assertNoPendingIdentity(): Promise<void> {
     try {
         await fs.lstat(path.join(stateDir(), 'workspace-identity-pending.json'));
-        throw new WorkspaceIdentityError('unavailable', 'Незавершённая привязка требует восстановления перед использованием папки.');
+        throw new WorkspaceBindingError('recovery-required', 'Незавершённая привязка требует восстановления перед использованием папки.');
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
 }
 
@@ -101,20 +104,20 @@ function validateInput(input: WorkspaceBindingInput): void {
         || input.folderName.includes(':') || /[\x00-\x1f]/.test(input.folderName) || ['.', '..'].includes(input.folderName)
         || input.mode !== undefined && !['new', 'new-copy', 'adopt-legacy', 'transfer', 'resume'].includes(input.mode)
         || input.expectedBindingId !== undefined && !/^[a-f0-9]{64}$/.test(input.expectedBindingId)
-        || input.expectedInstanceId !== undefined && !UUID.test(input.expectedInstanceId)) { throw new Error('Выберите допустимую локальную папку и режим привязки.'); }
+        || input.expectedInstanceId !== undefined && !UUID.test(input.expectedInstanceId)) { throw new WorkspaceBindingError('invalid-selection', 'Выберите допустимую локальную папку и режим привязки.'); }
 }
 
 async function snapshot(input: WorkspaceBindingInput) {
     validateInput(input);
     await assertNoPendingIdentity();
     const workspace = await readState<Workspace>('workspace');
-    if (!workspace?.root) { throw new Error('Сначала выберите общую папку проектов.'); }
+    if (!workspace?.root) { throw new WorkspaceBindingError('root-required', 'Сначала выберите общую папку проектов.'); }
     const root = await directory(workspace.root);
     const target = await directory(await safeTarget(root.realpath, input.folderName));
     const marker = await markerAt(target.realpath);
     const registry = await readInstanceRegistry();
     const mode = input.mode ?? 'new';
-    if (marker.marker && (marker.marker.server !== hub() || marker.marker.projectId !== input.projectId)) { throw new Error('Эта папка уже связана с другим проектом или сервером.'); }
+    if (marker.marker && (marker.marker.server !== hub() || marker.marker.projectId !== input.projectId)) { throw new WorkspaceBindingError('foreign-binding', 'Эта папка уже связана с другим проектом или сервером.'); }
     let previousBindingId: string | undefined;
     let source: Awaited<ReturnType<typeof directory>> | undefined;
     let sourceMarker: Awaited<ReturnType<typeof markerAt>> | undefined;
@@ -122,35 +125,35 @@ async function snapshot(input: WorkspaceBindingInput) {
     if (mode === 'new') {
         if (marker.marker) {
             instance = await workspaceInstanceAt(target.realpath, input.projectId);
-            if (workspace.bindings[input.projectId] !== target.realpath) { throw new Error('Повторная привязка требует явного возврата к ранее подключённой папке, новой копии или переноса.'); }
+            if (workspace.bindings[input.projectId] !== target.realpath) { throw new WorkspaceBindingError('resume-required', 'Повторная привязка требует явного возврата к ранее подключённой папке, новой копии или переноса.'); }
             previousBindingId = bindingId(instance);
         } else {
             if (Object.values(registry.instances).some(previous => previous.realpath === target.realpath || samePhysical(previous.physical, target.physical))) {
-                throw new Error('Зарегистрированный экземпляр потерял marker. Восстановите привязку перед изменением идентичности.');
+                throw new WorkspaceBindingError('marker-missing', 'Зарегистрированный экземпляр потерял marker. Восстановите привязку перед изменением идентичности.');
             }
             try {
                 await fs.lstat(await safeTarget(target.realpath, '.opencode/neurocenter'));
-                throw new Error('В папке уже есть управляемые данные MCP без marker. Требуется восстановление исходной привязки и проверка файлов.');
+                throw new WorkspaceBindingError('marker-missing', 'В папке уже есть управляемые данные MCP без marker. Требуется восстановление исходной привязки и проверка файлов.');
             } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
         }
     } else if (mode === 'adopt-legacy') {
-        if (marker.marker?.version !== 1) { throw new Error('Подтверждение старой привязки доступно только для marker v1.'); }
+        if (marker.marker?.version !== 1) { throw new WorkspaceBindingError('invalid-selection', 'Подтверждение старой привязки доступно только для marker v1.'); }
         previousBindingId = legacyBindingId(input.projectId, target.realpath);
     } else if (mode === 'new-copy') {
         if (marker.marker?.version !== 2 || !instance || instance.projectId !== input.projectId) {
-            throw new Error('Копия требует зарегистрированного исходного экземпляра на этом компьютере и закреплённых версий инструментов.');
+            throw new WorkspaceBindingError('source-unavailable', 'Копия требует зарегистрированного исходного экземпляра на этом компьютере и закреплённых версий инструментов.');
         }
         previousBindingId = bindingId(instance);
     } else if (mode === 'resume') {
         if (marker.marker?.version !== 2 || !instance || instance.projectId !== input.projectId) {
-            throw new Error('Вернуться можно только к ранее зарегистрированному экземпляру этой папки.');
+            throw new WorkspaceBindingError('source-unavailable', 'Вернуться можно только к ранее зарегистрированному экземпляру этой папки.');
         }
         // Копия marker не доказывает прежний каталог: сверяем путь, dev, inode и birthtime.
         instance = await workspaceInstanceAt(target.realpath, input.projectId);
         previousBindingId = bindingId(instance); source = target; sourceMarker = marker;
     } else {
         if (marker.marker?.version !== 2 || !instance || instance.projectId !== input.projectId
-            || !input.expectedBindingId || !input.expectedInstanceId) { throw new Error('Перенос требует зарегистрированного исходного экземпляра и его подтверждённой привязки.'); }
+            || !input.expectedBindingId || !input.expectedInstanceId) { throw new WorkspaceBindingError('source-unavailable', 'Перенос требует зарегистрированного исходного экземпляра и его подтверждённой привязки.'); }
         previousBindingId = bindingId(instance);
     }
     if (mode === 'new-copy' || mode === 'transfer') {
@@ -158,15 +161,18 @@ async function snapshot(input: WorkspaceBindingInput) {
             source = await directory(instance!.realpath);
             sourceMarker = await markerAt(source.realpath);
             if (!samePhysical(source.physical, instance!.physical) || sourceMarker.marker?.instanceId !== instance!.instanceId
-                || sourceMarker.marker.server !== hub() || sourceMarker.marker.projectId !== input.projectId) { throw new Error('Исходная папка переноса была подменена.'); }
+                || sourceMarker.marker.server !== hub() || sourceMarker.marker.projectId !== input.projectId) { throw new WorkspaceBindingError('source-unavailable', 'Исходная папка переноса была подменена.'); }
         } catch (error) {
             // Переименование сохраняет dev+ino; занятый другим каталогом старый путь не считается переносом.
-            if (mode !== 'transfer' || (error as NodeJS.ErrnoException).code !== 'ENOENT' || !samePhysical(target.physical, instance!.physical)) { throw error; }
+            if (mode !== 'transfer' || (error as NodeJS.ErrnoException).code !== 'ENOENT' || !samePhysical(target.physical, instance!.physical)) {
+                if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) { throw new WorkspaceBindingError('source-unavailable', 'Исходная папка недоступна. Восстановите её перед копированием или переносом.'); }
+                throw error;
+            }
             source = target; sourceMarker = marker;
         }
     }
-    if (input.expectedBindingId !== undefined && input.expectedBindingId !== previousBindingId) { throw new Error('Исходная привязка изменилась. Подготовьте действие заново.'); }
-    if (input.expectedInstanceId !== undefined && input.expectedInstanceId !== marker.marker?.instanceId) { throw new Error('Экземпляр папки изменился. Подготовьте действие заново.'); }
+    if (input.expectedBindingId !== undefined && input.expectedBindingId !== previousBindingId) { throw new WorkspaceBindingError('preparation-stale', 'Исходная привязка изменилась. Подготовьте действие заново.'); }
+    if (input.expectedInstanceId !== undefined && input.expectedInstanceId !== marker.marker?.instanceId) { throw new WorkspaceBindingError('preparation-stale', 'Экземпляр папки изменился. Подготовьте действие заново.'); }
     const workspaceRaw = await optionalText(path.join(stateDir(), 'workspace.json'));
     const registryRaw = await optionalText(registryFile());
     const state = { input: { projectId: input.projectId, folderName: input.folderName, mode,
@@ -183,7 +189,7 @@ export async function prepareProjectBinding(input: WorkspaceBindingInput): Promi
 
 /** Изменение идентичности возможно только после явного preview и внешней проверки закреплённых файлов. */
 export async function commitProjectBinding(prepared: WorkspaceBindingPreparation, verifyFrozenFiles?: VerifyWorkspaceFiles): Promise<WorkspaceBindingResult> {
-    if (!prepared || !/^[a-f0-9]{64}$/.test(prepared.preparation)) { throw new Error('Сначала подготовьте привязку папки.'); }
+    if (!prepared || !/^[a-f0-9]{64}$/.test(prepared.preparation)) { throw new WorkspaceBindingError('preparation-stale', 'Сначала подготовьте привязку папки.'); }
     return withWorkspaceIdentityLock(async () => {
         const recovered = await recoverWorkspaceIdentity(true);
         if (recovered?.preparation === prepared.preparation) { return recovered; }
@@ -192,13 +198,13 @@ export async function commitProjectBinding(prepared: WorkspaceBindingPreparation
             try {
                 if ((await snapshot(prepared)).preparation.preparation === prepared.preparation) { return; }
             } catch { /* Исчезновение или подмена каталога также аннулирует подготовленное действие. */ }
-            throw new Error('Папки или привязка изменились после подготовки. Подготовьте действие заново.');
+            throw new WorkspaceBindingError('preparation-stale', 'Папки или привязка изменились после подготовки. Подготовьте действие заново.');
         };
         await assertUnchanged();
         let release: void | (() => Promise<void>) = undefined;
         try {
             if (current.preparation.requiresFileVerification) {
-                if (!verifyFrozenFiles) { throw new Error('Миграция требует проверки закреплённых файлов исходной и целевой папки.'); }
+                if (!verifyFrozenFiles) { throw new WorkspaceBindingError('installation-mismatch', 'Миграция требует проверки закреплённых файлов исходной и целевой папки.'); }
                 release = await verifyFrozenFiles({ projectId: prepared.projectId, mode: current.input.mode, targetRoot: current.target.realpath,
                     ...(current.source ? { sourceRoot: current.source.realpath } : {}), ...(current.previousBindingId ? { previousBindingId: current.previousBindingId } : {}),
                     ...(current.instance ? { previousConfigRoot: current.instance.realpath } : {}),

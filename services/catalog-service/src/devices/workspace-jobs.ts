@@ -67,7 +67,7 @@ export async function workspaceJobPayload(store: DeviceStore, installations: Dev
     if (preparation && mode !== 'resume' && !isDeepStrictEqual(preparedInstallations,packages)) {
         throw new ConflictException('Состав установок изменился после проверки папки. Откройте мастер заново.');
     }
-    return { folderName: input.folderName, mode, ...(input.expectedBindingId ? { expectedBindingId: input.expectedBindingId } : {}),
+    return { folderName: input.folderName, mode, workspaceFailureVersion: 1, ...(input.expectedBindingId ? { expectedBindingId: input.expectedBindingId } : {}),
         ...(input.expectedInstanceId ? { expectedInstanceId: input.expectedInstanceId } : {}), installations: packages,
         ...(mode === 'resume' && preparation ? {expectedBindingId:preparation.previousBindingId,expectedInstanceId:preparation.instanceId} : {}),
         ...(preparation ? { preparation } : {}) };

@@ -10,6 +10,7 @@ import { InstallationPlan } from './installation-plan.js';
 import { planInstall } from './installation-planner.js';
 import { hash } from './state.js';
 import { sortedRefs } from './install-set.js';
+import { WorkspaceBindingError } from './workspace-binding-error.js';
 
 async function hold(root: string): Promise<() => Promise<void>> {
     let ready!: () => void;
@@ -32,14 +33,15 @@ async function assertReceipts(root: string, packages: Package[]): Promise<void> 
     const actual = names.filter(name => name.endsWith('.json')).sort();
     const expected = packages.map(pkg => assetKey(pkg)+'.json').sort();
     if (names.length > 1000 || JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error('В папке есть неизвестные квитанции или отсутствует подтверждённая установка. Автоматическая привязка остановлена.');
+        throw new WorkspaceBindingError('installation-mismatch', 'В папке есть неизвестные квитанции или отсутствует подтверждённая установка. Автоматическая привязка остановлена.');
     }
     if (packages.length === 0) {
         try {
             const ledger = JSON.parse(await readBoundedUtf8(await safeTarget(root,LEDGER_PATH),4*1024*1024)) as {schemaVersion?:number;roots?:object};
             if (ledger.schemaVersion !== 1 || !ledger.roots || typeof ledger.roots !== 'object' || Array.isArray(ledger.roots) || Object.keys(ledger.roots).length > 0) { throw new Error(); }
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw new Error('Локальный реестр не подтверждён историей сервера.'); }
+            if (['EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) { throw error; }
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw new WorkspaceBindingError('installation-mismatch', 'Локальный реестр не подтверждён историей сервера.'); }
         }
     }
 }
@@ -65,7 +67,7 @@ export async function verifyWorkspaceInstallations(context: WorkspaceFileVerific
                 const result = await check(previousRoot);
                 // Повтор после прерывания принимает уже обновлённые собственные пути, но не произвольные команды.
                 if (!matches(result) && (root !== context.targetRoot || previousRoot === root || !matches(await check(root)))) {
-                    throw new Error('Локальные файлы или подключение отличаются от сохранённого серверного пакета. Сначала сохраните и проверьте изменения.');
+                    throw new WorkspaceBindingError('installation-mismatch', 'Локальные файлы или подключение отличаются от сохранённого серверного пакета. Сначала сохраните и проверьте изменения.');
                 }
             }
         }

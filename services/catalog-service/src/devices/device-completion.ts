@@ -13,6 +13,7 @@ import { CONFIGURATION_KINDS, assertConfigurationReport } from './mcp-config-rep
 import type { IPackage } from '../catalog/bundle-package';
 import { assertRagJobResult, isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import { RAG_JOB_KINDS } from './rag-job-binding';
+import { workspaceFailureMessage } from './workspace-failure';
 
 export interface DeviceCompletion {
     lease: string;
@@ -135,10 +136,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if (job.kind === 'prepare-bind-project' && input.state === 'succeeded') {
             assertWorkspacePreparation(input.result,{projectId:job.project_id ?? undefined,folderName:job.payload.folderName as string,mode:job.payload.mode});
         }
-        if (['prepare-bind-project','bind-project'].includes(job.kind) && job.payload.mode
-            && input.state === 'failed' && Object.keys(input.result).length > 0) {
-            throw new ConflictException('Ошибка привязки не должна передавать локальные файлы или настройки.');
-        }
+        const workspaceMessage = ['prepare-bind-project','bind-project'].includes(job.kind)
+            ? input.state === 'failed' ? workspaceFailureMessage(input.result, job.payload.workspaceFailureVersion)
+                : job.kind === 'prepare-bind-project' ? 'Папка проверена. Подтвердите действие в мастере.' : 'Папка проекта связана.'
+            : undefined;
         if (LOCAL_PREPARATIONS.includes(job.kind) && input.state === 'failed' && Object.keys(input.result).length > 0) {
             throw new ConflictException('Ошибка сравнения не передаёт локальные файлы и настройки.');
         }
@@ -172,7 +173,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             : job.kind==='apply-adopt-installation' ? 'Инструмент принят под управление; исходные файлы сохранены.'
             : job.kind==='apply-local-restore' ? 'Локальные правки возвращены; прежнее состояние сохранено.'
             : 'План подготовлен. Проверьте изменения перед подтверждением.' : undefined;
-        const message = configurationMessage ?? projectMessage ?? (job.kind === 'inspect-installation'
+        const message = configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'
@@ -180,9 +181,6 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             : job.kind === 'open-local-change-report' ? input.state === 'failed' ? 'Сравнение не открыто. Проверьте подключённый компьютер.' : 'Полное сравнение открыто только на подключённом компьютере.'
             : job.kind === 'open-local-recovery-folder' ? input.state === 'failed' ? 'Папка резервных копий не открыта.' : 'Резервные копии открыты на подключённом компьютере.'
             : LOCAL_PREPARATIONS.includes(job.kind) ? input.state === 'failed' ? 'Сравнение не выполнено. Локальные файлы сохранены.' : 'План изменений подготовлен. Проверьте его перед применением.'
-            : ['bind-project','prepare-bind-project'].includes(job.kind)
-                ? input.state === 'failed' ? 'Привязка не выполнена. Проверьте папку в мастере.'
-                : job.kind === 'prepare-bind-project' ? 'Папка проверена. Подтвердите действие в мастере.' : 'Папка проекта связана.'
             : input.message);
         await client.query(
             'UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5,updated_at=now() WHERE id=$1',

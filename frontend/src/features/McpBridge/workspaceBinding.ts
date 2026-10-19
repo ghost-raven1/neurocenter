@@ -13,6 +13,18 @@ export const workspaceModeDescriptions: Record<TWorkspaceBindingMode, string> = 
     transfer: 'Мост проверит оригинальный каталог и сохранит экземпляр в новой папке. Привязка изменится; прежняя папка перестанет быть текущей.',
     resume: 'Вернуться к ранее подключённой папке на этом компьютере. Мост проверит её экземпляр и файлы, сохранит идентичность и создаст актуальную привязку.',
 };
+/** Пояснение строится по проверенному статусу, без локальных путей и произвольных ошибок моста. */
+export function workspaceBindingNotice(binding?: IBridgeBinding): string {
+    if (binding?.identityStatus === 'legacy') { return 'У папки старая привязка. Подтвердите её отдельной проверкой, чтобы сохранить историю установок.'; }
+    if (binding?.identityStatus === 'copied') { return 'Папка отличается от зарегистрированного экземпляра. Сначала восстановите доступ к исходной папке. Для её копии выберите «Создать отдельную копию» после подтверждения исходной привязки.'; }
+    if (binding?.identityStatus === 'changed') { return 'Папка или её служебная привязка изменились. Проверьте выбранный каталог и восстановите исходную привязку, затем повторите проверку.'; }
+    if (binding?.identityStatus === 'unavailable') {
+        return sha(binding.previousBindingId) && uuid(binding.instanceId)
+            ? 'Прежняя папка недоступна. Если вы перенесли её на этом компьютере, выберите новый каталог и действие «Перенести существующий экземпляр».'
+            : 'Прежняя папка недоступна. Проверьте общую папку проектов и доступ к каталогу на выбранном компьютере.';
+    }
+    return '';
+}
 export function workspaceSource(binding: IBridgeBinding | undefined, mode: TWorkspaceBindingMode): {expectedBindingId?: string; expectedInstanceId?: string} {
     if (mode === 'new' || mode === 'resume') { return {}; }
     if (mode === 'adopt-legacy') {

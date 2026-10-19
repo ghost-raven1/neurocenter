@@ -46,6 +46,7 @@ import { prepareJobRuntimeArtifacts } from './job-runtime-artifacts.js';
 import { recoverRuntimePreparations, runtimePreparationCompletion } from './runtime-preparation-intent.js';
 import { runRagBridgeJob } from './rag-worker.js';
 import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
+import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 
 interface Job {
     id: string;
@@ -53,7 +54,7 @@ interface Job {
     project_id?: string;
     lease: string;
     payload: ProjectLocalPayload & ConfigurationPayload & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
-        mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[];
+        mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;
         changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[] };
 }
@@ -305,7 +306,7 @@ export async function runWorker(): Promise<void> {
                             ...(current.payload.installSet ? { packages: sortedRefs(current.payload.installSet.packages) } : {}),
                             bindingId: current.payload.bindingId, unchanged: true,
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
-                        } : {};
+                        } : workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
                             state: 'failed', result, message: [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });

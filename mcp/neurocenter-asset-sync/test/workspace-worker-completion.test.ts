@@ -24,6 +24,25 @@ describe('Worker не подменяет committed привязку ошибоч
         for (const [signal, previous] of signals) { for (const listener of process.listeners(signal)) { if (!previous.has(listener)) { process.off(signal, listener); } } }
         await fs.rm(fixture.temporary, { recursive: true, force: true });
     });
+    it.each([undefined, 1] as const)('Отказ привязки отдаёт безопасную причину только серверу с версией %s', async workspaceFailureVersion => {
+        const marker = path.join(fixture.root, '.opencode/neurocenter.json');
+        const raw = JSON.parse(await fs.readFile(marker, 'utf8')); raw.server = 'https://another.example.test';
+        await fs.writeFile(marker, JSON.stringify(raw));
+        await writeState('credentials', { token: 'a'.repeat(64), deviceId, email: 'fixture@example.test' });
+        let claimed = false; const delivered: unknown[] = [];
+        vi.mocked(api).mockImplementation(async (route, body) => {
+            if (route === 'jobs/claim') {
+                if (claimed) { return null as never; } claimed = true;
+                return { ...job, project_id: 'test-project', kind: 'prepare-bind-project', payload: { folderName: path.basename(fixture.root), mode: 'new', workspaceFailureVersion } } as never;
+            }
+            if (route === `jobs/${job.id}/complete`) { delivered.push(body); }
+            return {} as never;
+        });
+        vi.spyOn(process.stderr, 'write').mockReturnValue(true); vi.useFakeTimers(); await runWorker();
+        expect(delivered).toEqual([expect.objectContaining({ ...job, state: 'failed',
+            result: workspaceFailureVersion === 1 ? { workspaceFailure: 'foreign-binding' } : {} })]);
+        expect(await fs.readFile(marker, 'utf8')).toBe(JSON.stringify(raw));
+    });
     it.each([1, 2])('После %i сбоев durable success повторяет восстановление, не сохраняя failed', async failures => {
         const target = path.join(path.dirname(fixture.root), 'проверенная-копия'); await fs.cp(fixture.root, target, { recursive: true });
         const prepared = await prepareProjectBinding({ projectId: 'test-project', folderName: path.basename(target), mode: 'new-copy' });

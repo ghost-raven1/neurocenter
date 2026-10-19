@@ -6,7 +6,7 @@ import type { useBridge } from './useBridge';
 import { useLocalJob } from './useLocalJob';
 import { isPending } from './installationHelpers';
 import { workspaceBlocker } from './readiness';
-import { matchingWorkspacePreparation, workspaceModeDescriptions, workspaceModeLabels, workspaceSnapshot, workspaceSource } from './workspaceBinding';
+import { matchingWorkspacePreparation, workspaceBindingNotice, workspaceModeDescriptions, workspaceModeLabels, workspaceSnapshot, workspaceSource } from './workspaceBinding';
 import './localOperations.less';
 
 type WorkspaceDraft = Extract<IBridgeJobDraft, {kind:'prepare-bind-project'|'bind-project'}>;
@@ -28,6 +28,8 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
     const stale = !!request && request.snapshot !== workspaceSnapshot(bridge.device, project.id);
     const expired = !!prepared && (!Number.isFinite(prepared.expiresAt) || prepared.expiresAt <= now);
     const pending = isPending(operation.job); const locked = operation.busy || pending;
+    const needsRecheck = operation.job?.kind === 'bind-project' && operation.job.state === 'failed';
+    const bindingNotice = workspaceBindingNotice(binding);
     useEffect(() => {
         if (operation.job?.kind === 'prepare-bind-project' && operation.job.state === 'succeeded' && request?.jobId === operation.job.id) {
             const value = matchingWorkspacePreparation(operation.job.result, request.input);
@@ -53,7 +55,7 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
     };
     const commit = async () => {
         const current = latest.current;
-        if (!current.canManage || !prepared || !request || !confirmed || locked || workspaceBlocker(current.bridge.device) || !current.bridge.devicesReady || !current.bridge.jobsReady
+        if (!current.canManage || !prepared || !request || !confirmed || locked || needsRecheck || workspaceBlocker(current.bridge.device) || !current.bridge.devicesReady || !current.bridge.jobsReady
             || Date.now() >= prepared.expiresAt || request.snapshot !== workspaceSnapshot(current.bridge.device,current.project.id) || otherPending) { return; }
         await operation.submit({...request.input,kind:'bind-project',preparationJobId:prepared.jobId,expectedPreparation:prepared.value.preparation});
     };
@@ -64,6 +66,7 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
     return <Modal open title={`Папка проекта «${project.name}»`} onCancel={() => { if (!operation.busy) { onClose(); } }} footer={null} width={640}>
         <Space direction="vertical" size={16} className="local-operation">
             <Steps size="small" current={prepared ? 2 : request ? 1 : 0} items={[{title:'Папка'},{title:'Проверка моста'},{title:'Подтверждение'}]} />
+            {bindingNotice && <Alert type="warning" showIcon message={bindingNotice} />}
             {!prepared && <>
                 <Typography.Paragraph>Выберите папку на компьютере «{bridge.device?.name}». Мост проверит её перед привязкой.</Typography.Paragraph>
                 <Select aria-label="Локальная папка проекта" style={{width:'100%'}} value={folderName} disabled={locked}
@@ -84,8 +87,8 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
                     {(request.sourceFolderName || prepared.value.sourceFolderName) && <Descriptions.Item label="Прежняя папка">{request.sourceFolderName || prepared.value.sourceFolderName}</Descriptions.Item>}
                 </Descriptions>
                 <Alert type="info" showIcon message="Папка проверена мостом" description={workspaceModeDescriptions[prepared.value.mode]} />
-                <Checkbox checked={confirmed} onChange={event => setConfirmed(event.target.checked)} disabled={locked || stale || expired}>Подтверждаю выбранную папку и действие с её экземпляром</Checkbox>
-                <Space wrap><Button onClick={reset} disabled={locked}>Изменить выбор</Button><Button type="primary" disabled={!confirmed || stale || expired || !!blocker || !!otherPending || locked}
+                <Checkbox checked={confirmed} onChange={event => setConfirmed(event.target.checked)} disabled={locked || stale || expired || needsRecheck}>Подтверждаю выбранную папку и действие с её экземпляром</Checkbox>
+                <Space wrap><Button onClick={reset} disabled={locked}>Изменить выбор</Button><Button type="primary" disabled={!confirmed || stale || expired || !!blocker || !!otherPending || locked || needsRecheck}
                     loading={operation.busy || operation.job?.kind === 'bind-project' && pending} onClick={() => { void commit(); }}>Подтвердить привязку</Button></Space>
             </>}
             {stale && <Alert type="warning" showIcon message="Компьютер или исходная привязка изменились. Подготовьте действие заново." />}
@@ -95,7 +98,9 @@ export function WorkspaceBindingWizard({bridge, project, canManage = false, onCl
             {otherPending && <Alert type="info" showIcon message="Сначала дождитесь завершения другого действия с проектом." description={otherPending.message}
                 action={otherPending.state === 'queued' ? <Button size="small" onClick={() => cancel(otherPending.id)}>Отменить</Button> : undefined} />}
             {operation.job && <Alert role="status" type={operation.job.state === 'failed' ? 'error' : 'info'} showIcon message={operation.job.message}
-                action={operation.job.state === 'queued' ? <Button size="small" onClick={() => cancel(operation.job!.id)}>Отменить</Button> : undefined} />}
+                action={operation.job.state === 'queued' ? <Button size="small" onClick={() => cancel(operation.job!.id)}>Отменить</Button>
+                    : operation.job.state === 'failed' && ['prepare-bind-project','bind-project'].includes(operation.job.kind)
+                        ? <Button size="small" onClick={reset} disabled={locked}>Проверить папку заново</Button> : undefined} />}
             {operation.error && <Alert type="error" role="alert" showIcon message={operation.error} />}
         </Space>
     </Modal>;
