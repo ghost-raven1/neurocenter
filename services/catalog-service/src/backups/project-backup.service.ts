@@ -29,22 +29,21 @@ export class ProjectBackupService implements OnModuleInit,OnModuleDestroy {
         const safe=createHash('sha256').update(projectId).digest('hex').slice(0,32);
         return path.join(backupDirectory(),'projects',safe);
     }
+    private async availableFile(projectId:string,backup:Pick<IProjectBackup,'fileName'|'sizeBytes'>):Promise<boolean> {
+        try {
+            if(path.basename(backup.fileName)!==backup.fileName||!backup.fileName.endsWith('.dump'))return false;
+            const info=await lstat(path.join(this.directory(projectId),backup.fileName));
+            return info.isFile()&&!info.isSymbolicLink()&&info.nlink===1&&info.size===backup.sizeBytes;
+        }catch(error){
+            if((error as NodeJS.ErrnoException).code==='ENOENT')return false;
+            throw backupFailure('BACKUP_STORAGE_UNAVAILABLE','Не удалось проверить файлы резервных копий. Обновите список после восстановления хранилища.',503);
+        }
+    }
     async list(key:string):Promise<IProjectBackup[]> {
         const id=await this.projectId(key);
         const {rows}=await this.pool.query(`SELECT id,project_id AS "projectId",file_name AS "fileName",database_name AS "databaseName",size_bytes::float8 AS "sizeBytes",created_at AS "createdAt" FROM project_backups WHERE project_id=$1 ORDER BY created_at DESC LIMIT 100`,[id]);
         const results:IProjectBackup[]=[];
-        for (const backup of rows as IProjectBackup[]) {
-            try {
-                if(path.basename(backup.fileName)!==backup.fileName||!backup.fileName.endsWith('.dump')){continue;}
-                const info=await lstat(path.join(this.directory(id),backup.fileName));
-                if(info.isFile()&&!info.isSymbolicLink()&&info.nlink===1&&info.size===backup.sizeBytes){results.push(backup);}
-            }catch(error){
-                // Удалённый retention файл пропускаем; отказ хранилища не выдаём за пустой список.
-                if((error as NodeJS.ErrnoException).code!=='ENOENT'){
-                    throw backupFailure('BACKUP_STORAGE_UNAVAILABLE','Не удалось проверить файлы резервных копий. Обновите список после восстановления хранилища.',503);
-                }
-            }
-        }
+        for (const backup of rows as IProjectBackup[])if(await this.availableFile(id,backup))results.push(backup);
         return results;
     }
     async create(key:string):Promise<IProjectBackup> {
@@ -66,8 +65,11 @@ export class ProjectBackupService implements OnModuleInit,OnModuleDestroy {
         return backup;
     }
     async file(key:string,backupId:string):Promise<{file:string;name:string}> {
-        const backup=(await this.list(key)).find(item=>item.id===backupId);
-        if (!backup) { throw new NotFoundException('Резервная копия проекта не найдена или уже удалена по сроку хранения.'); }
-        return {file:path.join(this.directory(backup.projectId),backup.fileName),name:backup.fileName};
+        const id=await this.projectId(key);
+        const {rows}=await this.pool.query<Pick<IProjectBackup,'fileName'|'sizeBytes'>>(`SELECT file_name AS "fileName",size_bytes::float8 AS "sizeBytes"
+            FROM project_backups WHERE project_id=$1 AND id=$2`,[id,backupId]);
+        const backup=rows[0];
+        if (!backup||!await this.availableFile(id,backup)) { throw new NotFoundException('Резервная копия проекта не найдена или уже удалена по сроку хранения.'); }
+        return {file:path.join(this.directory(id),backup.fileName),name:backup.fileName};
     }
 }
