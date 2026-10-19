@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "catalog-2026-10-20.2",
+  "release": "catalog-2026-10-20.3",
   "tools": [
     {
       "key": "filesystem",
@@ -109,7 +109,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -120,7 +120,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -131,7 +131,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -142,7 +142,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -153,7 +153,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -164,7 +164,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -175,7 +175,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         },
         {
           "descriptor": {
@@ -186,7 +186,7 @@
             "unpackedBytes": 24433351,
             "compressedBytes": 5178568
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
         }
       ]
     },
@@ -297,7 +297,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -308,7 +308,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -319,7 +319,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -330,7 +330,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -341,7 +341,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -352,7 +352,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -363,7 +363,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         },
         {
           "descriptor": {
@@ -374,7 +374,7 @@
             "unpackedBytes": 17387587,
             "compressedBytes": 3529087
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
         }
       ]
     },
@@ -485,7 +485,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -496,7 +496,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -507,7 +507,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -518,7 +518,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -529,7 +529,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -540,7 +540,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -551,7 +551,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         },
         {
           "descriptor": {
@@ -562,7 +562,7 @@
             "unpackedBytes": 18073429,
             "compressedBytes": 3697342
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
         }
       ]
     },
@@ -667,7 +667,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -678,7 +678,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -689,7 +689,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -700,7 +700,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -711,7 +711,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -722,7 +722,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -733,7 +733,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         },
         {
           "descriptor": {
@@ -744,7 +744,7 @@
             "unpackedBytes": 1792,
             "compressedBytes": 1007
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
         }
       ]
     },
@@ -849,7 +849,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -860,7 +860,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -871,7 +871,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -882,7 +882,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -893,7 +893,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -904,7 +904,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -915,7 +915,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         },
         {
           "descriptor": {
@@ -926,7 +926,7 @@
             "unpackedBytes": 1176,
             "compressedBytes": 861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
         }
       ]
     },
@@ -936,7 +936,7 @@
         "name": "OpenCodeRAG",
         "kind": "mcp",
         "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; без настроек используется проектная локальная модель. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.",
-        "revision": "2.4.4-mcp.pack.7",
+        "revision": "2.4.4-mcp.pack.8",
         "tags": [
           "RAG",
           "npm",
@@ -1010,63 +1010,64 @@
               ]
             },
             "hostedEmbedding": {
-              "schemaVersion": 1
+              "schemaVersion": 1,
+              "profileSchemaVersion": 2
             },
             "runtimeArtifacts": [
               {
                 "target": "darwin-arm64",
-                "sha256": "081adc1dbf9128fc2785cb076a17253782472eda2b3ca33b4eb1244212f6a953",
-                "compressedBytes": 102155461,
-                "unpackedBytes": 300246888,
-                "filesCount": 7865,
+                "sha256": "66e3c6bdcc162f34a19e5aed3f4e22683a94e1b0d1af53da8866d00941ab645d",
+                "compressedBytes": 98490574,
+                "unpackedBytes": 290763324,
+                "filesCount": 7841,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "linux-arm64-glibc",
-                "sha256": "78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9",
-                "compressedBytes": 175845984,
-                "unpackedBytes": 484585201,
-                "filesCount": 7884,
+                "sha256": "b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5",
+                "compressedBytes": 172166655,
+                "unpackedBytes": 475101637,
+                "filesCount": 7860,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "linux-arm64-musl",
-                "sha256": "78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9",
-                "compressedBytes": 175845984,
-                "unpackedBytes": 484585201,
-                "filesCount": 7884,
+                "sha256": "b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5",
+                "compressedBytes": 172166655,
+                "unpackedBytes": 475101637,
+                "filesCount": 7860,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "linux-x64-glibc",
-                "sha256": "e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5",
-                "compressedBytes": 182477011,
-                "unpackedBytes": 523420067,
-                "filesCount": 7884,
+                "sha256": "ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9",
+                "compressedBytes": 178791172,
+                "unpackedBytes": 513936503,
+                "filesCount": 7860,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "linux-x64-musl",
-                "sha256": "e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5",
-                "compressedBytes": 182477011,
-                "unpackedBytes": 523420067,
-                "filesCount": 7884,
+                "sha256": "ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9",
+                "compressedBytes": 178791172,
+                "unpackedBytes": 513936503,
+                "filesCount": 7860,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "win32-arm64",
-                "sha256": "c824abf01f2e087758f54b5e42e2a9ed8fe4232de7fdf44cf01eeaa678b7b0f3",
-                "compressedBytes": 107492700,
-                "unpackedBytes": 328160739,
-                "filesCount": 7861,
+                "sha256": "2c94cf420b416ef4b9f6f6b42453f82d17fffe9c03dadde8cafb4a3354df9927",
+                "compressedBytes": 103807947,
+                "unpackedBytes": 318677175,
+                "filesCount": 7837,
                 "entrypoint": "opencode-rag.mjs"
               },
               {
                 "target": "win32-x64",
-                "sha256": "349f0d3b3a272525c44b1770455740d9caa4ae4d33bdebbc69b5eedaec86cea0",
-                "compressedBytes": 113657099,
-                "unpackedBytes": 361715190,
-                "filesCount": 7862,
+                "sha256": "aa058887f7d885e52b696527d9d0b04af557cbbf6358998269329fa4c6aee1b2",
+                "compressedBytes": 109980853,
+                "unpackedBytes": 352231626,
+                "filesCount": 7838,
                 "entrypoint": "opencode-rag.mjs"
               }
             ]
@@ -1087,79 +1088,79 @@
         {
           "descriptor": {
             "target": "darwin-arm64",
-            "sha256": "081adc1dbf9128fc2785cb076a17253782472eda2b3ca33b4eb1244212f6a953",
-            "compressedBytes": 102155461,
-            "unpackedBytes": 300246888,
-            "filesCount": 7865,
+            "sha256": "66e3c6bdcc162f34a19e5aed3f4e22683a94e1b0d1af53da8866d00941ab645d",
+            "compressedBytes": 98490574,
+            "unpackedBytes": 290763324,
+            "filesCount": 7841,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/081adc1dbf9128fc2785cb076a17253782472eda2b3ca33b4eb1244212f6a953.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/66e3c6bdcc162f34a19e5aed3f4e22683a94e1b0d1af53da8866d00941ab645d.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-arm64-glibc",
-            "sha256": "78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9",
-            "compressedBytes": 175845984,
-            "unpackedBytes": 484585201,
-            "filesCount": 7884,
+            "sha256": "b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5",
+            "compressedBytes": 172166655,
+            "unpackedBytes": 475101637,
+            "filesCount": 7860,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-arm64-musl",
-            "sha256": "78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9",
-            "compressedBytes": 175845984,
-            "unpackedBytes": 484585201,
-            "filesCount": 7884,
+            "sha256": "b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5",
+            "compressedBytes": 172166655,
+            "unpackedBytes": 475101637,
+            "filesCount": 7860,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/78879bdcb2977b2da1ce3c698b922f948be11624de91fd64f61e42fe88ae7ff9.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/b1a2e82617a92e28634e58f51151c9fd11deb254c3bdcbf9ab2e7eaeb99e95c5.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-x64-glibc",
-            "sha256": "e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5",
-            "compressedBytes": 182477011,
-            "unpackedBytes": 523420067,
-            "filesCount": 7884,
+            "sha256": "ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9",
+            "compressedBytes": 178791172,
+            "unpackedBytes": 513936503,
+            "filesCount": 7860,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-x64-musl",
-            "sha256": "e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5",
-            "compressedBytes": 182477011,
-            "unpackedBytes": 523420067,
-            "filesCount": 7884,
+            "sha256": "ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9",
+            "compressedBytes": 178791172,
+            "unpackedBytes": 513936503,
+            "filesCount": 7860,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e814b03a6778df40497e0c9f00b9a91b7eba4e8cd0cc62bd3adb702db7a7d4c5.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/ee1b80de677238006e90abb194c39ca2c7b656fa1a0569dbd041124d98d0ddd9.tar.gz"
         },
         {
           "descriptor": {
             "target": "win32-arm64",
-            "sha256": "c824abf01f2e087758f54b5e42e2a9ed8fe4232de7fdf44cf01eeaa678b7b0f3",
-            "compressedBytes": 107492700,
-            "unpackedBytes": 328160739,
-            "filesCount": 7861,
+            "sha256": "2c94cf420b416ef4b9f6f6b42453f82d17fffe9c03dadde8cafb4a3354df9927",
+            "compressedBytes": 103807947,
+            "unpackedBytes": 318677175,
+            "filesCount": 7837,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/c824abf01f2e087758f54b5e42e2a9ed8fe4232de7fdf44cf01eeaa678b7b0f3.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/2c94cf420b416ef4b9f6f6b42453f82d17fffe9c03dadde8cafb4a3354df9927.tar.gz"
         },
         {
           "descriptor": {
             "target": "win32-x64",
-            "sha256": "349f0d3b3a272525c44b1770455740d9caa4ae4d33bdebbc69b5eedaec86cea0",
-            "compressedBytes": 113657099,
-            "unpackedBytes": 361715190,
-            "filesCount": 7862,
+            "sha256": "aa058887f7d885e52b696527d9d0b04af557cbbf6358998269329fa4c6aee1b2",
+            "compressedBytes": 109980853,
+            "unpackedBytes": 352231626,
+            "filesCount": 7838,
             "entrypoint": "opencode-rag.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/349f0d3b3a272525c44b1770455740d9caa4ae4d33bdebbc69b5eedaec86cea0.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/aa058887f7d885e52b696527d9d0b04af557cbbf6358998269329fa4c6aee1b2.tar.gz"
         }
       ]
     },
@@ -1169,7 +1170,7 @@
         "name": "OpenCodeRAG (плагин)",
         "kind": "plugin",
         "description": "Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Без конфига использует локальную qwen3-embedding:4b на порту 11435 и автоиндексацию; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
-        "revision": "2.4.4-plugin.pack.7",
+        "revision": "2.4.4-plugin.pack.8",
         "tags": [
           "RAG",
           "GitHub",
@@ -1192,63 +1193,64 @@
               ]
             },
             "hostedEmbedding": {
-              "schemaVersion": 1
+              "schemaVersion": 1,
+              "profileSchemaVersion": 2
             },
             "runtimeArtifacts": [
               {
                 "target": "darwin-arm64",
-                "sha256": "2b0f17b10ce4baaf7e107dc6ba53e7d8e1c8d9a8954b8f8fd32f0fbe9b6915a2",
-                "compressedBytes": 111933420,
-                "unpackedBytes": 351099832,
-                "filesCount": 11245,
+                "sha256": "816b56f7c5aa5150cf0b2c480a9cfda4b91c4acbb20a5af1db2ffb755b93772c",
+                "compressedBytes": 108265616,
+                "unpackedBytes": 341616268,
+                "filesCount": 11221,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "linux-arm64-glibc",
-                "sha256": "8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37",
-                "compressedBytes": 185625974,
-                "unpackedBytes": 535413161,
-                "filesCount": 11265,
+                "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+                "compressedBytes": 181950455,
+                "unpackedBytes": 525929597,
+                "filesCount": 11241,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "linux-arm64-musl",
-                "sha256": "8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37",
-                "compressedBytes": 185625974,
-                "unpackedBytes": 535413161,
-                "filesCount": 11265,
+                "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+                "compressedBytes": 181950455,
+                "unpackedBytes": 525929597,
+                "filesCount": 11241,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "linux-x64-glibc",
-                "sha256": "16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac",
-                "compressedBytes": 192261408,
-                "unpackedBytes": 574280227,
-                "filesCount": 11267,
+                "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+                "compressedBytes": 188571852,
+                "unpackedBytes": 564796663,
+                "filesCount": 11243,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "linux-x64-musl",
-                "sha256": "16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac",
-                "compressedBytes": 192261408,
-                "unpackedBytes": 574280227,
-                "filesCount": 11267,
+                "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+                "compressedBytes": 188571852,
+                "unpackedBytes": 564796663,
+                "filesCount": 11243,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "win32-arm64",
-                "sha256": "79c53b797dd52988718c4a53d37301aec54b740a3d6d40f27531567c4cc7d5d0",
-                "compressedBytes": 117254895,
-                "unpackedBytes": 378959593,
-                "filesCount": 11237,
+                "sha256": "15bcc3dc373fc1a771ea9eb036a7c8cb25bfd1ee1908eeb2cb3e2fe5448e7316",
+                "compressedBytes": 113584825,
+                "unpackedBytes": 369476029,
+                "filesCount": 11213,
                 "entrypoint": "rag-plugin.mjs"
               },
               {
                 "target": "win32-x64",
-                "sha256": "894d9be94f5588f42bf41b04ef74f56630fed7d4efb886a507bd98c0cabe9ef6",
-                "compressedBytes": 123542543,
-                "unpackedBytes": 412740254,
-                "filesCount": 11243,
+                "sha256": "fbb48a1082073bbdcb912ca28d2c87f3cbc96c0da31ccaf226940e3406b4b7fa",
+                "compressedBytes": 119866396,
+                "unpackedBytes": 403256690,
+                "filesCount": 11219,
                 "entrypoint": "rag-plugin.mjs"
               }
             ]
@@ -1269,79 +1271,79 @@
         {
           "descriptor": {
             "target": "darwin-arm64",
-            "sha256": "2b0f17b10ce4baaf7e107dc6ba53e7d8e1c8d9a8954b8f8fd32f0fbe9b6915a2",
-            "compressedBytes": 111933420,
-            "unpackedBytes": 351099832,
-            "filesCount": 11245,
+            "sha256": "816b56f7c5aa5150cf0b2c480a9cfda4b91c4acbb20a5af1db2ffb755b93772c",
+            "compressedBytes": 108265616,
+            "unpackedBytes": 341616268,
+            "filesCount": 11221,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/2b0f17b10ce4baaf7e107dc6ba53e7d8e1c8d9a8954b8f8fd32f0fbe9b6915a2.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/816b56f7c5aa5150cf0b2c480a9cfda4b91c4acbb20a5af1db2ffb755b93772c.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-arm64-glibc",
-            "sha256": "8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37",
-            "compressedBytes": 185625974,
-            "unpackedBytes": 535413161,
-            "filesCount": 11265,
+            "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+            "compressedBytes": 181950455,
+            "unpackedBytes": 525929597,
+            "filesCount": 11241,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-arm64-musl",
-            "sha256": "8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37",
-            "compressedBytes": 185625974,
-            "unpackedBytes": 535413161,
-            "filesCount": 11265,
+            "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+            "compressedBytes": 181950455,
+            "unpackedBytes": 525929597,
+            "filesCount": 11241,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/8757eef097765b1a45b6a07f07e3b9c4230b1cf7623a34f3036e733db1549a37.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-x64-glibc",
-            "sha256": "16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac",
-            "compressedBytes": 192261408,
-            "unpackedBytes": 574280227,
-            "filesCount": 11267,
+            "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+            "compressedBytes": 188571852,
+            "unpackedBytes": 564796663,
+            "filesCount": 11243,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a.tar.gz"
         },
         {
           "descriptor": {
             "target": "linux-x64-musl",
-            "sha256": "16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac",
-            "compressedBytes": 192261408,
-            "unpackedBytes": 574280227,
-            "filesCount": 11267,
+            "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+            "compressedBytes": 188571852,
+            "unpackedBytes": 564796663,
+            "filesCount": 11243,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/16b1dcabeff905b394ecd02ccb3eae0ee256b10f1af46fd6a00de0dca35fd2ac.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a.tar.gz"
         },
         {
           "descriptor": {
             "target": "win32-arm64",
-            "sha256": "79c53b797dd52988718c4a53d37301aec54b740a3d6d40f27531567c4cc7d5d0",
-            "compressedBytes": 117254895,
-            "unpackedBytes": 378959593,
-            "filesCount": 11237,
+            "sha256": "15bcc3dc373fc1a771ea9eb036a7c8cb25bfd1ee1908eeb2cb3e2fe5448e7316",
+            "compressedBytes": 113584825,
+            "unpackedBytes": 369476029,
+            "filesCount": 11213,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/79c53b797dd52988718c4a53d37301aec54b740a3d6d40f27531567c4cc7d5d0.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/15bcc3dc373fc1a771ea9eb036a7c8cb25bfd1ee1908eeb2cb3e2fe5448e7316.tar.gz"
         },
         {
           "descriptor": {
             "target": "win32-x64",
-            "sha256": "894d9be94f5588f42bf41b04ef74f56630fed7d4efb886a507bd98c0cabe9ef6",
-            "compressedBytes": 123542543,
-            "unpackedBytes": 412740254,
-            "filesCount": 11243,
+            "sha256": "fbb48a1082073bbdcb912ca28d2c87f3cbc96c0da31ccaf226940e3406b4b7fa",
+            "compressedBytes": 119866396,
+            "unpackedBytes": 403256690,
+            "filesCount": 11219,
             "entrypoint": "rag-plugin.mjs"
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/894d9be94f5588f42bf41b04ef74f56630fed7d4efb886a507bd98c0cabe9ef6.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fbb48a1082073bbdcb912ca28d2c87f3cbc96c0da31ccaf226940e3406b4b7fa.tar.gz"
         }
       ]
     },
@@ -1452,7 +1454,7 @@
             "unpackedBytes": 10239205,
             "compressedBytes": 4133039
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4.tar.gz"
         },
         {
           "descriptor": {
@@ -1463,7 +1465,7 @@
             "unpackedBytes": 10631075,
             "compressedBytes": 4365763
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5.tar.gz"
         },
         {
           "descriptor": {
@@ -1474,7 +1476,7 @@
             "unpackedBytes": 9901899,
             "compressedBytes": 3971957
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
         },
         {
           "descriptor": {
@@ -1485,7 +1487,7 @@
             "unpackedBytes": 9901899,
             "compressedBytes": 3971957
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
         },
         {
           "descriptor": {
@@ -1496,7 +1498,7 @@
             "unpackedBytes": 10397515,
             "compressedBytes": 4283973
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
         },
         {
           "descriptor": {
@@ -1507,7 +1509,7 @@
             "unpackedBytes": 10397515,
             "compressedBytes": 4283973
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
         },
         {
           "descriptor": {
@@ -1518,7 +1520,7 @@
             "unpackedBytes": 10032787,
             "compressedBytes": 3985425
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67.tar.gz"
         },
         {
           "descriptor": {
@@ -1529,7 +1531,7 @@
             "unpackedBytes": 10657939,
             "compressedBytes": 4363861
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da.tar.gz"
         }
       ]
     },
@@ -1632,7 +1634,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1643,7 +1645,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1654,7 +1656,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1665,7 +1667,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1676,7 +1678,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1687,7 +1689,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1698,7 +1700,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         },
         {
           "descriptor": {
@@ -1709,7 +1711,7 @@
             "unpackedBytes": 46670043,
             "compressedBytes": 8763682
           },
-          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.2/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
         }
       ]
     }
