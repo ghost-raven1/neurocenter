@@ -63,7 +63,12 @@ export async function promote(source,target,expected,verification) {
 export async function ensureSpace(directory,bytes,readDisk=statfs) {
     if(!bytes)return;
     const disk=await readDisk(directory,{bigint:true});
-    if(disk.bavail*disk.bsize<BigInt(bytes+1024**3))throw new Error('Недостаточно места для поставки моделей с резервом 1 ГиБ. Существующие данные сохранены.');
+    const requiredBytes=bytes+1024**3,available=disk.bavail*disk.bsize;
+    if(available<BigInt(requiredBytes)) {
+        const availableBytes=Number(available);
+        throw Object.assign(new Error(`Недостаточно места для поставки моделей. Нужно ${(requiredBytes/1024**3).toFixed(2)} ГиБ свободного места с резервом 1 ГиБ, доступно ${(availableBytes/1024**3).toFixed(2)} ГиБ. Существующие данные сохранены.`),
+            {code:'ENOSPC',requiredBytes,availableBytes});
+    }
 }
 
 function allowedRedirect(value) {

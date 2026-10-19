@@ -88,6 +88,22 @@ test('После обрыва прогресс учитывает провере
     for(const stage of ['inspecting','verifying','assembling','activating','ready'])assert.ok(progress.some(value=>value.stage===stage));
 }));
 
+test('Предварительный расчёт после обрыва не резервирует место повторно для проверенных частей',async()=>fixture(async({hydrate,fetch,manifest,calls})=>{
+    let requests=0;
+    await assert.rejects(hydrate({downloadOnly:true,fetch:async(...args)=>{
+        if(++requests===2)throw new Error('INTERRUPTED');return fetch(...args);
+    }}));
+    const first=manifest.files.find(file=>file.parts).parts[0];
+    const blobs=manifest.files.filter(file=>file.parts);
+    const coldBudget=blobs.reduce((sum,file)=>sum+file.size,0)+Math.max(...blobs.map(file=>file.size))+1024**3;
+    let diskChecks=0;
+    // Проверяем предварительный расчёт после сохранения части; последующие потоковые проверки имеют запас.
+    const report=await hydrate({downloadOnly:true,readDisk:async()=>++diskChecks===1
+        ? {bavail:BigInt(coldBudget-first.size),bsize:1n}:ampleDisk()});
+    assert.equal(report.ok,true);assert.ok(diskChecks>1);
+    assert.equal(calls.filter(url=>url.endsWith('/'+first.name)).length,1);
+}));
+
 test('Предзагрузка не публикует теги, а импорт использует готовый кэш без повторного скачивания',async()=>fixture(async({hydrate,calls,destination,manifest})=>{
     await hydrate({downloadOnly:true});const count=calls.length;
     await assert.rejects(access(path.join(destination,manifest.files.find(file=>file.inlineBase64).path)));
@@ -180,8 +196,15 @@ test('Опись не принимает обход путей, подменён
     for(const edit of edits) {const candidate=structuredClone(manifest);edit(candidate);assert.throws(()=>validateModelBundle(candidate,locks));}
 }));
 
-test('Недостаток физического места отклоняется до первой загрузки',async()=>fixture(async({hydrate,calls})=>{
-    await assert.rejects(hydrate({readDisk:async()=>({bavail:0n,bsize:4096n})}),/Недостаточно места/);assert.equal(calls.length,0);
+test('Недостаток физического места содержит безопасные объёмы и отклоняется до первой загрузки',async()=>fixture(async({hydrate,calls,manifest,root})=>{
+    const blobs=manifest.files.filter(file=>file.parts),tags=manifest.files.filter(file=>file.inlineBase64);
+    const required=blobs.reduce((sum,file)=>sum+file.size,0)+Math.max(...blobs.map(file=>file.size))
+        +tags.reduce((sum,file)=>sum+file.size,0)+1024**3;
+    await assert.rejects(hydrate({readDisk:async()=>({bavail:2n,bsize:4096n})}),error=>{
+        assert.equal(error.code,'ENOSPC');assert.equal(error.requiredBytes,required);assert.equal(error.availableBytes,8192);
+        assert.match(error.message,/Недостаточно места/);assert.match(error.message,/резервом 1 ГиБ/);
+        assert.ok(!error.message.includes(root));return true;
+    });assert.equal(calls.length,0);
 }));
 
 test('Перенаправление на внешний или локальный сервер отклоняется до второго запроса',async()=>fixture(async({hydrate})=>{

@@ -105,3 +105,26 @@ test('Отказ или неполный ответ поставки не зап
         assert.equal(calls.includes('docker'),false);
     }
 }));
+
+test('Причина отказа весов проходит из CLI в итоговую ошибку с закрытой диагностикой',async()=>fixture(async({root,output,messages})=>{
+    const result={status:1,stdout:JSON.stringify({ok:false,error:{code:'EACCES',message:'PRIVATE arbitrary child message'}})};
+    await assert.rejects(startModelRuntime({root,output,environment:{}},()=>result),error=>{
+        assert.match(error.message,/Нет прав.*data\/embedding/);
+        assert.doesNotMatch(error.message,/PRIVATE|свободное место/);return true;
+    });
+    assert.doesNotMatch(JSON.stringify(messages),/PRIVATE/);
+    assert.ok(messages.some(item=>item.text[0]==='Код подготовки моделей'&&item.text[1]==='1'));
+    const diagnostic=messages.find(item=>item.text[0]==='Подробности подготовки')?.text[1];
+    assert.match(await readFile(diagnostic,'utf8'),/PRIVATE arbitrary child message/);
+    if(process.platform!=='win32')assert.equal((await stat(diagnostic)).mode&0o777,0o600);
+}));
+
+test('Реальная нехватка места показывает числовое требование вместо общего отказа',async()=>fixture(async({root,output})=>{
+    await assert.rejects(startModelRuntime({root,output,environment:{}},()=>({status:1,
+        stdout:JSON.stringify({ok:false,error:{code:'ENOSPC',requiredBytes:4*1024**3,availableBytes:2*1024**3}})})),
+    /требуется свободно 4.00 ГиБ, доступно 2.00 ГиБ/);
+}));
+
+test('Пустой ответ при коде 0 отличим от ошибки диска',async()=>fixture(async({root,output})=>{
+    await assert.rejects(startModelRuntime({root,output,environment:{}},()=>({status:0,stdout:''})),/без полного отчёта/);
+}));

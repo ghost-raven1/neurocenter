@@ -107,11 +107,23 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
         if(await verifyFile(cache,file,{onBytes:checkedCache}))cached.set(file.path,cache);
         else {required+=file.size;largest=Math.max(largest,file.size);}
     }
-    await ensureSpace(directory,required?required+largest:0,readDisk);
+    let missingPartBytes=0;
+    const checkedParts=byteProgress(onProgress,'verifying','Проверяем SHA-256 сохранённых частей перед расчётом места.',required);
+    await checkedParts(0);
+    for(const file of blobs) {
+        if(present.has(file.path)||cached.has(file.path))continue;
+        for(const part of file.parts) {
+            signal?.throwIfAborted();
+            if(!await verifyFile(path.join(directory,'.bundle-cache/parts',part.sha256),part,{onBytes:checkedParts}))missingPartBytes+=part.size;
+        }
+    }
+    const missingTagBytes=tags.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0);
+    // Проверенные части уже занимают место: повторно резервируем только загрузку, сборку и новые теги.
+    await ensureSpace(directory,missingPartBytes+largest+(downloadOnly?0:missingTagBytes),readDisk);
     const staging=await mkdtemp(path.join(directory,'.bundle-cache/stage-'));
     const obtained=byteProgress(onProgress,'downloading','Подготавливаем части моделей: загрузка и проверенный кэш.',required);
     const assembled=byteProgress(onProgress,'assembling','Собираем файлы моделей из проверенных частей.',required);
-    const activated=byteProgress(onProgress,'activating','Активируем проверенные файлы моделей.',missingBytes+tags.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0));
+    const activated=byteProgress(onProgress,'activating','Активируем проверенные файлы моделей.',missingBytes+missingTagBytes);
     try {
         for(const file of blobs) {
             signal?.throwIfAborted();

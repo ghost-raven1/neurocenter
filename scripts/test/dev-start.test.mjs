@@ -53,6 +53,10 @@ async function fixture(t, mode) {
         import {appendFileSync} from 'node:fs';
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-bundle',directory:process.argv[3]})+'\\n');
         if(process.env.DEV_START_MODE==='model-bundle-error')process.exit(34);
+        if(process.env.DEV_START_MODE==='model-bundle-disk-error'){
+            console.log(JSON.stringify({ok:false,error:{code:'ENOSPC',requiredBytes:3*1024**3,availableBytes:1024**3,message:'PRIVATE child details'}}));
+            process.exit(1);
+        }
         console.log(JSON.stringify({ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:4427274223}));`);
     await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
     await fs.writeFile(path.join(checkout, 'scripts/package-bridge.sh'), '#!/bin/bash\nexit 0\n', {mode: 0o700});
@@ -279,6 +283,21 @@ test('Ошибка Docker хостинга объясняется и допус�
     assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
     assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,1);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+});
+
+test('Нехватка места останавливает запуск с точными объёмами и сохраняет прежний стек',async t=>{
+    const f=await fixture(t,'model-bundle-disk-error');
+    await fs.mkdir(path.join(f.checkout,'.run'));
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');
+    await fs.writeFile(filename,state);
+    const result=await f.run();
+    assert.equal(result.code,1,result.stdout+result.stderr);
+    assert.match(result.stderr,/требуется свободно 3.00 ГиБ, доступно 1.00 ГиБ/);
+    assert.match(result.stdout,/Подробности подготовки/);
+    assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
+    assert.equal(await fs.readFile(filename,'utf8'),state);
+    assert.equal(result.events.filter(event=>event.kind==='catalog-sync'||event.kind==='child-spawn').length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.includes('embedding')).length,0);
 });
 
 test('Отмена зависшего хостинга завершает ожидание и сохраняет прежний стек',async t=>{

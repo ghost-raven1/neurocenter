@@ -1,6 +1,8 @@
 import path from 'node:path';
+import {realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {packModelBundle,hydrateModelBundle,readModelBundle} from './bundle.mjs';
+import {modelBundleFailure} from './bundle-errors.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only] [--manifest <опись>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
@@ -53,6 +55,15 @@ export async function runModelBundleCli(args=process.argv.slice(2)) {
     console.log(JSON.stringify(report));
 }
 
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-    runModelBundleCli().catch(error=>{console.error(error?.code?'Не удалось подготовить поставку моделей. Проверьте хранилище, сеть и повторите запуск.':error instanceof Error?error.message:'Не удалось подготовить модели.');process.exitCode=1;});
+/** Node разрешает entrypoint через symlink; импорт модуля при этом не должен запускать CLI. */
+function isEntrypoint() {
+    try {return !!process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url));}
+    catch {return false;}
+}
+
+if(isEntrypoint()) {
+    runModelBundleCli().catch(error=>{
+        const failure=modelBundleFailure(error);
+        console.error(failure.message);console.log(JSON.stringify({ok:false,error:failure}));process.exitCode=1;
+    });
 }

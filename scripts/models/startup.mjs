@@ -4,8 +4,9 @@ import path from 'node:path';
 import {configuration} from '../embedding/config.mjs';
 import {dataDirectory} from '../embedding/runtime.mjs';
 import {runModelStartupProcess} from './startup-process.mjs';
+import {modelBundleFailure} from './bundle-errors.mjs';
 
-/** Подробности Docker остаются в закрытом файле; исключения и настройки не печатаются в общий вывод. */
+/** Подробности команды остаются в закрытом файле; исключения и настройки не печатаются в общий вывод. */
 async function saveRuntimeDiagnostic(root,result) {
     try {
         const state=path.join(root,'.run');await mkdir(state,{recursive:true,mode:0o700});
@@ -52,8 +53,15 @@ export async function startModelRuntime({root,environment=process.env,output},ru
     try {bundle=JSON.parse(prepared.stdout);} catch { /* Неподтверждённая поставка не считается готовой. */ }
     if(prepared.error||prepared.status!==0||bundle?.ok!==true||bundle.downloadOnly!==false||bundle.verifyOnly!==false
         ||bundle.models!==2||bundle.files!==9||!Number.isSafeInteger(bundle.bytes)||bundle.bytes<1) {
-        if(prepared.error?.code==='ETIMEDOUT')output.warning('Подготовка весов превысила предел ожидания — 2 часа. Проверенные части остаются в кеше.');
-        throw new Error('Встроенные модели не подготовлены. Проверьте сообщение выше, свободное место и повторите scripts/dev.sh up. Прежние сервисы не остановлены.');
+        const failure=modelBundleFailure(prepared.error?.code==='ETIMEDOUT'?{code:'MODEL_BUNDLE_TIMEOUT'}:
+            prepared.error||bundle?.error||{code:prepared.status===0?'MODEL_BUNDLE_PROTOCOL':'MODEL_BUNDLE_FAILED'});
+        output.warning(failure.message);
+        if(Number.isInteger(prepared.status))output.info('Код подготовки моделей',String(prepared.status));
+        if(prepared.signal)output.info('Сигнал подготовки моделей',prepared.signal);
+        const diagnostic=await saveRuntimeDiagnostic(root,prepared);
+        if(diagnostic)output.info('Подробности подготовки',diagnostic);
+        output.info('Повторить только подготовку','npm run models:prepare');
+        throw new Error(`Встроенные модели не подготовлены: ${failure.message} Прежние сервисы не остановлены.`);
     }
     output.success('Обе встроенные модели находятся в проекте; файлы проверены по SHA-256');
     output.info('Запуск контейнера моделей','Ожидаем Docker и готовность runtime. Первая загрузка образа может занять несколько минут; предел ожидания — 10 минут.');
