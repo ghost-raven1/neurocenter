@@ -5,6 +5,7 @@ import { errorMessage } from '../../../common/utils/errorMessage';
 import { useSectionUpdates } from '../../../core/socket/useSectionUpdates';
 import type { IStoreApp } from '../AppCard';
 import { approveInstallation, prepareInstallation, refreshInstallationPlan, revokeInstallationPlan, type IPlanExecution } from './installPlanFlow';
+import { parseInstallPlanFailure, type IInstallPlanFailure } from './installPlanFailure';
 
 interface IInstallContext {
     scopeKey: string;
@@ -21,10 +22,12 @@ interface IInstallContext {
 }
 interface IReview { plan: IInstallPlan; app: IStoreApp; installOnApprove: boolean; scopeKey: string }
 type TAction = 'install' | 'inspect' | 'approve' | 'revoke';
+interface IFailure extends IInstallPlanFailure { scopeKey: string; action: 'install' | 'inspect'; request: number }
 
 /** Контекст и номер запроса не позволяют старой модалке писать в другой проект. */
 export function useInstallPlan(context: IInstallContext) {
     const [review, setReview] = useState<IReview | null>(null);
+    const [failure, setFailure] = useState<IFailure | null>(null);
     const [busy, setBusy] = useState('');
     const currentScope = useRef(context.scopeKey);
     currentScope.current = context.scopeKey;
@@ -43,6 +46,7 @@ export function useInstallPlan(context: IInstallContext) {
         refreshPending.current = false;
         lock.current = false;
         updateReview(null);
+        setFailure(null);
         setBusy('');
     };
     useEffect(() => {
@@ -75,9 +79,10 @@ export function useInstallPlan(context: IInstallContext) {
     const execute = async (app: IStoreApp, action: TAction, plan?: IInstallPlan): Promise<void> => {
         const installs = action === 'install' || action === 'approve' && !!review?.installOnApprove;
         const owner = context.captureOwner();
-        if (!owner() || lock.current || !context.projectId || (action !== 'install' && !context.canApprove)
+        if (!owner() || context.scopeKey !== currentScope.current || lock.current || !context.projectId || (action !== 'install' && !context.canApprove)
             || installs && (!context.ready || !context.deviceId || context.isPending(app))) { return; }
         lock.current = true;
+        setFailure(null);
         refreshSequence.current += 1;
         setBusy(app.id);
         const token = ++sequence.current;
@@ -122,7 +127,13 @@ export function useInstallPlan(context: IInstallContext) {
                 if (current() && pending) { updateReview({ plan: pending, app, installOnApprove: installs, scopeKey: scope }); }
             }
         } catch (cause) {
-            if (current()) { message.error(errorMessage(cause, 'Не удалось подготовить установку через мост.')); }
+            if (current()) {
+                const issue = parseInstallPlanFailure(cause, app);
+                if (issue && (action === 'install' || action === 'inspect')) {
+                    updateReview(null);
+                    setFailure({ app, issue, action, scopeKey: scope, request: token });
+                } else { message.error(errorMessage(cause, 'Не удалось подготовить установку через мост.')); }
+            }
         } finally {
             if (current()) {
                 lock.current = false; setBusy('');
@@ -132,6 +143,9 @@ export function useInstallPlan(context: IInstallContext) {
     };
     return {
         busy, review: review?.scopeKey === context.scopeKey ? review : null, cancel,
+        failure: failure?.scopeKey === context.scopeKey ? failure : null,
+        retryFailure: () => failure?.scopeKey === currentScope.current && failure.request === sequence.current
+            ? execute(failure.app, failure.action) : Promise.resolve(),
         install: (app: IStoreApp) => execute(app, 'install'),
         inspect: (app: IStoreApp) => execute(app, 'inspect'),
         approve: () => review ? execute(review.app, 'approve', review.plan) : Promise.resolve(),

@@ -26,6 +26,7 @@ import {currentInstallation, isPending, latestAssetJob} from '../../features/Mcp
 import { installationBlocker } from '../../features/McpBridge/readiness';
 import { useInstallPlan } from './installPlans/useInstallPlan';
 import { InstallPlanModal } from './installPlans/InstallPlanModal';
+import { InstallPlanFailureModal } from './installPlans/InstallPlanFailureModal';
 import { runtimeArtifactBlocker } from '../../features/McpBridge/runtimeArtifacts';
 import { ProjectInstallationReadiness } from '../../features/McpBridge/ProjectInstallationReadiness';
 import { pendingLocalJob } from '../../features/McpBridge/operationHelpers';
@@ -433,6 +434,15 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 installOnApprove={!!localPlans.review?.installOnApprove}
                 installDisabled={localPlans.installDisabled} installBlocker={localPlans.installBlocker} onInstall={() => { void localPlans.installReviewed(); }}
                 onCancel={localPlans.cancel} onApprove={() => { void localPlans.approve(); }} onRevoke={() => { void localPlans.revoke(); }} />
+            <InstallPlanFailureModal failure={localPlans.failure} busy={!!localBusy}
+                onCancel={localPlans.cancel} onRetry={() => { void localPlans.retryFailure(); }}
+                onOpenPackage={localPlans.failure ? () => {
+                    const failed = localPlans.failure!.issue.package;
+                    const app = catalog.find(item => item.id === failed.id && item.kind === failed.kind)
+                        ?? { ...failed, description: '', tags: [], origin: '' };
+                    localPlans.cancel(); setViewApp(app);
+                } : undefined}
+                onPackage={isMain ? () => { localPlans.cancel(); setViewApp(null); setPackagingOpen(true); } : undefined} />
 
             <StoreEditModal key={'edit:' + accessKey} editApp={editApp} onClose={() => setEditApp(null)} onSaved={loadCatalog} />
         </div>
