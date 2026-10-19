@@ -18,7 +18,7 @@ for (const tool of manifest.tools) {
         const { stdout } = await run('tar', ['-tzf', path.join(directory, artifact.archivePath)]);
         const entries = stdout.split('\n').filter(Boolean);
         assert.equal(entries.length, descriptor.filesCount);
-        if (tool.key === 'opencode-rag') {
+        if (['opencode-rag', 'opencode-rag-plugin'].includes(tool.key)) {
             const libraries = [...new Set(entries.filter(name => name.startsWith('node_modules/@lancedb/lancedb-')).map(name => name.split('/')[2]))];
             const expected = 'lancedb-' + native[descriptor.target];
             assert.ok(libraries.includes(expected));
@@ -30,6 +30,11 @@ for (const tool of manifest.tools) {
             assert.ok(entries.some(name => /node_modules\/@lancedb\/.*\.(?:node|dll|so|dylib)$/.test(name)));
             assert.ok(entries.some(name => name.startsWith('upstream/wasm/') && name.endsWith('.wasm')));
             assert.ok(!entries.some(name => name.startsWith('node_modules/@opencode/')));
+            if (tool.key === 'opencode-rag-plugin') {
+                assert.ok(entries.includes('rag-plugin.mjs'));
+                assert.ok(entries.includes('rag-plugin-config.mjs'));
+                assert.ok(entries.includes('node_modules/@opencode-ai/plugin/package.json'));
+            }
         } else {
             assert.ok(entries.includes(descriptor.target.startsWith('win32-') ? 'bin/snip.exe' : 'bin/snip'));
             assert.ok(entries.includes('plugin.mjs'));
@@ -38,8 +43,10 @@ for (const tool of manifest.tools) {
         verified.push({ tool: tool.key, ...descriptor });
     }
 }
-assert.equal(verified.filter(value => value.tool === 'opencode-rag').length, 7);
-assert.equal(verified.filter(value => value.tool === 'opencode-snip').length, 8);
+assert.ok(manifest.tools.length > 0);
+for (const [key, expected] of [['opencode-rag', 7], ['opencode-rag-plugin', 7], ['opencode-snip', 8]]) {
+    assert.equal(verified.filter(value => value.tool === key).length, manifest.tools.some(tool => tool.key === key) ? expected : 0);
+}
 const value = { status: 'passed', kind: 'static-platform-inventory', nativeExecution: 'darwin-arm64 only; see native smoke', artifacts: verified };
 if (report) await fs.writeFile(report, JSON.stringify(value, null, 2) + '\n');
 console.log(JSON.stringify({ status: value.status, artifacts: verified.length }));

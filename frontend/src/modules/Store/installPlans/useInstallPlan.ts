@@ -13,7 +13,9 @@ interface IInstallContext {
     bindingId?: string;
     ready: boolean;
     canApprove: boolean;
+    captureOwner(): () => boolean;
     isPending(app: IStoreApp): boolean;
+    prepareCatalog?(app: IStoreApp, current: () => boolean): Promise<boolean>;
     planBlocker?(plan: IInstallPlan): string;
     reload(): Promise<unknown>;
 }
@@ -72,17 +74,24 @@ export function useInstallPlan(context: IInstallContext) {
 
     const execute = async (app: IStoreApp, action: TAction, plan?: IInstallPlan): Promise<void> => {
         const installs = action === 'install' || action === 'approve' && !!review?.installOnApprove;
-        if (lock.current || !context.projectId || (action !== 'install' && !context.canApprove)
+        const owner = context.captureOwner();
+        if (!owner() || lock.current || !context.projectId || (action !== 'install' && !context.canApprove)
             || installs && (!context.ready || !context.deviceId || context.isPending(app))) { return; }
         lock.current = true;
         refreshSequence.current += 1;
         setBusy(app.id);
         const token = ++sequence.current;
         const scope = context.scopeKey;
-        const current = (): boolean => token === sequence.current && scope === currentScope.current;
+        const current = (): boolean => token === sequence.current && scope === currentScope.current && owner();
         const execution: IPlanExecution = {
             api: bridgeApi,
             current,
+            prepareCatalog: context.prepareCatalog ? async () => {
+                if (!await context.prepareCatalog!(app, current) || !current()) { return false; }
+                const live = latestContext.current;
+                if (!live.ready || live.isPending(app)) { throw new Error('Подключение или очередь изменились. Дождитесь актуального статуса и повторите установку.'); }
+                return true;
+            } : undefined,
             enqueue: async approved => {
                 if (!current()) { return; }
                 if (!installs) { updateReview({ plan: approved, app, installOnApprove: false, scopeKey: scope }); return; }

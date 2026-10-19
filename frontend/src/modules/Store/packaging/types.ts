@@ -21,5 +21,5 @@ export type RepositoryAdapter = 'python' | 'java' | 'dotnet' | 'go' | 'rust' | '
 export interface RepositoryMetadata {
     url: string; commit: string; ref: string; subdirectory?: string; entrypoint: string;
     candidates: string[]; name: string; description: string; recommendedKind?: PackagingKind;
-    adapter?: RepositoryAdapter; supportedTargets?: string[];
+    adapter?: RepositoryAdapter; preparedAdapter?: 'opencode-rag-plugin'; preparedVersion?: string; supportedTargets?: string[];
 }

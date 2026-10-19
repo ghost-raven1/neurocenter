@@ -9,7 +9,7 @@ const ExtensionInstruction = lazy(() => import('./ExtensionInstruction'));
 const { Title, Paragraph } = Typography;
 const extensions = [
     { id: 'lsp', title: 'Работа с кодом', name: 'LSP', kind: 'Встроено в OpenCode', description: 'Навигация по файлам и символам, диагностика кода в OpenCode.', content: lspDoc, catalog: null },
-    { id: 'rag', title: 'Поиск по проекту', name: 'OpenCodeRAG', kind: 'MCP', description: 'Поиск по смыслу в локальной базе знаний проекта.', content: null, catalog: '/store?q=OpenCodeRAG' },
+    { id: 'rag', title: 'Поиск по проекту', name: 'OpenCodeRAG', kind: 'Плагин', description: 'Плагин MrDoe: поиск по смыслу, индексация и обработчики OpenCode.', content: null, catalog: `/store?q=${encodeURIComponent('OpenCodeRAG (плагин)')}` },
     { id: 'snip', title: 'Короткие ответы терминала', name: 'opencode-snip', kind: 'Плагин', description: 'Фильтрация вывода команд: меньше шума в контексте агента.', content: null, catalog: '/store?q=opencode-snip' },
 ];
 
@@ -68,13 +68,13 @@ const OpenCodeExtensions = ({ project }: { project?: string }) => {
                     <Paragraph>Выберите проект и установите {selected.name} через мост из карточки каталога.</Paragraph>
                     <Paragraph type="secondary">Каталог покажет состав готового комплекта, поддерживаемые платформы и разрешение на выбранную версию. После установки запуск проверяется отдельно.</Paragraph>
                     {selected.id === 'rag' && <>
-                        <Paragraph>После установки подготовьте индекс в той же связанной папке проекта:</Paragraph>
+                        <Paragraph>После установки откройте OpenCode в той же связанной папке проекта:</Paragraph>
                         <ol>
-                            <li>Откройте локальную настройку установленного MCP и укажите адрес сервиса эмбеддингов и модель.</li>
-                            <li>В OpenCode попросите помощника вызвать инструмент <Typography.Text code>index_project</Typography.Text>. Дождитесь завершения индексации.</li>
+                            <li>Убедитесь, что сервис эмбеддингов доступен. По умолчанию используется локальная модель qwen3-embedding:4b на http://127.0.0.1:11435/api.</li>
+                            <li>Перезапустите OpenCode. Плагин подключит свои инструменты и обработчики. Если конфигурации проекта нет, автоматическая индексация включена.</li>
                             <li>Вернитесь в «Базу знаний» этого проекта и нажмите «Синхронизировать с сервером».</li>
                         </ol>
-                        <Paragraph type="secondary">Индексирование запускается явно. Без настроенного сервиса эмбеддингов локальный индекс не создаётся.</Paragraph>
+                        <Paragraph type="secondary">Существующий opencode-rag.json сохраняется. Модель запускается отдельно; установка плагина не скачивает её веса. Адаптер MCP в каталоге — отдельный инструмент со своим локальным мастером настройки.</Paragraph>
                     </>}
                 </> : <Paragraph type="secondary">LSP встроен в OpenCode. Справка поможет проверить поддержку языка и настроить языковой сервер для проекта.</Paragraph>}
                 {selected?.content && <Suspense fallback={<Paragraph>Загружаем инструкцию…</Paragraph>}>

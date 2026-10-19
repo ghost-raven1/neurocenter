@@ -13,13 +13,14 @@ export function RepositoryMetadataDetails({ metadata, entrypoint }: { metadata: 
     return <div className="tool-packaging__source">
         <Typography.Text strong>{defaultPackagingTitle(metadata.name)}</Typography.Text>
         <Typography.Text type="secondary" title={metadata.commit}>Commit: {metadata.commit.slice(0, 12)}</Typography.Text>
+        {metadata.preparedAdapter && <Typography.Text>Совместимая сборка OpenCodeRAG {metadata.preparedVersion} · плагин OpenCode</Typography.Text>}
         {metadata.adapter ? <>
             <Typography.Text>{adapterLabels[metadata.adapter]}</Typography.Text>
             <Typography.Text type="secondary">Рецепт поставки: {metadata.entrypoint}</Typography.Text>
-            {!!metadata.supportedTargets?.length && <>
-                <Typography.Text type="secondary">Поддерживаемые платформы</Typography.Text>
-                <Space wrap>{metadata.supportedTargets.map(target => <Tag key={target}>{packagingPlatformLabels[target] || target}</Tag>)}</Space>
-            </>}
         </> : <Typography.Text type="secondary">Файл запуска: {entrypoint || 'выберите ниже'}</Typography.Text>}
+        {!!metadata.supportedTargets?.length && <>
+            <Typography.Text type="secondary">Поддерживаемые платформы</Typography.Text>
+            <Space wrap>{metadata.supportedTargets.map(target => <Tag key={target}>{packagingPlatformLabels[target] || target}</Tag>)}</Space>
+        </>}
     </div>;
 }

@@ -60,7 +60,7 @@ export function RuntimeProbeModal({item,bridge,canManage,onClose}: {item:IBridge
         <Space direction="vertical" size={16} className="local-operation">
             <Typography.Text>Папка: <strong>{item.folderName || 'Выбранная папка проекта'}</strong> · версия {item.version}</Typography.Text>
             <Alert type="warning" showIcon message="Диагностика выполняет одобренный код на вашем компьютере"
-                description="MCP проходит подключение и чтение списков инструментов, ресурсов и промптов. Плагины проходят инициализацию. У скиллов проверяется структура без запуска скриптов. Диагностика не устанавливает npm-пакеты, не начинает OAuth и не обращается к модели." />
+                description="MCP проходит подключение и чтение списков инструментов, ресурсов и промптов. Плагины проходят инициализацию и могут обращаться к настроенным сервисам, включая провайдер эмбеддингов. У скиллов проверяется структура без запуска скриптов. Диагностика не устанавливает npm-пакеты и не начинает OAuth." />
             {plan && <>
                 <Typography.Text strong>Точный одобренный комплект</Typography.Text>
                 <Typography.Text code className="local-operation__hash">SHA: {plan.manifest}</Typography.Text>

@@ -37,6 +37,7 @@ import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwne
 import { createProjectCatalogBatchController } from './projectCatalogBatch';
 import UnavailableProjectAssets from './UnavailableProjectAssets';
 import { unavailableProjectAssets } from './selectUnavailableProjectAssets';
+import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
 
 const { Text, Paragraph } = Typography;
 
@@ -124,6 +125,12 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         ready: !!bridge.device && !bridgeInstallError && !!targetProject && canInstall && !!binding
             && bridge.jobsReady && bridge.installationsReady && projectCatalogUsable,
         canApprove: canManage,
+        captureOwner,
+        prepareCatalog: (app, current) => prepareProjectCatalogInstall({
+            inProject: isToolInProject(app, targetProject?.id, assets), canManage, current,
+            add: () => bffApi.addProjectAsset(target!, { assetId: app.id, assetKind: app.kind }),
+            refresh: loadProject,
+        }),
         isPending: app => isPending(assetJobFor(app)) || !!localActionFor(app),
         planBlocker: plan => runtimeArtifactBlocker(plan,bridge.device),
         reload: bridge.reload,
@@ -261,10 +268,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         const installation=currentInstallation(bridge.installations,installTarget(app));
         const installLabel=pendingAction&&!['install','uninstall'].includes(pendingAction.kind)?'Дождитесь локального действия':pending?(job?.state==='reconciling'?'Сверяем результат':job?.kind==='uninstall'?'Удаление через мост…':job?.state==='queued'?'В очереди моста':'Устанавливается…'):installation?(installation.version===app.version?'Установить повторно':`Обновить до версии ${app.version}`):'Установить через мост';
         return <Space direction="vertical" style={{width:'100%'}}>
-            {target && canManage && !referenceBlocker && <Button size="small" block type={selected?'default':'primary'} loading={installing===app.id} disabled={!!installing||projectLoading||!projectCatalogUsable}
+            {target && canInstall && (selected || canManage && !referenceBlocker) && <Button size="small" block type="primary" disabled={!projectCatalogUsable||!!installing||projectLoading||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</Button>}
+            {target && canManage && !referenceBlocker && <Button size="small" block loading={installing===app.id} disabled={!!installing||!!localBusy||projectLoading||!projectCatalogUsable}
                 onClick={()=>{void doInstall(app,selected?'uninstall':'install');}}>{selected?'Убрать из каталога проекта':'Добавить в каталог проекта'}</Button>}
             {target && canManage && referenceBlocker && skillProject(app) !== targetProject?.id && <Text type="secondary">{referenceBlocker}</Text>}
-            {target && selected && canInstall && <Button size="small" block type="primary" disabled={!projectCatalogUsable||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</Button>}
             {target && selected && canManage && <Button size="small" block disabled={!!localBusy || projectLoading || !projectCatalogUsable}
                 onClick={() => { void localPlans.inspect(app); }}>Разрешение версии</Button>}
             {job&&<Text type={job.state==='failed'?'danger':'secondary'} role="status">{job.message}</Text>}
@@ -289,7 +296,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         if (referenceBlocker && skillProject(app) !== targetProject.id) { return referenceBlocker; }
         if (!canInstall) { return 'Установка требует доступной роли разработчика или администратора в выбранном проекте.'; }
         if (!projectCatalogUsable) { return projectCatalogError || 'Дождитесь загрузки каталога выбранного проекта.'; }
-        if (!isInProject(app)) { return canManage ? 'Добавьте инструмент в каталог выбранного проекта. Затем его можно установить на компьютер через мост.' : 'Сначала администратор должен добавить инструмент в каталог выбранного проекта.'; }
+        if (!isInProject(app) && !canManage) { return 'Сначала администратор должен добавить инструмент в каталог выбранного проекта.'; }
         if (bridgeInstallError) { return bridgeInstallError; }
         if (!binding) { return 'Свяжите папку выбранного проекта на странице «Проекты».'; }
         if (!bridge.jobsReady || !bridge.installationsReady) { return 'Дождитесь загрузки заданий и установок. При ошибке обновите данные подключения.'; }
@@ -415,11 +422,11 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
             <StoreDetailsModal viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}
                 projectName={target ?? undefined}
-                onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) ? () => { void doInstall(viewApp, 'install'); } : undefined}
+                onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}
                 onChooseProjectFolder={viewApp && targetProject && canInstall && isInProject(viewApp) && bridge.device && !bridgeInstallError && !binding ? () => { setViewApp(null); history.push('/projects'); } : undefined}
-                onInstall={viewApp&&canInstall&&projectCatalogUsable&&!bridgeInstallError&&binding&&bridge.jobsReady&&bridge.installationsReady&&isInProject(viewApp)&&!(isPending(assetJobFor(viewApp))&&assetJobFor(viewApp)?.kind==='uninstall')?version=>{void localInstall({...viewApp,version});}:undefined}
-                installStatus={viewApp?jobFor(viewApp):undefined} installBusy={!!localBusy} installUnavailableReason={viewApp?installationUnavailableReason(viewApp):undefined}/>
+                onInstall={viewApp&&canInstall&&projectCatalogUsable&&!bridgeInstallError&&binding&&bridge.jobsReady&&bridge.installationsReady&&(isInProject(viewApp)||canManage&&!projectSkillReferenceBlocker(viewApp,targetProject?.id))&&!(isPending(assetJobFor(viewApp))&&assetJobFor(viewApp)?.kind==='uninstall')?version=>{void localInstall({...viewApp,version});}:undefined}
+                installStatus={viewApp?jobFor(viewApp):undefined} installBusy={!!localBusy||!!installing} installUnavailableReason={viewApp?installationUnavailableReason(viewApp):undefined}/>
 
             <InstallPlanModal plan={localPlans.review?.plan ?? null} name={localPlans.review?.app.name}
                 projectName={targetProject?.name} canApprove={canManage} busy={!!localBusy}

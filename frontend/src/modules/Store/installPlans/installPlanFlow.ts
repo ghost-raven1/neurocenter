@@ -7,6 +7,7 @@ export interface IPlanFlowApi {
 export interface IPlanExecution {
     api: IPlanFlowApi;
     current(): boolean;
+    prepareCatalog?(): Promise<boolean>;
     enqueue(plan: IInstallPlan): Promise<void>;
 }
 
@@ -22,6 +23,8 @@ function assertPlan(plan: IInstallPlan, expected: IInstallPlanInput): void {
 
 /** Одобренный пакет отправляется сразу; остальные возвращаются для явного просмотра. */
 export async function prepareInstallation(input: IInstallPlanInput, execution: IPlanExecution, reviewOnly = false): Promise<IInstallPlan | undefined> {
+    if (!reviewOnly && execution.prepareCatalog && !await execution.prepareCatalog()) { return; }
+    if (!execution.current()) { return; }
     const plan = await execution.api.preparePlan(input);
     if (!execution.current()) { return; }
     assertPlan(plan, input);

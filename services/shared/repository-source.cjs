@@ -3,6 +3,7 @@ const {createHash}=require('node:crypto');
 const {portablePath}=require('./runtime-artifacts.cjs');
 const {validateRuntimeSource,runtimeSourceTargets}=require('./tool-runtime-source.cjs');
 const {isSourceEntrypoint,SOURCE_EXTENSIONS}=require('./source-entrypoint.cjs');
+const {RAG_PLUGIN_SOURCE,isPreparedRagRepository}=require('./opencode-rag-source.cjs');
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
 const commitPattern=/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
@@ -114,6 +115,13 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
   return {...result(manifestName,[manifestName],manifest),recommendedKind:'mcp',adapter:manifest.source.adapter,
    supportedTargets:runtimeSourceTargets(manifest.source),runtimeSource:manifest.source,manifestSha256:createHash('sha256').update(bytes).digest('hex')};
  };
+ if(isPreparedRagRepository({...source,commit})){
+  const prepared=RAG_PLUGIN_SOURCE;
+  const entry=await githubJson(fetcher,contentsPath(prepared.entrypoint),{optional:true});
+  if(!object(entry)||entry.type!=='file'||!Number.isSafeInteger(entry.size)||entry.size<1||entry.size>1048576)throw new Error('Файл плагина OpenCodeRAG отсутствует в закреплённом commit.');
+  return {...result(prepared.entrypoint,[prepared.entrypoint],{name:'OpenCodeRAG (плагин)',description:'Плагин OpenCodeRAG от MrDoe: инструменты поиска, hooks и автоматическое индексирование. Совместимая сборка для OpenCode 1.x без интерфейса TUI OpenCode V2.'}),
+   recommendedKind:'plugin',preparedAdapter:prepared.adapter,preparedVersion:prepared.version,supportedTargets:[...prepared.supportedTargets]};
+ }
  if(source.entrypoint===manifestName)return manifestResult(await githubJson(fetcher,contentsPath(manifestName)));
  if(source.entrypoint&&!includeMetadata){
   const entry=await githubJson(fetcher,contentsPath(source.entrypoint),{optional:true});

@@ -15,6 +15,7 @@ import { RuntimeArtifacts, runtimeArtifactDirectory } from '../runtime-artifacts
 import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { resolveRepositorySource, validateRepositorySource, type RepositoryInput } from '../../../shared/repository-source.cjs';
 import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
+import { RAG_PLUGIN_SOURCE, isPreparedRagRepository } from '../../../shared/opencode-rag-source.cjs';
 import { builderScript, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
 import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
@@ -192,6 +193,12 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const supported = runtimeSourceTargets(source.runtimeSource);
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = supported;}
             else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('В neurocenter.tool.json нет комплекта для одной из выбранных платформ. Выберите поддерживаемые платформы.');}
+        }
+        if (source.type === 'repository' && isPreparedRagRepository(source)) {
+            if (input.kind !== 'plugin') {throw new BadRequestException('OpenCodeRAG из этого репозитория устанавливается как плагин. Для MCP используйте отдельную карточку OpenCodeRAG.');}
+            const supported = RAG_PLUGIN_SOURCE.supportedTargets;
+            if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...supported];}
+            else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('Для плагина OpenCodeRAG нет готового комплекта Intel Mac. Выберите поддерживаемые платформы.');}
         }
         await this.requireMain(actor);
         const lease = this.currentLease();

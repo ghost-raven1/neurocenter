@@ -1,6 +1,7 @@
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { additionalSourceTargets, validateAdditionalSource } from './source-adapters.mjs';
 import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
+import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) => object(value) && Object.keys(value).every(key => keys.includes(key));
@@ -52,7 +53,11 @@ export function validateRecipe(input) {
         }
         javascriptEntrypoint(source.entrypoint);
     } else { normalizedSource = validateAdditionalSource(source) ?? source; }
-    const supported = additionalSourceTargets(source) ?? runtime.TARGETS;
+    if (input.kind !== 'plugin' && (normalizedSource.type === 'prepared' && normalizedSource.adapter === 'opencode-rag-plugin'
+        || normalizedSource.type === 'repository' && ragSource.isPreparedRagRepository(normalizedSource))) {
+        throw new Error('Совместимый OpenCodeRAG из GitHub подключается как plugin. Для MCP используйте отдельный адаптер opencode-rag.');
+    }
+    const supported = additionalSourceTargets(normalizedSource) ?? runtime.TARGETS;
     const targets = input.targets ?? supported;
     if (!Array.isArray(targets) || !targets.length || targets.length > 8 || new Set(targets).size !== targets.length
         || targets.some(target => !runtime.TARGETS.includes(target) || !supported.includes(target))) {

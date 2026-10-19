@@ -8,6 +8,7 @@ import { npmTools, filePlugins } from './generic.mjs';
 import { additionalSourceTargets } from './source-adapters.mjs';
 import { validateRecipe } from './recipe-schema.mjs';
 import { RAG_REVISION } from './recipes/opencode-rag.mjs';
+import { RAG_PLUGIN_REVISION } from './recipes/opencode-rag-plugin.mjs';
 import { SNIP_VERSION, SNIP_PLUGIN_VERSION } from './recipes/opencode-snip.mjs';
 
 /** Встроенный каталог задаёт только рецепты; упаковка совпадает с любым пользовательским расширением. */
@@ -17,6 +18,8 @@ export function builtinRecipes() {
         ...filePlugins.map(tool => ({ key: tool.key, name: tool.name, kind: 'plugin', description: tool.description, tags: tool.tags, revision: `${tool.revision ?? '1.0.0'}-pack.1` })),
         { key: 'opencode-rag', name: 'OpenCodeRAG', kind: 'mcp', revision: RAG_REVISION, tags: ['RAG', 'npm', 'Локальная настройка'],
             description: 'Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project; модель эмбеддингов настраивается локальным мастером. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.' },
+        { key: 'opencode-rag-plugin', name: 'OpenCodeRAG (плагин)', kind: 'plugin', revision: RAG_PLUGIN_REVISION, tags: ['RAG', 'GitHub', 'Автоиндексация'],
+            description: 'Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память и hooks OpenCode 1. Без конфига использует локальную qwen3-embedding:4b на порту 11435 и автоиндексацию; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.' },
         { key: 'opencode-snip', name: 'opencode-snip', kind: 'plugin', revision: `${SNIP_PLUGIN_VERSION}+snip.${SNIP_VERSION}.pack.1`, tags: ['Терминал', 'GitHub Releases', 'Готовый комплект'],
             description: 'Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.' },
     ];

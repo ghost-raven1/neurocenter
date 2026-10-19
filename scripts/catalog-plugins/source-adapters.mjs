@@ -6,6 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { installDependencies } from './recipes/upstream.mjs';
 import { prepareOpenCodeRag, RAG_SUPPORTED_TARGETS } from './recipes/opencode-rag.mjs';
+import { prepareOpenCodeRagPlugin } from './recipes/opencode-rag-plugin.mjs';
 import { prepareOpenCodeSnip } from './recipes/opencode-snip.mjs';
 import { npmTools, filePlugins, prepareNpmTool, filePluginPublication } from './generic.mjs';
 import repositorySource from '../../services/shared/repository-source.cjs';
@@ -13,6 +14,7 @@ import { prepareRepository } from './repository-source.mjs';
 import runtimeSource from '../../services/shared/tool-runtime-source.cjs';
 import { downloadRuntimeAsset, inspectRuntimeSource, prepareRuntimeSource } from './runtime-source.mjs';
 import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
+import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const exact = (value, keys) => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).every(key => keys.includes(key));
@@ -22,7 +24,7 @@ const localDirectory = value => typeof value === 'string' && (value === '.' || r
 /** Источник меняет подготовку дерева, но не формат архива, одобрение или установку. */
 export function validateAdditionalSource(source) {
     if (source.type === 'prepared') {
-        if (!exact(source, ['type', 'adapter']) || !['opencode-rag', 'opencode-snip', ...npmTools.map(tool => tool.key), ...filePlugins.map(tool => tool.key)].includes(source.adapter)) throw new Error('Неизвестный подготовленный адаптер.');
+        if (!exact(source, ['type', 'adapter']) || !['opencode-rag', 'opencode-rag-plugin', 'opencode-snip', ...npmTools.map(tool => tool.key), ...filePlugins.map(tool => tool.key)].includes(source.adapter)) throw new Error('Неизвестный подготовленный адаптер.');
     } else if (source.type === 'repository') {
         return repositorySource.validateRepositorySource(source);
     } else if (source.type === 'runtime') {
@@ -40,7 +42,8 @@ export function validateAdditionalSource(source) {
 }
 
 export function additionalSourceTargets(source) {
-    if (source.type === 'prepared' && source.adapter === 'opencode-rag') return RAG_SUPPORTED_TARGETS;
+    if (source.type === 'prepared' && ['opencode-rag', 'opencode-rag-plugin'].includes(source.adapter)) return RAG_SUPPORTED_TARGETS;
+    if (source.type === 'repository' && ragSource.isPreparedRagRepository(source)) return RAG_SUPPORTED_TARGETS;
     if (source.type === 'release') return Object.keys(source.assets);
     if (source.type === 'runtime') return runtimeSource.runtimeSourceTargets(source);
     if (source.type === 'repository' && source.runtimeSource) return runtimeSource.runtimeSourceTargets(source.runtimeSource);
@@ -201,10 +204,12 @@ export async function extractRelease(archive, asset, directory) {
 export async function prepareAdditionalSource(recipe, context) {
     const source = recipe.source;
     if (source.type === 'project') return prepareProject(recipe, context);
-    if (source.type === 'repository') return prepareRepository(recipe, context, { extractRelease, prepareProject });
+    if (source.type === 'repository') return ragSource.isPreparedRagRepository(source)
+        ? prepareOpenCodeRagPlugin(context) : prepareRepository(recipe, context, { extractRelease, prepareProject });
     if (source.type === 'runtime') return prepareRuntimeSource(recipe, context, { extractRelease });
     if (source.type === 'prepared') {
         if (source.adapter === 'opencode-rag') return prepareOpenCodeRag(context);
+        if (source.adapter === 'opencode-rag-plugin') return prepareOpenCodeRagPlugin(context);
         if (source.adapter === 'opencode-snip') return prepareOpenCodeSnip(context);
         const npm = npmTools.find(tool => tool.key === source.adapter);
         if (npm) return prepareNpmTool(npm, context.directory);

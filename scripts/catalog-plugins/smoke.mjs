@@ -41,6 +41,20 @@ export async function smokeCatalog(manifestFile) {
             }
             if (publication.kind === 'plugin') {
                 const plugin = (await import(pathToFileURL(entrypoint))).default;
+                if (tool.key === 'opencode-rag-plugin') {
+                    // Общий smoke проверяет загрузку без модели; автоиндекс и поиск покрывает native smoke.
+                    const config = path.join(project, 'opencode-rag.json');
+                    await fs.writeFile(config, JSON.stringify({ embedding: { vectorDimension: 4 }, openCode: { autoIndex: { enabled: false } },
+                        description: { enabled: false }, imageDescription: { enabled: false }, logging: { level: 'none' } }), { flag: 'wx' });
+                    try {
+                        const hooks = await plugin({ directory: project });
+                        assert.ok(hooks.tool.search_semantic);
+                        assert.ok(hooks.tool.get_file_skeleton);
+                        assert.equal(typeof hooks['chat.message'], 'function');
+                        report.push({ key: tool.key, initialized: true, hook: true, tools: Object.keys(hooks.tool).length });
+                    } finally { await fs.rm(config, { force: true }); }
+                    continue;
+                }
                 const hooks = await plugin({ directory: project });
                 if (tool.key === 'opencode-snip') {
                     const output = { args: { command: 'git status' } };

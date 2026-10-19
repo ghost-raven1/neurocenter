@@ -27,8 +27,8 @@ export const RAG_LOCAL_CONFIGURATION = Object.freeze({ schemaVersion: 1, fields:
         target: { kind: 'env', name: 'NEUROCENTER_RAG_EMBEDDING_KEY' } },
 ] });
 
-/** Автономная поставка upstream MCP с явным индексированием и локальной настройкой модели. */
-export async function prepareOpenCodeRag({ target, directory }) {
+/** Общее закреплённое ядро MCP и плагина; зависимости устанавливаются только на площадке. */
+export async function prepareOpenCodeRagRuntime({ target, directory, dependencies = RAG_DEPENDENCIES, lock = 'opencode-rag.json' }) {
     if (!RAG_SUPPORTED_TARGETS.includes(target)) {
         throw new Error(target === 'darwin-x64' ? 'OpenCodeRAG: upstream LanceDB 0.29.0 не публикует native runtime для Intel Mac.' : 'Неизвестная платформа: ' + target);
     }
@@ -38,14 +38,20 @@ export async function prepareOpenCodeRag({ target, directory }) {
     try {
         await extract(archive, temporary);
         await fs.cp(path.join(temporary, 'package'), path.join(directory, 'upstream'), { recursive: true });
-        await fs.copyFile(fileURLToPath(new URL('../locks/opencode-rag.json', import.meta.url)), path.join(directory, 'package-lock.json'));
-        await installDependencies(directory, RAG_DEPENDENCIES, target);
-        for (const name of ['rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs']) {
-            await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(directory, name));
-        }
-        return { entrypoint: 'rag-mcp.mjs', kind: 'mcp', mode: 'mcp',
-            config: { transport: 'stdio', command: 'node', entrypoint: 'rag-mcp.mjs', args: [], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION } },
-            upstream: { version: RAG_VERSION, archiveSha256: sha256 },
-            limitations: ['MCP tools; без TUI и автоматических hooks OpenCode V2.', 'Индекс создаётся только явным вызовом index_project.'] };
+        await fs.copyFile(fileURLToPath(new URL('../locks/' + lock, import.meta.url)), path.join(directory, 'package-lock.json'));
+        await installDependencies(directory, dependencies, target);
+        return { version: RAG_VERSION, archiveSha256: sha256 };
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+}
+
+/** Автономная поставка upstream MCP с явным индексированием и локальной настройкой модели. */
+export async function prepareOpenCodeRag(context) {
+    const upstream = await prepareOpenCodeRagRuntime(context);
+    for (const name of ['rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs']) {
+        await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(context.directory, name));
+    }
+    return { entrypoint: 'rag-mcp.mjs', kind: 'mcp', mode: 'mcp',
+        config: { transport: 'stdio', command: 'node', entrypoint: 'rag-mcp.mjs', args: [], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION } },
+        upstream,
+        limitations: ['MCP tools; без TUI и автоматических hooks OpenCode V2.', 'Индекс создаётся только явным вызовом index_project.'] };
 }

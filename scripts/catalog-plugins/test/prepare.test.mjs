@@ -6,6 +6,7 @@ import { afterEach, test } from 'node:test';
 import { builtinRecipes, parsePrepareArguments, prepareCatalog } from '../prepare.mjs';
 import { readyManifest } from '../manifest.mjs';
 import { validateRecipe } from '../recipe-schema.mjs';
+import ragSource from '../../../services/shared/opencode-rag-source.cjs';
 
 const roots = [];
 afterEach(async () => { for (const root of roots.splice(0)) { await fs.rm(root, { recursive: true, force: true }); } });
@@ -13,8 +14,8 @@ async function fixture() { const root = await fs.realpath(await fs.mkdtemp(path.
 
 test('Все встроенные инструменты являются рецептами единого builder с новой ревизией упаковки', () => {
     const recipes = builtinRecipes();
-    assert.equal(recipes.length, 7);
-    assert.equal(new Set(recipes.map(recipe => recipe.key)).size, 7);
+    assert.equal(recipes.length, 8);
+    assert.equal(new Set(recipes.map(recipe => recipe.key)).size, 8);
     for (const recipe of recipes) {
         assert.equal(validateRecipe(recipe).source.type, 'prepared');
         assert.match(recipe.revision, /pack\.\d+$/);
@@ -23,19 +24,36 @@ test('Все встроенные инструменты являются рец
     assert.equal(recipes.find(recipe => recipe.key === 'project-context').revision, '1.0.1-pack.1');
     assert.equal(recipes.find(recipe => recipe.key === 'git-context').revision, '1.0.0-pack.1');
     assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.4');
+    const ragPlugin = validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag-plugin'));
+    assert.equal(ragPlugin.kind, 'plugin');
+    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.3');
+    assert.equal(ragPlugin.targets.length, 7);
+    assert.ok(!ragPlugin.targets.includes('darwin-x64'));
+    assert.throws(() => validateRecipe({ ...ragPlugin, kind: 'mcp' }), /подключается как plugin/);
 });
 
-test('Общий dry-run проверяет семь рецептов и не создаёт output или сетевую сессию', async () => {
+test('Общий dry-run проверяет восемь рецептов и не создаёт output или сетевую сессию', async () => {
     const f = await fixture();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => { throw new Error('Dry-run обратился к сети'); };
     try {
         const result = await prepareCatalog({ output: f.output, dryRun: true });
         assert.equal(result.dryRun, true);
-        assert.equal(result.tools.length, 7);
+        assert.equal(result.tools.length, 8);
         assert.ok(result.tools.every(tool => tool.dryRun));
         await assert.rejects(fs.access(f.output), { code: 'ENOENT' });
     } finally { globalThis.fetch = originalFetch; }
+});
+
+test('Закреплённый GitHub OpenCodeRAG использует те же семь платформ совместимого плагина', () => {
+    const { url, commit, entrypoint } = ragSource.RAG_PLUGIN_SOURCE;
+    const input = { schemaVersion: 1, key: 'github-rag', name: 'GitHub RAG', kind: 'plugin', revision: '2.4.4-plugin.pack.3',
+        description: 'Совместимая поставка', source: { type: 'repository', url, commit, entrypoint } };
+    assert.equal(validateRecipe(input).targets.length, 7);
+    assert.equal(validateRecipe({ ...input, source: { ...input.source, url: 'https://github.com/MrDoe/OpenCodeRAG' } }).targets.length, 7);
+    assert.throws(() => validateRecipe({ ...input, kind: 'mcp' }), /подключается как plugin/);
+    assert.throws(() => validateRecipe({ ...input, targets: ['darwin-x64'] }), /неподдерживаемую/);
+    assert.equal(validateRecipe({ ...input, source: { ...input.source, commit: 'a'.repeat(40) } }).targets.length, 8);
 });
 
 test('Встроенные JS-плагины проходят ту же упаковку и корректные пути общего manifest', async () => {
@@ -53,7 +71,8 @@ test('Встроенные JS-плагины проходят ту же упак
 
 test('Неизвестные и несовместимые фильтры отклоняются до создания общей папки', async () => {
     const f = await fixture();
-    for (const options of [{ only: ['missing'] }, { only: [] }, { only: ['memory', 'memory'] }, { targets: ['missing'] }, { only: ['opencode-rag'], targets: ['darwin-x64'] }]) {
+    for (const options of [{ only: ['missing'] }, { only: [] }, { only: ['memory', 'memory'] }, { targets: ['missing'] },
+        { only: ['opencode-rag'], targets: ['darwin-x64'] }, { only: ['opencode-rag-plugin'], targets: ['darwin-x64'] }]) {
         await assert.rejects(prepareCatalog({ output: f.output, ...options }));
         await assert.rejects(fs.access(f.output), { code: 'ENOENT' });
     }
