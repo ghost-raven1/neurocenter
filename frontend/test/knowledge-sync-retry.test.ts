@@ -28,11 +28,12 @@ const hooks = vi.hoisted(() => {
 });
 const ui = vi.hoisted(() => ({
     projectId: 'project-a', owner: 'owner-a', owners: new Map<string, () => () => boolean>(),
-    buttons: new Map<string, {disabled?: boolean; onClick: () => void}>(), errors: [] as string[],
+    buttons: new Map<string, {disabled?: boolean; onClick: () => void}>(), errors: [] as string[], warnings: [] as string[],
     bridge: {device: {id: 'device-a', name: 'Компьютер', role: 'Разработчик', online: true, report: {
-        protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-sync-v1'],
-        bindings: [{projectId: 'project-a', bindingId: 'a'.repeat(64), valid: true}, {projectId: 'project-b', bindingId: 'b'.repeat(64), valid: true}],
-    }}, devicesReady: true, jobsReady: true, installationsReady: true, jobs: [], reload: vi.fn(async () => undefined)},
+        root: '/fixture/root', protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-sync-v1'],
+        bindings: [{projectId: 'project-a', bindingId: 'a'.repeat(64), instanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', valid: true}, {projectId: 'project-b', bindingId: 'b'.repeat(64), instanceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', valid: true}],
+    }}, devicesReady: true, jobsReady: true, installationsReady: true, loading: false, jobs: [] as IBridgeJob[],
+        errors: {devices: '', jobs: '', installations: ''}, reload: vi.fn(async () => undefined)},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(),
     useState: hooks.useState, useRef: hooks.useRef, useEffect: hooks.useEffect,
@@ -48,12 +49,15 @@ vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi', () => ({OpenCodeRagUi: 
 vi.mock('react-router-dom', () => ({Link: () => null}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children;
-    return {Space: content, Typography: {Text: content}, Alert: ({type, message}: {type: string; message: string}) => {if (type === 'error') ui.errors.push(message); return null;},
+    return {Space: content, Typography: {Text: content}, Alert: ({type, message, description}: {type: string; message: string; description?: string}) => {
+        if (type === 'error') ui.errors.push(message); if (type === 'warning') ui.warnings.push(message + ' ' + (description || '')); return null;},
         Button: (props: {children: ReactNode; disabled?: boolean; onClick: () => void}) => {ui.buttons.set(String(props.children), props); return null;}};
 });
 const sync = 'Синхронизировать с сервером', restore = 'Скачать в проект через мост';
-const job = (id: string, state: IBridgeJob['state'] = 'queued') => ({id, state}) as IBridgeJob;
-function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: true, serverReady: true})); hooks.commit();}
+const job = (id: string, state: IBridgeJob['state'] = 'queued') => ({id, state, deviceId: ui.bridge.device.id, projectId: ui.projectId,
+    kind: 'sync-rag', bindingId: ui.bridge.device.report.bindings.find(item => item.projectId === ui.projectId)!.bindingId,
+    message: 'Ожидает моста', createdAt: '', updatedAt: ''}) as IBridgeJob;
+function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: true, serverReady: true})); hooks.commit();}
 function click(label = sync) {const button = ui.buttons.get(label)!; expect(button.disabled).toBe(false); button.onClick();}
 async function flush() {for (let index = 0; index < 12; index++) await Promise.resolve();}
 function deferred() {
@@ -64,6 +68,8 @@ function deferred() {
 beforeEach(() => {
     vi.resetAllMocks(); ui.projectId = 'project-a'; ui.owner = 'owner-a'; ui.owners.clear();
     ui.bridge.device.id = 'device-a'; ui.bridge.device.report.bindings[0].bindingId = 'a'.repeat(64);
+    ui.bridge.device.report.root = '/fixture/root'; ui.bridge.device.report.bindings[0].instanceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    ui.bridge.jobs = []; ui.bridge.devicesReady = true; ui.bridge.jobsReady = true; ui.bridge.loading = false; ui.bridge.errors.jobs = '';
     ui.bridge.reload.mockResolvedValue(undefined);
 });
 afterEach(() => {hooks.dispose(); vi.unstubAllGlobals();});
@@ -72,7 +78,7 @@ describe('Повтор синхронизации сохраняет неопр�
     it.each([sync, restore])('%s: принятый POST с потерянным ответом повторяется даже после завершения job', async label => {
         const accepted = new Map<string, IBridgeJob>(); let lost = true;
         vi.mocked(bridgeApi.create).mockImplementation(async input => {
-            if (!accepted.has(input.requestKey)) accepted.set(input.requestKey, job('job-' + (accepted.size + 1)));
+            if (!accepted.has(input.requestKey)) accepted.set(input.requestKey, {...job('job-' + (accepted.size + 1)), kind: input.kind});
             const saved = accepted.get(input.requestKey)!;
             if (lost) {lost = false; saved.state = 'succeeded'; throw new Error('Ответ потерян после принятия задания');}
             return saved;
@@ -91,7 +97,7 @@ describe('Повтор синхронизации сохраняет неопр�
         expect(new Set(keys).size).toBe(3);
     });
 
-    it.each(['project', 'device', 'binding', 'owner'])('Смена %s и возврат не возвращают ключ прежнего контекста', async change => {
+    it.each(['project', 'device', 'binding', 'owner', 'root', 'instance'])('Смена %s и возврат не возвращают ключ прежнего контекста', async change => {
         vi.mocked(bridgeApi.create).mockRejectedValue(new Error('Нет ответа'));
         render(); click(); await flush();
         const alter = (changed: boolean) => {
@@ -99,6 +105,8 @@ describe('Повтор синхронизации сохраняет неопр�
             if (change === 'device') ui.bridge.device.id = changed ? 'device-b' : 'device-a';
             if (change === 'binding') ui.bridge.device.report.bindings[0].bindingId = (changed ? 'c' : 'a').repeat(64);
             if (change === 'owner') ui.owner = changed ? 'owner-b' : 'owner-a';
+            if (change === 'root') ui.bridge.device.report.root = changed ? '/fixture/other' : '/fixture/root';
+            if (change === 'instance') ui.bridge.device.report.bindings[0].instanceId = changed ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' : 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
         };
         alter(true); render(); click(); await flush(); alter(false); render(); click(); await flush();
         expect(new Set(vi.mocked(bridgeApi.create).mock.calls.map(([input]) => input.requestKey)).size).toBe(3);
@@ -124,7 +132,7 @@ describe('Повтор синхронизации сохраняет неопр�
         render(); click(); ui.projectId = 'project-b'; render(); render(); click(); render();
         if (outcome === 'success') old.resolve(job('old')); else old.reject(new Error('Старый отказ'));
         await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(true); expect(ui.errors).toEqual([]); expect(ui.bridge.reload).not.toHaveBeenCalled();
-        current.resolve(job('current')); await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(false); expect(ui.bridge.reload).toHaveBeenCalledOnce();
+        current.resolve(job('current', 'succeeded')); await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(false); expect(ui.bridge.reload).toHaveBeenCalledOnce();
     });
 
     it.each(['success', 'failure'])('Отзыв владельца до render игнорирует старый %s', async outcome => {
@@ -141,13 +149,126 @@ describe('Повтор синхронизации сохраняет неопр�
         pending.resolve(job('accepted')); await flush();
     });
 
-    it('Задержка чтения очереди не удерживает принятую отправку; отказ чтения отличается от POST', async () => {
+    it('Принятый queued ACK блокирует повтор до терминального результата, даже при отказе чтения', async () => {
         const reload = deferred(); ui.bridge.reload.mockReturnValue(reload.promise as unknown as Promise<void>);
-        vi.mocked(bridgeApi.create).mockResolvedValue(job('accepted'));
-        render(); click(); await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+        const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
+        render(); click(); await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(true);
         reload.reject(new Error('Чтение недоступно')); await flush(); render(); expect(ui.errors.join()).toContain('Задание принято');
+        ui.buttons.get(sync)!.onClick(); await flush(); expect(bridgeApi.create).toHaveBeenCalledOnce();
+        ui.bridge.jobs = [{...accepted, state: 'succeeded'}]; render();
         click(); await flush();
         const keys = vi.mocked(bridgeApi.create).mock.calls.map(([input]) => input.requestKey);
         expect(keys[1]).not.toBe(keys[0]);
+    });
+
+    it('Повтор обработчика после ACK до render не создаёт вторую тяжёлую операцию', async () => {
+        const reload = deferred(); ui.bridge.reload.mockReturnValue(reload.promise as unknown as Promise<void>);
+        vi.mocked(bridgeApi.create).mockResolvedValue(job('accepted')); render();
+        const action = ui.buttons.get(sync)!.onClick; action(); await flush(); action(); await flush();
+        expect(bridgeApi.create).toHaveBeenCalledOnce();
+    });
+
+    it.each([sync, restore])('%s: потерянный ACK повторяет тот же ключ, принятый повтор блокирует оба направления', async label => {
+        const accepted = {...job('accepted'), kind: label === sync ? 'sync-rag' : 'restore-rag'};
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ потерян')).mockResolvedValue(accepted);
+        render(); click(label); await flush(); render(); click(label); await flush(); render();
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0].requestKey).toBe(vi.mocked(bridgeApi.create).mock.calls[0][0].requestKey);
+        expect(ui.buttons.get(sync)!.disabled).toBe(true); expect(ui.buttons.get(restore)!.disabled).toBe(true);
+        ui.buttons.get(sync)!.onClick(); ui.buttons.get(restore)!.onClick(); await flush();
+        expect(bridgeApi.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('Непроверенный терминальный снимок не снимает барьер принятого задания', async () => {
+        const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
+        render(); click(); await flush(); ui.bridge.jobs = [{...accepted, state: 'succeeded'}];
+        ui.bridge.jobsReady = false; ui.bridge.errors.jobs = 'Не удалось прочитать очередь'; render();
+        expect(ui.buttons.get(sync)!.disabled).toBe(true);
+        ui.bridge.jobsReady = true; ui.bridge.errors.jobs = ''; render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+
+    it('Подтверждённый терминальный итог не воскресает как queued после отказа чтения', async () => {
+        const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
+        render(); click(); await flush(); render();
+        ui.bridge.jobs = [{...accepted, state: 'succeeded'}]; render(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+        ui.bridge.jobsReady = false; ui.bridge.errors.jobs = 'Очередь временно недоступна'; ui.bridge.jobs = []; render();
+        expect(ui.buttons.has('Обновить состояние задания')).toBe(false);
+        ui.bridge.jobsReady = true; ui.bridge.errors.jobs = ''; render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+
+    it('Выпавший из последних ста записей итог сверяется тем же ключом, без новой операции', async () => {
+        const accepted = job('accepted');
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(accepted).mockResolvedValue({...accepted, state: 'succeeded'});
+        render(); click(); await flush(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(true);
+        ui.buttons.get('Обновить состояние задания')!.onClick(); await flush(); render();
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(vi.mocked(bridgeApi.create).mock.calls[0][0]);
+        expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+
+    it('Пустой список и чужой результат сверки не разрешают повтор тяжёлой операции', async () => {
+        const accepted = job('accepted');
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(accepted).mockResolvedValue({...accepted, id: 'another', state: 'succeeded'});
+        render(); click(); await flush(); render(); ui.buttons.get('Обновить состояние задания')!.onClick(); await flush(); render();
+        expect(ui.buttons.get(sync)!.disabled).toBe(true); expect(ui.errors.join()).toContain('исходное задание');
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0].requestKey).toBe(vi.mocked(bridgeApi.create).mock.calls[0][0].requestKey);
+    });
+
+    it('Двойное обновление сверяет одно исходное задание; поздний итог другого проекта игнорируется', async () => {
+        const accepted = job('accepted'), pending = deferred();
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(accepted).mockReturnValue(pending.promise);
+        render(); click(); await flush(); render(); const refresh = ui.buttons.get('Обновить состояние задания')!.onClick;
+        refresh(); refresh(); expect(bridgeApi.create).toHaveBeenCalledTimes(2);
+        ui.projectId = 'project-b'; render(); render(); pending.resolve({...accepted, state: 'succeeded'}); await flush(); render();
+        expect(ui.bridge.reload).toHaveBeenCalledOnce(); expect(ui.buttons.get(sync)!.disabled).toBe(false); expect(ui.errors).toEqual([]);
+    });
+
+    it('Поздний queued ответ сверки не затирает уже подтверждённый терминальный итог', async () => {
+        const accepted = job('accepted'), pending = deferred();
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(accepted).mockReturnValue(pending.promise);
+        render(); click(); await flush(); render(); ui.buttons.get('Обновить состояние задания')!.onClick();
+        ui.bridge.jobs = [{...accepted, state: 'succeeded'}]; render(); render();
+        ui.bridge.jobsReady = false; ui.bridge.jobs = []; render(); pending.resolve(accepted); await flush(); render();
+        ui.bridge.jobsReady = true; render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+
+    it('Отказ прав при сверке виден, а восстановленный доступ использует тот же ключ', async () => {
+        const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValueOnce(accepted)
+            .mockRejectedValueOnce(new Error('Доступ к исходному заданию запрещён')).mockResolvedValue({...accepted, state: 'failed'});
+        render(); click(); await flush(); render(); ui.buttons.get('Обновить состояние задания')!.onClick(); await flush(); render();
+        expect(ui.errors.join()).toContain('Доступ к исходному заданию запрещён'); expect(ui.buttons.get(sync)!.disabled).toBe(true);
+        ui.buttons.get('Обновить состояние задания')!.onClick(); await flush(); render();
+        expect(ui.buttons.get(sync)!.disabled).toBe(false);
+        expect(new Set(vi.mocked(bridgeApi.create).mock.calls.map(([input]) => input.requestKey)).size).toBe(1);
+    });
+
+    it('Чужой ACK сохраняет неопределённый ключ и не выдаётся за принятое задание', async () => {
+        const accepted = job('accepted');
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce({...accepted, bindingId: 'f'.repeat(64)}).mockResolvedValue(accepted);
+        render(); click(); await flush(); render(); expect(ui.errors.join()).toContain('неполное подтверждение');
+        click(); await flush(); render();
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0].requestKey).toBe(vi.mocked(bridgeApi.create).mock.calls[0][0].requestKey);
+        expect(ui.buttons.get(sync)!.disabled).toBe(true);
+    });
+
+    it('Поздний ACK первого проекта после A→B→A не возвращает старое задание', async () => {
+        const pending = deferred(), accepted = job('old'); vi.mocked(bridgeApi.create).mockReturnValue(pending.promise);
+        render(); click(); ui.projectId = 'project-b'; render(); ui.projectId = 'project-a'; render();
+        pending.resolve(accepted); await flush(); render();
+        expect(ui.bridge.reload).not.toHaveBeenCalled(); expect(ui.buttons.get(sync)!.disabled).toBe(false); expect(ui.errors).toEqual([]);
+    });
+
+    it('Отказ доступа к чтению очереди показывает причину и оставляет безопасное обновление', async () => {
+        const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
+        render(); click(); await flush(); ui.bridge.jobsReady = false; ui.bridge.errors.jobs = 'Доступ к очереди запрещён'; render();
+        expect(ui.warnings.join()).toContain('Доступ к очереди запрещён');
+        expect(ui.buttons.get(sync)!.disabled).toBe(true); expect(ui.buttons.get('Обновить состояние задания')!.disabled).not.toBe(true);
+        ui.buttons.get('Обновить состояние задания')!.onClick(); await flush(); expect(bridgeApi.create).toHaveBeenCalledOnce();
+        ui.bridge.jobsReady = true; ui.bridge.errors.jobs = ''; ui.bridge.jobs = [{...accepted, state: 'failed'}]; render();
+        expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+
+    it('Обработчик первого проекта не действует после A→B→A', async () => {
+        vi.mocked(bridgeApi.create).mockResolvedValue(job('accepted')); render(); const old = ui.buttons.get(sync)!.onClick;
+        ui.projectId = 'project-b'; render(); ui.projectId = 'project-a'; render(); old(); await flush();
+        expect(bridgeApi.create).not.toHaveBeenCalled();
     });
 });
