@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelHostingController } from '../src/models/hosting.controller';
 import { ModelHostingService } from '../src/models/hosting.service';
 import { ModelHostingRepository } from '../src/models/hosting.repository';
+import { ModelsRepository } from '../src/models/models.repository';
 import type { Pool, PoolClient } from 'pg';
 import type { AccessDb } from '../src/access/access-db';
 import type { ModelsService } from '../src/models/models.service';
@@ -14,15 +15,17 @@ import type { IModel } from '../src/models/model.types';
 import type { IHostingJobRow, IHostingProgress } from '../src/models/hosting.types';
 
 const card: IModel = { id: 'model-one', name: 'Модель', description: '', capability: 'embedding', runtime: 'ollama', model: 'qwen3:4b', manifestSha256: null, dimension: 3, source: 'custom', revision: 4, createdAt: '2026-10-19', updatedAt: '2026-10-19' };
+const hostingActor = 'admin@example.test';
 const job = (action: IHostingJobRow['action'] = 'start'): IHostingJobRow => ({ id: 'job-one', model_id: card.id, action, actor: 'admin@example.test', state: 'running', stage: 'starting', message: 'Подготовка', progress: 0, started_at: '2026-10-19', finished_at: null, operation_id: 'op-model-one' });
 const flush = async () => { for (let index = 0; index < 15; index++) await Promise.resolve(); };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
 function harness(locked = true) {
     const lease = Object.assign(new EventEmitter(), { query: vi.fn(async () => ({ rows: [{ locked }] })), release: vi.fn() });
     const pool = { connect: vi.fn(async () => lease) };
-    const models = { pool, ready: vi.fn(async () => undefined), get: vi.fn(async () => card), requireMain: vi.fn(async () => 'admin@example.test'), getAccessible: vi.fn(async () => card) };
+    const models = { pool, ready: vi.fn(async () => undefined), get: vi.fn(async () => card), requireMain: vi.fn(async () => 'admin@example.test'), getAccessible: vi.fn(async () => card),
+        pinVerified: vi.fn(async (_model, _verified, _actor, authorize) => {await authorize(); return card;}) };
     const access = { claims: vi.fn(async () => ({ userRoles: ['Главный админ'] })) };
-    const runtime = { start: vi.fn(async () => undefined), check: vi.fn(async () => undefined), stop: vi.fn(async () => undefined), status: vi.fn(async () => ({ state: 'ready', message: 'Готова', checkedAt: null })) };
+    const runtime = { start: vi.fn(async () => ({manifestSha256: 'a'.repeat(64), dimension: 3})), check: vi.fn(async () => ({manifestSha256: 'a'.repeat(64), dimension: 3})), stop: vi.fn(async () => undefined), status: vi.fn(async () => ({ state: 'ready', message: 'Готова', checkedAt: null })) };
     const repository = { setup: vi.fn(async () => undefined), latest: vi.fn(async () => undefined as IHostingJobRow | undefined), checkedAt: vi.fn(async () => null), interruptStale: vi.fn(async () => undefined), create: vi.fn(async (_lease, _id, action) => job(action)), update: vi.fn(async () => undefined) };
     const service = new ModelHostingService(models as unknown as ModelsService, access as unknown as AccessDb, runtime as unknown as OllamaClient);
     Object.defineProperty(service, 'repository', { value: repository });
@@ -69,6 +72,35 @@ describe('Проверка и взаимное исключение управл
 });
 
 describe('Завершение, отзыв прав и прогресс хостинга', () => {
+    it.each(['start', 'check'] as const)('Явное %s закрепляет подтверждение runtime до успешного завершения задания', async action => {
+        const {service, models, repository} = harness();
+        await service.control(card.id, {action, expectedRevision: card.revision}, hostingActor);
+        await vi.waitFor(() => expect(repository.update).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({stage: 'completed'}), 'completed'));
+        expect(models.pinVerified).toHaveBeenCalledWith(card, {manifestSha256: 'a'.repeat(64), dimension: 3}, hostingActor, expect.any(Function));
+        expect(models.pinVerified.mock.invocationCallOrder[0]).toBeLessThan(repository.update.mock.invocationCallOrder.at(-1)!);
+    });
+    it('Отзыв роли после probe не позволяет закрепить модель и завершить задание успешно', async () => {
+        const {service, access, runtime, repository} = harness();
+        runtime.check.mockImplementation(async () => {access.claims.mockResolvedValue({userRoles: []}); return {manifestSha256: 'a'.repeat(64), dimension: 3};});
+        await service.control(card.id, {action: 'check', expectedRevision: card.revision}, hostingActor);
+        await vi.waitFor(() => expect(repository.update).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({stage: 'failed', message: expect.stringContaining('отозваны')}), 'failed'));
+        expect(repository.update.mock.calls.some(call => call[2] === 'completed')).toBe(false);
+    });
+    it('Отсутствующее подтверждение custom-модели завершает задание отказом', async () => {
+        const {service, models, runtime, repository} = harness();
+        const pins = new ModelsRepository({} as Pool);
+        models.pinVerified.mockImplementation((model, verified, email, authorize) => pins.pinVerified(model, verified, email, authorize));
+        runtime.check.mockResolvedValue(undefined as never);
+        await service.control(card.id, {action: 'check', expectedRevision: card.revision}, hostingActor);
+        await vi.waitFor(() => expect(repository.update).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({stage: 'failed', message: expect.stringContaining('не подтвердил')}), 'failed'));
+        expect(repository.update.mock.calls.some(call => call[2] === 'completed')).toBe(false);
+    });
+    it('Выгрузка модели не изменяет её закреплённые метаданные', async () => {
+        const {service, models, repository} = harness();
+        await service.control(card.id, {action: 'stop', expectedRevision: card.revision}, hostingActor);
+        await vi.waitFor(() => expect(repository.update).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({stage: 'completed'}), 'completed'));
+        expect(models.pinVerified).not.toHaveBeenCalled();
+    });
     it('Отозванные до выполнения права завершают операцию отказом без runtime', async () => {
         const { service, access, runtime, repository, lease } = harness(); access.claims.mockResolvedValue({ userRoles: [] });
         await service.control(card.id, { action: 'start', expectedRevision: 4 }, 'admin@example.test'); await flush();
@@ -119,6 +151,7 @@ describe('Завершение, отзыв прав и прогресс хост
             await progress({ stage: 'downloading', message: 'Частый повтор', progress: 10 });
             await progress({ stage: 'checking', message: 'Проверяем', progress: 90.9 });
             await progress({ stage: 'ready', message: 'Готово', progress: 200 });
+            return {manifestSha256: 'a'.repeat(64), dimension: 3};
         });
         await service.control(card.id, { action: 'start', expectedRevision: 4 }, 'admin@example.test'); await flush();
         const values = repository.update.mock.calls.map(call => call[1]);

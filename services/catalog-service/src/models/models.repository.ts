@@ -4,7 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import { builtinModels } from './builtin-models';
 import { modelSupplySeeds } from './model-supply-seed';
-import type { IModel, IModelDescriptor, IProjectModel } from './model.types';
+import type { IModel, IModelDescriptor, IModelVerification, IProjectModel } from './model.types';
 import { validateModelCreate, validateModelDelete, validateModelUpdate } from './model-validation';
 
 interface IModelRow { id: string; name: string; descriptor: IModelDescriptor; revision: number; created_at: string | Date; updated_at: string | Date }
@@ -117,6 +117,39 @@ export class ModelsRepository {
             const updated = await client.query<IModelRow>('UPDATE model_catalog SET name=$2,descriptor=$3::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *', [id, name, JSON.stringify(descriptor)]);
             const saved = model(updated.rows[0]);
             await securityEvent(client, { actor, action: 'model.update', resourceId: id, before: current, after: saved });
+            return saved;
+        });
+    }
+
+    /** Первый успешный probe закрепляет custom-модель; существующий pin не заменяется. */
+    async pinVerified(expected: IModel, verified: IModelVerification, actor: string, authorize: () => Promise<void>): Promise<IModel> {
+        if (!verified || !/^[a-f0-9]{64}$/.test(verified.manifestSha256)
+            || (expected.capability === 'embedding'
+                ? !Number.isSafeInteger(verified.dimension) || Number(verified.dimension) < 1 || Number(verified.dimension) > 16384
+                : verified.dimension !== null)) {
+            throw new ConflictException('Runtime не подтвердил SHA и размерность модели. Повторите проверку хостинга.');
+        }
+        return this.transaction(async client => {
+            const result = await client.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1 FOR UPDATE', [expected.id]);
+            if (!result.rows[0]) { throw new NotFoundException('Модель удалена во время проверки.'); }
+            await authorize();
+            const current = model(result.rows[0]);
+            this.assertRevision(current, expected.revision);
+            if ((['runtime', 'model', 'capability', 'dimension', 'manifestSha256', 'source'] as const).some(key => current[key] !== expected[key])) {
+                throw new ConflictException('Карточка модели изменилась во время проверки. Обновите каталог.');
+            }
+            if (current.dimension !== null && current.dimension !== verified.dimension
+                || current.manifestSha256 !== null && current.manifestSha256 !== verified.manifestSha256) {
+                throw new ConflictException('Проверенная версия или размерность отличается от закреплённой модели. Существующий pin сохранён.');
+            }
+            if (current.manifestSha256 !== null) { return current; }
+            if (current.source !== 'custom') { throw new ConflictException('Встроенная модель не имеет корректного закреплённого SHA.'); }
+            const descriptor = {...result.rows[0].descriptor, manifestSha256: verified.manifestSha256,
+                dimension: current.capability === 'embedding' ? verified.dimension : null};
+            const updated = await client.query<IModelRow>(`UPDATE model_catalog SET descriptor=$2::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *`,
+                [current.id, JSON.stringify(descriptor)]);
+            const saved = model(updated.rows[0]);
+            await securityEvent(client, {actor, action: 'model.pin', resourceId: current.id, before: current, after: saved});
             return saved;
         });
     }

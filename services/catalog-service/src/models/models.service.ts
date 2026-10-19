@@ -6,7 +6,8 @@ import { CatalogService } from '../catalog/catalog.service';
 import type { IProjectDetail } from '../catalog/dto';
 import { createPool } from '../database/pool';
 import { readModelActor, type IModelActor } from './model-access';
-import type { IModel, IModelList } from './model.types';
+import type { IModel, IModelList, IModelVerification } from './model.types';
+import { notifyModelCatalogChange } from './model-events';
 import { validateModelId } from './model-validation';
 import { ModelsRepository } from './models.repository';
 
@@ -83,6 +84,12 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
     isAssigned(projectId: string, modelId: string): Promise<boolean> { return this.repository.isAssigned(projectId, modelId); }
     create(raw: unknown, actor: string): Promise<IModel> { return this.repository.create(raw, actor); }
     update(id: string, raw: unknown, actor: string): Promise<IModel> { validateModelId(id); return this.repository.update(id, raw, actor); }
+    /** Доверенные метаданные runtime фиксируются до инвалидации клиентского каталога. */
+    async pinVerified(expected: IModel, verified: IModelVerification, actor: string, authorize: () => Promise<void>): Promise<IModel> {
+        const saved = await this.repository.pinVerified(expected, verified, actor, authorize);
+        if (saved.revision !== expected.revision) { await notifyModelCatalogChange(); }
+        return saved;
+    }
     remove(id: string, raw: unknown, actor: string): Promise<void> { validateModelId(id); return this.repository.remove(id, raw, actor); }
     assign(projectId: string, modelId: string, actor: string): Promise<void> { validateModelId(modelId); return this.repository.assign(projectId, modelId, actor); }
     unassign(projectId: string, modelId: string, actor: string): Promise<boolean> { validateModelId(modelId); return this.repository.unassign(projectId, modelId, actor); }

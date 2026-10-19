@@ -170,9 +170,17 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             const claims = await this.access.claims(row.actor);
             if (!claims.userRoles.includes('Главный админ')) { throw new Error('Права управления хостингом отозваны.'); }
             abort.signal.throwIfAborted();
-            if (row.action === 'start') { await this.runtime.start(model, progress, abort.signal); }
-            else if (row.action === 'check') { await this.runtime.check(model, abort.signal); }
-            else { await this.runtime.stop(model, abort.signal); }
+            if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
+            else {
+                const verified = row.action === 'start' ? await this.runtime.start(model, progress, abort.signal) : await this.runtime.check(model, abort.signal);
+                abort.signal.throwIfAborted();
+                await this.models.pinVerified(model, verified, row.actor, async () => {
+                    abort.signal.throwIfAborted();
+                    const current = await this.access.claims(row.actor);
+                    if (!current.userRoles.includes('Главный админ')) { throw new Error('Права управления хостингом отозваны.'); }
+                    abort.signal.throwIfAborted();
+                });
+            }
             abort.signal.throwIfAborted();
             await this.repository.update(row, { stage: 'completed', message: row.action === 'stop' ? 'Модель выгружена из памяти. Веса сохранены.' : 'Проверка модели пройдена.', progress: 100 }, 'completed');
         } catch (error) {

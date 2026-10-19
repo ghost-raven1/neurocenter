@@ -1,7 +1,7 @@
 import {visionFixture} from '../../../shared/vision-fixture.cjs';
 import {statfs} from 'node:fs/promises';
 import path from 'node:path';
-import type {IModel} from './model.types';
+import type {IModel,IModelVerification} from './model.types';
 
 export interface IModelProgress {stage:string;message:string;progress:number|null;}
 export interface IRuntimeModelStatus {
@@ -52,7 +52,7 @@ export class OllamaClient {
         } catch {return {state:'unavailable',message:'Хостинг моделей недоступен. Проверьте запуск проектного runtime.',checkedAt:null};}
     }
 
-    async start(model:IModel,onProgress:Progress=()=>{},signal?:AbortSignal):Promise<void> {
+    async start(model:IModel,onProgress:Progress=()=>{},signal?:AbortSignal):Promise<IModelVerification> {
         this.assertModel(model);
         await onProgress({stage:'preparing',message:'Проверяем сохранённую модель.',progress:0});
         const existing=this.entry(await this.request('/api/tags',undefined,signal),model);
@@ -65,21 +65,26 @@ export class OllamaClient {
             await this.pull(model,onProgress,signal);
         }
         await onProgress({stage:'checking',message:'Проверяем версию и содержательный ответ модели.',progress:90});
-        await this.check(model,signal);
+        const verified=await this.check(model,signal);
         await onProgress({stage:'ready',message:'Модель готова к работе.',progress:100});
+        return verified;
     }
 
     /** Статус не подменяет проверку: здесь проверяются digest, возможности и настоящий ответ. */
-    async check(model:IModel,signal?:AbortSignal):Promise<void> {
+    async check(model:IModel,signal?:AbortSignal):Promise<IModelVerification> {
         this.assertModel(model);
         const installed=this.entry(await this.request('/api/tags',undefined,signal),model);
         if(!installed)throw new Error('Веса модели не подготовлены. Сначала запустите хостинг модели.');
         if(!this.digestMatches(model,installed))throw new Error('SHA установленной модели отличается от закреплённой версии.');
+        if(typeof installed.digest!=='string'||!/^[a-f0-9]{64}$/.test(installed.digest))throw new Error('Runtime не подтвердил SHA установленной модели.');
         const metadata=await this.request('/api/show',{model:model.model},signal,30000);
         const required=model.capability==='chat'?'completion':model.capability;
         if(!Array.isArray(metadata.capabilities)||!metadata.capabilities.includes(required))throw new Error('Возможности модели не соответствуют карточке каталога.');
-        if(model.capability==='embedding')await this.probeEmbedding(model,signal);
-        else await this.probeChat(model,signal);
+        const dimension=model.capability==='embedding'?await this.probeEmbedding(model,signal):null;
+        if(model.capability!=='embedding')await this.probeChat(model,signal);
+        const after=this.entry(await this.request('/api/tags',undefined,signal),model);
+        if(!after||after.digest!==installed.digest)throw new Error('SHA модели изменился во время проверки. Повторите проверку без замены сохранённых весов.');
+        return {manifestSha256:installed.digest,dimension};
     }
 
     /** Останавливается только выбранная модель; общие веса и соседние модели сохраняются. */
@@ -145,9 +150,12 @@ export class OllamaClient {
         if(available<BigInt(bytes+gibibyte))throw new Error('Недостаточно свободного места для модели с резервом 1 ГиБ. Загрузка остановлена; сохранённые данные не удалены.');
     }
 
-    private async probeEmbedding(model:IModel,signal?:AbortSignal) {
+    private async probeEmbedding(model:IModel,signal?:AbortSignal):Promise<number> {
         const value=await this.request('/api/embed',{model:model.model,input:['Локальная проверка базы знаний.','Local knowledge test.'],truncate:false,keep_alive:'5m'},signal,180000);
-        if(value.model!==model.model||!this.validVectors(value.embeddings,2,model.dimension))throw new Error('Модель не вернула корректные ненулевые векторы ожидаемой размерности.');
+        if(value.model!==model.model||!this.validVectors(value.embeddings,2,null))throw new Error('Модель не вернула корректные ненулевые векторы ожидаемой размерности.');
+        const dimension=(value.embeddings as number[][])[0].length;
+        if(model.dimension!==null&&model.dimension!==dimension)throw new Error(`Размерность модели не совпадает с карточкой: ожидалась ${model.dimension}, получена ${dimension}. Проверьте карточку модели.`);
+        return dimension;
     }
 
     private async probeChat(model:IModel,signal?:AbortSignal) {

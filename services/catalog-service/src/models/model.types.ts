@@ -19,5 +19,7 @@ export interface IModel {
 export type IModelDescriptor = Pick<IModel, 'description' | 'capability' | 'runtime' | 'model' | 'manifestSha256' | 'dimension' | 'source'>;
 export interface IModelCreate { name: string; description?: string; capability: TModelCapability; model: string; dimension?: number | null }
 export interface IModelUpdate { expectedRevision: number; name?: string; description?: string }
+/** Метаданные получены только после проверки runtime и повторной сверки digest. */
+export interface IModelVerification { manifestSha256: string; dimension: number | null }
 export interface IModelList { items: IModel[]; assignedModelIds: string[] }
 export interface IProjectModel { projectId: string; modelId: string; addedBy: string; addedAt: string }

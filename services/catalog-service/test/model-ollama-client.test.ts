@@ -69,8 +69,8 @@ describe('Проверка и хостинг модели',()=>{
     it('известные веса повторно не скачиваются, проверка требует реальные векторы',async()=>{
         const {client,calls}=fixture();const progress:IModelProgress[]=[];
         await client.start(model,value=>{progress.push(value);});
-        expect(calls.map(call=>call.path)).toEqual(['/api/tags','/api/tags','/api/show','/api/embed']);
-        expect(calls.at(-1)?.body).toMatchObject({model:model.model,input:expect.any(Array),truncate:false});
+        expect(calls.map(call=>call.path)).toEqual(['/api/tags','/api/tags','/api/show','/api/embed','/api/tags']);
+        expect(calls.findLast(call=>call.path==='/api/embed')?.body).toMatchObject({model:model.model,input:expect.any(Array),truncate:false});
         expect(progress.at(-1)?.progress).toBe(100);
     });
     it.each([[[0,0],[3,4]],[[1,2],[3]],[[1,2],[1e100,3]],[[1,2],['private',4]],[[1,2]]].map(vectors=>({vectors})))('отклоняет неправильные векторы $vectors',async({vectors})=>{
@@ -100,7 +100,7 @@ describe('Проверка и хостинг модели',()=>{
         const context=fixture({'/api/show':()=>json({capabilities:['completion','vision']}),
             '/api/chat':()=>json({model:model.model,done:true,done_reason:'stop',message:{content:'{"number":"42","color":"red"}'}})});
         await context.client.check(vision);
-        const body=context.calls.at(-1)!.body!;
+        const body=context.calls.findLast(call=>call.path==='/api/chat')!.body!;
         expect(body.stream).toBe(false);expect(JSON.stringify(body)).not.toContain('file://');
         const messages=body.messages as Array<{images:string[]}>;
         expect(Buffer.from(messages[0].images[0],'base64').subarray(0,8).toString('hex')).toBe('89504e470d0a1a0a');
@@ -147,7 +147,7 @@ describe('Поток подготовки весов',()=>{
     it('полный NDJSON заканчивается SHA и содержательной пробой',async()=>{
         const context=pulling(JSON.stringify({status:'pulling',digest:'sha256:'+'b'.repeat(64),total:100,completed:100})+'\n{"status":"success"}\n');
         const progress:IModelProgress[]=[];await context.client.start(model,value=>{progress.push(value);});
-        expect(context.calls.map(call=>call.path)).toEqual(['/api/tags','/api/pull','/api/tags','/api/show','/api/embed']);
+        expect(context.calls.map(call=>call.path)).toEqual(['/api/tags','/api/pull','/api/tags','/api/show','/api/embed','/api/tags']);
         expect(progress.some(value=>value.stage==='downloading'&&value.progress===85)).toBe(true);
     });
     it.each(['{"status":"pulling"}\n','{"error":"PRIVATE"}\n','not JSON\n',JSON.stringify({status:'x'.repeat(65537)})])('отклоняет незавершённый или неверный поток %s',async body=>{
