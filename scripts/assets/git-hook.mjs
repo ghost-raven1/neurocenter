@@ -1,7 +1,7 @@
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {nodeRuntime} from '../workspace/node-runtime.mjs';
-import {runPreviousHook,shouldSyncAfterHook} from './git-hooks.mjs';
+import {installAssetHooks,runPreviousHook,shouldSyncAfterHook} from './git-hooks.mjs';
 import {assetEnvironment} from './environment.mjs';
 import {prepareAssetsWithCancellation} from './cancellation.mjs';
 
@@ -21,6 +21,7 @@ async function main() {
     console.error('\nНейроцентр · Подготовка поставки после обновления Git');
     const {modelBundleProgressReporter}=await import('../models/bundle-cli.mjs');
     await prepareAssetsWithCancellation({root,environment:await assetEnvironment(root),onProgress:modelBundleProgressReporter()});
+    await installAssetHooks({root,node:runtime.node,onlyIfInstalled:true});
     console.error('Поставка подготовлена. Миграции и перезапуск выполняются штатной командой запуска.');
 }
 

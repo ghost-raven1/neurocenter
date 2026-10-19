@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,mkdir,readFile,writeFile,copyFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,readdir,writeFile,copyFile,rm,symlink} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -78,6 +78,71 @@ test('Отказ загрузки виден после pull и не объяв�
     assert.equal(git(f.checkout,['rev-parse','HEAD']).stdout,git(f.source,['rev-parse','HEAD']).stdout);
 });
 
+test('После удаления прежнего Node хук использует доступный runtime и сохраняет прежнюю проверку',async t=>{
+    const f=await fixture(t),oldNode=path.join(f.directory,'previous node');
+    await symlink(process.execPath,oldNode);
+    await writeFile(path.join(f.checkout,'.git/hooks/post-merge'),'#!/bin/sh\nprintf \'{"kind":"previous"}\\n\' >> "$HOOK_TEST_LOG"\n',{mode:0o700});
+    await installAssetHooks({root:f.checkout,node:oldNode});await rm(oldNode);await f.advance();
+    const env={...f.env,PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH};delete env.NODE_BIN;
+    git(f.checkout,['pull','--ff-only'],false,env);
+    const events=await f.events();assert.equal(events.filter(event=>event.kind==='previous').length,1);
+    assert.equal(events.filter(event=>event.kind==='sync').length,1);
+});
+
+test('Linked worktree без своего .run использует Node из главного checkout до системного PATH',async t=>{
+    const f=await fixture(t),linked=path.join(f.directory,'linked'),stub=path.join(f.directory,'system bin');
+    const localNode=path.join(f.checkout,'.run/toolchains',`node-v24.99.0-${process.platform}-${process.arch}`,'bin/node');
+    await mkdir(path.dirname(localNode),{recursive:true});await symlink(process.execPath,localNode);
+    await mkdir(stub);await writeFile(path.join(stub,'node'),'#!/bin/sh\nprintf "unexpected system Node\\n" >&2\nexit 65\n',{mode:0o700});
+    await installAssetHooks({root:f.checkout,node:localNode});
+    const env={...f.env,PATH:stub+path.delimiter+process.env.PATH};delete env.NODE_BIN;
+    git(f.checkout,['worktree','add','-b','linked',linked],false,env);
+    assert.equal((await f.events()).filter(event=>event.kind==='sync').length,1);
+});
+
+test('Успешный pull обновляет старую обёртку и не запускает прежний хук повторно',async t=>{
+    const f=await fixture(t),oldNode=path.join(f.directory,'previous node');await symlink(process.execPath,oldNode);
+    const custom='custom hooks';await mkdir(path.join(f.checkout,custom));
+    await writeFile(path.join(f.checkout,custom,'post-merge'),'#!/bin/sh\nprintf \'{"kind":"previous"}\\n\' >> "$HOOK_TEST_LOG"\n',{mode:0o700});
+    git(f.checkout,['config','--local','core.hooksPath',custom]);
+    await installAssetHooks({root:f.checkout,node:oldNode});
+    const wrapper=path.join(f.checkout,'.git/neurocenter-hooks/post-merge');
+    const registration=path.join(f.checkout,'.git/neurocenter-hooks/installation.json');
+    const state=JSON.parse(await readFile(registration,'utf8'));delete state.previousRelative;
+    await writeFile(registration,JSON.stringify(state));
+    await writeFile(wrapper,`#!/bin/sh\n# legacy wrapper\nrepo=$(git rev-parse --show-toplevel) || exit 1\nexec '${oldNode}' "$repo/scripts/assets/git-hook.mjs" post-merge "$@"\n`);
+    await f.advance();git(f.checkout,['pull','--ff-only'],false,f.env);
+    const shell=await readFile(wrapper,'utf8');assert.doesNotMatch(shell,/legacy wrapper/);assert.ok(!shell.includes(oldNode));
+    assert.equal(JSON.parse(await readFile(registration,'utf8')).previousRelative,custom);
+    assert.equal((await f.events()).filter(event=>event.kind==='previous').length,1);
+    assert.equal((await f.events()).filter(event=>event.kind==='sync').length,1);
+    await rm(oldNode);await writeFile(path.join(f.source,'version.txt'),'third\n');
+    git(f.source,['add','.']);git(f.source,['commit','-m','third']);git(f.source,['push','origin','main']);
+    const env={...f.env};delete env.NODE_BIN;git(f.checkout,['pull','--ff-only'],false,env);
+    assert.equal((await f.events()).filter(event=>event.kind==='previous').length,2);
+    assert.equal((await f.events()).filter(event=>event.kind==='sync').length,2);
+});
+
+test('Обновление обёрток не подключает отключённые хуки и не меняет ручной hooksPath',async t=>{
+    const f=await fixture(t);
+    assert.equal((await installAssetHooks({root:f.checkout,onlyIfInstalled:true})).installed,false);
+    assert.equal(git(f.checkout,['config','--local','--get','core.hooksPath'],true).status,1);
+    await writeFile(path.join(f.checkout,'.git/hooks/post-merge'),'#!/bin/sh\ngit config --local core.hooksPath "custom hooks"\n',{mode:0o700});
+    await installAssetHooks({root:f.checkout});await f.advance();git(f.checkout,['pull','--ff-only'],false,f.env);
+    assert.equal(git(f.checkout,['config','--local','--get','core.hooksPath']).stdout.trim(),'custom hooks');
+    assert.equal((await f.events()).filter(event=>event.kind==='sync').length,1);
+});
+
+test('Параллельное обновление обёрток сохраняет регистрацию и не оставляет временные файлы',async t=>{
+    const f=await fixture(t);await installAssetHooks({root:f.checkout});
+    await Promise.all(Array.from({length:3},()=>installAssetHooks({root:f.checkout,onlyIfInstalled:true})));
+    const directory=path.join(f.checkout,'.git/neurocenter-hooks');
+    assert.equal(JSON.parse(await readFile(path.join(directory,'installation.json'),'utf8')).previousLocal,null);
+    assert.ok(!(await readdir(directory)).some(name=>name.endsWith('.tmp')));
+    await f.advance();git(f.checkout,['pull','--ff-only'],false,f.env);
+    assert.equal((await f.events()).filter(event=>event.kind==='sync').length,1);
+});
+
 test('Прежние pre-commit и custom hooksPath сохраняются и восстанавливаются',async t=>{
     const f=await fixture(t),custom=path.join(f.checkout,'.git/own hooks');await mkdir(custom);
     await writeFile(path.join(custom,'pre-commit'),'#!/bin/sh\nprintf "old precommit\\n" >&2\nexit 7\n',{mode:0o700});
@@ -108,6 +173,24 @@ test('Linked worktree читает общую регистрацию и сохр
     const events=await f.events();assert.equal(events.filter(event=>event.kind==='previous-checkout').length,1);
     assert.equal(events.filter(event=>event.kind==='sync').length,1);
     await uninstallAssetHooks({root:linked});assert.equal(git(f.checkout,['config','--local','--get','core.hooksPath'],true).status,1);
+});
+
+test('Относительный прежний hooksPath выполняется в своём linked worktree',async t=>{
+    const f=await fixture(t),linked=path.join(f.directory,'linked'),custom='custom hooks';
+    await mkdir(path.join(f.checkout,custom));
+    await writeFile(path.join(f.checkout,custom,'post-checkout'),'#!/bin/sh\nprintf \'{"kind":"main-hook"}\\n\' >> "$HOOK_TEST_LOG"\n',{mode:0o700});
+    git(f.checkout,['config','--local','core.hooksPath',custom]);await installAssetHooks({root:f.checkout});
+    git(f.checkout,['worktree','add','-b','linked',linked],false,f.env);
+    await mkdir(path.join(linked,custom));
+    await writeFile(path.join(linked,custom,'post-checkout'),'#!/bin/sh\nprintf \'{"kind":"linked-hook"}\\n\' >> "$HOOK_TEST_LOG"\n',{mode:0o700});
+    await writeFile(path.join(linked,custom,'pre-commit'),'#!/bin/sh\nprintf "linked precommit\\n" >&2\nexit 7\n',{mode:0o700});
+    git(linked,['switch','-c','another-linked'],false,f.env);
+    assert.equal((await f.events()).filter(event=>event.kind==='linked-hook').length,1);
+    await writeFile(path.join(linked,'version.txt'),'linked change\n');git(linked,['add','version.txt']);
+    const blocked=git(linked,['commit','-m','blocked'],true,f.env);
+    assert.notEqual(blocked.status,0);assert.match(blocked.stderr,/linked precommit/);
+    await uninstallAssetHooks({root:linked});
+    assert.equal(git(linked,['config','--local','--get','core.hooksPath']).stdout.trim(),custom);
 });
 
 test('Старая ветка без загрузчика сохраняет прежний хук и показывает границу подготовки',async t=>{
