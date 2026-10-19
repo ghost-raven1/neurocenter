@@ -9,11 +9,12 @@ import {PairingCode} from '../../features/McpBridge/PairingCode';
 import {bridgeOperationBlocker} from '../../features/McpBridge/readiness';
 import {roleLevel} from '../../features/UserBlock/roles';
 import {bridgeInstallerCommand} from '../../features/McpBridge/connectionCommands';
+import {projectBindingUrl} from '../Projects/projectNavigation';
 
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({origin,windows:browserWindows,onCopy}:{origin:string;windows:boolean;onCopy:(text:string)=>void})=>{
+export const BridgeSetup=({origin,windows:browserWindows,onCopy,projectId}:{origin:string;windows:boolean;onCopy:(text:string)=>void;projectId?:string})=>{
     const bridge=useBridge();const history=useHistory();
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
     const [action,setAction]=useState<ConnectionAction>();
@@ -55,7 +56,7 @@ export const BridgeSetup=({origin,windows:browserWindows,onCopy}:{origin:string;
                     ?roleLevel(device.role)<2?'Для изменения проектов выберите на сайте назначенную вам роль разработчика или администратора и подтвердите подключение. Переустановка моста для этого не нужна.':'Продлите подключение установленного моста и подтвердите доступ в браузере. Файлы и история сохранятся.'
                     :needsUpdate?'Для новых возможностей обновите программу командой ниже. Установщик сохранит файлы и историю.':device.online?'Мост работает в фоне, даже когда окно OpenCode закрыто. Следующий шаг — выбрать общую папку и связать проект.':'Запустите установленный мост командой подключения. Повторная установка обычно не нужна.'}/>
             <Space wrap>
-                <Button type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push('/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</Button>
+                <Button type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</Button>
                 <Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button>
                 <Button onClick={()=>openAction('connect')}>Подключить установленный мост</Button>
                 <Button onClick={()=>openAction('install')}>Обновить мост</Button>

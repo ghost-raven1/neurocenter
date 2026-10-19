@@ -32,7 +32,7 @@ function device(): IBridgeDevice {
 function select(devices: IBridgeDevice[], selected = devices[0]): void {
     fixture.bridge.devices = devices; fixture.bridge.device = selected;
 }
-const setup = (windows = false): string => renderToStaticMarkup(createElement(BridgeSetup, { origin, windows, onCopy: vi.fn() }));
+const setup = (windows = false, projectId?: string): string => renderToStaticMarkup(createElement(BridgeSetup, { origin, windows, onCopy: vi.fn(), projectId }));
 
 beforeEach(() => {
     vi.clearAllMocks(); fixture.buttons.clear();
@@ -42,6 +42,24 @@ beforeEach(() => {
 });
 
 describe('Подключение компьютера с уже установленным мостом', () => {
+    it('Выбранный проект после настройки общей папки открывает свой мастер привязки', () => {
+        const current = device(); current.report.root = '/fixture/projects'; select([current]); setup(false, 'prj-dossier-ko');
+        fixture.buttons.get('Связать папку проекта')?.onClick?.();
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-dossier-ko');
+    });
+
+    it('Без общей папки выбранный проект сначала ведёт к выбору корня', () => {
+        select([device()]); setup(false, 'prj-dossier-ko');
+        fixture.buttons.get('Выбрать папку проектов')?.onClick?.();
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects');
+    });
+
+    it('Без выбранного проекта настроенный компьютер открывает общий список', () => {
+        const current = device(); current.report.root = '/fixture/projects'; select([current]); setup();
+        fixture.buttons.get('Связать папку проекта')?.onClick?.();
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects');
+    });
+
     it('Пустой список по умолчанию предлагает существующий мост и отдельный вариант установки', () => {
         const html = setup();
         expect(html).toContain('Мост уже установлен');

@@ -6,6 +6,7 @@ import { useHistory, useLocation } from 'react-router-dom';
 import { CodeBlock } from '../../common/components/CodeBlock';
 import { PageHeading } from '../../common/components/PageHeading';
 import { useAvailableProjects } from '../Projects/useAvailableProjects';
+import { projectBindingUrl } from '../Projects/projectNavigation';
 import installDoc from './docs/OPENCODE-INSTALL.md?raw';
 import OpenCodeExtensions from './OpenCodeExtensions';
 import './Start.less';
@@ -27,7 +28,10 @@ const Start = () => {
     const step = startStep(location.search);
     const { projects, ready, loading, error, refresh } = useAvailableProjects();
     const requestedProject = new URLSearchParams(location.search).get('p');
-    const project = ready ? projects.find(item => item.id === requestedProject || item.name === requestedProject)?.name : undefined;
+    const selectedProject = ready && !error
+        ? projects.find(item => item.id === requestedProject) ?? projects.find(item => item.name === requestedProject)
+        : undefined;
+    const project = selectedProject?.name;
     const go = (next: number): void => history.replace(startQueryUrl(location.search, { step: next }, location.hash));
     const selectProject = (value: string): void => history.replace(startQueryUrl(location.search, { project: value }, location.hash));
     const bridgeBase = `${window.location.origin}/api/bridge`;
@@ -67,17 +71,17 @@ const Start = () => {
                         <Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>
                     </>}
                     {step === 1 && <>
-                        <BridgeSetup origin={window.location.origin} windows={windows} onCopy={text=>{void copy(text);}}/>
+                        <BridgeSetup origin={window.location.origin} windows={windows} projectId={selectedProject?.id} onCopy={text=>{void copy(text);}}/>
                         <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
                     {step === 2 && <>
                         <Title level={3}>Свяжите папку с проектом</Title>
-                        <Paragraph type="secondary">На странице «Проекты» выберите общую папку на своём компьютере и свяжите нужный подкаталог с серверным проектом. Названия папок и проектов могут отличаться.</Paragraph>
-                        <Button type="primary" onClick={()=>history.push('/projects')}>Выбрать папку и связать проект <ArrowRightOutlined/></Button>
-                        <Paragraph type="secondary" style={{marginTop:16}}>Когда привязка готова, выберите проект ниже и откройте его каталог инструментов.</Paragraph>
+                        <Paragraph type="secondary">Выберите серверный проект. Затем укажите его папку на своём компьютере. Названия папки и проекта могут отличаться.</Paragraph>
                         {error && <Alert type="error" showIcon message="Не удалось загрузить проекты" description={error} action={<Button size="small" onClick={() => { void refresh(); }}>Повторить</Button>} />}
                         {loading && !ready ? <Skeleton active paragraph={{rows:2}} /> : <Space direction="vertical" size={16} style={{width:'100%'}}>
-                            <Select aria-label="Проект для настройки" showSearch optionFilterProp="label" placeholder="Выберите проект" value={project} onChange={selectProject} disabled={!ready || !!error} style={{width:'100%',maxWidth:420}} options={projects.map(item => ({value:item.name,label:item.name}))} notFoundContent={error ? 'Список проектов недоступен' : 'Сначала создайте или подключите проект'} />
+                            <Select aria-label="Проект для настройки" showSearch optionFilterProp="label" placeholder="Выберите проект" value={selectedProject?.id} onChange={selectProject} disabled={!ready || !!error} style={{width:'100%',maxWidth:420}} options={projects.map(item => ({value:item.id,label:item.name}))} notFoundContent={error ? 'Список проектов недоступен' : 'Сначала создайте или подключите проект'} />
+                            <Button type="primary" disabled={!selectedProject} onClick={() => { if (selectedProject) history.push(projectBindingUrl(selectedProject.id)); }}>Выбрать папку и связать проект <ArrowRightOutlined/></Button>
+                            <Text type="secondary">Когда папка связана, откройте каталог инструментов выбранного проекта.</Text>
                             <Button type="primary" disabled={!project || !!error} onClick={() => history.push(`/store?p=${encodeURIComponent(project ?? '')}`)}>Подобрать инструменты <ArrowRightOutlined /></Button>
                         </Space>}
                     </>}

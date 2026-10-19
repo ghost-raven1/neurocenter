@@ -31,6 +31,7 @@ import { runtimeArtifactBlocker } from '../../features/McpBridge/runtimeArtifact
 import { ProjectInstallationReadiness } from '../../features/McpBridge/ProjectInstallationReadiness';
 import { pendingLocalJob } from '../../features/McpBridge/operationHelpers';
 import { useAvailableProjects } from '../Projects/useAvailableProjects';
+import { projectBindingUrl } from '../Projects/projectNavigation';
 import { storeProjectQuery, storeQueryUrl, storeSearchQuery } from './storeQuery';
 import { ToolPackagingModal } from './packaging/ToolPackagingModal';
 import { useProjectCatalog } from './useProjectCatalog';
@@ -434,7 +435,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 projectName={target ?? undefined}
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}
-                onChooseProjectFolder={viewApp && targetProject && canInstall && isInProject(viewApp) && bridge.device && !bridgeInstallError && !binding ? () => { setViewApp(null); history.push('/projects'); } : undefined}
+                onChooseProjectFolder={viewApp && targetProject && canInstall && isInProject(viewApp) && bridge.device && !bridgeInstallError && !binding ? () => { setViewApp(null); history.push(projectBindingUrl(targetProject.id)); } : undefined}
                 onInstall={viewApp&&canInstall&&projectCatalogUsable&&!bridgeInstallError&&binding&&bridge.jobsReady&&bridge.installationsReady&&(isInProject(viewApp)||canManage&&!projectSkillReferenceBlocker(viewApp,targetProject?.id))&&!(isPending(assetJobFor(viewApp))&&assetJobFor(viewApp)?.kind==='uninstall')?version=>{void localInstall({...viewApp,version});}:undefined}
                 installStatus={viewApp?jobFor(viewApp):undefined} installBusy={!!localBusy||!!installing} installUnavailableReason={viewApp?installationUnavailableReason(viewApp):undefined}/>
 

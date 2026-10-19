@@ -1,6 +1,7 @@
 import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Router } from 'react-router-dom';
+import { createMemoryHistory } from 'history';
 import { describe, expect, it, vi } from 'vitest';
 import type { IBridgeDevice, IBridgeInstallation } from '../src/features/McpBridge/api';
 import type { useBridge } from '../src/features/McpBridge/useBridge';
@@ -9,6 +10,15 @@ import { ProjectInstallationReadiness } from '../src/features/McpBridge/ProjectI
 import { LocalInstallations } from '../src/features/McpBridge/LocalInstallations';
 import { connectionBlocker, inspectionBlocker, inspectionNotice, installationBlocker } from '../src/features/McpBridge/readiness';
 import { ProjectKnowledgeLink } from '../src/modules/Store/ProjectKnowledgeLink';
+
+const navigation = vi.hoisted(() => ({ chooseFolder: undefined as (() => void) | undefined }));
+vi.mock('antd', async original => {
+    const actual = await original<typeof import('antd')>();
+    return { ...actual, Button: (props: Parameters<typeof actual.Button>[0]) => {
+        if (props.children === 'Выбрать папку проекта') { navigation.chooseFolder = props.onClick as () => void; }
+        return createElement(actual.Button, props);
+    } };
+});
 
 const device: IBridgeDevice = {id:'computer',name:'Компьютер',role:'Разработчик',fingerprint:'',online:true,lastSeen:null,
     report:{protocolVersion:2,capabilities:['durable-completions','managed-installations','install-set-v1','workspace-instance-v1','installation-inspection-v1'],
@@ -34,6 +44,20 @@ function button(html: string, label: string): string {
 }
 
 describe('Общее предупреждение готовности каталога',()=>{
+    it('Выбор папки ведёт к выбранному проекту, сохраняя название действия',()=>{
+        const history = createMemoryHistory({initialEntries:['/store?p=dossier-ko']});
+        const target={...device,report:{...device.report,bindings:[]}};
+        navigation.chooseFolder=undefined;
+        const html=renderToStaticMarkup(createElement(Router,{history},
+            createElement(ProjectInstallationReadiness,{bridge:bridge(target),projectId:'prj-dossier-ko',canInstall:true})));
+        expect(html).toContain('Выбрать папку проекта'); expect(navigation.chooseFolder).toBeDefined();
+        navigation.chooseFolder?.(); expect(history.location.pathname+history.location.search).toBe('/projects?bind=prj-dossier-ko');
+        navigation.chooseFolder=undefined;
+        renderToStaticMarkup(createElement(Router,{history},
+            createElement(ProjectInstallationReadiness,{bridge:bridge(target),projectId:'prj-dossier-ko',canInstall:false})));
+        expect(navigation.chooseFolder).toBeUndefined();
+    });
+
     it('Старый MCP получает один шаг обновления без включения установки и проверки',()=>{
         const target={...device,report:{...device.report,capabilities:['durable-completions','managed-installations']}};
         const html=renderReadiness(target);

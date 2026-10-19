@@ -5,6 +5,7 @@ import Store from '../src/modules/Store/Store';
 import bffApi from '../src/core/api/bff';
 import type {IAiPlugin} from '../src/core/api/interfaces';
 import type {ToolBuild} from '../src/modules/Store/packaging/types';
+import type {IBridgeDevice} from '../src/features/McpBridge/api';
 
 const hooks = vi.hoisted(() => {
     let cursor = 0, mounted = true, disposedWrites = 0;
@@ -40,6 +41,8 @@ const ui = vi.hoisted(() => ({
     location: {pathname: '/store', search: '?p=prj-a', hash: ''},
     buttons: new Map<string, ButtonProps>(), errors: [] as string[], form: false, open: false,
     job: undefined as ToolBuild | undefined, view: null as {id: string} | null, reset: vi.fn(),
+    bridgeDevice: undefined as IBridgeDevice | undefined, assets: [] as Array<{assetKind: 'mcp'; assetId: string}>,
+    chooseFolder: undefined as (() => void) | undefined,
     history: {location: {pathname: '/store', search: '?p=prj-a', hash: ''}, replace: vi.fn(), push: vi.fn()},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.useState,
@@ -56,8 +59,8 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestO
 vi.mock('../src/modules/Projects/useAvailableProjects', () => ({useAvailableProjects: () => ({
     projects: [{id: 'prj-a', name: 'Проект A'}, {id: 'prj-b', name: 'Проект B'}], ready: true, scope: ui.scope,
 })}));
-vi.mock('../src/modules/Store/useProjectCatalog', () => ({useProjectCatalog: () => ({assets: [], ready: true, loading: false, refresh: vi.fn(async () => undefined)})}));
-vi.mock('../src/features/McpBridge/useBridge', () => ({useBridge: () => ({devices: [], jobs: [], installations: [], errors: {}, reload: vi.fn()})}));
+vi.mock('../src/modules/Store/useProjectCatalog', () => ({useProjectCatalog: () => ({assets: ui.assets, ready: true, loading: false, refresh: vi.fn(async () => undefined)})}));
+vi.mock('../src/features/McpBridge/useBridge', () => ({useBridge: () => ({device: ui.bridgeDevice, devices: [], jobs: [], installations: [], errors: {}, reload: vi.fn()})}));
 vi.mock('../src/modules/Store/installPlans/useInstallPlan', () => ({useInstallPlan: () => ({busy: '', review: null, failure: null})}));
 vi.mock('../src/core/socket/useSectionUpdates', () => ({useSectionUpdates: () => undefined}));
 vi.mock('../src/core/api/bff', () => ({default: {getAiPlugin: vi.fn(), listAiPlugins: vi.fn(), listSkills: vi.fn()}}));
@@ -73,7 +76,9 @@ vi.mock('../src/modules/Store/CatalogTabs', () => ({CatalogTabs: ({tools}: {tool
 vi.mock('../src/modules/Store/UnavailableProjectAssets', () => ({default: () => null}));
 vi.mock('../src/modules/Store/StoreCreateModal', () => ({default: () => null}));
 vi.mock('../src/modules/Store/StoreEditModal', () => ({default: () => null}));
-vi.mock('../src/modules/Store/StoreDetailsModal', () => ({default: ({viewApp}: {viewApp: typeof ui.view}) => { ui.view = viewApp; return null; }}));
+vi.mock('../src/modules/Store/StoreDetailsModal', () => ({default: ({viewApp, onChooseProjectFolder}: {viewApp: typeof ui.view; onChooseProjectFolder?: () => void}) => {
+    ui.view = viewApp; ui.chooseFolder = onChooseProjectFolder; return null;
+}}));
 vi.mock('../src/modules/Store/installPlans/InstallPlanModal', () => ({InstallPlanModal: () => null}));
 vi.mock('../src/modules/Store/installPlans/InstallPlanFailureModal', () => ({InstallPlanFailureModal: () => null}));
 vi.mock('antd', () => {
@@ -108,11 +113,38 @@ function open() { render(); click('Упаковать инструмент'); re
 beforeEach(() => {
     vi.resetAllMocks(); ui.scope = 'admin-a'; ui.owners.clear(); ui.location = {pathname: '/store', search: '?p=prj-a', hash: ''};
     ui.history.location = ui.location; ui.job = job('old-package'); ui.view = null;
+    ui.bridgeDevice = undefined; ui.assets = []; ui.chooseFolder = undefined;
     ui.reset.mockImplementation(() => { ui.job = undefined; });
     vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items: [], page: 1, size: 100, total: 0});
     vi.mocked(bffApi.listSkills).mockResolvedValue([]);
 });
 afterEach(() => hooks.dispose());
+
+describe('Переход к папке из карточки инструмента', () => {
+    it.each(['Проект A', 'prj-a'])('Разрешённая карточка в каталоге %s передаёт канонический проект', async target => {
+        ui.location.search = `?p=${encodeURIComponent(target)}`;
+        ui.bridgeDevice = {id:'computer', name:'Компьютер', role:'Разработчик', fingerprint:'', online:true, lastSeen:null,
+            report:{protocolVersion:2, capabilities:['durable-completions','managed-installations','install-set-v1','workspace-instance-v1'], root:'/fixture/projects'}};
+        ui.assets = [{assetKind:'mcp',assetId:'old-package'}];
+        vi.mocked(bffApi.getAiPlugin).mockResolvedValue(plugin('old-package'));
+        open(); await flush(); render();
+        expect(ui.chooseFolder).toBeDefined(); ui.chooseFolder?.();
+        expect(ui.history.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-a');
+        render(); expect(ui.view).toBeNull();
+    });
+
+    it.each(['bound', 'reconnect', 'missing-project'] as const)('Не добавляет переход к папке при состоянии %s', async state => {
+        ui.bridgeDevice = {id:'computer', name:'Компьютер', role:'Разработчик', fingerprint:'', online:true, lastSeen:null,
+            report:{protocolVersion:2, capabilities:['durable-completions','managed-installations','install-set-v1','workspace-instance-v1'],
+                bindings:state==='bound'?[{projectId:'prj-a',folderName:'folder',bindingId:'binding',valid:true}]:[]}};
+        if (state === 'reconnect') ui.bridgeDevice.requiresReconnect = true;
+        if (state === 'missing-project') ui.location.search = '?p=prj-deleted';
+        ui.assets = [{assetKind:'mcp',assetId:'old-package'}];
+        vi.mocked(bffApi.getAiPlugin).mockResolvedValue(plugin('old-package'));
+        open(); await flush(); render();
+        expect(ui.view?.id).toBe('old-package'); expect(ui.chooseFolder).toBeUndefined();
+    });
+});
 
 describe('Открытие опубликованного инструмента принадлежит текущей форме упаковки', () => {
     it.each(['success', 'failure'] as const)('Поздний %s прежнего открытия не меняет новый черновик после reset', async outcome => {
