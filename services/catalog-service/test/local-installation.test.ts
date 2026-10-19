@@ -22,4 +22,17 @@ describe('Установка в настроенный каталог проек
         expect(() => resolveFsRootPath(path.join(root,'../outside'))).toThrow();
         expect(resolveFsRootPath(path.join(root,'demo'))).toBe(path.join(root,'demo'));
     });
+
+    it('Относительный путь к разрешённой папке не зависит от рабочего каталога сервиса', () => {
+        const relative=path.relative(process.cwd(),path.join(root,'demo'));
+        expect(() => resolveFsRootPath(relative)).toThrow('абсолютным');
+        expect(() => resolveFsRootPath('')).toThrow('абсолютным');
+        vi.stubEnv('PROJECTS_ROOT',process.cwd());
+        expect(() => resolveFsRootPath('demo')).toThrow('абсолютным');
+    });
+
+    it('Соседняя папка с тем же префиксом не становится частью корня проектов', () => {
+        expect(() => resolveFsRootPath(root+'-other/demo')).toThrow();
+        expect(resolveFsRootPath(path.join(root,'demo','..','ready'))).toBe(path.join(root,'ready'));
+    });
 });

@@ -395,7 +395,7 @@ export class CatalogController {
     }
 
     /**
-     * Валидация `fsRootPath` (400 при выходе за пределы ~/projects).
+     * Валидация абсолютного `fsRootPath` внутри настроенного PROJECTS_ROOT.
      *
      * @param {string | undefined} value - путь из тела запроса
      * @returns {string | undefined} нормализованный путь или undefined (не задан)
@@ -408,7 +408,7 @@ export class CatalogController {
         try {
             return resolveFsRootPath(value);
         } catch {
-            throw new BadRequestException('fsRootPath должен быть абсолютным путём под ~/projects');
+            throw new BadRequestException('fsRootPath должен быть абсолютным путём внутри настроенного каталога PROJECTS_ROOT');
         }
     }
 

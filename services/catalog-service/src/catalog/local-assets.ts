@@ -100,14 +100,15 @@ function projectsRoot(): string {
 }
 
 /**
- * Разрешает `fs_root_path` проекта: абсолютный путь, находящийся под `~/projects`
+ * Разрешает `fs_root_path` проекта: абсолютный путь внутри настроенного PROJECTS_ROOT
  * (защита от наведения restore/sync на чужие каталоги).
  *
  * @param value - `fsRootPath` из запроса.
  * @returns {string} нормализованный абсолютный путь.
- * @throws {Error} если путь не абсолютный или выходит за пределы `~/projects`.
+ * @throws {Error} если путь не абсолютный или выходит за пределы PROJECTS_ROOT.
  */
 export function resolveFsRootPath(value: string): string {
+    if (!path.isAbsolute(value)) { throw new Error('fsRootPath должен быть абсолютным путём'); }
     const p = path.resolve(value);
     const root = projectsRoot();
 
