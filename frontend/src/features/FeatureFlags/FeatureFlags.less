@@ -1,0 +1,19 @@
+.feature-flags {
+    &__intro.ant-typography { max-width: 980px; margin-bottom: 24px; line-height: 1.7; }
+    &__row { padding: 22px 0; border-top: 1px solid #e8eef4; &:last-child { padding-bottom: 0; } }
+    &__setting { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    &__description { min-width: 0; flex: 1; > .ant-typography { margin-bottom: 6px; line-height: 1.65; overflow-wrap: anywhere; } }
+    &__updated { font-size: 12px; .ant-typography { font-size: inherit; overflow-wrap: anywhere; } }
+    &__control { flex-shrink: 0; margin-top: 2px; .ant-tag { margin-right: 0; } .ant-switch-checked { background: #1677ff; } }
+    &__error { margin-bottom: 20px; .ant-alert-content { min-width: 0; } .ant-alert-description { overflow-wrap: anywhere; } }
+    &__row &__error { margin: 16px 0 0; }
+    &__saved { display: block; margin-top: 12px; color: #1666b5; }
+    &__loading { padding: 28px; text-align: center; }
+    @media (max-width: 575px) {
+        .ant-card-extra { max-width: 100%; }
+        &__setting { flex-direction: column; gap: 14px; }
+        &__control { width: 100%; justify-content: space-between; }
+        &__error { flex-wrap: wrap; gap: 12px; .ant-alert-action { margin-left: 0; width: 100%; .ant-btn { width: 100%; } } }
+        &__error .ant-btn { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
+    }
+}

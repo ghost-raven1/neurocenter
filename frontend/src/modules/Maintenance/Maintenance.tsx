@@ -17,6 +17,7 @@ import { createMaintenanceRequestScope } from './maintenanceRequestScope';
 import { fetchBackup, fetchStorage } from './redux/actions';
 import CapacityStatus from './CapacityStatus';
 import FullBackupSettings from './FullBackupSettings';
+import { FeatureFlagsPanel } from '../../features/FeatureFlags/FeatureFlagsPanel';
 import './Maintenance.less';
 
 const { Paragraph, Text, Title } = Typography;
@@ -89,6 +90,7 @@ const AccountMaintenance: FC = () => {
                 actions={<Button icon={<ReloadOutlined />} loading={storageLoading || backupLoading} onClick={refresh} disabled={backingUp}>Обновить сведения</Button>}
             />
             <Row gutter={[ 24, 24 ]}>
+                <Col span={24}><FeatureFlagsPanel /></Col>
                 <Col span={24}><FullBackupSettings /></Col>
                 <Col span={24}><CapacityStatus /></Col>
                 <Col xs={24} xl={15}>

@@ -13,7 +13,7 @@ const RESOURCE_LABELS: Record<string, string> = {
     skill: 'Скилл', plugin: 'MCP / плагин', mcp: 'MCP-сервер', project: 'Проект', quota: 'Квоты',
     backup: 'Резервная копия', snapshot: 'Снимок', rag: 'База знаний', package: 'Пакет',
     profile: 'Профиль', asset: 'Инструмент', catalog: 'Каталог',
-    bridge:'Мост', maintenance:'Обслуживание', user:'Пользователь',
+    bridge:'Мост', maintenance:'Обслуживание', user:'Пользователь', feature_flag:'Функция платформы',
 };
 
 /** Переводит реальные коды operations, сохраняя неизвестное действие без догадок. */
@@ -28,6 +28,7 @@ export function describeAuditAction(action: string): { label: string; color: str
     if (normalized === 'project.asset.add') { return { label: 'Добавлен в проект', color: 'blue' }; }
     if (normalized === 'project.asset.remove') { return { label: 'Убран из проекта', color: 'red' }; }
     if (normalized === 'maintenance.policy.update') { return {label:'Настройки обслуживания',color:'cyan'}; }
+    if (normalized === 'feature_flag.update') { return {label:'Переключение функции',color:'blue'}; }
     if (normalized === 'maintenance.external.verified') { return {label:'Внешняя копия проверена',color:'green'}; }
     if (normalized === 'maintenance.run.failed') { return {label:'Ошибка полной копии',color:'red'}; }
     if (normalized === 'quota.project') { return { label: 'Изменение квот', color: 'cyan' }; }
@@ -40,6 +41,14 @@ export function auditResourceLabel(type: string): string { return RESOURCE_LABEL
 
 /** Старое техническое значение admin не выдаётся за подтверждённую почту пользователя. */
 export function auditActorLabel(actor: string): string { return !actor || actor === 'admin' ? 'Служебная запись' : actor; }
+
+/** Флаговый аудит раскрывает только подтверждённое булево состояние. */
+export function featureFlagAuditChanges(details:IAuditEvent['details']):{label:string;before:string;after:string}[] {
+    const enabled=(value:unknown):unknown=>value&&typeof value==='object'&&!Array.isArray(value)?(value as Record<string,unknown>).enabled:undefined;
+    const before=enabled(details?.before),after=enabled(details?.after);
+    if(typeof before!=='boolean'||typeof after!=='boolean'||before===after)return [];
+    return [{label:'Состояние',before:before?'Включено':'Выключено',after:after?'Включено':'Выключено'}];
+}
 
 export function formatAuditTime(value: string | null): string {
     if (!value || !Number.isFinite(Date.parse(value))) { return 'Дата не указана'; }

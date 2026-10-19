@@ -6,7 +6,7 @@ import { errorMessage } from '../../common/utils/errorMessage';
 import bffApi from '../../core/api/bff';
 import type { IAuditEvent, IOperationDetail } from '../../core/api/interfaces';
 import { useSectionUpdates } from '../../core/socket/useSectionUpdates';
-import { auditActorLabel, auditResourceLabel, describeAuditAction, formatAuditTime, maintenanceAuditChanges } from './auditHelpers';
+import { auditActorLabel, auditResourceLabel, describeAuditAction, featureFlagAuditChanges, formatAuditTime, maintenanceAuditChanges } from './auditHelpers';
 
 const { Paragraph, Text } = Typography;
 const LEVEL_LABELS: Record<string, string> = { INFO: 'Информация', WARN: 'Внимание', ERROR: 'Ошибка', DEBUG: 'Отладка' };
@@ -18,6 +18,8 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
     const [ error, setError ] = useState<string | null>(null);
     const [ attempt, setAttempt ] = useState(0);
     const retry = useCallback(() => setAttempt(value => value + 1), []);
+    const flagEvent=event.action==='feature_flag.update';
+    const changes=flagEvent?featureFlagAuditChanges(event.details):maintenanceAuditChanges(event.details);
     useSectionUpdates(['audit', 'operations'], retry, Boolean(event.correlationId));
 
     useEffect(() => {
@@ -47,7 +49,7 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
             {event.decisionId && <Descriptions.Item label="Решение доступа"><Text code>{event.decisionId}</Text></Descriptions.Item>}
         </Descriptions>
         {(!event.actor || event.actor === 'admin') && <Paragraph type="secondary">В исходной записи не сохранена почта пользователя: указан технический исполнитель {event.actor || 'без имени'}.</Paragraph>}
-        {event.details&&<Descriptions title="Изменённые настройки обслуживания" column={1} size="small">{maintenanceAuditChanges(event.details).map(change=><Descriptions.Item key={change.label} label={change.label}><Text delete>{change.before}</Text> → <Text>{change.after}</Text></Descriptions.Item>)}</Descriptions>}
+        {changes.length>0&&<Descriptions title={flagEvent?'Изменение функции':'Изменённые настройки обслуживания'} column={1} size="small">{changes.map(change=><Descriptions.Item key={change.label} label={change.label}><Text delete>{change.before}</Text> → <Text>{change.after}</Text></Descriptions.Item>)}</Descriptions>}
         {!event.correlationId ? <Alert showIcon type="info" message={event.source==='security'?'Изменение зафиксировано в транзакционном журнале':'Связанная операция не указана'} /> : loading && !detail ? <div className="audit-page__loading"><Spin tip="Загружаем подробности…" /></div> : null}
         {error && <Alert
             showIcon type="error" message={detail ? 'Не удалось обновить подробности — показаны предыдущие данные' : 'Подробности недоступны'} description={error}
