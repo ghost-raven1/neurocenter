@@ -9,20 +9,23 @@ const {Text,Paragraph,Title}=Typography;
 
 /** Действующий лимит знаний; черновик и его ревизия переживают фоновые обновления. */
 export default function RagQuotaPanel({projectKey}:{projectKey:string}):JSX.Element{
-    const {quota,loading,error,refresh,accept}=useRagQuota(projectKey);const [form]=Form.useForm<{limitMiB:number}>();
+    const {quota,loading,error,refresh,accept,captureCurrent}=useRagQuota(projectKey);const [form]=Form.useForm<{limitMiB:number}>();
     const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [saveError,setSaveError]=useState('');
     const draftRevision=useRef<number|null>(null);const edited=useRef(false);const busy=useRef(false);
+    useEffect(()=>{edited.current=false;busy.current=false;draftRevision.current=null;setDirty(false);setSaving(false);setSaveError('');},[captureCurrent]);
     useEffect(()=>{if(quota&&!edited.current){form.setFieldsValue({limitMiB:quota.limitBytes/MEBIBYTE});draftRevision.current=quota.revision;}},[quota,form]);
-    const review=async():Promise<void>=>{const fresh=await refresh();if(fresh){draftRevision.current=fresh.revision;setSaveError('');}};
+    const review=async():Promise<void>=>{const isCurrent=captureCurrent();if(!isCurrent()){return;}const fresh=await refresh();if(fresh&&isCurrent()){draftRevision.current=fresh.revision;setSaveError('');}};
     const save=async(values:{limitMiB:number}):Promise<void>=>{
-        if(busy.current||!quota||draftRevision.current===null){return;}busy.current=true;setSaving(true);setSaveError('');
+        const isCurrent=captureCurrent();
+        if(!isCurrent()||busy.current||!quota||draftRevision.current===null){return;}busy.current=true;setSaving(true);setSaveError('');
         try{
             const limitBytes=ragLimitBytes(values.limitMiB,Math.max(quota.maximumBytes,quota.limitBytes));
             const saved=requireRagQuota(await bffApi.updateRagQuota(projectKey,{limitBytes,expectedRevision:draftRevision.current}));
+            if(!isCurrent()){return;}
             if(saved.limitBytes!==limitBytes){throw new Error('Сервер не подтвердил новый лимит. Обновите сведения и повторите сохранение.');}
             edited.current=false;setDirty(false);accept(saved);draftRevision.current=saved.revision;form.setFieldsValue({limitMiB:saved.limitBytes/MEBIBYTE});void message.success('Лимит базы знаний сохранён');void refresh();
-        }catch(failure){setSaveError(errorMessage(failure,'Не удалось сохранить лимит. Введённое значение осталось в форме.'));}
-        finally{busy.current=false;setSaving(false);}
+        }catch(failure){if(isCurrent()){setSaveError(errorMessage(failure,'Не удалось сохранить лимит. Введённое значение осталось в форме.'));}}
+        finally{if(isCurrent()){busy.current=false;setSaving(false);}}
     };
     return <Space direction="vertical" size={16} className="rag-quota">
         <Card className="rag-quota-card" title="Лимит базы знаний" extra={<Button onClick={()=>void review()} loading={loading} disabled={saving}>Обновить сведения</Button>}>
