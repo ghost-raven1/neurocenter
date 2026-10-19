@@ -8,7 +8,7 @@ import path from 'node:path';
 import {composeEnvironment} from './configuration.mjs';
 
 export const repositoryRoot=fileURLToPath(new URL('../../',import.meta.url));
-export const applicationServices=['frontend','api-gateway','oauth2-bridge','rag-sync-service','skills-service','catalog-service'];
+export const applicationServices=['frontend','api-gateway','oauth2-bridge','rag-sync-service','skills-service','catalog-service','feature-flags-service'];
 
 /** Потоки дампов не попадают в память или логи оператора. */
 export async function docker(args,{input, inputFile, outputFile, inherit=false, timeout=30*60*1000,release}={}){

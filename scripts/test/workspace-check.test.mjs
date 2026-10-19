@@ -111,6 +111,8 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
+        for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+        await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
         for (const directory of workspacePackages) await fs.mkdir(path.join(checkout, directory), {recursive: true});
         await fs.writeFile(path.join(bin, 'docker'), `#!${process.execPath}
             const args=process.argv.slice(2).join(' ');

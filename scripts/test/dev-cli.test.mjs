@@ -28,6 +28,8 @@ async function fixture(t, mode = 'ready') {
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -42,7 +44,7 @@ async function fixture(t, mode = 'ready') {
         AbortSignal.timeout=ms=>{record({kind:'timeout',ms});return timeout(ms);};
         globalThis.fetch=async input=>{
             const url=new URL(input); record({kind:'health',port:url.port,path:url.pathname,search:url.search});
-            if(!['22222','4100','4200','4300','4000','5173'].includes(url.port))return deny();
+            if(!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
             if(url.port==='5173'){
                 const mode=process.env.DEV_CLI_MODE;
                 if(mode==='frontend-error')return new Response('Process.cwd failed with error',{status:500});
@@ -105,17 +107,18 @@ test('Лишний аргумент отклоняется до сборки, Do
 test('Статус показывает адреса всех сервисов и не меняет состояние процессов', async t => {
     const f = await fixture(t), result = await f.run('status');
     assert.equal(result.status, 0, result.stderr);
-    for (const port of [22222, 4100, 4200, 4300, 4000, 5173]) assert.ok(result.stdout.includes(String(port)), String(port));
+    for (const port of [22222, 4100, 4200, 4300, 4400, 4000, 5173]) assert.ok(result.stdout.includes(String(port)), String(port));
     assert.match(result.stdout, /готов/);
     assert.equal(result.stderr, '');
     const requests = result.events.filter(event => event.kind === 'health');
-    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4200', '4300', '5173']);
+    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4200', '4300', '4400', '5173']);
     assert.deepEqual(requests.find(event => event.port === '5173'), {
         kind: 'health', port: '5173', path: '/node_modules/antd/dist/antd.less', search: '?direct',
     });
-    assert.ok(requests.filter(event => event.port !== '5173').every(event => event.path === '/health' && event.search === ''));
+    assert.ok(requests.filter(event => !['5173','4400'].includes(event.port)).every(event => event.path === '/health' && event.search === ''));
+    assert.equal(requests.find(event=>event.port==='4400').path,'/ready');
     assert.deepEqual(result.events.filter(event => event.kind === 'timeout').map(event => event.ms).sort((a, b) => a - b),
-        [1000, 1000, 1000, 1000, 1000, 10000]);
+        [1000, 1000, 1000, 1000, 1000, 1000, 10000]);
     await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
 });
 
@@ -128,10 +131,10 @@ for (const [mode, description] of [
         const f = await fixture(t, mode), result = await f.run('status');
         assert.equal(result.status, 1);
         assert.match(result.stdout, /Веб-интерфейс[^\n]*недоступен/);
-        for (const label of ['Вход и сессии', 'Каталог', 'Скиллы', 'Базы знаний', 'API']) {
+        for (const label of ['Вход и сессии', 'Каталог', 'Флаги функций', 'Скиллы', 'Базы знаний', 'API']) {
             assert.match(result.stdout, new RegExp(label + '[^\\n]*готов'));
         }
-        assert.match(result.stderr, /Готово сервисов: 5\/6/);
+        assert.match(result.stderr, /Готово сервисов: 6\/7/);
         await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
     });
 }
@@ -141,7 +144,7 @@ test('Недоступный сервис остаётся заметен и с�
     assert.equal(result.status, 1);
     assert.match(result.stdout, /4300/);
     assert.match(result.stdout, /недоступ/);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 6);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
 });
 
 test('Логи читаются из LOGDIR с пробелами и показывают последние события', async t => {

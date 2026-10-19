@@ -65,6 +65,7 @@ test('Новый релиз начинается только после коп�
     const result=await updateProduction(f.options,f.deps);assert.equal(result.state,'completed');assert.equal(result.backup.sha256,'e'.repeat(64));
     assert.equal(f.calls[0].backup,true);assert.equal(f.calls[0].config.maxPauseMs,60000);
     const up=f.calls.find(row=>row.command?.[0]==='up');assert.ok(up.command.includes('--no-build'));assert.ok(up.command.includes('never'));assert.equal(up.settings.timeout,60000);
+    assert.ok(up.command.includes('feature-flags-service'));
     const sync=f.calls.filter(row=>row.command?.includes('dist/builtin-catalog/sync.cli.js'));assert.equal(sync.length,2);
     assert.ok(sync[0].command.includes('--download-only'));assert.ok(!sync[1].command.includes('--download-only'));
     assert.equal(sync[1].settings.timeout,60000);
@@ -76,6 +77,7 @@ test('Новый релиз начинается только после коп�
     assert.equal(models[1].settings.timeout,60000);assert.ok(f.calls.indexOf(models[1])<f.calls.indexOf(up));
     assert.equal(result.models.models,2);
     const pinned=JSON.parse(await readFile(up.config.files.at(-1),'utf8'));assert.equal(pinned.services['catalog-service'].image,image('b'));
+    assert.equal(pinned.services['feature-flags-service'].image,image('b'));
     assert.equal(pinned.services['model-volume-init'].image,image('b'));
     assert.equal(await readFile(path.join(f.directory,'updates/test-update.env.before'),'utf8'),f.before);
     assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before.replace("'old'","'new'"));

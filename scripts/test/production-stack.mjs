@@ -111,9 +111,9 @@ try{
     socket=await connectSocket();
     await verifyProductionBridge({check,request,query});
     await verifyProductionSkills({check,request});
-    await check('Метрики всех пяти сервисов доступны только отдельному внутреннему сборщику',async()=>{
+    await check('Метрики всех шести сервисов доступны только отдельному внутреннему сборщику',async()=>{
         assert.equal((await request('/metrics')).status,404);
-        for(const service of ['oauth2-bridge','api-gateway','catalog-service','skills-service','rag-sync-service']){
+        for(const service of ['oauth2-bridge','api-gateway','catalog-service','skills-service','rag-sync-service','feature-flags-service']){
             const result=JSON.parse(docker(['exec','-T',service,'node','-e',"const fs=require('fs');const url='http://127.0.0.1:'+process.env.PORT+'/metrics';const token=fs.readFileSync(process.env.NEUROCENTER_METRICS_TOKEN_FILE,'utf8').trim();const internal=fs.readFileSync(process.env.NEUROCENTER_INTERNAL_TOKEN_FILE,'utf8').trim();Promise.all([fetch(url),fetch(url,{headers:{authorization:'Bearer '+internal}}),fetch(url,{headers:{authorization:'Bearer '+token}})]).then(async values=>console.log(JSON.stringify({statuses:values.map(r=>r.status),text:await values[2].text()})))"]));
             assert.deepEqual(result.statuses,[403,403,200]);assert.ok(result.text.includes('neurocenter_process_uptime_seconds'));assert.equal(result.text.includes('example.test'),false);
         }

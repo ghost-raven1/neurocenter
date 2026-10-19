@@ -90,7 +90,7 @@ async function cleanupSide(side){
     assert.equal((await containers(side.client)).length,0);side.cleaned=true;
 }
 try{
-    await check('Исходный 0.9 и новый P0 закреплены шестью настоящими image ID',async()=>{
+    await check('Исходный 0.9 и новый P0 закреплены семью настоящими image ID',async()=>{
         const inspect=async release=>Object.fromEntries(await Promise.all(applicationServices.map(async service=>{
             const [image]=JSON.parse(await docker(['image','inspect','neurocenter/'+service+':'+release]));assert.match(image.Id,/^sha256:[a-f0-9]{64}$/);return [service,image.Id];
         })));
@@ -166,7 +166,7 @@ try{
         await assert.rejects(updateProduction({...options,plan:{...plan,rehearsalSha256:'0'.repeat(64)},execute:false}),/SHA256/);
         assert.equal((await updateProduction({...options,execute:false})).dryRun,true);
     });
-    await check('Настоящий updateProduction создаёт новую копию, меняет шесть образов и сохраняет настройки',async()=>{
+    await check('Настоящий updateProduction создаёт новую копию, меняет семь образов и сохраняет настройки',async()=>{
         const beforeTime=Date.now();updateReceipt=await updateProduction({...options,execute:true});timings.orchestratedUpdateMs=Date.now()-beforeTime;
         assert.equal(updateReceipt.state,'completed');assert.equal(updateReceipt.repeated,false);await verifyBackup(updateReceipt.backup.destination,updateReceipt.backup.sha256);
         await recordProductionHealth(source.client,stage,'update-orchestrated-target-ready');assert.deepEqual(await fingerprint(source),before);assert.deepEqual(await filesFingerprint(source),beforeFiles);await verifyProductionRuntimeArtifact(source.client,artifact);

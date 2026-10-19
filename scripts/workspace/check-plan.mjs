@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const workspacePackages = ['services/oauth2-bridge', 'services/catalog-service', 'services/skills-service',
+export const workspacePackages = ['services/oauth2-bridge', 'services/catalog-service', 'services/feature-flags-service', 'services/skills-service',
     'services/rag-sync-service', 'services/api-gateway', 'frontend', 'mcp/neurocenter-asset-sync'];
 
 /** Общие контракты и builder входят в приёмку вместе с сервисами, каждый файл ровно один раз. */

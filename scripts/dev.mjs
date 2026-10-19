@@ -17,6 +17,7 @@ const stateFile = path.join(stateDir, 'processes.json');
 const services = [
     { name: 'bridge', label: 'Вход и сессии', dir: 'services/oauth2-bridge', port: 22222 },
     { name: 'catalog', label: 'Каталог', dir: 'services/catalog-service', port: 4100 },
+    { name: 'flags', label: 'Флаги функций', dir: 'services/feature-flags-service', port: 4400, healthPath: '/ready' },
     { name: 'skills', label: 'Скиллы', dir: 'services/skills-service', port: 4200 },
     { name: 'rag', label: 'Базы знаний', dir: 'services/rag-sync-service', port: 4300 },
     { name: 'gateway', label: 'API', dir: 'services/api-gateway', port: 4000 },
@@ -141,7 +142,7 @@ async function assertServicePortsAvailable() {
 async function health(deadline = Infinity) {
     return Promise.all(services.map(async service => {
         const frontend = service.name === 'frontend';
-        const suffix = frontend ? '/node_modules/antd/dist/antd.less?direct' : '/health';
+        const suffix = frontend ? '/node_modules/antd/dist/antd.less?direct' : service.healthPath || '/health';
         try {
             const timeout = Math.max(1, Math.min(frontend ? 10000 : 1000, deadline - Date.now()));
             const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal: AbortSignal.timeout(timeout) });
@@ -188,6 +189,7 @@ async function start() {
         CATALOG_SERVICE_URL: 'http://127.0.0.1:4100',
         SKILLS_SERVICE_URL: 'http://127.0.0.1:4200',
         RAG_SERVICE_URL: 'http://127.0.0.1:4300',
+        FEATURE_FLAGS_SERVICE_URL: 'http://127.0.0.1:4400',
         AUTH_SERVICE_URL: 'http://127.0.0.1:22222',
         CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
         RAG_PG_URL: process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag',

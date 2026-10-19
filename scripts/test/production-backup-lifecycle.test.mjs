@@ -23,7 +23,7 @@ async function fixture(action){
     const states=()=>[...applicationServices,'postgres'].map(service=>({Id:service,Image:image,Config:{Labels:{'com.docker.compose.service':service}},
         State:{Running:service==='postgres'||running,ExitCode:0,OOMKilled:false},Mounts:mounts[service]||[]}));
     const deps={
-        composeClient:options=>({...options,run:async(args,config)=>{events.push(args[0]);if(args[0]==='stop'){running=false;assert.ok(config.timeout>0);}if(args[0]==='start'){running=true;}return '';}}),
+        composeClient:options=>({...options,run:async(args,config)=>{events.push(args[0]);if(args[0]==='stop'){running=false;assert.ok(config.timeout>0);assert.ok(args.includes('feature-flags-service'));}if(args[0]==='start'){running=true;assert.ok(args.includes('feature-flags-service'));}return '';}}),
         composeConfiguration:async()=>({volumes:Object.fromEntries(Object.entries(names).map(([key,name])=>[key,{name}]))}),
         containers:async()=>states(),serviceImageIds:async()=>Object.fromEntries(applicationServices.map(service=>[service,image])),
         maintenanceLock:async(_client,_image,_kind,action)=>{events.push('lock');try{return await action();}finally{events.push('unlock');}},
@@ -44,7 +44,9 @@ async function fixture(action){
     try{await action({root,events,options,deps,isRunning:()=>running,setCopy:value=>{copy=value;}});}finally{await rm(root,{recursive:true,force:true});}
 }
 test('Обычная полная копия проверяется и возвращает приложения до снятия блокировки',async()=>fixture(async f=>{
-    const receipt=await backupProduction(f.options,f.deps);assert.equal(receipt.ok,true);await verifyBackup(receipt.destination,receipt.sha256);
+    const receipt=await backupProduction(f.options,f.deps);assert.equal(receipt.ok,true);const manifest=await verifyBackup(receipt.destination,receipt.sha256);
+    assert.equal(Object.keys(manifest.images).length,7);assert.equal(manifest.images['feature-flags-service'],image);
+    assert.deepEqual(manifest.databases.map(database=>database.name),['catalog','rag']);
     assert.equal(f.isRunning(),true);assert.deepEqual(f.events,['lock','stop','copy','start','unlock']);assert.deepEqual((await readdir(f.root)).sort(),['snapshot']);
 }));
 test('Обновление получает проверенную копию под той же блокировкой и не запускает старые приложения',async()=>fixture(async f=>{

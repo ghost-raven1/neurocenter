@@ -34,6 +34,8 @@ async function fixture(t) {
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
     const entry = path.join(serviceDirectory, 'dist/main.js');
     const worker = `const net=require('node:net');
         if(process.env.DEV_STOP_IGNORE_TERM==='1')process.on('SIGTERM',()=>{});

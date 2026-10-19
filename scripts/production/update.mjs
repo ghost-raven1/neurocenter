@@ -26,7 +26,7 @@ export function validateUpdatePlan(plan){
         throw new Error('Не заданы совместимость, репетиция и восстановление в новый проект');
     }
     for(const key of ['sourceImages','targetImages']){
-        if(Object.keys(plan[key]||{}).length!==applicationServices.length||applicationServices.some(service=>!imagePattern.test(plan[key]?.[service]||''))){throw new Error('Зафиксируйте все шесть образов '+key);}
+        if(Object.keys(plan[key]||{}).length!==applicationServices.length||applicationServices.some(service=>!imagePattern.test(plan[key]?.[service]||''))){throw new Error('Зафиксируйте все '+applicationServices.length+' образов '+key);}
     }
     if(!Number.isSafeInteger(plan.maxPauseMs)||plan.maxPauseMs<60000||plan.maxPauseMs>86400000){throw new Error('maxPauseMs должен быть от минуты до суток');}
     assertMigrationPrefix([],plan.catalogMigrations);

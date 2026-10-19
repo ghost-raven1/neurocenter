@@ -20,6 +20,8 @@ async function fixture(t) {
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
     await fs.symlink(process.execPath, path.join(caller, 'runtime/node'));
     const record = path.join(directory, 'calls.jsonl');
     const hook = path.join(directory, 'isolated-startup.mjs');
@@ -30,7 +32,7 @@ async function fixture(t) {
         record({kind:'startup',cwd:process.cwd()});
         const deny=()=>{throw Error('REAL_NETWORK_FORBIDDEN');};
         globalThis.fetch=async input=>{const url=new URL(input);
-            if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4000','5173'].includes(url.port))return deny();
+            if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
             record({kind:'health',port:url.port});
             return url.port==='5173'
                 ? new Response('body { color: #24344a; }',{headers:{'Content-Type':'text/css'}})
@@ -64,7 +66,7 @@ for (const action of ['--help', 'status']) {
         assert.equal(result.status, 0, result.stderr);
         assert.doesNotMatch(result.stderr, /uv_cwd|process\.cwd|REAL_NETWORK_FORBIDDEN/);
         assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
-        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 6);
+        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
         else assert.match(result.stdout, /Использование: scripts\/dev\.sh/);
         await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
     });
@@ -80,14 +82,14 @@ test('CLI восстанавливает корень проекта после 
 test('CLI сохраняет выбранный Node через относительный NODE_BIN из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: './runtime/node'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 6);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 
 test('CLI находит Node в относительном PATH из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: '', PATH: 'runtime:/usr/bin:/bin'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 6);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 

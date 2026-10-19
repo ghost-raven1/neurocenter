@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const services = [
     ['bridge', 'services/oauth2-bridge'],
     ['catalog', 'services/catalog-service'],
+    ['flags', 'services/feature-flags-service'],
     ['skills', 'services/skills-service'],
     ['rag', 'services/rag-sync-service'],
     ['gateway', 'services/api-gateway'],
@@ -87,7 +88,7 @@ async function fixture(t, mode) {
         await fs.writeFile(entry, `
             const fs=require('node:fs'), service=${JSON.stringify(name)};
             const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
-            record({kind:'child-start',service,pid:process.pid,entry:process.argv[1]});
+            record({kind:'child-start',service,pid:process.pid,entry:process.argv[1],flagsUrl:process.env.FEATURE_FLAGS_SERVICE_URL});
             process.on('SIGTERM',()=>{record({kind:'child-stop',service,pid:process.pid});process.exit(0);});
             if(service==='catalog'){
                 const fail=()=>{record({kind:'child-exit',service,pid:process.pid});console.error('fixture catalog failure');process.exit(7);};
@@ -126,7 +127,7 @@ async function fixture(t, mode) {
             const server=new EventEmitter();
             server.listen=options=>{
                 record({kind:'port-probe',...options});
-                if(options.host!=='127.0.0.1'||!options.exclusive||![22222,4100,4200,4300,4000,5173].includes(options.port)){
+                if(options.host!=='127.0.0.1'||!options.exclusive||![22222,4100,4200,4300,4400,4000,5173].includes(options.port)){
                     record({kind:'unexpected-probe'});throw Error('REAL_PORT_BIND_FORBIDDEN');
                 }
                 queueMicrotask(()=>{
@@ -143,7 +144,7 @@ async function fixture(t, mode) {
         globalThis.fetch=async input=>{
             const url=new URL(input);
             record({kind:'health-start',port:url.port,path:url.pathname,search:url.search});
-            if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4000','5173'].includes(url.port))return deny();
+            if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
             fs.writeFileSync(process.env.DEV_START_MARKER,'started');
             await new Promise(resolve=>setTimeout(resolve,300));
             record({kind:'health-end',port:url.port});
@@ -194,7 +195,7 @@ test('Запуск называет завершившийся сервис, п�
     assert.match(result.stderr, /код\S*\s+7/);
     assert.match(result.stderr, /neurocenter-catalog\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
-    assert.equal(result.events.filter(event => event.kind === 'npm').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'npm').length, 8);
     assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 1);
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
     assert.equal(result.events.find(event => event.kind === 'catalog-sync').artifactDir, path.join(f.checkout, 'data/runtime-artifacts'));
@@ -220,7 +221,7 @@ test('Ошибка поставки каталога показывает при
     }), state);
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
     assert.equal(result.events.find(event => event.kind === 'catalog-sync').mode, '--skip-conflicts');
-    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 6);
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 7);
     assert.ok(result.events.some(event => event.kind === 'health-start'));
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
 });

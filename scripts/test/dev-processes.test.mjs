@@ -33,6 +33,8 @@ async function fixture(t, checkoutName = 'checkout before rename') {
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
     await fs.writeFile(path.join(checkout, relativeEntry), 'process.send({ready:true});setInterval(()=>{},1000);');
     async function start(entryRoot = checkout, cwd = path.join(entryRoot, 'services/catalog-service')) {
         const child = spawn(process.execPath, [path.join(entryRoot, relativeEntry)], {cwd, stdio: ['ignore', 'ignore', 'pipe', 'ipc']});
@@ -65,6 +67,17 @@ async function settled(child) {
     if (child.exitCode !== null || child.signalCode !== null) return;
     await new Promise(resolve => setTimeout(resolve, 30));
 }
+
+for(const saved of [false,true])test(`down останавливает свой сервис флагов ${saved?'по сохранённому PID':'без списка PID'}`,async t=>{
+    const f=await fixture(t),directory=path.join(f.checkout,'services/feature-flags-service');
+    const entry=path.join(directory,'dist/main.js');await fs.mkdir(path.dirname(entry),{recursive:true});
+    await fs.writeFile(entry,'process.send({ready:true});setInterval(()=>{},1000);');
+    const child=spawn(process.execPath,[entry],{cwd:directory,stdio:['ignore','ignore','pipe','ipc']});
+    f.children.push(child);await once(child,'message');
+    if(saved)await f.record(f.checkout,child,{name:'flags',identity:devProcessIdentity(child.pid)});
+    const result=f.down();await settled(child);
+    assert.equal(alive(child),false);assert.match(result.stdout,/Остановлено процессов этого каталога: 1/);
+});
 
 test('down останавливает свой процесс после переноса проекта, хотя argv содержит старый путь', async t => {
     const f = await fixture(t), child = await f.start();

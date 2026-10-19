@@ -154,6 +154,7 @@ services:
       BACKUP_MAX_TOTAL_BYTES: ${BACKUP_MAX_TOTAL_BYTES:-68719476736}
       BACKUP_MAX_FILE_BYTES: ${BACKUP_MAX_FILE_BYTES:-17179869184}
       BACKUP_MIN_FREE_BYTES: ${BACKUP_MIN_FREE_BYTES:-1073741824}
+      FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
       MODEL_RUNTIME_URL: http://model-runtime:11434
       MODEL_STORAGE_PATH: /data/models
       MODEL_HOSTING_ENABLED: ${MODEL_HOSTING_ENABLED:-true}
@@ -165,6 +166,29 @@ services:
       postgres: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4100/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  feature-flags-service:
+    <<: *service
+    image: neurocenter/feature-flags-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/feature-flags-service/Dockerfile}
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    environment:
+      <<: *runtime
+      PORT: 4400
+      CATALOG_PG_URL_FILE: /run/secrets/catalog_url
+      CATALOG_SERVICE_URL: http://catalog-service:4100
+    secrets: [metrics_token, internal_token, catalog_url]
+    depends_on:
+      postgres: {condition: service_healthy}
+      catalog-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4400/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -267,12 +291,14 @@ services:
       SKILLS_SERVICE_URL: http://skills-service:4200
       RAG_SERVICE_URL: http://rag-sync-service:4300
       AUTH_SERVICE_URL: http://oauth2-bridge:22222
+      FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
     secrets: [metrics_token, internal_token]
     depends_on:
       catalog-service: {condition: service_healthy}
       skills-service: {condition: service_healthy}
       rag-sync-service: {condition: service_healthy}
       oauth2-bridge: {condition: service_healthy}
+      feature-flags-service: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
