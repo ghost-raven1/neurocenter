@@ -17,8 +17,10 @@ export function ProjectEmbeddingConnection({ selection, disabled }: { selection:
     const binding = device?.report.bindings?.find(item => item.projectId === selection.projectId && item.valid !== false);
     const choices = embeddingInstallations(bridge.installations, device, selection.projectId, bridge.jobs);
     const item = choices.length === 1 ? choices[0] : choices.find(row => installationKey(row) === selected);
+    const installationPrompt = choices.length > 1 ? 'Выберите установку OpenCodeRAG для подключения модели.'
+        : 'Установите или обновите OpenCodeRAG и проверьте его файлы в каталоге. Если установок несколько, выберите нужную.';
     const reason = !bridge.devicesReady || !bridge.jobsReady || !bridge.installationsReady ? 'Дождитесь актуальных данных моста или обновите подключение.'
-        : embeddingConnectionBlocker(device, binding) || (!item ? 'Установите или обновите OpenCodeRAG и проверьте его файлы в каталоге. Если установок несколько, выберите нужную.' : '');
+        : embeddingConnectionBlocker(device, binding) || (!item ? installationPrompt : '');
     const input = item && binding && sha(binding.bindingId) && uuid(binding.instanceId) && selection.profile && selection.modelPin ? embeddingConnectionInput(item, binding, selection) : undefined;
     const target = JSON.stringify([device?.id, device?.report.root, binding?.bindingId, binding?.instanceId, binding?.folderName, item && installationKey(item), selection.revision, selection.modelPin]);
     return <Space direction="vertical" className="project-embedding__connection" size={12}>

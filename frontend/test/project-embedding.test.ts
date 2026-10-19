@@ -164,6 +164,16 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         current.device.report.capabilities.push('hosted-rag-model-v1');current.item.hostedEmbedding=undefined;render();expect(ui.buttons.has('Открыть OpenCodeRAG в каталоге')).toBe(true);
         current.item.hostedEmbedding={supported:true};const html=render();expect(html).toContain('/fixture/root/Проект');expect(html).toContain('Рабочий компьютер');expect(ui.consent?.checked).toBe(false);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
+    it('При двух проверенных установках просит выбрать нужную и сохраняет отдельное согласие на подключение',()=>{
+        mode='connection';const plugin={...current.item,assetId:'rag-plugin',assetKind:'plugin' as const,
+            inspection:{...current.item.inspection!,assetId:'rag-plugin',assetKind:'plugin' as const}};
+        current.bridge.installations=[current.item,plugin];const html=render(),installations=ui.choices.get('Установка OpenCodeRAG для модели')!;
+        expect(installations.options).toHaveLength(2);expect(installations.value).toBeUndefined();
+        expect(html).toContain('Выберите установку OpenCodeRAG для подключения модели.');expect(html).not.toContain('Установите или обновите');
+        expect(ui.buttons.has('Открыть OpenCodeRAG в каталоге')).toBe(false);expect(ui.consent).toBeUndefined();expect(bridgeApi.create).not.toHaveBeenCalled();
+        installations.onChange(installations.options[1].value);render();expect(ui.consent?.checked).toBe(false);
+        expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
     it('Отсутствующая общая папка и неподтверждённый instance не допускают запуск и не ломают форму',()=>{
         mode='connection';current.device.report.root=undefined;render();expect(button('Выбрать общую папку').href).toBe('/projects');
         expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);
