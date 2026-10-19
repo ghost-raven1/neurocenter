@@ -20,6 +20,19 @@ async function readLock(lock: string): Promise<string> {
 }
 /** Проверяем владельца ОС и отдельный аргумент установленного entry перед сигналом процессу. */
 async function assertWorker(pid: number, index: string): Promise<void> {
+    const refusal = 'PID блокировки принадлежит другому процессу. Обновление остановлено без завершения этого процесса.';
+    if (process.platform === 'linux') {
+        // procfs сохраняет UTF-8 и границы аргументов независимо от LANG/LC_ALL вызывающего shell.
+        const verified = await Promise.all([fs.stat(`/proc/${pid}`), fs.readFile(`/proc/${pid}/cmdline`, 'utf8')])
+            .then(([owner, command]) => {
+                const args = command.replace(/\0$/, '').split('\0');
+                const evaluation = args.slice(1, -2).some(argument => /^(?:--(?:eval|print)(?:=|$)|-[^-]*[ep])/.test(argument));
+                return Number.isSafeInteger(process.getuid?.()) && owner.uid === process.getuid?.()
+                    && args.at(-2) === index && args.at(-1) === '--worker' && !evaluation;
+            }, () => false);
+        if (!verified) { throw new Error(refusal); }
+        return;
+    }
     let command: string; let ownUser: boolean;
     if (process.platform === 'win32') {
         const script = `$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; ` +
@@ -35,7 +48,7 @@ async function assertWorker(pid: number, index: string): Promise<void> {
     const escaped = index.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const argument = new RegExp(`(?:^|\\s)(?:"${escaped}"|${escaped})\\s+--worker(?:\\s|$)`);
     if (!ownUser || !argument.test(command)) {
-        throw new Error('PID блокировки принадлежит другому процессу. Обновление остановлено без завершения этого процесса.');
+        throw new Error(refusal);
     }
 }
 async function stopWorker(index: string, force: boolean): Promise<boolean> {

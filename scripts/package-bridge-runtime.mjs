@@ -18,10 +18,12 @@ if (!platform || !['x64', 'arm64'].includes(process.arch)) throw new Error('Эт
 const build = await verifyBridgeBuild(path.join(bridge, 'dist'), manifest.version);
 const musl = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
 const target = `${platform}-${process.arch}${musl ? '-musl' : ''}`;
-const output = path.join(root, 'bridge-dist/runtime');
+const output = process.env.BRIDGE_RUNTIME_OUTPUT_DIR
+    ? path.resolve(process.env.BRIDGE_RUNTIME_OUTPUT_DIR)
+    : path.join(root, 'bridge-dist/runtime');
 await fs.mkdir(output, { recursive: true });
-await fs.mkdir(path.join(root, '.run'), { recursive: true });
-const stage = await fs.mkdtemp(path.join(root, '.run/bridge-runtime-'));
+// Временный архив остаётся на томе назначения: rename работает и через Docker bind mount.
+const stage = await fs.mkdtemp(path.join(output, '.bridge-runtime-'));
 const content = path.join(stage, 'package');
 try {
     await fs.mkdir(path.join(content, 'bin'), { recursive: true });

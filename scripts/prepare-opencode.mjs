@@ -8,7 +8,12 @@ import {opencodeVersion, opencodeVariants} from './opencode-platforms.mjs';
 const version = process.env.OPENCODE_VERSION || opencodeVersion;
 const registry = (process.env.OPENCODE_REGISTRY || 'https://registry.npmjs.org').replace(/\/$/, '');
 const directory = fileURLToPath(new URL('../bridge-dist/opencode/', import.meta.url));
-const variants = opencodeVariants;
+const variants = process.env.OPENCODE_TARGETS
+    ? [...new Set(process.env.OPENCODE_TARGETS.split(',').map(value => value.trim()).filter(Boolean))]
+    : opencodeVariants;
+if (!variants.length || variants.some(variant => !opencodeVariants.includes(variant))) {
+    throw new Error('OPENCODE_TARGETS содержит неподдерживаемую платформу OpenCode.');
+}
 await mkdir(directory, { recursive:true });
 for (const variant of variants) {
     const name = `opencode-${variant}`;
@@ -34,4 +39,4 @@ for (const variant of variants) {
     await writeFile(`${file}.sha256`,createHash('sha256').update(bytes).digest('hex')+'\n');
     console.log(`${name}: ${(bytes.length/1024/1024).toFixed(1)} МБ`);
 }
-console.log(`OpenCode ${version}: готовы все ${variants.length} платформенных пакетов.`);
+console.log(`OpenCode ${version}: готовы ${variants.length} платформенных пакетов.`);

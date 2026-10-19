@@ -24,7 +24,7 @@ const entry = path.join(installDirectory, 'dist/index.js');
 const metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
 const digest = value => createHash('sha256').update(value).digest('hex');
 const deviceId = randomUUID();
-let candidateHash, pairStarts = 0, heartbeat, corruptChecksum = false, server, child, origin, fatal;
+let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal;
 let expectedEntryInode, paused = false, pauseObservations = 0;
 let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
 const rejectedRoutes = [];
@@ -44,16 +44,33 @@ async function installer(env, script) {
         child.once('close', code => { clearTimeout(timeout); child = undefined; resolve({ code, output }); });
     });
 }
+/** Linux отдаёт точные Unicode-аргументы через /proc независимо от locale терминала. */
+async function ownsLinuxFixtureProcess(pid, modes) {
+    try {
+        if ((await fs.stat(`/proc/${pid}`)).uid !== process.getuid()) return false;
+        const args = (await fs.readFile(`/proc/${pid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+        return args.some((argument, index) => argument === entry && modes.includes(args[index + 1]));
+    } catch (error) {
+        if (['ENOENT', 'ESRCH'].includes(error.code)) return false;
+        throw error;
+    }
+}
 /** Завершаем только worker одноразового профиля после проверки владельца и entry. */
 async function stopFixtureWorker(profile) {
     const lock = path.join(profile, 'worker.lock');
     await waitFor(() => fs.access(lock).then(() => true, () => false), 'блокировка worker одноразового профиля');
+    await waitFor(async () => heartbeatWorkerPid === Number(await fs.readFile(lock, 'utf8')),
+        'heartbeat текущего worker после регистрации обработчиков завершения');
     const pid = Number(await fs.readFile(lock, 'utf8'));
     assert.ok(Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid);
-    const command = execFileSync('ps', ['-p', String(pid), '-o', 'uid=', '-o', 'args='], { encoding: 'utf8' }).trim();
-    const owner = /^(\d+)\s+([\s\S]*)$/.exec(command);
-    assert.equal(Number(owner?.[1]), process.getuid());
-    assert.ok(owner?.[2].includes(entry) && /--worker(?:\s|$)/.test(owner[2]), 'PID должен принадлежать worker одноразового профиля');
+    if (process.platform === 'linux') {
+        assert.ok(await ownsLinuxFixtureProcess(pid, ['--worker']), 'PID должен принадлежать worker одноразового профиля');
+    } else {
+        const command = execFileSync('ps', ['-p', String(pid), '-o', 'uid=', '-o', 'args='], { encoding: 'utf8' }).trim();
+        const owner = /^(\d+)\s+([\s\S]*)$/.exec(command);
+        assert.equal(Number(owner?.[1]), process.getuid());
+        assert.ok(owner?.[2].includes(entry) && /--worker(?:\s|$)/.test(owner[2]), 'PID должен принадлежать worker одноразового профиля');
+    }
     process.kill(pid, 'SIGTERM');
     await waitFor(() => {
         try { process.kill(pid, 0); return false; }
@@ -64,7 +81,7 @@ async function stopFixtureWorker(profile) {
 }
 try {
     const bin = path.join(temporary, 'system-bin'); await fs.mkdir(bin);
-    for (const command of ['uname', 'sysctl', 'curl', 'tar', 'dirname', 'basename', 'mkdir', 'mktemp', 'rm', 'awk', 'shasum', 'sha256sum', 'grep', 'rmdir', 'mv', 'ldd', 'ps']) {
+    for (const command of ['uname', 'sysctl', 'curl', 'tar', 'gzip', 'dirname', 'basename', 'mkdir', 'mktemp', 'rm', 'awk', 'shasum', 'sha256sum', 'grep', 'rmdir', 'mv', 'ldd', 'ps']) {
         const found = spawnSync('/bin/sh', ['-c', 'command -v "$1"', 'fixture', command], { encoding: 'utf8' });
         if (found.status === 0 && found.stdout.trim().startsWith('/')) await fs.symlink(found.stdout.trim(), path.join(bin, command));
     }
@@ -95,7 +112,13 @@ try {
             } else {
                 if (digest(token) !== candidateHash) { rejectedRoutes.push(route); response.writeHead(401).end('{}'); return; }
                 if (route === 'identity') data = { id: deviceId, email: 'native-fixture@example.test', role: 'Разработчик' };
-                else if (route === 'heartbeat') { heartbeat = body; data = { ok: true }; }
+                else if (route === 'heartbeat') {
+                    heartbeat = body;
+                    const pid = Number(await fs.readFile(path.join(profile, 'worker.lock'), 'utf8'));
+                    const version = JSON.parse(await fs.readFile(path.join(profile, 'worker-version.json'), 'utf8'));
+                    if (version.pid === pid) heartbeatWorkerPid = pid;
+                    data = { ok: true };
+                }
                 else if (route === 'worker/pause') {
                     if (expectedEntryInode) assert.equal((await fs.stat(entry)).ino, expectedEntryInode, 'Пауза должна предшествовать замене файла');
                     pauseObservations++; paused = true; data = { activeJobs };
@@ -237,11 +260,22 @@ try {
 } catch (error) { fatal = error.stack || String(error); console.error(fatal); process.exitCode = 1; }
 finally {
     if (child) child.kill('SIGTERM');
-    const processes = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n');
-    for (const line of processes) {
-        const match = /^\s*(\d+)\s+(.+)$/.exec(line);
-        if (match && match[2].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[2])) {
-            try { process.kill(Number(match[1]), 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    if (process.platform === 'linux') {
+        const pids = (await fs.readdir('/proc')).filter(name => /^\d+$/.test(name)).map(Number);
+        for (const pid of pids) {
+            if (await ownsLinuxFixtureProcess(pid, ['--worker', '--pair-watch'])) {
+                try { process.kill(pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+            }
+        }
+        await waitFor(async () => !(await Promise.all(pids.map(pid => ownsLinuxFixtureProcess(pid, ['--worker', '--pair-watch'])))).some(Boolean),
+            'завершение worker и pair-watch одноразового профиля');
+    } else {
+        const processes = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n');
+        for (const line of processes) {
+            const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+            if (match && match[2].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[2])) {
+                try { process.kill(Number(match[1]), 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+            }
         }
     }
     await delay(200);

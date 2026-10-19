@@ -28,6 +28,78 @@ test('Явно заданный неработающий NODE_BIN не подм�
     assert.throws(() => nodeRuntime({...process.env, NODE_BIN: path.join(os.tmpdir(), 'missing-neurocenter-node')}), /NODE_BIN/);
 });
 
+/** Настоящий каталог toolchains читается только внутри fixture; запуск кандидатов заменён ответами Node. */
+async function projectRuntimeFixture(t, platform, arch) {
+    const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter project runtime ')));
+    t.after(() => fs.rm(directory, {recursive: true, force: true}));
+    const checkout = path.join(directory, 'checkout'), toolchains = path.join(checkout, '.run/toolchains');
+    await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
+    await fs.copyFile(path.join(root, 'scripts/workspace/node-runtime.mjs'), path.join(checkout, 'scripts/workspace/node-runtime.mjs'));
+    const names = ['24.3.0', '24.21.1', '24.22.0', '24.99.0', '24.98.0', '25.1.0'].map(version => `node-v${version}-${platform}-${arch}`);
+    names.push(`node-v24.97.0-${platform === 'darwin' ? 'linux' : 'darwin'}-${arch}`,
+        `node-v24.96.0-${platform}-${arch === 'arm64' ? 'x64' : 'arm64'}`);
+    for (const name of names) {
+        const candidate = path.join(toolchains, name);
+        await fs.mkdir(path.join(candidate, 'bin'), {recursive: true});
+        await fs.writeFile(path.join(candidate, 'bin/node'), 'isolated binary marker');
+        if (!name.startsWith('node-v24.99.0')) await fs.writeFile(path.join(candidate, 'LICENSE'), 'isolated license marker');
+        if (!name.startsWith('node-v24.98.0')) {
+            await fs.mkdir(path.join(candidate, 'lib/node_modules/npm/bin'), {recursive: true});
+            await fs.writeFile(path.join(candidate, 'lib/node_modules/npm/bin/npm-cli.js'), 'isolated npm marker');
+        }
+    }
+    const current = path.join(directory, 'current/node'), pathNode = path.join(directory, 'path/node');
+    const hook = path.join(directory, 'runtime-candidates.mjs'), runner = path.join(directory, 'select.mjs');
+    await fs.writeFile(hook, `
+        import childProcess from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';
+        const settings=JSON.parse(process.env.RUNTIME_FIXTURE_SETTINGS);globalThis.runtimeCalls=[];
+        Object.defineProperty(process,'execPath',{value:settings.current});
+        Object.defineProperty(process,'platform',{value:settings.platform});Object.defineProperty(process,'arch',{value:settings.arch});
+        childProcess.spawnSync=(binary)=>{
+            globalThis.runtimeCalls.push(binary);
+            const version=binary===settings.current?settings.currentVersion||'20.0.0'
+                :binary===settings.pathNode?settings.pathVersion||'20.0.0'
+                :binary.includes('codex-runtimes')?'24.19.0':binary.match(/node-v(\\d+\\.\\d+\\.\\d+)-/)?.[1];
+            return version?{status:0,stdout:JSON.stringify({version,binary})}:{status:1,stdout:''};
+        };
+        syncBuiltinESMExports();
+    `);
+    await fs.writeFile(runner, `
+        import {nodeRuntime} from ${JSON.stringify(pathToFileURL(path.join(checkout, 'scripts/workspace/node-runtime.mjs')).href)};
+        const environment=JSON.parse(process.env.RUNTIME_FIXTURE_ENV);
+        const selected=nodeRuntime(environment);
+        console.log(JSON.stringify({node:selected.node,version:selected.version,calls:globalThis.runtimeCalls}));
+    `);
+    function run(settings = {}, environment = {}) {
+        const result = spawnSync(process.execPath, ['--import', hook, runner], {cwd: checkout, encoding: 'utf8', timeout: 10000,
+            env: {RUNTIME_FIXTURE_SETTINGS: JSON.stringify({platform, arch, current, pathNode, ...settings}),
+                RUNTIME_FIXTURE_ENV: JSON.stringify({PATH: path.dirname(pathNode), ...environment})}});
+        assert.equal(result.error, undefined);
+        assert.equal(result.status, 0, result.stderr);
+        return JSON.parse(result.stdout);
+    }
+    return {run, current, pathNode, expected: path.join(toolchains, `node-v24.22.0-${platform}-${arch}/bin/node`)};
+}
+
+for (const [platform, arch] of [['darwin', 'arm64'], ['darwin', 'x64'], ['linux', 'arm64'], ['linux', 'x64']]) {
+    test(`Проектный toolchain ${platform}/${arch} выбирает лучший полный Node 24 до Codex runtime`, async t => {
+        const f = await projectRuntimeFixture(t, platform, arch), selected = f.run();
+        assert.equal(selected.node, f.expected);
+        assert.equal(selected.version, '24.22.0');
+        assert.deepEqual(selected.calls, [f.current, f.pathNode, f.expected]);
+    });
+}
+
+test('Работающий current или PATH сохраняет приоритет перед проектным toolchain', async t => {
+    const f = await projectRuntimeFixture(t, 'darwin', 'arm64');
+    const current = f.run({currentVersion: '24.10.0'});
+    assert.equal(current.node, f.current);
+    assert.deepEqual(current.calls, [f.current]);
+    const fromPath = f.run({pathVersion: '24.11.0'});
+    assert.equal(fromPath.node, f.pathNode);
+    assert.deepEqual(fromPath.calls, [f.current, f.pathNode]);
+});
+
 test('Dev-команда соблюдает явный npm CLI и запускает его выбранным Node во всех пакетах', async () => {
     const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter dev runtime ')));
     try {

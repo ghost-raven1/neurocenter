@@ -53,6 +53,9 @@ function forPackages(command, next) {
         next('Подготовка переносимого пакета моста');
         run('bash', [ path.join(root, 'scripts/package-bridge.sh') ]);
         output.success('Пакет моста подготовлен');
+        next('Подготовка автономных пакетов моста');
+        run(node, [ path.join(root, 'scripts/prepare-bridge-runtimes.mjs') ]);
+        output.success('Автономные пакеты моста готовы');
     }
 }
 
@@ -150,7 +153,7 @@ async function health(deadline = Infinity) {
 }
 
 async function start() {
-    const next = progress(packages.length + 6);
+    const next = progress(packages.length + 7);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
@@ -282,7 +285,7 @@ async function main() {
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }
-    else if (command === 'build') { forPackages(command, progress(packages.length + 1)); output.success('Проект собран'); }
+    else if (command === 'build') { forPackages(command, progress(packages.length + 2)); output.success('Проект собран'); }
     else if (command === 'up') { await start(); }
     else if (command === 'down') {
         const count = await stop();

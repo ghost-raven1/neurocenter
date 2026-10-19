@@ -36,16 +36,17 @@ node scripts/production/setup.mjs configure --directory /srv/neurocenter/config
 
 ## Проверка, сборка и первый seed
 
-Образ gateway включает подготовленную раздачу из `bridge-dist`. На сборочной машине перед сборкой подготовьте актуальный переносимый MCP-архив и зеркальные пакеты OpenCode:
+Образ gateway включает подготовленную раздачу из `bridge-dist`. На сборочной машине с Node.js 24 перед сборкой подготовьте актуальный переносимый MCP-архив, автономный мост и зеркальные пакеты OpenCode:
 
 ```sh
 npm --prefix mcp/neurocenter-asset-sync ci --no-audit --no-fund
 npm --prefix mcp/neurocenter-asset-sync run build
 bash scripts/package-bridge.sh
+node scripts/prepare-bridge-runtimes.mjs
 node scripts/prepare-opencode.mjs
 ```
 
-Эта подготовка использует реестр на сборочной машине. `setup.mjs build` не пересобирает `bridge-dist` автоматически. Для изолированного сервера доставляются уже проверенные образы и подготовленная раздача.
+Автономный мост по умолчанию готовится для текущей платформы и Linux x64 (glibc); для кросс-сборки Linux нужен Docker. `BRIDGE_RUNTIME_TARGETS` задаёт явный список целей. Готовые архивы повторно используются после проверки build ID и SHA-256. Эта подготовка использует реестр только на сборочной машине. `setup.mjs build` не пересобирает `bridge-dist` автоматически. Для изолированного сервера доставляются уже проверенные образы и подготовленная раздача.
 
 ```sh
 node scripts/production/setup.mjs check --directory /srv/neurocenter/config

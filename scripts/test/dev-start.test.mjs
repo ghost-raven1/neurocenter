@@ -46,6 +46,10 @@ async function fixture(t, mode) {
     }
     await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
     await fs.writeFile(path.join(checkout, 'scripts/package-bridge.sh'), '#!/bin/bash\nexit 0\n', {mode: 0o700});
+    await fs.writeFile(path.join(checkout, 'scripts/prepare-bridge-runtimes.mjs'), `
+        import {appendFileSync} from 'node:fs';
+        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'runtime-prepare'})+'\\n');
+        if(process.env.DEV_START_MODE==='runtime-error')process.exit(31);`);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -163,7 +167,7 @@ async function fixture(t, mode) {
         }
         return {...status, stdout, stderr, events};
     }
-    return {run};
+    return {run, checkout};
 }
 
 test('Запуск называет завершившийся сервис, порт, код выхода и его отдельный лог', async t => {
@@ -175,6 +179,25 @@ test('Запуск называет завершившийся сервис, п�
     assert.match(result.stderr, /neurocenter-catalog\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
     assert.equal(result.events.filter(event => event.kind === 'npm').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 1);
+    assert.ok(result.events.findIndex(event => event.kind === 'runtime-prepare')
+        < result.events.findIndex(event => event.kind === 'child-spawn'));
+});
+
+test('Ошибка подготовки автономного моста сохраняет состояние работающего стека', async t => {
+    const f = await fixture(t, 'runtime-error');
+    await fs.mkdir(path.join(f.checkout, '.run'));
+    const state = '[{"name":"catalog","pid":99999999}]\n';
+    const stateFile = path.join(f.checkout, '.run/processes.json');
+    await fs.writeFile(stateFile, state);
+    const result = await f.run();
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /31/);
+    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'docker'
+        && event.args[0] === 'compose' && event.args[1] === 'up' && !event.args.includes('--help')).length, 0);
 });
 
 test('Сервис, завершившийся во время проверки HTTP, не объявляется готовым', async t => {

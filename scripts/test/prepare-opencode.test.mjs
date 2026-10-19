@@ -56,6 +56,7 @@ globalThis.fetch = async input => {
 `);
     const env = { ...process.env, OPENCODE_REGISTRY: registry, TEST_RESPONSES: fixtureFile, TEST_REQUESTS: requestsFile };
     delete env.OPENCODE_VERSION;
+    delete env.OPENCODE_TARGETS;
     delete env.TEST_OFFLINE;
     const run = async (overrides = {}) => {
         await writeFile(fixtureFile, JSON.stringify(responses));
@@ -95,6 +96,23 @@ test('Повторная подготовка полного набора раб
     assert.equal(repeated.status, 0, repeated.stderr);
     assert.deepEqual(await f.requests(), []);
     assert.equal((await readdir(f.directory)).length, 24);
+});
+
+test('Подготовка выбранной платформы не скачивает остальные варианты', async () => {
+    const f = await fixture();
+    const result = await f.run({ OPENCODE_TARGETS: 'linux-x64-baseline' });
+    assert.equal(result.status, 0, result.stderr);
+    const file = `opencode-linux-x64-baseline-${version}.tgz`;
+    assert.deepEqual((await readdir(f.directory)).sort(), [file, file + '.sha256'].sort());
+    assert.equal((await f.requests()).length, 2);
+});
+
+test('Неизвестная платформа подготовки отклоняется до сетевых запросов', async () => {
+    const f = await fixture();
+    const result = await f.run({ OPENCODE_TARGETS: 'linux-unknown' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /OPENCODE_TARGETS/);
+    assert.deepEqual(await f.requests(), []);
 });
 
 test('Неверная контрольная сумма загрузки сохраняет прежний архив и не оставляет временных файлов', async () => {

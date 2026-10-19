@@ -23,6 +23,7 @@ describe('Безопасная подготовка замены установ�
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
     beforeEach(async () => {
         vi.resetAllMocks();
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
         directory = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-worker-upgrade-'));
         lock = path.join(directory, 'worker.lock');
         vi.mocked(stateDir).mockReturnValue(directory);
@@ -195,6 +196,60 @@ describe('Безопасная подготовка замены установ�
         await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('другому процессу');
         expect(execute.mock.calls[0]?.[1]?.join(' ')).toContain('GetOwnerSid');
         expect(signals).not.toContain('SIGTERM'); expect(api).toHaveBeenLastCalledWith('worker/resume');
+    });
+    it('На Linux путь с кириллицей проверяется через procfs даже при LC_ALL=C и отсутствующем LANG', async () => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        vi.stubEnv('LANG', undefined); vi.stubEnv('LC_ALL', 'C');
+        const owner = vi.spyOn(fs, 'stat').mockResolvedValueOnce({ uid: process.getuid?.() } as Awaited<ReturnType<typeof fs.stat>>);
+        const command = vi.spyOn(fs, 'readFile').mockResolvedValueOnce(`${process.execPath}\0${installed}\0--worker\0`);
+        execute.mockRejectedValue(new Error('ps заменяет кириллицу при C locale'));
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: true });
+        expect(owner).toHaveBeenCalledWith(`/proc/${pid}`);
+        expect(command).toHaveBeenCalledWith(`/proc/${pid}/cmdline`, 'utf8');
+        expect(execute).not.toHaveBeenCalled();
+        expect(signals.filter(signal => signal === 'SIGTERM')).toHaveLength(1);
+        await expect(fs.stat(lock)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it.each([
+        ['--no-opt', '-r', '/proc/.reset'],
+        ['--enable-source-maps'],
+    ])('Linux допускает параметры запуска Node перед установленным worker: %j', async (...prefix) => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        vi.stubEnv('LANG', undefined); vi.stubEnv('LC_ALL', 'C');
+        vi.spyOn(fs, 'stat').mockResolvedValueOnce({ uid: process.getuid?.() } as Awaited<ReturnType<typeof fs.stat>>);
+        vi.spyOn(fs, 'readFile').mockResolvedValueOnce([process.execPath, ...prefix, installed, '--worker', ''].join('\0'));
+        await expect(prepareWorkerUpgrade(installed)).resolves.toEqual({ paused: true });
+        expect(signals.filter(signal => signal === 'SIGTERM')).toHaveLength(1);
+        expect(execute).not.toHaveBeenCalled();
+        await expect(fs.stat(lock)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it.each([
+        { reason: 'чужой UID', owner: (process.getuid?.() || 0) + 1, args: ['node', installed, '--worker'] },
+        { reason: 'другой entry', args: ['node', '/подмена' + installed, '--worker'] },
+        { reason: 'путь и флаг в одном аргументе', args: ['node', installed + ' --worker'] },
+        { reason: 'другой флаг', args: ['node', installed, '--worker-other'] },
+        { reason: 'entry в аргументах node --eval', args: ['node', '--eval', 'setInterval(()=>{},1000)', installed, '--worker'] },
+        ...['--eval=0', '--print', '--print=0', '-e', '-p', '-e0', '-p0', '-pe', '-ep', '-ie'].map(flag => ({
+            reason: `entry после параметра ${flag}`, args: ['node', flag, installed, '--worker'],
+        })),
+        { reason: 'дополнительный аргумент после --worker', args: ['node', installed, '--worker', 'другой аргумент'] },
+    ])('Linux сохраняет чужой процесс: $reason', async ({ owner, args }) => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        vi.spyOn(fs, 'stat').mockResolvedValueOnce({ uid: owner ?? process.getuid?.() } as Awaited<ReturnType<typeof fs.stat>>);
+        vi.spyOn(fs, 'readFile').mockResolvedValueOnce(args.join('\0') + '\0');
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('другому процессу');
+        expect(signals).not.toContain('SIGTERM'); expect(execute).not.toHaveBeenCalled();
+        expect(api).toHaveBeenLastCalledWith('worker/resume');
+        expect(await fs.readFile(lock, 'utf8')).toBe(String(pid));
+    });
+    it.each(['EACCES', 'ENOENT'])('Linux не завершает процесс, если cmdline недоступен: %s', async code => {
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        vi.spyOn(fs, 'stat').mockResolvedValueOnce({ uid: process.getuid?.() } as Awaited<ReturnType<typeof fs.stat>>);
+        vi.spyOn(fs, 'readFile').mockRejectedValueOnce(Object.assign(new Error('procfs недоступен'), { code }));
+        await expect(prepareWorkerUpgrade(installed)).rejects.toThrow('другому процессу');
+        expect(signals).not.toContain('SIGTERM'); expect(execute).not.toHaveBeenCalled();
+        expect(api).toHaveBeenLastCalledWith('worker/resume');
+        expect(await fs.readFile(lock, 'utf8')).toBe(String(pid));
     });
     it('Новый worker ждёт удаления блокировки установщика', async () => {
         const entry = path.join(directory, 'installed', 'dist', 'index.js');
