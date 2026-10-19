@@ -9,7 +9,7 @@ export type TSnapshotStatus = 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING'
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
 
 /** Тип операции. */
-export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT';
+export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'MODEL';
 
 /** Статус проекта. */
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';

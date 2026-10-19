@@ -26,7 +26,7 @@ interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
 const navigation: Record<string, { title: string; icon: ReactNode }> = {
     start: { title: 'Начало работы', icon: <RocketOutlined /> },
-    store: { title: 'Каталог инструментов', icon: <AppstoreOutlined /> },
+    store: { title: 'Каталог', icon: <AppstoreOutlined /> },
     projects: { title: 'Проекты', icon: <FolderOutlined /> },
     rag: { title: 'Базы знаний', icon: <DatabaseOutlined /> },
     maintenance: { title: 'Обслуживание', icon: <ToolOutlined /> },

@@ -11,13 +11,13 @@ export const operationStateOptions: { value: TOperationState; label: string }[] 
 ];
 
 const operationTypes: Record<string, string> = {
-    INSTALL: 'Установка', DELETE: 'Удаление', CATALOG: 'Каталог', PROJECT: 'Проект', BUILD: 'Упаковка инструмента',
+    INSTALL: 'Установка', DELETE: 'Удаление', CATALOG: 'Каталог', PROJECT: 'Проект', BUILD: 'Упаковка инструмента', MODEL: 'Хостинг модели',
     DOWNLOAD: 'Скачивание', RELEASE: 'Публикация', UPLOAD: 'Загрузка', VERIFY: 'Проверка',
     SYNC: 'Синхронизация', TRANSFER: 'Передача', MOVE: 'Перемещение', CLEANUP: 'Очистка', RESTORE: 'Восстановление',
 };
 const resourceTypes: Record<string, string> = {
     bridge: 'Мост', snapshot: 'Снимок', profile: 'Профиль', skill: 'Скилл',
-    package: 'Пакет', rag: 'RAG-индекс', project: 'Проект', catalog: 'Каталог', 'tool-build': 'MCP или плагин',
+    package: 'Пакет', rag: 'RAG-индекс', project: 'Проект', catalog: 'Каталог', 'tool-build': 'MCP или плагин', model: 'Модель',
 };
 const logLevels: Record<string, { label: string; color?: string }> = {
     INFO: { label: 'Инфо', color: 'processing' },

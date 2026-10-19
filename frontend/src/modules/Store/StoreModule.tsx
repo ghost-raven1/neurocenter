@@ -7,7 +7,7 @@ import { STORE_ROUTE } from '../../features/UserBlock/permissions';
 
 import { lazySection } from '../../common/components/LazySection';
 
-const Store = lazySection(() => import('./Store'), 'Каталог инструментов');
+const Store = lazySection(() => import('./Store'), 'Каталог');
 
 /**
  * Функциональный модуль «Магазин» — витрина приложений (скиллы/MCP/плагины)

@@ -40,6 +40,8 @@ import UnavailableProjectAssets from './UnavailableProjectAssets';
 import { unavailableProjectAssets } from './selectUnavailableProjectAssets';
 import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
 import { loadCompletePluginCatalog } from './loadCompletePluginCatalog';
+import { CatalogTabs } from './CatalogTabs';
+import { catalogSection } from './catalogSection';
 
 const { Text, Paragraph } = Typography;
 
@@ -314,11 +316,11 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     return (
         <div className="store">
-            {!embedded && <PageHeading title="Каталог инструментов" description="Соберите инструменты команды: скиллы, MCP и плагины в общем и проектных каталогах." actions={isMain && <Space wrap><Button onClick={() => setCreateOpen(true)}>Добавить вручную</Button><Button type="primary" onClick={() => setPackagingOpen(true)}>Упаковать инструмент</Button></Space>} />}
+            {!embedded && <PageHeading title="Каталог" description="Соберите инструменты и модели команды в общем и проектных каталогах." actions={isMain && catalogSection(location.search) === 'tools' && <Space wrap><Button onClick={() => setCreateOpen(true)}>Добавить вручную</Button><Button type="primary" onClick={() => setPackagingOpen(true)}>Упаковать инструмент</Button></Space>} />}
             <div className="store__destination">
                 <div><Text strong>Каталог проекта</Text><Paragraph type="secondary">{!projectsReady
                     ? projectsLoading ? 'Загружаем доступные проекты…' : 'Загрузите список проектов, чтобы продолжить.'
-                    : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог нужные инструменты.'}</Paragraph></div>
+                    : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог инструменты и модели.'}</Paragraph></div>
                 {!embedded && <Select aria-label="Каталог проекта" placeholder="Выберите проект" value={projectsReady ? target ?? undefined : undefined} loading={projectsLoading} disabled={!projectsReady} allowClear showSearch optionFilterProp="label" onChange={(name?: string) => switchTarget(name ?? null)} options={projects.map(project => ({value:project.name,label:project.name}))} style={{width:260,maxWidth:'100%'}} />}
             </div>
             {projectLoadError && <Alert className="store__projects-error" type={projectsReady?'warning':'error'} showIcon
@@ -329,6 +331,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 message={projectCatalogReady ? 'Не удалось обновить каталог проекта — показаны предыдущие данные' : 'Каталог проекта не загружен'}
                 description={projectCatalogError}
                 action={<Button size="small" loading={projectLoading} onClick={() => { void loadProject(); }}>Повторить загрузку каталога</Button>} />}
+            <CatalogTabs scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} isMain={isMain} tools={<>
             <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
@@ -379,6 +382,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             <Paragraph type="secondary" style={{ marginTop: 12, fontSize: 12 }}>
                 Инструменты проектного каталога доступны всем участникам проекта. Выбор каталога не запускает локальную установку.
             </Paragraph>
+            </>} />
 
             {/* Выбор проекта для установки (глобальный магазин): мультиселект + подтверждение */}
             <Modal
