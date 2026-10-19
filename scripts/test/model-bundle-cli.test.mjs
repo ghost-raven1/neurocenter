@@ -49,7 +49,7 @@ test('Справка с флагом verify и длинным тире откр�
 }));
 
 test('Неверные параметры CLI показывают справку вместо ошибки описи моделей',async()=>fixture(async({run})=>{
-    for(const args of [['--unknown'],['--directory'],['--verify-only','--download-only'],['--pack'],['--verify-only','--verify-only']]) {
+    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--pack'],['--verify-only','--verify-only']]) {
         const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
         assert.equal(result.status,1);const report=JSON.parse(result.stdout);
         assert.equal(report.error.code,'MODEL_BUNDLE_USAGE');

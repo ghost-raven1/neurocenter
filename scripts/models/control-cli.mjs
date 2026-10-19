@@ -1,4 +1,4 @@
-import path from 'node:path';
+import {realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
 const commands = ['up', 'check', 'status', 'down'];
@@ -55,7 +55,9 @@ async function execute(profile, args) {
 
 /** Один CLI для двух профилей; импорт entrypoint не запускает операции и не читает конфигурацию. */
 export async function runModelCli(profile, entryUrl) {
-    if (!process.argv[1] || path.resolve(process.argv[1]) !== fileURLToPath(entryUrl)) return;
+    try {
+        if (!process.argv[1] || realpathSync(process.argv[1]) !== realpathSync(fileURLToPath(entryUrl))) return;
+    } catch { return; }
     try {await execute(profile, process.argv.slice(2));}
     catch (error) {
         console.error(error instanceof Error ? error.message : 'Не удалось выполнить команду локальной модели.');

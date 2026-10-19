@@ -1,6 +1,6 @@
 import {test, before, after} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, writeFile, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, writeFile, readFile, rm, symlink} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -46,8 +46,8 @@ before(async () => {
 });
 after(async () => {if (temporary) await rm(temporary, {recursive: true, force: true});});
 
-async function invoke(profile, args, env = {}, importOnly = false) {
-    const file = path.join(scripts, profile, 'cli.mjs'), record = path.join(temporary, `events-${++sequence}.jsonl`);
+async function invoke(profile, args, env = {}, importOnly = false, file = path.join(scripts, profile, 'cli.mjs')) {
+    const record = path.join(temporary, `events-${++sequence}.jsonl`);
     const command = importOnly ? ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(file).href)})`] : [file, ...args];
     const result = spawnSync(process.execPath, ['--import', path.join(temporary, 'hook.mjs'), ...command],
         {encoding: 'utf8', timeout: 10000, env: {...process.env, MODEL_CLI_TEST_RECORD: record, ...env}});
@@ -81,6 +81,19 @@ for (const profile of ['embedding', 'vision']) {
     test(`${profile}: импорт entrypoint не запускает CLI и не пишет в терминал`, async () => {
         const result = await invoke(profile, [], {}, true);
         assert.equal(result.status, 0); assert.equal(result.stdout, ''); assert.equal(result.stderr, ''); assert.deepEqual(result.events, []);
+    });
+
+    test(`${profile}: entrypoint через symlink выполняет CLI, а импорт ссылки остаётся молчаливым`, {skip:process.platform === 'win32'}, async () => {
+        const alias = path.join(temporary, `${profile}-cli.mjs`);
+        await symlink(path.join(scripts, profile, 'cli.mjs'), alias);
+        const help = await invoke(profile, ['--help'], {EMBEDDING_PORT: 'invalid'}, false, alias);
+        assert.equal(help.status, 0); assert.match(help.stdout, new RegExp(`${profile}:up`));
+        assert.equal(help.stderr, ''); assert.deepEqual(help.events, []);
+        const status = await invoke(profile, ['status'], {}, false, alias);
+        assert.equal(status.status, 0); assert.equal(JSON.parse(status.stdout).state, 'verified');
+        assert.deepEqual(status.events.map(event => event.event), ['configuration', 'status']);
+        const imported = await invoke(profile, [], {}, true, alias);
+        assert.equal(imported.status, 0); assert.equal(imported.stdout, ''); assert.equal(imported.stderr, ''); assert.deepEqual(imported.events, []);
     });
 
     test(`${profile}: up сохраняет профиль, правильную пробу и компактный прогресс`, async () => {

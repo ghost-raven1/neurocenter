@@ -92,7 +92,12 @@ export async function downloadPart(url,target,part,{fetch:request=fetch,signal,o
     if(!response?.ok||!response.body) {await response?.body?.cancel();throw new Error(`GitHub не выдал часть модели (HTTP ${response?.status||0}).`);}
     const length=response.headers.get('content-length');
     if(length!==null&&length!==String(part.size)) {await response.body.cancel();throw new Error('Размер ответа GitHub не совпал с описью модели.');}
-    const file=await open(target,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+    let file;
+    try {file=await open(target,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);}
+    catch(error) {
+        await response.body.cancel().catch(()=>undefined);
+        throw error;
+    }
     const reader=response.body.getReader(),hash=createHash('sha256');let size=0;
     try {
         while(true) {

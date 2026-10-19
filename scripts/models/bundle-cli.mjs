@@ -42,8 +42,8 @@ export async function runModelBundleCli(args=process.argv.slice(2)) {
     const flags={'--download-only':'downloadOnly','--verify-only':'verifyOnly','--pack':'pack'};const seen=new Set();
     for(let index=0;index<args.length;index++) {
         const key=args[index];if(seen.has(key))throw usageError('Параметр указан повторно.');seen.add(key);
-        if(flags[key])options[flags[key]]=true;
-        else if(values[key]&&args[index+1]&&!args[index+1].startsWith('--'))options[values[key]]=args[++index];
+        if(Object.hasOwn(flags,key))options[flags[key]]=true;
+        else if(Object.hasOwn(values,key)&&args[index+1]&&!args[index+1].startsWith('--'))options[values[key]]=args[++index];
         else throw usageError();
     }
     if(options.pack) {

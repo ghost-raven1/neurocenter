@@ -4,6 +4,7 @@ import {mkdir,mkdtemp,lstat,open,readFile,writeFile,rm,unlink} from 'node:fs/pro
 import path from 'node:path';
 import {MAX_PART_BYTES,lockedFiles,modelLocks,releaseBaseUrl,validateModelBundle} from './bundle-manifest.mjs';
 import {safeDirectory,verifyFile,promote,ensureSpace,downloadPart} from './bundle-files.mjs';
+import {preflightModelDirectories,preflightModelTargets} from './bundle-preflight.mjs';
 
 /** Пакуются только публичные закреплённые blobs; ключи Ollama и прочие файлы каталога не читаются. */
 export async function packModelBundle({directory,output,baseUrl,locks,partBytes=MAX_PART_BYTES}) {
@@ -96,8 +97,11 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
     }
     const ready=()=>onProgress({stage:'ready',message:downloadOnly?'Предзагрузка закреплённых моделей завершена.':'Все закреплённые модели находятся в проекте.',completed:report.bytes,total:report.bytes});
     if(verifyOnly||present.size===manifest.files.length) {await ready();return report;}
-    await safeDirectory(directory,'.bundle-cache/parts',true);await safeDirectory(directory,'.bundle-cache/blobs',true);
+    if(!downloadOnly)await preflightModelTargets(directory,manifest.files.filter(file=>!present.has(file.path)));
     const missingBytes=blobs.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0);
+    if(missingBytes) {
+        try {await safeDirectory(directory,'.bundle-cache/blobs');} catch(error) {if(error.code!=='ENOENT')throw error;}
+    }
     const checkedCache=byteProgress(onProgress,'verifying','Проверяем SHA-256 подготовленного кэша моделей.',missingBytes);
     await checkedCache(0);
     const cached=new Map();let required=0,largest=0;
@@ -106,6 +110,10 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
         const cache=path.join(directory,'.bundle-cache/blobs',file.sha256);
         if(await verifyFile(cache,file,{onBytes:checkedCache}))cached.set(file.path,cache);
         else {required+=file.size;largest=Math.max(largest,file.size);}
+    }
+    if(downloadOnly&&required===0) {await ready();return report;}
+    if(required) {
+        try {await safeDirectory(directory,'.bundle-cache/parts');} catch(error) {if(error.code!=='ENOENT')throw error;}
     }
     let missingPartBytes=0;
     const checkedParts=byteProgress(onProgress,'verifying','Проверяем SHA-256 сохранённых частей перед расчётом места.',required);
@@ -118,9 +126,14 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
         }
     }
     const missingTagBytes=tags.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0);
+    const needsStaging=required>0||(!downloadOnly&&missingTagBytes>0),writableCache=[];
+    if(required)writableCache.push('.bundle-cache/parts');
+    if(required||(!downloadOnly&&cached.size))writableCache.push('.bundle-cache/blobs');
+    if(needsStaging)writableCache.push('.bundle-cache');
+    await preflightModelDirectories(directory,writableCache);
     // Проверенные части уже занимают место: повторно резервируем только загрузку, сборку и новые теги.
     await ensureSpace(directory,missingPartBytes+largest+(downloadOnly?0:missingTagBytes),readDisk);
-    const staging=await mkdtemp(path.join(directory,'.bundle-cache/stage-'));
+    const staging=needsStaging?await mkdtemp(path.join(directory,'.bundle-cache/stage-')):undefined;
     const obtained=byteProgress(onProgress,'downloading','Подготавливаем части моделей: загрузка и проверенный кэш.',required);
     const assembled=byteProgress(onProgress,'assembling','Собираем файлы моделей из проверенных частей.',required);
     const activated=byteProgress(onProgress,'activating','Активируем проверенные файлы моделей.',missingBytes+missingTagBytes);
@@ -173,7 +186,7 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
         }
         await ready();
         return report;
-    } finally {await rm(staging,{recursive:true,force:true});}
+    } finally {if(staging)await rm(staging,{recursive:true,force:true});}
 }
 
 export async function readModelBundle(filename) {
