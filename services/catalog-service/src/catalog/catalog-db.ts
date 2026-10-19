@@ -11,6 +11,7 @@ import { OperationRepository } from '../operations/operation-repository';
 import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.types';
 import {validateProjectSettings} from './project-validation';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
+import {deleteProjectWithAudit} from './project-deletion';
 import type { IProjectRow } from './project-row';
 import {setupInstallPlans} from '../devices/install-plan-schema';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
@@ -293,11 +294,8 @@ export class CatalogDb {
      * @param idOrName - id или имя проекта.
      * @returns {Promise<boolean>} — true, если проект был удалён.
      */
-    public async deleteProject(idOrName: string): Promise<boolean> {
-        const project=await this.getProject(idOrName);if(!project){return false;}
-        const res = await this.pool.query('DELETE FROM projects WHERE id = $1', [project.id]);
-
-        return (res.rowCount ?? 0) > 0;
+    public deleteProject(idOrName: string, actor = 'admin'): Promise<boolean> {
+        return deleteProjectWithAudit(this.pool,idOrName,actor);
     }
 
     /** Публикации обслуживает отдельный репозиторий с транзакциями. */

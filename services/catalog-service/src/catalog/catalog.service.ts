@@ -239,21 +239,11 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         if (!found) {
             throw new NotFoundException(`project not found: ${idOrName}`);
         }
-        const deleted = await this.db.deleteProject(found.id);
+        const deleted = await this.db.deleteProject(found.id,actor);
 
         if (!deleted) {
             throw new NotFoundException(`project not found: ${idOrName}`);
         }
-
-        void this.db.createOperation({
-            type: 'DELETE',
-            projectId: found.id,
-            resourceType: 'project',
-            resourceId: found.id,
-            actor,
-            state: 'SUCCEEDED',
-            message: `Удаление проекта «${found.name}»`,
-        }).catch(() => undefined);
 
         return { ok: true, id: found.id };
     }
