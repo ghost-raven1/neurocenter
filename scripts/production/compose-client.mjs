@@ -54,12 +54,14 @@ export function composeClient({directory,projectName='neurocenter-production',fi
 }
 
 /** Имя контейнера — блокировка на Docker daemon, общая для разных рабочих каталогов. */
-export async function maintenanceLock(client,image,operation,action){
+export async function maintenanceLock(client,image,operation,action,run=docker){
     const name='neurocenter-maintenance-'+client.projectName;
-    let id;
-    try{id=await docker(['create','--name',name,'--label','neurocenter.maintenance='+operation,'--network','none',image,'node','-e','0']);}
+    let id;let retain=false;
+    try{id=await run(['create','--name',name,'--label','neurocenter.maintenance='+operation,'--network','none',image,'node','-e','0']);}
     catch{throw new Error('Не удалось взять блокировку '+name+'. Проверьте Docker и незавершённые операции; чужую блокировку не удаляем.');}
-    try{return await action();}finally{await docker(['rm',id]);}
+    try{return await action();}
+    catch(error){retain=error?.retainMaintenanceLock===true;throw error;}
+    finally{if(!retain){await run(['rm',id]);}}
 }
 
 export async function composeConfiguration(client){return JSON.parse(await client.run(['config','--format','json']));}

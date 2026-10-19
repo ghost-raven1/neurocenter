@@ -1,0 +1,1689 @@
+{
+  "schemaVersion": 1,
+  "release": "catalog-2026-10-19.1",
+  "tools": [
+    {
+      "key": "filesystem",
+      "publication": {
+        "name": "MCP Filesystem",
+        "kind": "mcp",
+        "description": "Чтение, поиск и редактирование файлов только в папке выбранного проекта. Готовый npm-комплект с зависимостями; мост запускает его своим Node без npm на компьютере.",
+        "tags": [
+          "Файлы",
+          "npm",
+          "Готовый комплект"
+        ],
+        "files": [],
+        "config": {
+          "transport": "stdio",
+          "args": [],
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "darwin-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "darwin-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "linux-arm64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "linux-x64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "linux-x64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "win32-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              },
+              {
+                "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+                "target": "win32-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 4083,
+                "unpackedBytes": 24433351,
+                "compressedBytes": 5178568
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem",
+        "compatibility": "JavaScript; bundled Node 24; 8 платформ моста",
+        "revision": "1.0.0"
+      },
+      "legacyOrigins": [
+        "https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem",
+        "neurocenter:recipe/filesystem",
+        "npm:@modelcontextprotocol/server-filesystem"
+      ],
+      "legacyPackages": [
+        "@modelcontextprotocol/server-filesystem"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "darwin-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "darwin-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "linux-arm64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "linux-x64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "linux-x64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "win32-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+            "target": "win32-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 4083,
+            "unpackedBytes": 24433351,
+            "compressedBytes": 5178568
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "memory",
+      "publication": {
+        "name": "MCP Memory",
+        "kind": "mcp",
+        "description": "Локальный граф памяти: сущности, связи и наблюдения между сессиями агента. Данные хранятся в .opencode/neurocenter-memory проекта. Готовый npm-комплект без облака и API-ключей.",
+        "tags": [
+          "Память",
+          "npm",
+          "Готовый комплект"
+        ],
+        "files": [],
+        "config": {
+          "transport": "stdio",
+          "args": [],
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "darwin-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "darwin-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "linux-arm64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "linux-x64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "linux-x64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "win32-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              },
+              {
+                "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+                "target": "win32-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3659,
+                "unpackedBytes": 17387587,
+                "compressedBytes": 3529087
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "https://www.npmjs.com/package/@modelcontextprotocol/server-memory",
+        "compatibility": "JavaScript; bundled Node 24; 8 платформ моста",
+        "revision": "1.0.0"
+      },
+      "legacyOrigins": [
+        "https://www.npmjs.com/package/@modelcontextprotocol/server-memory",
+        "neurocenter:recipe/memory",
+        "npm:@modelcontextprotocol/server-memory"
+      ],
+      "legacyPackages": [
+        "@modelcontextprotocol/server-memory"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "darwin-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "darwin-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "linux-arm64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "linux-x64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "linux-x64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "win32-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963",
+            "target": "win32-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3659,
+            "unpackedBytes": 17387587,
+            "compressedBytes": 3529087
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/23216460e2a56934c4faf73497bde9760e4aac5e910d01e50b57879a4788d963.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "sequential-thinking",
+      "publication": {
+        "name": "MCP Sequential Thinking",
+        "kind": "mcp",
+        "description": "Пошаговое рассуждение для сложных задач: пересмотр шагов и ветвление гипотез. Готовый npm-комплект; сервер не вызывает отдельную модель и не требует API-ключа.",
+        "tags": [
+          "Планирование",
+          "npm",
+          "Готовый комплект"
+        ],
+        "files": [],
+        "config": {
+          "transport": "stdio",
+          "args": [],
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "darwin-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "darwin-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "linux-arm64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "linux-x64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "linux-x64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "win32-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              },
+              {
+                "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+                "target": "win32-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 3836,
+                "unpackedBytes": 18073429,
+                "compressedBytes": 3697342
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+        "compatibility": "JavaScript; bundled Node 24; 8 платформ моста",
+        "revision": "1.0.0"
+      },
+      "legacyOrigins": [
+        "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+        "neurocenter:recipe/sequential-thinking",
+        "npm:@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "legacyPackages": [
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "darwin-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "darwin-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "linux-arm64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "linux-x64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "linux-x64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "win32-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+            "target": "win32-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 3836,
+            "unpackedBytes": 18073429,
+            "compressedBytes": 3697342
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "project-context",
+      "publication": {
+        "name": "Контекст проекта",
+        "kind": "plugin",
+        "description": "Автоматически добавляет менеджер пакетов и названия scripts из package.json в контекст OpenCode. Не запускает команды. Отдельный JS-файл без зависимостей.",
+        "tags": [
+          "Контекст",
+          "JS-файл",
+          "Без зависимостей"
+        ],
+        "files": [],
+        "config": {
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "darwin-arm64",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "darwin-x64",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "linux-arm64-musl",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "linux-x64-glibc",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "linux-x64-musl",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "win32-arm64",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              },
+              {
+                "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+                "target": "win32-x64",
+                "entrypoint": "project-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1792,
+                "compressedBytes": 1007
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "neurocenter:recipe/project-context",
+        "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+        "revision": "1.0.1-pack.1"
+      },
+      "legacyOrigins": [
+        "neurocenter:recipe/project-context",
+        "neurocenter:catalog-plugins"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "darwin-arm64",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "darwin-x64",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "linux-arm64-musl",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "linux-x64-glibc",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "linux-x64-musl",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "win32-arm64",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a",
+            "target": "win32-x64",
+            "entrypoint": "project-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1792,
+            "compressedBytes": 1007
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/fc0b500cabe95c718a123e2b0f9e53b4e7253d0388657a63ddd0aad557bbd33a.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "git-context",
+      "publication": {
+        "name": "Контекст Git",
+        "kind": "plugin",
+        "description": "Добавляет текущую ветку и краткий список изменений Git в контекст OpenCode. Только локальное чтение, без сети. Отдельный JS-файл без зависимостей; требуется установленный Git.",
+        "tags": [
+          "Git",
+          "JS-файл",
+          "Контекст"
+        ],
+        "files": [],
+        "config": {
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "darwin-arm64",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "darwin-x64",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "linux-arm64-musl",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "linux-x64-glibc",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "linux-x64-musl",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "win32-arm64",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              },
+              {
+                "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+                "target": "win32-x64",
+                "entrypoint": "git-context.mjs",
+                "filesCount": 1,
+                "unpackedBytes": 1176,
+                "compressedBytes": 861
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "neurocenter:recipe/git-context",
+        "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+        "revision": "1.0.0-pack.1"
+      },
+      "legacyOrigins": [
+        "neurocenter:recipe/git-context",
+        "neurocenter:catalog-plugins"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "darwin-arm64",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "darwin-x64",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "linux-arm64-musl",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "linux-x64-glibc",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "linux-x64-musl",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "win32-arm64",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+            "target": "win32-x64",
+            "entrypoint": "git-context.mjs",
+            "filesCount": 1,
+            "unpackedBytes": 1176,
+            "compressedBytes": 861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "opencode-rag",
+      "publication": {
+        "name": "OpenCodeRAG",
+        "kind": "mcp",
+        "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project; модель эмбеддингов настраивается локальным мастером. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.",
+        "tags": [
+          "RAG",
+          "npm",
+          "Локальная настройка"
+        ],
+        "files": [],
+        "config": {
+          "transport": "stdio",
+          "command": "node",
+          "args": [],
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "2e4f5ecddc6980d86d0ff89ceac886a9df741fb6652282df87cff870c222fb54",
+                "target": "darwin-arm64",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7854,
+                "unpackedBytes": 300200418,
+                "compressedBytes": 102141531
+              },
+              {
+                "sha256": "6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7873,
+                "unpackedBytes": 484538731,
+                "compressedBytes": 175833129
+              },
+              {
+                "sha256": "6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2",
+                "target": "linux-arm64-musl",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7873,
+                "unpackedBytes": 484538731,
+                "compressedBytes": 175833129
+              },
+              {
+                "sha256": "94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87",
+                "target": "linux-x64-glibc",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7873,
+                "unpackedBytes": 523373597,
+                "compressedBytes": 182463030
+              },
+              {
+                "sha256": "94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87",
+                "target": "linux-x64-musl",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7873,
+                "unpackedBytes": 523373597,
+                "compressedBytes": 182463030
+              },
+              {
+                "sha256": "3387df6b7d70454ac65b66905045073258362692884064291cff8abb6ebefa8b",
+                "target": "win32-arm64",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7850,
+                "unpackedBytes": 328114269,
+                "compressedBytes": 107478833
+              },
+              {
+                "sha256": "c4a3bc2cec62a6dc89f27273a7c1ef106ea5111f3314380609f57ec9dcfbc099",
+                "target": "win32-x64",
+                "entrypoint": "rag-mcp.mjs",
+                "filesCount": 7851,
+                "unpackedBytes": 361668720,
+                "compressedBytes": 113644258
+              }
+            ],
+            "localConfiguration": {
+              "fields": [
+                {
+                  "id": "embeddingUrl",
+                  "type": "url",
+                  "label": "URL эмбеддингов (Ollama /api или OpenAI /v1; код отправляется на этот адрес)",
+                  "target": {
+                    "kind": "env",
+                    "name": "NEUROCENTER_RAG_EMBEDDING_URL"
+                  },
+                  "required": true
+                },
+                {
+                  "id": "embeddingModel",
+                  "type": "string",
+                  "label": "Модель эмбеддингов",
+                  "target": {
+                    "kind": "env",
+                    "name": "NEUROCENTER_RAG_EMBEDDING_MODEL"
+                  },
+                  "required": true
+                },
+                {
+                  "id": "embeddingProvider",
+                  "type": "string",
+                  "label": "Протокол: ollama или openai (по умолчанию ollama)",
+                  "target": {
+                    "kind": "env",
+                    "name": "NEUROCENTER_RAG_EMBEDDING_PROVIDER"
+                  },
+                  "required": false
+                },
+                {
+                  "id": "embeddingKey",
+                  "type": "string",
+                  "label": "API-ключ эмбеддингов (для OpenAI; локальный сервер может принимать любое значение)",
+                  "secret": true,
+                  "target": {
+                    "kind": "env",
+                    "name": "NEUROCENTER_RAG_EMBEDDING_KEY"
+                  },
+                  "required": false
+                }
+              ],
+              "schemaVersion": 1
+            }
+          },
+          "entrypoint": "rag-mcp.mjs"
+        },
+        "version": 1,
+        "origin": "https://github.com/MrDoe/OpenCodeRAG",
+        "compatibility": "MCP; Node 24; 7 платформ, кроме darwin-x64",
+        "revision": "2.4.4-mcp.pack.3"
+      },
+      "legacyOrigins": [
+        "https://github.com/MrDoe/OpenCodeRAG",
+        "neurocenter:recipe/opencode-rag",
+        "https://www.npmjs.com/package/opencode-rag-plugin",
+        "npm:opencode-rag-plugin"
+      ],
+      "legacyPackages": [
+        "opencode-rag-plugin"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "2e4f5ecddc6980d86d0ff89ceac886a9df741fb6652282df87cff870c222fb54",
+            "target": "darwin-arm64",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7854,
+            "unpackedBytes": 300200418,
+            "compressedBytes": 102141531
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/2e4f5ecddc6980d86d0ff89ceac886a9df741fb6652282df87cff870c222fb54.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7873,
+            "unpackedBytes": 484538731,
+            "compressedBytes": 175833129
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2",
+            "target": "linux-arm64-musl",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7873,
+            "unpackedBytes": 484538731,
+            "compressedBytes": 175833129
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/6944f98a0cfa75e1813543e747fdb44a70abf3d9fc779bd434f98c7faaf05ea2.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87",
+            "target": "linux-x64-glibc",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7873,
+            "unpackedBytes": 523373597,
+            "compressedBytes": 182463030
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87",
+            "target": "linux-x64-musl",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7873,
+            "unpackedBytes": 523373597,
+            "compressedBytes": 182463030
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/94b946f61c1c7f845f54a2642964ad3d118b3049b5acf34c2a3ab5c089660a87.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "3387df6b7d70454ac65b66905045073258362692884064291cff8abb6ebefa8b",
+            "target": "win32-arm64",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7850,
+            "unpackedBytes": 328114269,
+            "compressedBytes": 107478833
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/3387df6b7d70454ac65b66905045073258362692884064291cff8abb6ebefa8b.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "c4a3bc2cec62a6dc89f27273a7c1ef106ea5111f3314380609f57ec9dcfbc099",
+            "target": "win32-x64",
+            "entrypoint": "rag-mcp.mjs",
+            "filesCount": 7851,
+            "unpackedBytes": 361668720,
+            "compressedBytes": 113644258
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/c4a3bc2cec62a6dc89f27273a7c1ef106ea5111f3314380609f57ec9dcfbc099.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "opencode-rag-plugin",
+      "publication": {
+        "name": "OpenCodeRAG (плагин)",
+        "kind": "plugin",
+        "description": "Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память и hooks OpenCode 1. Без конфига использует локальную qwen3-embedding:4b на порту 11435 и автоиндексацию; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
+        "tags": [
+          "RAG",
+          "GitHub",
+          "Автоиндексация"
+        ],
+        "files": [],
+        "config": {
+          "entrypoint": "rag-plugin.mjs",
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "8f2610377e159a8c1fb33e7c1ccf1863ea58d003d95f982f08545120065d1a49",
+                "target": "darwin-arm64",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11238,
+                "unpackedBytes": 351064809,
+                "compressedBytes": 111923814
+              },
+              {
+                "sha256": "d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11258,
+                "unpackedBytes": 535378138,
+                "compressedBytes": 185615191
+              },
+              {
+                "sha256": "d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73",
+                "target": "linux-arm64-musl",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11258,
+                "unpackedBytes": 535378138,
+                "compressedBytes": 185615191
+              },
+              {
+                "sha256": "c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb",
+                "target": "linux-x64-glibc",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11260,
+                "unpackedBytes": 574245204,
+                "compressedBytes": 192251594
+              },
+              {
+                "sha256": "c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb",
+                "target": "linux-x64-musl",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11260,
+                "unpackedBytes": 574245204,
+                "compressedBytes": 192251594
+              },
+              {
+                "sha256": "42e7d12335eed6209999f438a84a77499d28a0b0ad6c32c461ae000036d7c251",
+                "target": "win32-arm64",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11230,
+                "unpackedBytes": 378924570,
+                "compressedBytes": 117244243
+              },
+              {
+                "sha256": "81c4071f8769c44ec00821e2061e2c7c63fea277c06e6dd40817c0d9e1ba3318",
+                "target": "win32-x64",
+                "entrypoint": "rag-plugin.mjs",
+                "filesCount": 11236,
+                "unpackedBytes": 412705231,
+                "compressedBytes": 123532663
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "neurocenter:recipe/opencode-rag-plugin",
+        "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+        "revision": "2.4.4-plugin.pack.4"
+      },
+      "legacyOrigins": [
+        "neurocenter:recipe/opencode-rag-plugin",
+        "https://github.com/MrDoe/OpenCodeRAG",
+        "https://www.npmjs.com/package/opencode-rag-plugin",
+        "npm:opencode-rag-plugin"
+      ],
+      "legacyPackages": [
+        "opencode-rag-plugin"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "8f2610377e159a8c1fb33e7c1ccf1863ea58d003d95f982f08545120065d1a49",
+            "target": "darwin-arm64",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11238,
+            "unpackedBytes": 351064809,
+            "compressedBytes": 111923814
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/8f2610377e159a8c1fb33e7c1ccf1863ea58d003d95f982f08545120065d1a49.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11258,
+            "unpackedBytes": 535378138,
+            "compressedBytes": 185615191
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73",
+            "target": "linux-arm64-musl",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11258,
+            "unpackedBytes": 535378138,
+            "compressedBytes": 185615191
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/d44d218c27390fbaa7c5f2e55561d3dba515ed0c9e4d5842577876a3513a0b73.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb",
+            "target": "linux-x64-glibc",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11260,
+            "unpackedBytes": 574245204,
+            "compressedBytes": 192251594
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb",
+            "target": "linux-x64-musl",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11260,
+            "unpackedBytes": 574245204,
+            "compressedBytes": 192251594
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/c026117ce2a8b92fe9ee359eb0067998f2d977e37d06340ff2ba793118a95ccb.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "42e7d12335eed6209999f438a84a77499d28a0b0ad6c32c461ae000036d7c251",
+            "target": "win32-arm64",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11230,
+            "unpackedBytes": 378924570,
+            "compressedBytes": 117244243
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/42e7d12335eed6209999f438a84a77499d28a0b0ad6c32c461ae000036d7c251.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "81c4071f8769c44ec00821e2061e2c7c63fea277c06e6dd40817c0d9e1ba3318",
+            "target": "win32-x64",
+            "entrypoint": "rag-plugin.mjs",
+            "filesCount": 11236,
+            "unpackedBytes": 412705231,
+            "compressedBytes": 123532663
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/81c4071f8769c44ec00821e2061e2c7c63fea277c06e6dd40817c0d9e1ba3318.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "opencode-snip",
+      "publication": {
+        "name": "opencode-snip",
+        "kind": "plugin",
+        "description": "Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.",
+        "tags": [
+          "Терминал",
+          "GitHub Releases",
+          "Готовый комплект"
+        ],
+        "files": [],
+        "config": {
+          "entrypoint": "plugin.mjs",
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4",
+                "target": "darwin-arm64",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10239205,
+                "compressedBytes": 4133039
+              },
+              {
+                "sha256": "7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5",
+                "target": "darwin-x64",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10631075,
+                "compressedBytes": 4365763
+              },
+              {
+                "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 9901899,
+                "compressedBytes": 3971957
+              },
+              {
+                "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+                "target": "linux-arm64-musl",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 9901899,
+                "compressedBytes": 3971957
+              },
+              {
+                "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+                "target": "linux-x64-glibc",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10397515,
+                "compressedBytes": 4283973
+              },
+              {
+                "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+                "target": "linux-x64-musl",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10397515,
+                "compressedBytes": 4283973
+              },
+              {
+                "sha256": "a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67",
+                "target": "win32-arm64",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10032787,
+                "compressedBytes": 3985425
+              },
+              {
+                "sha256": "1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da",
+                "target": "win32-x64",
+                "entrypoint": "plugin.mjs",
+                "filesCount": 6,
+                "unpackedBytes": 10657939,
+                "compressedBytes": 4363861
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "https://github.com/edouard-claude/snip",
+        "compatibility": "Legacy Plugin API; snip CLI: 8 платформ моста",
+        "revision": "2.0.0+snip.0.25.2"
+      },
+      "legacyOrigins": [
+        "https://github.com/edouard-claude/snip",
+        "neurocenter:recipe/opencode-snip",
+        "https://www.npmjs.com/package/opencode-snip",
+        "npm:opencode-snip"
+      ],
+      "legacyPackages": [
+        "opencode-snip"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4",
+            "target": "darwin-arm64",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10239205,
+            "compressedBytes": 4133039
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5",
+            "target": "darwin-x64",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10631075,
+            "compressedBytes": 4365763
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 9901899,
+            "compressedBytes": 3971957
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+            "target": "linux-arm64-musl",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 9901899,
+            "compressedBytes": 3971957
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+            "target": "linux-x64-glibc",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10397515,
+            "compressedBytes": 4283973
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+            "target": "linux-x64-musl",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10397515,
+            "compressedBytes": 4283973
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67",
+            "target": "win32-arm64",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10032787,
+            "compressedBytes": 3985425
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da",
+            "target": "win32-x64",
+            "entrypoint": "plugin.mjs",
+            "filesCount": 6,
+            "unpackedBytes": 10657939,
+            "compressedBytes": 4363861
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da.tar.gz"
+        }
+      ]
+    },
+    {
+      "key": "fetch-mcp",
+      "publication": {
+        "name": "MCP Fetch",
+        "kind": "mcp",
+        "description": "Получение веб-страниц в HTML, Markdown, тексте и JSON. Упакован из закреплённого commit GitHub.",
+        "tags": [],
+        "files": [],
+        "config": {
+          "transport": "stdio",
+          "args": [],
+          "extra": {
+            "runtimeArtifacts": [
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "darwin-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "darwin-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "linux-arm64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "linux-arm64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "linux-x64-glibc",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "linux-x64-musl",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "win32-arm64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              },
+              {
+                "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+                "target": "win32-x64",
+                "entrypoint": "entrypoint.mjs",
+                "filesCount": 6628,
+                "unpackedBytes": 46670043,
+                "compressedBytes": 8763682
+              }
+            ]
+          }
+        },
+        "version": 1,
+        "origin": "https://github.com/zcaceres/fetch-mcp",
+        "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+        "revision": "git-1ddb1a59cb09a2d38e759f2d7a97829680cbe514-compat.1"
+      },
+      "legacyOrigins": [
+        "https://github.com/zcaceres/fetch-mcp",
+        "neurocenter:recipe/fetch-mcp"
+      ],
+      "artifacts": [
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "darwin-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "darwin-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "linux-arm64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "linux-arm64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "linux-x64-glibc",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "linux-x64-musl",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "win32-arm64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        },
+        {
+          "descriptor": {
+            "sha256": "e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee",
+            "target": "win32-x64",
+            "entrypoint": "entrypoint.mjs",
+            "filesCount": 6628,
+            "unpackedBytes": 46670043,
+            "compressedBytes": 8763682
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-19.1/e44cdb775c9e1f0f29dde5c96746068022c3ea628be76e14d572004df5f621ee.tar.gz"
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import {readFile,lstat} from 'node:fs/promises';
 import path from 'node:path';
 import {configureProduction,ensureMetricsToken} from './configuration.mjs';
 import {composeClient,composeConfiguration,maintenanceLock} from './compose-client.mjs';
+import {runCatalogSync} from './sync-catalog.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const args=process.argv.slice(2);const mode=args[0]||'configure';
@@ -52,7 +53,11 @@ async function main() {
         await compose(['up','-d','--wait','postgres']);
         await compose(['--profile','setup','run','--rm','database-init']);
         if(mode==='seed'){await compose(['--profile','setup','run','--rm','bootstrap-admin']);}
-        if(mode==='up'){await compose(['up','-d','--wait']);}
+        if(mode==='up'){
+            await compose(['up','-d','--wait','capacity-collector']);
+            await runCatalogSync(client);
+            await compose(['up','-d','--wait']);
+        }
     });
 }
 void main().catch(error=>{console.error(error instanceof Error?error.message:'Не удалось подготовить production');process.exitCode=1;});

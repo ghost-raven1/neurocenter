@@ -8,6 +8,7 @@ import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {applicationServices} from '../production/compose-client.mjs';
+import {runCatalogSync} from '../production/sync-catalog.mjs';
 import {validateUpdatePlan,assertMigrationPrefix,preflightUpdate,updateProduction} from '../production/update.mjs';
 import {pauseBudget} from '../production/recovery.mjs';
 import {digestFile,inventory} from '../production/recovery-files.mjs';
@@ -27,18 +28,26 @@ async function fixture(action){
     const plan={format:'neurocenter-update-v1',id:'test-update',sourceRelease:'old',targetRelease:'new',sourceImages:source,targetImages:target,postgresImage:image('d'),
         rollback:'restore-new-project',migrationCompatibility:'restore-required',catalogMigrations:[migration],rehearsalSha256:digest(raw),maxPauseMs:60000};
     const options={directory,projectName:'nc-update-test',plan,rehearsalFile,backupDestination:path.join(directory,'snapshot'),execute:true};
-    let live=source;let failStart=false;let beforeDeploy=async()=>{};let backupError;let alteredTarget=false;
+    let live=source;let failStart=false;let beforeDeploy=async()=>{};let backupError;let alteredTarget=false;let catalogErrorPhase;
     const states=()=>[...applicationServices,'postgres'].map(service=>({Id:service,Image:service==='postgres'?image('d'):live[service],
         Config:{Labels:{'com.docker.compose.service':service}},State:{Running:true,Health:{Status:'healthy'}}}));
     const deps={
-        composeClient:config=>({...config,run:async(args,settings)=>{calls.push({command:args,config,settings});if(args[0]==='up'){if(failStart){live=target;throw new Error('отказ миграции');}live=target;}return '';}}),
+        runCatalogSync:(client,options)=>runCatalogSync(client,options,{docker:async()=>''}),
+        composeClient:config=>({...config,run:async(args,settings)=>{
+            calls.push({command:args,config,settings});
+            if(args[0]==='run'){
+                if(catalogErrorPhase===(args.includes('--download-only')?'download':'sync')){throw new Error('каталог недоступен');}
+                return JSON.stringify({ok:true,dryRun:false,downloadOnly:args.includes('--download-only'),artifacts:0,tools:[]});
+            }
+            if(args[0]==='up'){if(failStart){live=target;throw new Error('отказ миграции');}live=target;}return '';
+        }}),
         composeConfiguration:async client=>({services:Object.fromEntries([...applicationServices,'postgres'].map(service=>[service,{image:service==='postgres'?'postgres':(client.release?'target':'source')+':'+service,environment:{QUOTA:alteredTarget&&client.release?'changed':'kept'}}])),volumes:{postgres:{name:'stable-postgres'}}}),
         serviceImageIds:async config=>config.services.frontend.image.startsWith('target')?target:source,
         containers:async()=>states(),
         docker:async args=>args[0]==='image'?JSON.stringify([{Id:image('d')}]):JSON.stringify([migration]),
-        withBackup:async(config,hooks)=>{calls.push({backup:true,config});await hooks.beforePause();if(backupError){throw backupError;}await beforeDeploy();return hooks.afterBackup({ok:true,sha256:'e'.repeat(64),destination:config.destination},{remainingMs:()=>60000});},
+        withBackup:async(config,hooks)=>{calls.push({backup:true,config});await hooks.beforePause();if(backupError){throw backupError;}await beforeDeploy();calls.push({backupReady:true});return hooks.afterBackup({ok:true,sha256:'e'.repeat(64),destination:config.destination},{remainingMs:()=>60000});},
     };
-    try{await action({directory,before,options,plan,deps,calls,setLive:value=>{live=value;},failStart:()=>{failStart=true;},beforeDeploy:fn=>{beforeDeploy=fn;},failBackup:()=>{backupError=new Error('копия не создана');},alterTarget:()=>{alteredTarget=true;}});}
+    try{await action({directory,before,options,plan,deps,calls,setLive:value=>{live=value;},failStart:()=>{failStart=true;},beforeDeploy:fn=>{beforeDeploy=fn;},failBackup:()=>{backupError=new Error('копия не создана');},alterTarget:()=>{alteredTarget=true;},failCatalog:(phase='download')=>{catalogErrorPhase=phase;}});}
     finally{await rm(directory,{recursive:true,force:true});}
 }
 
@@ -50,6 +59,11 @@ test('Новый релиз начинается только после коп�
     const result=await updateProduction(f.options,f.deps);assert.equal(result.state,'completed');assert.equal(result.backup.sha256,'e'.repeat(64));
     assert.equal(f.calls[0].backup,true);assert.equal(f.calls[0].config.maxPauseMs,60000);
     const up=f.calls.find(row=>row.command?.[0]==='up');assert.ok(up.command.includes('--no-build'));assert.ok(up.command.includes('never'));assert.equal(up.settings.timeout,60000);
+    const sync=f.calls.filter(row=>row.command?.[0]==='run');assert.equal(sync.length,2);
+    assert.ok(sync[0].command.includes('--download-only'));assert.ok(!sync[1].command.includes('--download-only'));
+    assert.equal(sync[1].settings.timeout,60000);
+    const copied=f.calls.findIndex(row=>row.backupReady);assert.ok(f.calls.indexOf(sync[0])<copied&&copied<f.calls.indexOf(sync[1]));
+    assert.ok(f.calls.indexOf(sync[1])<f.calls.indexOf(up));assert.ok(result.catalog.ok);
     const pinned=JSON.parse(await readFile(up.config.files.at(-1),'utf8'));assert.equal(pinned.services['catalog-service'].image,image('b'));
     assert.equal(await readFile(path.join(f.directory,'updates/test-update.env.before'),'utf8'),f.before);
     assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before.replace("'old'","'new'"));
@@ -103,7 +117,21 @@ test('SIGTERM во время applying сохраняет комплект и з
 }));
 test('Ошибка копии останавливает обновление до запуска новых образов',async()=>fixture(async f=>{
     f.failBackup();await assert.rejects(updateProduction(f.options,f.deps),/копия/);
-    assert.equal(f.calls.some(row=>row.command),false);assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
+    assert.ok(f.calls.filter(row=>row.command).every(row=>row.command.includes('--download-only')));assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
+}));
+test('Ошибка загрузки каталога до паузы не запускает новый релиз и сохраняет настройки',async()=>fixture(async f=>{
+    f.failCatalog();await assert.rejects(updateProduction(f.options,f.deps),/каталог/);
+    assert.equal(f.calls.filter(row=>row.command?.[0]==='run').length,1);
+    assert.equal(f.calls.some(row=>['up','stop'].includes(row.command?.[0])),false);
+    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
+}));
+test('Ошибка публикации после копии останавливает rollout и сохраняет комплект для восстановления',async()=>fixture(async f=>{
+    f.failCatalog('sync');await assert.rejects(updateProduction(f.options,f.deps),/каталог/);
+    assert.equal(f.calls.some(row=>row.command?.[0]==='up'),false);
+    assert.equal(f.calls.at(-1).command[0],'stop');
+    const receipt=JSON.parse(await readFile(path.join(f.directory,'updates/test-update.json'),'utf8'));
+    assert.equal(receipt.state,'failed');assert.equal(receipt.failurePhase,'applying');assert.ok(receipt.backup.sha256);
+    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
 }));
 test('Конфликт настройки после копии блокирует миграции и сохраняет чужое изменение',async()=>fixture(async f=>{
     f.beforeDeploy(()=>writeFile(path.join(f.directory,'.env'),f.before+"CUSTOM='сохранить'\n"));

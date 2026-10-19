@@ -32,8 +32,8 @@ function progress(total) {
 }
 
 /** Выполняет команду с передачей её ошибки вызывающему процессу. */
-function run(command, args, cwd = root) {
-    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: process.env });
+function run(command, args, cwd = root, env = process.env) {
+    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env });
     if (result.error) { throw result.error; }
     if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
 }
@@ -153,7 +153,7 @@ async function health(deadline = Infinity) {
 }
 
 async function start() {
-    const next = progress(packages.length + 7);
+    const next = progress(packages.length + 8);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
@@ -164,6 +164,14 @@ async function start() {
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
     output.success('PostgreSQL готов');
+    next('Обновление встроенного каталога инструментов');
+    run(node, [path.join(root, 'services/catalog-service/dist/builtin-catalog/sync.cli.js'),
+        path.join(root, 'scripts/catalog-plugins/catalog-release.json')], root, {
+        ...process.env,
+        CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+        RUNTIME_ARTIFACT_DIR: path.resolve(root, process.env.RUNTIME_ARTIFACT_DIR || 'data/runtime-artifacts'),
+    });
+    output.success('Каталог инструментов синхронизирован');
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();

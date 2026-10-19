@@ -23,6 +23,11 @@ export class RuntimeArtifacts {
         await fs.mkdir(root, { recursive: true, mode: 0o700 });
         const info = await fs.lstat(root);
         if (!info.isDirectory() || info.isSymbolicLink()) { throw new BadRequestException('Хранилище артефактов заменено ссылкой.'); }
+        // Предзагрузка уже разместила проверенный SHA-файл: повторная копия не нужна.
+        if (path.resolve(source) === path.join(root, descriptor.sha256 + '.tar.gz')) {
+            const releaseRegistry = await reserveCapacity({resource:'postgres',bytes:65536});
+            try { return await this.registerArchive(descriptor); } finally { releaseRegistry(); }
+        }
         const releaseCapacity=await reserveCapacity({resource:'runtime-artifacts',bytes:descriptor.compressedBytes,path:root});
         let releaseRegistry=()=>{};
         try {
@@ -54,15 +59,20 @@ export class RuntimeArtifacts {
             await fs.unlink(temporary);
             if (process.platform !== 'win32') { const directoryHandle = await fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await directoryHandle.sync(); } finally { await directoryHandle.close(); } }
             await inspectRuntimeArchive(target, descriptor);
-            await this.devices.pool.query(`INSERT INTO bridge_runtime_artifacts(sha256,compressed_bytes,unpacked_bytes,files_count)
-                VALUES($1,$2,$3,$4) ON CONFLICT(sha256) DO NOTHING`,
-            [descriptor.sha256, descriptor.compressedBytes, descriptor.unpackedBytes, descriptor.filesCount]);
-            const { rows } = await this.devices.pool.query('SELECT compressed_bytes,unpacked_bytes,files_count FROM bridge_runtime_artifacts WHERE sha256=$1', [descriptor.sha256]);
-            if (!rows[0] || Number(rows[0].compressed_bytes) !== descriptor.compressedBytes || Number(rows[0].unpacked_bytes) !== descriptor.unpackedBytes || Number(rows[0].files_count) !== descriptor.filesCount) {
-                throw new ConflictException('Существующий артефакт имеет другую опись.');
-            }
-            return descriptor;
+            return await this.registerArchive(descriptor);
         } finally { await handle.close(); await fs.rm(temporary, { force: true }); }
+    }
+
+    /** Квитанция принимает только точную опись ранее проверенного неизменяемого файла. */
+    private async registerArchive(descriptor:RuntimeArtifact):Promise<RuntimeArtifact> {
+        await this.devices.pool.query(`INSERT INTO bridge_runtime_artifacts(sha256,compressed_bytes,unpacked_bytes,files_count)
+            VALUES($1,$2,$3,$4) ON CONFLICT(sha256) DO NOTHING`,
+        [descriptor.sha256, descriptor.compressedBytes, descriptor.unpackedBytes, descriptor.filesCount]);
+        const { rows } = await this.devices.pool.query('SELECT compressed_bytes,unpacked_bytes,files_count FROM bridge_runtime_artifacts WHERE sha256=$1', [descriptor.sha256]);
+        if (!rows[0] || Number(rows[0].compressed_bytes) !== descriptor.compressedBytes || Number(rows[0].unpacked_bytes) !== descriptor.unpackedBytes || Number(rows[0].files_count) !== descriptor.filesCount) {
+            throw new ConflictException('Существующий артефакт имеет другую опись.');
+        }
+        return descriptor;
     }
 
     /** Авторизацию устройства, lease и одобренного графа вызывающий маршрут проверяет до открытия. */

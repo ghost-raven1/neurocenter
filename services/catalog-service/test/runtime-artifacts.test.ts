@@ -34,6 +34,19 @@ describe('Неизменяемые архивы готовых платформ�
         const f=await fixture();await f.service.importArchive(f.source,f.descriptor);const target=path.join(f.directory,f.descriptor.sha256+'.tar.gz');const before=await fs.stat(target);
         await f.service.importArchive(f.source,f.descriptor);const after=await fs.stat(target);expect({ino:after.ino,mtime:after.mtimeMs}).toEqual({ino:before.ino,mtime:before.mtimeMs});expect(await fs.readdir(f.directory)).toEqual([f.descriptor.sha256+'.tar.gz']);
     });
+    it('Регистрирует предзагруженный SHA-файл после полной проверки без повторной копии',async()=>{
+        const f=await fixture();await fs.mkdir(f.directory,{recursive:true});const target=path.join(f.directory,f.descriptor.sha256+'.tar.gz');await fs.copyFile(f.source,target);await fs.chmod(target,0o400);
+        const before=await fs.stat(target),link=vi.spyOn(fs,'link'),open=vi.spyOn(fs,'open');
+        expect(await f.service.importArchive(target,f.descriptor)).toEqual(f.descriptor);
+        expect(f.registry.size).toBe(1);expect(link).not.toHaveBeenCalled();
+        expect(open.mock.calls.some(([filename])=>String(filename).endsWith('.partial'))).toBe(false);
+        const after=await fs.stat(target);expect({ino:after.ino,mtime:after.mtimeMs}).toEqual({ino:before.ino,mtime:before.mtimeMs});
+    });
+    it.each(['sha','symlink','hardlink'])('Предзагруженный файл с нарушением %s не регистрируется',async failure=>{
+        const f=await fixture();await fs.mkdir(f.directory,{recursive:true});const target=path.join(f.directory,f.descriptor.sha256+'.tar.gz');
+        if(failure==='symlink')await fs.symlink(f.source,target);else if(failure==='hardlink')await fs.link(f.source,target);else await fs.writeFile(target,Buffer.alloc(f.archive.length));
+        await expect(f.service.importArchive(target,f.descriptor)).rejects.toThrow();expect(f.registry.size).toBe(0);
+    });
     it('Обрезанный архив и неверный SHA не публикуются и не регистрируются',async()=>{
         const f=await fixture();await fs.writeFile(f.source,f.archive.subarray(0,5));await expect(f.service.importArchive(f.source,f.descriptor)).rejects.toThrow();expect(f.registry.size).toBe(0);
         await fs.writeFile(f.source,f.archive);await expect(f.service.importArchive(f.source,{...f.descriptor,sha256:'a'.repeat(64)})).rejects.toThrow(/SHA/);expect(f.registry.size).toBe(0);

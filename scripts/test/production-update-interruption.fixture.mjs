@@ -10,6 +10,7 @@ process.once('message',async options=>{
     const {plan}=options;
     const deps={
         composeClient:config=>({...config,run:async args=>{
+            if(args[0]==='run'){return JSON.stringify({ok:true,dryRun:false,downloadOnly:args.includes('--download-only'),artifacts:0,tools:[]});}
             if(args[0]==='up'){setInterval(()=>{},1000);process.send({phase:'applying'});await new Promise(()=>{});}
             return '';
         }}),

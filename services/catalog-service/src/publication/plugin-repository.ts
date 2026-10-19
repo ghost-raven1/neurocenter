@@ -41,7 +41,7 @@ export class PluginRepository {
     }
 
     /** Переданный idle-клиент сохраняет сессию владельца; его освобождает вызывающая сторона. */
-    async create(raw: IAiPluginCreate, author: string, afterCreate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient): Promise<IAiPlugin> {
+    async create(raw: IAiPluginCreate, author: string, afterCreate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<IAiPlugin> {
         const body = validatePublication(raw);
         const fingerprint = publicationHash(body);
         return this.transaction(async client => {
@@ -70,10 +70,10 @@ export class PluginRepository {
             await securityEvent(client, { actor: author, action: 'plugin.create', resourceId: plugin.id, before: null, after: auditSummary(plugin) });
             await afterCreate?.(client, plugin);
             return plugin;
-        }, borrowedClient);
+        }, borrowedClient, alreadyInTransaction);
     }
 
-    async update(idOrName: string, raw: IAiPluginUpdate, author: string): Promise<IAiPlugin | null> {
+    async update(idOrName: string, raw: IAiPluginUpdate, author: string, afterUpdate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<IAiPlugin | null> {
         const body = object(raw, 'Изменения');
         const allowed = ['kind', 'description', 'compatibility', 'tags', 'origin', 'revision', 'config', 'files', 'expectedVersion', 'dependencies'];
         if (Object.keys(body).some(key => !allowed.includes(key))) { throw new BadRequestException('В изменениях есть неподдерживаемые поля; название и тип сохраняются.'); }
@@ -83,20 +83,21 @@ export class PluginRepository {
             const found = await client.query("SELECT * FROM ai_plugins WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'ai-plug-%') ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE", [idOrName]);
             if (!found.rows[0]) { return null; }
             const current = toPlugin(found.rows[0]);
+            const complete = async (plugin: IAiPlugin): Promise<IAiPlugin> => { await afterUpdate?.(client, plugin); return plugin; };
             if (body.expectedVersion !== undefined && current.version !== body.expectedVersion) { throw new ConflictException('Карточку уже изменили. Обновите её перед сохранением; введённый текст сохранён в форме.'); }
             if (body.kind !== undefined && body.kind !== current.kind) { throw new BadRequestException('Тип опубликованного инструмента менять нельзя. Создайте отдельный инструмент.'); }
             const { expectedVersion: _expected, ...changes } = body;
             const normalizedCurrent = { ...metadata(current), name: current.name, config: current.config, files: current.files, version: 1 };
-            if (publicationHash({ ...normalizedCurrent, ...changes }) === publicationHash(normalizedCurrent)) { return current; }
+            if (publicationHash({ ...normalizedCurrent, ...changes }) === publicationHash(normalizedCurrent)) { return complete(current); }
             const next = validatePublication({ ...normalizedCurrent, ...changes });
             const { publicationKey: _key, ...comparable } = next;
-            if (publicationHash({...comparable,compatibility:next.compatibility ?? null,revision:next.revision ?? null}) === publicationHash(normalizedCurrent)) { return current; }
+            if (publicationHash({...comparable,compatibility:next.compatibility ?? null,revision:next.revision ?? null}) === publicationHash(normalizedCurrent)) { return complete(current); }
             await assertPublicationDependencies(client, next.dependencies, { id: current.id, files: next.files });
             const saved = await this.saveVersion(client, { ...current, ...next, dependencies: next.dependencies,
                 compatibility: next.compatibility ?? null, revision: next.revision ?? null }, author, 'Изменён в общем магазине');
             await securityEvent(client, { actor: author, action: 'plugin.update', resourceId: saved.id, before: auditSummary(current), after: auditSummary(saved) });
-            return saved;
-        });
+            return complete(saved);
+        }, borrowedClient, alreadyInTransaction);
     }
 
     async versions(id: string): Promise<IAiPluginVersion[]> {
@@ -162,17 +163,18 @@ export class PluginRepository {
             [plugin.id, plugin.version, JSON.stringify(plugin.files), JSON.stringify(plugin.config), author, note, JSON.stringify(metadata(plugin))]);
     }
 
-    private async transaction<T>(work: (client: PoolClient) => Promise<T>, borrowedClient?: PoolClient): Promise<T> {
+    private async transaction<T>(work: (client: PoolClient) => Promise<T>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<T> {
+        if (alreadyInTransaction && !borrowedClient) { throw new Error('Внешней транзакции нужен её клиент.'); }
         const client = borrowedClient ?? await this.pool.connect();
         try {
-            await client.query('BEGIN');
+            if (!alreadyInTransaction) { await client.query('BEGIN'); }
             // Единый порядок блокировок исключает гонку publish/delete и взаимную блокировку A→B/B→A.
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['publication:dependency-graph']);
             const result = await work(client);
-            await client.query('COMMIT');
+            if (!alreadyInTransaction) { await client.query('COMMIT'); }
             return result;
         }
-        catch (error) { await client.query('ROLLBACK'); throw error; }
+        catch (error) { if (!alreadyInTransaction) { await client.query('ROLLBACK'); } throw error; }
         finally { if (!borrowedClient) {client.release();} }
     }
 }

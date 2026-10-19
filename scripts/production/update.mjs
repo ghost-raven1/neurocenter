@@ -6,11 +6,12 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {applicationServices,composeClient,composeConfiguration,containers,docker,serviceImageIds,repositoryRoot,saveDiagnostic} from './compose-client.mjs';
 import {withQuiescedProductionBackup} from './recovery.mjs';
+import {runCatalogSync} from './sync-catalog.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const imagePattern=/^sha256:[a-f0-9]{64}$/;
 const releasePattern=/^[a-z0-9][a-z0-9._-]{0,63}$/;
-const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,withBackup:withQuiescedProductionBackup};
+const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,runCatalogSync,withBackup:withQuiescedProductionBackup};
 const sameImages=(left,right)=>applicationServices.every(service=>left?.[service]===right?.[service]);
 
 /** План привязан к точным образам и квитанции репетиции, а не к подвижной метке latest. */
@@ -130,18 +131,28 @@ export async function updateProduction(options,injected={}){
     const pinnedFile=path.join(folder,plan.id+'.compose.json');
     const pinned={services:Object.fromEntries([...applicationServices,'database-init','bootstrap-admin',...(checked.hasCapacityCollector?['capacity-collector']:[])].map(service=>[service,{image:plan.targetImages[applicationServices.includes(service)?service:'catalog-service']}]))};
     let targetStarted=false;let failureRecorded=false;
-    const recordFailure=async()=>{failureRecorded=true;journal.failurePhase=journal.state;journal.failedAt=new Date().toISOString();await save('failed');};
+    const recordFailure=async cause=>{
+        failureRecorded=true;journal.failurePhase=journal.state;journal.failedAt=new Date().toISOString();
+        try{await save('failed');}
+        catch(error){if(cause?.retainMaintenanceLock===true){error.retainMaintenanceLock=true;}throw error;}
+    };
     const target=deps.composeClient({directory,projectName,files:[...files,pinnedFile],release:plan.targetRelease});
     try{
         await writeFile(path.join(folder,plan.id+'.env.before'),before,{flag:'wx',mode:0o600,flush:true});
         await writeFile(pinnedFile,JSON.stringify(pinned,null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
         return await deps.withBackup({directory,projectName,files,destination:options.backupDestination,offline:true,maxPauseMs:plan.maxPauseMs,progress:options.progress}, {
-            beforePause:async()=>{await preflightUpdate(options,deps);if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены после preflight');}},
+            beforePause:async()=>{
+                await preflightUpdate(options,deps);
+                if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены после preflight');}
+                // Большие архивы загружаются до остановки приложений; БД каталога ещё не меняется.
+                journal.catalogDownload=await deps.runCatalogSync(target,{downloadOnly:true});
+            },
             afterBackup:async(receipt,{remainingMs})=>{
                 try{
                     journal.backup=receipt;await save('backed-up');
                     if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены во время копирования');}
                     await save('applying');targetStarted=true;
+                    journal.catalog=await deps.runCatalogSync(target,{timeout:remainingMs()});
                     await target.run(['up','-d','--no-build','--pull','never','--wait',...applicationServices,...(checked.hasCapacityCollector?['capacity-collector']:[])],{timeout:remainingMs()});
                     await assertLive(target,plan.targetImages,plan.postgresImage,deps);remainingMs();
                     const current=await privateFile(path.join(directory,'.env'));
@@ -153,12 +164,12 @@ export async function updateProduction(options,injected={}){
                 }catch(error){
                     // Остановка и квитанция остаются под общей daemon-блокировкой.
                     if(targetStarted){try{await target.run(['stop','--timeout','45',...applicationServices]);}catch{journal.stopFailed=true;}}
-                    await recordFailure();throw error;
+                    await recordFailure(error);throw error;
                 }
             },
         });
     }catch(error){
-        if(!failureRecorded&&journal.state!=='completed'){await recordFailure();}
+        if(!failureRecorded&&journal.state!=='completed'){await recordFailure(error);}
         throw error;
     }
 }

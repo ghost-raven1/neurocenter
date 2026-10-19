@@ -50,6 +50,11 @@ async function fixture(t, mode) {
         import {appendFileSync} from 'node:fs';
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'runtime-prepare'})+'\\n');
         if(process.env.DEV_START_MODE==='runtime-error')process.exit(31);`);
+    await fs.mkdir(path.join(checkout, 'services/catalog-service/dist/builtin-catalog'), {recursive: true});
+    await fs.writeFile(path.join(checkout, 'services/catalog-service/dist/builtin-catalog/sync.cli.js'), `
+        require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'catalog-sync',
+            manifest:process.argv[2],artifactDir:process.env.RUNTIME_ARTIFACT_DIR})+'\\n');
+        if(process.env.DEV_START_MODE==='catalog-error')process.exit(32);`);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -180,8 +185,27 @@ test('Запуск называет завершившийся сервис, п�
     assert.doesNotMatch(result.stdout, /Готов к работе/);
     assert.equal(result.events.filter(event => event.kind === 'npm').length, 7);
     assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
+    assert.equal(result.events.find(event => event.kind === 'catalog-sync').artifactDir, path.join(f.checkout, 'data/runtime-artifacts'));
+    assert.ok(result.events.findIndex(event => event.kind === 'catalog-sync')
+        < result.events.findIndex(event => event.kind === 'child-spawn'));
     assert.ok(result.events.findIndex(event => event.kind === 'runtime-prepare')
         < result.events.findIndex(event => event.kind === 'child-spawn'));
+});
+
+test('Ошибка обновления каталога останавливает запуск до остановки прежних процессов', async t => {
+    const f = await fixture(t, 'catalog-error');
+    await fs.mkdir(path.join(f.checkout, '.run'));
+    const state = '[{"name":"catalog","pid":99999999}]\n';
+    const stateFile = path.join(f.checkout, '.run/processes.json');
+    await fs.writeFile(stateFile, state);
+    const result = await f.run();
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /32/);
+    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
+    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'port-probe').length, 0);
 });
 
 test('Ошибка подготовки автономного моста сохраняет состояние работающего стека', async t => {

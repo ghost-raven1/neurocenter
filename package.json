@@ -16,6 +16,7 @@
     "vision:describe": "node scripts/vision/describe.mjs",
     "tools:build": "node scripts/catalog-plugins/run.mjs build",
     "tools:publish": "node scripts/catalog-plugins/run.mjs publish",
+    "tools:sync": "node scripts/catalog-plugins/sync.mjs",
     "tools:catalog": "node scripts/catalog-plugins/run.mjs prepare",
     "tools:check": "node scripts/catalog-plugins/run.mjs check"
   }
