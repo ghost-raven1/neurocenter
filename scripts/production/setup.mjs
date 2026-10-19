@@ -42,7 +42,13 @@ async function main() {
     if(mode==='configure'){await configureProduction(await input(),directory);console.log('Production-конфиг сохранён в приватном каталоге. Далее: setup.mjs check, build, seed, up с тем же --directory.');return;}
     if(!['check','build','seed','up','status'].includes(mode)){throw new Error('Команды: configure | check | build | seed | up | status; параметр --directory <каталог>');}
     if(mode==='check'){await compose(['config','--quiet']);console.log('Структура production-конфига корректна.');return;}
-    if(mode==='build'){await compose(['build']);return;}
+    if(mode==='build'){
+        await readFile(path.join(directory,'.env'),'utf8');
+        const {hydrateBridgeRuntimeRelease}=await import('../bridge-runtime-release.mjs');
+        const bridge=await hydrateBridgeRuntimeRelease({directory:root});
+        console.log(`Раздача моста ${bridge.version}: ${bridge.targets.join(', ')}; загружено пакетов: ${bridge.downloaded.length}.`);
+        await compose(['build']);return;
+    }
     if(mode==='status'){await compose(['ps']);return;}
     await ensureMetricsToken(directory);
     const config=await composeConfiguration(client);

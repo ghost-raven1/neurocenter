@@ -38,7 +38,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(root, 'scripts'), {recursive: true});
     await fs.mkdir(path.join(bridge, 'dist'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['prepare-bridge-runtimes.mjs', ...contextScripts]) {
+    for (const file of ['prepare-bridge-runtimes.mjs', 'bridge-runtime-release.mjs', ...contextScripts]) {
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
     }
     await fs.mkdir(path.join(root, 'services/api-gateway'), {recursive: true});
@@ -120,7 +120,13 @@ async function fixture(t) {
         if(process.env.RUNTIME_FIXTURE_NODE_MAJOR)Object.defineProperty(process.versions,'node',{value:process.env.RUNTIME_FIXTURE_NODE_MAJOR+'.0.0'});
         const record=value=>fs.appendFileSync(process.env.RUNTIME_FIXTURE_CALLS,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
-        globalThis.fetch=deny;http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;
+        globalThis.fetch=async url=>{
+            if(!process.env.RUNTIME_FIXTURE_RELEASE_TRANSPORT)return deny();
+            const responses=JSON.parse(fs.readFileSync(process.env.RUNTIME_FIXTURE_ROOT+'/release-payloads.json','utf8'));
+            if(!responses[url])return deny();
+            record({kind:'release-download',url});return new Response(Buffer.from(responses[url],'base64'));
+        };
+        http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;
         net.Server.prototype.listen=deny;
         const rename=fs.promises.rename;
         let publishFailed=false;
@@ -160,6 +166,19 @@ async function fixture(t) {
         await fs.writeFile(file + '.sha256', digest + '\n');
         return file;
     }
+    async function seedRelease(published = ['darwin-arm64','linux-x64'], releaseBuildId = buildId) {
+        const payloads = {};
+        const artifacts = published.map(target => {
+            const file = archiveName(target), bytes = Buffer.from('isolated released runtime ' + target);
+            const url = `https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v${version}/${file}`;
+            payloads[url] = bytes.toString('base64');
+            return {file, url, metadata: {version, target, buildId: releaseBuildId, nodeVersion: '24.22.0', ragSupported: true,
+                probeEngine: {version: opencodeVersion, file: 'bin/opencode-probe', sha256: 'a'.repeat(64)}, bytes: bytes.length, sha256: hash(bytes)}};
+        });
+        await fs.writeFile(path.join(root, 'scripts/bridge-runtime-release.json'), JSON.stringify({schemaVersion: 1, version,
+            buildId: releaseBuildId, release: 'bridge-v' + version, artifacts}));
+        await fs.writeFile(path.join(root, 'release-payloads.json'), JSON.stringify(payloads));
+    }
     function environment(overrides) {
         return {
                 PATH: [bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter),
@@ -195,8 +214,38 @@ async function fixture(t) {
         }).finally(() => clearTimeout(timer)).then(checked);
         return {completion};
     }
-    return {root, runtime, seed, run, start};
+    return {root, runtime, seed, seedRelease, run, start};
 }
+
+test('Linux-сервер по умолчанию получает также опубликованный Mac-пакет без чужой нативной сборки', async t => {
+    const f = await fixture(t); await f.seedRelease();
+    const result = await f.run([], {RUNTIME_FIXTURE_HOST: 'linux-x64', RUNTIME_FIXTURE_RELEASE_TRANSPORT: '1'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.events.filter(event => event.kind === 'release-download').length, 2);
+    assert.equal(result.events.some(event => ['exec','docker','native-build'].includes(event.kind)), false);
+    for (const target of ['darwin-arm64','linux-x64']) {
+        const file = path.join(f.runtime, archiveName(target));
+        assert.equal((await fs.readFile(file + '.sha256', 'utf8')).trim(), hash(await fs.readFile(file)));
+        assert.equal(JSON.parse(await fs.readFile(file + '.json', 'utf8')).buildId, buildId);
+    }
+});
+
+test('Явная цель при опубликованной поставке сохраняет выбор оператора', async t => {
+    const f = await fixture(t); await f.seedRelease();
+    const result = await f.run(['--targets=linux-x64'], {RUNTIME_FIXTURE_RELEASE_TRANSPORT: '1'});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.events.filter(event => event.kind === 'release-download').length, 1);
+    await assert.rejects(fs.access(path.join(f.runtime, archiveName('darwin-arm64'))), {code: 'ENOENT'});
+});
+
+test('Изменённая сборка разработки не скачивает старый release с прежней версией пакета', async t => {
+    const f = await fixture(t); await f.seedRelease(undefined, 'e'.repeat(64));
+    const result = await f.run(['--targets=linux-x64']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.events.filter(event => event.kind === 'release-download').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'docker').length, 1);
+    assert.equal(JSON.parse(await fs.readFile(path.join(f.runtime, archiveName('linux-x64') + '.json'), 'utf8')).buildId, buildId);
+});
 
 test('Проверенный кеш текущего хоста и Linux x64 не запускает процессы и сеть', async t => {
     const f = await fixture(t);

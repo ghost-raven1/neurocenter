@@ -1,11 +1,10 @@
 import fs from 'node:fs/promises';
-import {createReadStream} from 'node:fs';
-import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyBridgeBuild} from './bridge-build-integrity.mjs';
 import {opencodeVersion, opencodePackageName} from './opencode-platforms.mjs';
+import {bridgeRuntimeCached, hydrateBridgeRuntimeRelease, publishBridgeRuntimeFiles, readBridgeRuntimeRelease} from './bridge-runtime-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
@@ -17,59 +16,15 @@ const hostMusl = process.platform === 'linux' && !process.report.getReport().hea
 const host = `${hostPlatform}-${process.arch}${hostMusl ? '-musl' : ''}`;
 const nativeNodeSupported = Number(process.versions.node.split('.')[0]) === 24;
 
-/** Большой архив проверяется потоком, без загрузки целиком в память. */
-async function sha256(file) {
-    const hash = createHash('sha256');
-    for await (const bytes of createReadStream(file)) { hash.update(bytes); }
-    return hash.digest('hex');
-}
-
 /** Принимаем только согласованный комплект текущей сборки и закреплённого движка. */
-async function cached(target, version, buildId, directory = output) {
-    const archive = path.join(directory, `neurocenter-asset-sync-${target}-${version}.tgz`);
-    try {
-        const [stat, jsonStat, checksumStat] = await Promise.all([archive, archive + '.json', archive + '.sha256'].map(file => fs.lstat(file)));
-        if (![stat, jsonStat, checksumStat].every(info => info.isFile()) || jsonStat.size > 65536 || checksumStat.size > 1024) { return false; }
-        const metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
-        if (metadata.version !== version || metadata.target !== target || metadata.buildId !== buildId
-            || !/^24\./.test(metadata.nodeVersion || '') || metadata.probeEngine?.version !== opencodeVersion
-            || !Number.isSafeInteger(metadata.bytes) || metadata.bytes <= 0 || metadata.bytes !== stat.size
-            || !/^[a-f0-9]{64}$/.test(metadata.sha256 || '')) { return false; }
-        return (await fs.readFile(archive + '.sha256', 'utf8')).trim() === metadata.sha256
-            && await sha256(archive) === metadata.sha256;
-    } catch { return false; }
+function cached(target, version, buildId, directory = output, metadata) {
+    return bridgeRuntimeCached({directory, target, version, buildId, metadata});
 }
 
 /** Предыдущий комплект сохраняется до публикации; ошибка любого rename откатывает всю тройку. */
 async function publish(candidate, previous, target, version) {
     const name = `neurocenter-asset-sync-${target}-${version}.tgz`;
-    const files = [name, name + '.sha256', name + '.json'];
-    const saved = new Set();
-    await fs.mkdir(previous);
-    for (const file of files) {
-        try {
-            const source = path.join(output, file), backup = path.join(previous, file);
-            try { await fs.link(source, backup); }
-            catch (error) { if (error.code === 'ENOENT') { throw error; } await fs.cp(source, backup, {preserveTimestamps: true}); }
-            saved.add(file);
-        }
-        catch (error) { if (error.code !== 'ENOENT') { throw error; } }
-    }
-    try {
-        for (const file of files) { await fs.rename(path.join(candidate, file), path.join(output, file)); }
-    } catch (error) {
-        const failed = [];
-        for (const file of files) {
-            try {
-                if (saved.has(file)) { await fs.rename(path.join(previous, file), path.join(output, file)); }
-                else { await fs.rm(path.join(output, file), {force: true}); }
-            } catch { failed.push(file); }
-        }
-        if (failed.length) {
-            throw Object.assign(new Error(`Не удалось восстановить ${failed.join(', ')}. Резервный комплект: ${previous}`), {keepTemporary: true});
-        }
-        throw error;
-    }
+    await publishBridgeRuntimeFiles({candidate, previous, directory: output, files: [name, name + '.sha256', name + '.json']});
 }
 
 /** Копируем только открытые входные файлы; пользовательские настройки в контейнер не попадают. */
@@ -121,16 +76,24 @@ async function main() {
         console.log('Подготовка автономного моста: node scripts/prepare-bridge-runtimes.mjs [--targets=darwin-arm64,linux-x64] [--windows-job-helper=файл]');
         return;
     }
-    const targets = [...new Set(selected === undefined ? [host, 'linux-x64'] : selected.split(',').map(value => value.trim()))];
-    if (!targets.length || targets.some(target => !supported.includes(target))) { throw new Error(`Неизвестные цели моста: ${targets.join(', ')}. Поддерживаются: ${supported.join(', ')}.`); }
     const manifest = JSON.parse(await fs.readFile(path.join(bridge, 'package.json'), 'utf8'));
     const build = await verifyBridgeBuild(path.join(bridge, 'dist'), manifest.version);
+    let release;
+    try {
+        const pinned = await readBridgeRuntimeRelease({directory: root});
+        if (pinned.version === manifest.version && pinned.buildId === build.buildId) { release = pinned; }
+    } catch (error) { if (error.code !== 'ENOENT') { throw error; } }
+    const published = release?.artifacts.map(item => item.metadata.target) || [];
+    const targets = [...new Set(selected === undefined ? [host, 'linux-x64', ...published] : selected.split(',').map(value => value.trim()))];
+    if (!targets.length || targets.some(target => !supported.includes(target))) { throw new Error(`Неизвестные цели моста: ${targets.join(', ')}. Поддерживаются: ${supported.join(', ')}.`); }
+    const metadata = target => release?.artifacts.find(item => item.metadata.target === target)?.metadata;
     const missing = [];
     for (const target of targets) {
-        if (await cached(target, manifest.version, build.buildId)) { console.log(`Мост ${target}: готов, контрольная сумма проверена.`); }
+        if (await cached(target, manifest.version, build.buildId, output, metadata(target))) { console.log(`Мост ${target}: готов, контрольная сумма проверена.`); }
         else { missing.push(target); }
     }
     for (const target of missing) {
+        if (published.includes(target)) { continue; }
         if (target !== host && !['linux-x64', 'linux-arm64'].includes(target)) {
             throw new Error(`Мост ${target}: отсутствует готовый пакет; сборка нужна на целевой ОС/архитектуре. Автоматическая кросс-сборка этой цели недоступна.`);
         }
@@ -148,8 +111,13 @@ async function main() {
         throw new Error(`Подготовка автономного моста уже выполняется. Повторите после её завершения. Если процесс завершён, проверьте оставшуюся блокировку: ${lock}`);
     }
     try {
+        const downloads = missing.filter(target => published.includes(target));
+        if (downloads.length) {
+            console.log(`Мост: загружаем закреплённую поставку ${release.release} (${downloads.join(', ')})…`);
+            await hydrateBridgeRuntimeRelease({directory: root, release, targets: downloads, lock: false});
+        }
         for (const target of missing) {
-            if (await cached(target, manifest.version, build.buildId)) {
+            if (await cached(target, manifest.version, build.buildId, output, metadata(target))) {
                 console.log(`Мост ${target}: готов, контрольная сумма проверена.`);
                 continue;
             }
