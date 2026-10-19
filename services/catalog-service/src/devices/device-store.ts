@@ -51,7 +51,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             CREATE TABLE IF NOT EXISTS bridge_jobs (
             id text PRIMARY KEY,device_id text NOT NULL REFERENCES bridge_devices(id),email text NOT NULL,
             role text NOT NULL,project_id text,kind text NOT NULL,payload jsonb NOT NULL,request_key text NOT NULL,
-            request_hash text NOT NULL,state text NOT NULL DEFAULT 'queued',percent integer,message text NOT NULL DEFAULT 'Ожидает MCP',
+            request_hash text NOT NULL,state text NOT NULL DEFAULT 'queued',percent integer,message text NOT NULL DEFAULT 'Ожидает моста',
             lease text,lease_until timestamptz,result jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
             UNIQUE(email,request_key));
             CREATE INDEX IF NOT EXISTS bridge_jobs_device_queue ON bridge_jobs(device_id,state,created_at);
@@ -245,7 +245,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             await client.query('BEGIN');
             await client.query('UPDATE bridge_devices SET revoked=true WHERE id=$1',[id]);
             const {rows}=await client.query<IRevokedJob>(`UPDATE bridge_jobs SET state=CASE WHEN state='queued' THEN 'cancelled' WHEN kind IN ('install','uninstall','apply-local-change','apply-adopt-installation','apply-local-restore','bind-project') THEN 'reconciling' ELSE 'failed' END,
-                message=CASE WHEN state='queued' THEN 'Подключение MCP отключено. Задание отменено.' ELSE 'MCP отключён во время выполнения. Проверьте локальные файлы перед повтором.' END,
+                message=CASE WHEN state='queued' THEN 'Подключение моста отключено. Задание отменено.' ELSE 'Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.' END,
                 updated_at=now() WHERE device_id=$1 AND state IN ('queued','running','reconciling') RETURNING *`,[id]);
             for(const job of rows){await recordDeviceOperation(client,job,job.state==='reconciling'?'RUNNING':String(job.state).toUpperCase(),job.percent??0,job.message);}
             await client.query('COMMIT');

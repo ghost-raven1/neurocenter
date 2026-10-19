@@ -61,14 +61,14 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
         }
         const count = await client.query<{ count: string }>("SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND state IN ('queued','running','reconciling')", [input.deviceId]);
         if (Number(count.rows[0]?.count) >= 100) { throw new HttpException('На компьютере уже 100 ожидающих действий. Завершите или отмените задания перед добавлением новых.', 429); }
-        await client.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(email,request_key) DO NOTHING`,
-        [input.id, input.deviceId, input.email, input.role, input.projectId || null, input.kind, input.payload, input.requestKey, input.requestHash]);
+        await client.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash,message)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(email,request_key) DO NOTHING`,
+        [input.id, input.deviceId, input.email, input.role, input.projectId || null, input.kind, input.payload, input.requestKey, input.requestHash, 'Ожидает моста']);
         const saved = await client.query<Row>(`SELECT ${view},request_hash FROM bridge_jobs WHERE email=$1 AND request_key=$2`, [input.email, input.requestKey]);
         if (!saved.rows[0] || saved.rows[0].request_hash !== input.requestHash) { throw new ConflictException('Параллельный запрос использовал этот ключ с другими параметрами.'); }
         result = clean(await saveDeviceJobRequest(client,view,input,saved.rows[0].id));
         if (result.id === input.id) {
-            await recordDeviceOperation(client, { id: input.id, kind: input.kind, email: input.email, project_id: input.projectId || null }, 'QUEUED', 0, 'Ожидает MCP');
+            await recordDeviceOperation(client, { id: input.id, kind: input.kind, email: input.email, project_id: input.projectId || null }, 'QUEUED', 0, 'Ожидает моста');
         }
         await client.query('COMMIT');
     } catch (error) {

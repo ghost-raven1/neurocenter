@@ -52,6 +52,8 @@ describe('Старый MCP не обходит реестр владельцев
         query.mockImplementation(async (sql: string) => ({ rows: sql.includes("state='queued'") && sql.startsWith('SELECT') ? [job] : [], rowCount: 0 }));
         expect(await service.claim(device)).toMatchObject({ id: job.id, state: 'running' });
         expect(delivery).toHaveBeenCalled();
+        expect(query.mock.calls.find(([sql])=>sql.startsWith("UPDATE bridge_jobs SET state='running'"))?.[0]).toContain("message='Мост принял задание'");
+        expect(JSON.parse(query.mock.calls.find(([sql])=>sql.includes('INSERT INTO operations'))?.[1][8])[0].message).toBe('Мост принял задание');
     });
     it('Номер версии без capability не выдаёт разрешение обходить ledger', () => {
         expect(() => assertInstallationSetBridge({ bridgeVersion: '0.5.0', capabilities: [] })).toThrow('Обновите');

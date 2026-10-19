@@ -7,6 +7,7 @@ import {findDeviceJobRequest} from '../src/devices/device-job-requests';
 import type {DeviceArtifacts} from '../src/devices/device-artifacts';
 import type {DeviceInstallations} from '../src/devices/device-installations';
 import type {InstallPlans} from '../src/devices/install-plans';
+import {recordDeviceOperation} from '../src/devices/device-operations';
 
 vi.mock('../src/devices/device-job-access',async importOriginal=>({
     ...await importOriginal<typeof import('../src/devices/device-job-access')>(),
@@ -18,7 +19,7 @@ const email='owner@example.test',role='Разработчик';
 const actor={email,activeRole:role};
 const payload={assetKind:'mcp',assetId:'tool',bindingId:'binding',planId:'plan',planRevision:1,package:{manifest:{sha256:'a'.repeat(64)}}};
 const claims={email,userRoles:[role],projects:[{projectId:'project',projectName:'Проект',role}],pluginIds:[],skillPaths:[]};
-type StoredJob={id:string;deviceId:string;projectId:string;email:string;role:string;kind:string;state:string;payload:Record<string,unknown>;requestKey:string;requestHash:string};
+type StoredJob={id:string;deviceId:string;projectId:string;email:string;role:string;kind:string;state:string;message:string;payload:Record<string,unknown>;requestKey:string;requestHash:string};
 type Receipt={email:string;key:string;deviceId:string;hash:string|null;jobId:string};
 
 /** Изолированная очередь сохраняет durable rows и откатывает незавершённую SQL-транзакцию. */
@@ -56,7 +57,10 @@ function queue(){
         if(sql.startsWith('SELECT count(*)'))return result([{count:String(jobs.filter(job=>job.deviceId===params[0]&&['queued','running','reconciling'].includes(job.state)).length)}]);
         if(sql.startsWith('INSERT INTO bridge_jobs')){
             const [id,deviceId,owner,savedRole,projectId,kind,savedPayload,requestKey,requestHash]=params as [string,string,string,string,string,string,Record<string,unknown>,string,string];
-            if(!jobs.some(job=>job.email===owner&&job.requestKey===requestKey))jobs.push({id,deviceId,email:owner,role:savedRole,projectId,kind,payload:savedPayload,requestKey,requestHash,state:'queued'});
+            // Существующая БД сохраняет старый DEFAULT, пока INSERT не задаёт сообщение явно.
+            const columns=sql.match(/^INSERT INTO bridge_jobs\(([^)]+)\)/)![1].split(',');
+            const message=columns.includes('message')?String(params[columns.indexOf('message')]):'Ожидает MCP';
+            if(!jobs.some(job=>job.email===owner&&job.requestKey===requestKey))jobs.push({id,deviceId,email:owner,role:savedRole,projectId,kind,payload:savedPayload,requestKey,requestHash,state:'queued',message});
             return result();
         }
         throw new Error('Unexpected query: '+sql);
@@ -66,7 +70,7 @@ function queue(){
     const incoming=(changes:Record<string,unknown>={})=>({id:'new-job',deviceId:'computer',email,role,projectId:'project',kind:'install',payload,
         requestKey:'22222222-2222-2222-2222-222222222222',requestHash:'b'.repeat(64),...changes});
     const seed=(changes:Partial<StoredJob>={})=>{
-        const job:StoredJob={...incoming(),id:'original-job',requestKey:'11111111-1111-1111-1111-111111111111',requestHash:'c'.repeat(64),state:'queued',...changes};
+        const job:StoredJob={...incoming(),id:'original-job',requestKey:'11111111-1111-1111-1111-111111111111',requestHash:'c'.repeat(64),state:'queued',message:'Ожидает MCP',...changes};
         jobs.push(job);receipts.push({email:job.email,key:job.requestKey,deviceId:job.deviceId,hash:job.requestHash,jobId:job.id});return job;
     };
     const enqueue=(changes:Record<string,unknown>={})=>enqueueDeviceJob(pool,'id,device_id AS "deviceId",kind,state',incoming(changes),async()=>claims);
@@ -76,6 +80,18 @@ function queue(){
 describe('Ключ запроса хранит связь с объединённым заданием',()=>{
     beforeEach(()=>vi.clearAllMocks());
     afterEach(()=>vi.restoreAllMocks());
+    it('Новое задание явно сохраняет «Ожидает моста» в старой БД и истории без дубля при повторе',async()=>{
+        const q=queue();
+        await q.enqueue();
+        const insert=q.query.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO bridge_jobs'))!;
+        const columns=insert[0].match(/^INSERT INTO bridge_jobs\(([^)]+)\)/)![1].split(',');
+        expect(columns).toContain('message');
+        expect(insert[1]![columns.indexOf('message')]).toBe('Ожидает моста');
+        expect(q.jobs[0].message).toBe('Ожидает моста');
+        expect(recordDeviceOperation).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({id:'new-job'}),'QUEUED',0,'Ожидает моста');
+        await q.enqueue();
+        expect(q.jobs).toHaveLength(1);expect(recordDeviceOperation).toHaveBeenCalledOnce();
+    });
     it.each(['install','uninstall','apply-local-change'])('После потери ответа и завершения %s повтор возвращает тот же job',async kind=>{
         const q=queue(),original=q.seed({kind});
         expect(await q.enqueue({kind})).toMatchObject({id:original.id,state:'queued'});

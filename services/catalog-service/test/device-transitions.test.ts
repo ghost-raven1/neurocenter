@@ -37,6 +37,9 @@ describe('Атомарность очереди и журнала операци
         expect(query.mock.calls.map(([sql])=>sql)).toEqual(['BEGIN',expect.stringContaining("state='reconciling'"),'COMMIT',
             'BEGIN',expect.stringContaining("state='cancelled'"),expect.stringContaining('INSERT INTO operations'),'ROLLBACK']);
         expect(direct).not.toHaveBeenCalled();
+        expect(query.mock.calls.find(([sql])=>sql.startsWith("UPDATE bridge_jobs SET state='cancelled'"))?.[0]).toContain('Задание ожидало моста больше суток');
+        const operation=query.mock.calls.find(([sql])=>sql.includes('INSERT INTO operations'))!;
+        expect(JSON.parse(operation[1][8])[0].message).toBe('Срок ожидания моста истёк.');
     });
     it('Отказ промежуточного журнала откатывает прогресс обычного задания',async()=>{
         await expect(jobs.update({id:row.device_id} as Device,row.id,{lease:'lease',state:'running',message:'Продолжаем работу'})).rejects.toThrow('Журнал временно недоступен');

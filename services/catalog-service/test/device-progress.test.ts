@@ -29,6 +29,15 @@ describe('Согласованность прогресса MCP',()=>{
         await expect(service.update({id:'computer'} as Device,'job',{lease:'lease',state:'running',message:'Проверяем',percent:35})).resolves.toEqual({ok:true});
         expect(query.mock.calls.find(([sql])=>sql.startsWith('UPDATE'))?.[1][3]).toBe('running');
     });
+    it.each(['connect-rag-model','bind-project','open-rag-ui'])('Проверенное действие %s сохраняет статус моста вместо сообщения worker',async kind=>{
+        const row={id:'job',kind,project_id:'project',email:'test@example.test',percent:20};
+        query.mockImplementation(async(sql:string)=>sql.startsWith('SELECT')?{rows:[row]}:sql.startsWith('UPDATE')?{rowCount:1,rows:[row]}:{rows:[]});
+        await service.update({id:'computer'} as Device,'job',{lease:'lease',percent:20,message:'MCP выполняет задание /private/API_KEY=секрет'});
+        expect(query.mock.calls.find(([sql])=>sql.startsWith('UPDATE'))?.[1][5]).toBe('Мост выполняет проверенное действие.');
+        const operation=query.mock.calls.find(([sql])=>sql.includes('INSERT INTO operations'))!;
+        expect(JSON.parse(operation[1][8])[0].message).toBe('Мост выполняет проверенное действие.');
+        expect(query.mock.calls.some(([,parameters])=>JSON.stringify(parameters??null).includes('API_KEY'))).toBe(false);
+    });
     const bindingId='b'.repeat(64);
     const inspection={schemaVersion:1,projectId:'project',bindingId,assetId:'ai-plug-helper',assetKind:'mcp',version:1,manifest:'a'.repeat(64),
         checkedAt:'2026-10-17T00:00:00.000Z',readiness:'unverified',state:'checked',status:'unknown',issues:['inspection-failed']};

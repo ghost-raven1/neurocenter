@@ -232,12 +232,12 @@ export class DeviceJobs {
     }
     private async expire() {
         await transitionDeviceJobs(this.store.pool,
-            "UPDATE bridge_jobs SET state='reconciling',message='MCP потерял соединение. Ожидаем сверку сохранённого локального результата.',updated_at=now() WHERE state='running' AND lease_until<now() RETURNING *",
-            [],{state:'RUNNING',message:'Ожидает сверки после потери соединения MCP.'},
+            "UPDATE bridge_jobs SET state='reconciling',message='Мост потерял соединение. Ожидаем сверку сохранённого локального результата.',updated_at=now() WHERE state='running' AND lease_until<now() RETURNING *",
+            [],{state:'RUNNING',message:'Ожидает сверки после потери соединения моста.'},
         );
         await transitionDeviceJobs(this.store.pool,
-            "UPDATE bridge_jobs SET state='cancelled',message='Задание ожидало MCP больше суток и отменено. Повторите действие, если оно ещё нужно.',updated_at=now() WHERE state='queued' AND created_at<now()-interval '24 hours' RETURNING *",
-            [],{state:'CANCELLED',percent:0,message:'Срок ожидания MCP истёк.'});
+            "UPDATE bridge_jobs SET state='cancelled',message='Задание ожидало моста больше суток и отменено. Повторите действие, если оно ещё нужно.',updated_at=now() WHERE state='queued' AND created_at<now()-interval '24 hours' RETURNING *",
+            [],{state:'CANCELLED',percent:0,message:'Срок ожидания моста истёк.'});
     }
     async claim(device: Device) {
         await this.expire();
@@ -257,10 +257,10 @@ export class DeviceJobs {
             if (job) {
                 job.lease = randomUUID();
                 await client.query(
-                    "UPDATE bridge_jobs SET state='running',lease=$2,lease_until=now()+interval '3 minutes',started_at=now(),percent=0,message='MCP принял задание',updated_at=now() WHERE id=$1",
+                    "UPDATE bridge_jobs SET state='running',lease=$2,lease_until=now()+interval '3 minutes',started_at=now(),percent=0,message='Мост принял задание',updated_at=now() WHERE id=$1",
                     [job.id, job.lease],
                 );
-                await recordDeviceOperation(client,job,'RUNNING',0,'MCP принял задание');
+                await recordDeviceOperation(client,job,'RUNNING',0,'Мост принял задание');
             }
             await client.query('COMMIT');
         } catch (error) {
@@ -404,7 +404,7 @@ export class DeviceJobs {
         let progressMessage = input.message;
         if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
-            progressMessage = 'MCP выполняет проверенное действие.';
+            progressMessage = 'Мост выполняет проверенное действие.';
         }
         if (selected.rows[0]?.kind === 'inspect-installation') {
             if (input.result !== undefined && input.result !== null) {
