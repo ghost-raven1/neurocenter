@@ -1,6 +1,7 @@
 import type { IOperation } from '../../core/api/interfaces';
 import type { IUserInfo } from '../../core/interfaces';
 import { projectRoleLevel } from '../../features/UserBlock/roles';
+import { operationKnowledgeRecovery, requiresKnowledgeResync } from './operationKnowledgeRecovery';
 
 const BRIDGE_JOB_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
@@ -8,16 +9,18 @@ const BRIDGE_JOB_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]
 export function operationActions(operation: IOperation, email: string, canWrite: boolean) {
     const own = !!email && operation.resourceType === 'bridge'
         && operation.actor === email && BRIDGE_JOB_ID.test(operation.resourceId);
+    const recovery = operationKnowledgeRecovery(operation);
     return {
         cancel: own && operation.state === 'QUEUED',
-        retry: own && canWrite && ['FAILED', 'CANCELLED'].includes(operation.state),
+        retry: own && canWrite && ['FAILED', 'CANCELLED'].includes(operation.state) && !requiresKnowledgeResync(operation),
+        reopenKnowledge: own && canWrite && !!recovery,
     };
 }
 
 /** Отзыв активной роли блокирует и уже открытое подтверждение действия. */
 export function operationActionPermissions(operation: IOperation, user: IUserInfo | null) {
     if (!user || !user.userRoles.includes(user.activeRole)) {
-        return { cancel: false, retry: false };
+        return { cancel: false, retry: false, reopenKnowledge: false };
     }
     const canWrite = !operation.projectId || projectRoleLevel(user, operation.projectId) >= 2;
     return operationActions(operation, user.email, canWrite);

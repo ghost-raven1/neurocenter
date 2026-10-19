@@ -51,6 +51,13 @@ function setup() {
 }
 
 describe('Действия очереди принадлежат текущему пользователю', () => {
+    it('Не повторяет старую передачу, для которой нужно открыть базу знаний и выбрать текущую папку', async () => {
+        const { controller, options } = setup();
+        await controller.retry({ ...operation, type: 'SYNC', error: 'Синхронизация требует проверки плана в MCP. Изменения не подтверждены.' });
+        expect(options.retry).not.toHaveBeenCalled();
+        expect(options.requestKey).not.toHaveBeenCalled();
+    });
+
     it('Сохраняет ключ повтора после сетевого сбоя и удаляет после подтверждённого результата', async () => {
         const { controller, options } = setup();
         options.retry.mockRejectedValueOnce(new Error('Нет связи'));
