@@ -1,43 +1,43 @@
 {
   "schemaVersion": 1,
-  "version": "0.9.9",
-  "buildId": "8d6436f2595c81dbea2796cfb51bc3a80405f8aa3b28ade4d195599afa837070",
-  "release": "bridge-v0.9.9",
+  "version": "0.9.10",
+  "buildId": "864c437ffda9f5f4471ea0e87083a1b6eb2fd4f4668d0ceae7d8f36decbafa11",
+  "release": "bridge-v0.9.10",
   "artifacts": [
     {
-      "file": "neurocenter-asset-sync-darwin-arm64-0.9.9.tgz",
-      "url": "https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v0.9.9/neurocenter-asset-sync-darwin-arm64-0.9.9.tgz",
+      "file": "neurocenter-asset-sync-darwin-arm64-0.9.10.tgz",
+      "url": "https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v0.9.10/neurocenter-asset-sync-darwin-arm64-0.9.10.tgz",
       "metadata": {
-        "version": "0.9.9",
+        "version": "0.9.10",
         "target": "darwin-arm64",
         "nodeVersion": "24.22.0",
-        "buildId": "8d6436f2595c81dbea2796cfb51bc3a80405f8aa3b28ade4d195599afa837070",
+        "buildId": "864c437ffda9f5f4471ea0e87083a1b6eb2fd4f4668d0ceae7d8f36decbafa11",
         "ragSupported": true,
         "probeEngine": {
           "version": "1.14.48",
           "sha256": "a29407b32f28ff552539d6f4a1bbe6fafc5023472c7ff8ca2494525b9b0d921b",
           "file": "bin/opencode-probe"
         },
-        "sha256": "373da570208de229cf54b3404dedea439892a1862ef64fd3e7183cb70a0ec8e3",
-        "bytes": 123062363
+        "sha256": "756dcf8d9fbcd03851619a43dc56d00553d32a71816721749e7af24c2b25a502",
+        "bytes": 123059214
       }
     },
     {
-      "file": "neurocenter-asset-sync-linux-x64-0.9.9.tgz",
-      "url": "https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v0.9.9/neurocenter-asset-sync-linux-x64-0.9.9.tgz",
+      "file": "neurocenter-asset-sync-linux-x64-0.9.10.tgz",
+      "url": "https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v0.9.10/neurocenter-asset-sync-linux-x64-0.9.10.tgz",
       "metadata": {
-        "version": "0.9.9",
+        "version": "0.9.10",
         "target": "linux-x64",
         "nodeVersion": "24.22.0",
-        "buildId": "8d6436f2595c81dbea2796cfb51bc3a80405f8aa3b28ade4d195599afa837070",
+        "buildId": "864c437ffda9f5f4471ea0e87083a1b6eb2fd4f4668d0ceae7d8f36decbafa11",
         "ragSupported": true,
         "probeEngine": {
           "version": "1.14.48",
           "sha256": "8732bd22e724fc19055e0e2800b763dbe9efc1e9ca004dc2f8836a9c124303b7",
           "file": "bin/opencode-probe"
         },
-        "sha256": "775a9c5ae0d4b93a1bda850d2f2196687167a693ffaa860ffbf87d97466d9b0e",
-        "bytes": 203218515
+        "sha256": "a595051e62af148da7d300bbd6fc665f3426cfd82642db4c9773beb0173980ab",
+        "bytes": 203216352
       }
     }
   ]

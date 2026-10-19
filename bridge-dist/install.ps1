@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $BridgeBase = '__BASE_URL__'
 $HubUrl = $BridgeBase -replace '/api/bridge$', ''
-$Version = '0.9.9'
+$Version = '0.9.10'
 $Reconnect = '__RECONNECT__' -eq '1'
 $Architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 if ($Architecture -eq 'x64') { $Arch = 'x64' } elseif ($Architecture -eq 'arm64') { $Arch = 'arm64' } else { throw 'Эта архитектура Windows не поддерживается.' }
