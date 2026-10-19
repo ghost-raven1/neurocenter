@@ -36,9 +36,9 @@ describe('Общие действия MCP 0.4 без поддержки комп
         expect(buttonAttributes(html,'Синхронизировать с сервером')).not.toContain('disabled');
     });
     it('На странице начала работы обновление установщика не блокирует переход к папкам',()=>{
-        const html=renderToStaticMarkup(createElement(BridgeSetup,{command:'fixture-installer',onCopy:vi.fn()}));
+        const html=renderToStaticMarkup(createElement(BridgeSetup,{origin:'https://panel.example.test',windows:false,onCopy:vi.fn()}));
         expect(buttonAttributes(html,'Связать папку проекта')).not.toContain('disabled');
-        expect(html).toContain('Обновите или переподключите мост');
+        expect(html).toContain('Обновите мост');
     });
     it('Роль наблюдателя по-прежнему блокирует общие действия',()=>{
         fixture.bridge.device.role='Наблюдатель';

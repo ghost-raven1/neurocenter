@@ -97,7 +97,7 @@ export const BridgeConnection: FC<{
             {connection === 'empty' && (
                 <>
                     <Alert type="info" showIcon message="Подключите этот компьютер"
-                        description="Установщик откроет страницу подтверждения. После подключения вы сможете выбрать папку проектов."
+                        description="Подключите уже установленный мост или установите его на новом компьютере. После подтверждения вы сможете выбрать папку проектов."
                         action={<Button type="primary" onClick={()=>history.push('/start?step=1')}>Подключить компьютер</Button>}/>
                     <Collapse ghost><Collapse.Panel key="manual" header="Страница не открылась? Ввести код вручную"><PairingCode/></Collapse.Panel></Collapse>
                 </>

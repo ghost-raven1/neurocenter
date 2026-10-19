@@ -16,7 +16,7 @@ vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => fixture
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: vi.fn(), location: { pathname: '/start' } }) }));
 
 const capabilities = [...fixture.bridge.device.report.capabilities];
-const setup = () => renderToStaticMarkup(createElement(BridgeSetup, { command: 'fixture-installer', onCopy: vi.fn() }));
+const setup = () => renderToStaticMarkup(createElement(BridgeSetup, { origin: 'https://panel.example.test', windows: false, onCopy: vi.fn() }));
 beforeEach(() => {
     fixture.bridge.device.report.bridgeVersion = '0.9.0';
     fixture.bridge.device.report.capabilities = [...capabilities];
@@ -37,13 +37,13 @@ describe('Обновление уже подключённого моста', ()
         const button = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2].includes('Обновить мост'));
         expect(button).toBeDefined();
         expect(button?.[1]).not.toContain('disabled');
-        expect(html).toContain('Установить или обновить мост');
+        expect(html).toContain('Подключение и обновление моста');
         expect(html).not.toContain('Подключить другой компьютер');
     });
     it('При обновлении объясняет сохранение подключения и повторную проверку версии', () => {
         fixture.bridge.device.report.capabilities = ['durable-completions', 'managed-installations'];
         const html = setup();
-        expect(html).toContain('fixture-installer');
+        expect(html).toContain('/api/bridge/install.sh');
         expect(html).toContain('Сохранённое подключение будет использовано повторно');
         expect(html).toContain('Перезапустите OpenCode');
         expect(html).not.toContain('Следующий шаг — подтвердить компьютер');

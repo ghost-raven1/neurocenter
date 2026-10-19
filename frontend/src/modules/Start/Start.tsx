@@ -36,7 +36,6 @@ const Start = () => {
         ? `irm ${bridgeBase}/install_opencode.ps1 | iex`
         : `curl -fsSL ${bridgeBase}/install_opencode.sh | bash`;
     const instructions = installDoc.replace(/__BRIDGE_BASE__/g, bridgeBase);
-    const bridgeCommand = windows?`irm '${bridgeBase}/install.ps1' | iex`:`curl -fsSL '${bridgeBase}/install.sh' | bash`;
 
     useEffect(() => {
         if (!ready || error || requestedProject || projects.length !== 1) { return; }
@@ -68,7 +67,7 @@ const Start = () => {
                         <Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>
                     </>}
                     {step === 1 && <>
-                        <BridgeSetup command={bridgeCommand} onCopy={text=>{void copy(text);}}/>
+                        <BridgeSetup origin={window.location.origin} windows={windows} onCopy={text=>{void copy(text);}}/>
                         <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
                     {step === 2 && <>

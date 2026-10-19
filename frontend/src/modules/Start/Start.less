@@ -39,6 +39,12 @@
 }
 @media (max-width: 767px) { .start { &__hero { grid-template-columns: 1fr; padding: 24px; h2.ant-typography { font-size: 27px; } } &__overview { display: none; } &__setup .ant-card-body { padding: 20px; } &__command { flex-direction: column; align-items: flex-start; } &__guides { grid-template-columns: 1fr; } } }
 @media (max-width: 767px) {
+    .start__connection-method {
+        display: flex; flex-direction: column; gap: 8px;
+        .ant-radio-button-wrapper { border: 1px solid @brand-border; border-radius: 8px; text-align: center; }
+        .ant-radio-button-wrapper::before { display: none; }
+        .ant-radio-button-wrapper-checked { border-color: @brand-primary; box-shadow: none; }
+    }
     .start__step .ant-btn {
         display: inline-flex;
         align-items: center;
