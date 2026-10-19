@@ -137,14 +137,14 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, onClose, onPublishe
             {source === 'npm' ? <>
                 <Form.Item label="Пакет или ссылка npm" extra="Версия закрепится перед сборкой. Можно указать package@version.">
                     <Input.Search aria-label="npm-пакет или ссылка" value={specifier} onChange={event => setSpecifier(event.target.value)} placeholder="Например, opencode-snip" loading={npm.loading} enterButton="Проверить"
-                        onPressEnter={event => event.preventDefault()} onBlur={() => { if (specifier.trim()) void npm.resolve().catch(() => {}); }} onSearch={() => { void npm.resolve().catch(() => {}); }} />
+                        onPressEnter={event => event.preventDefault()} onBlur={() => { if (specifier.trim()) void npm.resolve().catch(() => {}); }} onSearch={() => { void npm.resolve(true).catch(() => {}); }} />
                 </Form.Item>
                 {npm.metadata && <NpmMetadataDetails metadata={npm.metadata} />}
                 {npm.error && <Alert type="error" showIcon message={npm.error} />}
             </> : source === 'repository' ? <>
                 <Form.Item label="Ссылка на репозиторий" extra="Публичный GitHub по HTTPS. Без входа, токенов и SSH.">
                     <Input.Search aria-label="Ссылка на репозиторий GitHub" value={repositoryUrl} onChange={event => setRepositoryUrl(event.target.value)} placeholder="https://github.com/owner/repository" loading={repository.loading} enterButton="Проверить"
-                        onPressEnter={event => event.preventDefault()} onBlur={() => { if (repositoryUrl.trim()) void repository.resolve().catch(() => {}); }} onSearch={() => { void repository.resolve().catch(() => {}); }} />
+                        onPressEnter={event => event.preventDefault()} onBlur={() => { if (repositoryUrl.trim()) void repository.resolve().catch(() => {}); }} onSearch={() => { void repository.resolve(true).catch(() => {}); }} />
                 </Form.Item>
                 <Paragraph type="secondary">JS и TypeScript — из исходников. Python, Java, .NET, Go, Rust и native — из готовых поставок по рецепту neurocenter.tool.json.</Paragraph>
                 <Collapse ghost className="tool-packaging__details"><Collapse.Panel header="Ветка и подпапка" key="repository">

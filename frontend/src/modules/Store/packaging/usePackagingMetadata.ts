@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
 
-/** Номер редакции отсекает поздние ответы, включая быстрое переключение A → B → A. */
+/** Явная проверка обновляет pin; новая редакция отсекает прежние ответы, включая A → B → A. */
 export function usePackagingMetadata<T>(key: string, read: () => Promise<T>, fallback: string) {
     const [state, setState] = useState<{ key: string; epoch: number; metadata?: T; error?: string; loading?: boolean }>({ key, epoch: 0 });
     const current = useRef({ key, epoch: 0 });
@@ -11,10 +11,15 @@ export function usePackagingMetadata<T>(key: string, read: () => Promise<T>, fal
     if (current.current.key !== key) current.current = { key, epoch: current.current.epoch + 1 };
     useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
-    const resolve = async (): Promise<T> => {
+    const resolve = async (force = false): Promise<T> => {
+        if (!mounted.current || current.current.key !== key) throw new Error('Источник изменился. Повторите проверку выбранного источника.');
+        if (pending.current?.key === key && pending.current.epoch === current.current.epoch) return pending.current.promise;
+        if (force) {
+            current.current = { key, epoch: current.current.epoch + 1 };
+            cache.current = undefined;
+        }
         const epoch = current.current.epoch;
         if (cache.current?.key === key) { setState({ key, epoch, metadata: cache.current.metadata }); return cache.current.metadata; }
-        if (pending.current?.key === key && pending.current.epoch === epoch) return pending.current.promise;
         setState({ key, epoch, loading: true });
         const active = () => mounted.current && current.current.key === key && current.current.epoch === epoch;
         const promise = Promise.resolve().then(read).then(metadata => {
