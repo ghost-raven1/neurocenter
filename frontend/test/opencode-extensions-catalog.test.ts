@@ -52,14 +52,15 @@ describe('Расширения OpenCode переходят в каталог', (
         expect(html).toContain('LSP встроен в OpenCode');
         expect(html).toContain('Копировать для агента');
     });
-    it('Плагин объясняет локальную модель, автозапуск и сохраняет проект в каталоге и возврате', () => {
+    it('Плагин разделяет серверную и локальную модель и ведёт к явному индексированию с сохранением проекта', () => {
         navigation.location.search = '?extension=rag&p=prj-knowledge';
         const html = render('prj-knowledge');
         expect(html.split(`href="${ragCatalog}&amp;p=prj-knowledge"`)).toHaveLength(3);
         expect(html).toContain('href="/projects/prj-knowledge?tab=rag"');
         expect(html).toContain('автоматическая индексация включена');
-        expect(html).toContain('qwen3-embedding:4b');
-        expect(html).toContain('http://127.0.0.1:11435/api');
+        expect(html).toContain('Для серверной модели автоматическая индексация отключена');
+        expect(html).toContain('явно запустите полное индексирование');
+        expect(html).not.toContain('127.0.0.1:');
         expect(html).toContain('Существующий opencode-rag.json сохраняется');
         expect(html).not.toContain('index_project');
         expect(html).not.toContain('Откройте локальную настройку установленного MCP');

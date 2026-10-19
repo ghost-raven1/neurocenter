@@ -29,6 +29,7 @@ interface Choice{value?:string;disabled?:boolean;onChange:(id?:string)=>void;opt
 interface Consent{checked:boolean;disabled?:boolean;onChange:(event:{target:{checked:boolean}})=>void;}
 const ui=vi.hoisted(()=>({scope:'owner-a',epoch:0,buttons:new Map<string,Button>(),choices:new Map<string,Choice>(),consent:undefined as Consent|undefined,
     bridge:undefined as ReturnType<typeof ragUiFixture>['bridge']|undefined,
+    ragUi:undefined as {bridge:ReturnType<typeof ragUiFixture>['bridge'];projectId:string;canWrite:boolean}|undefined,
     owners:new Map<string,()=>()=>boolean>(),
 }));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:hooks.useState,useRef:hooks.useRef,useCallback:hooks.useCallback,useEffect:hooks.useEffect}));
@@ -43,6 +44,7 @@ vi.mock('../src/core/api/base',()=>({default:{get:vi.fn(),patch:vi.fn()}}));
 vi.mock('../src/features/ModelCatalog/api',()=>({modelCatalogApi:{list:vi.fn()}}));
 vi.mock('../src/features/McpBridge/api',()=>({bridgeApi:{create:vi.fn()}}));
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>ui.bridge}));
+vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi',()=>({OpenCodeRagUi:(props:NonNullable<typeof ui.ragUi>)=>{ui.ragUi=props;return 'Управление индексом выбранной установки';}}));
 vi.mock('antd',async()=>{
     const{createElement:h}=await import('react');const content=({children}:{children?:ReactNode})=>children;
     return{Space:content,Card:({title,extra,children}:{title:ReactNode;extra:ReactNode;children:ReactNode})=>h('div',null,title,extra,children),
@@ -55,10 +57,10 @@ vi.mock('antd',async()=>{
 });
 const model=(id:string,changes:Partial<ICatalogModel>={}):ICatalogModel=>({id,name:'Модель '+id,description:'',capability:'embedding',runtime:'ollama',model:'qwen3-embedding:4b',
     manifestSha256:'c'.repeat(64),dimension:2560,source:'builtin',revision:1,createdAt:'2026-10-20',updatedAt:'2026-10-20',...changes});
-let selection:IProjectEmbedding,catalog:IModelCatalog,current:ReturnType<typeof ragUiFixture>,mode:'panel'|'action'|'connection',canManage:boolean;
+let selection:IProjectEmbedding,catalog:IModelCatalog,current:ReturnType<typeof ragUiFixture>,mode:'panel'|'action'|'connection',canManage:boolean,canConnect:boolean;
 let actionInput:ReturnType<typeof embeddingConnectionInput>;
-function render(){hooks.begin();ui.buttons.clear();ui.choices.clear();ui.consent=undefined;
-    const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:{provider:'ollama',model:'legacy:tag',dimension:2560},canManage,canConnect:false})
+function render(){hooks.begin();ui.buttons.clear();ui.choices.clear();ui.consent=undefined;ui.ragUi=undefined;
+    const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:{provider:'ollama',model:'legacy:tag',dimension:2560},canManage,canConnect})
         :mode==='connection'?createElement(ProjectEmbeddingConnection,{selection,disabled:false})
         :createElement(ConnectEmbeddingAction,{input:actionInput,selection,bridge:current.bridge,disabled:false,consent:'Модель А · компьютер А · /fixture/root/Проект'});
     const html=renderToStaticMarkup(component);hooks.commit();return html;
@@ -69,9 +71,11 @@ const choice=()=>ui.choices.get('Модель эмбеддингов проек�
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:unknown)=>void;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 const result=()=>({status:'connected',revision:selection.revision,modelPin:selection.modelPin,profile:selection.profile,requiresRestart:true});
 function job(changes:Partial<IBridgeJob>={}):IBridgeJob{return current.job({kind:'connect-rag-model',...changes});}
+function checkedPlugin(){return{...current.item,assetId:'rag-plugin',assetKind:'plugin' as const,
+    inspection:{...current.item.inspection!,assetId:'rag-plugin',assetKind:'plugin' as const}};}
 function consent(){render();expect(ui.consent?.checked).toBe(false);ui.consent!.onChange({target:{checked:true}});render();}
 beforeEach(()=>{
-    vi.clearAllMocks();mode='panel';canManage=true;ui.scope='owner-a';ui.epoch=0;ui.owners.clear();
+    vi.clearAllMocks();mode='panel';canManage=true;canConnect=false;ui.scope='owner-a';ui.epoch=0;ui.owners.clear();
     current=ragUiFixture();ui.bridge=current.bridge;current.device.report.root='/fixture/root';current.device.report.capabilities!.push('hosted-rag-model-v1');
     current.item.hostedEmbedding={supported:true};current.item.inspection={schemaVersion:1,projectId:current.item.projectId,bindingId:current.binding.bindingId,assetId:current.item.assetId,
         assetKind:current.item.assetKind,version:current.item.version,manifest:current.item.manifest,checkedAt:'2026-10-20T01:00:00Z',readiness:'unverified',state:'checked',status:'synced',issues:[]};
@@ -118,6 +122,28 @@ describe('Выбор embedding-модели проекта без скрытых
     it('Сбой чтения можно повторить в той же форме без запуска моста',async()=>{
         vi.mocked(base.get).mockRejectedValueOnce(new Error('Сервис недоступен'));render();await settle();expect(render()).toContain('Сервис недоступен');
         button('Повторить загрузку').onClick!();await settle();expect(choice().value).toBe('a');expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Сбой каталога не скрывает свежую сохранённую модель и её подключение, но блокирует изменение выбора',async()=>{
+        canConnect=true;vi.mocked(modelCatalogApi.list).mockRejectedValueOnce(new Error('Каталог временно недоступен'));
+        render();await settle();expect(render()).toContain('Сохранённая модель');expect(render()).toContain('Модель a');expect(render()).toContain('Каталог временно недоступен');
+        expect(render()).not.toContain('Выбранная модель больше не доступна');expect(choice().disabled).toBe(true);expect(button('Сохранить модель проекта').disabled).toBe(true);
+        button('Сохранить модель проекта').onClick!();expect(base.patch).not.toHaveBeenCalled();consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        expect(bridgeApi.create).not.toHaveBeenCalled();button('Обновить сведения').onClick!();await settle();expect(choice().disabled).toBe(false);
+    });
+    it('Ошибка авторитетного выбора блокирует подключение даже при доступном каталоге',async()=>{
+        canConnect=true;render();await settle();consent();vi.mocked(base.get).mockRejectedValueOnce(new Error('Доступ запрещён'));
+        button('Обновить сведения').onClick!();await settle();expect(render()).toContain('Доступ запрещён');expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);
+        button('Подключить модель к OpenCodeRAG').onClick!();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it.each([401,403,404])('Отказ доступа к каталогу %s не разрешает подключение по предыдущим сведениям',async status=>{
+        canConnect=true;vi.mocked(modelCatalogApi.list).mockRejectedValueOnce(Object.assign(new Error('Доступ закрыт'),{isAxiosError:true,response:{status}}));
+        render();await settle();consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);button('Подключить модель к OpenCodeRAG').onClick!();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Медленный каталог не задерживает чтение модели, а поздний ответ прежнего владельца не меняет новый каталог',async()=>{
+        canConnect=true;const old=deferred<IModelCatalog>();vi.mocked(modelCatalogApi.list).mockReturnValueOnce(old.promise);
+        render();await settle();expect(render()).toContain('Модель a');expect(choice().disabled).toBe(true);consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        hooks.dispose();ui.scope='owner-b';selection={...selection,model:model('b')};render();await settle();
+        old.resolve({items:[],assignedModelIds:[]});await settle();expect(choice().value).toBe('b');expect(choice().options.map(item=>item.value)).toEqual(['a','b']);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('Поздний GET закрытой формы и save прежнего владельца не подменяют новый выбор',async()=>{
         const old=deferred<{data:IProjectEmbedding}>();vi.mocked(base.get).mockReturnValueOnce(old.promise);render();hooks.dispose();
@@ -173,6 +199,49 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         expect(ui.buttons.has('Открыть OpenCodeRAG в каталоге')).toBe(false);expect(ui.consent).toBeUndefined();expect(bridgeApi.create).not.toHaveBeenCalled();
         installations.onChange(installations.options[1].value);render();expect(ui.consent?.checked).toBe(false);
         expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Старому мосту с двумя установками объясняет обновление для совместной работы, сохраняя явное одиночное подключение',()=>{
+        mode='connection';current.bridge.installations=[current.item,checkedPlugin()];
+        const html=render(),installations=ui.choices.get('Установка OpenCodeRAG для модели')!;
+        expect(html).toContain('Для совместной работы MCP и плагина обновите мост и оба пакета OpenCodeRAG из каталога.');
+        expect(button('Обновить мост').href).toBe('/start');expect(bridgeApi.create).not.toHaveBeenCalled();
+        installations.onChange(installations.options[0].value);consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        current.device.report.capabilities!.push('hosted-rag-grants-v1');
+        expect(render()).not.toContain('Для совместной работы MCP и плагина обновите мост');
+        expect(ui.buttons.has('Обновить мост')).toBe(false);expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Появление второй установки не снимает прежний выбор и не теряет ключ подключения после потерянного ответа',async()=>{
+        mode='connection';vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ потерян'));consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();
+        const original=vi.mocked(bridgeApi.create).mock.calls[0][0];current.bridge.installations=[current.item,checkedPlugin()];render();
+        const installations=ui.choices.get('Установка OpenCodeRAG для модели')!;expect(installations.value).toBe(installations.options[0].value);
+        expect(button('Проверить отправленное подключение').disabled).toBe(false);expect(bridgeApi.create).toHaveBeenCalledOnce();
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(job({state:'succeeded',result:result()}));button('Проверить отправленное подключение').onClick!();await settle();
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(original);expect(render()).toContain('Подключение модели проверено');
+    });
+    it('Утрата выбранной установки не подставляет другой пакет и сохраняет безопасный повтор после её возврата',async()=>{
+        mode='connection';const plugin=checkedPlugin();current.bridge.installations=[current.item,plugin];render();
+        const installations=ui.choices.get('Установка OpenCodeRAG для модели')!;const originalChoice=installations.options[0].value;installations.onChange(originalChoice);
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Ответ потерян'));consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();
+        const original=vi.mocked(bridgeApi.create).mock.calls[0][0];current.bridge.installations=[plugin];render();
+        expect(ui.choices.get('Установка OpenCodeRAG для модели')?.value).toBe(originalChoice);expect(button('Проверить отправленное подключение').disabled).toBe(true);expect(bridgeApi.create).toHaveBeenCalledOnce();
+        expect(ui.choices.get('Установка OpenCodeRAG для модели')?.options[0]).toMatchObject({value:originalChoice,disabled:true});
+        current.bridge.installations=[current.item,plugin];render();expect(button('Проверить отправленное подключение').disabled).toBe(false);
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(job());button('Проверить отправленное подключение').onClick!();await settle();expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(original);
+    });
+    it('Смена компьютера или владельца не возвращает прежний выбор установки при переходе туда и обратно',()=>{
+        mode='connection';const plugin=checkedPlugin();current.bridge.installations=[current.item,plugin];render();
+        const choose=()=>ui.choices.get('Установка OpenCodeRAG для модели')!;choose().onChange(choose().options[1].value);render();expect(ui.consent).toBeDefined();
+        const originalDevice=current.bridge.device,originalItems=current.bridge.installations;
+        current.bridge.device={...current.device,id:'device-two'};current.bridge.installations=originalItems.map(item=>({...item,deviceId:'device-two'}));render();expect(choose().value).toBeUndefined();expect(ui.consent).toBeUndefined();
+        current.bridge.device=originalDevice;current.bridge.installations=originalItems;render();expect(choose().value).toBeUndefined();
+        choose().onChange(choose().options[1].value);render();ui.scope='owner-b';render();expect(choose().value).toBeUndefined();ui.scope='owner-a';render();expect(choose().value).toBeUndefined();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('После подключения предлагает управление индексом той же установки без автоматического открытия или индексирования',async()=>{
+        mode='action';current.bridge.installations=[current.item,checkedPlugin()];vi.mocked(bridgeApi.create).mockResolvedValueOnce(job({state:'succeeded',result:result()}));
+        consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();expect(render()).toContain('Управление индексом выбранной установки');
+        expect(ui.ragUi?.bridge.installations).toEqual([current.item]);expect(ui.ragUi?.projectId).toBe(selection.projectId);expect(ui.ragUi?.canWrite).toBe(true);
+        expect(bridgeApi.create).toHaveBeenCalledOnce();expect(vi.mocked(bridgeApi.create).mock.calls[0][0].kind).toBe('connect-rag-model');
     });
     it('Отсутствующая общая папка и неподтверждённый instance не допускают запуск и не ломают форму',()=>{
         mode='connection';current.device.report.root=undefined;render();expect(button('Выбрать общую папку').href).toBe('/projects');

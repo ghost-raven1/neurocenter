@@ -20,6 +20,12 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             {model.dimension && <Tag>{model.dimension} измерений</Tag>}<Tag>{model.source === 'builtin' ? 'Встроенная' : 'Добавлена вручную'}</Tag>
         </Space>
         <ModelHosting model={model} canManage={canHost} />
+        {model.source === 'custom' && !model.manifestSha256 && <Typography.Paragraph type="secondary">
+            {canHost ? model.capability === 'embedding' && model.dimension === null
+                ? 'После успешного запуска или проверки сервер закрепит версию и определит размерность модели.'
+                : 'После успешного запуска или проверки сервер закрепит версию модели.'
+                : 'Версия модели ещё не закреплена. Попросите главного администратора запустить или проверить модель.'}
+        </Typography.Paragraph>}
         <div className="model-card__actions">
             {projectSelected && canAssign ? <Button block type={assigned ? 'default' : 'primary'} loading={busy} disabled={busy} onClick={onAssign}>
                 {assigned ? 'Убрать из проекта' : 'Добавить в проект'}

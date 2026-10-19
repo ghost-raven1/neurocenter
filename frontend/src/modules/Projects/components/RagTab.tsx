@@ -56,7 +56,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
             <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} />
             <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
-                <Paragraph>Для поиска в OpenCode установите нативный плагин OpenCodeRAG в связанную папку проекта, запустите сервис эмбеддингов и дождитесь индексации.</Paragraph>
+                <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Затем откройте интерфейс выбранной установки и явно запустите полное индексирование.</Paragraph>
                 {canWrite ? <Space wrap>
                     <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
                     <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
