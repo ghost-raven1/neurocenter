@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
+import {devProcessIdentity, devServiceEntry, ownsDevProcess} from './workspace/dev-processes.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -55,7 +56,7 @@ function forPackages(command, next) {
 }
 
 function entryFor(service) {
-    return path.join(root, service.dir, service.name === 'frontend' ? 'node_modules/vite/bin/vite.js' : 'dist/main.js');
+    return devServiceEntry(root, service);
 }
 
 function readProcesses() {
@@ -66,23 +67,36 @@ function readProcesses() {
     }
 }
 
-/** Проверяем PID и команду: чужие процессы и переиспользованные PID не останавливаем. */
+/** Чужие процессы и переиспользованные PID не останавливаем, перенос checkout поддерживаем. */
 function ownsProcess(record) {
     const service = services.find(item => item.name === record.name);
-    if (!service || !Number.isSafeInteger(record.pid) || record.pid <= 0) { return false; }
-    const result = spawnSync('ps', [ '-p', String(record.pid), '-o', 'command=' ], { encoding: 'utf8' });
-    return result.status === 0 && result.stdout.includes(entryFor(service));
+    return ownsDevProcess(record, root, service);
+}
+
+/** Факт завершения берём у запущенного ChildProcess, включая выход во время проверки HTTP. */
+function assertServicesRunning(children) {
+    const failed = children.find(({child}) => child.exitCode !== null || child.signalCode !== null);
+    if (!failed) { return; }
+    const {child, service, logFile} = failed;
+    const reason = child.signalCode ? `сигнал ${child.signalCode}` : `код ${child.exitCode}`;
+    throw new Error(`${service.label} (:${service.port}) завершился при запуске: ${reason}. Лог: ${logFile}`);
 }
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+/** Процесс может успеть завершиться между проверкой принадлежности и сигналом. */
+function signalProcess(pid, signal) {
+    try { process.kill(pid, signal); }
+    catch (error) { if (error.code !== 'ESRCH') { throw error; } }
+}
+
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
-async function stop() {
-    const records = readProcesses().filter(ownsProcess);
-    for (const record of records) { process.kill(record.pid, 'SIGTERM'); }
+async function stop(saved = readProcesses()) {
+    const records = saved.filter(ownsProcess);
+    for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
     const deadline = Date.now() + 5000;
     while (records.some(ownsProcess) && Date.now() < deadline) { await delay(100); }
-    for (const record of records.filter(ownsProcess)) { process.kill(record.pid, 'SIGKILL'); }
+    for (const record of records.filter(ownsProcess)) { signalProcess(record.pid, 'SIGKILL'); }
     rmSync(stateFile, { force: true });
     return records.length;
 }
@@ -142,32 +156,38 @@ async function start() {
         AUTH_GUARD_ENABLED: 'true',
     };
     const records = [];
+    const children = [];
     try {
         next('Запуск сервисов');
         for (const service of services) {
-            const log = openSync(path.join(logDir, `neurocenter-${service.name}.log`), 'a');
+            const logFile = path.join(logDir, `neurocenter-${service.name}.log`);
+            const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
                 env: { ...shared, PORT: String(service.port) },
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });
+            children.push({child, service, logFile});
             try {
                 await new Promise((resolve, reject) => {
                     child.once('spawn', resolve);
                     child.once('error', reject);
                 });
+            } catch (error) {
+                throw new Error(`${service.label} (:${service.port}) не запущен: ${error.message}. Лог: ${logFile}`);
             } finally { closeSync(log); }
             child.unref();
-            records.push({ name: service.name, pid: child.pid });
+            records.push({ name: service.name, pid: child.pid, identity: devProcessIdentity(child.pid) });
             writeFileSync(stateFile, JSON.stringify(records, null, 2));
         }
 
         next('Проверка готовности — до 45 секунд');
         const deadline = Date.now() + 45000;
         while (Date.now() < deadline) {
-            if (records.some(record => !ownsProcess(record))) { throw new Error(`Сервис завершился при запуске. Логи: ${logDir}`); }
+            assertServicesRunning(children);
             const results = await health(deadline);
+            assertServicesRunning(children);
             if (results.every(service => service.ok)) {
                 for (const service of results) { output.service(service); }
                 output.heading('Готов к работе');
@@ -181,7 +201,7 @@ async function start() {
         }
         throw new Error(`Сервисы не готовы за 45 секунд. Логи: ${logDir}`);
     } catch (error) {
-        await stop();
+        await stop(records);
         throw error;
     }
 }

@@ -67,6 +67,7 @@ export default defineConfig((configEnv) => {
         server: {
             host: '127.0.0.1',
             port: 5173,
+            strictPort: true,
             // React Refresh использует inline-пролог, а переподключение Vite — blob-worker; production CSP задаётся в nginx.conf.
             headers: {
                 'X-Content-Type-Options':'nosniff',
