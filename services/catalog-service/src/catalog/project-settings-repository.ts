@@ -4,6 +4,7 @@ import { securityEvent } from '../access/security-events';
 import type { IQuota, TProjectState } from './dto';
 import type { IProjectRow } from './project-row';
 import { validateProjectSettings } from './project-validation';
+import {normalizeProjectQuota} from './project-quota';
 
 export interface IProjectSettingsPatch {
     state?: TProjectState;
@@ -38,8 +39,7 @@ export class ProjectSettingsRepository {
             if (body.retention !== undefined) after.retention = body.retention;
             if (body.fsRootPath !== undefined) after.fs_root_path = body.fsRootPath;
             if (body.quotas && Object.keys(body.quotas).length) {
-                const quota = typeof before.quota === 'string' ? JSON.parse(before.quota) : before.quota;
-                after.quota = { ...quota, ...body.quotas };
+                after.quota = { ...normalizeProjectQuota(before.quota), ...body.quotas };
             }
             if (!isDeepStrictEqual(settings(before), settings(after))) {
                 await client.query('UPDATE projects SET state=$2,retention=$3,quota=$4::jsonb,fs_root_path=$5,updated_at=now() WHERE id=$1',

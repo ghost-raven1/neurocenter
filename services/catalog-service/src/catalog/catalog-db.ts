@@ -10,6 +10,7 @@ import { PluginRepository } from '../publication/plugin-repository';
 import { OperationRepository } from '../operations/operation-repository';
 import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.types';
 import {validateProjectSettings} from './project-validation';
+import {normalizeProjectQuota} from './project-quota';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
 import {deleteProjectWithAudit} from './project-deletion';
 import type { IProjectRow } from './project-row';
@@ -264,7 +265,7 @@ export class CatalogDb {
                 name,
                 body.externalResourceId ?? null,
                 body.retention ?? 30,
-                body.quotas ? JSON.stringify(body.quotas) : null,
+                body.quotas ? JSON.stringify(normalizeProjectQuota(body.quotas)) : null,
                 fsRoot || null,
             ],
         );
@@ -617,27 +618,6 @@ function slugify(name: string): string {
 
 
 
-function parseQuota(v: IProjectRow['quota']): IQuota {
-    if (v == null) {
-        return {
-            currentBytesLimit: 0,
-            currentBytesUsed: 0,
-            retentionBytesLimit: 0,
-            retentionBytesUsed: 0,
-            stagingBytesLimit: 0,
-            stagingBytesUsed: 0,
-        };
-    }
-    if (typeof v === 'string') {
-        try {
-            return JSON.parse(v) as IQuota;
-        } catch {
-            return parseQuota(null);
-        }
-    }
-    return v as IQuota;
-}
-
 function toSummary(r: IProjectRow): IProjectSummary {
     return {
         id: r.id,
@@ -666,6 +646,6 @@ function toDetail(r: IProjectRow): IProjectDetail {
     return {
         ...toSummary(r),
         createdAt: r.created_at,
-        quota: parseQuota(r.quota),
+        quota: normalizeProjectQuota(r.quota),
     };
 }
