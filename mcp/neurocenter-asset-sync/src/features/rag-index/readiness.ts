@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { safeTarget } from '../../bridge/workspace-paths.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { stateDir } from '../../bridge/state.js';
+import {managedRagMcpEmbedding,type ManagedRagEmbedding} from '../rag-ui/managed-installation.js';
 import type { IStoreLocateResult } from '../../lib/store.js';
 import { normalizeIndexProfile, embeddingSignature, managedEmbeddingConfiguration, type IIndexProfile } from './contract.js';
 
@@ -29,6 +30,7 @@ export async function assertIndexIdle(storePath: string, restore = false, ownedL
     if (await liveLock(storePath, 'index.lock', ownedLock)) { throw new Error('Идёт индексация OpenCodeRAG. Дождитесь её завершения.'); }
     if (restore && await liveLock(storePath, 'watcher.lock')) { throw new Error('Закройте OpenCode перед восстановлением базы знаний.'); }
     if (restore && await liveLock(storePath, 'neurocenter-session.lock')) { throw new Error('Закройте OpenCode перед восстановлением базы знаний, даже если автоиндексация выключена.'); }
+    if (restore && await liveLock(storePath, 'neurocenter-ui-session.lock')) { throw new Error('Закройте интерфейс OpenCodeRAG перед восстановлением базы знаний.'); }
     const status = await json(storePath, 'watcher-status.json');
     if (restore) { return JSON.stringify(status); }
     const provenance = await json(storePath, 'neurocenter-index-profile.json');
@@ -52,12 +54,18 @@ export async function assertIndexIdle(storePath: string, restore = false, ownedL
     }
     return JSON.stringify([status, manifest, provenance]);
 }
-async function managedNative(root: string): Promise<boolean> {
+async function managedNative(root: string): Promise<{embedding:ManagedRagEmbedding}|undefined> {
     const directory = await safeTarget(root, '.opencode/neurocenter/receipts');
     let files: string[];
-    try { files = await fs.readdir(directory); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { return false; } throw error; }
+    try { files = await fs.readdir(directory); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { return undefined; } throw error; }
+    const marker=await json(root,'.opencode/neurocenter.json');
+    let plugin=false;
     for (const name of files.filter(name => /^[a-f0-9]{24}\.json$/.test(name))) {
         const receipt = await json(root, '.opencode/neurocenter/receipts/' + name);
+        if(typeof marker?.projectId==='string'){
+            const embedding=await managedRagMcpEmbedding(root,marker.projectId,name.slice(0,-5),receipt);
+            if(embedding)return {embedding};
+        }
         const config = receipt?.config as { key?: unknown; value?: unknown } | undefined;
         if (config?.key !== 'plugin' || typeof config.value !== 'string' || !/^[a-f0-9]{64}$/.test(String(receipt?.manifest))
             || !Number.isSafeInteger(receipt?.version)) { continue; }
@@ -65,10 +73,10 @@ async function managedNative(root: string): Promise<boolean> {
             const url = new URL(config.value);
             if (url.protocol !== 'file:' || url.hostname || url.search || url.hash) { continue; }
             const relative = path.relative(path.join(stateDir(), 'runtime-artifacts'), fileURLToPath(url)).split(path.sep).join('/');
-            if (/^[a-f0-9]{64}\/rag-plugin\.mjs$/.test(relative)) { return true; }
+            if (/^[a-f0-9]{64}\/rag-plugin\.mjs$/.test(relative)) { plugin=true; }
         } catch { /* Посторонний плагин не задаёт профиль embedding-модели. */ }
     }
-    return false;
+    return plugin?{embedding:{}}:undefined;
 }
 /** Название модели не восстанавливается по размерности: разные модели несовместимы и при одинаковом числе координат. */
 export async function localEmbeddingIdentity(located: IStoreLocateResult, dimension?: number): Promise<{ profile: IIndexProfile; signature: string }> {
@@ -78,7 +86,7 @@ export async function localEmbeddingIdentity(located: IStoreLocateResult, dimens
     }
     const embedding = located.config?.embedding;
     const managed = await managedNative(located.root);
-    const effective = managed ? managedEmbeddingConfiguration(located.config?.embeddingInput) : embedding;
+    const effective = managed ? managedEmbeddingConfiguration({...located.config?.embeddingInput,...managed.embedding}) : embedding;
     let profile: IIndexProfile | null = null;
     let baseUrl = effective?.baseUrl ?? 'http://127.0.0.1:11434/api';
     if (effective) {

@@ -47,6 +47,8 @@ export interface IBridgeJob {
     assetKind?: string;
     version?: string;
     bindingId?: string | null;
+    expectedManifest?: string;
+    expectedInstanceId?: string;
     createdAt: string;
     startedAt?: string | null;
     updatedAt: string;
@@ -91,6 +93,7 @@ export interface IBridgeInstallation {
     configurationInvalidatedAt?: string;
     configurationObservedAt?: string;
     configuration?: IMcpConfigurationStatus;
+    ragUi?: { supported: true; mode: 'web' };
 }
 interface IBridgeJobInputBase {
     deviceId: string;
@@ -105,7 +108,9 @@ interface IBridgeJobInputBase {
     planRevision?: number;
 }
 export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind: 'uninstall' | 'inspect-installation'; assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string}
+    {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
+        expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}
+    | {kind: 'uninstall' | 'inspect-installation'; assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string}
     | {kind: 'prepare-bind-project' | 'bind-project'; projectId: string; folderName: string; bindingMode: TWorkspaceBindingMode;
         expectedBindingId?: string; expectedInstanceId?: string; preparationJobId?: string; expectedPreparation?: string}
     | {kind: 'prepare-local-change' | 'apply-local-change' | 'open-local-change-report' | 'probe-runtime'; projectId: string;

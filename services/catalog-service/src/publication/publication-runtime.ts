@@ -1,14 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import type { IAiPluginConfig } from '../catalog/dto';
 import { parseLocalConfiguration } from '../devices/mcp-config-schema';
-import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints, type RuntimeArtifact } from '../../../shared/runtime-artifacts.cjs';
+import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints, type RuntimeArtifact, type RuntimeArtifactEntry } from '../../../shared/runtime-artifacts.cjs';
+import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 
 /** Публичная публикация принимает декларации поставки и настройки, без произвольных extra и секретных значений. */
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration'].includes(key))) {
-        throw new BadRequestException('В extra поддерживаются только runtimeArtifacts и localConfiguration. Зависимости задаются отдельно.');
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi'].includes(key))) {
+        throw new BadRequestException('В extra поддерживаются только runtimeArtifacts, localConfiguration и localUi. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
     try {
@@ -16,8 +17,17 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
         validateRuntimeArtifactEntrypoints(kind, artifacts);
         if (transport === 'remote' && artifacts.length) { throw new Error('Удалённому MCP не нужен локальный готовый комплект.'); }
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
-        return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}) };
+        const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
+        return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
+}
+
+/** Дополнительная UI-точка обязана входить в проверенную SHA-опись каждого платформенного архива. */
+export function assertLocalUiInventory(config:IAiPluginConfig|null|undefined,kind:string,entries:RuntimeArtifactEntry[]):void{
+    const ui=localRagUi({schemaVersion:5,plugin:{kind},config});
+    if(ui&&!entries.some(entry=>entry.path===ui.entrypoint&&entry.size>0)){
+        throw new BadRequestException('Точка входа localUi отсутствует или пуста в описи готового комплекта.');
+    }
 }
 
 /** Старые необязательные поля не должны противоречить авторитетной платформенной точке входа. */

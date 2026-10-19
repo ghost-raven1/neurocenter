@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeSync } from '../src/features/McpBridge/KnowledgeSync';
+vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi', () => ({ OpenCodeRagUi: () => null }));
 import { LocalProjectsFolder } from '../src/modules/Projects/local/LocalProjectsFolder';
 import { BridgeSetup } from '../src/modules/Start/BridgeSetup';
 import type { IBridgeJob } from '../src/features/McpBridge/api';

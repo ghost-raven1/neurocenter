@@ -109,7 +109,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
                     null
                 )}
             </Spin>
-            <Card size="small" title="Синхронизация через мост" className="project-rag__sync">
+            <Card size="small" title="Локальная база знаний через мост" className="project-rag__sync">
                 <KnowledgeSync projectId={projectKey} canWrite={canWrite} serverReady={serverState?.verified} connection/>
                 <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией. Перед восстановлением закройте OpenCode.</Paragraph>
             </Card>

@@ -1,3 +1,4 @@
+import {localRagUi} from '../features/rag-ui/contract.js';
 import { projectFolder, projectBindingId } from './workspace.js';
 import { verify, type Package } from './package.js';
 import { assetBase, assetKey } from './installation-receipt.js';
@@ -55,7 +56,9 @@ async function installPackages(projectId: string, packages: Package[], pkg: Pack
             changed: changes.length > 0,
             ...(multiple ? { packages: refs } : {}),
             readiness: 'unverified',
-            note: 'Файлы установлены. OpenCode перечитает конфигурацию при следующем запуске; авторизация внешнего MCP выполняется отдельно.',
+            note: packages.some(member=>{try{return member.plugin.kind==='mcp'&&!!localRagUi(member);}catch{return false;}})
+                ? 'Подключение opencode-rag mcp включено. Уже открытый OpenCode перезапустите для перечитывания конфигурации.'
+                : 'Файлы установлены. OpenCode перечитает конфигурацию при следующем запуске; авторизация внешнего MCP выполняется отдельно.',
         };
         const recoveryPath = await commitChanges(root, changes, { action: 'install', assetKey: key, manifest, result });
         return { ...result, recoveryPath };

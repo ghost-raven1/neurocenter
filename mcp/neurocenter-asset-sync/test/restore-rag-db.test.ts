@@ -64,9 +64,9 @@ describe('Атомарное восстановление RAG в подтвер�
         else { await fs.rm(store, { recursive: true }); await fs.symlink(outside, store, 'dir'); }
         await expect(run()).rejects.toThrow(/внутри|симлинк/); expect(await ids(outside)).toEqual(['outside-original']); expect(transport.fetch).not.toHaveBeenCalled();
     });
-    it.each(['watcher.lock', 'index.lock', 'neurocenter-session.lock'])('Живой native %s блокирует восстановление до HTTP', async name => {
+    it.each(['watcher.lock', 'index.lock', 'neurocenter-session.lock', 'neurocenter-ui-session.lock'])('Живой native %s блокирует восстановление до HTTP', async name => {
         await fs.writeFile(path.join(store, name), JSON.stringify({ pid: process.pid }));
-        await expect(run()).rejects.toThrow(/Закройте OpenCode|Идёт индексация/); expect(await ids()).toEqual(['local-original']); expect(transport.fetch).not.toHaveBeenCalled();
+        await expect(run()).rejects.toThrow(/Закройте (?:интерфейс )?OpenCode|Идёт индексация/); expect(await ids()).toEqual(['local-original']); expect(transport.fetch).not.toHaveBeenCalled();
     });
     it('Незапечатанный или legacy источник не создаёт staging', async () => {
         transport.fetch.mockResolvedValue(Response.json({ projectKey: 'test-project', chunks: source, dimension: 3, hasMore: false }));

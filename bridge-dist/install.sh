@@ -4,7 +4,7 @@ set -euo pipefail
 umask 077
 BASE_URL="${BASE_URL:-__BASE_URL__}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.opencode/neurocenter-asset-sync}"
-VERSION='0.9.4'
+VERSION='0.9.5'
 RECONNECT='__RECONNECT__'
 BLUE='' GREEN='' RED='' BOLD='' RESET=''
 if [ -t 1 ] && [ "${TERM:-}" != dumb ] && [ -z "${NO_COLOR+x}" ]; then

@@ -73,7 +73,7 @@ export async function smokeCatalog(manifestFile) {
                 report.push({ key: tool.key, initialized: true, hook: true });
                 continue;
             }
-            const transport = new StdioClientTransport({ command: process.execPath, args: [entrypoint], cwd: project,
+            const transport = new StdioClientTransport({ command: process.execPath, args: [entrypoint, ...(publication.config.args ?? [])], cwd: project,
                 env: { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, XDG_DATA_HOME: home, PATH: tripwire, TMPDIR: root }, stderr: 'pipe' });
             let diagnostics = '';
             transport.stderr?.on('data', chunk => { if (diagnostics.length < 4000) diagnostics += chunk.toString(); });

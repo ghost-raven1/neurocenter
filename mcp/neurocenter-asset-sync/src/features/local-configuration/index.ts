@@ -1,3 +1,4 @@
+import {missingLaunchFields} from './launch-fields.js';
 import { randomUUID } from 'node:crypto';
 import { hash } from '../../bridge/state.js';
 import type { Package } from '../../bridge/package.js';
@@ -5,7 +6,7 @@ import type { InstallSet } from '../../bridge/install-set.js';
 import { openVerificationPage } from '../../bridge/open-browser.js';
 import { configurationContext, type ConfigurationTuple } from './context.js';
 import { configurationStatus, readConfiguration } from './state.js';
-import { configurationTargets, missingConfigurationFields } from './schema.js';
+import { configurationTargets } from './schema.js';
 import { readPrivateConfiguration, writePrivateConfiguration } from './private-store.js';
 import { startConfigurationSession } from './server.js';
 import { saveLauncherDescriptor } from './launcher-descriptor.js';
@@ -49,6 +50,6 @@ export async function getMcpConfigurationStatus(projectId:string,pkg:Package,set
 /** Этот результат остаётся внутри MCP-процесса и никогда не включается в completion задания. */
 export async function readMcpConfiguration(projectId:string,pkg:Package,set:InstallSet|undefined,authorize:()=>Promise<void>) {
     const context = await configurationContext(projectId,pkg,set,authorize); const stored = await readConfiguration(context);
-    if (missingConfigurationFields(context.schema,stored?.values ?? {}).length) {throw new Error('configuration-required');}
+    if (missingLaunchFields(context.pkg,context.schema,stored?.values ?? {}).length) {throw new Error('configuration-required');}
     return {revision:stored?.revision ?? null,...configurationTargets(context.schema,stored?.values ?? {})};
 }

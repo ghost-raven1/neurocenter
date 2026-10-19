@@ -16,6 +16,17 @@ describe('Область результата MCP при действующей 
         vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true}));
     });
     afterEach(()=>vi.unstubAllGlobals());
+    it('Открытие RAG UI сохраняет только фиксированный факт и принимает отдельный отказ без локальных данных',async()=>{
+        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT')?[{...row,kind:'open-rag-ui'}]:[]}));
+        const result={opened:true,reused:false,note:'Локальный интерфейс готов; система приняла запрос на отдельное окно браузера.'};
+        await expect(completeDeviceJob(pool,'computer','job',{...input,result})).resolves.toEqual({ok:true,repeated:false});
+        await expect(completeDeviceJob(pool,'computer','job',{...input,state:'failed',result:{}})).resolves.toEqual({ok:true,repeated:false});
+        query.mockClear();
+        for(const changed of [{url:'http://127.0.0.1:1234/#private'},{port:1234},{path:'/Users/private'},{note:'private secret'},{opened:false}]){
+            await expect(completeDeviceJob(pool,'computer','job',{...input,result:{...result,...changed}})).rejects.toHaveProperty('status',409);
+        }
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
+    });
     it.each(['sync-rag','restore-rag'])('%s не принимает пустой или чужой успех до истечения аренды',async kind=>{
         query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT')?[{...row,kind}]:[]}));
         for(const result of [{},{projectId:'another',ok:true},{projectId:'project',ok:false}]){

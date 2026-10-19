@@ -1,0 +1,14 @@
+.rag-ui {
+    display: flex; width: 100%; padding: 16px; border: 1px solid #e3eaf0; border-radius: 10px; background: #f8fafc;
+    > .ant-space-item { min-width: 0; max-width: 100%; }
+    &__description.ant-typography { margin: 4px 0 0; line-height: 1.6; }
+    &__select { width: 100%; }
+    &__reason.ant-typography { display: block; overflow-wrap: anywhere; }
+    &__next.ant-btn { height: auto; padding: 0; color: #1666b5; background: transparent; border: 0; box-shadow: none; }
+    .ant-alert-description { overflow-wrap: anywhere; }
+    @media (max-width: 575px) {
+        padding: 12px;
+        .ant-btn { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
+        .ant-alert { flex-wrap: wrap; gap: 8px; .ant-alert-content { min-width: 0; } .ant-alert-action { margin-left: 0; width: 100%; } }
+    }
+}

@@ -48,7 +48,7 @@ export async function releaseManagedIndexLock(file) {
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 
-async function assertNoIndexWriter(storePath) {
+export async function assertNoIndexWriter(storePath) {
     const file = path.join(storePath, 'index.lock');
     try {
         const record = JSON.parse(await fs.readFile(file, 'utf8'));
@@ -71,6 +71,12 @@ export async function enterManagedSession(storePath) {
 /** Полный rebuild сохраняет presence lock при атомарной замене каталога. */
 export async function preserveManagedSessionLock(storePath, temporary) {
     if (sessions.has(storePath)) await fs.copyFile(path.join(storePath, 'neurocenter-session.lock'), path.join(temporary, 'neurocenter-session.lock'), 1);
+    const ui = path.join(storePath, 'neurocenter-ui-session.lock');
+    try {
+        const info = await fs.lstat(ui);
+        if (!info.isFile() || info.isSymbolicLink()) throw new Error('Некорректная блокировка OpenCodeRAG UI.');
+        await fs.copyFile(ui, path.join(temporary, 'neurocenter-ui-session.lock'), 1);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 
 /** Вызывается после закрытия upstream stores и watchers. */

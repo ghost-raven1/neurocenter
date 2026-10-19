@@ -1,3 +1,4 @@
+import {missingLaunchFields} from './launch-fields.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import { readPrivateConfiguration } from './private-store.js';
 import { launcherDescriptorKey, type LauncherDescriptor } from './launcher-descriptor.js';
 import { configurationContext } from './context.js';
 import { readConfiguration } from './state.js';
-import { configurationTargets, missingConfigurationFields } from './schema.js';
+import { configurationTargets } from './schema.js';
 import { assetBase, assetKey } from '../../bridge/installation-receipt.js';
 import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 import { startConfiguredRemote } from './remote-proxy.js';
@@ -21,7 +22,7 @@ async function launch():Promise<void> {
     const context = await configurationContext(marker.projectId,descriptor.pkg,undefined,async()=>{});
     if (context.root !== await fs.realpath(root)) {throw new Error();}
     const stored = await readConfiguration(context);
-    if (missingConfigurationFields(context.schema,stored?.values ?? {}).length) {throw new Error();}
+    if (missingLaunchFields(context.pkg,context.schema,stored?.values ?? {}).length) {throw new Error();}
     const values = configurationTargets(context.schema,stored?.values ?? {});
     if (context.pkg.config?.transport === 'remote') {await startConfiguredRemote(context.pkg,values.headers); return;}
     const artifact = await resolvePreparedRuntimeArtifact(context.pkg);

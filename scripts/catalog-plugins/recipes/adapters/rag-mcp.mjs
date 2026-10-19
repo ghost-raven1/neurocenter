@@ -8,6 +8,7 @@ import { destroyAllPooledConnections } from './upstream/dist/embedder/http.js';
 import { retrieve } from './upstream/dist/retriever/retriever.js';
 import { readRagConfiguration, createRagContext, checkedWorkspacePath } from './rag-context.mjs';
 import { protectedEmbedder, strictRetriever, requireSuccessfulIndex } from './rag-errors.mjs';
+import { enterManagedSession, leaveManagedSessions } from './rag-index-lock.mjs';
 
 const root = await fs.realpath(process.cwd());
 const config = await readRagConfiguration(root);
@@ -22,10 +23,13 @@ const tool = handler => async (...args) => {
     catch (error) { return { ...text(error.indexStats ? { ...error.indexStats, message: error.message } : error.message), isError: true }; }
 };
 async function getContext() {
-    if (!pendingContext) pendingContext = createRagContext(root, config).then(value => {
+    if (!pendingContext) pendingContext = (async () => {
+        await enterManagedSession(await checkedWorkspacePath(root, config.vectorStore.path));
+        return createRagContext(root, config);
+    })().then(value => {
         value.embedder = protectedEmbedder(value.embedder);
         return (context = value);
-    }).catch(error => { pendingContext = undefined; throw error; });
+    }).catch(async error => { pendingContext = undefined; await leaveManagedSessions(); throw error; });
     return pendingContext;
 }
 
@@ -57,15 +61,18 @@ server.registerTool('get_index_status', { description: 'Состояние ло�
     return getIndexStatusSummary(root, ctx.storePath, config, ctx.store, true);
 }));
 
-let closing = false;
-async function close() {
-    if (closing) return;
-    closing = true;
-    await server.close();
-    if (context) { await context.store.close(); context.keywordIndex.close(); }
-    destroyAllPooledConnections();
-}
-process.once('SIGTERM', () => { void close(); });
-process.once('SIGINT', () => { void close(); });
+let closing;
+const close = () => closing ||= (async () => {
+    try {
+        await server.close();
+        destroyAllPooledConnections();
+        await pendingContext?.catch(() => undefined);
+        if (context) { try { await context.store.close(); } finally { context.keywordIndex.close(); } }
+    } finally { destroyAllPooledConnections(); await leaveManagedSessions(); }
+})();
+const shutdown = () => { void close().then(() => process.exit(process.exitCode || 0), () => process.exit(1)); };
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);
 await server.connect(new StdioServerTransport());
-process.stdin.once('end', () => { void close(); });
+process.stdin.once('end', shutdown);
+process.stdin.once('close', shutdown);

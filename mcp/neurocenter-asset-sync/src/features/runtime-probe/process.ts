@@ -5,9 +5,14 @@ import { windowsJobHelper } from './windows-job.js';
 /** Один общий срок включает авторизацию, handshake, чтение и завершение собственных процессов. */
 export class ProbeScope {
     readonly controller = new AbortController();
-    readonly deadline = Date.now() + 59_000;
+    readonly deadline: number;
     private readonly children = new Set<ChildProcessWithoutNullStreams>();
-    private readonly timer = setTimeout(() => this.controller.abort(), 59_000);
+    private readonly timer: NodeJS.Timeout;
+
+    constructor(milliseconds=59_000){
+        this.deadline=Date.now()+milliseconds;
+        this.timer=setTimeout(()=>this.controller.abort(),milliseconds);
+    }
 
     remaining(): number {
         const value = this.deadline - Date.now();

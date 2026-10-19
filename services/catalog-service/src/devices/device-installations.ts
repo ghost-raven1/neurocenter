@@ -1,3 +1,4 @@
+import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 import {
     BadRequestException,
     ConflictException,
@@ -162,7 +163,9 @@ export class DeviceInstallations {
                     verifiedInspection=inspection;
                 } catch { /* Повреждённая или чужая JSONB-сверка не попадает в интерфейс. */ }
             }
-            return { ...item, bindingChanged: !isCurrentBinding, isCurrentBinding,
+            let ragUi: {supported:true;mode:'web'}|undefined;
+            try{if(localRagUi({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig}))ragUi={supported:true,mode:'web'};}catch{/* Неизвестный descriptor не обещает интерфейс. */}
+            return { ...item,...(ragUi?{ragUi}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
                 ...(!item.bindingId ? { legacyBinding: true } : {}),
                 ...(verifiedInspection ? { inspection:verifiedInspection } : {}),
                 ...(verifiedRuntime && isCurrentBinding ? {runtime:verifiedRuntime} : {}),

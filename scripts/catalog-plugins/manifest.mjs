@@ -30,8 +30,11 @@ export async function readyManifest(filename) {
     const manifest = await jsonFile(manifestPath, 16 * 1024 * 1024);
     if (!object(manifest) || !exact(manifest, ['schemaVersion', 'tools']) || manifest.schemaVersion !== 1
         || !Array.isArray(manifest.tools) || !manifest.tools.length || manifest.tools.length > 100) { throw new Error('Ожидается manifest schemaVersion: 1 и от 1 до 100 tools.'); }
-    let validatePublication;
-    try { ({ validatePublication } = require('./dist/publication/publication-validation.js')); }
+    let validatePublication,assertLocalUiInventory;
+    try {
+        ({ validatePublication } = require('./dist/publication/publication-validation.js'));
+        ({ assertLocalUiInventory } = require('./dist/publication/publication-runtime.js'));
+    }
     catch { throw new Error('Сначала соберите catalog-service: npm run build в services/catalog-service.'); }
     const keys = new Set(), names = new Set(), prepared = [];
     const directory = path.dirname(manifestPath);
@@ -56,7 +59,8 @@ export async function readyManifest(filename) {
             const archivePath = await realpath(path.resolve(directory, artifact.archivePath));
             const descriptorPath = await realpath(path.resolve(directory, artifact.descriptorPath));
             const [descriptor] = normalizeRuntimeArtifacts([await jsonFile(descriptorPath, 4096)]);
-            await inspectRuntimeArchive(archivePath, descriptor);
+            const entries=await inspectRuntimeArchive(archivePath, descriptor);
+            assertLocalUiInventory(publication.config,publication.kind,entries);
             artifacts.push({ archivePath, descriptorPath, descriptor });
         }
         const declared = normalizeRuntimeArtifacts(publication.config?.extra?.runtimeArtifacts);

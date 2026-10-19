@@ -2,12 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { download, extract, installDependencies, TARGETS } from './upstream.mjs';
+import { applyManagedWebUiCompatibility, RAG_LOCAL_UI } from './rag-web-ui.mjs';
+import { applyManagedPipeline } from './rag-managed-pipeline.mjs';
 
 export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.4`;
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.5`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
 const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
-// V2/TUI зависимости исключены: этот комплект запускает MCP, а не неподдерживаемый V2 plugin.
+// V2/TUI зависимости исключены; настоящий Web UI уже собран в закреплённом upstream-архиве.
 export const RAG_DEPENDENCIES = Object.freeze({
     '@e965/xlsx': '0.20.3', '@lancedb/lancedb': '0.29.0', '@modelcontextprotocol/sdk': '1.29.0',
     '@thednp/dommatrix': '3.0.4', '@vscode/tree-sitter-wasm': '0.3.1', 'apache-arrow': '18.1.0',
@@ -44,14 +46,28 @@ export async function prepareOpenCodeRagRuntime({ target, directory, dependencie
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 }
 
+/** Общие управляемые команды сохраняют одни настройки и блокировки MCP, плагина и Web UI. */
+export async function prepareManagedRagCommands(directory) {
+    for (const name of ['opencode-rag.mjs', 'rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs',
+        'rag-ui.mjs', 'rag-ui-guards.mjs', 'rag-ui-config.mjs', 'rag-plugin-errors.mjs', 'rag-index-lock.mjs']) {
+        await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(directory, name));
+    }
+    for (const name of ['rag-index-profile.mjs', 'rag-plugin-config.mjs']) {
+        const helper = await fs.readFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), 'utf8');
+        if (helper.split('../../../../services/shared/rag-index-contract.cjs').length !== 2) throw new Error('Изменилась зависимость RAG helper.');
+        await fs.writeFile(path.join(directory, name), helper.replace('../../../../services/shared/rag-index-contract.cjs', './rag-index-contract.cjs'));
+    }
+    await fs.copyFile(fileURLToPath(new URL('../../../services/shared/rag-index-contract.cjs', import.meta.url)), path.join(directory, 'rag-index-contract.cjs'));
+    return applyManagedWebUiCompatibility(directory);
+}
+
 /** Автономная поставка upstream MCP с явным индексированием и локальной настройкой модели. */
 export async function prepareOpenCodeRag(context) {
     const upstream = await prepareOpenCodeRagRuntime(context);
-    for (const name of ['rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs']) {
-        await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(context.directory, name));
-    }
-    return { entrypoint: 'rag-mcp.mjs', kind: 'mcp', mode: 'mcp',
-        config: { transport: 'stdio', command: 'node', entrypoint: 'rag-mcp.mjs', args: [], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION } },
-        upstream,
-        limitations: ['MCP tools; без TUI и автоматических hooks OpenCode V2.', 'Индекс создаётся только явным вызовом index_project.'] };
+    const uiPatch = await prepareManagedRagCommands(context.directory);
+    const pipelinePatch = await applyManagedPipeline(context.directory);
+    return { entrypoint: 'opencode-rag.mjs', kind: 'mcp', mode: 'mcp',
+        config: { transport: 'stdio', command: 'node', entrypoint: 'opencode-rag.mjs', args: ['mcp'], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION, localUi: RAG_LOCAL_UI } },
+        upstream: { ...upstream, compatibilityPatches: [uiPatch, pipelinePatch] },
+        limitations: ['Настоящий Web UI и MCP; без TUI и автоматических hooks OpenCode V2.', 'Индекс создаётся только явным вызовом index_project или через Web UI при закрытых сессиях.'] };
 }

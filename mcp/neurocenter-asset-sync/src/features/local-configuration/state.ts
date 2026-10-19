@@ -1,7 +1,8 @@
+import {missingLaunchFields} from './launch-fields.js';
 import { randomUUID } from 'node:crypto';
 import { readPrivateConfiguration, writePrivateConfiguration } from './private-store.js';
 import type { ConfigurationContext } from './context.js';
-import { missingConfigurationFields, validateConfigurationValues, type ConfigurationValues } from './schema.js';
+import { validateConfigurationValues, type ConfigurationValues } from './schema.js';
 
 interface StoredConfiguration {schemaVersion:1; scope:ConfigurationContext['scope']; revision:string; values:ConfigurationValues}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -15,7 +16,7 @@ export async function readConfiguration(context: ConfigurationContext): Promise<
 }
 export async function configurationStatus(context: ConfigurationContext) {
     await pendingWrites.get(context.key);
-    const stored = await readConfiguration(context); const missingFieldIds = missingConfigurationFields(context.schema,stored?.values ?? {});
+    const stored = await readConfiguration(context); const missingFieldIds = missingLaunchFields(context.pkg,context.schema,stored?.values ?? {});
     return {...context.tuple,ready:missingFieldIds.length === 0,missingFieldIds,revision:stored?.revision ?? null,checkedAt:new Date().toISOString()};
 }
 /** CAS защищает две открытые формы; новая ревизия аннулирует прежнюю диагностику. */

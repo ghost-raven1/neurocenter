@@ -8,6 +8,7 @@ import { errorMessage } from '../../common/utils/errorMessage';
 import { isPending } from './installationHelpers';
 import { bridgeOperationBlocker } from './readiness';
 import { currentKnowledgeJobs, knowledgeSyncBlocker } from './knowledgeSyncState';
+import { OpenCodeRagUi } from './ragUi/OpenCodeRagUi';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
@@ -65,6 +66,7 @@ export const KnowledgeSync: FC<{
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
             {binding && <Typography.Text type="secondary">Папка проекта: <Typography.Text code>{binding.folderName}</Typography.Text></Typography.Text>}
+            <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} />
             {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && <Alert type="warning" showIcon message={bridgeError}
                 action={!bridge.device.report.capabilities?.includes('project-rag-sync-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
             <Space wrap>

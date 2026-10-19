@@ -6,6 +6,7 @@ import { createVectorStore } from './upstream/dist/vectorstore/factory.js';
 import { readStoreDimension } from './upstream/dist/vectorstore/lancedb.js';
 import { KeywordIndex } from './upstream/dist/retriever/keyword-index.js';
 import { applyLocalRuntimeProfile } from './rag-local-runtime.mjs';
+import { managedRagConfiguration, readProjectRagConfiguration } from './rag-plugin-config.mjs';
 
 export function workspacePath(root, requested) {
     const resolved = path.resolve(root, requested);
@@ -28,10 +29,10 @@ export async function checkedWorkspacePath(root, requested) {
 }
 
 /** Секрет остаётся в памяти launcher; конфиг проекта и upstream setup не изменяются. */
-export async function readRagConfiguration(root, env = process.env) {
+export async function readRagConfiguration(root, env = process.env, { ui = false } = {}) {
     const source = findConfigFile(root);
     if (source) await checkedWorkspacePath(root, source);
-    const cfg = source ? loadConfig(source) : structuredClone(DEFAULT_CONFIG);
+    const cfg = managedRagConfiguration(source ? loadConfig(source) : structuredClone(DEFAULT_CONFIG), readProjectRagConfiguration(source));
     const provider = env.NEUROCENTER_RAG_EMBEDDING_PROVIDER || cfg.embedding.provider || 'ollama';
     if (!['ollama', 'openai'].includes(provider)) throw new Error('Выберите протокол эмбеддингов ollama или openai.');
     const baseUrl = env.NEUROCENTER_RAG_EMBEDDING_URL || cfg.embedding.baseUrl;
@@ -41,12 +42,9 @@ export async function readRagConfiguration(root, env = process.env) {
     cfg.embedding = { ...cfg.embedding, provider, baseUrl, model,
         apiKey: env.NEUROCENTER_RAG_EMBEDDING_KEY || cfg.embedding.apiKey, timeoutMs: 30_000 };
     cfg.autoUpdate = { ...cfg.autoUpdate, enabled: false, autoInstall: false };
-    cfg.openCode = { ...cfg.openCode, autoIndex: { ...cfg.openCode.autoIndex, enabled: false } };
+    if (!ui) cfg.openCode = { ...cfg.openCode, autoIndex: { ...cfg.openCode.autoIndex, enabled: false } };
     // Дополнительные модели не вызываются неявно: wizard настраивает только эмбеддинги.
-    cfg.description = { ...cfg.description, enabled: false };
-    cfg.imageDescription = { ...cfg.imageDescription, enabled: false };
-    cfg.decision = { ...cfg.decision, enabled: false };
-    cfg.reranking = { ...cfg.reranking, enabled: false };
+    if (!ui) for (const name of ['description', 'imageDescription', 'decision', 'reranking']) cfg[name] = { ...cfg[name], enabled: false };
     await checkedWorkspacePath(root, cfg.vectorStore.path);
     return applyLocalRuntimeProfile(cfg);
 }
