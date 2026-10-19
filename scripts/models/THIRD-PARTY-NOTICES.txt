@@ -1,0 +1,16 @@
+Neurocenter bundled models
+
+Qwen3 Embedding 4B
+Original model: https://huggingface.co/Qwen/Qwen3-Embedding-4B
+Ollama distribution: https://ollama.com/library/qwen3-embedding:4b
+License: Apache License 2.0 (included in LICENSE-APACHE-2.0.txt).
+Pinned manifest: df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907
+
+Qwen3 VL 2B Instruct
+Original model: https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct
+Ollama distribution: https://ollama.com/library/qwen3-vl:2b-instruct
+Quantized distribution: dhiltgen/qwen3-vl:2b-instruct-q4_K_M-llamacpp
+License: Apache License 2.0 (included in LICENSE-APACHE-2.0.txt and original license blob).
+Pinned manifest: afc393e3572c07db0bc84aa460d928a16c75f3fbb9ca9e0dccc4fbd2dafb573e
+
+The supplied runtime files are byte-identical to the pinned upstream Ollama distributions. Neurocenter splits large blobs into transport parts and reconstructs the original bytes; model weights and manifests are not modified. All model/config/projector/license/parameter files named by the pinned manifests are included. User accounts, Ollama keys, history, readiness files and other models are not included.

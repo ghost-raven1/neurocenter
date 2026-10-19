@@ -4,6 +4,8 @@
   "scripts": {
     "check": "node scripts/workspace/check.mjs",
     "compose:install": "node scripts/install-compose.mjs",
+    "models:prepare": "node scripts/models/bundle-cli.mjs",
+    "models:verify": "node scripts/models/bundle-cli.mjs --verify-only",
     "bridge:prepare": "node scripts/prepare-bridge-runtimes.mjs",
     "embedding:up": "node scripts/embedding/cli.mjs up",
     "embedding:status": "node scripts/embedding/cli.mjs status",
