@@ -5,6 +5,8 @@ import type { Request } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ModelHostingController } from '../src/models/hosting.controller';
 import { ModelHostingService } from '../src/models/hosting.service';
+import { ModelHostingRepository } from '../src/models/hosting.repository';
+import type { Pool, PoolClient } from 'pg';
 import type { AccessDb } from '../src/access/access-db';
 import type { ModelsService } from '../src/models/models.service';
 import type { OllamaClient } from '../src/models/ollama-client';
@@ -142,5 +144,141 @@ describe('Завершение, отзыв прав и прогресс хост
         expect(failure?.message).toContain('Управление хостингом не выполнено');
         expect(failure?.message).not.toContain('password');
         await service.beforeApplicationShutdown();
+    });
+});
+
+describe('Проверка состояния восстанавливает задания без управляющего исполнителя', () => {
+    it('Занятая advisory lock сохраняет активную операцию и не запускает восстановление', async () => {
+        const h = harness(false); h.repository.latest.mockResolvedValue(job());
+        expect(await h.service.status(card)).toMatchObject({state: 'busy', operation: {id: 'job-one', state: 'running'}});
+        expect(h.lease.query).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("pg_try_advisory_lock(hashtextextended('neurocenter:model-hosting',0))"));
+        expect(h.repository.interruptStale).not.toHaveBeenCalled(); expect(h.runtime.status).not.toHaveBeenCalled();
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(false); expect(h.lease.listenerCount('error')).toBe(0);
+    });
+
+    it('После двух отказов финальной записи и восстановления БД статус снимает вечную занятость без повторного выполнения', async () => {
+        const h = harness(); let stored: IHostingJobRow | undefined;
+        h.repository.latest.mockImplementation(async () => stored);
+        h.repository.create.mockImplementation(async () => stored = job());
+        h.repository.interruptStale.mockImplementation(async () => { if (stored) stored = {...stored, state: 'failed', stage: 'interrupted'}; });
+        h.repository.update.mockRejectedValue(new Error('Временный отказ БД'));
+        await h.service.control(card.id, {action: 'start', expectedRevision: card.revision}, 'admin@example.test'); await flush();
+        expect(h.repository.update).toHaveBeenCalledTimes(2); expect(h.lease.release).toHaveBeenCalledOnce();
+        expect(stored?.state).toBe('running'); h.repository.update.mockResolvedValue(undefined);
+        expect(await h.service.status(card)).toMatchObject({state: 'ready', operation: {id: 'job-one', state: 'failed', stage: 'interrupted'}});
+        expect(h.repository.interruptStale).toHaveBeenLastCalledWith(h.lease);
+        expect(await h.service.status(card)).toMatchObject({state: 'ready'});
+        expect(h.pool.connect).toHaveBeenCalledTimes(2); expect(h.runtime.start).toHaveBeenCalledOnce(); expect(h.repository.create).toHaveBeenCalledOnce();
+    });
+
+    it('Ошибка восстановления освобождает блокировку; следующая проверка повторяет только сверку', async () => {
+        const h = harness(); let stored = job();
+        h.repository.latest.mockImplementation(async () => stored);
+        h.repository.interruptStale.mockRejectedValueOnce(new Error('Не удалось сохранить сверку')).mockImplementation(async () => { stored = {...stored, state: 'failed'}; });
+        await expect(h.service.status(card)).rejects.toThrow('Не удалось сохранить сверку');
+        expect(h.lease.query).toHaveBeenLastCalledWith(expect.stringContaining('pg_advisory_unlock'));
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(false); expect(h.lease.listenerCount('error')).toBe(0);
+        expect(await h.service.status(card)).toMatchObject({state: 'ready', operation: {state: 'failed'}});
+        expect(h.repository.interruptStale).toHaveBeenCalledTimes(2); expect(h.runtime.start).not.toHaveBeenCalled(); expect(h.repository.create).not.toHaveBeenCalled();
+    });
+
+    it('Два процесса не восстанавливают одну операцию одновременно; следующий poll видит завершённую сверку', async () => {
+        const first = harness(), second = harness(false), recovery = deferred<void>(); let stored = job();
+        const latest = async () => stored; first.repository.latest.mockImplementation(latest); second.repository.latest.mockImplementation(latest);
+        first.repository.interruptStale.mockImplementation(async () => { await recovery.promise; stored = {...stored, state: 'failed'}; });
+        const reading = first.service.status(card);
+        try {
+            await flush(); expect(first.repository.interruptStale).toHaveBeenCalledOnce();
+            expect(await second.service.status(card)).toMatchObject({state: 'busy'});
+            expect(second.repository.interruptStale).not.toHaveBeenCalled();
+        } finally { recovery.resolve(); }
+        expect(await reading).toMatchObject({state: 'ready', operation: {state: 'failed'}});
+        expect(await second.service.status(card)).toMatchObject({state: 'ready', operation: {state: 'failed'}});
+        expect(first.repository.interruptStale).toHaveBeenCalledOnce(); expect(first.lease.release).toHaveBeenCalledOnce();
+        expect(second.lease.release).toHaveBeenCalledOnce(); expect(first.runtime.start).not.toHaveBeenCalled(); expect(second.runtime.start).not.toHaveBeenCalled();
+    });
+
+    it('Ошибка unlock исключает управляющее соединение из пула', async () => {
+        const h = harness(); let stored = job(); h.repository.latest.mockImplementation(async () => stored);
+        h.repository.interruptStale.mockImplementation(async () => { stored = {...stored, state: 'failed'}; });
+        h.lease.query.mockImplementation(async sql => {
+            if (sql.includes('pg_advisory_unlock')) throw new Error('Не подтверждён unlock');
+            return {rows: [{locked: true}]};
+        });
+        await expect(h.service.status(card)).rejects.toThrow('Не подтверждён unlock');
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true); expect(h.lease.listenerCount('error')).toBe(0);
+        expect(await h.service.status(card)).toMatchObject({state: 'ready'}); expect(h.runtime.start).not.toHaveBeenCalled();
+    });
+
+    it('Неподтверждённый захват lock уничтожает неоднозначную сессию и допускает повтор', async () => {
+        const h = harness(); h.repository.latest.mockResolvedValue(job());
+        h.lease.query.mockRejectedValueOnce(new Error('Ответ БД потерян'));
+        await expect(h.service.status(card)).rejects.toThrow('Ответ БД потерян');
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true); expect(h.repository.interruptStale).not.toHaveBeenCalled();
+        expect(h.lease.listenerCount('error')).toBe(0);
+    });
+
+    it('Ошибка unlock на startup не возвращает session lock в пул', async () => {
+        const h = harness(); h.lease.query.mockImplementation(async sql => {
+            if (sql.includes('pg_advisory_unlock')) throw new Error('Не подтверждён startup unlock');
+            return {rows: [{locked: true}]};
+        });
+        await expect(h.service.onModuleInit()).rejects.toThrow('Не подтверждён startup unlock');
+        expect(h.repository.interruptStale).toHaveBeenCalledWith(h.lease);
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true); expect(h.lease.listenerCount('error')).toBe(0);
+    });
+
+    it('Ошибка unlock до передачи executor уничтожает сессию после отмены запуска', async () => {
+        const h = harness(); h.models.get.mockResolvedValueOnce(card).mockResolvedValueOnce({...card, revision: card.revision + 1});
+        h.lease.query.mockImplementation(async sql => {
+            if (sql.includes('pg_advisory_unlock')) throw new Error('Не подтверждён control unlock');
+            return {rows: [{locked: true}]};
+        });
+        await expect(h.service.control(card.id, {action: 'start', expectedRevision: card.revision}, 'admin@example.test')).rejects.toThrow('Не подтверждён control unlock');
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true); expect(h.lease.listenerCount('error')).toBe(0);
+        expect(h.runtime.start).not.toHaveBeenCalled();
+    });
+
+    it('Потеря lock во время startup-сверки не допускает передачу новому executor', async () => {
+        const h = harness(); h.repository.interruptStale.mockImplementation(async () => { h.lease.emit('error', new Error('Потеряна owner-сессия')); });
+        await expect(h.service.control(card.id, {action: 'start', expectedRevision: card.revision}, 'admin@example.test')).rejects.toThrow();
+        expect(h.repository.create).not.toHaveBeenCalled(); expect(h.runtime.start).not.toHaveBeenCalled();
+        expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true); expect(h.lease.listenerCount('error')).toBe(0);
+    });
+
+    it('Потеря owner-сессии при сверке не пытается unlock на другом соединении', async () => {
+        const h = harness(); h.repository.latest.mockResolvedValue(job());
+        h.repository.interruptStale.mockImplementation(async () => { h.lease.emit('error', new Error('PG-сессия завершилась')); });
+        await expect(h.service.status(card)).rejects.toThrow('Потеряно соединение проверки хостинга');
+        expect(h.lease.query).toHaveBeenCalledOnce(); expect(h.lease.release).toHaveBeenCalledExactlyOnceWith(true);
+        expect(h.lease.listenerCount('error')).toBe(0); expect(h.runtime.status).not.toHaveBeenCalled();
+    });
+
+    it('Восстановление пишет задания и журнал только через владельца advisory lock', async () => {
+        const owner = {query: vi.fn(async (sql: string) => sql.startsWith('SELECT * FROM model_hosting_jobs')
+            ? {rows: [job()], rowCount: 1} : {rows: [], rowCount: 1}), release: vi.fn()};
+        const pool = {query: vi.fn(async () => { throw new Error('Восстановление ушло на другую PG-сессию'); }), connect: vi.fn()};
+        const repository = new ModelHostingRepository(pool as unknown as Pool);
+        await repository.interruptStale(owner as unknown as PoolClient);
+        expect(pool.query).not.toHaveBeenCalled(); expect(pool.connect).not.toHaveBeenCalled(); expect(owner.release).not.toHaveBeenCalled();
+        const queries = owner.query.mock.calls.map(([sql]) => sql);
+        expect(queries).toContain('BEGIN'); expect(queries).toContain('COMMIT');
+        expect(queries.some(sql => sql.startsWith('UPDATE model_hosting_jobs'))).toBe(true);
+        expect(queries.some(sql => sql.startsWith('UPDATE operations'))).toBe(true);
+        expect(queries.some(sql => sql.startsWith('INSERT INTO security_events'))).toBe(true);
+    });
+
+    it('Отказ журнала откатывает сверку на owner-сессии без её освобождения внутри репозитория', async () => {
+        const owner = {query: vi.fn(async (sql: string) => {
+            if (sql.startsWith('SELECT * FROM model_hosting_jobs')) return {rows: [job()], rowCount: 1};
+            if (sql.startsWith('UPDATE operations')) throw new Error('Журнал временно недоступен');
+            return {rows: [], rowCount: 1};
+        }), release: vi.fn()};
+        const pool = {query: vi.fn(), connect: vi.fn()};
+        const repository = new ModelHostingRepository(pool as unknown as Pool);
+        await expect(repository.interruptStale(owner as unknown as PoolClient)).rejects.toThrow('Журнал временно недоступен');
+        expect(owner.query).toHaveBeenLastCalledWith('ROLLBACK'); expect(owner.release).not.toHaveBeenCalled();
+        expect(pool.connect).not.toHaveBeenCalled(); expect(pool.query).not.toHaveBeenCalled();
+        expect(owner.query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
     });
 });

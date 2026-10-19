@@ -27,12 +27,20 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         await this.models.ready();
         await this.repository.setup();
         const client = await this.models.pool.connect();
+        let discard = false;
+        const disconnected = () => { discard = true; };
+        client.on('error', disconnected);
         try {
             if ((await client.query<{ locked: boolean }>(`SELECT pg_try_advisory_lock(${lock}) AS locked`)).rows[0].locked) {
-                try { await this.repository.interruptStale(); }
+                try {
+                    if (discard) { throw new Error('Потеряна управляющая блокировка хостинга.'); }
+                    await this.repository.interruptStale(client);
+                    if (discard) { throw new Error('Потеряна управляющая блокировка хостинга.'); }
+                }
                 finally { await client.query(`SELECT pg_advisory_unlock(${lock})`); }
             }
-        } finally { client.release(); }
+        } catch (error) { discard = true; throw error; }
+        finally { client.removeListener('error', disconnected); client.release(discard); }
     }
 
     async beforeApplicationShutdown(): Promise<void> {
@@ -44,13 +52,40 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
     }
 
     async status(model: IModel): Promise<IModelHosting> {
-        const latest = await this.repository.latest(model.id);
+        const latest = await this.currentJob(model.id);
         if (latest?.state === 'running') {
             return { state: 'busy', message: latest.message, checkedAt: await this.repository.checkedAt(model.id), operation: hostingOperation(latest) };
         }
         const current = await this.runtime.status(model).catch(() => ({ state: 'unavailable' as const, message: 'Хостинг моделей недоступен или отключён администратором сервера.', checkedAt: null }));
         return { ...current, checkedAt: current.state === 'ready' || current.state === 'stopped' ? await this.repository.checkedAt(model.id) : null,
             ...(latest ? { operation: hostingOperation(latest) } : {}) };
+    }
+
+    /** Свободная общая lock доказывает отсутствие исполнителя; восстановление не запускает модель повторно. */
+    private async currentJob(modelId: string): Promise<IHostingJobRow | undefined> {
+        let latest = await this.repository.latest(modelId);
+        if (latest?.state !== 'running') { return latest; }
+        const lease = await this.models.pool.connect();
+        let locked = false, discard = false;
+        const disconnected = () => { discard = true; };
+        const assertConnected = () => { if (discard) { throw new Error('Потеряно соединение проверки хостинга. Повторите проверку состояния.'); } };
+        lease.on('error', disconnected);
+        try {
+            try { locked = (await lease.query<{locked: boolean}>(`SELECT pg_try_advisory_lock(${lock}) AS locked`)).rows[0].locked; }
+            catch (error) { discard = true; throw error; }
+            assertConnected();
+            if (locked) {
+                await this.repository.interruptStale(lease);
+                assertConnected();
+                latest = await this.repository.latest(modelId);
+                assertConnected();
+            }
+            return latest;
+        } finally {
+            try { if (locked && !discard) { await lease.query(`SELECT pg_advisory_unlock(${lock})`); } }
+            catch (error) { discard = true; throw error; }
+            finally { lease.removeListener('error', disconnected); lease.release(discard); }
+        }
     }
 
     async control(id: string, input: unknown, actor: string): Promise<IModelHosting> {
@@ -72,16 +107,24 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         const model = await this.models.get(id);
         if (model.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
         const lease = await this.models.pool.connect();
-        let transferred = false, locked = false, released = false;
+        let transferred = false, locked = false, released = false, discard = false;
+        const disconnected = () => { discard = true; };
+        const assertConnected = () => { if (discard) { throw new Error('Потеряна управляющая блокировка хостинга. Повторите действие.'); } };
+        lease.on('error', disconnected);
         try {
-            locked = (await lease.query<{ locked: boolean }>(`SELECT pg_try_advisory_lock(${lock}) AS locked`)).rows[0].locked;
+            try { locked = (await lease.query<{ locked: boolean }>(`SELECT pg_try_advisory_lock(${lock}) AS locked`)).rows[0].locked; }
+            catch (error) { discard = true; throw error; }
+            assertConnected();
             if (!locked) {
-                lease.release(); released = true;
+                lease.removeListener('error', disconnected); lease.release(false); released = true;
                 const running = await this.repository.latest(id);
-                if (running?.state === 'running' && running.action === action) { return this.status(model); }
+                if (running?.state === 'running' && running.action === action) {
+                    return {state: 'busy', message: running.message, checkedAt: await this.repository.checkedAt(id), operation: hostingOperation(running)};
+                }
                 throw new ConflictException('Управление другой моделью уже выполняется. Дождитесь завершения операции.');
             }
-            await this.repository.interruptStale();
+            await this.repository.interruptStale(lease);
+            assertConnected();
             const current = await this.models.get(id);
             if (current.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
             if (this.stopping) { throw new ConflictException('Сервис перезапускается. Повторите действие после запуска.'); }
@@ -95,9 +138,10 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             return { state: 'busy', message: row.message, checkedAt: await this.repository.checkedAt(id), operation: hostingOperation(row) };
         } finally {
             if (!transferred && !released) {
-                try { if (locked) { await lease.query(`SELECT pg_advisory_unlock(${lock})`); } }
-                finally { lease.release(); }
-            }
+                try { if (locked && !discard) { await lease.query(`SELECT pg_advisory_unlock(${lock})`); } }
+                catch (error) { discard = true; throw error; }
+                finally { lease.removeListener('error', disconnected); lease.release(discard); }
+            } else { lease.removeListener('error', disconnected); }
         }
     }
 

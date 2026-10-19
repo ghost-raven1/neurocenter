@@ -34,10 +34,10 @@ export class ModelHostingRepository {
     }
 
     /** Вызов разрешён только владельцу общей управляющей блокировки runtime. */
-    async interruptStale(): Promise<void> {
-        const rows = (await this.pool.query<IHostingJobRow>("SELECT * FROM model_hosting_jobs WHERE state='running'")).rows;
+    async interruptStale(owner: PoolClient): Promise<void> {
+        const rows = (await owner.query<IHostingJobRow>("SELECT * FROM model_hosting_jobs WHERE state='running'")).rows;
         for (const row of rows) {
-            await this.update(row, { stage: 'interrupted', message: 'Управление хостингом прервано перезапуском. Повторите действие; сохранённые веса используются повторно.', progress: row.progress }, 'failed');
+            await this.updateUsing(owner, row, { stage: 'interrupted', message: 'Управление хостингом прервано. Проверьте состояние и повторите действие при необходимости; сохранённые веса используются повторно.', progress: row.progress }, 'failed');
         }
     }
 
@@ -59,6 +59,11 @@ export class ModelHostingRepository {
 
     async update(row: IHostingJobRow, progress: IHostingProgress, state: IHostingJobRow['state'] = 'running'): Promise<void> {
         const client = await this.pool.connect();
+        try { await this.updateUsing(client, row, progress, state); }
+        finally { client.release(); }
+    }
+
+    private async updateUsing(client: PoolClient, row: IHostingJobRow, progress: IHostingProgress, state: IHostingJobRow['state']): Promise<void> {
         try {
             await client.query('BEGIN');
             const updated = await client.query(`UPDATE model_hosting_jobs SET state=$2,stage=$3,message=$4,progress=$5,
@@ -75,6 +80,5 @@ export class ModelHostingRepository {
             }
             await client.query('COMMIT');
         } catch (error) { await client.query('ROLLBACK'); throw error; }
-        finally { client.release(); }
     }
 }
