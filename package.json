@@ -3,6 +3,10 @@
   "private": true,
   "scripts": {
     "check": "node scripts/workspace/check.mjs",
+    "embedding:up": "node scripts/embedding/cli.mjs up",
+    "embedding:status": "node scripts/embedding/cli.mjs status",
+    "embedding:check": "node scripts/embedding/cli.mjs check",
+    "embedding:down": "node scripts/embedding/cli.mjs down",
     "tools:build": "node scripts/catalog-plugins/run.mjs build",
     "tools:publish": "node scripts/catalog-plugins/run.mjs publish",
     "tools:catalog": "node scripts/catalog-plugins/run.mjs prepare",

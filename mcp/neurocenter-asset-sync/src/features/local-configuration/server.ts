@@ -4,6 +4,7 @@ import { configurationPage } from './page.js';
 import { configurationStatus, readConfiguration, saveConfiguration } from './state.js';
 import type { ConfigurationContext } from './context.js';
 import { validateConfigurationValues } from './schema.js';
+import { projectLocalEmbeddingFields } from './project-local-embedding.js';
 const active = new Map<string,{expiresAt:string;close:()=>void}>();
 const token = () => randomBytes(32).toString('base64url');
 async function body(request: IncomingMessage): Promise<Record<string,unknown>> {
@@ -37,6 +38,7 @@ export async function startConfigurationSession(context: ConfigurationContext, p
             // Резервируем одноразовый токен до первого await: две вкладки не получают одну сессию.
             used = true; await context.assertCurrent();
             json(response,200,{csrf,revision:expectedRevision,expiresAt,name:context.pkg.plugin.name,
+                projectLocalEmbeddingFields:projectLocalEmbeddingFields(context.schema),
                 fields:context.schema.fields.map(field => ({id:field.id,label:field.label,type:field.type,required:field.required,secret:!!field.secret,configured:Object.hasOwn(initial?.values ?? {},field.id)}))}); return;
         }
         if (request.url !== '/save' || !used || saved || saving || request.headers['x-configuration-csrf'] !== csrf

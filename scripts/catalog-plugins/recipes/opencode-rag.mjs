@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { download, extract, installDependencies, TARGETS } from './upstream.mjs';
 
 export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.3`;
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.4`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
 const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
 // V2/TUI зависимости исключены: этот комплект запускает MCP, а не неподдерживаемый V2 plugin.
@@ -40,7 +40,7 @@ export async function prepareOpenCodeRag({ target, directory }) {
         await fs.cp(path.join(temporary, 'package'), path.join(directory, 'upstream'), { recursive: true });
         await fs.copyFile(fileURLToPath(new URL('../locks/opencode-rag.json', import.meta.url)), path.join(directory, 'package-lock.json'));
         await installDependencies(directory, RAG_DEPENDENCIES, target);
-        for (const name of ['rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs']) {
+        for (const name of ['rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs']) {
             await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(directory, name));
         }
         return { entrypoint: 'rag-mcp.mjs', kind: 'mcp', mode: 'mcp',

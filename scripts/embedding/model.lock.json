@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "model": "qwen3-embedding:4b",
+  "dimension": 2560,
+  "registryManifestUrl": "https://registry.ollama.ai/v2/library/qwen3-embedding/manifests/4b",
+  "manifestSha256": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+  "manifest": {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+    "config": {
+      "mediaType": "application/vnd.docker.container.image.v1+json",
+      "digest": "sha256:2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d",
+      "size": 265
+    },
+    "layers": [
+      {
+        "mediaType": "application/vnd.ollama.image.model",
+        "digest": "sha256:2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b",
+        "size": 2496703776,
+        "from": "/Users/ollama/.ollama/models/blobs/sha256-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b"
+      }
+    ]
+  },
+  "image": "ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c"
+}

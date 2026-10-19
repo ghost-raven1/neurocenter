@@ -5,6 +5,7 @@ import { createEmbedder, probeEmbeddingDimension } from './upstream/dist/embedde
 import { createVectorStore } from './upstream/dist/vectorstore/factory.js';
 import { readStoreDimension } from './upstream/dist/vectorstore/lancedb.js';
 import { KeywordIndex } from './upstream/dist/retriever/keyword-index.js';
+import { applyLocalRuntimeProfile } from './rag-local-runtime.mjs';
 
 export function workspacePath(root, requested) {
     const resolved = path.resolve(root, requested);
@@ -47,7 +48,7 @@ export async function readRagConfiguration(root, env = process.env) {
     cfg.decision = { ...cfg.decision, enabled: false };
     cfg.reranking = { ...cfg.reranking, enabled: false };
     await checkedWorkspacePath(root, cfg.vectorStore.path);
-    return cfg;
+    return applyLocalRuntimeProfile(cfg);
 }
 
 /** Провайдер вызывается только при явном запросе поиска или индексирования. */

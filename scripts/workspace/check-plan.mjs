@@ -22,5 +22,6 @@ export function checkPlan(root) {
     }
     steps.push({name: 'Общие контракты, production и упаковка', directory: '.', type: 'node', args: ['--test', '--test-concurrency=2', ...nodeTestFiles(root)]});
     steps.push({name: 'Compose: dev', directory: '.', type: 'compose', args: ['compose', 'config', '--quiet']});
+    steps.push({name: 'Compose: локальные эмбеддинги', directory: '.', type: 'compose', args: ['compose', '-f', 'compose.embedding.yml', 'config', '--quiet']});
     return steps;
 }

@@ -34,6 +34,10 @@ URL, модель, протокол Ollama/OpenAI и ключ задаются �
 провайдеру только при явном поиске или индексировании. Установка и `listTools`
 не запускают индексирование. Индекс создаётся в папке проекта.
 
+Текущая поставка — `2.4.4-mcp.pack.4`. Для [локальной модели проекта](../../../docs/local-embedding.md)
+адаптер ограничивает embedding до одного фрагмента и одного запроса одновременно,
+с таймаутом 120 секунд. Другие подключения сохраняют прежние параметры.
+
 Для Intel Mac готового комплекта нет: upstream `@lancedb/lancedb@0.29.0` не
 публикует `darwin-x64` native пакет. Остальные семь целей комплектуются отдельно.
 Отсутствующая платформа должна блокировать установку, без подмены архитектуры.
@@ -42,7 +46,9 @@ URL, модель, протокол Ollama/OpenAI и ключ задаются �
 
 ```sh
 node --test scripts/catalog-plugins/recipes/test/recipes.test.mjs
+node --test scripts/catalog-plugins/recipes/test/rag-local-runtime.test.mjs
 node scripts/catalog-plugins/recipes/test/native-smoke.mjs <rag-directory> <snip-directory> <evidence.json>
+node scripts/embedding/smoke-rag.mjs --package <rag-directory>
 ```
 
 Native smoke использует временный HOME и loopback fixture эмбеддингов. Он
