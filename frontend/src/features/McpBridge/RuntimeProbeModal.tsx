@@ -14,6 +14,7 @@ import './localOperations.less';
 /** Согласие относится к одобренному SHA всего комплекта, включая каждую закреплённую зависимость. */
 export function RuntimeProbeModal({item,bridge,canManage,onClose}: {item:IBridgeInstallation;bridge:ReturnType<typeof useBridge>;canManage:boolean;onClose():void}) {
     const [plan,setPlan] = useState<IInstallPlan>(); const [preparing,setPreparing] = useState(true); const [confirmed,setConfirmed] = useState(false);
+    const [approvalAttempt,setApprovalAttempt] = useState(0);
     const consentLock = useRef(false); const [checking,setChecking] = useState(false);
     const operation = useLocalJob(bridge);
     const latest = useRef({bridge,canManage}); latest.current = {bridge,canManage};
@@ -29,12 +30,13 @@ export function RuntimeProbeModal({item,bridge,canManage,onClose}: {item:IBridge
     useEffect(() => { setConfirmed(false); },[configurationKey,configuration.blocker,consentContext]);
     useEffect(() => {
         let cancelled = false;
+        setPreparing(true); operation.setError('');
         bridgeApi.preparePlan({projectId:item.projectId,assetId:item.assetId,assetKind:item.assetKind,version:item.version}).then(value => {
             runtimeConsent(value,item); if (!cancelled) { setPlan(value); }
         }).catch(cause => { if (!cancelled) { operation.setError(errorMessage(cause,'Не удалось получить одобрение точной установленной версии.')); } })
             .finally(() => { if (!cancelled) { setPreparing(false); } });
         return () => { cancelled = true; };
-    },[]);
+    },[approvalAttempt]);
     const run = async () => {
         if (!plan || !confirmed || consentLock.current || operation.busy || isPending(operation.job)) { return; }
         consentLock.current = true; setChecking(true); operation.setError('');
@@ -74,6 +76,7 @@ export function RuntimeProbeModal({item,bridge,canManage,onClose}: {item:IBridge
             </>}
             {reason && <Alert type="info" showIcon message={reason} />}
             {configuration.revisions.length > 0 && <Typography.Text type="secondary">Проверка использует текущие локальные настройки MCP ({configuration.revisions.length}). Их изменение потребует новой диагностики.</Typography.Text>}
+            {!plan && !preparing && <Button onClick={() => setApprovalAttempt(value => value + 1)}>Повторить загрузку одобрения</Button>}
             <Button type="primary" disabled={!plan || !confirmed || !!reason || locked} loading={locked} onClick={() => { void run(); }}>Запустить диагностику</Button>
             {operation.job && <Alert role="status" showIcon type={operation.job.state === 'failed' ? 'warning' : 'info'} message={operation.job.message} />}
             <RuntimeProbeStatus item={report} />
