@@ -172,4 +172,24 @@ describe.skipIf(!connection)('Профили и seal RAG в отдельной �
         await expect(db.applyDelta(key,[value],['raw'],{indexProfile:replacement,snapshot:snapshot([value],false,replacement)})).rejects.toMatchObject({status:409});
         expect(await db.manifest(key)).toEqual(before);
     });
+    it('Прямой legacy SQL удерживает общий lock; ожидающий новый профиль видит его COMMIT',async()=>{
+        const key='raw-writer-race',replacement={...profile,model:'replacement'},value=row('replacement');
+        await db.applyDelta(key,[],[],{indexProfile:profile,snapshot:snapshot([])});
+        const sql=new Client({connectionString:databaseUrl});await sql.connect();let work:Promise<unknown>|undefined;
+        try{
+            await sql.query('BEGIN');
+            await sql.query('INSERT INTO rag_chunks(id,project_key,content,content_hash) VALUES($1,$2,$3,$4)',['raw',key,'legacy',value.contentHash]);
+            work=second.applyDelta(key,[value],['raw'],{indexProfile:replacement,snapshot:snapshot([value],false,replacement)})
+                .then(result=>({result}),error=>({error}));
+            let waiting=false;
+            for(let attempt=0;attempt<100;attempt++){
+                const state=await admin.query("SELECT 1 FROM pg_stat_activity WHERE datname=$1 AND wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock%' LIMIT 1",[name]);
+                if(state.rowCount){waiting=true;break;}
+                await new Promise(resolve=>setTimeout(resolve,10));
+            }
+            expect(waiting).toBe(true);await sql.query('COMMIT');
+            expect(await work).toMatchObject({error:{status:409}});
+            expect(await db.manifest(key)).toMatchObject({rowCount:1,indexProfile:profile,ids:{raw:value.contentHash}});
+        }finally{await sql.query('ROLLBACK');await sql.end();await work;}
+    });
 });
