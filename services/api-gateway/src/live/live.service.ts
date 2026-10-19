@@ -73,6 +73,10 @@ export class LiveService implements OnModuleDestroy {
             this.sections(['catalog', 'projects', 'audit']);
             return;
         }
+        if (path.startsWith('/api/models')) {
+            this.sections(['catalog', 'projects', 'operations', 'audit']);
+            return;
+        }
         if (path.startsWith('/api/skills')) {
             this.sections(['catalog', 'projects', 'audit']);
             return;

@@ -44,6 +44,10 @@ async function fixture(t, mode) {
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/catalog-startup.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    for(const directory of ['models','embedding']) {
+        await fs.mkdir(path.join(checkout,'scripts',directory),{recursive:true});
+        for(const file of await fs.readdir(path.join(root,'scripts',directory)))await fs.copyFile(path.join(root,'scripts',directory,file),path.join(checkout,'scripts',directory,file));
+    }
     await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
     await fs.writeFile(path.join(checkout, 'scripts/package-bridge.sh'), '#!/bin/bash\nexit 0\n', {mode: 0o700});
     await fs.writeFile(path.join(checkout, 'scripts/prepare-bridge-runtimes.mjs'), `
@@ -69,6 +73,7 @@ async function fixture(t, mode) {
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
+        else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding')console.log('fixture model runtime ready');
         else process.exitCode=93;
     `, {mode: 0o700});
     for (const [name, relative] of services) {

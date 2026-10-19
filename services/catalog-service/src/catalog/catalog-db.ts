@@ -18,6 +18,7 @@ import type { IProjectMemberRow } from './project-member-repository';
 import { ProjectAssetRepository } from './project-asset-repository';
 import { reserveSkillDependencies } from '../publication/skill-dependency-registry';
 import { SkillAuditRepository } from '../publication/skill-audit-repository';
+import { setupModelsSchema } from '../models/models.repository';
 
 import { IAccessDecision, IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, IOperation, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
 
@@ -167,6 +168,7 @@ export class CatalogDb {
         if(process.env.NODE_ENV!=='production'){await this.seedFsRootPaths();}
         if(process.env.NODE_ENV!=='production'){await this.seedProjectMembers();}
         await this.migrateLegacyRoles();
+        await setupModelsSchema(this.pool);
     }
 
     /**

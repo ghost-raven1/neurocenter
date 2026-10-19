@@ -29,6 +29,16 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route.startsWith('/api/platform/users')) { return main; }
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
+    if (route === '/api/models') { return read || main; }
+    const model = /^\/api\/models\/[^/]+(?:\/(.*))?$/.exec(route);
+    if (model) {
+        if (read) { return true; }
+        if (['ollama/api/embed', 'ollama/api/chat', 'ollama/v1/embeddings', 'ollama/v1/chat/completions'].includes(model[1] ?? '')) {
+            // Точная область назначения и роль в проекте повторно проверяются модельным контроллером.
+            return ['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole);
+        }
+        return main;
+    }
     if (route === '/api/access/users') { return common; }
     if (route === '/api/me/decisions') { return read; }
     if (route.startsWith('/api/operations')) { return read || main; }

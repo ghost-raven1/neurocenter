@@ -17,6 +17,30 @@ x-runtime: &runtime
   NEUROCENTER_METRICS_TOKEN_FILE: /run/secrets/metrics_token
 
 services:
+  # Веса скачиваются только по действию администратора в каталоге моделей.
+  model-runtime:
+    <<: *service
+    image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
+    mem_limit: 5g
+    cpus: 4
+    pids_limit: 512
+    cap_drop: [ALL]
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: '1'
+      OLLAMA_CONTEXT_LENGTH: '4096'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_MAX_QUEUE: '8'
+      OLLAMA_KEEP_ALIVE: 5m
+    volumes: [model-weights:/root/.ollama]
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
   postgres:
     <<: *service
     image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
@@ -114,9 +138,13 @@ services:
       BACKUP_MAX_TOTAL_BYTES: ${BACKUP_MAX_TOTAL_BYTES:-68719476736}
       BACKUP_MAX_FILE_BYTES: ${BACKUP_MAX_FILE_BYTES:-17179869184}
       BACKUP_MIN_FREE_BYTES: ${BACKUP_MIN_FREE_BYTES:-1073741824}
+      MODEL_RUNTIME_URL: http://model-runtime:11434
+      MODEL_STORAGE_PATH: /data/models
+      MODEL_HOSTING_ENABLED: ${MODEL_HOSTING_ENABLED:-true}
     secrets: [metrics_token, internal_token, catalog_url, backup_url]
-    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro]
+    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:ro]
     depends_on:
+      model-runtime: {condition: service_healthy}
       capacity-collector: {condition: service_healthy}
       postgres: {condition: service_healthy}
     healthcheck:
@@ -273,6 +301,7 @@ networks:
   backend: {}
   edge: {}
 volumes:
+  model-weights:
   capacity:
   postgres:
   skills:

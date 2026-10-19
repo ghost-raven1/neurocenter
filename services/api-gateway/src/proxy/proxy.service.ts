@@ -85,6 +85,7 @@ export class ProxyService {
             }
             const upstream = await this.http.request({
                 method,
+                ...(/^\/api\/models\/[^/]+\/ollama\//.test(path) ? {timeout: 610000, maxContentLength: 8 * 1024 * 1024} : {}),
                 responseType: 'json',
                 url: `${upstreamBase}${path}`,
                 headers: this.buildHeaders(req.headers, auth),
@@ -101,7 +102,7 @@ export class ProxyService {
             }
 
             res.send(filterResponse(upstream.data,decision.data.claims,auth.activeRole,path));
-            if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
+            if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)&&!/^\/api\/models\/[^/]+\/ollama\//.test(path)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[api-gateway] proxy error:', error instanceof Error ? error.message : 'upstream-unavailable');

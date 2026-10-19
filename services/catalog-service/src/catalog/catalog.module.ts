@@ -15,6 +15,12 @@ import {InstallPlans} from '../devices/install-plans';
 import {InstallPlanController} from '../devices/install-plan.controller';
 import {PackageBuildController} from '../package-build/package-build.controller';
 import {PackageBuildService} from '../package-build/package-build.service';
+import { ModelsController } from '../models/models.controller';
+import { ModelsService } from '../models/models.service';
+import { ModelHostingController } from '../models/hosting.controller';
+import { ModelHostingService } from '../models/hosting.service';
+import { ModelInferenceController } from '../models/inference.controller';
+import { OllamaClient } from '../models/ollama-client';
 
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
@@ -25,5 +31,5 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * Модуль каталога: проекты — PG-backed (БД `catalog`), остальное — mock.
  */
-@Module({ controllers: [MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,InstallPlanController,PackageBuildController], providers: [MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService], exports:[CatalogService] })
+@Module({ controllers: [MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController], providers: [MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
 export class CatalogModule {}

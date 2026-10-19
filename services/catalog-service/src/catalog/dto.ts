@@ -7,7 +7,7 @@ import type { IDependencyPin } from '../../../shared/dependency-pins.cjs';
 
 export type TSnapshotStatus = 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING' | 'DELETED';
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
-export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD';
+export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD' | 'MODEL';
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
 export type TSkillState = 'PUBLISHED' | 'DEPRECATED';
 export type TCollectionScope = 'COMMON' | 'PROJECT';

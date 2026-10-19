@@ -9,6 +9,7 @@ import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
 import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
 import {syncStartupCatalog} from './workspace/catalog-startup.mjs';
+import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -154,7 +155,7 @@ async function health(deadline = Infinity) {
 }
 
 async function start() {
-    const next = progress(packages.length + 8);
+    const next = progress(packages.length + 9);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
@@ -165,6 +166,8 @@ async function start() {
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
     output.success('PostgreSQL готов');
+    next('Запуск хостинга моделей');
+    await startModelRuntime({root,output,environment:process.env});
     next('Обновление встроенного каталога инструментов');
     syncStartupCatalog({ node, root, output, environment: {
         ...process.env, CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
@@ -178,6 +181,7 @@ async function start() {
 
     const shared = {
         ...process.env,
+        ...modelRuntimeEnvironment(root,process.env),
         DEV_POSTGRES_CONTAINER: postgres.stdout.trim(),
         BACKUP_DIR: path.resolve(root, process.env.BACKUP_DIR || 'data/backups'),
         RUNTIME_ARTIFACT_DIR:path.resolve(root,process.env.RUNTIME_ARTIFACT_DIR||'data/runtime-artifacts'),
