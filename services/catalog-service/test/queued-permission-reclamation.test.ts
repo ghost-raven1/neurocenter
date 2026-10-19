@@ -67,7 +67,7 @@ describe('Освобождение очереди после отзыва пра
     });
     it('Повтор requestKey возвращает прежний результат до fresh cleanup и не раскрывает внутренние поля',async()=>{
         const input={id:'new',deviceId:device.id,email,role:incoming.role,projectId:'current',kind:'sync-rag',payload:{},requestKey:'key',requestHash:'hash'};
-        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id,role')?[device]:sql.includes('request_hash')?[{id:'saved',request_hash:'hash',payload:{secret:'private'},role:'Разработчик'}]:[]}));
+        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id,role')?[device]:sql.includes('request_hash')?[{id:'saved',request_hash:'hash',request_device_id:device.id,payload:{secret:'private'},role:'Разработчик'}]:[]}));
         const pool={connect:async()=>({query,release:vi.fn()})} as unknown as Pool;
         await expect(enqueueDeviceJob(pool,'id',input,readClaims)).resolves.toEqual({id:'saved'});
         expect(readClaims).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();

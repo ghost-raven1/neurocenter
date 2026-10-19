@@ -5,6 +5,7 @@ import { notifyDeviceOperations, recordDeviceOperation } from './device-operatio
 import { guardWorkspaceQueue } from './workspace-queue';
 import type { IAccessClaims } from '../access/access.model';
 import { reclaimUnauthorizedQueuedJobs } from './device-job-access';
+import {findDeviceJobRequest,saveDeviceJobRequest} from './device-job-requests';
 
 interface Enqueue {
     id: string; deviceId: string; email: string; role: string; projectId?: string;
@@ -24,11 +25,10 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
         await client.query('BEGIN');
         const owned = await client.query<{id:string;role:string}>('SELECT id,role FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR UPDATE', [input.deviceId, input.email]);
         if (!owned.rows.length) { throw new ForbiddenException('Подключение MCP истекло или отключено.'); }
-        const previous = await client.query<Row>(`SELECT ${view},request_hash FROM bridge_jobs WHERE email=$1 AND request_key=$2`, [input.email, input.requestKey]);
-        if (previous.rows[0]) {
-            if (previous.rows[0].request_hash !== input.requestHash) { throw new ConflictException('Ключ запроса уже использован с другими параметрами.'); }
+        const previous = await findDeviceJobRequest(client,view,input);
+        if (previous) {
             await client.query('COMMIT');
-            return clean(previous.rows[0]);
+            return clean(previous);
         }
         const reclaimed=await reclaimUnauthorizedQueuedJobs(client,{id:input.deviceId,email:input.email,role:owned.rows[0].role},
             {role:input.role,project_id:input.projectId??null,kind:input.kind},readClaims);
@@ -52,9 +52,10 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
                     || current.payload?.changePlanId !== input.payload.changePlanId || current.payload?.expectedChangeDigest !== input.payload.expectedChangeDigest) {
                     throw new ConflictException('Для этого инструмента уже выполняется другое действие или ожидается сверка. Дождитесь результата.');
                 } else {
+                    const saved=await saveDeviceJobRequest(client,view,input,current.id);
                     await client.query('COMMIT');
                     if(reclaimed)await notifyDeviceOperations();
-                    return clean(current);
+                    return clean(saved);
                 }
             }
         }
@@ -65,7 +66,7 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
         [input.id, input.deviceId, input.email, input.role, input.projectId || null, input.kind, input.payload, input.requestKey, input.requestHash]);
         const saved = await client.query<Row>(`SELECT ${view},request_hash FROM bridge_jobs WHERE email=$1 AND request_key=$2`, [input.email, input.requestKey]);
         if (!saved.rows[0] || saved.rows[0].request_hash !== input.requestHash) { throw new ConflictException('Параллельный запрос использовал этот ключ с другими параметрами.'); }
-        result = clean(saved.rows[0]);
+        result = clean(await saveDeviceJobRequest(client,view,input,saved.rows[0].id));
         if (result.id === input.id) {
             await recordDeviceOperation(client, { id: input.id, kind: input.kind, email: input.email, project_id: input.projectId || null }, 'QUEUED', 0, 'Ожидает MCP');
         }

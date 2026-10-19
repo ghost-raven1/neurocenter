@@ -14,6 +14,7 @@ import {assertDeviceCatalogAsset} from './device-catalog-access';
 import {InstallPlans} from './install-plans';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { enqueueDeviceJob } from './device-enqueue';
+import {findDeviceJobRequest} from './device-job-requests';
 import { assertManagedBridge, assertPackageBridge, assertInstallationSetBridge, assertInstallationInspectionBridge, assertExpectedBinding, managedBinding } from './device-compatibility';
 import {verifyInstallationSet,type IInstallationSet} from './installation-set';
 import { workspaceJobPayload, assertWorkspaceSource } from './workspace-jobs';
@@ -125,19 +126,8 @@ export class DeviceJobs {
         const requestHash = digest(
             JSON.stringify({role:actor.activeRole,request:Object.entries(input).sort(([a],[b])=>a.localeCompare(b))}),
         );
-        const previous = await this.store.pool.query(
-            `SELECT ${view},request_hash FROM bridge_jobs WHERE email=$1 AND request_key=$2`,
-            [actor.email, input.requestKey],
-        );
-        if (previous.rows[0]) {
-            if (previous.rows[0].request_hash !== requestHash) {
-                throw new ConflictException(
-                    'Ключ запроса уже использован с другими параметрами.',
-                );
-            }
-            delete previous.rows[0].request_hash;
-            return previous.rows[0];
-        }
+        const previous=await findDeviceJobRequest(this.store.pool,view,{email:actor.email,deviceId:input.deviceId,requestKey:input.requestKey,requestHash});
+        if(previous)return previous;
         if(input.kind==='sync-rag')await requireFeatureEnabled('rag_sync');
         let payload: Record<string, unknown> = {};
         if (['restore-rag', 'sync-rag'].includes(input.kind) && device.report.ragSupported === false) {

@@ -32,4 +32,14 @@ export const INSTALLATION_MIGRATIONS: readonly CatalogMigration[] = [{
         unpacked_bytes bigint NOT NULL CHECK(unpacked_bytes>0 AND unpacked_bytes<=1073741824),
         files_count integer NOT NULL CHECK(files_count>0 AND files_count<=20000),
         imported_at timestamptz NOT NULL DEFAULT now());`,
+}, {
+    version: 4,
+    name: 'durable-bridge-job-requests',
+    sql: `CREATE TABLE bridge_job_requests (
+        email text NOT NULL,request_key text NOT NULL,device_id text NOT NULL REFERENCES bridge_devices(id),
+        request_hash text NOT NULL,job_id text NOT NULL REFERENCES bridge_jobs(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,request_key));
+        CREATE INDEX bridge_job_requests_job ON bridge_job_requests(job_id);
+        INSERT INTO bridge_job_requests(email,request_key,device_id,request_hash,job_id,created_at)
+        SELECT email,request_key,device_id,request_hash,id,created_at FROM bridge_jobs;`,
 }];
