@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {projectRagCatalogUrl,projectRagSetupUrl, projectTabSearch} from '../src/modules/Projects/projectNavigation';
+import {projectBindingSearch,projectBindingTarget,projectBindingUrl,projectRagCatalogUrl,projectRagSetupUrl, projectTabSearch} from '../src/modules/Projects/projectNavigation';
 
 describe('Навигация вкладок проекта', () => {
     it('Сохраняет другие параметры при смене вкладки', () => {
@@ -27,5 +27,16 @@ describe('Навигация вкладок проекта', () => {
         const url=new URL(projectRagCatalogUrl('мой проект&other=wrong'),'http://localhost');
         expect(url.pathname).toBe('/store');expect(url.searchParams.get('q')).toBe('OpenCodeRAG (плагин)');
         expect(url.searchParams.get('p')).toBe('мой проект&other=wrong');expect(url.searchParams.has('other')).toBe(false);
+    });
+    it('Ссылка привязки сохраняет целевой ID, закрытие убирает только bind',()=>{
+        const url=new URL(projectBindingUrl('prj-project&source=wrong'),'http://localhost');
+        expect(url.pathname).toBe('/projects');expect(url.searchParams.get('bind')).toBe('prj-project&source=wrong');
+        expect(url.searchParams.has('source')).toBe(false);
+        const search=projectBindingSearch('?source=knowledge&bind=prj-a&bind=prj-b&other=1',null);
+        expect(new URLSearchParams(search).getAll('bind')).toEqual([]);
+        expect([...new URLSearchParams(search)]).toEqual([['source','knowledge'],['other','1']]);
+    });
+    it.each(['','dossier-ko','../project','prj-a/b','prj-a\\b','prj-a?wrong=1','prj-a#wrong','prj-a%2Fb'])('Не использует имя или небезопасный API-сегмент %j для привязки',id=>{
+        expect(projectBindingTarget('?'+new URLSearchParams({bind:id}).toString())).toBeNull();
     });
 });

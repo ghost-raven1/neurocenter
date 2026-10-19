@@ -19,7 +19,8 @@ const fixture = vi.hoisted(() => {
         loading:false,errors:{devices:'',jobs:'',installations:''},choose:vi.fn(),reload:vi.fn()}};
 });
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>fixture.bridge}));
-vi.mock('react-router-dom',()=>({useHistory:()=>({push:vi.fn(),location:{pathname:'/projects'}})}));
+vi.mock('react-router-dom',()=>({useHistory:()=>({push:vi.fn(),location:{pathname:'/projects'}}),
+    Link:({to,children}:{to:string;children:string})=>createElement('a',{href:to},children)}));
 
 function buttonAttributes(html: string, text: string): string {
     const match = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(item => item[2].includes(text));
@@ -32,6 +33,10 @@ const readySummary: IRagSummary = {projectKey:'project',rowCount:3,dimension:4,l
 
 describe('Общие действия MCP 0.4 без поддержки комплектов', () => {
     beforeEach(()=>{fixture.bridge.device.role='Разработчик';fixture.bridge.jobs=[];fixture.bridge.device.report.capabilities=['durable-completions','managed-installations','package-v4'];});
+    it('Переход из несвязанной базы знаний передаёт точный проект в существующий мастер',()=>{
+        const html=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'prj-dossier-ko',canWrite:true}));
+        expect(html).toContain('href="/projects?bind=prj-dossier-ko"');
+    });
     it('Выбор общей папки остаётся доступен',()=>{
         const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
         expect(buttonAttributes(html,'Выбрать другую папку')).not.toContain('disabled');

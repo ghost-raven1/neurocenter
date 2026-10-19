@@ -11,6 +11,7 @@ import { currentKnowledgeJobs, knowledgeSyncBlocker } from './knowledgeSyncState
 import { OpenCodeRagUi } from './ragUi/OpenCodeRagUi';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { createBridgeRequestKey } from './bridgeRequestKey';
+import { projectBindingUrl } from '../../modules/Projects/projectNavigation';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
@@ -107,7 +108,7 @@ export const KnowledgeSync: FC<{
             </Space>
             {restoreError && <Typography.Text type="secondary">{restoreError}</Typography.Text>}
             {bridge.device && bridge.devicesReady && !binding && (
-                <span>Папка проекта ещё не связана с мостом. <Link to="/projects">Связать папку проекта</Link></span>
+                <span>Папка проекта ещё не связана с мостом. <Link to={projectBindingUrl(projectId)}>Связать папку проекта</Link></span>
             )}
             {job && (
                 <Alert
