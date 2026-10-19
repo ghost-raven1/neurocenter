@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {projectRagSetupUrl, projectTabSearch} from '../src/modules/Projects/projectNavigation';
+import {projectRagCatalogUrl,projectRagSetupUrl, projectTabSearch} from '../src/modules/Projects/projectNavigation';
 
 describe('Навигация вкладок проекта', () => {
     it('Сохраняет другие параметры при смене вкладки', () => {
@@ -22,5 +22,10 @@ describe('Навигация вкладок проекта', () => {
         expect(url.searchParams.get('extension')).toBe('rag');
         expect(url.searchParams.get('p')).toBe('мой проект&other=wrong');
         expect(url.searchParams.has('other')).toBe(false);
+    });
+    it('Установка знаний выбирает нативный плагин и сохраняет точный проект',()=>{
+        const url=new URL(projectRagCatalogUrl('мой проект&other=wrong'),'http://localhost');
+        expect(url.pathname).toBe('/store');expect(url.searchParams.get('q')).toBe('OpenCodeRAG (плагин)');
+        expect(url.searchParams.get('p')).toBe('мой проект&other=wrong');expect(url.searchParams.has('other')).toBe(false);
     });
 });

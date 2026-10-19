@@ -1,6 +1,5 @@
-import { Alert, Button, Card, Col, Row, Spin, Statistic, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Space, Spin, Statistic, Typography } from "antd";
 import { FC, useCallback, useEffect, useRef, useState } from "react";
-import { Link } from 'react-router-dom';
 import { formatDate } from "../../../common/utils/format";
 import bffApi from "../../../core/api/bff";
 import {useSectionUpdates} from '../../../core/socket/useSectionUpdates';
@@ -11,7 +10,8 @@ import type {RootState} from '../../../store';
 import {projectRoleLevel} from '../../../features/UserBlock/roles';
 import {errorMessage} from '../../../common/utils/errorMessage';
 import {RagQuotaMeter} from '../features/RagQuota/RagQuotaMeter';
-import {projectRagSetupUrl} from '../projectNavigation';
+import {projectRagCatalogUrl,projectRagSetupUrl} from '../projectNavigation';
+import {ragSummaryState} from './ragSummaryState';
 import {projectReadUnavailable} from '../projectReadError';
 import './RagTab.less';
 const { Paragraph, Text } = Typography;
@@ -39,7 +39,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
     }, [ load ]);
 
 
-    const indexed = (summary?.rowCount ?? 0) > 0;
+    const serverState = summary ? ragSummaryState(summary) : undefined;
 
     return (
         <div className="project-rag">
@@ -53,6 +53,14 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             </Row>
 
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
+            <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
+                <Paragraph>Для поиска в OpenCode установите нативный плагин OpenCodeRAG в связанную папку проекта, запустите сервис эмбеддингов и дождитесь индексации.</Paragraph>
+                {canWrite ? <Space wrap>
+                    <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
+                    <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
+                </Space> : <Text type="secondary">Попросите разработчика или администратора проекта подготовить локальный индекс.</Text>}
+                <Paragraph type="secondary" className="project-rag__help">Если плагин уже установлен, откройте OpenCode в связанной папке. Для нового проекта автоматическая индексация включена; существующий opencode-rag.json сохраняется. Установка и диагностика запуска не подтверждают готовность модели и индекса.</Paragraph>
+            </Card>
             <Spin spinning={loading}>
                 {summary ? (
                     <div className="project-rag__content">
@@ -62,7 +70,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
                                     <Statistic
                                         title="Фрагментов"
                                         value={ summary.rowCount }
-                                        valueStyle={{ fontSize: 24, color: indexed ? '#52c41a' : '#faad14' }}
+                                        valueStyle={{ fontSize: 24, color: serverState?.verified ? '#1677ff' : '#64748b' }}
                                     />
                                 </Card>
                             </Col>
@@ -74,11 +82,11 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
                             <Col xs={ 12 } md={ 6 }>
                                 <Card size="small" className="project-rag__stat">
                                     <Statistic
-                                        title="Статус"
-                                        value={ indexed ? 'Заиндексирован' : 'Ещё не отправлена' }
+                                        title="Серверная копия"
+                                        value={serverState?.title}
                                         valueStyle={{
                                             fontSize: 14,
-                                            color: indexed ? '#52c41a' : '#faad14',
+                                            color: serverState?.verified ? '#1677ff' : '#faad14',
                                         }}
                                     />
                                 </Card>
@@ -96,25 +104,15 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
 
                         {summary.quota&&<RagQuotaMeter value={summary.quota} projectKey={projectKey} canEdit={projectRoleLevel(user,projectKey)>=3} />}
 
-                        {!indexed && <Alert
-                            className="project-rag__first-index" type="info" showIcon
-                            message={canWrite ? 'Подготовьте знания проекта' : 'Знания проекта пока не опубликованы'}
-                            description={canWrite ? <>
-                                Сначала свяжите папку проекта с мостом, затем создайте локальный индекс в OpenCodeRAG
-                                и отправьте его кнопкой «Синхронизировать с сервером».
-                                {' '}<Link to={projectRagSetupUrl(projectKey)}>Как подготовить локальный индекс</Link>
-                            </> : 'Попросите разработчика или администратора проекта подготовить и отправить локальный индекс.'}
-                        />}
-
-                        <Card size="small" title="Синхронизация через мост" className="project-rag__sync">
-                            <KnowledgeSync projectId={projectKey} canWrite={projectRoleLevel(user,projectKey)>=2} connection/>
-                            <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией.</Paragraph>
-                        </Card>
                     </div>
                 ) : (
                     null
                 )}
             </Spin>
+            <Card size="small" title="Синхронизация через мост" className="project-rag__sync">
+                <KnowledgeSync projectId={projectKey} canWrite={canWrite} serverReady={serverState?.verified} connection/>
+                <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией. Перед восстановлением закройте OpenCode.</Paragraph>
+            </Card>
         </div>
     );
 };

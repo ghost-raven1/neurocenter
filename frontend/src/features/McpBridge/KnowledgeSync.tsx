@@ -1,5 +1,5 @@
-import { Alert, Button, Space } from 'antd';
-import { useRef, useState, type FC } from 'react';
+import { Alert, Button, Space, Typography } from 'antd';
+import { useEffect, useRef, useState, type FC } from 'react';
 import { Link } from 'react-router-dom';
 import { bridgeApi } from './api';
 import { useBridge } from './useBridge';
@@ -7,35 +7,41 @@ import { BridgeConnection } from './BridgeConnection';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { isPending } from './installationHelpers';
 import { bridgeOperationBlocker } from './readiness';
+import { currentKnowledgeJobs, knowledgeSyncBlocker } from './knowledgeSyncState';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
     projectId: string;
     canWrite: boolean;
     connection?: boolean;
-}> = ({ projectId, canWrite, connection }) => {
+    serverReady?: boolean;
+}> = ({ projectId, canWrite, connection, serverReady }) => {
     const bridge = useBridge();
-    const bridgeError = bridgeOperationBlocker(bridge.device);
+    const bridgeError = knowledgeSyncBlocker(bridge.device);
+    const restoreError = serverReady === false ? 'Сначала синхронизируйте полный индекс с сервером' : '';
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
     const lock = useRef(false);
-    const unsupported = bridge.device?.report.ragSupported === false;
-    const binding = bridge.device?.report.bindings?.some(
-        (item) => item.projectId === projectId && item.valid !== false,
+    const binding = bridge.device?.report.bindings?.find(
+        (item) => item.projectId === projectId && item.valid !== false && /^[a-f0-9]{64}$/.test(item.bindingId || ''),
     );
-    const matchingJobs = bridge.jobs.filter(
-        (item) =>
-            item.deviceId === bridge.device?.id &&
-            item.projectId === projectId &&
-            ['restore-rag', 'sync-rag'].includes(item.kind),
-    );
+    const matchingJobs = currentKnowledgeJobs(bridge.jobs,bridge.device?.id,projectId,binding?.bindingId);
     const job = matchingJobs.find(isPending) || matchingJobs[0];
     const pending = isPending(job);
+    const scope = JSON.stringify([projectId,bridge.device?.id,binding?.bindingId]);
+    const currentScope = useRef(scope); currentScope.current = scope;
+    const sequence = useRef(0);
+    useEffect(() => {
+        sequence.current++; lock.current = false; setBusy(false); setError('');
+        return () => { sequence.current++; };
+    },[scope]);
     const create = async (kind: 'restore-rag' | 'sync-rag'): Promise<void> => {
-        if (!bridge.device || bridgeError || unsupported || !bridge.devicesReady || !bridge.jobsReady || !binding || !canWrite || pending || lock.current) {
+        if (!bridge.device || bridgeError || (kind === 'restore-rag' && restoreError) || !bridge.devicesReady || !bridge.jobsReady || !binding || !canWrite || pending || lock.current) {
             return;
         }
         lock.current = true;
+        const ticket = ++sequence.current;
+        const current = (): boolean => ticket === sequence.current && currentScope.current === scope;
         setBusy(true);
         setError('');
         try {
@@ -43,26 +49,28 @@ export const KnowledgeSync: FC<{
                 deviceId: bridge.device.id,
                 projectId,
                 kind,
+                expectedBindingId: binding.bindingId,
                 requestKey: crypto.randomUUID(),
             });
-            await bridge.reload();
+            if (current()) { await bridge.reload(); }
         } catch (cause) {
-            setError(
+            if (current()) { setError(
                 errorMessage(cause, 'Не удалось передать синхронизацию мосту.'),
-            );
+            ); }
         } finally {
-            lock.current = false;
-            setBusy(false);
+            if (current()) { lock.current = false; setBusy(false); }
         }
     };
     return (
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
-            {unsupported && <Alert type="warning" showIcon message={bridge.device?.report.ragError || 'Локальная LanceDB недоступна на этом компьютере.'} />}
+            {binding && <Typography.Text type="secondary">Папка проекта: <Typography.Text code>{binding.folderName}</Typography.Text></Typography.Text>}
+            {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && <Alert type="warning" showIcon message={bridgeError}
+                action={!bridge.device.report.capabilities?.includes('project-rag-sync-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
             <Space wrap>
                 <Button
-                    disabled={!!bridgeError || unsupported || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
-                    title={bridgeError || undefined}
+                    disabled={!!restoreError || !!bridgeError || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
+                    title={bridgeError || restoreError || undefined}
                     loading={busy}
                     onClick={() => {
                         void create('restore-rag');
@@ -71,7 +79,7 @@ export const KnowledgeSync: FC<{
                     Скачать в проект через мост
                 </Button>
                 <Button
-                    disabled={!!bridgeError || unsupported || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
+                    disabled={!!bridgeError || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
                     title={bridgeError || undefined}
                     onClick={() => {
                         void create('sync-rag');
@@ -80,6 +88,7 @@ export const KnowledgeSync: FC<{
                     Синхронизировать с сервером
                 </Button>
             </Space>
+            {restoreError && <Typography.Text type="secondary">{restoreError}</Typography.Text>}
             {bridge.device && bridge.devicesReady && !binding && (
                 <span>Папка проекта ещё не связана с мостом. <Link to="/projects">Связать папку проекта</Link></span>
             )}

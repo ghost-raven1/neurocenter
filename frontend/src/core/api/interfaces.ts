@@ -44,14 +44,19 @@ export interface IRagProjectSummary {
     rowCount: number;
     lastSyncedAt: string | null;
     dimension: number;
+    usableVectorCount?: number;
+    incompleteRows?: number;
+    fingerprintVersion?: number;
+    indexProfile?: IRagIndexProfile | null;
+    indexState?: 'unverified' | 'syncing' | 'ready';
+    complete?: boolean;
+    snapshotHash?: string | null;
 }
 
+export interface IRagIndexProfile { provider: string; model: string; dimension: number; }
+
 /** Детальная сводка develop-индекса RAG по projectKey. */
-export interface IRagSummary {
-    projectKey: string;
-    rowCount: number;
-    lastSyncedAt: string | null;
-    dimension: number;
+export interface IRagSummary extends IRagProjectSummary {
     quota?: IRagQuota;
 }
 

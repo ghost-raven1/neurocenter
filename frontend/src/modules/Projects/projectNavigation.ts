@@ -9,3 +9,8 @@ export function projectTabSearch(search: string, tab: string): string {
 export function projectRagSetupUrl(projectKey: string): string {
     return `/start?${new URLSearchParams({ extension: 'rag', p: projectKey }).toString()}`;
 }
+
+/** Установка ведёт к нативному плагину и сохраняет выбранный серверный проект. */
+export function projectRagCatalogUrl(projectKey: string): string {
+    return `/store?${new URLSearchParams({q:'OpenCodeRAG (плагин)',p:projectKey}).toString()}`;
+}
