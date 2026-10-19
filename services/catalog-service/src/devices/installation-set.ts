@@ -24,6 +24,7 @@ const validRef = (value: IInstallationRef) => value && !Array.isArray(value)
     && Object.keys(value).length === 4 && Object.keys(value).every(name => ['kind','id','version','manifest'].includes(name))
     && ['skill','mcp','plugin'].includes(value.kind) && typeof value.id === 'string' && !!value.id && value.id.length <= 500
     && Number.isSafeInteger(value.version) && value.version > 0 && typeof value.manifest === 'string' && /^[a-f0-9]{64}$/.test(value.manifest);
+const packageIdentity = (pkg: IPackage) => ({kind: pkg.plugin.kind, id: pkg.plugin.id, name: pkg.plugin.name, version: pkg.plugin.version});
 
 /** Хэш набора закрепляет корень и точный состав без зависимости от порядка доставки. */
 export function installationSetHash(root: IInstallationRef, packages: IPackage[]): string {
@@ -121,8 +122,21 @@ export function verifyInstallationSet(set: IInstallationSet): boolean {
 export async function resolveInstallationSet(pool: Pool, projectId: string, root: IPackage,
     build: (kind: string, id: string, version: number) => Promise<IPackage>): Promise<IInstallationSet | undefined> {
     const packages = new Map<string, IPackage>(); const visiting = new Set<string>();
-    const visit = async (pkg: IPackage) => {
-        assertInstallablePackage(pkg);
+    const visit = async (pkg: IPackage, parents: IPackage['plugin'][] = []) => {
+        try { assertInstallablePackage(pkg); }
+        catch (error) {
+            const plugin = pkg?.plugin;
+            if (!(error instanceof ConflictException) || !plugin || typeof plugin.name !== 'string' || !plugin.name || plugin.name.length > 500
+                || !validRef({kind: plugin.kind, id: plugin.id, version: plugin.version, manifest: pkg.manifest?.sha256})) { throw error; }
+            // Имя и путь зависимости раскрываются только после проверки её доступности в проекте.
+            await assertDeviceCatalogAsset(pool, projectId, plugin.kind, plugin.id);
+            const current = packageIdentity(pkg), path = [...parents, current], dependency = parents.length > 0;
+            throw new ConflictException({
+                statusCode: 409, error: 'Conflict', code: 'PACKAGE_NOT_INSTALLABLE',
+                message: `${dependency ? 'Зависимость' : 'Инструмент'} «${current.name}», версия ${current.version}: ${error.message}`,
+                reason: error.message, package: current, root: path[0], dependency, path,
+            });
+        }
         const name = key(pkg.plugin);
         if (visiting.has(name)) { throw new ConflictException('Зависимости образуют цикл. Исправьте опубликованные версии.'); }
         const known = packages.get(name);
@@ -139,7 +153,7 @@ export async function resolveInstallationSet(pool: Pool, projectId: string, root
             if (dependency.plugin.kind !== pin.kind || dependency.plugin.id !== pin.id || dependency.plugin.version !== pin.version || dependency.manifest.sha256 !== pin.manifest) {
                 throw new ConflictException('Зависимость изменилась или её версия недоступна: ' + pin.id + '. Выберите точную версию заново.');
             }
-            await visit(dependency);
+            await visit(dependency, [...parents, packageIdentity(pkg)]);
         }
         visiting.delete(name);
     };

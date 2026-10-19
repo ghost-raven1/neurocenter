@@ -152,6 +152,55 @@ describe('Проверка сохранённого установочного �
     });
 });
 
+describe('Причина отказа указывает точный пакет установочного графа', () => {
+    const external = (id: string, command: string, version = 3) => buildPackage(
+        {kind: 'mcp', id: 'ai-plug-' + id, name: 'Недоставляемый ' + id, version}, [], 'now',
+        {transport: 'stdio', command, args: ['fixture@1.0.0', 'SECRET_ARGUMENT'],
+            env: {FIXTURE_TOKEN: 'SECRET_ENVIRONMENT'}},
+    );
+    const identity = (pkg: IPackage) => ({kind: pkg.plugin.kind, id: pkg.plugin.id, name: pkg.plugin.name, version: pkg.plugin.version});
+    const failure = async (run: Promise<unknown>) => {
+        try { await run; throw new Error('Ожидался отказ подготовки'); }
+        catch (error) { return error as {getStatus(): number; getResponse(): Record<string, unknown>}; }
+    };
+
+    it.each(['npx', 'uvx'])('Внешняя команда %s остаётся запрещённой с контекстом корневого MCP', async command => {
+        const pkg = external('root', command);
+        const error = await failure(resolveInstallationSet(poolFor([pkg]), project, pkg, builderFor([])));
+        expect(error.getStatus()).toBe(409);
+        expect(error.getResponse()).toMatchObject({
+            code: 'PACKAGE_NOT_INSTALLABLE', statusCode: 409, dependency: false,
+            package: identity(pkg), root: identity(pkg), path: [identity(pkg)],
+            reason: expect.stringContaining('Внешняя команда MCP не входит в закреплённый пакет'),
+            message: expect.stringContaining('Инструмент «Недоставляемый root», версия 3:'),
+        });
+        expect(JSON.stringify(error.getResponse())).not.toMatch(/SECRET_ARGUMENT|SECRET_ENVIRONMENT/);
+        expect(() => assertInstallablePackage(pkg)).toThrow('Внешняя команда MCP не входит в закреплённый пакет');
+    });
+
+    it('Отказ вложенной зависимости содержит имя, версию и весь путь от корня', async () => {
+        const leaf = external('leaf', 'uvx', 7), middle = remote('middle', 4, [leaf]), root = skill([middle]);
+        const error = await failure(resolveInstallationSet(poolFor([root, middle, leaf]), project, root, builderFor([middle, leaf])));
+        expect(error.getStatus()).toBe(409);
+        expect(error.getResponse()).toMatchObject({
+            code: 'PACKAGE_NOT_INSTALLABLE', dependency: true, package: identity(leaf), root: identity(root),
+            path: [identity(root), identity(middle), identity(leaf)],
+            message: expect.stringContaining('Зависимость «Недоставляемый leaf», версия 7:'),
+        });
+        expect(JSON.stringify(error.getResponse())).not.toMatch(/SECRET_ARGUMENT|SECRET_ENVIRONMENT/);
+    });
+
+    it('Недоступная зависимость возвращает 403 без раскрытия её имени, версии и пути', async () => {
+        const dependency = external('private', 'npx', 13), root = skill([dependency]);
+        const error = await failure(resolveInstallationSet(poolFor([root]), project, root, builderFor([dependency])));
+        expect(error.getStatus()).toBe(403);
+        expect(error.getResponse()).not.toHaveProperty('package');
+        expect(error.getResponse()).not.toHaveProperty('root');
+        expect(error.getResponse()).not.toHaveProperty('path');
+        expect(JSON.stringify(error.getResponse())).not.toMatch(/Недоставляемый private|ai-plug-private|SECRET_ARGUMENT|SECRET_ENVIRONMENT/);
+    });
+});
+
 describe('Контракт файлов серверного одобрения и локального моста',()=>{
     it('Не одобряет 101 файл, даже когда общий SHA пересчитан корректно',()=>{
         expect(()=>assertInstallablePackage(pluginPackage('files',[{path:'index.js',content:'export default {}'},...files(99)]))).not.toThrow();
