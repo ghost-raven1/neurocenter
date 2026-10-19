@@ -1,0 +1,44 @@
+{
+  "name": "neurocenter-asset-sync",
+  "version": "0.9.4",
+  "description": "stdio MCP-сервер: scan/sync opencode скиллов и плагинов, определение проекта rag_db, инспекция и дельта-синхронизация индексa (LanceDB) с центральным сервером (postgres+pgvector).",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "neurocenter-asset-sync": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.29.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "apache-arrow": "18.1.0",
+    "js-yaml": "^4.1.0",
+    "jsonc-parser": "3.3.1",
+    "socket.io-client": "4.8.3",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^5.41.0",
+    "@typescript-eslint/parser": "^5.41.0",
+    "eslint": "^7.32.0",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-airbnb-typescript": "^16.1.0",
+    "eslint-plugin-import": "^2.25.3",
+    "tsx": "^4.19.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

@@ -1,0 +1,31 @@
+.store {
+    &__destination { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 24px; padding: 20px 24px; background: @brand-tint; border: 1px solid @brand-border; border-radius: 12px;
+        > div:first-child { flex: 1; min-width: 220px; } .ant-typography { margin-bottom: 0; } .ant-typography-secondary { margin-top: 4px; font-size: 12px; }
+    }
+    .ant-input-search { max-width: 100%; }
+    .ant-radio-button-wrapper { padding: 0 15px; }
+    &__projects-error { margin-bottom: 16px; }
+}
+.store-card.ant-card { height: 100%; display: flex; flex-direction: column; transition: border-color .18s, box-shadow .18s; &:hover { border-color: @brand-border-hover; box-shadow: 0 8px 24px rgba(20,40,61,.06); }
+    .ant-card-head { padding: 16px 18px 0; border: 0; min-height: 0; }
+    .ant-card-head-title { padding: 0; white-space: normal; }
+    .ant-card-extra { padding: 0; align-self: flex-start; }
+    .ant-card-body { padding: 16px 18px 18px; display: flex; flex-direction: column; flex: 1; min-height: 200px; }
+}
+.store-card__identity { display: flex; gap: 12px; align-items: flex-start; min-width: 0; > div { min-width: 0; } }
+.store-card__icon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; background: @brand-tint; color: @brand-primary; font-size: 20px; }
+.store-card__title.ant-btn { display: block; padding: 0; height: auto; max-width: 100%; text-align: left; color: #172d41; font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
+.store-card__tags { min-height: 28px; margin-top: 12px; }
+.store-card__meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: #617387; margin-top: auto; padding: 16px 0 12px; }
+.store-card__actions { border-top: 1px solid #edf1f5; padding-top: 12px; .ant-row { margin: 0 !important; } .ant-btn { height: 34px; } .ant-col { min-width: 0; } }
+@media (max-width: 575px) { .store__destination { padding: 16px; align-items: stretch; .ant-select { width: 100% !important; } } .store .ant-radio-button-wrapper { padding: 0 10px; } }
+@media (max-width: 575px) {
+    .store__projects-error {
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 12px;
+        .ant-alert-icon { margin-right: 0; }
+        .ant-alert-content { flex: 1; min-width: 0; }
+        .ant-alert-action { flex-basis: 100%; margin: 0; .ant-btn { width: 100%; height: auto; white-space: normal; } }
+    }
+}

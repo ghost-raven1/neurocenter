@@ -1,0 +1,50 @@
+.bridge-connection {
+    min-width: 0;
+    max-width: 100%;
+
+    > .ant-space-item {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    &__controls {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+
+        > .ant-space-item {
+            min-width: 0;
+            max-width: 100%;
+        }
+    }
+
+    &__device-select {
+        width: 320px;
+        min-width: 0;
+        max-width: 100%;
+
+        .ant-select-selector {
+            min-width: 0;
+        }
+    }
+}
+
+@media (max-width: 575px) {
+    .bridge-connection .ant-alert,
+    .bridge-connection__project-readiness.ant-alert {
+        flex-wrap: wrap;
+        align-items: flex-start;
+
+        .ant-alert-content {
+            flex: 1;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .ant-alert-action {
+            flex-basis: 100%;
+            margin: 12px 0 0 24px;
+        }
+    }
+}

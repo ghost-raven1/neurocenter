@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "Пример готового .NET MCP",
+  "description": "Шаблон: замените example.com и SHA-256 настоящими готовыми поставками.",
+  "source": {
+    "type": "runtime",
+    "adapter": "dotnet",
+    "assets": {
+      "win32-x64": {
+        "app": {
+          "url": "https://example.com/releases/dotnet-mcp/v1.0.0/publish-win-x64.zip",
+          "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "format": "zip",
+          "entrypoint": "publish/ExampleMcp.dll"
+        },
+        "runtime": {
+          "url": "https://example.com/runtimes/dotnet/windows-x64/dotnet-runtime.zip",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "format": "zip",
+          "entrypoint": "dotnet/dotnet.exe"
+        }
+      }
+    }
+  }
+}

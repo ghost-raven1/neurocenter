@@ -1,0 +1,46 @@
+# Локальные настройки и секреты; в Git только обезличенные шаблоны.
+.env*
+!.env.example
+!.env.*.example
+**/secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*storageState*.json
+*cookies*.txt
+
+# Рабочие данные, модели и резервные копии.
+/data/
+skills-service/skills-storage/
+*.gguf
+*.safetensors
+
+# Зависимости, сборки и временные кандидаты.
+node_modules/
+dist/
+build/
+coverage/
+**/.*-dist/
+*.tsbuildinfo
+.run/
+.cache/
+
+# Установщики — исходники; тяжёлые релизные файлы собираются отдельно.
+/bridge-dist/*
+!/bridge-dist/*.sh
+!/bridge-dist/*.ps1
+
+# Локальные свидетельства могут содержать сессии, пути и пользовательские данные.
+/output/
+.playwright-mcp/
+.playwright-cli/
+playwright-report/
+test-results/
+*.log
+logs/
+
+# Настройки редактора и машины.
+.idea/
+.DS_Store
+deploy/production/local/

@@ -1,0 +1,1 @@
+export { lazySection } from './LazySection';

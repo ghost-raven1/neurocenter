@@ -1,0 +1,59 @@
+/* Тема highlight.js («github.css», github), скоупленная под .codeblock-light. Сгенерировано из node_modules/highlight.js/styles. */
+.codeblock-light pre code.hljs {display: block;
+  overflow-x: auto;
+  padding: 1em}
+.codeblock-light code.hljs {padding: 3px 5px}
+.codeblock-light {color: #24292e;
+  background: #ffffff}
+.codeblock-light .hljs-doctag,
+.codeblock-light .hljs-keyword,
+.codeblock-light .hljs-meta .hljs-keyword,
+.codeblock-light .hljs-template-tag,
+.codeblock-light .hljs-template-variable,
+.codeblock-light .hljs-type,
+.codeblock-light .hljs-variable.language_ {color: #d73a49}
+.codeblock-light .hljs-title,
+.codeblock-light .hljs-title.class_,
+.codeblock-light .hljs-title.class_.inherited__,
+.codeblock-light .hljs-title.function_ {color: #6f42c1}
+.codeblock-light .hljs-attr,
+.codeblock-light .hljs-attribute,
+.codeblock-light .hljs-literal,
+.codeblock-light .hljs-meta,
+.codeblock-light .hljs-number,
+.codeblock-light .hljs-operator,
+.codeblock-light .hljs-variable,
+.codeblock-light .hljs-selector-attr,
+.codeblock-light .hljs-selector-class,
+.codeblock-light .hljs-selector-id {color: #005cc5}
+.codeblock-light .hljs-regexp,
+.codeblock-light .hljs-string,
+.codeblock-light .hljs-meta .hljs-string {color: #032f62}
+.codeblock-light .hljs-built_in,
+.codeblock-light .hljs-symbol {color: #e36209}
+.codeblock-light .hljs-comment,
+.codeblock-light .hljs-code,
+.codeblock-light .hljs-formula {color: #6a737d}
+.codeblock-light .hljs-name,
+.codeblock-light .hljs-quote,
+.codeblock-light .hljs-selector-tag,
+.codeblock-light .hljs-selector-pseudo {color: #22863a}
+.codeblock-light .hljs-subst {color: #24292e}
+.codeblock-light .hljs-section {color: #005cc5;
+  font-weight: bold}
+.codeblock-light .hljs-bullet {color: #735c0f}
+.codeblock-light .hljs-emphasis {color: #24292e;
+  font-style: italic}
+.codeblock-light .hljs-strong {color: #24292e;
+  font-weight: bold}
+.codeblock-light .hljs-addition {color: #22863a;
+  background-color: #f0fff4}
+.codeblock-light .hljs-deletion {color: #b31d28;
+  background-color: #ffeef0}
+.codeblock-light .hljs-char.escape_,
+.codeblock-light .hljs-link,
+.codeblock-light .hljs-params,
+.codeblock-light .hljs-property,
+.codeblock-light .hljs-punctuation,
+.codeblock-light .hljs-tag {}
+

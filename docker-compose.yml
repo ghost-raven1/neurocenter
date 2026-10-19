@@ -1,0 +1,184 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${NEUROCENTER_PORT:-5173}:8080"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      oauth2-bridge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # SSO/Blitz login (NestJS), /auth — только internal-сеть (auth идёт через gateway).
+  oauth2-bridge:
+    build:
+      context: .
+      dockerfile: services/oauth2-bridge/Dockerfile
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PORT=22222
+      - CATALOG_SERVICE_URL=http://catalog-service:4100
+      - BIND_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:22222/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Front-facing: /api/* → fan-out на микросервисы, /socket.io → real-time, auth-guard
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PORT=4000
+      - BIND_HOST=0.0.0.0
+      - BRIDGE_DIST=/app/bridge-dist
+      - CATALOG_SERVICE_URL=http://catalog-service:4100
+      - SKILLS_SERVICE_URL=http://skills-service:4200
+      - RAG_SERVICE_URL=http://rag-sync-service:4300
+      - AUTH_SERVICE_URL=http://oauth2-bridge:22222
+      - AUTH_GUARD_ENABLED=true
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
+    volumes:
+      - ./bridge-dist:/app/bridge-dist:ro
+    depends_on:
+      - catalog-service
+      - skills-service
+      - rag-sync-service
+      - oauth2-bridge
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Каталог: проекты/версии/пакеты/операции/аудит/maintenance — internal-only (RBAC = доверие x-bridge-* от gateway).
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PORT=4100
+      - BIND_HOST=0.0.0.0
+      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+      - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
+      - RAG_SERVICE_URL=http://rag-sync-service:4300
+      - PROJECTS_ROOT=/data/projects
+      - SKILLS_SERVICE_URL=http://skills-service:4200
+      - RUNTIME_ARTIFACT_DIR=/app/runtime-artifacts
+      - BACKUP_DIR=/app/backups
+    volumes:
+      - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+      - runtime-artifacts:/app/runtime-artifacts
+      - backup-data:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4100/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Скиллы — internal-only (RBAC = доверие x-bridge-* от gateway).
+  skills-service:
+    build:
+      context: .
+      dockerfile: services/skills-service/Dockerfile
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PORT=4200
+      - BIND_HOST=0.0.0.0
+      - SKILLS_STORAGE_PATH=/app/data/skills
+      - CATALOG_SERVICE_URL=http://catalog-service:4100
+    volumes:
+      - ./data/skills:/app/data/skills
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4200/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Postgres + pgvector: develop-версия RAG-индекса (хранит rag_chunks, role-gated sync)
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-rag}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag}
+      - POSTGRES_DB=${POSTGRES_DB:-rag}
+    # Локальный dev: dev.sh поднимает node-сервисы на хосте — им нужен 127.0.0.1:5432.
+    # Публикуем только на loopback. Внутри docker-compose-стека сервисы ходят по имени `postgres`.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgvector-data:/var/lib/postgresql/data
+      - ./services/rag-sync-service/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # RAG-дельта-синхронизация: postgres+pgvector, role-gated (x-bridge-roles) — internal-only.
+  rag-sync-service:
+    build:
+      context: .
+      dockerfile: services/rag-sync-service/Dockerfile
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - PORT=4300
+      - BIND_HOST=0.0.0.0
+      - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
+      - CATALOG_SERVICE_URL=http://catalog-service:4100
+      - RAG_SERVICE_URL=http://rag-sync-service:4300
+      - PROJECTS_ROOT=/data/projects
+      # MCP-мост зашит в образ; пути — внутри контейнера (переопределяют host-значения из .env)
+      - ASSET_SYNC_NODE_BIN=/usr/local/bin/node
+      - ASSET_SYNC_MCP_BIN=/app/mcp/neurocenter-asset-sync/dist/index.js
+    volumes:
+      - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4300/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Дальше — микросервисы под задачи: packages-service, operations-service, mcp-service, ...
+
+volumes:
+  pgvector-data:
+  runtime-artifacts:
+  backup-data:

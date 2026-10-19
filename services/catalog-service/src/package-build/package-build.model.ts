@@ -1,0 +1,54 @@
+import { BadRequestException } from '@nestjs/common';
+import { packageFiles, publicationHash, filePath } from '../publication/publication-validation';
+import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
+import { validateRepositorySource, type RepositoryInput, type RepositorySource } from '../../../shared/repository-source.cjs';
+import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
+
+export type BuildState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export interface BuildSourceNpm { type: 'npm'; specifier: string; entrypoint?: string }
+export interface BuildSourceFiles { type: 'files'; files: Array<{path: string; content: string}>; entrypoint: string; args?: string[] }
+export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin'; name: string; description: string; tags?: string[]; targets?: string[]; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput}
+export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source'> {targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
+export interface BuildResult {catalogId: string; name: string; version: number}
+export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string}
+export const buildView = (row: BuildRow) => ({id: row.id, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
+    message: row.message, result: row.result, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at});
+export const requestHash = (input: BuildInput) => publicationHash({...input, requestKey: undefined});
+export const validId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
+const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+const text = (value: unknown, label: string, max: number) => {
+    if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x1f\x7f]/.test(value)) { throw new BadRequestException(`${label}: нужен текст до ${max} символов.`); }
+    return value.trim();
+};
+
+/** В задании сохраняются только исходники и декларация; команды и секреты сервера не принимаются. */
+export function validateBuildInput(raw: unknown): BuildInput & {targets: string[]; tags: string[]} {
+    if (!object(raw) || Object.keys(raw).some(key => !['requestKey', 'kind', 'name', 'description', 'tags', 'targets', 'source'].includes(key))
+        || !validId(raw.requestKey) || !['mcp', 'plugin'].includes(String(raw.kind)) || !object(raw.source)) { throw new BadRequestException('Нужны ключ запроса UUID, тип инструмента и источник npm, repository или files.'); }
+    const name = text(raw.name, 'Название', 128);
+    if (typeof raw.description !== 'string' || !raw.description.trim() || raw.description.length > 2000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(raw.description)) {throw new BadRequestException('Описание: нужен текст до 2000 символов.');}
+    const description = raw.description.trim();
+    if (/[/\\]/.test(name) || /^ai-plug-/i.test(name)) { throw new BadRequestException('Название содержит зарезервированный префикс или разделитель пути.'); }
+    const targets = raw.targets ?? TARGETS;
+    if (!Array.isArray(targets) || !targets.length || targets.length > 8 || new Set(targets).size !== targets.length || targets.some(target => !TARGETS.includes(target))) { throw new BadRequestException('Выберите поддерживаемые платформы без повторов.'); }
+    if (raw.tags !== undefined && (!Array.isArray(raw.tags) || raw.tags.length > 20)) { throw new BadRequestException('Укажите до 20 тегов.'); }
+    const tags = [...new Set(((raw.tags ?? []) as unknown[]).map(tag => text(tag, 'Тег', 40)))];
+    const source = raw.source;
+    if (source.type === 'repository') {
+        try {return {requestKey: raw.requestKey, kind: raw.kind as BuildInput['kind'], name, description, tags, targets: [...targets], source: validateRepositorySource(source, {pinned: false})};}
+        catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Некорректный источник GitHub.');}
+    }
+    if (source.type === 'npm') {
+        if (Object.keys(source).some(key => !['type', 'specifier', 'entrypoint'].includes(key))) { throw new BadRequestException('У npm поддерживаются только specifier и entrypoint.'); }
+        const specifier = text(source.specifier, 'npm-пакет', 256);
+        const entrypoint = source.entrypoint === undefined ? undefined : filePath(source.entrypoint);
+        if (entrypoint && !isSourceEntrypoint(entrypoint)) { throw new BadRequestException('Нужен исполняемый JS/TS-файл запуска npm-пакета, без деклараций типов.'); }
+        return {requestKey: raw.requestKey, kind: raw.kind as BuildInput['kind'], name, description, tags, targets: [...targets], source: {type: 'npm', specifier, ...(entrypoint ? {entrypoint} : {})}};
+    }
+    if (source.type !== 'files' || Object.keys(source).some(key => !['type', 'files', 'entrypoint', 'args'].includes(key))) { throw new BadRequestException('Источник files принимает files, entrypoint и args.'); }
+    const files = packageFiles(source.files).map(({path, content}) => ({path, content: content!}));
+    const entrypoint = filePath(source.entrypoint);
+    if (!isSourceEntrypoint(entrypoint) || !files.some(file => file.path === entrypoint && file.content.trim())) { throw new BadRequestException('Выберите непустой JS/TS-файл запуска из загруженных файлов, без деклараций типов.'); }
+    if (source.args !== undefined && (!Array.isArray(source.args) || source.args.length > 64 || source.args.some(arg => typeof arg !== 'string' || arg.length > 4096 || /[\x00-\x1f\x7f]/.test(arg)))) { throw new BadRequestException('args: до 64 строк без управляющих символов.'); }
+    return {requestKey: raw.requestKey, kind: raw.kind as BuildInput['kind'], name, description, tags, targets: [...targets], source: {type: 'files', files, entrypoint, ...(source.args ? {args: source.args as string[]} : {})}};
+}

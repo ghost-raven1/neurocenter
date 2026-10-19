@@ -1,0 +1,13 @@
+[Unit]
+Description=Neurocenter full external backup tick
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=neurocenter-operator
+WorkingDirectory=/opt/neurocenter
+EnvironmentFile=/etc/neurocenter/maintenance.env
+ExecStart=/usr/bin/node /opt/neurocenter/scripts/production/maintenance.mjs tick --directory /etc/neurocenter --project-name neurocenter-production --backup-root /srv/neurocenter-backups
+UMask=0077
+TimeoutStartSec=6h

@@ -1,0 +1,23 @@
+# Контекст сборки = neurocenter/ (чтобы COPY мог доставать и services/rag-sync-service, и mcp/).
+# Всё, что не нужно в образе, исключаем здесь (node_modules/dist/данные/secrets).
+
+# Зависимости и артефакты ставим/собираем в самом образе
+**/node_modules
+**/dist
+**/build
+**/.git
+
+# Локальные данные / логи
+**/*.log
+data/
+
+# Локальный env (секреты/пути хоста) не в образ; compose подставляет env_file в рантайме
+.env*
+**/.env*
+.run/
+deploy/production/local/
+**/secrets/
+
+# Фронтенд не нужен этому сервису
+frontend/
+playwright-mcp/

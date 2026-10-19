@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "Пример готового Java MCP",
+  "description": "Шаблон: замените example.com и SHA-256 настоящими готовыми поставками.",
+  "source": {
+    "type": "runtime",
+    "adapter": "java",
+    "assets": {
+      "linux-x64-glibc": {
+        "app": {
+          "url": "https://example.com/releases/java-mcp/v1.0.0/mcp-with-dependencies.jar",
+          "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "format": "file",
+          "entrypoint": "mcp-with-dependencies.jar"
+        },
+        "runtime": {
+          "url": "https://example.com/runtimes/java/linux-x64-glibc/jre-21.tar.gz",
+          "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+          "format": "tar.gz",
+          "entrypoint": "jre-21/bin/java"
+        }
+      }
+    }
+  }
+}

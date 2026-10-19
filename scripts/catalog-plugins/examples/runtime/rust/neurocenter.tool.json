@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Пример готового Rust MCP",
+  "description": "Шаблон: замените example.com и SHA-256 настоящей готовой программой.",
+  "source": {
+    "type": "runtime",
+    "adapter": "rust",
+    "assets": {
+      "darwin-arm64": {
+        "app": {
+          "url": "https://example.com/releases/rust-mcp/v1.0.0/rust-mcp-macos-arm64.tar.gz",
+          "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "format": "tar.gz",
+          "entrypoint": "rust-mcp/bin/server"
+        }
+      }
+    }
+  }
+}

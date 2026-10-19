@@ -1,0 +1,199 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { IOperation } from '../src/core/api/interfaces';
+import type { IUserInfo } from '../src/core/interfaces';
+import type { IBridgeJob } from '../src/features/McpBridge/api';
+import { createOperationActionsController } from '../src/modules/Operations/operationActionsController';
+
+const user: IUserInfo = {
+    id: 'owner', email: 'owner@example.test', principalName: 'owner@example.test', displayName: 'Владелец',
+    activeRole: 'Разработчик', userRoles: ['Разработчик'], routePermissions: ['/operations'],
+    projectRoles: [{ projectId: 'prj-example', projectName: 'example', role: 'Разработчик' }],
+};
+const operation: IOperation = {
+    operationId: 'bridge-12345678-1234-1234-1234-123456789abc',
+    resourceType: 'bridge', resourceId: '12345678-1234-1234-1234-123456789abc',
+    actor: user.email, projectId: 'prj-example', type: 'INSTALL', state: 'FAILED',
+    percent: 50, bytesDone: 0, bytesTotal: 0, startedAt: null, finishedAt: null, error: 'Сбой',
+};
+const job = { id: 'new-job', state: 'queued', message: '' } as IBridgeJob;
+
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+    return { promise, resolve, reject };
+}
+
+function setup() {
+    let currentUser: IUserInfo | null = structuredClone(user);
+    const dialogs: Array<{ confirm: () => Promise<void>; close: () => void; destroy: ReturnType<typeof vi.fn> }> = [];
+    const options = {
+        getUser: () => currentUser,
+        retry: vi.fn<(id: string, key: string) => Promise<IBridgeJob>>().mockResolvedValue(job),
+        cancel: vi.fn<(id: string) => Promise<void>>().mockResolvedValue(undefined),
+        reload: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        confirmCancel: vi.fn((confirm: () => Promise<void>, close: () => void) => {
+            const dialog = { confirm, close, destroy: vi.fn() };
+            dialogs.push(dialog);
+            return dialog;
+        }),
+        success: vi.fn(), error: vi.fn(), onBusyChange: vi.fn<(ids: ReadonlySet<string>) => void>(),
+        requestKey: vi.fn<() => string>().mockReturnValueOnce('key-first').mockReturnValue('key-next'),
+    };
+    const controller = createOperationActionsController(options);
+    controller.activate();
+    return {
+        controller, options, dialogs,
+        setUser: (next: IUserInfo | null) => { currentUser = next; },
+        busy: () => [...(options.onBusyChange.mock.lastCall?.[0] ?? [])],
+    };
+}
+
+describe('Действия очереди принадлежат текущему пользователю', () => {
+    it('Сохраняет ключ повтора после сетевого сбоя и удаляет после подтверждённого результата', async () => {
+        const { controller, options } = setup();
+        options.retry.mockRejectedValueOnce(new Error('Нет связи'));
+        await controller.retry(operation);
+        await controller.retry(operation);
+        await controller.retry(operation);
+        expect(options.retry.mock.calls.map(call => call[1])).toEqual(['key-first', 'key-first', 'key-next']);
+        expect(options.error).toHaveBeenCalledWith('Нет связи');
+        expect(options.reload).toHaveBeenCalledTimes(2);
+    });
+
+    it('Не повторяет один запрос дважды и сохраняет занятость каждой параллельной операции', async () => {
+        const first = deferred<IBridgeJob>();
+        const second = deferred<IBridgeJob>();
+        const { controller, options, busy } = setup();
+        const other = { ...operation, operationId: 'other-operation', resourceId: 'abcdef12-1234-1234-1234-123456789abc' };
+        options.retry.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+        const firstRequest = controller.retry(operation);
+        const secondRequest = controller.retry(other);
+        await controller.retry(operation);
+        expect(options.retry).toHaveBeenCalledTimes(2);
+        expect(busy()).toEqual([operation.operationId, other.operationId]);
+        first.resolve(job);
+        await firstRequest;
+        expect(busy()).toEqual([other.operationId]);
+        second.resolve(job);
+        await secondRequest;
+        expect(busy()).toEqual([]);
+    });
+
+    it.each(['смена аккаунта', 'отзыв роли', 'отзыв проекта', 'выход'])(
+        'Запоздалый повтор не обновляет интерфейс после события: %s', async reason => {
+            const pending = deferred<IBridgeJob>();
+            const { controller, options, setUser } = setup();
+            options.retry.mockReturnValueOnce(pending.promise);
+            const request = controller.retry(operation);
+            const changes: Record<string, IUserInfo | null> = {
+                'смена аккаунта': { ...user, id: 'other', email: 'other@example.test' },
+                'отзыв роли': { ...user, userRoles: [] },
+                'отзыв проекта': { ...user, projectRoles: [] },
+                'выход': null,
+            };
+            setUser(changes[reason]);
+            const busyChanges = options.onBusyChange.mock.calls.length;
+            pending.resolve(job);
+            await request;
+            expect(options.success).not.toHaveBeenCalled();
+            expect(options.error).not.toHaveBeenCalled();
+            expect(options.reload).not.toHaveBeenCalled();
+            expect(options.onBusyChange).toHaveBeenCalledTimes(busyChanges);
+        },
+    );
+
+    it('Не показывает ошибку старого запроса после размонтирования', async () => {
+        const pending = deferred<IBridgeJob>();
+        const { controller, options } = setup();
+        options.retry.mockReturnValueOnce(pending.promise);
+        const request = controller.retry(operation);
+        controller.dispose();
+        pending.reject(new Error('Нет связи'));
+        await request;
+        expect(options.error).not.toHaveBeenCalled();
+        expect(options.reload).not.toHaveBeenCalled();
+    });
+
+    it('Старое подтверждение не отправляет отмену после смены активной роли', async () => {
+        const { controller, options, dialogs, setUser } = setup();
+        controller.cancel({ ...operation, state: 'QUEUED' });
+        setUser({ ...user, activeRole: 'Наблюдатель', userRoles: ['Наблюдатель'] });
+        await dialogs[0].confirm();
+        expect(options.cancel).not.toHaveBeenCalled();
+    });
+
+    it('Уничтожает подтверждение при размонтировании и блокирует его запоздалый callback', async () => {
+        const { controller, options, dialogs } = setup();
+        controller.cancel({ ...operation, state: 'QUEUED' });
+        controller.dispose();
+        expect(dialogs[0].destroy).toHaveBeenCalledOnce();
+        await dialogs[0].confirm();
+        expect(options.cancel).not.toHaveBeenCalled();
+    });
+
+    it('Не создаёт два подтверждения и два запроса отмены для одного задания', async () => {
+        const pending = deferred<void>();
+        const { controller, options, dialogs } = setup();
+        const queued = { ...operation, state: 'QUEUED' } as IOperation;
+        options.cancel.mockReturnValueOnce(pending.promise);
+        controller.cancel(queued);
+        controller.cancel(queued);
+        expect(dialogs).toHaveLength(1);
+        const request = dialogs[0].confirm();
+        await dialogs[0].confirm();
+        controller.cancel(queued);
+        expect(options.cancel).toHaveBeenCalledTimes(1);
+        expect(dialogs).toHaveLength(1);
+        pending.resolve();
+        await request;
+        expect(options.success).toHaveBeenCalledWith('Задание в очереди отменено');
+    });
+
+    it('Отказ сервера для уже начатой работы не выдаётся за успешную отмену', async () => {
+        const { controller, options, dialogs } = setup();
+        options.cancel.mockRejectedValueOnce(new Error('MCP уже принял задание или оно завершено.'));
+        controller.cancel({ ...operation, state: 'QUEUED' });
+        await dialogs[0].confirm();
+        expect(options.success).not.toHaveBeenCalled();
+        expect(options.error).toHaveBeenCalledWith('MCP уже принял задание или оно завершено.');
+    });
+
+    it('Ошибка перечитывания после успешного POST не сообщает об ошибке повтора и не сохраняет его ключ', async () => {
+        const { controller, options } = setup();
+        options.reload.mockRejectedValueOnce(new Error('Не удалось прочитать список'));
+        await controller.retry(operation);
+        await controller.retry(operation);
+        expect(options.retry.mock.calls.map(call => call[1])).toEqual(['key-first', 'key-next']);
+        expect(options.success).toHaveBeenCalledTimes(2);
+        expect(options.error).toHaveBeenCalledWith('Не удалось прочитать список');
+    });
+
+    it('Не выполняет действия чужого пользователя и записи без действующей роли', async () => {
+        const { controller, options, setUser } = setup();
+        await controller.retry({ ...operation, actor: 'other@example.test' });
+        controller.cancel({ ...operation, actor: 'other@example.test', state: 'QUEUED' });
+        setUser({ ...user, userRoles: [] });
+        await controller.retry(operation);
+        controller.cancel({ ...operation, state: 'QUEUED' });
+        expect(options.retry).not.toHaveBeenCalled();
+        expect(options.confirmCancel).not.toHaveBeenCalled();
+    });
+
+    it('Старое подтверждение не затрагивает новое после повторного монтирования', async () => {
+        const { controller, options, dialogs } = setup();
+        const queued = { ...operation, state: 'QUEUED' } as IOperation;
+        controller.cancel(queued);
+        controller.dispose();
+        controller.activate();
+        controller.cancel(queued);
+        dialogs[0].close();
+        controller.cancel(queued);
+        expect(dialogs).toHaveLength(2);
+        await dialogs[0].confirm();
+        expect(options.cancel).not.toHaveBeenCalled();
+        await dialogs[1].confirm();
+        expect(options.cancel).toHaveBeenCalledOnce();
+    });
+});

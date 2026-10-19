@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "Пример готового Python MCP",
+  "description": "Шаблон: замените example.com и SHA-256 настоящими готовыми поставками.",
+  "source": {
+    "type": "runtime",
+    "adapter": "python",
+    "assets": {
+      "darwin-arm64": {
+        "app": {
+          "url": "https://example.com/releases/python-mcp/v1.0.0/app.tar.gz",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "format": "tar.gz",
+          "entrypoint": "python-mcp/server.py"
+        },
+        "runtime": {
+          "url": "https://example.com/runtimes/python/macos-arm64/python-runtime.tar.gz",
+          "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "format": "tar.gz",
+          "entrypoint": "python-runtime/bin/python3"
+        }
+      }
+    }
+  }
+}

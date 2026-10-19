@@ -1,0 +1,27 @@
+:root { --brand-primary: @brand-primary; }
+html, body, #root { min-height: 100%; margin: 0; padding: 0; }
+body { color: #24344a; background: #f4f7fa; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+:focus-visible { outline: 3px solid @brand-focus; outline-offset: 3px; }
+.app-root { min-height: 100vh; }
+.ant-card { border-color: #e3eaf0; border-radius: 12px; box-shadow: 0 2px 8px rgba(20,40,61,.025); }
+.ant-card-head { border-bottom-color: #edf1f5; }
+.ant-btn { font-weight: 500; box-shadow: none; }
+.ant-btn-primary { box-shadow: 0 3px 8px fade(@brand-primary, 12%); }
+.ant-table-thead > tr > th { background: #f6f8fa; color: #546577; font-size: 12px; font-weight: 600; }
+.ant-table { font-size: 13px; }
+.ant-table-wrapper { max-width: 100%; overflow-x: auto; }
+.ant-table-cell { overflow-wrap: anywhere; }
+.ant-tag { border-radius: 5px; }
+.ant-typography-secondary { color: #617387 !important; }
+.ant-modal-title, .ant-drawer-title { font-weight: 600; }
+.ant-modal-content { border-radius: 14px; overflow: hidden; }
+.ant-empty { padding: 32px 0; }
+.page-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px;
+    h1.ant-typography { font-size: 28px; line-height: 1.25; letter-spacing: -.7px; margin: 0 0 8px; }
+    .ant-typography-secondary { margin-bottom: 0; max-width: 680px; line-height: 1.65; }
+}
+.app__login { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at 15% 10%, @brand-tint 0, transparent 50%), #f4f7fa; }
+.app__login-card.ant-card { width: 100%; max-width: 440px; padding: 18px; box-shadow: 0 20px 70px rgba(20,40,61,.08); }
+.app__login-mark { color: @brand-primary; font-size: 38px; margin-bottom: 20px; }
+@media (max-width: 575px) { .ant-card-body { padding: 18px; } .page-heading { margin-bottom: 20px; h1.ant-typography { font-size: 24px; } } .ant-table { min-width: 620px; } .ant-descriptions-view { overflow-x: auto; } .ant-modal { max-width: calc(100vw - 24px); } }

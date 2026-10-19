@@ -1,0 +1,44 @@
+import {beforeEach,describe,expect,it,vi} from 'vitest';
+import {RagDb} from '../src/rag/rag-db';
+
+const fixture=vi.hoisted(()=>({query:vi.fn(),end:vi.fn(),setupQuota:vi.fn()}));
+vi.mock('../src/database/pool',()=>({createPool:()=>({query:fixture.query,end:fixture.end})}));
+vi.mock('../src/rag/quota/rag-quota',async original=>({
+    ...await original<typeof import('../src/rag/quota/rag-quota')>(),setupRagQuota:fixture.setupQuota,
+}));
+
+describe('Восстановление RAG после временного отказа PostgreSQL',()=>{
+    beforeEach(()=>{
+        fixture.query.mockReset().mockResolvedValue({rows:[]});
+        fixture.setupQuota.mockReset().mockResolvedValue(undefined);
+    });
+    const database=()=>new RagDb({url:'postgresql://fixture/own',dim:2});
+
+    it('Ошибка подключения не закрепляется навсегда: следующий запрос повторяет инициализацию',async()=>{
+        const db=database();fixture.query.mockRejectedValueOnce(Object.assign(new Error('Временный отказ'),{code:'ECONNRESET'}));
+        await expect(db.setup()).rejects.toThrow('Временный отказ');
+        await expect(db.setup()).resolves.toBeUndefined();expect(fixture.query).toHaveBeenCalledTimes(2);
+    });
+    it('Отказ настройки квоты позволяет повторить частично созданную схему',async()=>{
+        const db=database();fixture.setupQuota.mockRejectedValueOnce(new Error('Квота временно недоступна'));
+        await expect(db.setup()).rejects.toThrow('Квота временно недоступна');
+        await expect(db.setup()).resolves.toBeUndefined();expect(fixture.setupQuota).toHaveBeenCalledTimes(2);
+    });
+    it('Параллельные запросы делят одну попытку, после отказа делят один успешный повтор',async()=>{
+        const db=database();fixture.query.mockRejectedValueOnce(new Error('Первая попытка'));
+        const first=db.setup(),same=db.setup();expect(first).toBe(same);
+        await expect(first).rejects.toThrow('Первая попытка');
+        const retry=db.setup();expect(db.setup()).toBe(retry);await retry;
+        expect(db.setup()).toBe(retry);expect(fixture.query).toHaveBeenCalledTimes(2);
+    });
+    it.each(['42501','57014','ECONNRESET'])('Ошибка измерения %s не выдаётся за пустую базу',async code=>{
+        const db=database();fixture.query.mockRejectedValueOnce(Object.assign(new Error('Недоступно измерение'),{code}));
+        await expect(db.retainedEstimateBytes('own')).rejects.toMatchObject({status:503});
+    });
+    it('Отсутствующая таблица сохраняет совместимый нулевой размер, здоровое измерение восстанавливается',async()=>{
+        const db=database();fixture.query.mockRejectedValueOnce(Object.assign(new Error('Таблица не создана'),{code:'42P01'}));
+        await expect(db.retainedEstimateBytes('own')).resolves.toBe(0);
+        fixture.query.mockResolvedValueOnce({rows:[{tsize:'8192',pcount:'2',tcount:'4'}]});
+        await expect(db.retainedEstimateBytes('own')).resolves.toBe(4096);
+    });
+});

@@ -1,0 +1,170 @@
+import CreateProjectModal from './components/CreateProjectModal';
+import { PageHeading } from '../../common/components/PageHeading';
+import { Alert, Button, Card, Input, message, Popconfirm, Space, Table } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { FC, useCallback, useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
+
+import { useAppDispatch } from '../../core/hooks';
+import { useHistory } from 'react-router-dom';
+
+import bffApi from '../../core/api/bff';
+import { LocalProjectsFolder } from './local/LocalProjectsFolder';
+import {useSectionUpdates} from '../../core/socket/useSectionUpdates';
+import { projectRoleLevel } from '../../features/UserBlock/roles';
+
+import AsyncButton from '../../common/components/AsyncButton';
+import Permission from '../../common/components/Permission';
+import StatusTag from '../../common/components/StatusTag';
+import type { IProjectSummary, TProjectState } from '../../core/api/interfaces';
+import { baseRoutes } from '../../core/baseRoutes';
+import { projectCreateKey, projectsPolitics } from '../../features/UserBlock/permissions';
+import { RootState } from '../../store';
+
+import { fetchProjects } from './redux/actions';
+import { setPage, setQuery } from './redux/reducers';
+import { ProjectSize } from './features/ProjectSize/ProjectSize';
+import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
+
+
+
+/**
+ * Экран «Каталог проектов»: список, поиск, создание проекта.
+ *
+ * @component
+ * @returns JSX-элемент списка проектов
+ */
+const Projects: FC = () => {
+    const dispatch = useAppDispatch();
+    const history = useHistory();
+    const { captureOwner } = useAuthRequestOwner();
+
+    const { list, page, size, total, query, loading, listError, authScope } = useSelector((state: RootState) => state.projects);
+
+    const [ isCreateOpen, setIsCreateOpen ] = useState<boolean>(false);
+    const user = useSelector((state:RootState)=>state.userBlock.user);
+    const [localBindings,setLocalBindings]=useState<Record<string,{folderName:string}>>({});
+    const [bindingProject,setBindingProject]=useState<IProjectSummary|null>(null);
+    const [ removedIds, setRemovedIds ] = useState<string[]>([]);
+
+    useEffect(() => { setIsCreateOpen(false); }, [authScope]);
+
+    useEffect(() => {
+        dispatch(fetchProjects({ page, size, query }));
+    }, [ dispatch, page, size, query, authScope ]);
+    useSectionUpdates(['projects'],()=>{void dispatch(fetchProjects({page,size,query}));});
+
+    const retrySizes = (): void => {
+        if (captureOwner()()) { void dispatch(fetchProjects({ page, size, query })); }
+    };
+
+    /**
+     * Удалить проект из каталога.
+     *
+     * @param {IProjectSummary} record - строка проекта.
+     * @returns {Promise<void>}
+     */
+    const handleDelete = useCallback(async (record: IProjectSummary): Promise<void> => {
+        setRemovedIds((prev) => (prev.includes(record.id) ? prev : [ ...prev, record.id ]));
+
+        try {
+            await bffApi.deleteProject(record.id);
+            message.success(`Проект «${record.name}» удалён`);
+            dispatch(fetchProjects({ page, size, query }));
+        } catch {
+            setRemovedIds((prev) => prev.filter((id) => id !== record.id));
+            message.error('Не удалось удалить проект');
+        }
+    }, [ dispatch, page, size, query ]);
+
+    const openProject = useCallback(
+        (record: IProjectSummary): void => {
+            history.push(baseRoutes.projectDetail.replace(':projectId', record.id));
+        },
+        [ history ],
+    );
+
+    const columns: ColumnsType<IProjectSummary> = [
+        {
+            title: 'Имя',
+            dataIndex: 'name',
+            key: 'name',
+            render: (name: string, record: IProjectSummary) => (
+                <a href={baseRoutes.projectDetail.replace(':projectId',record.id)} onClick={event=>{event.stopPropagation();if(!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey&&event.button===0){event.preventDefault();openProject(record);}}}>{name}</a>
+            ),
+        },
+        { title: 'Папка на выбранном компьютере', key: 'localFolder', render: (_:unknown,record:IProjectSummary)=><Space direction="vertical" size={4}><span>{localBindings[record.id]?.folderName ?? 'Пока не связана'}</span>{projectRoleLevel(user,record.id)>=2&&<Button size="small" onClick={event=>{event.stopPropagation();setBindingProject(record);}}>{localBindings[record.id]?'Изменить привязку':'Связать папку'}</Button>}</Space> },
+        { title: 'Состояние', dataIndex: 'state', key: 'state', render: (value: TProjectState) => <StatusTag status={value} /> },
+        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', render: (value: unknown, record) => <ProjectSize kind="logical" bytes={value} error={record.logicalSizeError} loading={loading} onRetry={retrySizes} /> },
+        { title: 'Копия знаний', dataIndex: 'retainedBytes', key: 'retained', render: (value: unknown, record) => <ProjectSize kind="retained" bytes={value} error={record.retainedSizeError} loading={loading} onRetry={retrySizes} /> },
+        { title: 'В работе', dataIndex: 'activeOperations', key: 'ops' },
+        {
+            title: 'Действия',
+            key: 'actions',
+            width: 100,
+            render: (_: unknown, record: IProjectSummary) => (
+                projectRoleLevel(user,record.id)>=3 ? <Popconfirm
+                    title={`Удалить проект «${record.name}» из каталога?`}
+                    okText="Удалить"
+                    cancelText="Отмена"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => { void handleDelete(record); }}
+                >
+                    <Button size="small" danger onClick={(e) => e.stopPropagation()}>
+                        Удалить
+                    </Button>
+                </Popconfirm> : null
+            ),
+        },
+    ];
+
+    return (
+        <div><PageHeading title="Проекты" description="Подключайте проекты команды, добавляйте инструменты и управляйте базами знаний." />
+        <LocalProjectsFolder project={bindingProject} canManage={!!bindingProject&&projectRoleLevel(user,bindingProject.id)>=2} onClose={()=>setBindingProject(null)} onBindings={setLocalBindings}/>
+        <Card
+            
+            extra={
+                <Space>
+                    <Permission permissionKey={projectCreateKey} politic={projectsPolitics}>
+                        <AsyncButton type="primary" onClick={() => setIsCreateOpen(true)}>
+                            Создать проект
+                        </AsyncButton>
+                    </Permission>
+                </Space>
+            }
+        >
+            {listError && <Alert type="error" showIcon style={{ marginBottom: 16 }}
+                message={list.length ? 'Не удалось обновить проекты — показаны предыдущие данные' : 'Не удалось загрузить проекты'}
+                description={listError.message}
+                action={<Button size="small" loading={loading} onClick={() => { void dispatch(fetchProjects({ page, size, query })); }}>Повторить</Button>} />}
+            <div style={{ marginBottom: 16, width: '100%', maxWidth: 320 }}>
+                <Input.Search
+                    allowClear
+                    aria-label="Поиск проектов"
+                    placeholder="Найти проект…"
+                    defaultValue={query}
+                    style={{ width: '100%' }}
+                    onSearch={value => dispatch(setQuery(value))}
+                />
+            </div>
+            <Table
+                rowKey="id"
+                loading={loading}
+                dataSource={list.filter((p) => !removedIds.includes(p.id))}
+                columns={columns}
+                scroll={{ x: 720 }}
+                locale={{ emptyText: listError ? 'Список проектов недоступен. Повторите загрузку.' : query ? 'Проектов с таким названием нет. Попробуйте другой запрос.' : 'Создайте серверный проект или попросите администратора добавить вас. Затем свяжите его с локальной папкой.' }}
+                onRow={record => ({ onClick: () => openProject(record), style: { cursor: 'pointer' } })}
+                pagination={{
+                    current: page,
+                    pageSize: size,
+                    total,
+                    onChange: value => dispatch(setPage(value)),
+                }}
+            />
+            <CreateProjectModal key={authScope} open={isCreateOpen} onClose={() => setIsCreateOpen(false)} onCreated={id => { setIsCreateOpen(false); history.push(`/projects/${id}`); }} />
+        </Card></div>
+    );
+};
+
+export default Projects;

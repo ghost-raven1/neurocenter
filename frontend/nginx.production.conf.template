@@ -1,0 +1,61 @@
+# Query, cookies и Authorization не попадают в access log.
+log_format neurocenter escape=json '{"time":"$time_iso8601","requestId":"$request_id","method":"$request_method","path":"$uri","status":$status,"duration":$request_time}';
+limit_req_zone $binary_remote_addr zone=neurocenter_login:10m rate=10r/m;
+server {
+    listen 8080;
+    server_name ${NEUROCENTER_HOST};
+    return 308 https://${NEUROCENTER_HOST}$request_uri;
+}
+server {
+    listen 8443 ssl;
+    server_name ${NEUROCENTER_HOST};
+    ssl_certificate /run/secrets/tls_cert;
+    ssl_certificate_key /run/secrets/tls_key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    root /usr/share/nginx/html;
+    index index.html;
+    client_max_body_size 50m;
+    access_log /dev/stdout neurocenter;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss://${NEUROCENTER_HOST}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+    # Метрики доступны только сборщику внутри backend-сети.
+    location = /metrics { return 404; }
+    location = /health { return 200 '{"ok":true}'; }
+    location = /ready {
+        proxy_pass http://api-gateway:4000/ready;
+        proxy_read_timeout 5s;
+    }
+    location = /auth/login {
+        limit_req zone=neurocenter_login burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://oauth2-bridge:22222;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    location /auth/ {
+        proxy_pass http://oauth2-bridge:22222;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    location /api/ {
+        proxy_pass http://api-gateway:4000;
+        proxy_read_timeout 600s;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    location /socket.io/ {
+        proxy_pass http://api-gateway:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 75s;
+    }
+    location / { try_files $uri $uri/ /index.html; }
+}

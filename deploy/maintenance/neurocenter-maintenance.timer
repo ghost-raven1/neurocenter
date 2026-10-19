@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Neurocenter backup schedule every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=neurocenter-maintenance.service
+
+[Install]
+WantedBy=timers.target

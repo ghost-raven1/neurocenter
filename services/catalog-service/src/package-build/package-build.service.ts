@@ -1,0 +1,321 @@
+import { ConflictException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
+import { createRequire } from 'node:module';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import type { ChildProcess } from 'node:child_process';
+import type { PoolClient } from 'pg';
+import { AccessDb } from '../access/access-db';
+import type { IAccessActor } from '../access/access.model';
+import { createPool } from '../database/pool';
+import { notifyDeviceOperations } from '../devices/device-operations';
+import { PluginRepository } from '../publication/plugin-repository';
+import type { IAiPluginCreate } from '../catalog/dto';
+import { CatalogService } from '../catalog/catalog.service';
+import { RuntimeArtifacts, runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
+import { reserveCapacity } from '../../../shared/capacity.cjs';
+import { resolveRepositorySource, validateRepositorySource, type RepositoryInput } from '../../../shared/repository-source.cjs';
+import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
+import { builderScript, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
+import { resolveNpmSource } from './npm-source';
+import { readSourceArchive } from './source-archive';
+import { PackageBuildRepository } from './package-build.repository';
+import { buildView, requestHash, validId, validateBuildInput, type BuildConfiguration, type BuildRow } from './package-build.model';
+
+interface PreparedTool {publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>}
+
+/** Один владелец исполняет очередь последовательно; после рестарта продолжаются ещё не начатые задания. */
+@Injectable()
+export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
+    private readonly pool = createPool({connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 3}, 'package-build');
+    private readonly repository = new PackageBuildRepository(this.pool);
+    private readonly logger = new Logger('PackageBuildService');
+    private lease?: PoolClient;
+    private releaseLease?: (destroy?: boolean) => void;
+    private recovering?: Promise<void>;
+    private retryTimer?: ReturnType<typeof setTimeout>;
+    private retryDelay = 1000;
+    private leaseUse: Promise<void> = Promise.resolve();
+    private worker?: Promise<void>;
+    private queueRequested = false;
+    private child?: ChildProcess;
+    private stopping = false;
+
+    constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService) {}
+
+    async onModuleInit(): Promise<void> {
+        await this.catalog.ensureSchema();
+        await this.repository.setup();
+        await this.recoverOwnership();
+    }
+
+    /** Standby не прерывает живого владельца; повтор ограничен backoff до 15 секунд. */
+    private scheduleOwnershipRetry(): void {
+        if (this.stopping || this.lease || this.recovering || this.retryTimer) {return;}
+        const delay = this.retryDelay;
+        this.retryDelay = Math.min(delay * 2, 15000);
+        this.retryTimer = setTimeout(() => {this.retryTimer = undefined; void this.recoverOwnership();}, delay);
+        this.retryTimer.unref();
+    }
+
+    private recoverOwnership(): Promise<void> {
+        if (this.stopping || this.lease) {return Promise.resolve();}
+        if (this.recovering) {return this.recovering;}
+        const pending = this.acquireOwnership().catch(() => {
+            this.logger.warn('Владелец сборщика временно недоступен; повторим подключение PostgreSQL.');
+        }).finally(() => {
+            if (this.recovering === pending) {this.recovering = undefined;}
+            this.scheduleOwnershipRetry();
+        });
+        this.recovering = pending;
+        return pending;
+    }
+
+    private async acquireOwnership(): Promise<void> {
+        await this.leaseUse;
+        await this.worker?.catch(() => undefined);
+        if (this.stopping || this.lease) {return;}
+        const lease = await this.pool.connect();
+        let released = false, owned = false;
+        const release = (destroy = false): void => {
+            if (released) {return;}
+            released = true; lease.removeListener?.('error', lost); lease.release(destroy);
+        };
+        const lost = (): void => {
+            const current = this.lease === lease;
+            if (current) {this.lease = undefined; this.releaseLease = undefined;}
+            release(true);
+            if (current && this.child) {stopBuildProcess(this.child);}
+            this.retryDelay = 1000; this.scheduleOwnershipRetry();
+        };
+        lease.on('error', lost);
+        try {
+            if (this.stopping) {return;}
+            owned = (await lease.query<{locked: boolean}>('SELECT pg_try_advisory_lock(72465395) AS locked')).rows[0]?.locked === true;
+            if (!owned || this.stopping || released) {return;}
+            await this.repository.failInterrupted(lease);
+            await this.cleanupStages();
+            const root = await this.stagingRoot();
+            if (this.stopping || released) {return;}
+            this.lease = lease; this.releaseLease = release; this.retryDelay = 1000;
+            this.startWorker(root);
+        } finally {
+            if (this.lease !== lease) {
+                if (owned && !released) {await lease.query('SELECT pg_advisory_unlock(72465395)').catch(() => undefined);}
+                release();
+            }
+        }
+    }
+
+    async onModuleDestroy(): Promise<void> {
+        this.stopping = true;
+        if (this.retryTimer) {clearTimeout(this.retryTimer); this.retryTimer = undefined;}
+        if (this.child) { stopBuildProcess(this.child); }
+        await this.recovering?.catch(() => undefined);
+        await this.leaseUse;
+        await this.worker?.catch(() => undefined);
+        const lease = this.lease, release = this.releaseLease;
+        this.lease = undefined; this.releaseLease = undefined;
+        if (lease) {await lease.query('SELECT pg_advisory_unlock(72465395)').catch(() => undefined); release?.();}
+        await this.pool.end();
+    }
+
+    private currentLease(expected = this.lease): PoolClient {
+        if (!expected || this.lease !== expected || this.stopping) {throw new ServiceUnavailableException('Сборщик восстанавливает подключение. Повторите запрос позже.');}
+        return expected;
+    }
+
+    /** На lease-сессии не пересекаются BEGIN приёма и публикации; gate включает передачу worker. */
+    private withLease<T>(expected: PoolClient, work: () => Promise<T>): Promise<T> {
+        const pending = this.leaseUse.then(async () => {
+            this.currentLease(expected);
+            try {return await work();}
+            catch (error) {this.currentLease(expected); throw error;}
+        });
+        this.leaseUse = pending.then(() => undefined, () => undefined);
+        return pending;
+    }
+
+    async requireMain(actor: IAccessActor): Promise<void> {
+        const claims = await this.access.claims(actor?.email);
+        if (actor?.activeRole !== 'Главный админ' || !claims.userRoles.includes('Главный админ')) { throw new ForbiddenException('Собирать и публиковать инструменты может главный администратор.'); }
+    }
+
+    async npm(actor: IAccessActor, specifier: unknown, entrypoint?: string) {
+        await this.requireMain(actor);
+        return resolveNpmSource(specifier, entrypoint);
+    }
+    async archiveSource(actor: IAccessActor, input: unknown) {
+        await this.requireMain(actor);
+        return readSourceArchive(input);
+    }
+    async repositorySource(actor: IAccessActor, input: Omit<RepositoryInput, 'type'>) {
+        await this.requireMain(actor);
+        try {return await resolveRepositorySource(input);}
+        catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось проверить репозиторий GitHub.');}
+    }
+
+    async get(actor: IAccessActor, id: string) {
+        await this.requireMain(actor);
+        if (!validId(id)) { throw new BadRequestException('Некорректный ID сборки.'); }
+        return buildView(await this.repository.get(id));
+    }
+    async request(actor: IAccessActor, key: string) {
+        await this.requireMain(actor);
+        if (!validId(key)) {throw new BadRequestException('Некорректный ключ запроса сборки.');}
+        return buildView(await this.repository.findByRequest(actor.email, key));
+    }
+
+    async create(actor: IAccessActor, raw: unknown) {
+        await this.requireMain(actor);
+        const input = validateBuildInput(raw), fingerprint = requestHash(input);
+        const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
+        if (previous) { return buildView(previous); }
+        if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
+        let source: BuildConfiguration['source'];
+        if (input.source.type === 'npm') {source = {type: 'npm', ...await resolveNpmSource(input.source.specifier, input.source.entrypoint)};}
+        else if (input.source.type === 'repository') {
+            try {
+                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint});
+                source = validateRepositorySource({type: 'repository', url: resolved.url, commit: resolved.commit, subdirectory: resolved.subdirectory, entrypoint: resolved.entrypoint,
+                    ...(resolved.runtimeSource ? {runtimeSource: resolved.runtimeSource, manifestSha256: resolved.manifestSha256} : {})});
+            } catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось закрепить репозиторий GitHub.');}
+        } else {source = input.source;}
+        const {requestKey: _requestKey, ...configuration} = input;
+        const config: BuildConfiguration = {...configuration, source};
+        if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
+        if (source.type === 'npm' && source.supportedTargets) {
+            if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...source.supportedTargets];}
+            else if (config.targets.some(target => !source.supportedTargets!.includes(target))) {throw new BadRequestException('Для этого пакета нет готового адаптера одной из выбранных платформ. Выберите поддерживаемые платформы.');}
+        }
+        if (source.type === 'repository' && source.runtimeSource) {
+            if (input.kind !== 'mcp') {throw new BadRequestException('neurocenter.tool.json описывает автономный MCP. Измените тип инструмента.');}
+            const supported = runtimeSourceTargets(source.runtimeSource);
+            if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = supported;}
+            else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('В neurocenter.tool.json нет комплекта для одной из выбранных платформ. Выберите поддерживаемые платформы.');}
+        }
+        await this.requireMain(actor);
+        const lease = this.currentLease();
+        return this.withLease(lease, async () => {
+            const root = await this.stagingRoot();
+            let releaseDb: () => void = () => undefined;
+            try {
+                releaseDb = await reserveCapacity({resource: 'postgres', bytes: Buffer.byteLength(JSON.stringify(config)) + 131072});
+                await this.requireMain(actor);
+                this.currentLease(lease);
+                const row = await this.repository.enqueue(actor.email, input.requestKey, fingerprint, config, lease);
+                this.currentLease(lease);
+                if (row.state === 'QUEUED') {this.startWorker(root);}
+                void notifyDeviceOperations();
+                return buildView(row);
+            } finally {
+                releaseDb();
+            }
+        });
+    }
+
+    /** Флаг закрывает гонку: новый запрос мог прийти между пустой выборкой и завершением worker. */
+    private startWorker(root: string): void {
+        this.queueRequested = true;
+        if (this.worker || this.stopping || !this.lease) {return;}
+        this.queueRequested = false;
+        const worker = this.drainQueue(root).catch(() => {
+            if (this.stopping) {return;}
+            this.logger.warn('Обработка очереди прервана; восстановим владельца и продолжим ожидающие сборки.');
+            // Ошибка отдельного SQL-запроса не всегда вызывает client.error: освобождаем lease сами.
+            const release = this.releaseLease;
+            this.lease = undefined; this.releaseLease = undefined;
+            release?.(true);
+            this.scheduleOwnershipRetry();
+        }).finally(() => {
+            if (this.worker === worker) {this.worker = undefined;}
+            if (this.queueRequested && !this.stopping && this.lease) {this.startWorker(root);}
+        });
+        this.worker = worker;
+    }
+
+    private async drainQueue(root: string): Promise<void> {
+        while (this.lease && !this.stopping) {
+            const lease = this.currentLease();
+            const row = await this.withLease(lease, () => this.repository.takeQueued(lease));
+            if (!row) {return;}
+            await this.execute(row, root);
+        }
+    }
+
+    private async stagingRoot(): Promise<string> {
+        const root = path.join(runtimeArtifactDirectory(), '.build-staging');
+        await fs.mkdir(root, {recursive: true, mode: 0o700});
+        const info = await fs.lstat(root);
+        if (!info.isDirectory() || info.isSymbolicLink()) { throw new ConflictException('Каталог серверной сборки недоступен.'); }
+        return root;
+    }
+
+    /** Удаляются только каталоги известных завершённых UUID; ссылки не разыменовываются. */
+    private async cleanupStages(): Promise<void> {
+        const root = path.join(runtimeArtifactDirectory(), '.build-staging');
+        let entries: import('node:fs').Dirent[];
+        try {
+            const info = await fs.lstat(root);
+            if (!info.isDirectory() || info.isSymbolicLink()) {throw new Error('Небезопасный каталог серверной сборки.');}
+            entries = await fs.readdir(root, {withFileTypes: true});
+        } catch (error) {if ((error as NodeJS.ErrnoException).code === 'ENOENT') {return;} throw error;}
+        const ids = entries.filter(entry => validId(entry.name)).map(entry => entry.name);
+        if (!ids.length) {return;}
+        const {rows} = await this.pool.query<{id: string}>("SELECT id FROM tool_build_jobs WHERE id=ANY($1::uuid[]) AND state IN ('FAILED','SUCCEEDED')", [ids]);
+        for (const row of rows) {await fs.rm(path.join(root, row.id), {recursive: true, force: true});}
+    }
+
+    private async execute(row: BuildRow, root: string): Promise<void> {
+        const stage = path.join(root, row.id);
+        let releaseDisk: () => void = () => undefined;
+        try {
+            await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
+            if (!this.lease || this.stopping) { throw new Error('Сборщик останавливается.'); }
+            releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: stagingLimit, path: root});
+            await fs.mkdir(stage, {mode: 0o700});
+            await this.progress(row.id, 10, 'Подготовка исходников и закреплённой версии');
+            await this.progress(row.id, 30, 'Сборка платформенных комплектов и проверка SHA');
+            const manifest = await runPackageBuilder(row.config, stage, child => {
+                this.child = child;
+                if (child && (this.stopping || !this.lease)) {stopBuildProcess(child);}
+            }, event =>
+                this.progress(row.id, 30 + Math.floor(30 * event.completed / event.total), `Собрано ${event.completed}/${event.total}: ${event.target}`));
+            if (!this.lease || this.stopping) { throw new Error('Сборщик остановлен.'); }
+            await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
+            await this.progress(row.id, 70, 'Импорт проверенных готовых комплектов');
+            const {readyManifest} = createRequire(__filename)(path.join(path.dirname(builderScript()), 'manifest.mjs')) as {readyManifest: (file: string) => Promise<PreparedTool[]>};
+            const tools = await readyManifest(manifest);
+            if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
+            for (const artifact of tools[0].artifacts) { await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
+            await this.progress(row.id, 95, 'Публикация новой карточки каталога');
+            const lease = this.lease;
+            if (!lease || this.stopping) { throw new Error('Сборщик остановлен до публикации.'); }
+            // COMMIT использует сессию advisory lock: потеря lease откатывает старую публикацию.
+            await this.withLease(lease, async () => {
+                await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
+                this.currentLease(lease);
+                await new PluginRepository(this.pool).create(tools[0].publication, row.actor, (client, published) =>
+                    this.repository.completeWithPublication(client, row.id, {catalogId: published.id, name: published.name, version: published.version}), lease);
+            });
+            await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
+                method: 'POST', headers: {'Content-Type': 'application/json', 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || ''},
+                body: JSON.stringify({sections: ['catalog', 'operations', 'audit']}), signal: AbortSignal.timeout(1500),
+            }).catch(() => undefined);
+        } catch (error) {
+            const message = error instanceof ForbiddenException ? 'Права главного администратора отозваны. Публикация остановлена.'
+                : error instanceof Error && !/postgres|password|token|secret|connection|https?:\/\//i.test(error.message) ? error.message.slice(0, 500)
+                : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.';
+            await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);
+        } finally {
+            this.child = undefined;
+            try {await fs.rm(stage, {recursive: true, force: true});}
+            finally {releaseDisk();}
+            void notifyDeviceOperations();
+        }
+    }
+
+    private async progress(id: string, percent: number, message: string): Promise<void> {
+        await this.repository.progress(id, 'RUNNING', percent, message);
+        void notifyDeviceOperations();
+    }
+}

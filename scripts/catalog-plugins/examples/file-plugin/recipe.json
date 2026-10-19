@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "key": "example-context",
+  "name": "Пример контекста OpenCode",
+  "kind": "plugin",
+  "description": "Самодостаточный плагин добавляет короткое правило в контекст агента. Готовый JavaScript, без внешних зависимостей.",
+  "revision": "1.0.0",
+  "tags": ["Пример", "Контекст"],
+  "source": { "type": "files", "directory": "source", "entrypoint": "index.mjs" }
+}

@@ -1,0 +1,122 @@
+import { Alert, Button, Card, Col, Row, Spin, Statistic, Typography } from "antd";
+import { FC, useCallback, useEffect, useRef, useState } from "react";
+import { Link } from 'react-router-dom';
+import { formatDate } from "../../../common/utils/format";
+import bffApi from "../../../core/api/bff";
+import {useSectionUpdates} from '../../../core/socket/useSectionUpdates';
+import type { IRagSummary } from "../../../core/api/interfaces";
+import {KnowledgeSync} from '../../../features/McpBridge/KnowledgeSync';
+import {useSelector} from 'react-redux';
+import type {RootState} from '../../../store';
+import {projectRoleLevel} from '../../../features/UserBlock/roles';
+import {errorMessage} from '../../../common/utils/errorMessage';
+import {RagQuotaMeter} from '../features/RagQuota/RagQuotaMeter';
+import {projectRagSetupUrl} from '../projectNavigation';
+import {projectReadUnavailable} from '../projectReadError';
+import './RagTab.less';
+const { Paragraph, Text } = Typography;
+
+/** Вкладка проекта вынесена в самостоятельный компонент. */
+const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
+    const [ summary, setSummary ] = useState<IRagSummary | null>(null);
+    const [ loading, setLoading ] = useState(true);
+    const [error,setError]=useState('');const generation=useRef(0);
+    const user=useSelector((state:RootState)=>state.userBlock.user);
+    const canWrite = projectRoleLevel(user, projectKey) >= 2;
+
+    const load = useCallback(() => {
+        const request=++generation.current;
+        setLoading(true);
+        bffApi.getRagSummary(projectKey)
+            .then(value=>{if(request===generation.current){setSummary(value);setError('');}})
+            .catch(failure=>{if(request===generation.current){if(projectReadUnavailable(failure)){setSummary(null);}setError(errorMessage(failure,'Не удалось загрузить базу знаний.'));}})
+            .finally(() => {if(request===generation.current){setLoading(false);}});
+    }, [ projectKey ]);
+    useSectionUpdates(['knowledge'],load);
+
+    useEffect(() => {
+        setSummary(null);setError('');load();return()=>{generation.current++;};
+    }, [ load ]);
+
+
+    const indexed = (summary?.rowCount ?? 0) > 0;
+
+    return (
+        <div className="project-rag">
+            <Row className="project-rag__header" justify="space-between" align="middle" gutter={[ 8, 8 ]}>
+                <Col>
+                    <Text><b>Проект:</b> {projectKey}</Text>
+                </Col>
+                <Col>
+                    <Button type="link" size="small" onClick={load} loading={loading} style={{ padding: 0 }}>Обновить</Button>
+                </Col>
+            </Row>
+
+            {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
+            <Spin spinning={loading}>
+                {summary ? (
+                    <div className="project-rag__content">
+                        <Row className="project-rag__stats" gutter={[ 12, 12 ]}>
+                            <Col xs={ 12 } md={ 6 }>
+                                <Card size="small" className="project-rag__stat">
+                                    <Statistic
+                                        title="Фрагментов"
+                                        value={ summary.rowCount }
+                                        valueStyle={{ fontSize: 24, color: indexed ? '#52c41a' : '#faad14' }}
+                                    />
+                                </Card>
+                            </Col>
+                            <Col xs={ 12 } md={ 6 }>
+                                <Card size="small" className="project-rag__stat">
+                                    <Statistic title="Размерность" value={ summary.dimension } valueStyle={{ fontSize: 24 }} />
+                                </Card>
+                            </Col>
+                            <Col xs={ 12 } md={ 6 }>
+                                <Card size="small" className="project-rag__stat">
+                                    <Statistic
+                                        title="Статус"
+                                        value={ indexed ? 'Заиндексирован' : 'Ещё не отправлена' }
+                                        valueStyle={{
+                                            fontSize: 14,
+                                            color: indexed ? '#52c41a' : '#faad14',
+                                        }}
+                                    />
+                                </Card>
+                            </Col>
+                            <Col xs={ 12 } md={ 6 }>
+                                <Card size="small" className="project-rag__stat">
+                                    <Statistic
+                                        title="Последняя синхронизация"
+                                        value={ summary.lastSyncedAt ? formatDate(summary.lastSyncedAt) : '—' }
+                                        valueStyle={{ fontSize: 14 }}
+                                    />
+                                </Card>
+                            </Col>
+                        </Row>
+
+                        {summary.quota&&<RagQuotaMeter value={summary.quota} projectKey={projectKey} canEdit={projectRoleLevel(user,projectKey)>=3} />}
+
+                        {!indexed && <Alert
+                            className="project-rag__first-index" type="info" showIcon
+                            message={canWrite ? 'Подготовьте знания проекта' : 'Знания проекта пока не опубликованы'}
+                            description={canWrite ? <>
+                                Сначала свяжите папку проекта с мостом, затем создайте локальный индекс в OpenCodeRAG
+                                и отправьте его кнопкой «Синхронизировать с сервером».
+                                {' '}<Link to={projectRagSetupUrl(projectKey)}>Как подготовить локальный индекс</Link>
+                            </> : 'Попросите разработчика или администратора проекта подготовить и отправить локальный индекс.'}
+                        />}
+
+                        <Card size="small" title="Синхронизация через мост" className="project-rag__sync">
+                            <KnowledgeSync projectId={projectKey} canWrite={projectRoleLevel(user,projectKey)>=2} connection/>
+                            <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией.</Paragraph>
+                        </Card>
+                    </div>
+                ) : (
+                    null
+                )}
+            </Spin>
+        </div>
+    );
+};
+
+export default RagTab;

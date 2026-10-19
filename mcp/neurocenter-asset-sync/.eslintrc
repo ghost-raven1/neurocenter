@@ -1,0 +1,123 @@
+# ESLint для моста neurocenter-asset-sync (Node/TypeScript, ESM, без React).
+# База — airbnb-typescript; без react/jsx-правил.
+{
+    "root": true,
+
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": 2022,
+        "sourceType": "module",
+        "project": [ "./tsconfig.json" ]
+    },
+
+    "extends": [
+        "airbnb-typescript",
+        "plugin:import/typescript"
+    ],
+
+    "env": {
+        "node": true,
+        "es2021": true
+    },
+
+    "settings": {
+        "import/resolver": {
+            "node": { "extensions": [ ".ts" ] }
+        }
+    },
+
+    "plugins": [
+        "import"
+    ],
+
+    "rules": {
+        "@typescript-eslint/indent": [ "error", 4 ],
+        "@typescript-eslint/no-use-before-define": 0,
+        "@typescript-eslint/consistent-type-exports": "error",
+
+        /* general */
+        "import/no-extraneous-dependencies": [ "error", { "devDependencies": true } ],
+        "import/no-cycle": [ 2, { "maxDepth": 1 } ],
+        "import/extensions": "off",
+        "react/jsx-filename-extension": "off",
+        "no-underscore-dangle": 0,
+        "linebreak-style": [ "error", "unix" ],
+        "lines-between-class-members": [ "error", "always", { "exceptAfterSingleLine": true } ],
+        "no-bitwise": [ "error", { "allow": [ "~" ] } ],
+        "no-unused-expressions": 0,
+        "no-nested-ternary": "error",
+        "max-len": [ "error", {
+            "code": 160,
+            "ignoreUrls": true,
+            "ignoreStrings": true,
+            "ignoreRegExpLiterals": true,
+            "ignoreTemplateLiterals": true
+        } ],
+        "eol-last": "error",
+        "indent": [ "error", 4, { "SwitchCase": 1 } ],
+        "quotes": [ "error", "single" ],
+        "semi": [ "error", "always" ],
+        "comma-dangle": [ "error", {
+            "arrays": "ignore",
+            "objects": "ignore",
+            "imports": "ignore",
+            "exports": "ignore",
+            "functions": "ignore"
+        } ],
+        "array-bracket-spacing": [ "error", "always" ],
+        "no-unused-vars": 0,
+        "no-plusplus": 0,
+        "no-shadow": "off",
+        "object-curly-newline": [ "error", { "ObjectPattern": { "multiline": true } } ],
+        "prefer-destructuring": [ "error", { "array": false, "object": true } ],
+        "arrow-parens": [ 2, "as-needed", { "requireForBlockBody": true } ],
+        "default-case": 0,
+        "no-trailing-spaces": 0,
+        "no-console": "warn",
+        "no-continue": 0,
+        "no-duplicate-imports": "warn",
+        "no-use-before-define": 0,
+        "no-script-url": 0,
+        "curly": [ "error", "all" ],
+        "consistent-return": 0,
+        "no-else-return": 0,
+        "func-names": 0,
+        "prefer-template": 2,
+        "class-methods-use-this": 0,
+        "import/prefer-default-export": 0,
+        "no-param-reassign": [ "error", { "props": false } ],
+        "@typescript-eslint/lines-between-class-members": [ "error", "always", { "exceptAfterSingleLine": true } ],
+        "@typescript-eslint/no-unsafe-argument": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off",
+        "@typescript-eslint/unbound-method": "off",
+        "@typescript-eslint/no-empty-interface": "off",
+        "@typescript-eslint/no-unsafe-return": "off",
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/restrict-template-expressions": "off",
+        "@typescript-eslint/no-throw-literal": 0,
+        "@typescript-eslint/no-shadow": "error",
+        "@typescript-eslint/no-unused-vars": [ "error" ],
+        "@typescript-eslint/no-unused-expressions": [ "error", { "allowShortCircuit": true, "allowTernary": true } ],
+        "default-param-last": "off",
+        "@typescript-eslint/default-param-last": "off",
+        "@typescript-eslint/comma-dangle": [ "error", "always-multiline" ],
+
+        /* Настройка названий переменных: T/I/E-префиксы */
+        "@typescript-eslint/naming-convention": [ "error",
+            { "selector": "class", "format": [ "PascalCase" ] },
+            { "selector": [ "function", "variable" ], "format": [ "camelCase", "PascalCase", "UPPER_CASE" ], "leadingUnderscore": "allow" },
+            { "selector": "property", "format": [ "camelCase", "PascalCase", "UPPER_CASE" ], "filter": { "regex": "'[0-9]*|[a-zA-Z-]*'", "match": true } },
+            { "selector": "typeAlias", "format": [ "PascalCase" ], "prefix": [ "T" ] },
+            { "selector": "interface", "format": [ "PascalCase" ], "prefix": [ "I" ] },
+            { "selector": "enum", "format": [ "PascalCase" ], "prefix": [ "E" ] }
+        ],
+
+        /* Правила сортировки импортов */
+        "import/order": [ "error", {
+            "groups": [ "builtin", "external", "internal", [ "parent", "sibling" ], "index", "unknown" ],
+            "pathGroupsExcludedImportTypes": [ "builtin" ],
+            "newlines-between": "always",
+            "alphabetize": { "order": "asc", "caseInsensitive": true }
+        } ]
+    }
+}

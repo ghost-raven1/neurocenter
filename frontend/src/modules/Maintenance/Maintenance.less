@@ -1,0 +1,129 @@
+.maintenance-page {
+    .ant-card-head { padding: 0 24px; }
+    .ant-card-head-title { padding: 20px 0; white-space: normal; font-size: 16px; }
+    .ant-card-extra { flex-shrink: 0; padding: 16px 0; }
+    .ant-card-body { padding: 24px; }
+    .ant-card-head-title .anticon { color: @brand-primary; }
+    .maintenance-page__intro { margin: 0 0 24px; line-height: 1.7; }
+    .maintenance-page__notice { margin: 20px 0; }
+    .maintenance-page__notice:last-child { margin-bottom: 0; }
+    .maintenance-page__notice:first-child { margin-top: 0; }
+    .maintenance-page__notice .ant-alert-content { min-width: 0; }
+    .maintenance-page__notice .ant-alert-message,
+    .maintenance-page__notice .ant-alert-description { overflow-wrap: anywhere; }
+
+    .maintenance-page__status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1px;
+        margin: 0;
+        overflow: hidden;
+        border: 1px solid @brand-border;
+        border-radius: 10px;
+        background: @brand-border;
+        > div { min-width: 0; padding: 18px 20px; background: @brand-surface; }
+        dt { margin-bottom: 8px; color: #617387; font-size: 12px; line-height: 1.5; }
+        dd { margin: 0; color: #24344a; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+        .ant-tag { margin: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    }
+    .maintenance-page__settings { margin-top: 28px; }
+    .maintenance-page__form-section {
+        padding: 24px 0;
+        border-top: 1px solid #e8eef4;
+        &:first-child { padding-top: 0; border-top: 0; }
+        h3.ant-typography { margin: 0 0 20px; font-size: 16px; line-height: 1.5; }
+        .maintenance-page__section-description { margin: -10px 0 20px; line-height: 1.65; }
+        .ant-form-item { margin-bottom: 18px; }
+        > .ant-row > .ant-col:last-child .ant-form-item { margin-bottom: 0; }
+        .ant-form-item-label { padding-bottom: 8px; }
+        .ant-form-item-label > label { height: auto; white-space: normal; line-height: 1.5; }
+        .ant-input-number { width: 100%; }
+    }
+    .maintenance-page__window {
+        margin-bottom: 12px;
+        padding: 16px;
+        border: 1px solid #e3eaf0;
+        border-radius: 8px;
+        background: @brand-surface;
+        .ant-form-item { margin-bottom: 0; }
+        .ant-select-selector, .ant-input { background: #fff; }
+    }
+    .maintenance-page__window-action { display: flex; justify-content: flex-end; }
+    .maintenance-page__add-window { margin-top: 4px; }
+    .maintenance-page__form-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid #e8eef4;
+        > .ant-typography { font-size: 12px; white-space: nowrap; }
+    }
+    .maintenance-page__runs { margin-top: 28px; }
+    .maintenance-page__capacity-summary { margin-bottom: 8px; }
+    .maintenance-page__capacity-table .ant-table { min-width: 0; }
+    .maintenance-page__physical-capacity > .ant-card-body > .ant-alert { margin: 0; }
+    .maintenance-page__side { display: flex; width: 100%; }
+    .maintenance-page__side > .ant-space-item { width: 100%; }
+    .maintenance-page__last-copy {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 24px 0;
+        padding: 20px;
+        border: 1px solid @brand-border;
+        border-radius: 10px;
+        background: linear-gradient(120deg, @brand-tint, @brand-surface);
+        h3.ant-typography { margin: 0; font-size: 23px; }
+    }
+    .maintenance-page__created { margin-top: 24px; }
+    .maintenance-page__filename { min-width: 0; overflow-wrap: anywhere; }
+    .maintenance-page__file-size { flex-shrink: 0; margin-left: 16px; }
+    .maintenance-page__scope.ant-typography { margin: 20px 0 0; line-height: 1.65; }
+    .maintenance-page__storage-total {
+        padding-left: 24px !important;
+        border-left: 1px solid #e8eef4;
+        h3.ant-typography { margin: 8px 0; }
+    }
+    .maintenance-page__capacity { margin-top: 10px; }
+    .maintenance-page__loading { padding: 28px; text-align: center; }
+
+    @media (min-width: 768px) {
+        .maintenance-page__form-section > .ant-row > .ant-col .ant-form-item-label { min-height: 50px; }
+        .maintenance-page__form-section > .ant-row > .ant-col .ant-form-item { margin-bottom: 18px; }
+        .maintenance-page__form-section > .ant-row > .ant-col:last-child .ant-form-item { margin-bottom: 0; }
+    }
+    @media (max-width: 767px) {
+        .maintenance-page__window .ant-col { margin-bottom: 16px; }
+        .maintenance-page__window .ant-col:last-child { margin-bottom: 0; }
+        .maintenance-page__storage-total { padding: 20px 12px 0 !important; border-top: 1px solid #e8eef4; border-left: 0; }
+    }
+    @media (max-width: 575px) {
+        .ant-card-head { padding: 0 18px; }
+        .ant-card-body { padding: 20px 18px; }
+        .ant-card-head-wrapper { flex-wrap: wrap; padding: 16px 0; gap: 12px; }
+        .ant-card-head-title, .ant-card-extra { padding: 0; }
+        .ant-card-head-title { flex-basis: 100%; }
+        .ant-card-extra { max-width: 100%; }
+        .ant-btn-lg { width: 100%; height: auto; min-height: 40px; white-space: normal; }
+        .maintenance-page__status-grid {
+            grid-template-columns: minmax(0, 1fr);
+            > div { padding: 16px; }
+        }
+        .maintenance-page__settings { margin-top: 24px; }
+        .maintenance-page__form-section { padding: 24px 0; }
+        .maintenance-page__form-section h3.ant-typography { margin-bottom: 18px; }
+        .maintenance-page__window { padding: 14px; }
+        .maintenance-page__form-actions { align-items: flex-start; flex-direction: column; }
+        .maintenance-page__form-actions > .ant-space,
+        .maintenance-page__form-actions > .ant-space > .ant-space-item,
+        .maintenance-page__form-actions .ant-btn { width: 100%; }
+        .maintenance-page__form-actions .ant-btn { height: auto; min-height: 32px; white-space: normal; }
+        .maintenance-page__last-copy { padding: 16px; h3.ant-typography { font-size: 20px; } }
+        .maintenance-page__created .ant-list-item { align-items: flex-start; flex-direction: column; gap: 8px; }
+        .maintenance-page__file-size { margin-left: 0; }
+    }
+}

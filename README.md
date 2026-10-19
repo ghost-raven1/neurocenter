@@ -1,0 +1,56 @@
+# Neurocenter — Нейроцентр
+
+Веб-каталог инструментов и знаний команды: проекты, скиллы, MCP-серверы, плагины OpenCode и локальный мост для работы с папками пользователя.
+
+## Возможности
+
+- Общий и проектный каталог, версии и зависимости инструментов.
+- Упаковка npm-пакетов, публичных Git-репозиториев, ZIP/TAR-архивов и подготовленных приложений разных runtime.
+- Установка, настройка, диагностика и восстановление через локальный MCP-мост.
+- Синхронизация проектных баз знаний LanceDB ↔ PostgreSQL/pgvector.
+- Роли, отзыв доступа, журнал операций и транзакционный аудит изменений.
+- Полные резервные комплекты, расписание обслуживания, S3-доставка и контроль ресурсов.
+
+Состояние: разработка и локальная приёмка. Production-допуск **NO-GO**: настоящий IdP, полная матрица клиентских платформ и независимое восстановление требуют отдельной проверки. Точные границы: [готовность](docs/implementation-readiness.md), [реализация](docs/current-implementation.md), [сценарии](docs/publication-scenarios.md).
+
+## Быстрый старт
+
+Нужны **Node.js 24+**, npm, Docker с Compose v2; dev-скрипты рассчитаны на macOS/Linux. Порт 5432 должен быть свободен.
+
+```sh
+git clone https://github.com/ghost-raven1/neurocenter.git
+cd neurocenter
+cp .env.example .env
+node -e "require('node:fs').appendFileSync('.env','\nNEUROCENTER_INTERNAL_TOKEN='+require('node:crypto').randomBytes(32).toString('hex')+'\n')"
+scripts/dev.sh install
+scripts/dev.sh up
+```
+
+Случайный внутренний ключ создаётся один раз в локальном `.env` и используется всеми сервисами; не публикуйте этот файл.
+
+Интерфейс: <http://localhost:5173>. В шаблоне включён локальный вход `SSO_DISABLE=true`; для реального SSO задайте параметры своего IdP. Production-конфигурация проверяется отдельно и не допускает dev-авторизацию.
+
+При нескольких Node задайте `NODE_BIN` абсолютным путём к Node 24+. Остановка `scripts/dev.sh down` сохраняет PostgreSQL и данные. Проверки: `npm run check` или `scripts/dev.sh check`; они собирают проект и останавливаются при первой ошибке.
+
+В `bridge-dist/` хранятся исходники установщиков. Переносимый пакет моста создаётся при dev-сборке. Для автономной установки без Node/npm отдельно подготовьте архивы нужных платформ через `node scripts/package-bridge-runtime.mjs`; [формат и ограничения](docs/runtime-artifacts-0.9.md). Готовые бинарные архивы в этот Git-репозиторий не включены.
+
+## Структура
+
+| Каталог | Назначение |
+| --- | --- |
+| `frontend/` | React, TypeScript, Vite, Ant Design, Redux Toolkit, Less |
+| `services/` | NestJS, PostgreSQL/JSONB, pgvector, Socket.IO |
+| `mcp/neurocenter-asset-sync/` | Локальный MCP и worker |
+| `scripts/catalog-plugins/` | Общая упаковка и публикация инструментов |
+| `scripts/production/` | Настройка, обслуживание, backup/restore и обновление |
+| `docs/` | Архитектура, контракты, runbooks и история проверок |
+
+## Документация
+
+- [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
+- [Упаковка инструментов](scripts/catalog-plugins/README.md).
+- [Production-настройка](docs/production-setup.md), [восстановление](docs/production-recovery.md), [обновление](docs/production-update.md).
+- [Обслуживание](docs/maintenance-schedule.md), [внешние копии](docs/external-backups.md), [ресурсы](docs/capacity-admission.md).
+- [Последняя локальная приёмка настроек проектов](docs/project-settings-audit-2026-10-19.md).
+
+Файлы `.env`, `data/`, веса моделей, резервные копии, зависимости, сборки и локальные отчёты в Git не входят. В исторических документах ссылки на `output/` и `.run/` относятся к локальным свидетельствам; они не поставляются в публичном репозитории. Идентификаторы проектов, адреса, учётные записи и пользовательские пути в примерах и исторических отчётах обезличены. Внутренние сведения о рабочем стенде и расчёты инфраструктуры исключены из публичной документации.

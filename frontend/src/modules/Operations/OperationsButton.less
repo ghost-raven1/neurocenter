@@ -1,0 +1,27 @@
+.operations-button-badge .ant-badge-count { background: @brand-primary; }
+.operations-button-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.operations-button.ant-btn {
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s, background .2s;
+    &.operations-button--active { border-color: @brand-border-hover; background: @brand-tint; padding-bottom: 4px; }
+    &.operations-button--stale { border-style: dashed; }
+    .operations-button__percent { margin-left: 8px; font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 600; }
+    .operations-button__track {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 3px;
+        background: @brand-tint-2;
+        > span { display: block; height: 100%; background: @brand-primary; transition: width .25s ease; }
+        &--unknown > span { animation: operations-wait 1.4s ease-in-out infinite alternate; }
+    }
+    &.operations-button--stale .operations-button__track > span { opacity: .5; animation: none; }
+}
+
+@keyframes operations-wait { from { transform: translateX(0); } to { transform: translateX(185%); } }
+@media (max-width: 575px) { .operations-button.ant-btn .app__operations-label { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+    .operations-button.ant-btn { transition: none; .operations-button__track > span { animation: none; transition: none; } }
+}

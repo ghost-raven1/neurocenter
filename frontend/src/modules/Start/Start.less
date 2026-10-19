@@ -1,0 +1,54 @@
+.start {
+    display: flex; flex-direction: column; gap: 24px;
+    .page-heading { margin-bottom: 0; }
+    &__hero { display: grid; grid-template-columns: 1fr 240px; gap: 32px; padding: 36px; border: 1px solid @brand-border; border-radius: 16px; background: linear-gradient(115deg, @brand-tint, #fff 80%);
+        h2.ant-typography { margin-top: 14px; font-size: 32px; letter-spacing: -.8px; line-height: 1.3; }
+        p { color: #526779; max-width: 570px; line-height: 1.8; }
+    }
+    &__eyebrow { color: @brand-primary; letter-spacing: 1.6px; font-size: 10px; font-weight: 700; }
+    &__overview { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; border-left: 1px solid @brand-border; padding-left: 32px; gap: 8px;
+        .anticon { font-size: 24px; color: @brand-primary; }
+        strong { font-size: 44px; line-height: 1.1; color: #14283d; }
+        > span:last-child { color: #617387; font-size: 12px; line-height: 1.7; }
+    }
+    &__setup .ant-card-body { padding: 32px; }
+    &__setup .ant-steps.ant-steps-label-vertical {
+        .ant-steps-item { flex: 1; min-width: 0; }
+        .ant-steps-item-container { display: flex; flex-direction: column; align-items: center; }
+        .ant-steps-item-container:focus-visible { outline: 2px solid @brand-focus; outline-offset: 3px; border-radius: 6px; }
+        .ant-steps-item-container > .ant-steps-item-icon { margin: 0; }
+        .ant-steps-item-content { width: 100%; }
+        .ant-steps-item-tail { left: 50%; margin-left: 0; padding-right: 20px; padding-left: 20px; }
+    }
+    &__step { border-top: 1px solid #edf1f5; margin-top: 28px; padding-top: 28px; h3 { margin-bottom: 12px; } .ant-collapse { margin-top: 20px; } }
+    &__command { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 12px; padding: 16px; border-radius: 10px; background: #f1f5f8; code { overflow-wrap: anywhere; font-size: 12px; color: #244353; } }
+    &__guides { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; .ant-card-body { height: 100%; display: flex; flex-direction: column; } .ant-btn { margin-top: auto; padding-left: 0; text-align: left; height: auto; white-space: normal; } }
+    &__extensions > h3.ant-typography { margin: 0 0 8px; font-size: 20px; }
+    &__extensions > .ant-typography { margin-bottom: 20px; }
+    &__extension-kind { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; font-size: 12px; .ant-tag { margin: 0; } }
+    &__guides h4.ant-typography { margin: 0 0 8px; font-size: 16px; }
+}
+.extension-instruction {
+    .ant-modal-body { max-height: 65vh; overflow-y: auto; }
+    &__text { overflow-wrap: anywhere; line-height: 1.75;
+        h1 { font-size: 22px; } h2 { font-size: 19px; margin-top: 24px; } h3 { font-size: 16px; }
+        pre { overflow-x: auto; padding: 16px; border-radius: 8px; background: @brand-surface; }
+        table { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
+        th, td { min-width: 120px; padding: 8px; border: 1px solid @brand-border; }
+    }
+}
+@media (max-width: 767px) { .start { &__hero { grid-template-columns: 1fr; padding: 24px; h2.ant-typography { font-size: 27px; } } &__overview { display: none; } &__setup .ant-card-body { padding: 20px; } &__command { flex-direction: column; align-items: flex-start; } &__guides { grid-template-columns: 1fr; } } }
+@media (max-width: 767px) {
+    .start__step .ant-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        max-width: 100%;
+        height: auto;
+        min-height: 32px;
+        white-space: normal;
+        > span:not(.anticon) { min-width: 0; }
+        > .anticon { flex-shrink: 0; margin-left: 0; }
+    }
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "key": "python-context",
+  "name": "Контекст Python",
+  "kind": "plugin",
+  "description": "Добавляет в контекст OpenCode найденные настройки Python, uv, Poetry, pytest, Ruff и mypy. Читает только имена файлов и requires-python, команды не запускает. Собирается из TypeScript общим сборщиком.",
+  "revision": "1.0.0",
+  "tags": ["Python", "TypeScript", "Контекст"],
+  "source": { "type": "project", "directory": "source", "entrypoint": "index.ts" }
+}

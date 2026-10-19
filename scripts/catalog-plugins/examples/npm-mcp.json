@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "key": "example-npm-mcp",
+  "name": "Пример MCP из npm",
+  "kind": "mcp",
+  "description": "Готовый MCP из закреплённого npm-пакета. Перед публикацией проверьте фактическую точку входа и выполните отдельную диагностику запуска.",
+  "revision": "1.0.0",
+  "config": { "args": [] },
+  "source": {
+    "type": "npm",
+    "package": "@modelcontextprotocol/server-sequential-thinking",
+    "version": "1.0.0",
+    "entrypoint": "dist/index.js"
+  },
+  "targets": ["darwin-arm64"]
+}

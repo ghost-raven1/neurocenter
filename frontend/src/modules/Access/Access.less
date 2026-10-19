@@ -1,0 +1,26 @@
+.access-page {
+    .ant-table-cell { overflow-wrap: anywhere; }
+    .ant-tag { max-width: 100%; white-space: normal; }
+    &__toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; > .ant-input-search { width: 300px; max-width: 100%; } }
+    &__project-filter { width: 300px; max-width: 100%; }
+    &__form-error { margin-bottom: 20px; }
+    &__role-guide { margin-bottom: 16px; }
+    &__role-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; .ant-typography { font-size: 12px; } p { margin-top: 6px; margin-bottom: 0; } }
+}
+.access-grant-modal {
+    top: 28px;
+    .ant-modal-body { max-height: calc(100vh - 200px); overflow-y: auto; }
+    .ant-modal-title { overflow-wrap: anywhere; padding-right: 24px; }
+    .ant-alert { margin-bottom: 16px; }
+    .ant-alert ul { padding-left: 20px; margin-bottom: 0; }
+    &__list-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; .ant-input-search { width: 230px; max-width: 100%; } }
+    &__projects { max-height: 340px; overflow-y: auto; }
+    &__project { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #edf1f5; .ant-checkbox-wrapper { flex: 1; min-width: 0; overflow-wrap: anywhere; } .ant-select { width: 180px; flex-shrink: 0; } .ant-space .ant-typography { font-size: 11px; } }
+    &__roles { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; font-size: 12px; }
+}
+.platform-user-modal { top: 28px; .ant-modal-body { max-height: calc(100vh - 200px); overflow-y: auto; } }
+@media (max-width: 900px) { .access-page__role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 575px) {
+    .access-page { .ant-card-body { padding: 16px; } &__toolbar { align-items: stretch; > .ant-input-search { width: 100%; } } &__role-grid { grid-template-columns: 1fr; gap: 14px; } }
+    .access-grant-modal { top: 12px; .ant-modal-body { padding: 16px; max-height: calc(100vh - 210px); } &__project { align-items: flex-start; gap: 10px; flex-wrap: wrap; .ant-checkbox-wrapper { flex-basis: 100%; } .ant-select { width: 100%; margin-left: 24px; } } &__list-heading .ant-input-search { width: 100%; } }
+}

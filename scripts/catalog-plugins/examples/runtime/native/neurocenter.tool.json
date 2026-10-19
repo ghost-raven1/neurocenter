@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Пример готового native MCP",
+  "description": "Шаблон: замените example.com и SHA-256 настоящей готовой программой.",
+  "source": {
+    "type": "runtime",
+    "adapter": "native",
+    "assets": {
+      "win32-arm64": {
+        "app": {
+          "url": "https://example.com/releases/native-mcp/v1.0.0/native-mcp-windows-arm64.zip",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "format": "zip",
+          "entrypoint": "native-mcp/server.exe"
+        }
+      }
+    }
+  }
+}

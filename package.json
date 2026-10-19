@@ -1,0 +1,11 @@
+{
+  "name": "neurocenter-workspace",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/workspace/check.mjs",
+    "tools:build": "node scripts/catalog-plugins/run.mjs build",
+    "tools:publish": "node scripts/catalog-plugins/run.mjs publish",
+    "tools:catalog": "node scripts/catalog-plugins/run.mjs prepare",
+    "tools:check": "node scripts/catalog-plugins/run.mjs check"
+  }
+}

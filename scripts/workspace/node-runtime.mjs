@@ -1,0 +1,38 @@
+import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+/** Все команды сборки и их npm-потомки используют один проверенный Node 24+. */
+export function nodeRuntime(environment = process.env) {
+    const executable = process.platform === 'win32' ? 'node.exe' : 'node';
+    const candidates = environment.NODE_BIN ? [environment.NODE_BIN] : [process.execPath,
+        ...(environment.PATH || '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, executable)),
+        path.join(os.homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin', executable)];
+    for (const candidate of new Set(candidates)) {
+        const result = spawnSync(candidate, ['-p', 'JSON.stringify({version:process.versions.node,binary:process.execPath})'],
+            {env: environment, encoding: 'utf8', timeout: 5000, maxBuffer: 65536, windowsHide: true});
+        if (result.status !== 0) continue;
+        try {
+            const info = JSON.parse(result.stdout);
+            if (Number(info.version.split('.')[0]) < 24 || !path.isAbsolute(info.binary)) continue;
+            return {node: info.binary, version: info.version, env: {...environment,
+                NODE_BIN: info.binary, PATH: [path.dirname(info.binary), environment.PATH].filter(Boolean).join(path.delimiter)}};
+        } catch { /* Следующий установленный runtime. */ }
+    }
+    throw new Error(environment.NODE_BIN ? 'NODE_BIN должен указывать на работающий Node.js 24 или новее.' : 'Для проекта нужен Node.js 24 или новее. Укажите NODE_BIN или активируйте Node 24.');
+}
+
+/** npm запускается выбранным Node, независимо от shebang системного npm. */
+export function npmCli(environment = process.env) {
+    const candidates = [environment.NPM_CLI_JS, environment.npm_execpath];
+    for (const directory of (environment.PATH || '').split(path.delimiter).filter(Boolean)) {
+        candidates.push(path.join(directory, 'npm'), path.join(directory, 'node_modules/npm/bin/npm-cli.js'),
+            path.join(directory, '../lib/node_modules/npm/bin/npm-cli.js'));
+    }
+    for (const candidate of candidates.filter(Boolean)) {
+        try { const resolved = fs.realpathSync(candidate); if (resolved.endsWith('.js') && fs.statSync(resolved).isFile()) return resolved; }
+        catch { /* Следующий установленный npm. */ }
+    }
+    throw new Error('На машине сборки нужен npm-cli.js. Установите npm или укажите NPM_CLI_JS.');
+}

@@ -1,0 +1,59 @@
+/* Тема highlight.js («github-dark.css», github), скоупленная под .codeblock-dark. Сгенерировано из node_modules/highlight.js/styles. */
+.codeblock-dark pre code.hljs {display: block;
+  overflow-x: auto;
+  padding: 1em}
+.codeblock-dark code.hljs {padding: 3px 5px}
+.codeblock-dark {color: #c9d1d9;
+  background: #0d1117}
+.codeblock-dark .hljs-doctag,
+.codeblock-dark .hljs-keyword,
+.codeblock-dark .hljs-meta .hljs-keyword,
+.codeblock-dark .hljs-template-tag,
+.codeblock-dark .hljs-template-variable,
+.codeblock-dark .hljs-type,
+.codeblock-dark .hljs-variable.language_ {color: #ff7b72}
+.codeblock-dark .hljs-title,
+.codeblock-dark .hljs-title.class_,
+.codeblock-dark .hljs-title.class_.inherited__,
+.codeblock-dark .hljs-title.function_ {color: #d2a8ff}
+.codeblock-dark .hljs-attr,
+.codeblock-dark .hljs-attribute,
+.codeblock-dark .hljs-literal,
+.codeblock-dark .hljs-meta,
+.codeblock-dark .hljs-number,
+.codeblock-dark .hljs-operator,
+.codeblock-dark .hljs-variable,
+.codeblock-dark .hljs-selector-attr,
+.codeblock-dark .hljs-selector-class,
+.codeblock-dark .hljs-selector-id {color: #79c0ff}
+.codeblock-dark .hljs-regexp,
+.codeblock-dark .hljs-string,
+.codeblock-dark .hljs-meta .hljs-string {color: #a5d6ff}
+.codeblock-dark .hljs-built_in,
+.codeblock-dark .hljs-symbol {color: #ffa657}
+.codeblock-dark .hljs-comment,
+.codeblock-dark .hljs-code,
+.codeblock-dark .hljs-formula {color: #8b949e}
+.codeblock-dark .hljs-name,
+.codeblock-dark .hljs-quote,
+.codeblock-dark .hljs-selector-tag,
+.codeblock-dark .hljs-selector-pseudo {color: #7ee787}
+.codeblock-dark .hljs-subst {color: #c9d1d9}
+.codeblock-dark .hljs-section {color: #1f6feb;
+  font-weight: bold}
+.codeblock-dark .hljs-bullet {color: #f2cc60}
+.codeblock-dark .hljs-emphasis {color: #c9d1d9;
+  font-style: italic}
+.codeblock-dark .hljs-strong {color: #c9d1d9;
+  font-weight: bold}
+.codeblock-dark .hljs-addition {color: #aff5b4;
+  background-color: #033a16}
+.codeblock-dark .hljs-deletion {color: #ffdcd7;
+  background-color: #67060c}
+.codeblock-dark .hljs-char.escape_,
+.codeblock-dark .hljs-link,
+.codeblock-dark .hljs-params,
+.codeblock-dark .hljs-property,
+.codeblock-dark .hljs-punctuation,
+.codeblock-dark .hljs-tag {}
+

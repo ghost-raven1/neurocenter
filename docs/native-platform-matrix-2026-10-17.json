@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-17T19:38:32.307Z",
+  "bridgeVersion": "0.9.0",
+  "summary": {
+    "nativeTargetsAccepted": 1,
+    "pendingNativeTargets": 7,
+    "syntheticChecksCountAsNative": false
+  },
+  "acceptedArtifact": {
+    "target": "darwin-arm64",
+    "buildId": "2541aaf7d3f192323ef683dba9983e660b29d860db66b1a05b846caecae2e8c4",
+    "sha256": "91d118101ed39c1e45910bc434445a6063b326a8b449c81a103256cda6ae115c",
+    "nodeVersion": "24.22.0",
+    "path": "bridge-dist/runtime/neurocenter-asset-sync-darwin-arm64-0.9.0.tgz"
+  },
+  "targets": [
+    {
+      "target": "darwin-arm64",
+      "nativeAcceptance": "passed",
+      "installer": {
+        "status": "passed",
+        "cases": 5,
+        "report": ".run/reliable-installation-20261018-v09/native.json",
+        "log": ".run/reliable-installation-20261018-v09/native.log"
+      },
+      "runtimeSmoke": {
+        "status": "passed",
+        "cases": 5,
+        "report": ".run/reliable-installation-20261018-v09/runtime.json",
+        "log": ".run/reliable-installation-20261018-v09/runtime.log"
+      },
+      "runtimeProbe": {
+        "status": "partially_verified",
+        "genuinePinnedEngineTestCases": 3,
+        "includedInUnitTests": true,
+        "browserSkillAndMcp": false,
+        "report": ".run/reliable-installation-20261018-v09/check-final.log",
+        "note": "Три genuine pinned OpenCode сценария входят в MCP unit-прогон; три compiled launcher/proxy smoke проверены отдельно. В браузере дважды выполнены установка/настройка и ограниченная диагностика MCP с одной записью в каждом list. Скиллы и плагины через браузер в этом этапе не запускались; все hooks и внешние сервисы не приняты.",
+        "browserMcpRuntimeTested": true,
+        "browserSkillRuntimeTested": false,
+        "browserReport": ".run/reliable-installation-20261018-v09/browser.json"
+      }
+    },
+    {
+      "target": "darwin-x64",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужны нативная машина или runner соответствующей ОС, архитектуры и libc."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Установщик и stdio smoke не доказывают исполнение MCP/плагинов и работу внешних сервисов."
+      }
+    },
+    {
+      "target": "linux-arm64",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужны нативная машина или runner соответствующей ОС, архитектуры и libc."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Установщик и stdio smoke не доказывают исполнение MCP/плагинов и работу внешних сервисов."
+      }
+    },
+    {
+      "target": "linux-arm64-musl",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужны нативная машина или runner соответствующей ОС, архитектуры и libc."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Установщик и stdio smoke не доказывают исполнение MCP/плагинов и работу внешних сервисов."
+      }
+    },
+    {
+      "target": "linux-x64",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужны нативная машина или runner соответствующей ОС, архитектуры и libc."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Установщик и stdio smoke не доказывают исполнение MCP/плагинов и работу внешних сервисов."
+      }
+    },
+    {
+      "target": "linux-x64-musl",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужны нативная машина или runner соответствующей ОС, архитектуры и libc."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Установщик и stdio smoke не доказывают исполнение MCP/плагинов и работу внешних сервисов."
+      }
+    },
+    {
+      "target": "windows-arm64",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужна нативная PowerShell-приёмка на соответствующей Windows-архитектуре."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Job Objects helper реализован в исходниках. Упаковка требует проверяемый PE helper нужной архитектуры; без него unsupported. Синтетические PE-тесты не являются нативной Windows-приёмкой."
+      }
+    },
+    {
+      "target": "windows-x64",
+      "nativeAcceptance": "pending",
+      "installer": {
+        "status": "pending",
+        "reason": "Нужна нативная PowerShell-приёмка на соответствующей Windows-архитектуре."
+      },
+      "runtimeSmoke": {
+        "status": "pending",
+        "reason": "Готовый пакет на этой системе в данном этапе не запускался."
+      },
+      "runtimeProbe": {
+        "status": "pending_native_acceptance",
+        "note": "Job Objects helper реализован в исходниках. Упаковка требует проверяемый PE helper нужной архитектуры; без него unsupported. Синтетические PE-тесты не являются нативной Windows-приёмкой."
+      }
+    }
+  ],
+  "isolation": {
+    "temporaryHomeRemoved": true,
+    "realProfileChanged": false,
+    "realBrowserOpened": false
+  },
+  "notes": [
+    "Для darwin-arm64 выполнены реальный Bash-установщик и stdio MCP из готового архива без системных Node/npm.",
+    "Проверки выбора платформы с подменёнными uname/ldd не считаются нативной приёмкой Linux, Intel macOS или Windows.",
+    "Нативная установка 0.8.0 сохраняет 0.9.0 при попытке downgrade и не откатывает на несовместимый manifest 0.7.0 после ошибки init.",
+    "Нативная приёмка платформ, корпоративный SSO, CI и production deployment учитываются независимо."
+  ],
+  "currentReport": "docs/reliable-installation-0.9-2026-10-18.md"
+}

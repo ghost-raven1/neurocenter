@@ -1,0 +1,281 @@
+# Отдельный стек: не объединять с dev docker-compose.yml и его env_file.
+x-service: &service
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 45s
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+  networks: [backend]
+
+x-runtime: &runtime
+  NODE_ENV: production
+  BIND_HOST: 0.0.0.0
+  PANEL_URL: ${PANEL_URL:?Заполните PANEL_URL}
+  NEUROCENTER_INTERNAL_TOKEN_FILE: /run/secrets/internal_token
+  NEUROCENTER_METRICS_TOKEN_FILE: /run/secrets/metrics_token
+
+services:
+  postgres:
+    <<: *service
+    image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
+    mem_limit: 1g
+    cpus: 2
+    environment:
+      POSTGRES_USER: nc_owner
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres_password]
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U nc_owner -d postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  capacity-collector:
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    network_mode: none
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 32
+    command: [node, /shared/capacity-collector.cjs]
+    volumes:
+      - postgres:/volumes/postgres:ro
+      - skills:/volumes/skills:ro
+      - projects:/volumes/projects:ro
+      - backups:/volumes/backups:ro
+      - runtime-artifacts:/volumes/runtime-artifacts:ro
+      - capacity:/capacity
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, /shared/capacity-collector.cjs, --check]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
+  database-init:
+    <<: *service
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/catalog-service/Dockerfile}
+    restart: 'no'
+    profiles: [setup]
+    command: [node, dist/database/production-init.cli.js]
+    secrets: [postgres_password, catalog_url, rag_url, rag_provision_url, backup_url]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  bootstrap-admin:
+    <<: *service
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    restart: 'no'
+    profiles: [setup]
+    command: [node, dist/access/bootstrap-admin.cli.js]
+    environment:
+      NODE_ENV: production
+      NEUROCENTER_SERVICE: bootstrap-admin
+      SSO_DISABLE: 'false'
+      CATALOG_PG_URL_FILE: /run/secrets/catalog_url
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?Заполните почту первого администратора}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Главный администратор}
+    secrets: [catalog_url]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  catalog-service:
+    <<: *service
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/catalog-service/Dockerfile}
+    mem_limit: 512m
+    cpus: 1
+    environment:
+      <<: *runtime
+      CAPACITY_REQUIRED: 'true'
+      PORT: 4100
+      CATALOG_PG_URL_FILE: /run/secrets/catalog_url
+      # Эта роль читает только RAG; рабочий каталог не получает пароль владельца кластера.
+      RAG_PG_URL_FILE: /run/secrets/backup_url
+      RAG_SERVICE_URL: http://rag-sync-service:4300
+      SKILLS_SERVICE_URL: http://skills-service:4200
+      PROJECTS_ROOT: /data/projects
+      RUNTIME_ARTIFACT_DIR: /app/runtime-artifacts
+      BACKUP_DIR: /app/backups
+      BACKUP_MAX_TOTAL_BYTES: ${BACKUP_MAX_TOTAL_BYTES:-68719476736}
+      BACKUP_MAX_FILE_BYTES: ${BACKUP_MAX_FILE_BYTES:-17179869184}
+      BACKUP_MIN_FREE_BYTES: ${BACKUP_MIN_FREE_BYTES:-1073741824}
+    secrets: [metrics_token, internal_token, catalog_url, backup_url]
+    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro]
+    depends_on:
+      capacity-collector: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4100/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  skills-service:
+    <<: *service
+    image: neurocenter/skills-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/skills-service/Dockerfile}
+    mem_limit: 512m
+    cpus: 1
+    environment:
+      <<: *runtime
+      CAPACITY_REQUIRED: 'true'
+      PORT: 4200
+      SKILLS_STORAGE_PATH: /app/data/skills
+      CATALOG_SERVICE_URL: http://catalog-service:4100
+    secrets: [metrics_token, internal_token]
+    volumes: [skills:/app/data/skills, capacity:/capacity:ro]
+    depends_on:
+      capacity-collector: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4200/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  rag-sync-service:
+    <<: *service
+    image: neurocenter/rag-sync-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/rag-sync-service/Dockerfile}
+    mem_limit: 2g
+    cpus: 2
+    environment:
+      <<: *runtime
+      CAPACITY_REQUIRED: 'true'
+      PORT: 4300
+      RAG_AUTH_DISABLED: 'false'
+      RAG_DEFAULT_QUOTA_BYTES: ${RAG_DEFAULT_QUOTA_BYTES:-1073741824}
+      RAG_MAX_QUOTA_BYTES: ${RAG_MAX_QUOTA_BYTES:-17179869184}
+      RAG_PG_URL_FILE: /run/secrets/rag_url
+      RAG_PROVISION_PG_URL_FILE: /run/secrets/rag_provision_url
+      CATALOG_SERVICE_URL: http://catalog-service:4100
+      RAG_SERVICE_URL: http://rag-sync-service:4300
+      PROJECTS_ROOT: /data/projects
+      ASSET_SYNC_NODE_BIN: /usr/local/bin/node
+      ASSET_SYNC_MCP_BIN: /app/mcp/neurocenter-asset-sync/dist/index.js
+    secrets: [metrics_token, internal_token, rag_url, rag_provision_url]
+    volumes: [projects:/data/projects, capacity:/capacity:ro]
+    depends_on:
+      capacity-collector: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      catalog-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4300/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  oauth2-bridge:
+    <<: *service
+    image: neurocenter/oauth2-bridge:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/oauth2-bridge/Dockerfile}
+    mem_limit: 256m
+    cpus: 1
+    environment:
+      <<: *runtime
+      PORT: 22222
+      SSO_DISABLE: 'false'
+      SSO_HOST: ${SSO_HOST:?Заполните адрес Blitz}
+      SSO_CLIENT_ID: ${SSO_CLIENT_ID:?Заполните Client ID Blitz}
+      SSO_CLIENT_SECRET_FILE: /run/secrets/sso_client_secret
+      REDIRECT_URI: ${REDIRECT_URI:?Заполните callback Blitz}
+      SSO_SCOPE: ${SSO_SCOPE:-openid profile email}
+      CATALOG_SERVICE_URL: http://catalog-service:4100
+    secrets: [metrics_token, internal_token, sso_client_secret]
+    depends_on:
+      catalog-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:22222/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  api-gateway:
+    <<: *service
+    image: neurocenter/api-gateway:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ., dockerfile: services/api-gateway/Dockerfile}
+    mem_limit: 512m
+    cpus: 1
+    environment:
+      <<: *runtime
+      PORT: 4000
+      AUTH_GUARD_ENABLED: 'true'
+      BRIDGE_DIST: /app/bridge-dist
+      CATALOG_SERVICE_URL: http://catalog-service:4100
+      SKILLS_SERVICE_URL: http://skills-service:4200
+      RAG_SERVICE_URL: http://rag-sync-service:4300
+      AUTH_SERVICE_URL: http://oauth2-bridge:22222
+    secrets: [metrics_token, internal_token]
+    depends_on:
+      catalog-service: {condition: service_healthy}
+      skills-service: {condition: service_healthy}
+      rag-sync-service: {condition: service_healthy}
+      oauth2-bridge: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    <<: *service
+    image: neurocenter/frontend:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    build: {context: ./frontend}
+    mem_limit: 128m
+    cpus: 1
+    environment:
+      NEUROCENTER_HOST: ${NEUROCENTER_HOST:?Заполните публичное DNS-имя}
+    command: [/bin/sh, -ec, "envsubst '$$NEUROCENTER_HOST' < /etc/neurocenter/nginx.production.conf.template > /etc/nginx/conf.d/default.conf; exec nginx -g 'daemon off;'"]
+    secrets: [tls_cert, tls_key]
+    ports: ['80:8080', '443:8443']
+    networks: [backend, edge]
+    depends_on:
+      api-gateway: {condition: service_healthy}
+      oauth2-bridge: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, --spider, --no-check-certificate, https://127.0.0.1:8443/ready]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+secrets:
+  metrics_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/metrics_token'}
+  internal_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/internal_token'}
+  sso_client_secret: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/sso_client_secret'}
+  postgres_password: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/postgres_password'}
+  catalog_url: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/catalog_url'}
+  rag_url: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/rag_url'}
+  rag_provision_url: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/rag_provision_url'}
+  backup_url: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/backup_url'}
+  tls_cert: {file: '${TLS_CERT_FILE:?Укажите сертификат TLS}'}
+  tls_key: {file: '${TLS_KEY_FILE:?Укажите ключ TLS}'}
+networks:
+  backend: {}
+  edge: {}
+volumes:
+  capacity:
+  postgres:
+  skills:
+  projects:
+  runtime-artifacts:
+  backups:

@@ -1,0 +1,84 @@
+.operations-queue {
+    min-width: 0;
+    &__heading, &__toolbar, &__refresh, &__filter { display: flex; align-items: center; gap: 12px; }
+    &__heading { justify-content: space-between; margin-bottom: 18px; }
+    &__toolbar { justify-content: space-between; flex-wrap: wrap; margin-bottom: 20px; }
+    &__filter label { color: #617387; font-size: 12px; }
+    &__filter .ant-select { width: 175px; }
+    &__refresh { margin-left: auto; }
+    &__refresh > .ant-typography { font-size: 12px; }
+    > .ant-alert { margin: 0 0 20px; }
+    > .ant-alert .ant-alert-content { min-width: 0; overflow-wrap: anywhere; }
+    &__identity, &__actor { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+    &__identity > *, &__actor > * { max-width: 100%; overflow-wrap: anywhere; }
+    &__resource { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    &__actor time, &__actor > .ant-typography-secondary { color: #617387; font-size: 12px; }
+    &__table .ant-table-thead > tr > th { padding: 12px; font-size: 12px; }
+    &__table .ant-table-tbody > tr > td { padding: 16px 12px; vertical-align: top; }
+    &__table .ant-table-container { overflow: hidden; border-radius: 8px; }
+    &__cards .ant-list-item { padding: 0 0 12px; }
+    &__card { display: flex; flex-direction: column; gap: 16px; width: 100%; min-width: 0; padding: 18px; border: 1px solid @brand-border; border-radius: 10px; background: #fff; }
+    &__card .operation-progress { padding: 12px; border-radius: 8px; background: @brand-surface; }
+    &__pagination { display: flex; justify-content: center; margin-top: 8px; }
+    .ant-empty { margin: 32px 0; }
+    .ant-empty-description { color: #617387; }
+}
+
+.operation-progress {
+    min-width: 0;
+    .ant-tag { margin: 0 0 6px; max-width: 100%; white-space: normal; }
+    .ant-progress { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 1.4; }
+    .ant-progress.ant-progress-show-info .ant-progress-outer { flex: 1; width: auto; min-width: 0; margin: 0; padding: 0; }
+    .ant-progress-text { flex: none; width: 36px; margin-left: 0; font-size: 12px; }
+    &__bytes { display: block; margin-top: 5px; font-size: 12px; overflow-wrap: anywhere; }
+}
+
+.operation-actions {
+    max-width: 100%;
+    .ant-space-item { max-width: 100%; }
+    .ant-btn { height: auto; min-height: 26px; padding: 2px 8px; white-space: normal; text-align: left; line-height: 1.5; }
+}
+
+.operation-detail {
+    min-width: 0;
+    &__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+    > .ant-alert { margin: 0 0 20px; }
+    .ant-alert-content { min-width: 0; }
+    .ant-alert-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+    &__loading { display: flex; justify-content: center; padding: 40px 0; }
+    &__summary { padding: 20px; margin-bottom: 24px; border: 1px solid @brand-border; border-radius: 10px; background: @brand-surface; }
+    &__summary h5.ant-typography { margin: 0 0 12px; }
+    &__summary .operation-actions { display: flex; margin-top: 16px; }
+    &__summary .operation-actions:empty { display: none; }
+    &__properties { margin-bottom: 24px; }
+    &__properties .ant-descriptions-item-label { width: 128px; color: #617387; }
+    &__properties .ant-descriptions-item-content { min-width: 0; overflow-wrap: anywhere; }
+    &__properties .ant-typography { overflow-wrap: anywhere; }
+    &__log-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    &__log-heading h5.ant-typography { margin: 0; }
+    &__log-note { display: block; margin-bottom: 12px; font-size: 12px; }
+    &__log .ant-list-item { display: block; padding: 16px 0; }
+    &__log time { color: #617387; font-size: 12px; }
+    &__log .ant-tag { margin-right: 0; }
+    &__log-message { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 575px) {
+    .operations-queue {
+        &__heading { align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+        &__toolbar { align-items: stretch; flex-direction: column; gap: 14px; }
+        &__filter { align-items: flex-start; flex-direction: column; gap: 6px; }
+        &__filter .ant-select { width: 100%; }
+        &__refresh { justify-content: space-between; margin-left: 0; }
+        &__refresh > .ant-btn:only-child { margin-left: auto; }
+        > .ant-alert { flex-wrap: wrap; }
+        > .ant-alert .ant-alert-action { width: 100%; margin: 12px 0 0 28px; }
+    }
+    .operation-detail {
+        &__summary { padding: 16px; }
+        &__properties .ant-descriptions-item-container { flex-direction: column; gap: 4px; }
+        &__properties .ant-descriptions-item-label { width: auto; }
+        &__properties .ant-descriptions-item-label::after { display: none; }
+        &__log-heading { flex-direction: column; gap: 4px; }
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "key": "fetch-mcp",
+  "name": "MCP Fetch",
+  "kind": "mcp",
+  "description": "Получение веб-страниц через MCP.",
+  "revision": "git-1ddb1a59cb09a2d38e759f2d7a97829680cbe514",
+  "source": {
+    "type": "repository",
+    "url": "https://github.com/zcaceres/fetch-mcp",
+    "commit": "1ddb1a59cb09a2d38e759f2d7a97829680cbe514",
+    "entrypoint": "src/index.ts"
+  }
+}

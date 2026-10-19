@@ -1,0 +1,69 @@
+groups:
+  - name: neurocenter-http
+    rules:
+      - alert: NeurocenterServiceUnavailable
+        expr: up{job="neurocenter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Сервис Нейроцентра недоступен для сбора метрик'
+      - alert: NeurocenterApiErrors
+        expr: |
+          sum by (service) (rate(neurocenter_http_requests_total{group="api",status=~"5.."}[5m]))
+          / clamp_min(sum by (service) (rate(neurocenter_http_requests_total{group="api"}[5m])), 0.001) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Больше 1% API-запросов завершаются ошибкой сервера'
+      - alert: NeurocenterApiLatency
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(neurocenter_http_request_duration_seconds_bucket{group="api"}[5m]))) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'API p95 превышает 500 мс'
+      - alert: NeurocenterCapacityUnavailable
+        expr: neurocenter_capacity_snapshot_available == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Нет свежего замера физических томов; тяжёлые записи остановлены'
+      - alert: NeurocenterDiskSpaceLow
+        expr: neurocenter_capacity_free_bytes < 1073741824 or neurocenter_capacity_free_bytes / neurocenter_capacity_total_bytes < 0.15
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Свободное место физического тома ниже резерва или 15 процентов'
+      - alert: NeurocenterRagQueueGrowing
+        expr: neurocenter_work_queue_pending{queue="rag"} > 8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Очередь базы знаний превышает восемь ожидающих запросов'
+      - alert: NeurocenterExternalBackupOverdue
+        expr: neurocenter_external_backup_verified == 0 or neurocenter_backup_rpo_exceeded == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Нет проверенной внешней копии в пределах цели RPO'
+      - alert: NeurocenterBackupRunFailed
+        expr: neurocenter_backup_last_run_failed == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Последний запуск полной копии завершился ошибкой'
+      - alert: NeurocenterBackupStatusUnavailable
+        expr: neurocenter_backup_status_available == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Статус внешних копий не обновляется; свежесть резервирования неизвестна'

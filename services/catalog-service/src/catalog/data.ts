@@ -1,0 +1,112 @@
+import {
+    IImageVersion,
+    IPage,
+    IProjectProfile,
+    ISkill,
+    ISkillCollection,
+    ISkillDetail,
+    IPackage,
+    IPackageDetail,
+    ISnapshotManifest,
+} from './dto';
+
+/**
+ * In-memory mock-каталог (dev). При подключении реального лancedb-storage —
+ * заменить на запросы к хранилищу (каталог проектов/версий/скиллов/пакетов).
+ */
+
+export const VERSIONS: Record<string, IImageVersion[]> = {
+    'prj-lancedb-core': [
+        { snapshotId: 'snap-a1', storeId: 'store-a1', parentId: 'snap-a0', status: 'VERIFIED', author: 'dev@localhost', createdAt: '2026-10-10T12:00:00Z', bytes: 5242880000, formatVersion: 'lc3', isHead: true, pinned: true },
+        { snapshotId: 'snap-a0', storeId: 'store-a0', parentId: null, status: 'DELETED', author: 'dev@localhost', createdAt: '2026-10-01T11:00:00Z', bytes: 5000000000, formatVersion: 'lc3', isHead: false, pinned: false },
+    ],
+    'prj-lancedb-analytics': [
+        { snapshotId: 'snap-b1', storeId: 'store-b1', parentId: null, status: 'VERIFYING', author: 'dev@localhost', createdAt: '2026-09-02T08:30:00Z', bytes: 1048576000, formatVersion: 'lc3', isHead: true, pinned: false },
+    ],
+};
+
+export const PROFILES: Record<string, IProjectProfile[]> = {
+    'prj-lancedb-core': [
+        { profileId: 'prof-1', snapshotId: 'snap-a1', revision: 2, isActive: true, skillPins: [{ skillSlug: 'vector-search', skillId: 'sk-1', skillVersionId: 'skv-2' }] },
+        { profileId: 'prof-1', snapshotId: 'snap-a0', revision: 1, isActive: false, skillPins: [] },
+    ],
+    'prj-lancedb-analytics': [],
+};
+
+export const MANIFEST: ISnapshotManifest = {
+    snapshotId: 'snap-a1',
+    tables: [{ name: 'events', tableVersion: 7 }, { name: 'meta', tableVersion: 2 }],
+    files: [{ path: 'data/0.lance', size: 5242880000, sha256: 'e3b0c44298fc1c14' }],
+    signature: 'sig-0001',
+};
+
+export const SKILL_COLLECTIONS: ISkillCollection[] = [
+    { collectionId: 'col-common', scope: 'COMMON', projectId: null, title: 'Встроенные скиллы' },
+    { collectionId: 'col-core', scope: 'PROJECT', projectId: 'prj-lancedb-core', title: 'Скиллы проекта Core' },
+];
+
+export const SKILLS: ISkill[] = [
+    { id: 'sk-1', collectionId: 'col-common', slug: 'vector-search', owner: 'platform', state: 'PUBLISHED', currentVersionId: 'skv-2', versionsCount: 2, bytes: 204800, pinnedInCount: 1, nameConflict: false },
+    { id: 'sk-2', collectionId: 'col-core', slug: 'compaction', owner: 'dev@localhost', state: 'PUBLISHED', currentVersionId: 'skv-5', versionsCount: 3, bytes: 512000, pinnedInCount: 0, nameConflict: true },
+];
+
+export const SKILL_DETAILS: Record<string, ISkillDetail> = {
+    'sk-1': {
+        skill: SKILLS[0],
+        versions: [
+            { versionId: 'skv-2', skillId: 'sk-1', parentId: 'skv-1', author: 'platform', createdAt: '2026-10-05T10:00:00Z', contentHash: 'h2' },
+            { versionId: 'skv-1', skillId: 'sk-1', parentId: null, author: 'platform', createdAt: '2026-09-01T10:00:00Z', contentHash: 'h1' },
+        ],
+    },
+    'sk-2': {
+        skill: SKILLS[1],
+        versions: [
+            { versionId: 'skv-5', skillId: 'sk-2', parentId: 'skv-4', author: 'dev@localhost', createdAt: '2026-10-08T10:00:00Z', contentHash: 'h5' },
+            { versionId: 'skv-4', skillId: 'sk-2', parentId: null, author: 'dev@localhost', createdAt: '2026-10-02T10:00:00Z', contentHash: 'h4' },
+        ],
+    },
+};
+
+export const PACKAGE_COLLECTIONS: { id: string; title: string }[] = [
+    { id: 'pkcol-1', title: 'MCP-агенты' },
+    { id: 'pkcol-2', title: 'Плагины' },
+];
+
+export const PACKAGES: IPackage[] = [
+    { id: 'pk-1', collectionId: 'pkcol-1', name: 'lancedb-mcp-agent', kind: 'LOCAL_MCP', currentVersionId: 'pkv-3', compatibility: 'node>=18', variantsCount: 2, origin: 'git:internal', pinnedInCount: 1 },
+    { id: 'pk-2', collectionId: 'pkcol-2', name: 'query-export-plugin', kind: 'PLUGIN', currentVersionId: 'pkv-1', compatibility: 'web', variantsCount: 1, origin: 'git:internal', pinnedInCount: 0 },
+];
+
+export const PACKAGE_DETAILS: Record<string, IPackageDetail> = {
+    'pk-1': {
+        package: PACKAGES[0],
+        manifestHash: 'mh-1',
+        variants: [
+            { variantId: 'pkv-3-linux', os: 'linux', architecture: 'x64', runtime: 'node18', bytes: 15728640, entrypoint: 'dist/index.js' },
+            { variantId: 'pkv-3-win', os: 'windows', architecture: 'x64', runtime: 'node18', bytes: 16777216, entrypoint: 'dist/index.js' },
+        ],
+    },
+    'pk-2': {
+        package: PACKAGES[1],
+        manifestHash: 'mh-2',
+        variants: [{ variantId: 'pkv-1-web', os: 'web', architecture: 'wasm', runtime: 'browser', bytes: 4194304, entrypoint: 'plugin.js' }],
+    },
+};
+
+/**
+ * Отсечёт страницу списка (page-size).
+ *
+ * @template {unknown} T
+ * @param {T[]} all - весь набор
+ * @param {number} page - 1-based
+ * @param {number} size - размер страницы
+ * @returns {IPage<T>}
+ */
+export function toPage<T>(all: T[], page: number, size: number): IPage<T> {
+    const start = (page - 1) * size;
+
+    return { items: all.slice(start, start + size), page, size, total: all.length };
+}
+
+/** Допустимые роли сотрудника в проекте. */
+export const MEMBER_ROLE_OPTIONS: string[] = ['Админ проекта', 'Разработчик', 'Наблюдатель'];
