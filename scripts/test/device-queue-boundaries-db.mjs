@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {startFlagsFixture} from './feature-flags.fixture.mjs';
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -22,7 +23,7 @@ const beforeDatabases=(await admin.query('SELECT datname FROM pg_database WHERE 
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const scenarios=[];
 const owner='owner@example.test',other='other@example.test';
-let pool,catalog,access,store,created=false,ownDatabaseDropped=false,fatal,cleaning=false;
+let pool,catalog,access,store,flags,created=false,ownDatabaseDropped=false,fatal,cleaning=false;
 const backgroundErrors=[];
 
 try {
@@ -30,6 +31,7 @@ try {
     const url=new URL(adminUrl);url.pathname='/'+database;
     process.env.CATALOG_PG_URL=url.href;process.env.NODE_ENV='production';process.env.SSO_DISABLE='false';
     process.env.NEUROCENTER_INTERNAL_TOKEN=randomBytes(32).toString('hex');process.env.API_GATEWAY_URL='http://127.0.0.1:9';
+    flags=await startFlagsFixture(process.env.NEUROCENTER_INTERNAL_TOKEN);process.env.FEATURE_FLAGS_SERVICE_URL=flags.url;
     pool=new Pool({connectionString:url.href,max:4});
     pool.on('error',error=>{if(!cleaning)backgroundErrors.push(error.code||'unknown');});
     catalog=new CatalogService();await catalog.ensureSchema();
@@ -124,7 +126,7 @@ try {
 } catch(error) {fatal=error.stack||String(error);console.error(fatal);process.exitCode=1;}
 finally {
     cleaning=true;
-    const cleaned=await Promise.allSettled([store?.onModuleDestroy(),access?.onModuleDestroy(),catalog?.onModuleDestroy(),pool?.end()]);
+    const cleaned=await Promise.allSettled([store?.onModuleDestroy(),access?.onModuleDestroy(),catalog?.onModuleDestroy(),pool?.end(),flags?.close()]);
     const cleanupErrors=cleaned.flatMap(result=>result.status==='rejected'?[String(result.reason)]:[]);
     if(created){await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);ownDatabaseDropped=true;}
     const afterDatabases=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;

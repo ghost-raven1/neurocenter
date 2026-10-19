@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {startFlagsFixture} from './feature-flags.fixture.mjs';
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -25,7 +26,7 @@ const reportPath=process.env.DEVICE_QUEUE_TEST_REPORT || fileURLToPath(new URL('
 const concurrentPrefix=/^nc_skill_audit_test_[a-f0-9]+$/;
 const beforeDatabases=(await admin.query('SELECT oid,datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows.filter(row=>!concurrentPrefix.test(row.datname));
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-let pool,catalog,access,store,created=false,ownDatabaseDropped=false,fatal,cleaning=false;
+let pool,catalog,access,store,flags,created=false,ownDatabaseDropped=false,fatal,cleaning=false;
 const backgroundErrors=[];
 const scenarios=[];
 let observation;
@@ -35,11 +36,12 @@ try {
     const url=new URL(adminUrl);url.pathname='/'+database;
     process.env.CATALOG_PG_URL=url.href;process.env.NODE_ENV='production';process.env.SSO_DISABLE='false';
     process.env.NEUROCENTER_INTERNAL_TOKEN=randomBytes(32).toString('hex');process.env.API_GATEWAY_URL='http://127.0.0.1:9';
+    flags=await startFlagsFixture(process.env.NEUROCENTER_INTERNAL_TOKEN);process.env.FEATURE_FLAGS_SERVICE_URL=flags.url;
     pool=new Pool({connectionString:url.href,max:4});pool.on('error',error=>{if(!cleaning)backgroundErrors.push(error.code||'unknown');});
     catalog=new CatalogService();await catalog.ensureSchema();access=new AccessDb();await access.onModuleInit();
     store=new DeviceStore(access);await store.onModuleInit();
     const jobs=new DeviceJobs(store,{}, {}, {}),controller=new DeviceController(store,jobs,{},{}),authorization=new AccessController(access);
-    const email='owner@example.test',deviceId=randomUUID();
+    const email='owner@example.test',deviceId=randomUUID(),bindingId='b'.repeat(64);
     const actor={email,activeRole:'Разработчик'};
     const req={headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN,'x-bridge-actor':encodeURIComponent(JSON.stringify(actor))}};
     await pool.query("INSERT INTO projects(id,name) VALUES('prj-old','Отозванный проект'),('prj-current','Доступный проект'),('prj-read','Чтение')");
@@ -48,7 +50,9 @@ try {
         ('prj-old','old',$1,'Разработчик','Разработчик'),('prj-current','current',$1,'Разработчик','Разработчик'),('prj-read','read',$1,'Читатель','Наблюдатель')`,[email]);
     await pool.query(`INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,last_seen,report)
         VALUES($1,$2,'Разработчик','Offline-компьютер',$3,$4,NULL,$5)`,
-    [deviceId,email,'a'.repeat(64),randomBytes(32).toString('hex'),{protocolVersion:2,capabilities:['durable-completions','managed-installations']}]);
+    [deviceId,email,'a'.repeat(64),randomBytes(32).toString('hex'),{protocolVersion:2,ragSupported:true,
+        capabilities:['durable-completions','managed-installations','project-rag-sync-v1'],
+        bindings:[{projectId:'prj-current',bindingId,valid:true}]}]);
     const firstId=randomUUID();
     for(let i=0;i<100;i++)await pool.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash)
         VALUES($1,$2,$3,'Разработчик','prj-old','sync-rag','{}',$4,$5)`,[i===0?firstId:randomUUID(),deviceId,email,randomUUID(),'a'.repeat(64)]);
@@ -62,7 +66,7 @@ try {
     try{await controller.cancel(req,firstId);}catch(error){cancelStatus=error.status;}
     assert.equal(cancelStatus,404);
     const requestKey=randomUUID();
-    const input={deviceId,projectId:'prj-current',kind:'sync-rag',requestKey};
+    const input={deviceId,projectId:'prj-current',kind:'sync-rag',requestKey,expectedBindingId:bindingId};
     assert.equal((await authorization.authorize(process.env.NEUROCENTER_INTERNAL_TOKEN,{...actor,method:'POST',path:'/api/device-jobs',body:input})).allowed,true);
     const saved=await controller.create(req,input);
     assert.equal(saved.state,'queued');
@@ -145,7 +149,7 @@ try {
 }catch(error){fatal=error.stack||String(error);console.error(fatal);process.exitCode=1;}
 finally {
     cleaning=true;
-    const cleaned=await Promise.allSettled([store?.onModuleDestroy(),access?.onModuleDestroy(),catalog?.onModuleDestroy(),pool?.end()]);
+    const cleaned=await Promise.allSettled([store?.onModuleDestroy(),access?.onModuleDestroy(),catalog?.onModuleDestroy(),pool?.end(),flags?.close()]);
     const cleanupErrors=cleaned.flatMap(result=>result.status==='rejected'?[String(result.reason)]:[]);
     if(created){await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);ownDatabaseDropped=true;}
     const afterDatabases=(await admin.query('SELECT oid,datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
