@@ -88,7 +88,16 @@ test('Архив со ссылкой отклоняется до записи н
     await assert.rejects(readFile(path.join(f.env.OPENCODE_CONFIG_DIR,'opencode.jsonc')),{code:'ENOENT'});
 });
 
-for(const [os,arch,libc,variant] of [['Linux','x86_64','glibc','linux-x64-baseline'],['Linux','aarch64','musl','linux-arm64-musl'],['Linux','x86_64','musl','linux-x64-baseline-musl'],['Darwin','arm64','','darwin-arm64'],['MINGW64_NT','x86_64','','windows-x64-baseline']]) {
+for(const [os,arch,libc,variant] of [
+    ['Darwin','arm64','','darwin-arm64'],
+    ['Darwin','x86_64','','darwin-x64-baseline'],
+    ['Linux','aarch64','glibc','linux-arm64'],
+    ['Linux','aarch64','musl','linux-arm64-musl'],
+    ['Linux','x86_64','glibc','linux-x64-baseline'],
+    ['Linux','x86_64','musl','linux-x64-baseline-musl'],
+    ['MINGW64_NT','aarch64','','windows-arm64'],
+    ['MINGW64_NT','x86_64','','windows-x64-baseline'],
+]) {
     test(`Загрузка с площадки выбирает архив ${variant}`,async()=>{
         const f=await fixture(os,arch,os.startsWith('MINGW')?'opencode.exe':'opencode');
         await writeFile(path.join(f.root,'fake-bin/curl'),'#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_ROOT/urls"\ncase "$2" in *.sha256) shasum -a 256 "$TEST_ROOT/fixture.tgz" | cut -d " " -f1 > "$4" ;; *) cp "$TEST_ROOT/fixture.tgz" "$4" ;; esac\n',{mode:0o755});

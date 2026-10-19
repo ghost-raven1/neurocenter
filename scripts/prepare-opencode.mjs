@@ -3,11 +3,12 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import {opencodeVersion, opencodeVariants} from './opencode-platforms.mjs';
 
-const version = process.env.OPENCODE_VERSION || '1.14.48';
+const version = process.env.OPENCODE_VERSION || opencodeVersion;
 const registry = (process.env.OPENCODE_REGISTRY || 'https://registry.npmjs.org').replace(/\/$/, '');
 const directory = fileURLToPath(new URL('../bridge-dist/opencode/', import.meta.url));
-const variants = ['darwin-arm64','darwin-x64-baseline','linux-arm64','linux-arm64-musl','linux-x64-baseline','linux-x64-baseline-musl','windows-x64-baseline','windows-arm64'];
+const variants = opencodeVariants;
 await mkdir(directory, { recursive:true });
 for (const variant of variants) {
     const name = `opencode-${variant}`;
@@ -33,3 +34,4 @@ for (const variant of variants) {
     await writeFile(`${file}.sha256`,createHash('sha256').update(bytes).digest('hex')+'\n');
     console.log(`${name}: ${(bytes.length/1024/1024).toFixed(1)} МБ`);
 }
+console.log(`OpenCode ${version}: готовы все ${variants.length} платформенных пакетов.`);

@@ -3,14 +3,9 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import {opencodeVersion as probeVersion, opencodePackageName as probeArchiveName} from './opencode-platforms.mjs';
 
-export const probeVersion = '1.14.48';
-/** Имена npm-артефактов используют baseline для x64 и отдельный musl только на Linux. */
-export function probeArchiveName(platform = process.platform, arch = process.arch, musl = false) {
-    const os = { darwin: 'darwin', linux: 'linux', win32: 'windows' }[platform];
-    if (!os || !['x64', 'arm64'].includes(arch) || musl && platform !== 'linux') throw new Error('Unsupported probe target');
-    return `opencode-${os}-${arch}${arch === 'x64' ? '-baseline' : ''}${musl ? '-musl' : ''}`;
-}
+export {probeVersion, probeArchiveName};
 async function digest(file) {
     const hash = createHash('sha256');
     for await (const chunk of createReadStream(file)) hash.update(chunk);
