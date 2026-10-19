@@ -36,6 +36,30 @@ test('Синхронизация использует свежий CLI и оди
         && options.cwd === path.join(root, 'services/catalog-service')));
 });
 
+test('Серверный режим передаёт выбранный стек без чтения локальной БД и сборки на хосте', async () => {
+    const options = parseSyncArguments(['--production', '--directory', '/private/config', '--project-name', 'server', '--dry-run']);
+    assert.deepEqual(options, { production: true, directory: '/private/config', projectName: 'server', dryRun: true });
+    const env = { PATH: '/fixture/bin' }, calls = [];
+    await syncCatalog(options, {
+        environment: async () => { throw new Error('Локальное окружение не требуется'); },
+        npm: () => { throw new Error('Сборка на хосте не требуется'); },
+        runtime: source => { assert.equal(source, process.env); return { node: '/fixture/node24', env }; },
+        run: async (...args) => { calls.push(args); },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], '/fixture/node24');
+    assert.deepEqual(calls[0][1], [path.join(root, 'scripts/production/sync-catalog.mjs'),
+        '--directory', '/private/config', '--project-name', 'server', '--dry-run']);
+    assert.equal(calls[0][2].cwd, root);
+    assert.equal(calls[0][2].env, env);
+    assert.deepEqual(parseSyncArguments(['--production']), { production: true, ...parseCatalogSyncArguments([]) });
+    for (const args of [['--directory', '/private/config'], ['--production', '--production'],
+        ['--production', '--directory'], ['--production', '--dry-run', '--dry-run'],
+        ['--production', '--project-name', 'first', '--project-name', 'second'], ['--production', '--url']]) {
+        assert.throws(() => parseSyncArguments(args));
+    }
+});
+
 test('Ошибка сборки не запускает старую скомпилированную синхронизацию', async () => {
     let calls = 0;
     await assert.rejects(syncCatalog({ dryRun: false }, {
