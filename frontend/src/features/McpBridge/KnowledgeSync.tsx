@@ -9,6 +9,8 @@ import { isPending } from './installationHelpers';
 import { bridgeOperationBlocker } from './readiness';
 import { currentKnowledgeJobs, knowledgeSyncBlocker } from './knowledgeSyncState';
 import { OpenCodeRagUi } from './ragUi/OpenCodeRagUi';
+import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
+import { createBridgeRequestKey } from './bridgeRequestKey';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
@@ -17,6 +19,7 @@ export const KnowledgeSync: FC<{
     connection?: boolean;
     serverReady?: boolean;
 }> = ({ projectId, canWrite, connection, serverReady }) => {
+    const { scope: ownerScope, captureOwner } = useAuthRequestOwner();
     const bridge = useBridge();
     const bridgeError = knowledgeSyncBlocker(bridge.device);
     const restoreError = serverReady === false ? 'Сначала синхронизируйте полный индекс с сервером' : '';
@@ -29,31 +32,43 @@ export const KnowledgeSync: FC<{
     const matchingJobs = currentKnowledgeJobs(bridge.jobs,bridge.device?.id,projectId,binding?.bindingId);
     const job = matchingJobs.find(isPending) || matchingJobs[0];
     const pending = isPending(job);
-    const scope = JSON.stringify([projectId,bridge.device?.id,binding?.bindingId]);
+    const scope = JSON.stringify([ownerScope,projectId,bridge.device?.id,binding?.bindingId,canWrite]);
     const currentScope = useRef(scope); currentScope.current = scope;
+    const request = useRef<{scope:string;kind:'restore-rag'|'sync-rag';key:string}>();
+    if (request.current?.scope !== scope) { request.current = undefined; }
     const sequence = useRef(0);
     useEffect(() => {
         sequence.current++; lock.current = false; setBusy(false); setError('');
         return () => { sequence.current++; };
     },[scope]);
     const create = async (kind: 'restore-rag' | 'sync-rag'): Promise<void> => {
-        if (!bridge.device || bridgeError || (kind === 'restore-rag' && restoreError) || !bridge.devicesReady || !bridge.jobsReady || !binding || !canWrite || pending || lock.current) {
+        const owns = captureOwner();
+        if (!owns() || !bridge.device || bridgeError || (kind === 'restore-rag' && restoreError) || !bridge.devicesReady || !bridge.jobsReady || !binding || !canWrite || pending || lock.current) {
             return;
         }
         lock.current = true;
         const ticket = ++sequence.current;
-        const current = (): boolean => ticket === sequence.current && currentScope.current === scope;
+        const current = (): boolean => owns() && ticket === sequence.current && currentScope.current === scope;
         setBusy(true);
         setError('');
         try {
+            // Потерянный ответ повторяет исходный POST; смена направления означает новое действие.
+            if (request.current?.kind !== kind) { request.current = undefined; }
+            const saved = request.current ?? {scope,kind,key:createBridgeRequestKey()};
+            request.current = saved;
             await bridgeApi.create({
                 deviceId: bridge.device.id,
                 projectId,
                 kind,
                 expectedBindingId: binding.bindingId,
-                requestKey: crypto.randomUUID(),
+                requestKey: saved.key,
             });
-            if (current()) { await bridge.reload(); }
+            if (current()) {
+                if (request.current === saved) { request.current = undefined; }
+                void bridge.reload().catch(() => {
+                    if (current()) { setError('Задание принято, но не удалось обновить его состояние. Обновите данные.'); }
+                });
+            }
         } catch (cause) {
             if (current()) { setError(
                 errorMessage(cause, 'Не удалось передать синхронизацию мосту.'),
