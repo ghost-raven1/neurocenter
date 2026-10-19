@@ -16,10 +16,10 @@ export class ProxyController {
      *
      * @param {Request} req - входящий запрос
      * @param {Response} res - исходящий ответ
-     * @returns {void}
+     * @returns {Promise<void>}
      */
     @All('{*path}')
-    public all(@Req() req: Request, @Res() res: Response): void {
-        void this.proxy.forward(req, res);
+    public all(@Req() req: Request, @Res() res: Response): Promise<void> {
+        return this.proxy.forward(req, res);
     }
 }

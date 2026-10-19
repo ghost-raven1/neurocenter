@@ -38,18 +38,21 @@ async function bootstrap(): Promise<void> {
     const auth = app.get(AuthGuardService);
     const live=app.get(LiveService);live.attach(io);
     io.use(async (socket,next) => {
-        const request=socket.handshake.auth.token?{headers:{authorization:`Bearer ${String(socket.handshake.auth.token)}`}} as Request:socket.request as Request;
-        const user=await auth.authenticate(request);
-        if (!user) { next(new Error('Требуется вход в Нейроцентр')); return; }
-        socket.data.user=user;socket.data.authRequest=request;
-        next();
+        try {
+            const request=socket.handshake.auth.token?{headers:{authorization:`Bearer ${String(socket.handshake.auth.token)}`}} as Request:socket.request as Request;
+            const user=await auth.authenticate(request);
+            if (!user) { next(new Error('Требуется вход в Нейроцентр')); return; }
+            socket.data.user=user;socket.data.authRequest=request;
+            next();
+        } catch { next(new Error('Проверка входа временно недоступна. Повторите подключение позже.')); }
     });
     io.on('connection',socket=>{
         const user=socket.data.user as Awaited<ReturnType<AuthGuardService['authenticate']>>;
         if(!user){socket.disconnect(true);return;}
         void socket.join(user.deviceId?`device:${user.deviceId}`:`user:${user.email}`);
         if(user.deviceId){live.bridge(user.email,user.deviceId);}
-        const timer=setInterval(()=>{void auth.authenticate(socket.data.authRequest as Request).then(current=>{if(!current){socket.disconnect(true);}});},25000);
+        const timer=setInterval(()=>{void auth.authenticate(socket.data.authRequest as Request)
+            .then(current=>{if(!current){socket.disconnect(true);}}).catch(()=>{socket.disconnect(true);});},25000);
         socket.on('disconnect',()=>{clearInterval(timer);if(user.deviceId){live.bridge(user.email,user.deviceId);}});
     });
 
