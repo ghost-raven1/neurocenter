@@ -48,13 +48,21 @@ export async function packModelBundle({directory,output,baseUrl,locks,partBytes=
     } catch(error) {await rm(output,{recursive:true,force:true});throw error;}
 }
 
-async function assemble(parts,filename,expected) {
+async function assemble(parts,filename,expected,onBytes,verification) {
     const output=await open(filename,'wx',0o600);
     try {
-        for(const source of parts)for await(const bytes of createReadStream(source,{flags:constants.O_RDONLY|constants.O_NOFOLLOW}))await output.writeFile(bytes);
+        for(const source of parts)for await(const bytes of createReadStream(source,{flags:constants.O_RDONLY|constants.O_NOFOLLOW})) {
+            await output.writeFile(bytes);await onBytes(bytes.length);
+        }
         await output.sync();
     } finally {await output.close();}
-    if(!await verifyFile(filename,expected))throw new Error('Не удалось собрать файл модели.');
+    if(!await verifyFile(filename,expected,verification))throw new Error('Не удалось собрать файл модели.');
+}
+
+/** Счётчик отражает прочитанные или записанные байты конкретной стадии, а не прошедшее время. */
+function byteProgress(onProgress,stage,message,total) {
+    let completed=0;
+    return async bytes=>{completed+=bytes;await onProgress({stage,message,completed,total});};
 }
 
 /** Очистка общего immutable-кэша другим импортом допускает ограниченный повтор с полной проверкой. */
@@ -76,24 +84,34 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
     directory=await safeDirectory(directory,'',!verifyOnly);
     const report={ok:true,downloadOnly,verifyOnly,models:locks.length,files:manifest.files.length,bytes:manifest.files.reduce((sum,file)=>sum+file.size,0)};
     const blobs=manifest.files.filter(file=>file.parts),tags=manifest.files.filter(file=>file.inlineBase64);
+    await onProgress({stage:'inspecting',message:'Проверяем наличие закреплённых файлов моделей.',completed:0,total:manifest.files.length,unit:'files'});
+    const checked=byteProgress(onProgress,'verifying','Проверяем SHA-256 существующих файлов моделей.',report.bytes);
+    await checked(0);
     const present=new Set();
     for(const file of manifest.files) {
         const relative=path.posix.dirname(file.path);let parent=true;
         try {await safeDirectory(directory,relative);} catch(error) {if(error.code==='ENOENT')parent=false;else throw error;}
-        if(parent&&await verifyFile(path.join(directory,file.path),file))present.add(file.path);
+        if(parent&&await verifyFile(path.join(directory,file.path),file,{onBytes:checked}))present.add(file.path);
         else if(verifyOnly)throw new Error('В проекте отсутствует часть закреплённого комплекта моделей.');
     }
-    if(verifyOnly||present.size===manifest.files.length)return report;
+    const ready=()=>onProgress({stage:'ready',message:downloadOnly?'Предзагрузка закреплённых моделей завершена.':'Все закреплённые модели находятся в проекте.',completed:report.bytes,total:report.bytes});
+    if(verifyOnly||present.size===manifest.files.length) {await ready();return report;}
     await safeDirectory(directory,'.bundle-cache/parts',true);await safeDirectory(directory,'.bundle-cache/blobs',true);
+    const missingBytes=blobs.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0);
+    const checkedCache=byteProgress(onProgress,'verifying','Проверяем SHA-256 подготовленного кэша моделей.',missingBytes);
+    await checkedCache(0);
     const cached=new Map();let required=0,largest=0;
     for(const file of blobs) {
         if(present.has(file.path))continue;
         const cache=path.join(directory,'.bundle-cache/blobs',file.sha256);
-        if(await verifyFile(cache,file))cached.set(file.path,cache);
+        if(await verifyFile(cache,file,{onBytes:checkedCache}))cached.set(file.path,cache);
         else {required+=file.size;largest=Math.max(largest,file.size);}
     }
     await ensureSpace(directory,required?required+largest:0,readDisk);
-    const staging=await mkdtemp(path.join(directory,'.bundle-cache/stage-'));let downloaded=0;
+    const staging=await mkdtemp(path.join(directory,'.bundle-cache/stage-'));
+    const obtained=byteProgress(onProgress,'downloading','Подготавливаем части моделей: загрузка и проверенный кэш.',required);
+    const assembled=byteProgress(onProgress,'assembling','Собираем файлы моделей из проверенных частей.',required);
+    const activated=byteProgress(onProgress,'activating','Активируем проверенные файлы моделей.',missingBytes+tags.filter(file=>!present.has(file.path)).reduce((sum,file)=>sum+file.size,0));
     try {
         for(const file of blobs) {
             signal?.throwIfAborted();
@@ -102,29 +120,35 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
             for(const part of file.parts) {
                 signal?.throwIfAborted();
                 const cache=path.join(directory,'.bundle-cache/parts',part.sha256);
-                if(!await verifyFile(cache,part)) {
+                const checkedPart=byteProgress(onProgress,'verifying','Проверяем SHA-256 части модели в кэше.',part.size);
+                if(!await verifyFile(cache,part,{onBytes:checkedPart})) {
+                    await obtained(0);
                     const temporary=path.join(staging,part.name);
                     await downloadPart(manifest.releaseBaseUrl+'/'+part.name,temporary,part,{fetch:request,signal,onBytes:async bytes=>{
-                        downloaded+=bytes;await ensureSpace(directory,64*1024**2,readDisk);
-                        await onProgress({stage:'downloading',message:'Получаем закреплённые файлы моделей.',completed:downloaded,total:required});
+                        await ensureSpace(directory,64*1024**2,readDisk);await obtained(bytes);
                     }});
-                    await promote(temporary,cache,part);
-                }
+                    const checkedPart=byteProgress(onProgress,'verifying','Проверяем SHA-256 загруженной части модели.',part.size);
+                    await checkedPart(0);await promote(temporary,cache,part,{onBytes:checkedPart});
+                } else await obtained(part.size);
                 parts.push(cache);
             }
             const temporary=path.join(staging,file.sha256);
             await ensureSpace(directory,file.size,readDisk);
-            await assemble(parts,temporary,file);
+            await assembled(0);
+            const checkedBlob=byteProgress(onProgress,'verifying','Проверяем SHA-256 собранного файла модели.',file.size);
+            await assemble(parts,temporary,file,assembled,{onBytes:checkedBlob});
             const cache=path.join(directory,'.bundle-cache/blobs',file.sha256);
-            await promote(temporary,cache,file);cached.set(file.path,cache);
+            const checkedPublication=byteProgress(onProgress,'verifying','Проверяем SHA-256 файла модели в кэше.',file.size);
+            await promote(temporary,cache,file,{onBytes:checkedPublication});cached.set(file.path,cache);
             // Удаляются только собственные проверенные части после успешной сборки полного SHA-файла.
             for(const part of new Set(parts))try {await unlink(part);} catch(error) {if(error.code!=='ENOENT')throw error;}
         }
-        if(downloadOnly)return report;
+        if(downloadOnly) {await ready();return report;}
+        await activated(0);
         for(const file of blobs) {
             if(present.has(file.path))continue;
             await safeDirectory(directory,path.posix.dirname(file.path),true);
-            await promote(cached.get(file.path),path.join(directory,file.path),file);
+            await promote(cached.get(file.path),path.join(directory,file.path),file,{onBytes:activated});
         }
         // До этого момента Ollama не видит новых тегов и продолжает использовать прежний комплект.
         for(const file of tags) {
@@ -133,9 +157,9 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
             const temporary=path.join(staging,file.sha256+'.manifest');
             const handle=await open(temporary,'wx',0o600);
             try {await handle.writeFile(Buffer.from(file.inlineBase64,'base64'));await handle.sync();} finally {await handle.close();}
-            await promote(temporary,path.join(directory,file.path),file);
+            await promote(temporary,path.join(directory,file.path),file,{onBytes:activated});
         }
-        await onProgress({stage:'ready',message:'Все закреплённые модели находятся в проекте.',completed:report.bytes,total:report.bytes});
+        await ready();
         return report;
     } finally {await rm(staging,{recursive:true,force:true});}
 }

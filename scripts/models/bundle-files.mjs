@@ -28,7 +28,7 @@ export async function safeDirectory(root,relative='',create=false) {
 }
 
 /** Чтение потоковое: файлы весов не помещаются в память процесса. */
-export async function verifyFile(filename,expected) {
+export async function verifyFile(filename,expected,{onBytes=()=>{}}={}) {
     let file;
     try {
         const named=await lstat(filename);
@@ -37,7 +37,10 @@ export async function verifyFile(filename,expected) {
         const before=await file.stat();
         if(!before.isFile()||before.ino!==named.ino||before.dev!==named.dev||before.size!==expected.size)throw new Error('Файл модели изменился перед проверкой.');
         const hash=createHash('sha256');let size=0;
-        for await(const chunk of file.createReadStream({autoClose:false})) {size+=chunk.length;if(size>expected.size)throw new Error('Файл модели изменился во время проверки.');hash.update(chunk);}
+        for await(const chunk of file.createReadStream({autoClose:false})) {
+            size+=chunk.length;if(size>expected.size)throw new Error('Файл модели изменился во время проверки.');
+            hash.update(chunk);await onBytes(chunk.length);
+        }
         const after=await file.stat(),current=await lstat(filename);
         if(size!==expected.size||hash.digest('hex')!==expected.sha256||before.ino!==current.ino||before.dev!==current.dev||!current.isFile()
             ||current.isSymbolicLink()||after.size!==before.size||after.mtimeMs!==before.mtimeMs)throw new Error('SHA существующего файла модели не совпал. Данные сохранены.');
@@ -47,9 +50,9 @@ export async function verifyFile(filename,expected) {
 }
 
 /** Публикация create-if-absent допускает повтор и параллельный импорт, не перезаписывая другие данные. */
-export async function promote(source,target,expected) {
+export async function promote(source,target,expected,verification) {
     try {await link(source,target);} catch(error) {if(error.code!=='EEXIST')throw error;}
-    if(!await verifyFile(target,expected))throw new Error('Опубликованный файл модели исчез во время проверки.');
+    if(!await verifyFile(target,expected,verification))throw new Error('Опубликованный файл модели исчез во время проверки.');
     try {await unlink(source);} catch(error) {if(error.code!=='ENOENT')throw error;}
     if(process.platform!=='win32') {
         const folder=await open(path.dirname(target),constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);

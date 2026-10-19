@@ -31,10 +31,10 @@ async function fixture(t, mode) {
     t.after(async () => {
         if (cli?.exitCode === null && cli.signalCode === null) cli.kill('SIGKILL');
         // Путь entry из fixture проверяется повторно: переиспользованный PID не получает сигнал.
-        const children = (await eventsFrom(calls)).filter(event => event.kind === 'child-spawn');
+        const children = (await eventsFrom(calls)).filter(event => ['child-spawn','model-child-spawn','model-runtime-wait'].includes(event.kind));
         for (const child of children) {
             const command = spawnSync('ps', ['-ww', '-p', String(child.pid), '-o', 'command='], {encoding: 'utf8'});
-            if (command.status !== 0 || !command.stdout.includes(child.entry) || !child.entry.startsWith(checkout + path.sep)) continue;
+            if (command.status !== 0 || !command.stdout.includes(child.entry) || !child.entry.startsWith(directory + path.sep)) continue;
             try { process.kill(child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
         }
         await fs.rm(directory, {recursive: true, force: true});
@@ -79,7 +79,14 @@ async function fixture(t, mode) {
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
-        else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding')console.log('fixture model runtime ready');
+        else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding'){
+            if(process.env.DEV_START_MODE==='model-runtime-error'){
+                console.error('PRIVATE fixture Docker failure');process.exitCode=35;
+            }else if(process.env.DEV_START_MODE==='model-runtime-cancel'){
+                process.on('SIGTERM',()=>{});setInterval(()=>{},1000);
+                require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-runtime-wait',pid:process.pid,entry:process.argv[1]})+'\\n');
+            }else console.log('fixture model runtime ready');
+        }
         else process.exitCode=93;
     `, {mode: 0o700});
     for (const [name, relative] of services) {
@@ -112,7 +119,7 @@ async function fixture(t, mode) {
         const spawn=childProcess.spawn;
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
-            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:'child-spawn',pid:child.pid,entry});
+            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')?'model-child-spawn':'child-spawn',pid:child.pid,entry});
             return child;
         };
         const writeFileSync=fs.writeFileSync;
@@ -169,16 +176,22 @@ async function fixture(t, mode) {
         cli.stdout.setEncoding('utf8').on('data', value => { stdout += value; });
         cli.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
         const timer = setTimeout(() => cli.kill('SIGKILL'), 12000);
+        let cancelling=false;
+        const cancel=mode==='model-runtime-cancel'?setInterval(async()=>{
+            if(!cancelling&&(await eventsFrom(calls)).some(event=>event.kind==='model-runtime-wait')){
+                cancelling=true;cli.kill('SIGTERM');
+            }
+        },20):undefined;
         const status = await new Promise((resolve, reject) => {
             cli.once('error', reject);
             cli.once('close', (code, signal) => resolve({code, signal}));
-        }).finally(() => clearTimeout(timer));
+        }).finally(() => {clearTimeout(timer);clearInterval(cancel);});
         const events = await eventsFrom(calls);
         assert.equal(status.signal, null, stdout + stderr);
         assert.ok(events.every(event => !['unexpected-network', 'unexpected-probe'].includes(event.kind)));
         assert.ok(events.filter(event => event.kind === 'docker').every(event => !event.args.includes('down')));
         assert.doesNotMatch(stderr, /REAL_NETWORK_FORBIDDEN/);
-        for (const child of events.filter(event => event.kind === 'child-spawn')) {
+        for (const child of events.filter(event => ['child-spawn','model-child-spawn'].includes(event.kind))) {
             const command = spawnSync('ps', ['-ww', '-p', String(child.pid), '-o', 'command='], {encoding: 'utf8'});
             assert.ok(command.status !== 0 || !command.stdout.includes(child.entry), 'CLI оставил процесс ' + child.entry);
         }
@@ -255,6 +268,33 @@ test('Ошибка поставки весов сохраняет прежние
     assert.equal(result.events.filter(event => event.kind === 'model-bundle').length, 1);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('embedding')).length, 0);
+});
+
+test('Ошибка Docker хостинга объясняется и допускает запуск остальных сервисов',async t=>{
+    const f=await fixture(t,'model-runtime-error'),result=await f.run();
+    assert.equal(result.code,1,result.stdout+result.stderr); // Тестовый каталог завершается отдельно.
+    assert.match(result.stderr,/Хостинг моделей недоступен/);
+    assert.match(result.stdout,/код 35/);
+    assert.match(result.stdout,/model-hosting/);
+    assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
+    assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,1);
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+});
+
+test('Отмена зависшего хостинга завершает ожидание и сохраняет прежний стек',async t=>{
+    const f=await fixture(t,'model-runtime-cancel');
+    await fs.mkdir(path.join(f.checkout,'.run'));
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');
+    await fs.writeFile(filename,state);
+    const result=await f.run();
+    assert.equal(result.code,143,result.stdout+result.stderr);
+    assert.match(result.stderr,/Прежние сервисы не остановлены/);
+    assert.equal(await fs.readFile(filename,'utf8'),state);
+    assert.equal(result.events.filter(event=>event.kind==='catalog-sync'||event.kind==='child-spawn').length,0);
+    const waiting=result.events.find(event=>event.kind==='model-runtime-wait');
+    assert.ok(waiting);
+    const command=spawnSync('ps',['-ww','-p',String(waiting.pid),'-o','command='],{encoding:'utf8'});
+    assert.ok(command.status!==0||!command.stdout.includes(path.dirname(f.checkout)),command.stdout);
 });
 
 test('Сервис, завершившийся во время проверки HTTP, не объявляется готовым', async t => {

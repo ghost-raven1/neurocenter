@@ -55,6 +55,39 @@ test('Чистый импорт восстанавливает обе модел
     for(const file of manifest.files)assert.equal(sha256(await readFile(path.join(destination,file.path))),file.sha256);
 }));
 
+test('Повторная SHA-проверка сообщает реальные байты и готовность без обращения к сети',async()=>fixture(async({hydrate,calls,root,manifest})=>{
+    await hydrate();const count=calls.length;
+    for(const options of [{},{verifyOnly:true}]) {
+        const progress=[];await hydrate({...options,onProgress:value=>progress.push(value)});
+        assert.equal(calls.length,count);
+        assert.equal(progress[0].stage,'inspecting');
+        const verified=progress.filter(value=>value.stage==='verifying');
+        assert.equal(verified[0].completed,0);
+        assert.equal(verified.at(-1).completed,manifest.files.reduce((sum,file)=>sum+file.size,0));
+        assert.ok(verified.every((value,index)=>index===0||value.completed>=verified[index-1].completed));
+        assert.equal(progress.at(-1).stage,'ready');
+        assert.equal(progress.at(-1).completed,progress.at(-1).total);
+        assert.ok(!JSON.stringify(progress).includes(root));
+    }
+}));
+
+test('После обрыва прогресс учитывает проверенные части и достигает полного объёма',async()=>fixture(async({hydrate,fetch,manifest})=>{
+    let requests=0;
+    await assert.rejects(hydrate({fetch:async(...args)=>{if(++requests===2)throw new Error('INTERRUPTED');return fetch(...args);}}));
+    const progress=[];let completedBeforeNetwork;
+    await hydrate({onProgress:value=>progress.push(value),fetch:async(...args)=>{
+        completedBeforeNetwork??=progress.filter(value=>value.stage==='downloading').at(-1)?.completed;
+        return fetch(...args);
+    }});
+    assert.equal(completedBeforeNetwork,manifest.files.find(file=>file.parts).parts[0].size);
+    const downloading=progress.filter(value=>value.stage==='downloading');
+    const expected=manifest.files.filter(file=>file.parts).reduce((sum,file)=>sum+file.size,0);
+    assert.equal(downloading.at(-1).completed,expected);assert.equal(downloading.at(-1).total,expected);
+    assert.ok(downloading.every(value=>value.completed<=value.total));
+    assert.ok(downloading.every((value,index)=>index===0||value.completed>=downloading[index-1].completed));
+    for(const stage of ['inspecting','verifying','assembling','activating','ready'])assert.ok(progress.some(value=>value.stage===stage));
+}));
+
 test('Предзагрузка не публикует теги, а импорт использует готовый кэш без повторного скачивания',async()=>fixture(async({hydrate,calls,destination,manifest})=>{
     await hydrate({downloadOnly:true});const count=calls.length;
     await assert.rejects(access(path.join(destination,manifest.files.find(file=>file.inlineBase64).path)));

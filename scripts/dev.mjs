@@ -324,4 +324,7 @@ async function main() {
     }
 }
 
-main().catch(error => { output.error(error.message); process.exitCode = 1; });
+main().catch(error => {
+    output.error(error.message);
+    process.exitCode = error.code === 'ECANCELED' ? (error.signal === 'SIGTERM' ? 143 : 130) : 1;
+});

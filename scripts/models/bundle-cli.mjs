@@ -5,6 +5,31 @@ import {packModelBundle,hydrateModelBundle,readModelBundle} from './bundle.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only] [--manifest <опись>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
 
+function formatBytes(bytes) {
+    const units=['Б','КиБ','МиБ','ГиБ'];let index=0,value=bytes;
+    while(value>=1024&&index<units.length-1) {value/=1024;index++;}
+    return `${index?value.toFixed(1):value} ${units[index]}`;
+}
+
+/** Диагностика содержит только стадию и счётчики, без локальных путей или адресов загрузки. */
+export function formatModelBundleProgress(value) {
+    if(!Number.isSafeInteger(value.completed)||!Number.isSafeInteger(value.total)||value.total<1)return value.message;
+    if(value.unit==='files')return `${value.message} ${value.completed}/${value.total} файлов`;
+    const percent=Math.min(100,Math.floor(value.completed/value.total*100));
+    return `${value.message} ${percent}% · ${formatBytes(value.completed)} / ${formatBytes(value.total)}`;
+}
+
+/** Смена стадии видна сразу; потоковые счётчики обновляются не чаще одного раза в две секунды. */
+export function modelBundleProgressReporter(write=value=>console.error(value),now=Date.now) {
+    let last=0,stage,message;
+    return value=>{
+        const current=now();
+        if(value.stage!==stage||value.message!==message||current-last>=2000||value.stage==='ready') {
+            write(formatModelBundleProgress(value));last=current;stage=value.stage;message=value.message;
+        }
+    };
+}
+
 /** CLI не принимает произвольные файлы весов и не исполняет команды из поставки. */
 export async function runModelBundleCli(args=process.argv.slice(2)) {
     if(args.length===1&&['--help','-h'].includes(args[0])) {console.log(usage);return;}
@@ -23,10 +48,8 @@ export async function runModelBundleCli(args=process.argv.slice(2)) {
         console.log(JSON.stringify({ok:true,packed:true,files:manifest.files.length,parts:manifest.files.flatMap(file=>file.parts||[]).length}));return;
     }
     if(options.output||options.baseUrl||options.downloadOnly&&options.verifyOnly)throw new Error(usage);
-    const manifest=await readModelBundle(path.resolve(options.manifest));let last=0;
-    const report=await hydrateModelBundle({...options,directory:path.resolve(options.directory),manifest,onProgress:value=>{
-        if(Date.now()-last>2000||value.stage==='ready') {console.error(value.message);last=Date.now();}
-    }});
+    const manifest=await readModelBundle(path.resolve(options.manifest));
+    const report=await hydrateModelBundle({...options,directory:path.resolve(options.directory),manifest,onProgress:modelBundleProgressReporter()});
     console.log(JSON.stringify(report));
 }
 

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,mkdir,symlink} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,symlink,readFile,stat,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {modelRuntimeEnvironment,startModelRuntime} from '../models/startup.mjs';
@@ -35,6 +35,55 @@ test('Необязательный runtime не останавливает dev �
     const result=await startModelRuntime({root,output,environment:{}},command=>command==='docker'?{status:1,stderr:'PRIVATE UPSTREAM'}:prepared);
     assert.deepEqual(result,{ok:false});assert.ok(messages.some(item=>item.level==='warning'));
     assert.ok(!JSON.stringify(messages).includes('PRIVATE'));assert.ok(!messages.some(item=>item.level==='success'&&item.text[0].includes('Хостинг')));
+    const diagnostic=messages.find(item=>item.text[0]==='Подробности Docker')?.text[1];
+    assert.equal(path.dirname(diagnostic),path.join(root,'.run/model-hosting'));
+    assert.match(await readFile(diagnostic,'utf8'),/PRIVATE UPSTREAM/);
+    if(process.platform!=='win32')assert.equal((await stat(diagnostic)).mode&0o777,0o600);
+}));
+
+test('Асинхронная подготовка обновляет стадию и запускает Docker только после проверки весов',async()=>fixture(async({root,output,messages})=>{
+    let finishPreparation;const calls=[];
+    const result=startModelRuntime({root,output,environment:{}},async(command,args,options)=>{
+        calls.push(command);options.onTick(12000);
+        if(command!=='docker')return await new Promise(resolve=>{finishPreparation=resolve;});
+        return {status:0};
+    });
+    while(!finishPreparation)await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(calls.length,1);
+    assert.ok(messages.some(item=>item.text[0]==='Подготовка весов'&&item.text[1].includes('12 с')));
+    finishPreparation(prepared);assert.deepEqual(await result,{ok:true});
+    assert.deepEqual(calls,[process.execPath,'docker']);
+    assert.ok(messages.some(item=>item.text[0]==='Docker: запуск хостинга'&&item.text[1].includes('12 с')));
+}));
+
+test('Deadline Docker объясняется без ложного сообщения о готовности',async()=>fixture(async({root,output,messages})=>{
+    const result=await startModelRuntime({root,output,environment:{}},command=>command==='docker'
+        ? {status:null,error:Object.assign(new Error('PRIVATE timeout'),{code:'ETIMEDOUT'})}:prepared);
+    assert.deepEqual(result,{ok:false});
+    assert.ok(messages.some(item=>item.text[0]==='Причина'&&item.text[1].includes('10 минут')));
+    assert.ok(!JSON.stringify(messages).includes('PRIVATE'));
+    assert.ok(!messages.some(item=>item.text[0]==='Хостинг моделей готов; встроенные веса уже доступны'));
+}));
+
+for(const stage of ['weights','docker'])test(`Отмена на стадии ${stage} прерывает весь запуск`,async()=>fixture(async({root,output,messages})=>{
+    const calls=[];
+    await assert.rejects(startModelRuntime({root,output,environment:{}},command=>{
+        calls.push(command);
+        return stage==='docker'&&command!=='docker'?prepared:
+            {status:null,signal:'SIGTERM',error:Object.assign(new Error('cancelled'),{code:'ECANCELED'})};
+    }),error=>error.code==='ECANCELED'&&error.signal==='SIGTERM');
+    assert.equal(calls.length,stage==='weights'?1:2);
+    assert.ok(!messages.some(item=>item.level==='warning'));
+}));
+
+test('Диагностика не пишет через символическую ссылку и не мешает остальному запуску',async()=>fixture(async({root,output,messages})=>{
+    const outside=path.join(root,'outside');await mkdir(outside);await mkdir(path.join(root,'.run'));
+    await symlink(outside,path.join(root,'.run/model-hosting'));
+    assert.deepEqual(await startModelRuntime({root,output,environment:{}},command=>command==='docker'
+        ? {status:1,stderr:'PRIVATE UPSTREAM'}:prepared),{ok:false});
+    assert.deepEqual(await readdir(outside),[]);
+    assert.ok(!JSON.stringify(messages).includes('PRIVATE'));
+    assert.ok(!messages.some(item=>item.text[0]==='Подробности Docker'));
 }));
 
 test('Отключённый хостинг не вызывает Docker',async()=>fixture(async({root,output})=>{
