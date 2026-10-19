@@ -30,7 +30,7 @@ interface Consent{checked:boolean;disabled?:boolean;onChange:(event:{target:{che
 const ui=vi.hoisted(()=>({scope:'owner-a',epoch:0,buttons:new Map<string,Button>(),choices:new Map<string,Choice>(),consent:undefined as Consent|undefined,
     bridge:undefined as ReturnType<typeof ragUiFixture>['bridge']|undefined,
     ragUi:undefined as {bridge:ReturnType<typeof ragUiFixture>['bridge'];projectId:string;canWrite:boolean}|undefined,
-    owners:new Map<string,()=>()=>boolean>(),
+    owners:new Map<string,()=>()=>boolean>(),prefer:vi.fn(),
 }));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:hooks.useState,useRef:hooks.useRef,useCallback:hooks.useCallback,useEffect:hooks.useEffect}));
 vi.mock('react-redux',()=>({useSelector:()=>({email:'admin@example.test',activeRole:'Главный админ',userRoles:['Главный админ']})}));
@@ -62,7 +62,7 @@ let actionInput:ReturnType<typeof embeddingConnectionInput>;
 function render(){hooks.begin();ui.buttons.clear();ui.choices.clear();ui.consent=undefined;ui.ragUi=undefined;
     const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:{provider:'ollama',model:'legacy:tag',dimension:2560},canManage,canConnect})
         :mode==='connection'?createElement(ProjectEmbeddingConnection,{selection,disabled:false})
-        :createElement(ConnectEmbeddingAction,{input:actionInput,selection,bridge:current.bridge,disabled:false,consent:'Модель А · компьютер А · /fixture/root/Проект'});
+        :createElement(ConnectEmbeddingAction,{input:actionInput,selection,bridge:current.bridge,disabled:false,consent:'Модель А · компьютер А · /fixture/root/Проект',onPreferRagUi:ui.prefer});
     const html=renderToStaticMarkup(component);hooks.commit();return html;
 }
 async function settle(){for(let i=0;i<12;i++)await Promise.resolve();render();render();}
@@ -239,8 +239,11 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
     });
     it('После подключения предлагает управление индексом той же установки без автоматического открытия или индексирования',async()=>{
         mode='action';current.bridge.installations=[current.item,checkedPlugin()];vi.mocked(bridgeApi.create).mockResolvedValueOnce(job({state:'succeeded',result:result()}));
-        consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();expect(render()).toContain('Управление индексом выбранной установки');
-        expect(ui.ragUi?.bridge.installations).toEqual([current.item]);expect(ui.ragUi?.projectId).toBe(selection.projectId);expect(ui.ragUi?.canWrite).toBe(true);
+        consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();expect(render()).toContain('Перейти к интерфейсу установки');
+        expect(ui.ragUi).toBeUndefined();expect(ui.prefer).toHaveBeenCalled();
+        expect(ui.prefer.mock.calls.at(-1)?.[0]).toEqual({owner:'owner-a',root:'/fixture/root',request:{kind:'open-rag-ui',deviceId:actionInput.deviceId,projectId:actionInput.projectId,
+            assetId:actionInput.assetId,assetKind:actionInput.assetKind,version:actionInput.version,expectedManifest:actionInput.expectedManifest,expectedBindingId:actionInput.expectedBindingId,expectedInstanceId:actionInput.expectedInstanceId}});
+        expect(render()).toContain('Перейти к интерфейсу установки');
         expect(bridgeApi.create).toHaveBeenCalledOnce();expect(vi.mocked(bridgeApi.create).mock.calls[0][0].kind).toBe('connect-rag-model');
     });
     it('Отсутствующая общая папка и неподтверждённый instance не допускают запуск и не ломают форму',()=>{

@@ -1,5 +1,5 @@
 import { Alert, Button, Checkbox, Progress, Select, Space, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useBridge } from '../McpBridge/useBridge';
 import { useLocalJob } from '../McpBridge/useLocalJob';
 import { isPending } from '../McpBridge/installationHelpers';
@@ -9,10 +9,10 @@ import { sha, type IProjectEmbedding } from './model';
 import { uuid } from '../McpBridge/operationHelpers';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { embeddingInstallationKey, useEmbeddingInstallation } from './useEmbeddingInstallation';
-import { OpenCodeRagUi } from '../McpBridge/ragUi/OpenCodeRagUi';
+import { ragUiAnchorId, ragUiPreferenceKey, type IRagUiPreference } from '../McpBridge/ragUi/ragUiPreference';
 
 /** Подключение требует отдельного согласия; получение настроек никогда не запускает локальную операцию. */
-export function ProjectEmbeddingConnection({ selection, disabled }: { selection: IProjectEmbedding; disabled: boolean }): JSX.Element {
+export function ProjectEmbeddingConnection({ selection, disabled, onPreferRagUi }: { selection: IProjectEmbedding; disabled: boolean; onPreferRagUi?:(value:IRagUiPreference)=>void }): JSX.Element {
     const bridge = useBridge();
     const { scope: owner } = useAuthRequestOwner();
     const device = bridge.device;
@@ -48,16 +48,16 @@ export function ProjectEmbeddingConnection({ selection, disabled }: { selection:
             {reason.includes('общую папку') && <Button href="/projects">Выбрать общую папку</Button>}
             {reason.includes('Свяжите') && <Button href={projectBindingUrl(selection.projectId)}>Связать папку</Button>}
             {(reason.includes('Установите или обновите') || item && !eligible) && <Button href={projectRagCatalogUrl(selection.projectId)}>Открыть OpenCodeRAG в каталоге</Button>}</Space>
-        {input && item && device && binding && <ConnectEmbeddingAction key={target} input={input} selection={selection} bridge={bridge} disabled={disabled || !!reason}
+        {input && item && device && binding && <ConnectEmbeddingAction key={target} input={input} selection={selection} bridge={bridge} disabled={disabled || !!reason} onPreferRagUi={onPreferRagUi}
             consent={`Подключить «${selection.model?.name}» (${selection.model?.model}) через ${installationLabel(item)} на компьютере «${device.name}», папка ${device.report.root || ''}/${binding.folderName}. Код и тексты для эмбеддингов будут отправляться на сервер Нейроцентра.`} />}
     </Space>;
 }
 const installationLabel = (row: {name: string; assetKind: string; version: number}): string => `${row.name} · ${row.assetKind === 'mcp' ? 'MCP' : 'плагин'} · версия ${row.version}`;
 
-export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent}: {
-    input: IEmbeddingConnectionInput; selection: IProjectEmbedding; bridge: ReturnType<typeof useBridge>; disabled: boolean; consent: string;
+export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent,onPreferRagUi}: {
+    input: IEmbeddingConnectionInput; selection: IProjectEmbedding; bridge: ReturnType<typeof useBridge>; disabled: boolean; consent: string; onPreferRagUi?:(value:IRagUiPreference)=>void;
 }): JSX.Element {
-    const { captureOwner } = useAuthRequestOwner();
+    const { scope:owner, captureOwner } = useAuthRequestOwner();
     const operation = useLocalJob(bridge);
     const [confirmed, setConfirmed] = useState(false);
     const pending = pendingEmbeddingAction(bridge.jobs, input.deviceId, input.projectId, input.expectedBindingId);
@@ -65,9 +65,15 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent}
     const job = operation.job;
     const success = embeddingConnected(job, selection);
     const blocked = disabled || operation.busy || isPending(job) || pending;
-    const uiBridge = { ...bridge, installations: bridge.installations.filter(item => item.deviceId === input.deviceId && item.projectId === input.projectId
-        && item.bindingId === input.expectedBindingId && item.assetId === input.assetId && item.assetKind === input.assetKind
-        && item.version === input.version && item.manifest === input.expectedManifest) };
+    const binding=bridge.device?.report.bindings?.find(item=>item.projectId===input.projectId&&item.valid!==false);
+    const preference:IRagUiPreference={owner,root:bridge.device?.report.root||'',request:{kind:'open-rag-ui',deviceId:input.deviceId,projectId:input.projectId,
+        assetKind:input.assetKind,assetId:input.assetId,version:input.version,expectedManifest:input.expectedManifest,
+        expectedBindingId:input.expectedBindingId,expectedInstanceId:input.expectedInstanceId}};
+    const preferenceKey=ragUiPreferenceKey(preference);
+    const currentTarget=bridge.device?.id===input.deviceId&&!!preference.root&&binding?.bindingId===input.expectedBindingId&&binding.instanceId===input.expectedInstanceId;
+    useEffect(()=>{
+        if(success&&!disabled&&currentTarget&&captureOwner()())onPreferRagUi?.(preference);
+    },[success,disabled,currentTarget,preferenceKey,onPreferRagUi,captureOwner]);
     return <Space direction="vertical" size={12}>
         {!success && <Checkbox checked={confirmed} disabled={blocked || retrying} onChange={event => setConfirmed(event.target.checked)}>{consent}</Checkbox>}
         <Button type="primary" loading={operation.busy || isPending(job)} disabled={blocked || !confirmed || success}
@@ -83,7 +89,7 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent}
             description="Перезапустите OpenCode. Индекс не изменён и его готовность не подтверждена. Для серверной модели автоматическая индексация отключена: полную переиндексацию запускайте отдельно после проверки настроек и сохранения нужной копии." />}
         {success && <>
             <Typography.Paragraph type="secondary">Следующий шаг — откройте интерфейс этой установки и явно запустите полное индексирование. Открытие окна само не перестраивает индекс.</Typography.Paragraph>
-            <OpenCodeRagUi bridge={uiBridge} projectId={input.projectId} canWrite={!disabled} />
+            <Button type="link" href={'#'+ragUiAnchorId(input.projectId)}>Перейти к интерфейсу установки</Button>
         </>}
     </Space>;
 }

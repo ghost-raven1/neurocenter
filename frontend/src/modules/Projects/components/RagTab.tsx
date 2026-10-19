@@ -14,6 +14,8 @@ import {projectRagCatalogUrl,projectRagSetupUrl} from '../projectNavigation';
 import {ragSummaryState} from './ragSummaryState';
 import {projectReadUnavailable} from '../projectReadError';
 import { ProjectEmbedding } from '../../../features/ProjectEmbedding/ProjectEmbedding';
+import {useAuthRequestOwner} from '../../../features/UserBlock/useAuthRequestOwner';
+import {ragUiPreferenceKey,type IRagUiPreference} from '../../../features/McpBridge/ragUi/ragUiPreference';
 import './RagTab.less';
 const { Paragraph, Text } = Typography;
 
@@ -24,6 +26,17 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
     const [error,setError]=useState('');const generation=useRef(0);
     const user=useSelector((state:RootState)=>state.userBlock.user);
     const canWrite = projectRoleLevel(user, projectKey) >= 2;
+    const {scope:owner,captureOwner}=useAuthRequestOwner();
+    const scope=JSON.stringify([owner,projectKey]),currentScope=useRef({scope,epoch:0});
+    if(currentScope.current.scope!==scope)currentScope.current={scope,epoch:currentScope.current.epoch+1};
+    const epoch=currentScope.current.epoch;
+    const [launcher,setLauncher]=useState<{scope:string;preferred?:IRagUiPreference}>({scope});
+    if(launcher.scope!==scope)setLauncher({scope});
+    const preferRagUi=useCallback((preferred:IRagUiPreference)=>{
+        if(captureOwner()()&&currentScope.current.scope===scope&&currentScope.current.epoch===epoch&&preferred.owner===owner&&preferred.request.projectId===projectKey)
+            setLauncher(previous=>previous.scope===scope&&previous.preferred&&ragUiPreferenceKey(previous.preferred)===ragUiPreferenceKey(preferred)?previous:{scope,preferred});
+    },[captureOwner,scope,epoch,owner,projectKey]);
+    const preferred=launcher.scope===scope?launcher.preferred:undefined;
 
     const load = useCallback(() => {
         const request=++generation.current;
@@ -54,7 +67,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             </Row>
 
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
-            <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} />
+            <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} onPreferRagUi={preferRagUi} />
             <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
                 <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Затем откройте интерфейс выбранной установки и явно запустите полное индексирование.</Paragraph>
                 {canWrite ? <Space wrap>
@@ -112,7 +125,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
                 )}
             </Spin>
             <Card size="small" title="Локальная база знаний через мост" className="project-rag__sync">
-                <KnowledgeSync projectId={projectKey} canWrite={canWrite} serverReady={serverState?.verified} connection/>
+                <KnowledgeSync projectId={projectKey} canWrite={canWrite} serverReady={serverState?.verified} connection preferred={preferred}/>
                 <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией. Перед восстановлением закройте OpenCode.</Paragraph>
             </Card>
         </div>

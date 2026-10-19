@@ -3,9 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenCodeRagUi } from '../src/features/McpBridge/ragUi/OpenCodeRagUi';
 import { ragUiFixture } from './ragUiFixture';
+import {ragUiRequest} from '../src/features/McpBridge/ragUi/ragUiState';
+import type {IRagUiPreference} from '../src/features/McpBridge/ragUi/ragUiPreference';
 
-const ui = vi.hoisted(() => ({ hook: vi.fn(), submit: vi.fn(), buttons: [] as Array<Record<string, any>> }));
+const ui = vi.hoisted(() => ({ scope:'owner-a', hook: vi.fn(), submit: vi.fn(), buttons: [] as Array<Record<string, any>> }));
 vi.mock('../src/features/McpBridge/ragUi/useRagUiLauncher', () => ({ useRagUiLauncher: (...args: unknown[]) => ui.hook(...args) }));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.scope;return{scope,captureOwner:()=>()=>scope===ui.scope};}}));
 vi.mock('antd', async original => ({ ...await original<typeof import('antd')>(),
     Button: (props: Record<string, any>) => {
         ui.buttons.push(props);
@@ -13,17 +16,38 @@ vi.mock('antd', async original => ({ ...await original<typeof import('antd')>(),
     },
 }));
 beforeEach(() => {
-    vi.clearAllMocks(); ui.buttons = [];
+    vi.clearAllMocks(); ui.buttons = [];ui.scope='owner-a';
     ui.hook.mockReturnValue({ busy: false, error: '', submit: ui.submit });
     ui.submit.mockResolvedValue(undefined);
 });
-function render(bridge = ragUiFixture().bridge, canWrite = true) {
-    return renderToStaticMarkup(createElement(OpenCodeRagUi, { bridge, projectId: 'prj-one', canWrite }));
+function render(bridge = ragUiFixture().bridge, canWrite = true, preferred?:IRagUiPreference) {
+    return renderToStaticMarkup(createElement(OpenCodeRagUi, { bridge, projectId: 'prj-one', canWrite,preferred }));
 }
+function preference(f:ReturnType<typeof ragUiFixture>,item=f.item):IRagUiPreference{f.device.report.root='/fixture/root';return{owner:ui.scope,root:f.device.report.root,request:ragUiRequest(item,f.binding)};}
 const openButton = () => ui.buttons.find(button => typeof button.onClick === 'function' && String(button.children).includes('открытие'))
     ?? ui.buttons.find(button => String(button.children).startsWith('Открыть OpenCodeRAG'))!;
 
 describe('Открытие локального интерфейса OpenCodeRAG', () => {
+    it.each(['mcp','plugin'] as const)('Предпочтение после подключения открывает ровно %s среди двух пакетов',kind=>{
+        const f=ragUiFixture(),plugin={...f.item,assetId:'rag-plugin',assetKind:'plugin' as const,name:'OpenCodeRAG Plugin'};
+        f.bridge.installations=[f.item,plugin];const preferred=preference(f,kind==='mcp'?f.item:plugin);
+        render(f.bridge,true,preferred);expect(openButton().disabled).toBe(false);expect(ui.submit).not.toHaveBeenCalled();
+        openButton().onClick();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(preferred.request);
+    });
+    it.each(['device','root','binding','instance','owner'] as const)('Старое предпочтение %s блокирует запуск без подстановки текущего пакета',mode=>{
+        const f=ragUiFixture(),preferred=preference(f);
+        if(mode==='device'){f.device.id='other';f.item.deviceId='other';}
+        if(mode==='root')f.device.report.root='/fixture/other';
+        if(mode==='binding'){f.binding.bindingId='c'.repeat(64);f.item.bindingId=f.binding.bindingId;}
+        if(mode==='instance')f.binding.instanceId='22222222-2222-2222-2222-222222222222';
+        if(mode==='owner')ui.scope='owner-b';
+        render(f.bridge,true,preferred);expect(openButton().disabled).toBe(true);openButton().onClick();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Пропажа предпочтённого MCP не подменяет его единственным плагином, возврат сохраняет точную цель',()=>{
+        const f=ragUiFixture(),preferred=preference(f);const plugin={...f.item,assetId:'rag-plugin',assetKind:'plugin' as const,name:'OpenCodeRAG Plugin'};
+        f.bridge.installations=[plugin];expect(render(f.bridge,true,preferred)).toContain('недоступна');expect(openButton().disabled).toBe(true);openButton().onClick();expect(ui.submit).not.toHaveBeenCalled();
+        ui.buttons=[];f.bridge.installations=[f.item,plugin];render(f.bridge,true,preferred);expect(openButton().disabled).toBe(false);openButton().onClick();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(preferred.request);
+    });
     it('Использует выбранный мост и папку, отправляет запрос только после нажатия', () => {
         const f = ragUiFixture(), html = render(f.bridge);
         expect(html).toContain('отдельное окно браузера на компьютере моста');

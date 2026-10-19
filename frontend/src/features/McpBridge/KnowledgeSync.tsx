@@ -12,6 +12,7 @@ import { OpenCodeRagUi } from './ragUi/OpenCodeRagUi';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { createBridgeRequestKey } from './bridgeRequestKey';
 import { projectBindingUrl } from '../../modules/Projects/projectNavigation';
+import type {IRagUiPreference} from './ragUi/ragUiPreference';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
@@ -19,7 +20,8 @@ export const KnowledgeSync: FC<{
     canWrite: boolean;
     connection?: boolean;
     serverReady?: boolean;
-}> = ({ projectId, canWrite, connection, serverReady }) => {
+    preferred?:IRagUiPreference;
+}> = ({ projectId, canWrite, connection, serverReady, preferred }) => {
     const { scope: ownerScope, captureOwner } = useAuthRequestOwner();
     const bridge = useBridge();
     const bridgeError = knowledgeSyncBlocker(bridge.device);
@@ -82,7 +84,7 @@ export const KnowledgeSync: FC<{
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
             {binding && <Typography.Text type="secondary">Папка проекта: <Typography.Text code>{binding.folderName}</Typography.Text></Typography.Text>}
-            <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} />
+            <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} preferred={preferred} />
             {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && <Alert type="warning" showIcon message={bridgeError}
                 action={!bridge.device.report.capabilities?.includes('project-rag-sync-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
             <Space wrap>

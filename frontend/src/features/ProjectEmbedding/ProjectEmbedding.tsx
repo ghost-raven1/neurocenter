@@ -8,8 +8,9 @@ import { eligibleEmbedding, embeddingNeedsRepair, sameEmbeddingProfile } from '.
 import { useProjectEmbedding } from './useProjectEmbedding';
 import { ProjectEmbeddingConnection } from './ProjectEmbeddingConnection';
 import './ProjectEmbedding.less';
+import type {IRagUiPreference} from '../McpBridge/ragUi/ragUiPreference';
 
-interface IProps { projectId: string; indexProfile?: IRagIndexProfile | null; serverHasData: boolean; }
+interface IProps { projectId: string; indexProfile?: IRagIndexProfile | null; serverHasData: boolean; onPreferRagUi?:(value:IRagUiPreference)=>void; }
 /** Локальный выбор и запросы принадлежат точному проекту, роли и сеансу. */
 export function ProjectEmbedding(props: IProps): JSX.Element {
     const { scope } = useAuthRequestOwner();
@@ -17,7 +18,7 @@ export function ProjectEmbedding(props: IProps): JSX.Element {
     const level = projectRoleLevel(user, props.projectId);
     return <ProjectEmbeddingContent key={JSON.stringify([scope, props.projectId, level])} {...props} canManage={level >= 3} canConnect={level >= 2} />;
 }
-export function ProjectEmbeddingContent({projectId,indexProfile,serverHasData,canManage,canConnect}: IProps & {canManage: boolean; canConnect: boolean}): JSX.Element {
+export function ProjectEmbeddingContent({projectId,indexProfile,serverHasData,canManage,canConnect,onPreferRagUi}: IProps & {canManage: boolean; canConnect: boolean}): JSX.Element {
     const state = useProjectEmbedding(projectId);
     const {selection,catalog,modelId} = state;
     const assigned = new Set(catalog?.assignedModelIds ?? []);
@@ -53,7 +54,7 @@ export function ProjectEmbeddingContent({projectId,indexProfile,serverHasData,ca
                     description="Текущая серверная копия сохранена. Её профиль нельзя заменить обычной синхронизацией. Переход требует отдельной процедуры миграции или нового проекта; локальная переиндексация сама по себе это ограничение не снимает." />}
                 {dirty && <Typography.Text type="secondary">Сначала сохраните выбранную модель. Подключение использует только подтверждённый выбор проекта.</Typography.Text>}
                 {selection.model && selection.modelPin && selection.profile && !selection.blocker && canConnect && <ProjectEmbeddingConnection selection={selection}
-                    disabled={dirty || state.loading || state.saving || !!state.readError || state.catalogAccessDenied} />}
+                    disabled={dirty || state.loading || state.saving || !!state.readError || state.catalogAccessDenied} onPreferRagUi={onPreferRagUi} />}
             </>}
             <Button href={catalogUrl}>Открыть модели в каталоге проекта</Button>
         </Space>

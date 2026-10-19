@@ -9,6 +9,7 @@ import type {IBridgeJob} from '../src/features/McpBridge/api';
 
 vi.mock('react-redux',()=>({useSelector:(select:(state:unknown)=>unknown)=>select({userBlock:{user:{activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]}}})}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:vi.fn()}));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({scope:'owner',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/McpBridge/KnowledgeSync',()=>({KnowledgeSync:({projectId,serverReady}:{projectId:string;serverReady?:boolean})=>
     createElement('div',{'data-knowledge-sync':projectId,'data-server-ready':serverReady===undefined?'unknown':String(serverReady)})}));
 vi.mock('../src/features/ProjectEmbedding/ProjectEmbedding',()=>({ProjectEmbedding:({projectId}:{projectId:string})=>
