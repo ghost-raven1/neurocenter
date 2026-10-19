@@ -139,13 +139,15 @@ async function assertServicePortsAvailable() {
 }
 
 /** Проверяем JSON health сервисов и компиляцию Less интерфейса, а не только выдачу HTML. */
-async function health(deadline = Infinity) {
+async function health(deadline = Infinity, cancellation) {
     return Promise.all(services.map(async service => {
         const frontend = service.name === 'frontend';
         const suffix = frontend ? '/node_modules/antd/dist/antd.less?direct' : service.healthPath || '/health';
         try {
             const timeout = Math.max(1, Math.min(frontend ? 10000 : 1000, deadline - Date.now()));
-            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal: AbortSignal.timeout(timeout) });
+            const timeoutSignal = AbortSignal.timeout(timeout);
+            const signal = cancellation ? AbortSignal.any([cancellation, timeoutSignal]) : timeoutSignal;
+            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal });
             const ok = response.ok && (frontend
                 ? response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/css'
                     && (await response.text()).trim().length > 0
@@ -204,9 +206,16 @@ async function start() {
     };
     const records = [];
     const children = [];
+    // Detached-сервисы не получают Ctrl+C терминала; отмена очищает только новый запуск.
+    const cancellation = new AbortController();
+    const cancel = signal => cancellation.abort(Object.assign(new Error('Запуск сервисов прерван; процессы нового запуска остановлены.'), {code: 'ECANCELED', signal}));
+    const interrupt = () => cancel('SIGINT'), terminate = () => cancel('SIGTERM');
+    process.on('SIGINT', interrupt);
+    process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
         for (const service of services) {
+            cancellation.signal.throwIfAborted();
             const logFile = path.join(logDir, `neurocenter-${service.name}.log`);
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
@@ -232,8 +241,10 @@ async function start() {
         next('Проверка готовности — до 45 секунд');
         const deadline = Date.now() + 45000;
         while (Date.now() < deadline) {
+            cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            const results = await health(deadline);
+            const results = await health(deadline, cancellation.signal);
+            cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
             if (results.every(service => service.ok)) {
                 for (const service of results) { output.service(service); }
@@ -250,6 +261,9 @@ async function start() {
     } catch (error) {
         await stop(records);
         throw error;
+    } finally {
+        process.off('SIGINT', interrupt);
+        process.off('SIGTERM', terminate);
     }
 }
 

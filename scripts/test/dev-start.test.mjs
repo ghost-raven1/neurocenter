@@ -101,7 +101,7 @@ async function fixture(t, mode) {
             const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
             record({kind:'child-start',service,pid:process.pid,entry:process.argv[1],flagsUrl:process.env.FEATURE_FLAGS_SERVICE_URL});
             process.on('SIGTERM',()=>{record({kind:'child-stop',service,pid:process.pid});process.exit(0);});
-            if(service==='catalog'){
+            if(service==='catalog'&&!process.env.DEV_START_MODE.startsWith('native-cancel-')){
                 const fail=()=>{record({kind:'child-exit',service,pid:process.pid});console.error('fixture catalog failure');process.exit(7);};
                 if(process.env.DEV_START_MODE==='immediate')fail();
                 const waiting=setInterval(()=>{
@@ -152,11 +152,19 @@ async function fixture(t, mode) {
             server.unref=()=>server;
             return server;
         };
-        globalThis.fetch=async input=>{
+        globalThis.fetch=async (input,options)=>{
             const url=new URL(input);
             record({kind:'health-start',port:url.port,path:url.pathname,search:url.search});
             if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
             fs.writeFileSync(process.env.DEV_START_MARKER,'started');
+            if(process.env.DEV_START_MODE.startsWith('native-cancel-')){
+                await new Promise((resolve,reject)=>{
+                    const waiting=setTimeout(resolve,60000);
+                    const cancel=()=>{clearTimeout(waiting);record({kind:'health-cancel',port:url.port});reject(options.signal.reason);};
+                    if(options.signal.aborted)cancel();
+                    else options.signal.addEventListener('abort',cancel,{once:true});
+                });
+            }
             await new Promise(resolve=>setTimeout(resolve,300));
             record({kind:'health-end',port:url.port});
             return url.port==='5173'
@@ -181,9 +189,10 @@ async function fixture(t, mode) {
         cli.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
         const timer = setTimeout(() => cli.kill('SIGKILL'), 12000);
         let cancelling=false;
-        const cancel=mode==='model-runtime-cancel'?setInterval(async()=>{
-            if(!cancelling&&(await eventsFrom(calls)).some(event=>event.kind==='model-runtime-wait')){
-                cancelling=true;cli.kill('SIGTERM');
+        const cancel=mode==='model-runtime-cancel'||mode.startsWith('native-cancel-')?setInterval(async()=>{
+            const awaited=mode==='model-runtime-cancel'?'model-runtime-wait':'health-start';
+            if(!cancelling&&(await eventsFrom(calls)).some(event=>event.kind===awaited)){
+                cancelling=true;cli.kill(mode==='native-cancel-int'?'SIGINT':'SIGTERM');
             }
         },20):undefined;
         const status = await new Promise((resolve, reject) => {
@@ -329,6 +338,18 @@ test('Сервис, завершившийся во время проверки 
     const healthEnd = result.events.findIndex(event => event.kind === 'health-end');
     assert.ok(firstHealth >= 0 && firstHealth < exit && exit < healthEnd, JSON.stringify(result.events));
 });
+
+for(const [mode,code] of [['native-cancel-int',130],['native-cancel-term',143]]){
+    test(`Отмена проверки готовности (${mode}) завершает только сервисы нового запуска`,async t=>{
+        const f=await fixture(t,mode),result=await f.run();
+        assert.equal(result.code,code,result.stdout+result.stderr);
+        assert.match(result.stderr,/Запуск сервисов прерван/);
+        assert.doesNotMatch(result.stdout,/Готов к работе/);
+        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+        assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,7);
+        await assert.rejects(fs.access(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
+    });
+}
 
 test('Ошибка записи состояния после запуска процесса не оставляет сервис работать в фоне', async t => {
     const f = await fixture(t, 'write-error'), result = await f.run();
