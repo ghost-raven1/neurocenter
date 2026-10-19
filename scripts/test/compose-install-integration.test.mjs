@@ -17,7 +17,7 @@ async function fixture(t, mode = 'ready') {
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json']) {
+    for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});

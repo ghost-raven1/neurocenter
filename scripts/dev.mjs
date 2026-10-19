@@ -5,39 +5,53 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
+import {createDevOutput} from './workspace/dev-output.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
 const stateFile = path.join(stateDir, 'processes.json');
 const services = [
-    { name: 'bridge', dir: 'services/oauth2-bridge', port: 22222 },
-    { name: 'catalog', dir: 'services/catalog-service', port: 4100 },
-    { name: 'skills', dir: 'services/skills-service', port: 4200 },
-    { name: 'rag', dir: 'services/rag-sync-service', port: 4300 },
-    { name: 'gateway', dir: 'services/api-gateway', port: 4000 },
-    { name: 'frontend', dir: 'frontend', port: 5173 },
+    { name: 'bridge', label: 'Вход и сессии', dir: 'services/oauth2-bridge', port: 22222 },
+    { name: 'catalog', label: 'Каталог', dir: 'services/catalog-service', port: 4100 },
+    { name: 'skills', label: 'Скиллы', dir: 'services/skills-service', port: 4200 },
+    { name: 'rag', label: 'Базы знаний', dir: 'services/rag-sync-service', port: 4300 },
+    { name: 'gateway', label: 'API', dir: 'services/api-gateway', port: 4000 },
+    { name: 'frontend', label: 'Веб-интерфейс', dir: 'frontend', port: 5173 },
 ];
-const packages = [ ...services.map(service => service.dir), 'mcp/neurocenter-asset-sync' ];
+const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
+const output = createDevOutput();
 let node;
 let logDir;
+
+/** Показывает текущий этап без анимации, в том числе при перенаправлении в файл. */
+function progress(total) {
+    let index = 0;
+    return label => output.step(++index, total, label);
+}
 
 /** Выполняет команду с передачей её ошибки вызывающему процессу. */
 function run(command, args, cwd = root) {
     const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: process.env });
     if (result.error) { throw result.error; }
-    if (result.status !== 0) { throw new Error(`Команда ${command} ${args.join(' ')} завершилась с кодом ${result.status}`); }
+    if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
-function forPackages(command) {
+function forPackages(command, next) {
     const npm = npmCli(process.env);
-    for (const dir of packages) {
-        console.log(`\n${dir}: ${command}`);
+    for (const {dir, label} of packages) {
+        next(`${command === 'install' ? 'Зависимости' : 'Сборка'} · ${label}`);
+        const started = Date.now();
         const cwd = path.join(root, dir);
         if (command === 'install') { run(node, [ npm, 'ci', '--no-audit', '--no-fund' ], cwd); }
         else { run(node, [ npm, 'run', 'build' ], cwd); }
+        output.success(`${label} · ${((Date.now() - started) / 1000).toFixed(1)} с`);
     }
-    if (command === 'build') { run('bash', [ path.join(root, 'scripts/package-bridge.sh') ]); }
+    if (command === 'build') {
+        next('Подготовка переносимого пакета моста');
+        run('bash', [ path.join(root, 'scripts/package-bridge.sh') ]);
+        output.success('Пакет моста подготовлен');
+    }
 }
 
 function entryFor(service) {
@@ -70,6 +84,7 @@ async function stop() {
     while (records.some(ownsProcess) && Date.now() < deadline) { await delay(100); }
     for (const record of records.filter(ownsProcess)) { process.kill(record.pid, 'SIGKILL'); }
     rmSync(stateFile, { force: true });
+    return records.length;
 }
 
 /** Один снимок готовности: HTTP и JSON health проверяются отдельно для каждого сервиса. */
@@ -85,12 +100,18 @@ async function health() {
 }
 
 async function start() {
+    const next = progress(packages.length + 6);
+    next('Проверка Docker и Compose');
     checkCompose();
+    output.success('Docker готов к запуску');
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
-    forPackages('build');
+    forPackages('build', next);
+    next('Запуск PostgreSQL');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
+    output.success('PostgreSQL готов');
+    next('Остановка прежних локальных процессов');
     await stop();
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(logDir, { recursive: true });
@@ -117,6 +138,7 @@ async function start() {
     };
     const records = [];
     try {
+        next('Запуск сервисов');
         for (const service of services) {
             const log = openSync(path.join(logDir, `neurocenter-${service.name}.log`), 'a');
             const child = spawn(node, [ entryFor(service) ], {
@@ -136,11 +158,18 @@ async function start() {
             writeFileSync(stateFile, JSON.stringify(records, null, 2));
         }
 
+        next('Проверка готовности — до 45 секунд');
         const deadline = Date.now() + 45000;
         while (Date.now() < deadline) {
             if (records.some(record => !ownsProcess(record))) { throw new Error(`Сервис завершился при запуске. Логи: ${logDir}`); }
-            if ((await health()).every(service => service.ok)) {
-                console.log(`\nНейроцентр готов: http://localhost:5173\nЛоги: ${logDir}`);
+            const results = await health();
+            if (results.every(service => service.ok)) {
+                for (const service of results) { output.service(service); }
+                output.heading('Готов к работе');
+                output.info('Интерфейс', 'http://localhost:5173');
+                output.info('Логи', logDir);
+                output.info('Проверить состояние', 'scripts/dev.sh status');
+                output.info('Остановить', 'scripts/dev.sh down');
                 return;
             }
             await delay(500);
@@ -153,9 +182,25 @@ async function start() {
 }
 
 async function main() {
+    const args = process.argv.slice(2);
+    const command = args[0];
+    const commands = ['install', 'build', 'check', 'up', 'down', 'status', 'tail'];
+    if (!args.length || args.length === 1 && ['--help', '-h', 'help'].includes(command)
+        || args.length === 2 && commands.includes(command) && ['--help', '-h'].includes(args[1])) {
+        output.help();
+        return;
+    }
+    if (args.length !== 1 || !commands.includes(command)) {
+        output.error(`Неизвестная команда или параметры: ${args.join(' ')}`);
+        output.help();
+        process.exitCode = 1;
+        return;
+    }
     if (Number(process.versions.node.split('.')[0]) < 24) {
         const runtime = nodeRuntime();
-        run(runtime.node, [fileURLToPath(import.meta.url), ...process.argv.slice(2)]);
+        const result = spawnSync(runtime.node, [fileURLToPath(import.meta.url), ...args], {stdio:'inherit',env:process.env});
+        if (result.error) { throw result.error; }
+        process.exitCode = result.status ?? 1;
         return;
     }
     // Переменные процесса имеют приоритет; затем локальные настройки машины и общий .env.
@@ -169,25 +214,42 @@ async function main() {
     process.env.NODE_BIN = node;
     logDir = process.env.LOGDIR || path.join(stateDir, 'logs');
 
-    const command = process.argv[2];
-    if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); }
-    else if (command === 'install') { await ensureCompose(); forPackages(command); }
-    else if (command === 'build') { forPackages(command); }
+    const titles = {install:'Установка зависимостей',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
+    output.heading(titles[command]);
+    if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); output.success('Проверки проекта завершены'); }
+    else if (command === 'install') {
+        const next = progress(packages.length + 1);
+        next('Проверка и подготовка Docker Compose');
+        await ensureCompose();
+        forPackages(command, next);
+        output.success('Зависимости установлены');
+        output.info('Запустить проект', 'scripts/dev.sh up');
+    }
+    else if (command === 'build') { forPackages(command, progress(packages.length + 1)); output.success('Проект собран'); }
     else if (command === 'up') { await start(); }
-    else if (command === 'down') { await stop(); console.log('Сервисы остановлены.'); }
+    else if (command === 'down') {
+        const count = await stop();
+        if (count) { output.success(`Остановлено процессов этого каталога: ${count}`); }
+        else { output.info('Локальные процессы', 'Активных процессов этого каталога не найдено'); }
+        output.info('Данные', 'PostgreSQL и рабочие файлы сохранены');
+        output.info('Запустить снова', 'scripts/dev.sh up');
+    }
     else if (command === 'status') {
         const results = await health();
-        for (const service of results) { console.log(`${service.name.padEnd(9)} :${service.port} — ${service.ok ? 'готов' : 'недоступен'}`); }
-        if (results.some(service => !service.ok)) { process.exitCode = 1; }
+        for (const service of results) { output.service(service); }
+        const ready = results.filter(service => service.ok).length;
+        if (ready === results.length) { output.success(`Все сервисы готовы: ${ready}/${results.length}`); output.info('Интерфейс', 'http://localhost:5173'); }
+        else { output.warning(`Готово сервисов: ${ready}/${results.length}. Запуск: scripts/dev.sh up`); process.exitCode = 1; }
+        output.info('Логи', logDir);
     } else if (command === 'tail') {
+        let found = 0;
         for (const service of services) {
             const file = path.join(logDir, `neurocenter-${service.name}.log`);
-            if (existsSync(file)) { console.log(`${service.name}\n${readFileSync(file, 'utf8').split('\n').slice(-20).join('\n')}`); }
+            if (existsSync(file)) { found++; output.logs(service.label, readFileSync(file, 'utf8').trimEnd().split('\n').slice(-20).join('\n')); }
         }
-    } else {
-        console.log('Использование: scripts/dev.sh install | build | check | up | down | status | tail');
-        if (command) { process.exitCode = 1; }
+        if (!found) { output.info('Логи', 'Пока нет — появятся после первого запуска проекта.'); }
+        output.info('Каталог логов', logDir);
     }
 }
 
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+main().catch(error => { output.error(error.message); process.exitCode = 1; });
