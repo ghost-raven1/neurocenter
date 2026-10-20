@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import {createInterface} from 'node:readline/promises';
 import {fileURLToPath} from 'node:url';
 import {readFile,lstat} from 'node:fs/promises';
 import path from 'node:path';
@@ -28,6 +27,7 @@ async function hidden(question) {
 
 async function input() {
     if(args.includes('--json-stdin')){let data='';for await(const chunk of process.stdin){data+=chunk;if(data.length>65536){throw new Error('Слишком большой конфиг');}}return JSON.parse(data);}
+    const {createInterface}=await import('node:readline/promises');
     const rl=createInterface({input:process.stdin,output:process.stdout});
     const result={};for(const [key,label] of [['panelUrl','Публичный URL (https://…)'],['ssoHost','Адрес Blitz (https://…)'],['ssoClientId','Client ID Blitz'],['adminEmail','Почта первого администратора'],['adminName','Имя администратора'],['release','Метка релиза'],['tlsCertFile','Файл сертификата TLS'],['tlsKeyFile','Файл ключа TLS']]){result[key]=await rl.question(label+': ');}
     rl.close();result.ssoClientSecret=await hidden('Client secret Blitz (ввод скрыт): ');return result;

@@ -1,7 +1,7 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream,constants} from 'node:fs';
-import {mkdir,readFile,rm,lstat,statfs,open} from 'node:fs/promises';
+import {mkdir,readFile,rm,lstat,open} from 'node:fs/promises';
 import path from 'node:path';
 import {lockedModel} from './config.mjs';
 import {requestJson, pullModel, probeModel} from './client.mjs';
@@ -156,6 +156,13 @@ export async function withControlLock(config, action) {
     finally {await handle.close(); await rm(filename, {force: true});}
 }
 
+/** statfs существует в node:fs/promises только с Node 19.6; ленивая загрузка, чтобы импорт модуля не ломал старую версию. */
+let statfsModule;
+async function diskSpace(directory) {
+    const { statfs } = statfsModule ??= await import('node:fs/promises');
+    return statfs(directory);
+}
+
 /** Повторный запуск использует проверенные веса; сбой загрузки допускает продолжение. */
 export async function up(config, progress, probe = probeModel) {
     return withControlLock(config, async () => {
@@ -166,7 +173,7 @@ export async function up(config, progress, probe = probeModel) {
         }
         await docker(config, ['info', '--format', '{{.ServerVersion}}']);
         const imagePresent = await docker(config, ['image', 'inspect', config.lock.image]).then(() => true, () => false);
-        const space = await statfs(config.data);
+        const space = await diskSpace(config.data);
         const required = (imagePresent ? 2 : 10) * 1024 ** 3 + (cached ? 0 : config.lock.manifest.layers.reduce((sum, layer) => sum + layer.size, 0));
         if (Number(space.bavail) * Number(space.bsize) < required) throw new Error(`Для подготовки модели и образа нужно около ${Math.ceil(required / 1024 ** 3)} ГиБ свободного места.`);
         if (!cached) {

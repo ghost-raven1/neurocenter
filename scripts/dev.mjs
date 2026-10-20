@@ -50,7 +50,16 @@ function forPackages(command, next) {
         const started = Date.now();
         const cwd = path.join(root, dir);
         if (command === 'install') { run(node, [ npm, 'ci', '--no-audit', '--no-fund' ], cwd); }
-        else { run(node, [ npm, 'run', 'build' ], cwd); }
+        else {
+            try { run(node, [ npm, 'run', 'build' ], cwd); }
+            catch {
+                // Повреждённый или неполный node_modules (прерванная установка, сбой диска) восстанавливаем
+                // из lock-файла и повторяем сборку один раз; настоящая ошибка кода проявится повторно.
+                output.warning(`Сборка «${label}» не прошла; восстанавливаем зависимости из lock-файла и повторяем.`);
+                run(node, [ npm, 'ci', '--no-audit', '--no-fund' ], cwd);
+                run(node, [ npm, 'run', 'build' ], cwd);
+            }
+        }
         output.success(`${label} · ${((Date.now() - started) / 1000).toFixed(1)} с`);
     }
     if (command === 'build') {

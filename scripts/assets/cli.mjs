@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {realpathSync} from 'node:fs';
+import {realpathSync,statSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
@@ -9,6 +9,27 @@ import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from './environment.mjs';
 
 const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--root <проект>] [--models-directory <кэш моделей>] [--artifacts-directory <кэш инструментов>]';
+
+/**
+ * Системный каталог корневых сертификатов. Если HTTPS завершается корпоративным
+ * TLS-прокси (например, антивирус Kaspersky переподписывает сертификаты своим
+ * корнем), Node не доверяет ему, потому что использует встроенный Mozilla-бандл.
+ * NODE_EXTRA_CA_CERTS добавляет системный бандл к встроенному, и fetch начинает
+ * валидировать цепочку до корня прокси.
+ */
+function systemCaBundle() {
+    if(process.platform==='darwin')return null;
+    for(const candidate of [
+        '/etc/ssl/certs/ca-certificates.crt',
+        '/etc/pki/tls/certs/ca-bundle.crt',
+        '/etc/ssl/ca-bundle.pem',
+        '/etc/pki/tls/cacert.pem',
+        '/etc/ssl/cert.pem',
+    ]) {
+        try {if(statSync(candidate).isFile())return candidate;}catch { /* Следующий системный путь. */ }
+    }
+    return null;
+}
 
 /** CLI одинаков для Git hook и ручного восстановления; проверка не обращается к сети и не пишет файлы. */
 export function parseAssetsArguments(args) {
@@ -30,12 +51,15 @@ export async function runAssetsCli(args=process.argv.slice(2)) {
     const options=parseAssetsArguments(args);
     if(options.help) {console.log(usage);return;}
     const runtime=nodeRuntime();
-    if(runtime.node!==process.execPath) {
-        const result=spawnSync(runtime.node,[fileURLToPath(import.meta.url),...args],{env:runtime.env,stdio:'inherit'});
+    /** NODE_EXTRA_CA_CERTS fetch читает только на старте процесса, поэтому при его добавлении перезапускаем себя. */
+    const base=runtime.env,certificate=systemCaBundle();
+    if(certificate&&!base.NODE_EXTRA_CA_CERTS)base.NODE_EXTRA_CA_CERTS=certificate;
+    if(runtime.node!==process.execPath||base.NODE_EXTRA_CA_CERTS!==process.env.NODE_EXTRA_CA_CERTS) {
+        const result=spawnSync(runtime.node,[fileURLToPath(import.meta.url),...args],{env:base,stdio:'inherit'});
         if(result.error)throw result.error;process.exitCode=result.status??1;return;
     }
     const root=path.resolve(options.root||fileURLToPath(new URL('../../',import.meta.url)));
-    const environment=await assetEnvironment(root,runtime.env);
+    const environment=await assetEnvironment(root,base);
     const cancellation=new AbortController();
     const interrupt=()=>cancellation.abort(Object.assign(new Error('Подготовка поставки прервана. Проверенный кэш сохранён; повторите команду.'),{code:'ECANCELED'}));
     process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);

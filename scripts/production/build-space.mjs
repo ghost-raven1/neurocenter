@@ -1,5 +1,3 @@
-import {statfs} from 'node:fs/promises';
-
 export const MIN_BUILD_FREE_BYTES=6n*1024n**3n;
 
 /** Проверяет доступные процессу блоки; зарезервированное место не считается свободным для сборки. */
@@ -11,4 +9,8 @@ export function assertBuildSpace(stat) {
 }
 
 /** Это предварительный запас на host-файловой системе, а не резервирование диска Docker VM. */
-export async function assertBuildDiskSpace(directory) { assertBuildSpace(await statfs(directory,{bigint:true})); }
+export async function assertBuildDiskSpace(directory) {
+    /** statfs существует в node:fs/promises только с Node 19.6; ленивая загрузка, чтобы импорт модуля не ломал старую версию. */
+    const {statfs}=await import('node:fs/promises');
+    assertBuildSpace(await statfs(directory,{bigint:true}));
+}

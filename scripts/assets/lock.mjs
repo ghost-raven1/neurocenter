@@ -9,6 +9,7 @@ export async function withAssetsLock(root,action,{signal,onProgress=()=>{},waitM
     await safeDirectory(root,'.run',true);
     const filename=path.join(root,'.run/assets-sync.lock'),token=randomUUID(),started=Date.now(),candidate=filename+'.'+token;
     let owned=false;
+    let lastWaitReport=0;
     // Lock появляется атомарно только после полной записи владельца: авария не оставляет пустую блокировку.
     try {
         const owner=await open(candidate,'wx',0o600);
@@ -33,7 +34,18 @@ export async function withAssetsLock(root,action,{signal,onProgress=()=>{},waitM
                     }
                 }
                 if(Date.now()-started>=waitMs)throw new Error('Подготовка поставки уже выполняется. Дождитесь завершения и повторите команду.');
-                await onProgress({section:'supply',stage:'waiting',message:'Другая команда готовит поставку; ожидаем завершения.'});
+                // Сообщаем о ожидании не чаще раза в 10 секунд, чтобы не засыпать терминал повторами.
+                const now=Date.now();
+                if(now-lastWaitReport>=10*1000) {
+                    lastWaitReport=now;
+                    let holder='';
+                    // Свежий статус владельца (до 60 с): показываем, что именно делает занятая команда.
+                    try {
+                        const status=JSON.parse(await readFile(path.join(root,'.run/assets-sync.status.json'),'utf8'));
+                        if(typeof status.message==='string'&&status.message.length>0&&status.message.length<=500&&now-(status.updatedAt??0)<60*1000)holder=': '+status.message;
+                    } catch { /* Статуса нет или владелец молчит — ждём молча. */ }
+                    await onProgress({section:'supply',stage:'waiting',message:`Другая команда готовит поставку; ожидаем завершения (${Math.floor((now-started)/1000)} с)${holder}`});
+                }
                 await setTimeout(250,undefined,{signal});
             }
         }

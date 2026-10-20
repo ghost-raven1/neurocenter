@@ -57,31 +57,44 @@ export async function syncAssets({root=repository,environment=process.env,models
     const report={ok:true,mode:'prefetch',verifyOnly,revision:supply.revision,directories,
         bridge:{version:supply.bridge.version,targets:supply.bridge.artifacts.map(item=>item.metadata.target)},
         catalog:{release:supply.catalog.release,tools:supply.catalog.tools.length},models:{models:supply.locks.length,files:supply.models.files.length}};
-    const verify=async()=>{
-        await verifyBridge(supply,directories.bridge,signal,onProgress);
-        await verifyCatalogRelease({manifest:supply.catalog,directory:directories.catalog,signal,onProgress});
-        await verifyModels(supply,directories.models,signal,onProgress);
+    const verify=async(reporter=onProgress)=>{
+        await verifyBridge(supply,directories.bridge,signal,reporter);
+        await verifyCatalogRelease({manifest:supply.catalog,directory:directories.catalog,signal,reporter});
+        await verifyModels(supply,directories.models,signal,reporter);
         if((await readAssetSupply({root})).revision!==supply.revision)throw new Error('Опись изменилась во время проверки. Повторите подготовку поставки.');
         signal?.throwIfAborted();return report;
     };
     if(verifyOnly)return verify();
+    // Владелец блокировки публикует текущий этап, чтобы ожидающие команды могли показать его в своём выводе.
+    const statusFile=path.join(root,'.run/assets-sync.status.json');
+    const publishStatus=async(message)=>{
+        const temporary=statusFile+'.'+randomUUID();
+        try {await writeFile(temporary,JSON.stringify({pid:process.pid,updatedAt:Date.now(),message})+'\n',{flag:'wx',mode:0o644});await rename(temporary,statusFile);}
+        catch {await rm(temporary,{force:true}).catch(()=>{});}
+    };
     return withAssetsLock(root,async()=>{
-        signal?.throwIfAborted();
-        if((await readAssetSupply({root})).revision!==supply.revision)throw new Error('Опись изменилась во время ожидания. Повторите подготовку поставки.');
-        await onProgress({section:'supply',stage:'inspecting',message:'Проверяем закреплённую поставку моста, инструментов и моделей.'});
-        let bridgeBytes=0;
-        for(const artifact of supply.bridge.artifacts) {
-            if(!await bridgeRuntimeCached({directory:directories.bridge,target:artifact.metadata.target,version:supply.bridge.version,buildId:supply.bridge.buildId,metadata:artifact.metadata}))bridgeBytes+=artifact.metadata.bytes;
+        try {
+            signal?.throwIfAborted();
+            if((await readAssetSupply({root})).revision!==supply.revision)throw new Error('Опись изменилась во время ожидания. Повторите подготовку поставки.');
+            const announce=value=>{onProgress(value);if(typeof value?.message==='string'&&value.message.length<=500)void publishStatus(value.message);};
+            await announce({section:'supply',stage:'inspecting',message:'Проверяем закреплённую поставку моста, инструментов и моделей.'});
+            let bridgeBytes=0;
+            for(const artifact of supply.bridge.artifacts) {
+                if(!await bridgeRuntimeCached({directory:directories.bridge,target:artifact.metadata.target,version:supply.bridge.version,buildId:supply.bridge.buildId,metadata:artifact.metadata}))bridgeBytes+=artifact.metadata.bytes;
+            }
+            await safeDirectory(directories.bridge,'',true);
+            await ensureSpace(directories.bridge,bridgeBytes,readDisk);
+            await hydrateBridgeRuntimeRelease({directory:root,release:supply.bridge,fetch:request,signal,onProgress:announce});
+            await cacheCatalogRelease({manifest:supply.catalog,directory:directories.catalog,fetch:request,signal,onProgress:announce,readDisk});
+            await hydrateModelBundle({directory:directories.models,manifest:supply.models,locks:supply.locks,downloadOnly:true,fetch:request,signal,readDisk,
+                onProgress:value=>announce({section:'models',...value})});
+            // Изменение git checkout во время загрузки или SHA-проверки не получит прежнюю квитанцию.
+            await verify(announce);await writeReceipt(root,report);
+            await announce({section:'supply',stage:'ready',message:'Вся закреплённая поставка готова; теги моделей и база данных не изменены.'});
+            return report;
+        } finally {
+            // Статус означает лишь работающего владельца; после завершения (или отмены) он не должен оставаться.
+            await rm(statusFile,{force:true});
         }
-        await safeDirectory(directories.bridge,'',true);
-        await ensureSpace(directories.bridge,bridgeBytes,readDisk);
-        await hydrateBridgeRuntimeRelease({directory:root,release:supply.bridge,fetch:request,signal,onProgress});
-        await cacheCatalogRelease({manifest:supply.catalog,directory:directories.catalog,fetch:request,signal,onProgress,readDisk});
-        await hydrateModelBundle({directory:directories.models,manifest:supply.models,locks:supply.locks,downloadOnly:true,fetch:request,signal,readDisk,
-            onProgress:value=>onProgress({section:'models',...value})});
-        // Изменение git checkout во время загрузки или SHA-проверки не получит прежнюю квитанцию.
-        await verify();await writeReceipt(root,report);
-        await onProgress({section:'supply',stage:'ready',message:'Вся закреплённая поставка готова; теги моделей и база данных не изменены.'});
-        return report;
     },{signal,onProgress,waitMs:lockWaitMs});
 }

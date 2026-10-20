@@ -1,6 +1,6 @@
 import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {mkdir,lstat,open,link,unlink,statfs} from 'node:fs/promises';
+import {mkdir,lstat,open,link,unlink} from 'node:fs/promises';
 import path from 'node:path';
 import {requestRelease} from '../release-request.mjs';
 
@@ -61,9 +61,16 @@ export async function promote(source,target,expected,verification) {
     }
 }
 
-export async function ensureSpace(directory,bytes,readDisk=statfs) {
+/** statfs существует в node:fs/promises только с Node 19.6; ленивая загрузка, чтобы импорт модуля не ломал старую версию. */
+let statfsModule;
+async function systemDisk(directory,mode) {
+    const {statfs}=statfsModule??=await import('node:fs/promises');
+    return statfs(directory,mode);
+}
+
+export async function ensureSpace(directory,bytes,readDisk=null) {
     if(!bytes)return;
-    const disk=await readDisk(directory,{bigint:true});
+    const disk=await (readDisk??systemDisk)(directory,{bigint:true});
     const requiredBytes=bytes+1024**3,available=disk.bavail*disk.bsize;
     if(available<BigInt(requiredBytes)) {
         const availableBytes=Number(available);

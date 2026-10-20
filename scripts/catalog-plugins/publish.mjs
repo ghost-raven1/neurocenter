@@ -2,7 +2,6 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import { parseEnv } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -32,11 +31,18 @@ export function parseArguments(args) {
     return options;
 }
 
+/** parseEnv появился в Node 22.3; ленивая загрузка, чтобы импорт модуля не ломал старую версию. */
+let parseEnvModule;
+async function parseEnvText(text) {
+    const { parseEnv } = parseEnvModule ??= await import('node:util');
+    return parseEnv(text);
+}
+
 /** Как dev.mjs: process.env важнее .env.local, а локальные тома остаются внутри checkout. */
 async function operatorEnvironment() {
     const fromFiles = {};
     for (const file of ['.env', '.env.local']) {
-        try { Object.assign(fromFiles, parseEnv(await readFile(path.join(root, file), 'utf8'))); }
+        try { Object.assign(fromFiles, await parseEnvText(await readFile(path.join(root, file), 'utf8'))); }
         catch (error) { if (error.code !== 'ENOENT') { throw error; } }
     }
     const env = { ...fromFiles, ...process.env };
