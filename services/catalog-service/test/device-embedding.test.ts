@@ -30,7 +30,7 @@ describe('Embedding-брокер подключённого устройства
     });
     it('Батч использует реальный тег карточки и возвращает точный alias, не credentials',async()=>{
         const result=await service.embed(device,input);
-        expect(infer).toHaveBeenCalledWith(configured.model,'embed',{input:input.input,truncate:false},undefined);
+        expect(infer).toHaveBeenCalledWith(configured.model,'embed',{input:input.input,truncate:false},expect.any(AbortSignal));
         expect(result).toEqual({object:'list',model:alias,data:[{object:'embedding',index:0,embedding:[1,0,0]},{object:'embedding',index:1,embedding:[0,1,0]}],usage:{prompt_tokens:4,total_tokens:4}});
         expect(requireCurrent).toHaveBeenCalledTimes(2);expect(owned).toHaveBeenCalledTimes(2);expect(claims).toHaveBeenCalledTimes(2);
     });

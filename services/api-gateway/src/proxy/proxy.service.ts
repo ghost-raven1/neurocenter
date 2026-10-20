@@ -10,6 +10,7 @@ import {LiveService} from '../live/live.service';
 import { forwardRuntimeArtifact } from './runtime-artifact-stream';
 import { forwardBackupDownload } from './backup-download-stream';
 import {featureFlagFailure,requiredFeatureFlag} from '../features/feature-flag-gate';
+import {awaitEmbedding} from './embedding-deadline';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -160,25 +161,29 @@ export class ProxyService {
 
     /** Закрытие клиента отменяет только его embedding, включая ожидание проверки Bearer. */
     private async deviceEmbedding(req:Request,res:Response):Promise<void>{
+        let timedOut=false;
         const abort=new AbortController(),disconnected=()=>abort.abort();
+        const timer=setTimeout(()=>{timedOut=true;abort.abort();},115000);
         const closed=()=>{if(!res.writableEnded)abort.abort();};
-        const open=()=>!abort.signal.aborted&&!res.destroyed&&!res.writableEnded;
+        const connected=()=>!req.aborted&&!res.destroyed&&!res.writableEnded;
+        const open=()=>!abort.signal.aborted&&connected();
+        const timeoutReply=()=>{if(timedOut&&connected())res.status(504).json({code:'EMBEDDING_TIMEOUT',message:'Модель не ответила вовремя. Проверьте хостинг и повторите действие.'});};
         req.on('aborted',disconnected);res.on('close',closed);
         try{
             if(req.aborted||res.destroyed)abort.abort();
             if(!open())return;
             let auth:IAuthPayload|null;
-            try{auth=await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);}
-            catch(error){if(!open())return;throw error;}
-            if(!open())return;
+            try{auth=await awaitEmbedding(this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request),abort.signal);}
+            catch(error){if(!open()){timeoutReply();return;}throw error;}
+            if(!open()){timeoutReply();return;}
             if(!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
             try{
-                const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`,req.body,{
-                    timeout:120000,maxContentLength:8*1024*1024,signal:abort.signal,
-                    headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',authorization:req.headers.authorization}});
+                const response=await awaitEmbedding(this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`,req.body,{
+                    timeout:115000,maxContentLength:8*1024*1024,signal:abort.signal,
+                    headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',authorization:req.headers.authorization}}),abort.signal);
                 if(open())res.status(response.status).json(response.data===''?null:response.data);
-            }catch{if(open())res.status(502).json({message:'Сервис подключений недоступен.'});}
-        }finally{req.removeListener('aborted',disconnected);res.removeListener('close',closed);}
+            }catch{if(open())res.status(502).json({message:'Сервис подключений недоступен.'});else timeoutReply();}
+        }finally{clearTimeout(timer);req.removeListener('aborted',disconnected);res.removeListener('close',closed);}
     }
 
     private buildHeaders(headers: Record<string, unknown>, auth: IAuthPayload): Record<string, string> {
