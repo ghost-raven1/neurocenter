@@ -1,21 +1,5 @@
 services:
-  # Комплект моделей входит в релиз; до запуска runtime проверяются и подготавливаются локальные веса.
-  model-volume-init:
-    build:
-      context: .
-      dockerfile: services/catalog-service/Dockerfile
-    restart: 'no'
-    init: true
-    read_only: true
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    mem_limit: 256m
-    cpus: 1
-    pids_limit: 32
-    command: [node, /tools/scripts/models/bundle-cli.mjs, --directory, /models]
-    volumes: ['./data/embedding:/models']
-
-  # Управление моделями идёт через каталог; API runtime не публикуется наружу.
+  # Runtime starts empty; model installation uses imported asset supply.
   model-runtime:
     image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
     restart: unless-stopped
@@ -32,9 +16,6 @@ services:
       OLLAMA_MAX_QUEUE: '8'
       OLLAMA_KEEP_ALIVE: 5m
     volumes: ['./data/embedding:/root/.ollama']
-    depends_on:
-      model-volume-init:
-        condition: service_completed_successfully
     healthcheck:
       test: [CMD, ollama, list]
       interval: 10s
@@ -89,7 +70,7 @@ services:
     environment:
       - PORT=4000
       - BIND_HOST=0.0.0.0
-      - BRIDGE_DIST=/app/bridge-dist
+      - BRIDGE_TEMPLATES_DIR=/app/bridge-dist
       - CATALOG_SERVICE_URL=http://catalog-service:4100
       - SKILLS_SERVICE_URL=http://skills-service:4200
       - RAG_SERVICE_URL=http://rag-sync-service:4300
@@ -140,7 +121,7 @@ services:
       - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
       - runtime-artifacts:/app/runtime-artifacts
       - backup-data:/app/backups
-      - ./data/embedding:/data/models:ro
+      - ./data/embedding:/data/models:rw
     depends_on:
       model-runtime:
         condition: service_healthy

@@ -1,3 +1,4 @@
+import {readyManifest} from '../manifest.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -87,16 +88,16 @@ test('Один repository pipeline собирает две платформы и
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe: { ...recipe, source: { ...source, subdirectory: 'packages/tool' }, targets: ['darwin-arm64', 'linux-x64-glibc'] }, recipePath: path.join(root, 'recipe.json'), output });
         assert.equal(result.runtimeChecked, false); assert.equal(requests, 1);
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         assert.equal(manifest.tools[0].publication.origin, source.url);
         assert.equal(manifest.tools[0].artifacts.length, 2);
         const provenance = JSON.parse(await fs.readFile(path.join(output, 'provenance.json'), 'utf8'));
         assert.equal(provenance.sources[0].upstream.commit, commit);
         assert.equal(provenance.sources[0].upstream.archiveSha256, createHash('sha256').update(bytes).digest('hex'));
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: unpacked });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const entry = path.join(unpacked, descriptor.entrypoint);
         assert.equal(execFileSync(process.execPath, [entry], { encoding: 'utf8' }).trim(), 'REPOSITORY_MAIN');
         const { default: plugin } = await import(pathToFileURL(entry)); assert.deepEqual(await plugin({ name: 'Проверка' }), { name: 'Проверка' });
@@ -142,22 +143,22 @@ test('Репозиторий с рецептом native использует о�
         assert.throws(() => validateRecipe({ ...input, kind: 'plugin' }), /MCP|mcp/);
         assert.throws(() => validateRecipe({ ...input, targets: ['win32-x64'] }), /платформ/);
         const result = await buildRecipe({ recipe: input, recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'output') });
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         assert.equal(manifest.tools[0].publication.kind, 'mcp');
         assert.doesNotMatch(manifest.tools[0].publication.compatibility, /JavaScript/);
         assert.equal(manifest.tools[0].artifacts.length, 1);
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(root, 'output', artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         assert.equal(descriptor.entrypoint, 'app/server'); assert.equal(descriptor.executable, true);
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(root, 'output', artifact.archivePath), descriptor, { destination: unpacked });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const origin = JSON.parse(await fs.readFile(path.join(unpacked, 'repository.json'), 'utf8'));
         assert.equal(origin.manifestSha256, manifestSha256); assert.equal(origin.adapter, 'go');
         assert.equal(await fs.readFile(path.join(unpacked, 'app/server'), 'utf8'), 'prepared native program');
         assert.equal(await fs.readFile(path.join(unpacked, 'upstream-licenses/root/LICENSE'), 'utf8'), 'Native license');
         await assert.rejects(buildRecipe({ recipe: { ...input, source: { ...pinned, manifestSha256: '0'.repeat(64) } },
             recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'tampered') }), /закреплённым SHA/);
-        await assert.rejects(fs.stat(path.join(root, 'tampered/ready.json')), { code: 'ENOENT' });
+        await assert.rejects(fs.stat(path.join(root, 'tampered/asset.json')), { code: 'ENOENT' });
         await assert.rejects(buildRecipe({ recipe: { ...input, source: { ...pinned, runtimeSource: { ...runtimeSource, adapter: 'rust' } } },
             recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'changed') }), /Адаптер поставки изменился/);
     } finally { globalThis.fetch = previous; await fs.rm(root, { recursive: true, force: true }); }

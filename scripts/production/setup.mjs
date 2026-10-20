@@ -3,9 +3,9 @@ import {fileURLToPath} from 'node:url';
 import {readFile,lstat} from 'node:fs/promises';
 import path from 'node:path';
 import {configureProduction,ensureMetricsToken} from './configuration.mjs';
+import {ensureModelCredentialKey} from '../workspace/model-credentials.mjs';
+import {assertProductionModelKey} from './model-credentials.mjs';
 import {composeClient,composeConfiguration,maintenanceLock} from './compose-client.mjs';
-import {runCatalogSync} from './sync-catalog.mjs';
-import {runModelBundleSync} from './sync-models.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const args=process.argv.slice(2);const mode=args[0]||'configure';
@@ -44,13 +44,11 @@ async function main() {
     if(mode==='check'){await compose(['config','--quiet']);console.log('Структура production-конфига корректна.');return;}
     if(mode==='build'){
         await readFile(path.join(directory,'.env'),'utf8');
-        const {hydrateBridgeRuntimeRelease}=await import('../bridge-runtime-release.mjs');
-        const bridge=await hydrateBridgeRuntimeRelease({directory:root});
-        console.log(`Раздача моста ${bridge.version}: ${bridge.targets.join(', ')}; загружено пакетов: ${bridge.downloaded.length}.`);
         await compose(['build']);return;
     }
     if(mode==='status'){await compose(['ps']);return;}
     await ensureMetricsToken(directory);
+    await ensureModelCredentialKey(directory);
     const config=await composeConfiguration(client);
     // Пути берутся из разобранного Compose: пробелы и апострофы не ломают проверку TLS.
     if(mode==='up'){
@@ -59,11 +57,10 @@ async function main() {
     await maintenanceLock(client,config.services['catalog-service'].image,mode,async()=>{
         await compose(['up','-d','--wait','postgres']);
         await compose(['--profile','setup','run','--rm','database-init']);
+        await assertProductionModelKey(directory,config,input=>client.run(['exec','-T','postgres','psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input}));
         if(mode==='seed'){await compose(['--profile','setup','run','--rm','bootstrap-admin']);}
         if(mode==='up'){
             await compose(['up','-d','--wait','capacity-collector']);
-            await runCatalogSync(client);
-            await runModelBundleSync(client);
             await compose(['up','-d','--wait']);
         }
     });

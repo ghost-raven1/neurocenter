@@ -38,4 +38,5 @@ export interface JobInput {
     expectedConfigurationRevisions?: Array<{assetId:string;manifest:string;revision:string|null}>;
     expectedEmbeddingRevision?: number;
     expectedEmbeddingPin?: string;
+    reindex?:true;
 }

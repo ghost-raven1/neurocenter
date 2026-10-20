@@ -3,16 +3,13 @@ import {
     Body,
     Controller,
     Get,
-    ConflictException,
     ForbiddenException,
-    Post,
     Patch,
     Query,
     Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
-import { type ISyncBody } from './dto';
 import { assertMinLevel } from './role';
 import { RagService } from './rag.service';
 import {ragPagination} from './rag-validation';
@@ -91,10 +88,11 @@ export class RagController {
         @Query('projectKey') projectKey: string | undefined,
         @Query('limit') limit: string | undefined,
         @Query('offset') offset: string | undefined,
+        @Query('generation') generation?:string,
     ) {
         const pk = requireProjectKey(projectKey);
         const {limit:lim,offset:off}=ragPagination(limit,offset);
-        const {chunks,...summary}=await this.ragService.exportPage(pk,lim,off);
+        const {chunks,...summary}=await this.ragService.exportPage(pk,lim,off,generation);
         return {
             projectKey: pk,
             ...summary,
@@ -107,41 +105,6 @@ export class RagController {
     }
 
     /**
-     * POST /api/rag/restore-local — обратная синхронизация (role-gated, как
-     * /sync): запускает мост `neurocenter-asset-sync` (oneshot `--run
-     * restore_rag_db`), который скачивает develop-индекс из pgvector и пишет
-     * в локальную LanceDB-базу проекта на диске. Корень проекта (fsRootPath)
-     * rag-sync сам берёт из каталога по projectKey.
-     *
-     * @param body - { projectKey }
-     * @param req - запрос (identity-заголовки от gateway).
-     * @returns {Promise<Record<string, unknown>>} сводка восстановления.
-     */
-    @Post('restore-local')
-    public async restoreLocal(@Body() body: { projectKey?: string }, @Req() req: Request) {
-        const pk = requireProjectKey(body?.projectKey);
-        await assertMinLevel(req, pk, 2);
-        throw new ConflictException('Скачивание в локальную папку выполняется агентом на вашем компьютере.');
-    }
-
-    /**
-     * POST /api/rag/bootstrap — bootstrap-индексация (role ≥ 3): запускает
-     * мост `--run sync_rag_db` (oneshot) с cwd = корень проекта, который
-     * читает локальную LanceDB и загружает её в develop-индекс (pgvector).
-     * Идемпотентно: первая загрузка = полный bootstrap, повторный вызов — дельта.
-     *
-     * @param body - { projectKey }
-     * @param req - запрос (identity-заголовки от gateway).
-     * @returns {Promise<Record<string, unknown>>} сводка синхронизации.
-     */
-    @Post('bootstrap')
-    public async bootstrap(@Body() body: { projectKey?: string }, @Req() req: Request) {
-        const pk = requireProjectKey(body?.projectKey);
-        await assertMinLevel(req, pk, 3);
-        throw new ConflictException('Отправку локальной базы выполняет агент на вашем компьютере.');
-    }
-
-    /**
      * GET /api/rag/projects — список develop-индексов по всем projectKey
      * (админ-модуль RAG).
      *
@@ -150,26 +113,6 @@ export class RagController {
     @Get('projects')
     public async projects() {
         return { projects: await this.ragService.listProjects() };
-    }
-
-    /**
-     * POST /api/rag/sync — dельта-apply (role-gated: x-bridge-roles → rag:write).
-     *
-     * @param body - { projectKey, chunks?, deletes? }
-     * @param req - запрос (identity-заголовки от gateway).
-     * @returns {{ projectKey, upserted, deleted }}
-     */
-    @Post('sync')
-    public async sync(@Body() body: ISyncBody, @Req() req: Request) {
-        if (!body || typeof body.projectKey !== 'string' || !body.projectKey.trim()) {
-            throw new BadRequestException('projectKey is required');
-        }
-        const pk = body.projectKey.trim();
-        await assertMinLevel(req, pk, 2);
-        const chunks = body.chunks===undefined ? [] : body.chunks;
-        const deletes = body.deletes===undefined ? [] : body.deletes;
-        const result = await this.ragService.applyDelta(pk, chunks, deletes,body.indexProfile,body.snapshot);
-        return { projectKey: pk, ...result };
     }
 
     @Get('quota')

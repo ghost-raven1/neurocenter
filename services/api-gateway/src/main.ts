@@ -1,3 +1,4 @@
+import {sourceUploadContentRoute} from '../../shared/source-upload-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
 import 'reflect-metadata';
@@ -10,6 +11,7 @@ import type { Request } from 'express';
 import { AppModule } from './app.module';
 import {LiveService} from './live/live.service';
 import {allowBrowserOrigin,browserSecurity,panelOrigin} from './security/browser-security';
+import {sourceUploadConnection} from './proxy/source-upload-stream';
 
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
@@ -21,10 +23,15 @@ async function bootstrap(): Promise<void> {
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(createObservability({service:'api-gateway'}).middleware);
+    app.use(sourceUploadConnection);
     app.use(browserSecurity);
     // Скиллы и RAG-батчи должны проходить через gateway с тем же лимитом, что и в сервисах.
     app.use('/api/device-channel',express.json({limit:'512kb'}));
-    app.use(express.json({ limit: '50mb' }));
+    const jsonParser=express.json({limit:'50mb'});
+    app.use((req: import('express').Request,res: import('express').Response,next: import('express').NextFunction)=>{
+        if(sourceUploadContentRoute(req.method,req.path)){next();return;}
+        jsonParser(req,res,next);
+    });
     const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
     const io = new IoServer(app.getHttpServer(), {

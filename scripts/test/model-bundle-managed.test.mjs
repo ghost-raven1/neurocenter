@@ -83,7 +83,7 @@ test('Прежняя установка получает квитанцию че
 
 test('Неизвестный старый тег без квитанции не заменяется и объясняет восстановление',async()=>fixture(async({first,second,directory,contents})=>{
     await first.run();const expected=await contents();await rm(path.join(directory,'.bundle-managed'),{recursive:true});
-    await assert.rejects(second.run(),/прежней версии Git/);assert.equal(second.requests(),0);assert.deepEqual(await contents(),expected);
+    await assert.rejects(second.run(),/immutable alias/);assert.equal(second.requests(),0);assert.deepEqual(await contents(),expected);
 }));
 
 test('Повреждённый принадлежащий поставке тег не перезаписывается при обновлении',async()=>fixture(async({first,second,directory})=>{

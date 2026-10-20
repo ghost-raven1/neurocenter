@@ -68,15 +68,3 @@ export async function assertPublicationDependencies(client: PoolClient, pins: ID
     assertBudget();
     for (const pin of pins) { await visit(pin); }
 }
-
-/** Исторические pins защищаются наравне с head; собственные удаляемые версии не удерживают карточку. */
-export async function assertPublicationUnreferenced(client: PoolClient, id: string): Promise<void> {
-    const references = await client.query(
-        `SELECT 1 FROM ai_plugins WHERE id<>$1 AND dependencies @> $2::jsonb
-         UNION ALL SELECT 1 FROM ai_plugin_versions WHERE ai_plugin_id<>$1 AND metadata->'dependencies' @> $2::jsonb LIMIT 1`,
-        [id, JSON.stringify([{ id }])],
-    );
-    if (references.rows.length) {
-        throw new ConflictException('Инструмент закреплён в зависимостях других публикаций, включая историю версий. Удаление нарушит их восстановление.');
-    }
-}

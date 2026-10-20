@@ -55,20 +55,24 @@ nativeTest('Настоящий native autoindex → bridge seal → другая
         }
         expect(await sourceStore.count()).toBeGreaterThan(0);
         const profile = { provider: 'ollama', model: 'native-roundtrip', dimension: 3 };
-        const rows: Record<string, any> = Object.create(null); let complete = false; let hash: string | null = null;
-        const metadata = () => ({ projectKey: 'test-project', fingerprintVersion: 1, indexProfile: Object.keys(rows).length ? profile : null,
+        const generation='initial-'+'a'.repeat(32),selectionRevision=1;
+        const rows: Record<string, any> = Object.create(null); let complete = false; let hash: string | null = null;let dataRevision=0;
+        const metadata = () => ({ generation,selectionRevision,dataRevision,selectedProfile:profile,projectKey: 'test-project', fingerprintVersion: 1, indexProfile: Object.keys(rows).length ? profile : null,
             fingerprints: Object.fromEntries(Object.values(rows).map(row => [row.id, rowFingerprint(row)])),
             ids: Object.fromEntries(Object.values(rows).map(row => [row.id, contentHash(row.content)])), rowCount: Object.keys(rows).length,
             incompleteRows: 0, complete, indexState: complete ? 'ready' : 'syncing', snapshotHash: hash });
         transport.fetch.mockReset().mockImplementation(async (route: string, options?: RequestInit) => {
             if (options) {
                 const body = JSON.parse(String(options.body));
+                expect(route).toBe('/api/rag/sync');expect(body).toMatchObject({expectedGeneration:generation,expectedSelectionRevision:selectionRevision,expectedDataRevision:dataRevision,requestKey:expect.stringMatching(/^[a-f0-9]{64}$/)});
                 for (const row of body.chunks) { expect(path.isAbsolute(row.filePath)).toBe(false); rows[row.id] = row; }
                 for (const id of body.deletes) { delete rows[id]; }
                 complete = body.snapshot.complete;
                 if (complete) { hash = indexSnapshotHash(profile, metadata().fingerprints); expect(hash).toBe(body.snapshot.hash); }
-                return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length, complete, snapshotHash: hash });
+                dataRevision++;
+                return Response.json({ ...metadata(),dimension:profile.dimension,upserted: body.chunks.length, deleted: body.deletes.length });
             }
+            if(route.includes('/chunks')){const request=new URL(route,'http://fixture');const requested=request.searchParams.get('generation');if(requested)expect(requested).toBe(generation);}
             return Response.json(route.includes('/chunks') ? { ...metadata(), chunks: Object.values(rows), hasMore: false } : metadata());
         });
         const pushed = JSON.parse(await syncRagDb({ project: fixture.root }, fixture.root));

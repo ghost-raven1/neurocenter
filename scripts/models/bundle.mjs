@@ -1,8 +1,8 @@
 import {constants,createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {mkdir,mkdtemp,lstat,open,readFile,writeFile,rm,unlink} from 'node:fs/promises';
+import {mkdir,mkdtemp,lstat,open,readFile,rm,unlink} from 'node:fs/promises';
 import path from 'node:path';
-import {MAX_PART_BYTES,lockedFiles,modelLocks,releaseBaseUrl,validateModelBundle} from './bundle-manifest.mjs';
+import {MAX_PART_BYTES,lockedFiles,releaseBaseUrl,validateModelBundle} from './bundle-manifest.mjs';
 import {safeDirectory,verifyFile,promote,ensureSpace,downloadPart} from './bundle-files.mjs';
 import {preflightModelDirectories,preflightModelTargets} from './bundle-preflight.mjs';
 export {rollbackManagedModelBundle,recoverManagedModelBundle} from './bundle-managed.mjs';
@@ -10,7 +10,7 @@ import {managedModelState,managedTagPresent,recoverManagedModelBundle,activateMa
 
 /** Пакуются только публичные закреплённые blobs; ключи Ollama и прочие файлы каталога не читаются. */
 export async function packModelBundle({directory,output,baseUrl,locks,partBytes=MAX_PART_BYTES}) {
-    locks??=await modelLocks();const expected=lockedFiles(locks);
+    const expected=lockedFiles(locks);
     if(!Number.isSafeInteger(partBytes)||partBytes<1||partBytes>MAX_PART_BYTES)throw new Error('Недопустимый размер части поставки.');
     directory=await safeDirectory(directory);
     output=path.resolve(output);await safeDirectory(path.dirname(output));
@@ -46,7 +46,6 @@ export async function packModelBundle({directory,output,baseUrl,locks,partBytes=
             manifest.files.push({path:filename,size:file.size,sha256:file.sha256,parts});
         }
         validateModelBundle(manifest,locks);
-        await writeFile(path.join(output,'bundle-release.json'),JSON.stringify(manifest,null,2)+'\n',{flag:'wx',mode:0o600});
         return manifest;
     } catch(error) {await rm(output,{recursive:true,force:true});throw error;}
 }
@@ -81,8 +80,8 @@ export async function hydrateModelBundle(options) {
 }
 
 /** Кэш предзагрузки не активирует теги; готовые файлы публикуются без перезаписи и только после SHA. */
-async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOnly=false,fetch:request=fetch,signal,onProgress=()=>{},readDisk}) {
-    locks??=await modelLocks();validateModelBundle(manifest,locks);
+async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOnly=false,retainExistingTags=false,fetch:request=fetch,signal,onProgress=()=>{},readDisk}) {
+    validateModelBundle(manifest,locks);
     if(downloadOnly&&verifyOnly)throw new Error('Выберите один режим поставки моделей.');
     directory=await safeDirectory(directory,'',!verifyOnly);
     await recoverManagedModelBundle(directory,{downloadOnly,verifyOnly});
@@ -105,7 +104,7 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
     if(verifyOnly||present.size===manifest.files.length) {
         if(!verifyOnly) {
             const adopted=await adoptManagedModelBundle(directory,tags);
-            if(!downloadOnly&&!adopted)await activateManagedModelBundle(directory,tags);
+            if(!downloadOnly&&!adopted)await activateManagedModelBundle(directory,tags,{retainExistingTags});
         }
         await ready();return report;
     }
@@ -188,15 +187,8 @@ async function hydrateOnce({directory,manifest,locks,downloadOnly=false,verifyOn
             await promote(cached.get(file.path),path.join(directory,file.path),file,{onBytes:activated});
         }
         // Все blobs проверены до переключения; журнал позволяет восстановить прежний комплект после обрыва.
-        await activateManagedModelBundle(directory,tags,{onBytes:activated});
+        await activateManagedModelBundle(directory,tags,{onBytes:activated,retainExistingTags});
         await ready();
         return report;
     } finally {if(staging)await rm(staging,{recursive:true,force:true});}
-}
-
-export async function readModelBundle(filename) {
-    filename=path.resolve(filename);await safeDirectory(path.dirname(filename));
-    const info=await lstat(filename);
-    if(!info.isFile()||info.isSymbolicLink()||info.size>256*1024)throw new Error('Нужен небольшой обычный файл описи моделей.');
-    return JSON.parse(await readFile(filename,'utf8'));
 }

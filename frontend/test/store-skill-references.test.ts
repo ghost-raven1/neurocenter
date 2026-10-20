@@ -14,18 +14,18 @@ describe('Проектное назначение скилла совпадае�
     it('Переименование видимой карточки сохраняет технический slug и назначение', () => {
         const app = fromSkill({ path: common.path!, meta: { name: 'Монитор базы знаний', slug: 'rag-index-monitor' } } as ISkillListSummary);
         expect(app.skillSlug).toBe('rag-index-monitor');
-        expect(isToolInProject(app, 'prj-own', [legacy], [app])).toBe(true);
-        expect(projectAssetForTool(app, 'prj-own', [legacy], [app])?.assetId).toBe('rag-index-monitor');
+        expect(isToolInProject(app, 'prj-own', [asset(app.id)], [app])).toBe(true);
+        expect(projectAssetForTool(app, 'prj-own', [asset(app.id)], [app])?.assetId).toBe(app.id);
     });
 
     it('Старое назначение разрешается и по техническому slug, отличающемуся от basename', () => {
         const app = skill('ops/renamed-path', 'rag-index-monitor');
-        expect(isToolInProject(app, 'prj-own', [legacy], [app])).toBe(true);
+        expect(isToolInProject(app, 'prj-own', [legacy], [app])).toBe(false);
     });
 
     it('Старая карточка без метаданных использует basename пути, а не видимое название', () => {
         const app = { ...common, skillSlug: undefined };
-        expect(isToolInProject(app, 'prj-own', [legacy], [app])).toBe(true);
+        expect(isToolInProject(app, 'prj-own', [legacy], [app])).toBe(false);
         expect(isToolInProject({ ...app, name: 'Fake alias' }, 'prj-own', [asset('fake-alias')], [app])).toBe(false);
     });
 
@@ -54,7 +54,7 @@ describe('Проектное назначение скилла совпадае�
     it('Чужой проект не конкурирует с общим кандидатом и не получает доступ', () => {
         const foreign = skill('project-prj-other/rag-index-monitor');
         const catalog = [common, foreign];
-        expect(isToolInProject(common, 'prj-own', [legacy], catalog)).toBe(true);
+        expect(isToolInProject(common, 'prj-own', [asset(common.id)], catalog)).toBe(true);
         expect(isToolInProject(foreign, 'prj-own', [legacy, asset(foreign.id)], catalog)).toBe(false);
         expect(resolveStoreSkillReference(legacy.assetId, [foreign])).toBeUndefined();
     });
@@ -70,7 +70,7 @@ describe('Проектное назначение скилла совпадае�
     });
 
     it('Удаление использует исходный короткий ID, MCP и плагины требуют точного ID', () => {
-        expect(projectAssetForTool(common, 'prj-own', [legacy], [common])).toBe(legacy);
+        expect(projectAssetForTool(common, 'prj-own', [legacy], [common])).toBeUndefined();
         for (const kind of ['mcp', 'plugin'] as const) {
             const app = { ...common, kind, id: 'ai-plug-example', name: 'rag-index-monitor' };
             expect(isToolInProject(app, 'prj-own', [asset('rag-index-monitor', kind)], [app])).toBe(false);

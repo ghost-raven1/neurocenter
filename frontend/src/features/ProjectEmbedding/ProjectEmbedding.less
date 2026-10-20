@@ -8,8 +8,10 @@
     .ant-typography:last-child { margin-bottom: 0; }
     @media (max-width: 575px) {
         .ant-card-head { padding: 0 12px; }
-        .ant-card-head-title { white-space: normal; }
-        .ant-card-extra { margin-left: 8px; }
+        .ant-card-head-wrapper { flex-wrap: wrap; }
+        .ant-card-head-title { flex-basis: 100%; padding-bottom: 0; white-space: normal; }
+        .ant-card-extra { margin-left: 0; padding-top: 0; }
+        .ant-card-extra .ant-btn { padding-left: 0; }
         .ant-card-body { padding: 12px; }
         .ant-btn { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
     }

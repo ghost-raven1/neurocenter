@@ -14,7 +14,9 @@ import type { IPackage } from '../catalog/bundle-package';
 import { assertRagJobResult, isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import { RAG_JOB_KINDS } from './rag-job-binding';
 import { workspaceFailureMessage } from './workspace-failure';
+import {completeHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, assertHostedRagResult } from './hosted-rag-jobs';
+import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
 
 export interface DeviceCompletion {
     lease: string;
@@ -44,6 +46,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             [id, deviceId, input.lease],
         );
         const job = rows[0];
+        if(job&&['install','uninstall','apply-local-change','apply-adopt-installation'].includes(job.kind))await client.query('SELECT id FROM bridge_devices WHERE id=$1 FOR UPDATE',[deviceId]);
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
         // Потерянный ACK уже принятого legacy-результата не превращается в повторную запись индекса.
         if (RAG_JOB_KINDS.includes(job.kind) && job.state===input.state && isDeepStrictEqual(job.result ?? {},input.result)) {
@@ -57,7 +60,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         assertRagJobResult(job,input.result,input.state==='failed');
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
-        if (![...LOCAL_PREPARATIONS,'scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
+        if(job.kind==='scan-opencode-models'&&(input.state==='failed'?Object.keys(input.result).length>0:!validModelScan(input.result,{projectId:job.project_id,bindingId:job.payload.bindingId,instanceId:job.payload.instanceId})))throw new ConflictException('Отчёт моделей содержит неподдерживаемые данные или относится к другой папке.');
+        if (![...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
             throw new BadRequestException('Результат задания превышает допустимый размер.');
         }
         if (['scan-project-inventory','list-local-variants'].includes(job.kind)) {
@@ -170,12 +174,14 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             :job.kind==='open-mcp-configuration'?'Мастер открыт на компьютере. После сохранения обновите статус настройки.'
             :input.result.ready?'Обязательные параметры MCP заданы; запуск ещё не проверен.':'MCP требует локальной настройки.':undefined;
         const projectMessage = PROJECT_LOCAL_KINDS.includes(job.kind) ? input.state==='failed' ? 'Действие не выполнено. Локальные данные сохранены.'
+            : job.kind==='scan-opencode-models' ? 'Метаданные моделей OpenCode получены. Ключи остались на компьютере.'
             : job.kind==='scan-project-inventory' ? 'Инвентаризация проекта завершена.'
             : job.kind==='list-local-variants' ? 'Список локальных вариантов получен.'
             : job.kind==='apply-adopt-installation' ? 'Инструмент принят под управление; исходные файлы сохранены.'
             : job.kind==='apply-local-restore' ? 'Локальные правки возвращены; прежнее состояние сохранено.'
             : 'План подготовлен. Проверьте изменения перед подтверждением.' : undefined;
-        const message = configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
+        const hostedMessage=job.kind===HOSTED_RAG_KIND?(input.state==='failed'?'Подключение модели не подтверждено. Прежний локальный индекс сохранён; проверьте состояние на компьютере.':job.payload.reindex?'Модель подключена, локальный индекс перестроен и синхронизирован с сервером.':'Модель подключена к установленному OpenCodeRAG.'):undefined;
+        const message = hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'
@@ -189,6 +195,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             'UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5,updated_at=now() WHERE id=$1',
             [id, input.state, percent, message, input.result],
         );
+        if(job.kind===HOSTED_RAG_KIND&&input.state==='succeeded')await completeHostedRagGrant(client,job.id);
         await recordDeviceOperation(client, job, input.state.toUpperCase(), percent, message);
         await client.query('COMMIT');
     } catch (error) {

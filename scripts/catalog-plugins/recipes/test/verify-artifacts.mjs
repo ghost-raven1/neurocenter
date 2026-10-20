@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { run } from '../upstream.mjs';
+import {loadRepository} from '@neurocenter/asset-contract';
+import {readyManifest} from '../../manifest.mjs';
 
 const [directory, report] = process.argv.slice(2).map(value => path.resolve(value));
-const manifest = JSON.parse(await fs.readFile(path.join(directory, 'ready.json')));
+const source=await loadRepository(directory),tools=(await Promise.all(source.assets.map(item=>readyManifest(path.join(directory,item.path))))).flat();
 const native = {
     'darwin-arm64': 'darwin-arm64',
     'linux-arm64-glibc': 'linux-arm64-gnu', 'linux-arm64-musl': 'linux-arm64-musl',
@@ -12,10 +14,10 @@ const native = {
     'win32-arm64': 'win32-arm64-msvc', 'win32-x64': 'win32-x64-msvc',
 };
 const verified = [];
-for (const tool of manifest.tools) {
+for (const tool of tools) {
     for (const artifact of tool.artifacts) {
-        const descriptor = JSON.parse(await fs.readFile(path.join(directory, artifact.descriptorPath)));
-        const { stdout } = await run('tar', ['-tzf', path.join(directory, artifact.archivePath)]);
+        const descriptor=artifact.descriptor;
+        const { stdout } = await run('tar', ['-tzf', artifact.archivePath]);
         const entries = stdout.split('\n').filter(Boolean);
         assert.equal(entries.length, descriptor.filesCount);
         if (['opencode-rag', 'opencode-rag-plugin'].includes(tool.key)) {
@@ -44,9 +46,9 @@ for (const tool of manifest.tools) {
         verified.push({ tool: tool.key, ...descriptor });
     }
 }
-assert.ok(manifest.tools.length > 0);
+assert.ok(tools.length > 0);
 for (const [key, expected] of [['opencode-rag', 7], ['opencode-rag-plugin', 7], ['opencode-snip', 8]]) {
-    assert.equal(verified.filter(value => value.tool === key).length, manifest.tools.some(tool => tool.key === key) ? expected : 0);
+    assert.equal(verified.filter(value => value.tool === key).length, tools.some(tool => tool.key === key) ? expected : 0);
 }
 const value = { status: 'passed', kind: 'static-platform-inventory', nativeExecution: 'darwin-arm64 only; see native smoke', artifacts: verified };
 if (report) await fs.writeFile(report, JSON.stringify(value, null, 2) + '\n');

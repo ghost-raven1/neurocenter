@@ -69,12 +69,12 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
             <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} onPreferRagUi={preferRagUi} />
             <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
-                <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Затем откройте интерфейс выбранной установки и явно запустите полное индексирование.</Paragraph>
+                <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Выберите сервер и компьютер: Нейроцентр перестроит локальный индекс и синхронизирует его с сервером одним действием.</Paragraph>
                 {canWrite ? <Space wrap>
                     <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
                     <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
                 </Space> : <Text type="secondary">Попросите разработчика или администратора проекта подготовить локальный индекс.</Text>}
-                <Paragraph type="secondary" className="project-rag__help">Если плагин уже установлен, откройте OpenCode в связанной папке. Для нового проекта с локальной моделью автоматическая индексация включена по умолчанию. После подключения серверной модели выполните полное индексирование явно; подключение само не запускает индексацию. Существующий opencode-rag.json сохраняется. Установка и диагностика запуска не подтверждают готовность модели и индекса.</Paragraph>
+                <Paragraph type="secondary" className="project-rag__help">Прежний локальный индекс работает до проверки нового. Компьютер не в сети — действие дождётся моста в очереди. После завершения перезапустите OpenCode, чтобы открытая сессия использовала новое подключение. Установка файлов и диагностика запуска сами по себе не подтверждают готовность индекса.</Paragraph>
             </Card>
             <Spin spinning={loading}>
                 {summary ? (

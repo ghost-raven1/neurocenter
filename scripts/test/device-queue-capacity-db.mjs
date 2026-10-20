@@ -51,7 +51,7 @@ try {
     await pool.query(`INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,last_seen,report)
         VALUES($1,$2,'Разработчик','Offline-компьютер',$3,$4,NULL,$5)`,
     [deviceId,email,'a'.repeat(64),randomBytes(32).toString('hex'),{protocolVersion:2,ragSupported:true,
-        capabilities:['durable-completions','managed-installations','project-rag-sync-v1'],
+        capabilities:['durable-completions','managed-installations','project-rag-generations-v1'],
         bindings:[{projectId:'prj-current',bindingId,valid:true}]}]);
     const firstId=randomUUID();
     for(let i=0;i<100;i++)await pool.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash)

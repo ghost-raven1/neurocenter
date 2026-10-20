@@ -17,21 +17,7 @@ x-runtime: &runtime
   NEUROCENTER_METRICS_TOKEN_FILE: /run/secrets/metrics_token
 
 services:
-  # Одноразовая подготовка закреплённого комплекта: приложение не стартует с пустым томом моделей.
-  model-volume-init:
-    <<: *service
-    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/catalog-service/Dockerfile}
-    restart: 'no'
-    read_only: true
-    cap_drop: [ALL]
-    mem_limit: 256m
-    cpus: 1
-    pids_limit: 32
-    command: [node, /tools/scripts/models/bundle-cli.mjs, --directory, /models]
-    volumes: [model-weights:/models]
-
-  # Пользователь запускает уже подготовленную модель; API runtime остаётся внутренним.
+  # Runtime starts empty; model installation uses imported asset supply.
   model-runtime:
     <<: *service
     image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
@@ -48,8 +34,6 @@ services:
       OLLAMA_MAX_QUEUE: '8'
       OLLAMA_KEEP_ALIVE: 5m
     volumes: [model-weights:/root/.ollama]
-    depends_on:
-      model-volume-init: {condition: service_completed_successfully}
     healthcheck:
       test: [CMD, ollama, list]
       interval: 10s
@@ -146,6 +130,7 @@ services:
       CATALOG_PG_URL_FILE: /run/secrets/catalog_url
       # Эта роль читает только RAG; рабочий каталог не получает пароль владельца кластера.
       RAG_PG_URL_FILE: /run/secrets/backup_url
+      NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE: /run/secrets/model_credential_key
       RAG_SERVICE_URL: http://rag-sync-service:4300
       SKILLS_SERVICE_URL: http://skills-service:4200
       PROJECTS_ROOT: /data/projects
@@ -158,8 +143,8 @@ services:
       MODEL_RUNTIME_URL: http://model-runtime:11434
       MODEL_STORAGE_PATH: /data/models
       MODEL_HOSTING_ENABLED: ${MODEL_HOSTING_ENABLED:-true}
-    secrets: [metrics_token, internal_token, catalog_url, backup_url]
-    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:ro]
+    secrets: [metrics_token, internal_token, catalog_url, backup_url, model_credential_key]
+    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:rw]
     depends_on:
       model-runtime: {condition: service_healthy}
       capacity-collector: {condition: service_healthy}
@@ -329,6 +314,7 @@ services:
       start_period: 10s
 
 secrets:
+  model_credential_key: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/model_credential_key'}
   metrics_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/metrics_token'}
   internal_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/internal_token'}
   sso_client_secret: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/sso_client_secret'}

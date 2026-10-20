@@ -16,11 +16,3 @@ export interface ISyncChunk {
     contentHash: string;
     embedding?: number[] | null;
 }
-
-export interface ISyncBody {
-    projectKey: string;
-    chunks?: ISyncChunk[];
-    deletes?: string[];
-    indexProfile?:unknown;
-    snapshot?:unknown;
-}

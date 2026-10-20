@@ -134,7 +134,7 @@ export const KnowledgeSync: FC<{
             {binding && <Typography.Text type="secondary">Папка проекта: <Typography.Text code>{binding.folderName}</Typography.Text></Typography.Text>}
             <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} preferred={preferred} />
             {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && <Alert type="warning" showIcon message={bridgeError}
-                action={!bridge.device.report.capabilities?.includes('project-rag-sync-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
+                action={!bridge.device.report.capabilities?.includes('project-rag-generations-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
             <Space wrap>
                 <Button
                     disabled={!!restoreError || !!bridgeError || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}

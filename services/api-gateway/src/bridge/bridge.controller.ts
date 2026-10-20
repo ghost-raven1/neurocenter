@@ -1,22 +1,19 @@
 import { Controller, Get, Req, Res, NotFoundException } from '@nestjs/common';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import {panelOrigin} from '../security/browser-security';
+import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
 
 /**
- * Каталог раздачи артефактов моста neurocenter-asset-sync (`/bridge/*`).
- *
- * `GET /bridge/install.sh` — отдаёт установочный скрипт с доверенным PANEL_URL.
- *
- * `GET /bridge/neurocenter-asset-sync.tgz` — переносимый архив моста.
+ * Установщики используют импортированный neurocenter-assets и доверенный адрес Gateway.
  */
 @Controller(['bridge', 'api/bridge'])
 export class BridgeController {
     private readonly dir: string;
 
-    constructor() {
-        this.dir = process.env.BRIDGE_DIST || path.resolve(
+    constructor(private readonly supply: BridgeSupplyService) {
+        this.dir = process.env.BRIDGE_TEMPLATES_DIR || path.resolve(
             __dirname,
             '..',
             '..',
@@ -35,12 +32,7 @@ export class BridgeController {
      */
     @Get('install.sh')
     public async installScript(@Req() req: Request, @Res() res: Response): Promise<void> {
-        const template = (await this.read('install.sh')).toString('utf8');
-        const baseUrl = `${panelOrigin()}/api/bridge`;
-        const script = template.replace(/__BASE_URL__/g, baseUrl).replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
-
-        res.setHeader('content-type', 'text/x-shellscript; charset=utf-8');
-        res.send(script);
+        await this.script('install.sh', req, res, true);
     }
 
     /**
@@ -56,7 +48,7 @@ export class BridgeController {
 
     /** Первичная регистрация локального MCP в Windows. */
     @Get('install.ps1')
-    public async installWindowsBridge(@Req() req:Request,@Res() res:Response):Promise<void>{await this.script('install.ps1',req,res);}
+    public async installWindowsBridge(@Req() req:Request,@Res() res:Response):Promise<void>{await this.script('install.ps1',req,res,true);}
 
     /** Отдаёт установщик для PowerShell без зависимости от Bash. */
     @Get('install_opencode.ps1')
@@ -75,34 +67,10 @@ export class BridgeController {
         res.send(await this.read(`opencode/${file}`));
     }
 
-    /**
-     * Отдаёт собранный архив моста.
-     *
-     * @param res - ответ.
-     * @returns {Promise<void>}
-     */
-    @Get('neurocenter-asset-sync.tgz')
-    public async artifact(@Res() res: Response): Promise<void> {
-        const buf = await this.read('neurocenter-asset-sync.tgz');
-
-        res.setHeader('content-type', 'application/gzip');
-        res.setHeader('content-disposition', 'attachment; filename="neurocenter-asset-sync.tgz"');
-        res.send(buf);
-    }
-
-    /** Готовый runtime передаётся потоком: несколько скачиваний не держат архивы целиком в памяти. */
+    /** Только импортированная неизменяемая версия; локального архива или внешнего fallback нет. */
     @Get('runtime/:file')
     public async runtime(@Req() req: Request, @Res() res: Response): Promise<void> {
-        const file = req.params.file;
-        if (!/^neurocenter-asset-sync-(darwin|linux|windows)-(x64|arm64)(-musl)?-\d+\.\d+\.\d+\.tgz(\.sha256|\.json)?$/.test(file)) {
-            throw new NotFoundException('Автономный пакет для этой платформы не найден.');
-        }
-        const directory = path.join(this.dir, 'runtime');
-        const info = await stat(path.join(directory, file)).catch(() => null);
-        if (!info?.isFile()) { throw new NotFoundException('Автономный пакет для этой платформы ещё не подготовлен.'); }
-        res.setHeader('cache-control', 'no-store');
-        res.setHeader('content-type', file.endsWith('.sha256') ? 'text/plain; charset=utf-8' : file.endsWith('.json') ? 'application/json' : 'application/gzip');
-        res.sendFile(file, { root: directory }, error => { if (error && !res.headersSent) { res.status(404).json({ message: 'Пакет недоступен. Повторите скачивание.' }); } });
+        await bridgeRequest(req, res, signal => this.supply.runtime(req.params.file, signal, res));
     }
 
     private async read(file: string): Promise<Buffer> {
@@ -114,9 +82,20 @@ export class BridgeController {
     }
 
     /** Подставляет адрес площадки с проверкой прокси-заголовков. */
-    private async script(file: string, req: Request, res: Response): Promise<void> {
-        const script = (await this.read(file)).toString('utf8').replace(/__BASE_URL__/g, `${panelOrigin()}/api/bridge`).replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
-        res.setHeader('content-type', 'text/plain; charset=utf-8');
-        res.send(script);
+    private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
+        await bridgeRequest(req, res, async signal => {
+            const version = bridge ? (await this.supply.supply(signal)).version : undefined;
+            if (signal.aborted) { return; }
+            let script = (await this.read(file)).toString('utf8');
+            if (bridge) {
+                if (script.split('__BRIDGE_VERSION__').length !== 2) { throw new NotFoundException('Шаблон установщика моста недоступен.'); }
+                script = script.replace('__BRIDGE_VERSION__', version!);
+            }
+            if (signal.aborted) { return; }
+            script = script.replace(/__BASE_URL__/g, `${panelOrigin()}/api/bridge`).replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
+            res.setHeader('cache-control', 'no-store');
+            res.setHeader('content-type', file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8');
+            res.send(script);
+        });
     }
 }

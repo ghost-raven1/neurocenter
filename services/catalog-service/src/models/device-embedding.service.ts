@@ -1,10 +1,10 @@
-import {ConflictException,ForbiddenException,Injectable,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
+import {ConflictException,ForbiddenException,Inject,Injectable,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
 import {projectLevel} from '../access/access.model';
 import {DeviceStore,type Device} from '../devices/device-store';
 import {managedBinding} from '../devices/device-compatibility';
 import {requireFeatureEnabled} from '../features/require-feature-enabled';
-import {OllamaClient} from './ollama-client';
-import {ProjectEmbeddingService} from './project-embedding.service';
+import {ModelRuntime,type IModelInferenceRuntime} from './model-runtime';
+import {HostedRagGrantService} from './hosted-rag-grant.service';
 import {deviceEmbeddingInput} from './project-embedding.validation';
 import type {IConfiguredProjectEmbedding,IDeviceEmbeddingContext,IDeviceEmbeddingInput} from './project-embedding.types';
 
@@ -26,7 +26,7 @@ async function deviceEmbeddingDeadline<T>(caller:AbortSignal|undefined,action:(s
 /** Существующий device Bearer проверяется для каждого батча; ключ не входит в настройки проекта. */
 @Injectable()
 export class DeviceEmbeddingService {
-    constructor(private readonly devices:DeviceStore,private readonly selection:ProjectEmbeddingService,private readonly runtime:OllamaClient){}
+    constructor(private readonly devices:DeviceStore,@Inject(ModelRuntime) private readonly runtime:IModelInferenceRuntime,private readonly grants:HostedRagGrantService){}
     private async current(device:Device,input:IDeviceEmbeddingContext,signal?:AbortSignal):Promise<IConfiguredProjectEmbedding>{
         signal?.throwIfAborted();
         const live=await this.devices.owned({email:device.email,activeRole:device.role},device.id);signal?.throwIfAborted();
@@ -40,7 +40,7 @@ export class DeviceEmbeddingService {
         if(managedBinding(live.report,input.projectId)!==input.bindingId||binding?.instanceId!==input.instanceId){
             throw new ConflictException('Папка или экземпляр проекта изменились. Перечитайте подключение embedding-модели.');
         }
-        const selected=await this.selection.requireCurrent(input.projectId,input.expectedRevision,input.expectedModelPin);signal?.throwIfAborted();return selected;
+        const selected=await this.grants.require(live,input);signal?.throwIfAborted();return selected;
     }
     context(device:Device,value:unknown):Promise<IConfiguredProjectEmbedding>{
         return this.current(device,deviceEmbeddingInput(value) as IDeviceEmbeddingContext);
@@ -54,7 +54,7 @@ export class DeviceEmbeddingService {
             const texts=typeof input.input==='string'?[input.input]:input.input;
             let result:Record<string,unknown>;
             try{result=await this.runtime.infer(selected.model,'embed',{input:texts,truncate:false},signal);}
-            catch{signal.throwIfAborted();throw new ServiceUnavailableException('Модель не выполнила embedding-запрос. Проверьте хостинг и повторите действие.');}
+            catch(cause){signal.throwIfAborted();if(cause instanceof ServiceUnavailableException)throw cause;throw new ServiceUnavailableException('Модель не выполнила embedding-запрос. Проверьте хостинг и повторите действие.');}
             // Отзыв прав, назначения или папки во время inference не отдаёт векторы старому подключению.
             signal.throwIfAborted();await this.current(device,input,signal);
             const vectors=result.embeddings;

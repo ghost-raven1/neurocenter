@@ -1,11 +1,17 @@
 import type { IBridgeDevice } from './api';
 import { roleLevel } from '../UserBlock/roles';
 
+/** До первого heartbeat версия неизвестна; это ещё не признак устаревшего моста. */
+export function awaitingBridgeReport(device?: IBridgeDevice): boolean {
+    return !!device && !device.online && !device.lastSeen && device.report.protocolVersion === undefined && !device.report.bridgeVersion;
+}
+
 /** Общие задания не требуют поддержки установки комплектов; сервер повторяет проверки. */
 export function bridgeOperationBlocker(device?: IBridgeDevice): string {
     if (!device) { return 'Выберите подключённый компьютер.'; }
     if (device.requiresReconnect) { return 'Подключение компьютера истекло. Подтвердите его заново: файлы и история установок сохранятся.'; }
     if (roleLevel(device.role) < 2) { return 'Роль этого подключения моста не разрешает изменение проекта. Переподключите компьютер с ролью разработчика или администратора.'; }
+    if (awaitingBridgeReport(device)) { return 'Ожидаем первого выхода на связь. Запустите установленный мост и проверьте подключение.'; }
     const { report } = device;
     if (report.protocolVersion !== 2 || !report.capabilities?.includes('durable-completions') || !report.capabilities.includes('managed-installations')) {
         return 'Обновите мост на странице «Начало работы», чтобы выполнять задания с надёжным подтверждением результата.';

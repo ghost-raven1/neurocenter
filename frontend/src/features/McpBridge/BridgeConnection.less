@@ -17,10 +17,12 @@
             min-width: 0;
             max-width: 100%;
         }
+
+        > .ant-space-item:has(.bridge-connection__device-select) { flex: 1 1 240px; }
     }
 
     &__device-select {
-        width: 320px;
+        width: 100%;
         min-width: 0;
         max-width: 100%;
 
@@ -28,6 +30,20 @@
             min-width: 0;
         }
     }
+
+    &__device-option { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; }
+    &__device-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    &__device-status { flex-shrink: 0; white-space: nowrap; font-size: 12px; color: #526779; }
+}
+
+.bridge-device-details {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    font-size: 13px;
+    div { min-width: 0; }
+    dt { color: #617387; font-size: 12px; }
+    dd { margin: 2px 0 0; overflow-wrap: anywhere; }
 }
 
 @media (max-width: 575px) {

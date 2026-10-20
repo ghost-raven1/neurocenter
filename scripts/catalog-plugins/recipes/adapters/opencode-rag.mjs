@@ -7,6 +7,12 @@ export async function runManagedRagCli(args = process.argv.slice(2)) {
         console.log('Использование: opencode-rag mcp | opencode-rag ui [--port 0|1024–65535] [--no-open]');
         return;
     }
+    if(args[0]==='reindex'&&args.length===3&&args[1]==='--stage'){
+        const raw=process.env.NEUROCENTER_RAG_REINDEX_CONTEXT;delete process.env.NEUROCENTER_RAG_REINDEX_CONTEXT;
+        if(!raw)throw new Error('Переиндексацию запускает авторизованный мост.');
+        const {buildManagedReindex}=await import('./rag-reindex.mjs');
+        const result=await buildManagedReindex(args[2],raw);await new Promise((resolve,reject)=>process.stdout.write(JSON.stringify(result)+'\n',error=>error?reject(error):resolve()));return;
+    }
     if (args[0] === 'mcp' && args.length === 1) { await import('./rag-mcp.mjs'); return; }
     if (args[0] !== 'ui') { throw new Error('Доступны команды opencode-rag mcp и opencode-rag ui.'); }
     let port = 3210; const seen = new Set();
@@ -24,5 +30,9 @@ export async function runManagedRagCli(args = process.argv.slice(2)) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    runManagedRagCli().catch(() => { console.error('OpenCodeRAG не запущен. Проверьте папку проекта, локальный индекс и настройки подключения.'); process.exitCode = 1; });
+    // One-shot reindex has closed its stores and flushed its receipt; upstream count timers must not delay the commit guard.
+    runManagedRagCli().then(()=>{if(process.argv[2]==='reindex')process.exit(0);}).catch(() => {
+        const message='OpenCodeRAG не запущен. Проверьте папку проекта, локальный индекс и настройки подключения.';
+        if(process.argv[2]==='reindex')process.stderr.write(message+'\n',()=>process.exit(1));else{console.error(message);process.exitCode=1;}
+    });
 }

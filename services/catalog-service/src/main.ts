@@ -1,3 +1,4 @@
+import {sourceUploadContentRoute} from '../../shared/source-upload-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
 import 'reflect-metadata';
@@ -14,7 +15,11 @@ async function bootstrap(): Promise<void> {
     app.enableShutdownHooks();
     app.use(createObservability({service:'catalog-service'}).middleware);
     // До 5 МиБ UTF-8 после разбора JSON; экранирование может увеличить тело запроса в шесть раз.
-    app.use(express.json({limit: '35mb'}));
+    const jsonParser=express.json({limit:'35mb'});
+    app.use((req: import('express').Request,res: import('express').Response,next: import('express').NextFunction)=>{
+        if(sourceUploadContentRoute(req.method,req.path)){next();return;}
+        jsonParser(req,res,next);
+    });
     app.use((req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
         if (req.path.startsWith('/api/') && (!process.env.NEUROCENTER_INTERNAL_TOKEN || req.headers['x-neurocenter-internal'] !== process.env.NEUROCENTER_INTERNAL_TOKEN)) {
             res.status(403).json({message:'Запрос должен пройти через авторизованный шлюз.'}); return;

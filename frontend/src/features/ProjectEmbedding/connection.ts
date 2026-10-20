@@ -15,7 +15,7 @@ export function embeddingInstallations(items: IBridgeInstallation[], device: IBr
 export function embeddingConnectionBlocker(device: IBridgeDevice | undefined, binding: IBridgeBinding | undefined): string {
     const common = bridgeOperationBlocker(device); if (common) return common;
     if (!device?.online) return 'Включите компьютер и обновите данные моста.';
-    if (!device.report.capabilities?.includes('hosted-rag-model-v1')) return 'Обновите мост для подключения модели проекта к OpenCodeRAG.';
+    if (!device.report.capabilities?.includes('hosted-rag-reindex-v1')||!device.report.capabilities?.includes('hosted-rag-grants-v1')||!device.report.capabilities?.includes('hosted-rag-profile-values-v1')) return 'Обновите мост для подключения модели проекта к OpenCodeRAG.';
     if (!device.report.root?.trim()) return 'Выберите общую папку проектов на выбранном компьютере.';
     if (!binding || !sha(binding.bindingId) || !uuid(binding.instanceId)) return 'Свяжите и подтвердите папку этого проекта на выбранном компьютере.';
     return '';
@@ -26,11 +26,12 @@ export function embeddingConnectionInput(item: IBridgeInstallation, binding: IBr
     return {kind: 'connect-rag-model', deviceId: item.deviceId, projectId: item.projectId, assetId: item.assetId,
         assetKind: item.assetKind as 'mcp' | 'plugin', version: item.version, expectedManifest: item.manifest,
         expectedBindingId: binding.bindingId, expectedInstanceId: binding.instanceId,
-        expectedEmbeddingRevision: selection.revision, expectedEmbeddingPin: selection.modelPin};
+        expectedEmbeddingRevision: selection.revision, expectedEmbeddingPin: selection.modelPin,reindex:true};
 }
 export function embeddingConnected(job: IBridgeJob | undefined, selection: IProjectEmbedding): boolean {
     const result = job?.result;
-    return job?.state === 'succeeded' && result?.status === 'connected' && result.revision === selection.revision
+    const rebuilt=result?.reindex as {complete?:unknown;serverSynced?:unknown;rowCount?:unknown;snapshotHash?:unknown}|undefined;
+    return rebuilt?.complete===true&&rebuilt.serverSynced===true&&Number.isSafeInteger(rebuilt.rowCount)&&Number(rebuilt.rowCount)>=0&&sha(rebuilt.snapshotHash)&&job?.state === 'succeeded' && result?.status === 'connected' && result.revision === selection.revision
         && result.modelPin === selection.modelPin && result.requiresRestart === true && !!selection.profile
         && !!result.profile && typeof result.profile === 'object'
         && sameEmbeddingProfile(result.profile as NonNullable<IProjectEmbedding['profile']>, selection.profile);

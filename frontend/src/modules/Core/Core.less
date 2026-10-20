@@ -18,19 +18,22 @@
     &__location { display: flex; align-items: center; gap: 12px; min-width: 0; white-space: nowrap; overflow: hidden;
         > .ant-typography:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     }
-    &__live { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    &__header-actions { flex-shrink: 0; }
+    &__live { display: inline-flex; align-items: center; gap: 6px; color: #4a6479; font-size: 12px; white-space: nowrap;
+        > .anticon { color: #389e0d; }
+        &--disconnected > .anticon { color: #ad6800; }
+    }
     &__location-separator { color: #b5c1cb; }
     &__content { min-width: 0; padding: 32px; }
     &__page { max-width: 1500px; margin: 0 auto; }
     &__skip { position: fixed; top: -80px; left: 16px; z-index: 2000; padding: 12px 18px; background: white; border: 2px solid @brand-primary; border-radius: 8px; &:focus { top: 12px; } }
-    &__mobile-menu { .ant-menu.ant-menu-dark, .ant-menu-dark .ant-menu-sub { background: transparent; } .ant-drawer-content, .ant-drawer-header { background: #14283d; } .ant-drawer-body { padding: 12px; } .ant-drawer-header { border-color: #314559; } .ant-drawer-close { color: white; } .app__brand { padding: 0; } }
+    &__mobile-menu { .ant-menu.ant-menu-dark, .ant-menu-dark .ant-menu-sub { background: transparent; } .ant-drawer-content, .ant-drawer-header { background: #14283d; } .ant-drawer-body { padding: 12px; } .ant-drawer-header { padding: 20px; border-color: #314559; } .ant-drawer-title { color: #fff; font-size: 18px; font-weight: 600; } .ant-drawer-close { color: #a8bacd; } }
 }
-@media (max-width: 991px) { .app { &__header.ant-layout-header { padding: 0 16px; height: 64px; } &__content { padding: 20px; } &__role { display: block; } &__location > .ant-typography-secondary, &__location-separator { display: none; } } }
+@media (max-width: 991px) { .app { &__header.ant-layout-header { padding: 0 16px; height: 64px; } &__content { padding: 20px; } &__location > .ant-typography-secondary, &__location-separator { display: none; } } }
 @media (max-width: 575px) { .app { &__content { padding: 16px 12px; } &__operations-label { display: none; } &__header .ant-space { gap: 8px !important; } &__location { gap: 4px; } } }
 
 .app__sidebar-note a { display: block; margin-top: 16px; color: @brand-on-dark; }
 @media (max-width: 575px) { .user-info__name { display: none; } .app__location { overflow: hidden; } .app__location .ant-typography { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 
-@media (max-width: 575px) { .app__header.ant-layout-header { flex-wrap: wrap; height: auto; min-height: 96px; padding-top: 8px; padding-bottom: 8px; } .app__header > .ant-space { margin-left: auto; } .app__role .ant-select { min-width: 150px !important; } }
-@media (max-width: 767px) { .app__live-label { display: none; } }
+@media (max-width: 575px) { .app__header.ant-layout-header { gap: 8px; } .app__live-label { max-width: 90px; white-space: normal; line-height: 1.3; } .app__header > .ant-space { margin-left: auto; } }
 @media (max-width: 575px) { .app__header .user-info__name { display: none; } .app__header > .ant-space { max-width: 100%; } }

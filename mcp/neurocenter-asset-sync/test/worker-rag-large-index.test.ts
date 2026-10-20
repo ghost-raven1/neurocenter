@@ -7,7 +7,7 @@ import { indexSnapshotHash } from '../src/features/rag-index/contract.js';
 import { writeRows } from '../src/lib/lancedb.js';
 import { syncRagDb } from '../src/tools/sync-rag-db.js';
 import { workspaceFixture } from './bridge-fixture.js';
-import { metadata, profile, readyIndex, row } from './rag-index-fixture.js';
+import { metadata,receipt, profile, readyIndex, row } from './rag-index-fixture.js';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../src/bridge/state.js', async original => ({
@@ -65,7 +65,7 @@ describe('Большой настоящий LanceDB-индекс проходи�
                 for (const chunk of body.chunks) { expect(path.isAbsolute(chunk.filePath)).toBe(false); server.set(chunk.id, chunk); }
                 for (const id of body.deletes) { server.delete(id); }
             }
-            return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length,
+            return Response.json({ ...receipt(body),upserted: body.chunks.length, deleted: body.deletes.length,
                 complete, snapshotHash: complete ? body.snapshot.hash : null });
         });
     });

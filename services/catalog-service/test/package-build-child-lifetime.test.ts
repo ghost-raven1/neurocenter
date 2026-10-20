@@ -29,9 +29,9 @@ describe('Поздний запуск дочерней сборки после �
         });
         const progress=vi.fn().mockResolvedValue(undefined);
         const service=new PackageBuildService({claims:async()=>({userRoles:['Главный админ']})} as unknown as AccessDb,
-            {} as RuntimeArtifacts,{} as CatalogService);
+            {} as RuntimeArtifacts,{} as CatalogService,{} as never);
         Object.assign(service,{lease:{},repository:{progress}});
-        const row={id:randomUUID(),actor:'builder@example.test',config:{name:'Проверка позднего запуска'}} as BuildRow;
+        const row={id:randomUUID(),actor:'builder@example.test',config:{name:'Проверка позднего запуска',source:{type:'files',entrypoint:'index.mjs',files:[{path:'index.mjs',content:'export default()=>({})'}]}}} as BuildRow;
         const execute=(service as unknown as{execute:(row:BuildRow,root:string)=>Promise<void>}).execute.bind(service);
         const running=execute(row,root);
         await prepared.promise;

@@ -1,6 +1,7 @@
 import type { IModule } from '../core/interfaces';
 
 import Access from './Access';
+import Assets from './Assets';
 import Audit from './Audit';
 import Maintenance from './Maintenance';
 import Projects from './Projects';
@@ -16,6 +17,7 @@ import Store from './Store';
 export const contentModules: IModule[] = [
     Start,
     Store,
+    Assets,
     Projects,
     Rag,
     Maintenance,

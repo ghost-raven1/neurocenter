@@ -7,20 +7,21 @@ import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from '../assets/environment.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-export const usage='npm run models:publish -- --recipe <рецепт из каталога.json> --release models-YYYY-MM-DD.N [--directory data/embedding] [--output <новый каталог>] [--publish]\n'
-    +'Без --publish: только упаковка и SHA-проверка. С --publish: новый GitHub Release, затем обновление реестра и описи в Git. Требуется gh auth login; команда не делает git commit/push.';
+export const usage='npm run models:publish -- --model <namespace/name:tag> --release <immutable-tag> [--id model-name] [--name <название>] [--capability embedding|vision|chat] [--dimension N] [--license SPDX] [--directory data/embedding] [--output <новый каталог>] [--publish]\n'
+    +'Без --publish: только локальная упаковка в asset.json. С --publish: проверенный GitHub Release в neurocenter-assets. Git checkout не меняется.';
 
 export function parseModelPublishArguments(args) {
     const options={root,publish:false},seen=new Set();
-    const fields={'--recipe':'recipe','--release':'release','--tag':'release','--directory':'directory','--output':'output'};
+    const fields={'--model':'model','--id':'id','--name':'name','--capability':'capability','--dimension':'dimension','--description':'description','--license':'license','--version':'version','--release':'release','--directory':'directory','--output':'output'};
     for(let index=0;index<args.length;index++) {
         const key=args[index],field=fields[key]||key;
         if(seen.has(field))throw new Error('Параметр указан повторно.');seen.add(field);
         if(key==='--publish')options.publish=true;
-        else if(fields[key]&&args[index+1]&&!args[index+1].startsWith('-'))options[fields[key]]=args[++index];
+        else if(Object.hasOwn(fields,key)&&args[index+1]&&!args[index+1].startsWith('-'))options[fields[key]]=args[++index];
         else throw new Error(usage);
     }
-    if(!options.recipe||!options.release)throw new Error(usage);
+    if(!options.model||!options.release)throw new Error(usage);
+    if(options.dimension!==undefined){if(!/^[1-9][0-9]{0,4}$/.test(options.dimension))throw new Error(usage);options.dimension=Number(options.dimension);}
     return options;
 }
 
@@ -37,7 +38,7 @@ export async function runModelPublishCli(args=process.argv.slice(2)) {
     const result=await prepareModelSupply(options,{onProgress:value=>console.error(value.message)});
     console.log(JSON.stringify(result,null,2));
     if(!result.published)console.error('Комплект подготовлен локально. Для публикации повторите ту же команду с --publish: части будут проверены и использованы повторно.');
-    else console.error('Модели опубликованы. Проверьте git diff, сохраните реестр, lock и bundle-release.json одним коммитом и отправьте его в Git.');
+    else console.error('Поставка опубликована в neurocenter-assets. Добавьте полученный asset.json в индекс репозитория; готовые версии не перезаписываются.');
 }
 
 function isEntrypoint() {

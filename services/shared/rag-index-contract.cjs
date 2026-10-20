@@ -4,6 +4,11 @@ const FINGERPRINT_VERSION=1;
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const clean=value=>typeof value==='string'?value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,''):null;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+/** Ключ повтора зависит от JSON-значений, а не порядка ключей после JSONB roundtrip. */
+function ragRequestHash(value){
+ const canonical=item=>Array.isArray(item)?item.map(canonical):object(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,canonical(item[key])])):item;
+ return hash(canonical(value));
+}
 
 /** Только идентичность модели: адрес подключения и секреты в контракт не входят. */
 function normalizeIndexProfile(value){
@@ -67,4 +72,4 @@ function managedEmbeddingConfiguration(value={}){
  }
  return {provider,model,...baseUrl!==undefined?{baseUrl}:{},...vectorDimension!==undefined?{vectorDimension}:{}};
 }
-module.exports={FINGERPRINT_VERSION,normalizeIndexProfile,normalizeChunkRow,rowFingerprint,indexSnapshotHash,embeddingSignature,managedEmbeddingConfiguration};
+module.exports={FINGERPRINT_VERSION,normalizeIndexProfile,normalizeChunkRow,rowFingerprint,indexSnapshotHash,embeddingSignature,managedEmbeddingConfiguration,ragRequestHash};

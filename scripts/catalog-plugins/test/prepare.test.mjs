@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, test } from 'node:test';
 import { builtinRecipes, parsePrepareArguments, prepareCatalog } from '../prepare.mjs';
 import { readyManifest } from '../manifest.mjs';
+import {loadRepository} from '@neurocenter/asset-contract';
 import { validateRecipe } from '../recipe-schema.mjs';
 import ragSource from '../../../services/shared/opencode-rag-source.cjs';
 import {RAG_HOSTED_EMBEDDING} from '../recipes/opencode-rag.mjs';
@@ -24,12 +25,12 @@ test('Все встроенные инструменты являются рец
     assert.equal(validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag')).targets.length, 7);
     assert.equal(recipes.find(recipe => recipe.key === 'project-context').revision, '1.0.1-pack.1');
     assert.equal(recipes.find(recipe => recipe.key === 'git-context').revision, '1.0.0-pack.1');
-    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.8');
+    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.9');
     const ragPlugin = validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag-plugin'));
     assert.equal(ragPlugin.kind, 'plugin');
-    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.8');
+    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.9');
     assert.equal(ragPlugin.targets.length, 7);
-    assert.deepEqual(RAG_HOSTED_EMBEDDING,{schemaVersion:1,profileSchemaVersion:2});
+    assert.deepEqual(RAG_HOSTED_EMBEDDING,{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1});
     assert.ok(!ragPlugin.targets.includes('darwin-x64'));
     assert.throws(() => validateRecipe({ ...ragPlugin, kind: 'mcp' }), /подключается как plugin/);
 });
@@ -41,8 +42,8 @@ test('Общий dry-run проверяет восемь рецептов и н�
     try {
         const result = await prepareCatalog({ output: f.output, dryRun: true });
         assert.equal(result.dryRun, true);
-        assert.equal(result.tools.length, 8);
-        assert.ok(result.tools.every(tool => tool.dryRun));
+        assert.equal(result.plans.length, 8);
+        assert.ok(result.plans.every(tool => tool.dryRun));
         await assert.rejects(fs.access(f.output), { code: 'ENOENT' });
     } finally { globalThis.fetch = originalFetch; }
 });
@@ -61,13 +62,13 @@ test('Закреплённый GitHub OpenCodeRAG использует те же
 test('Встроенные JS-плагины проходят ту же упаковку и корректные пути общего manifest', async () => {
     const f = await fixture();
     const result = await prepareCatalog({ output: f.output, only: ['project-context', 'git-context'], targets: ['darwin-arm64'] });
-    assert.equal(result.tools.length, 2);
-    const tools = await readyManifest(path.join(f.output, 'ready.json'));
+    assert.equal(result.assets.length, 2);
+    const repository=await loadRepository(f.output),tools=(await Promise.all(repository.assets.map(record=>readyManifest(path.join(f.output,record.path))))).flat();
     for (const tool of tools) {
         assert.equal(tool.artifacts.length, 1);
-        assert.ok(tool.artifacts[0].archivePath.startsWith(path.join(f.output, tool.key) + path.sep));
+        assert.ok(tool.artifacts[0].archivePath.startsWith(path.join(f.output,'assets',tool.key) + path.sep));
         assert.match(tool.publication.config.extra.runtimeArtifacts[0].entrypoint, /context\.mjs$/);
-        assert.equal(JSON.parse(await fs.readFile(path.join(f.output, tool.key, 'provenance.json'), 'utf8')).runtimeChecked, false);
+        assert.equal(JSON.parse(await fs.readFile(path.join(path.dirname(tool.filename),'provenance.json'), 'utf8')).runtimeChecked, false);
     }
 });
 

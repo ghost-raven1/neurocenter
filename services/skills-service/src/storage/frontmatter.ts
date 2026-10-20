@@ -91,6 +91,14 @@ export function normalizeMeta(raw: Record<string, unknown>, slug: string): ISkil
 
     return {
         ...(asString(raw.generation) ? { generation: asString(raw.generation) } : {}),
+        ...(asString(raw.archivedAt) ? {archivedAt:asString(raw.archivedAt)} : {}),
+        ...(raw.assetArchive && typeof raw.assetArchive==='object' && typeof (raw.assetArchive as Record<string,unknown>).requestKey==='string'
+            && typeof (raw.assetArchive as Record<string,unknown>).previousHash==='string' && typeof (raw.assetArchive as Record<string,unknown>).payloadHash==='string' && Number.isSafeInteger((raw.assetArchive as Record<string,unknown>).version)
+            && typeof (raw.assetArchive as Record<string,unknown>).restore==='boolean' ? {assetArchive:raw.assetArchive as ISkillMeta['assetArchive']} : {}),
+        ...(raw.assetImport && typeof raw.assetImport==='object' && !Array.isArray(raw.assetImport)
+            && typeof (raw.assetImport as Record<string,unknown>).requestKey==='string' && typeof (raw.assetImport as Record<string,unknown>).payloadHash==='string'
+            && Number.isSafeInteger((raw.assetImport as Record<string,unknown>).version) && Number((raw.assetImport as Record<string,unknown>).version)>0
+            ? {assetImport:raw.assetImport as ISkillMeta['assetImport']} : {}),
         name: asString(raw.name) ?? slug,
         slug,
         scope,

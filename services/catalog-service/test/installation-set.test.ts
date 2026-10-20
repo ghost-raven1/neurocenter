@@ -24,7 +24,7 @@ const setOf = (root: IPackage, packages: IPackage[] = [root]): IInstallationSet 
 const poolFor = (packages: IPackage[], selectedProject = project) => {
     const allowed = new Set(packages.map(pkg => `${selectedProject}:${pkg.plugin.kind}:${pkg.plugin.id}`));
     return { query: vi.fn(async (_sql: unknown, parameters: unknown[]) => ({
-        rows: [], rowCount: allowed.has(parameters.join(':')) ? 1 : 0,
+        rows: allowed.has(parameters.join(':'))?[{asset_id:parameters[2],asset_kind:parameters[1]}]:[], rowCount: allowed.has(parameters.join(':')) ? 1 : 0,
     })) } as unknown as Pool;
 };
 const builderFor = (packages: IPackage[]) => vi.fn(async (kind: string, id: string, version: number) => {
@@ -73,10 +73,10 @@ describe('Замкнутый граф установочного комплек�
             : remote('other');
         await expect(resolveInstallationSet(poolFor([root, dependency, wrong]), project, root, vi.fn(async () => wrong))).rejects.toMatchObject({ status: 409 });
     });
-    it('Зависимость из чужого проектного каталога не получает доступ через корневой скилл', async () => {
-        const dependency = remote('dependency'); const root = skill([dependency]);
-        await expect(resolveInstallationSet(poolFor([root]), project, root, builderFor([dependency]))).rejects.toMatchObject({ status: 403 });
-        await expect(resolveInstallationSet(poolFor([root, dependency], 'prj-other'), project, root, builderFor([dependency]))).rejects.toMatchObject({ status: 403 });
+    it('Exact dependency is authorized by assigned root; another project cannot read the root',async()=>{
+        const dependency=remote('dependency'),root=skill([dependency]);
+        expect((await resolveInstallationSet(poolFor([root]),project,root,builderFor([dependency])))?.packages).toHaveLength(2);
+        await expect(resolveInstallationSet(poolFor([root,dependency],'prj-other'),project,root,builderFor([dependency]))).rejects.toMatchObject({status:403});
     });
     it('Чужой проектный корень отклоняется до чтения зависимостей', async () => {
         const dependency = remote('dependency');
@@ -190,14 +190,10 @@ describe('Причина отказа указывает точный пакет
         expect(JSON.stringify(error.getResponse())).not.toMatch(/SECRET_ARGUMENT|SECRET_ENVIRONMENT/);
     });
 
-    it('Недоступная зависимость возвращает 403 без раскрытия её имени, версии и пути', async () => {
-        const dependency = external('private', 'npx', 13), root = skill([dependency]);
-        const error = await failure(resolveInstallationSet(poolFor([root]), project, root, builderFor([dependency])));
-        expect(error.getStatus()).toBe(403);
-        expect(error.getResponse()).not.toHaveProperty('package');
-        expect(error.getResponse()).not.toHaveProperty('root');
-        expect(error.getResponse()).not.toHaveProperty('path');
-        expect(JSON.stringify(error.getResponse())).not.toMatch(/Недоставляемый private|ai-plug-private|SECRET_ARGUMENT|SECRET_ENVIRONMENT/);
+    it('Unassigned root returns 403 without revealing dependency metadata',async()=>{
+        const dependency=external('private','npx',13),root=skill([dependency]);
+        const error=await failure(resolveInstallationSet(poolFor([]),project,root,builderFor([dependency])));
+        expect(error.getStatus()).toBe(403);expect(error.getResponse()).not.toHaveProperty('package');
     });
 });
 

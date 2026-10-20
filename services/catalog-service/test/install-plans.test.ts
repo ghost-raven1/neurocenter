@@ -7,12 +7,13 @@ import type { InstallPlanRow } from '../src/devices/install-plan.model';
 
 describe('Одобрение точной версии установочного плана', () => {
     const actor = { email: 'admin@example.test', activeRole: 'Главный админ' };
-    const query = vi.fn(); const claims = vi.fn(); const build = vi.fn();
-    const service = new InstallPlans({ pool: { query }, access: { claims } } as unknown as DeviceStore, { build } as unknown as DeviceArtifacts);
+    const query = vi.fn(); const connect=vi.fn(); const claims = vi.fn(); const build = vi.fn();
+    const service = new InstallPlans({ pool: { query, connect }, access: { claims } } as unknown as DeviceStore, { build } as unknown as DeviceArtifacts);
     const id = '12345678-1234-1234-1234-123456789abc';
     const pkg = buildPackage({ id: 'common/helper', name: 'helper', kind: 'skill', version: 1 }, [{ path: 'SKILL.md', content: 'Исходная инструкция' }], '2026-01-01');
     const row: InstallPlanRow = { id, project_id: 'prj-own', asset_kind: 'skill', asset_id: pkg.plugin.id, version: 1, manifest: pkg.manifest.sha256, package: pkg, status: 'approved', revision: 1, approved_by: actor.email };
-    beforeEach(() => { query.mockReset(); claims.mockReset(); build.mockReset(); query.mockResolvedValue({ rows: [row], rowCount: 1 });
+    let assigned=pkg;
+    beforeEach(() => { assigned=pkg;connect.mockResolvedValue({query,release:vi.fn()});query.mockReset(); claims.mockReset(); build.mockReset(); query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM project_assets')?[{project_id:'prj-own',asset_id:assigned.plugin.id,asset_kind:assigned.plugin.kind,asset_version:assigned.plugin.version,asset_manifest:assigned.manifest.sha256,pin_snapshot:{package:assigned}}]:[row],rowCount:1}));
         claims.mockResolvedValue({ email: actor.email, userRoles: ['Главный админ'], projects: [] }); build.mockResolvedValue(pkg); });
     it('Выдаёт сохранённые байты без повторного чтения изменяемого каталога', async () => {
         expect(await service.package(id, 'prj-own', 'skill', 'common/helper', 1, 1, row.manifest)).toEqual(pkg);
@@ -45,7 +46,7 @@ describe('Одобрение точной версии установочног�
         await expect(service.package(id, 'prj-own', 'skill', 'common/helper', 1, 1)).rejects.toMatchObject({ status: 409 });
     });
     it.each([{ mcp: ['server'], plugins: [] }, { mcp: [], plugins: ['plugin'] }, { mcp: 'server', plugins: [] }])('Неразрешённые зависимости не превращаются в частичную установку', async requirements => {
-        build.mockResolvedValue(buildPackage(pkg.plugin, pkg.files, '2026-01-01', { extra: { requirements } }));
+        assigned=buildPackage(pkg.plugin, pkg.files, '2026-01-01', { extra: { requirements } });
         await expect(service.prepare(actor, { projectId: 'prj-own', assetKind: 'skill', assetId: 'common/helper', version: 1 })).rejects.toMatchObject({ status: 409 });
         expect(query.mock.calls.some(([sql]) => String(sql).startsWith('INSERT INTO device_install_plans'))).toBe(false);
     });
@@ -67,7 +68,7 @@ describe('Одобрение точной версии установочног�
         expect(plan.manifest).toBe(row.manifest);
     });
     it.each(['npx','uvx','/usr/local/bin/server'])('Внешняя команда %s не выдаётся за неизменяемый локальный код',async command=>{
-        build.mockResolvedValue(buildPackage({...pkg.plugin,kind:'mcp'},[],'2026-01-01',{transport:'stdio',command,args:['server@latest']}));
+        assigned=buildPackage({...pkg.plugin,kind:'mcp'},[],'2026-01-01',{transport:'stdio',command,args:['server@latest']});
         await expect(service.prepare(actor,{projectId:'prj-own',assetKind:'mcp',assetId:'common/helper',version:1})).rejects.toMatchObject({status:409});
     });
 });

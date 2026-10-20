@@ -33,7 +33,7 @@ describe('Права каталога моделей и проектных на�
         catalog = { ensureSchema: vi.fn().mockResolvedValue(undefined), getProject: vi.fn(async (id: string) => ({ id: id === 'Работа' ? 'prj-work' : id })) };
         mocks.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
             if (sql.startsWith('SELECT DISTINCT model_id')) { return { rows: links.filter(link => (params[0] as string[]).includes(link.project)).map(link => ({ model_id: link.model })) }; }
-            if (sql.startsWith('SELECT * FROM model_catalog WHERE id=ANY')) { return { rows: cards.filter(card => (params[0] as string[]).includes(card.id)) }; }
+            if (sql.startsWith('SELECT * FROM model_catalog WHERE (archived_at') && params.length === 2) { return { rows: cards.filter(card => (params[1] as string[]).includes(card.id)) }; }
             if (sql.startsWith('SELECT * FROM model_catalog WHERE id=$1')) { return { rows: cards.filter(card => card.id === params[0]) }; }
             if (sql.startsWith('SELECT * FROM model_catalog')) { return { rows: cards }; }
             if (sql.startsWith('SELECT 1 FROM project_models')) { return { rows: links.filter(link => link.project === params[0] && link.model === params[1]) }; }
@@ -102,6 +102,13 @@ describe('Права каталога моделей и проектных на�
         }
         expect(mocks.query).not.toHaveBeenCalled();
         expect(await service.requireMain(request())).toBe(email);
+    });
+
+    it('Публичное создание требует request key и не обходит проверенную локальную поставку', async () => {
+        const body={name:'Новая',capability:'embedding',model:'fixture:one',runtime:'ollama',requestKey:'11111111-1111-4111-8111-111111111111'};
+        await expect(controller.create({...body,requestKey:undefined},request())).rejects.toMatchObject({status:400});
+        await expect(controller.create(body,request())).rejects.toMatchObject({status:400});
+        expect(mocks.query).not.toHaveBeenCalled();
     });
 
     it('Проектные назначения разрешены только управляющей роли именно этого проекта', async () => {

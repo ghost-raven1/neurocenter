@@ -60,7 +60,7 @@ describe('Ограничение HTTP ожидания только для уп�
             expect(requests.filter(value => value.startsWith('POST'))).toHaveLength(1);
             const recovered = await resumePendingBuild(key, packagingApi.lookup, new AbortController().signal);
             expect(recovered.id).toBe(queued.id);
-            const retried = buildSubmissionRequest(JSON.stringify(body), undefined, readPendingBuild('alice'));
+            const retried = buildSubmissionRequest(JSON.stringify(body), {signature:JSON.stringify(body),key}, readPendingBuild('alice'));
             assert.equal(retried.key, key);
             expect((await packagingApi.create({ ...body, requestKey: retried.key })).id).toBe(queued.id);
             expect(requestKeys).toEqual([key, key]); expect(operations.size).toBe(1);

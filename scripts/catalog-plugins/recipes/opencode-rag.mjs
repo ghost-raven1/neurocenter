@@ -5,9 +5,9 @@ import { download, extract, installDependencies, TARGETS } from './upstream.mjs'
 import { applyManagedWebUiCompatibility, RAG_LOCAL_UI } from './rag-web-ui.mjs';
 import { applyManagedPipeline } from './rag-managed-pipeline.mjs';
 
-export const RAG_HOSTED_EMBEDDING = Object.freeze({ schemaVersion: 1, profileSchemaVersion: 2 });
+export const RAG_HOSTED_EMBEDDING = Object.freeze({ schemaVersion: 1, profileSchemaVersion: 2, reindexSchemaVersion: 1 });
 export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.8`;
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.9`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
 const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
 // V2/TUI зависимости исключены; настоящий Web UI уже собран в закреплённом upstream-архиве.
@@ -59,7 +59,7 @@ export async function applyHostedRuntimeCompatibility(directory) {
 /** Общие управляемые команды сохраняют одни настройки и блокировки MCP, плагина и Web UI. */
 export async function prepareManagedRagCommands(directory) {
     for (const name of ['opencode-rag.mjs', 'rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs',
-        'rag-ui.mjs', 'rag-ui-guards.mjs', 'rag-ui-config.mjs', 'rag-plugin-errors.mjs', 'rag-index-lock.mjs']) {
+        'rag-ui.mjs', 'rag-reindex.mjs', 'rag-reindex-source.mjs', 'rag-ui-guards.mjs', 'rag-ui-config.mjs', 'rag-plugin-errors.mjs', 'rag-index-lock.mjs']) {
         await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(directory, name));
     }
     for (const name of ['rag-index-profile.mjs', 'rag-plugin-config.mjs', 'rag-hosted.mjs']) {

@@ -5,7 +5,7 @@ import { modelCatalogApi } from './api';
 import { modelHostingBusy } from './modelCatalogState';
 import type { ICatalogModel, IModelHosting, TModelHostingAction } from './types';
 
-/** Хостинг работает на сервере; закрытие карточки не прерывает операцию. */
+/** Свежий объект каталога перечитывает серверный статус; закрытие карточки не прерывает операцию. */
 export function useModelHosting(model: ICatalogModel) {
     const { captureOwner } = useAuthRequestOwner();
     const [hosting, setHosting] = useState<IModelHosting | null>(null);
@@ -17,18 +17,22 @@ export function useModelHosting(model: ICatalogModel) {
     const reading = useRef(false);
     const mounted = useRef(false);
     const queued = useRef(false);
+    const scope = `${model.id}:${model.revision}`;
+    const currentScope = useRef(scope);
+    const loadedScope = useRef(scope);
+    currentScope.current = scope;
     const latestRefresh = useRef<() => Promise<void>>(async () => undefined);
     const refresh = useCallback(async (): Promise<void> => {
         const owns = captureOwner();
-        if (!owns() || lock.current) return;
-        if (reading.current) { queued.current = true; return; }
+        if (!owns()) return;
+        if (lock.current || reading.current) { queued.current = true; return; }
         reading.current = true;
         const generation = ++request.current;
-        const current = (): boolean => owns() && generation === request.current;
+        const current = (): boolean => owns() && generation === request.current && currentScope.current === scope;
         setLoading(true);
         try {
             const value = await modelCatalogApi.hosting(model.id);
-            if (current()) { setHosting(value); setError(''); }
+            if (current()) { loadedScope.current = scope; setHosting(value); setError(''); }
         } catch (cause) {
             if (current()) setError(errorMessage(cause, 'Не удалось проверить состояние хостинга.'));
         } finally {
@@ -39,13 +43,14 @@ export function useModelHosting(model: ICatalogModel) {
                 void latestRefresh.current();
             }
         }
-    }, [model.id, captureOwner]);
+    }, [model, scope, captureOwner]);
     latestRefresh.current = refresh;
     useEffect(() => {
-        mounted.current = true; void refresh();
+        mounted.current = true; setHosting(null); setError(''); setSubmitting(false); void refresh();
         return () => { mounted.current = false; queued.current = false; request.current++; };
     }, [refresh]);
-    const busy = modelHostingBusy(hosting);
+    const currentHosting = loadedScope.current === scope ? hosting : null;
+    const busy = modelHostingBusy(currentHosting);
     useEffect(() => {
         if (!busy) return;
         const timer = setInterval(() => { void refresh(); }, 2000);
@@ -54,16 +59,21 @@ export function useModelHosting(model: ICatalogModel) {
     const operate = async (action: TModelHostingAction): Promise<void> => {
         const owns = captureOwner();
         if (!owns() || lock.current || busy) return;
-        lock.current = true; ++request.current; setSubmitting(true); setError('');
+        lock.current = true; const generation = ++request.current; setSubmitting(true); setError('');
+        const current = (): boolean => owns() && generation === request.current && currentScope.current === scope;
         try {
             const value = await modelCatalogApi.operate(model, action);
-            if (owns()) setHosting(value);
+            if (current()) { loadedScope.current = scope; setHosting(value); }
         } catch (cause) {
-            if (owns()) setError(errorMessage(cause, 'Не удалось запустить операцию с моделью.'));
+            if (current()) setError(errorMessage(cause, 'Не удалось запустить операцию с моделью.'));
         } finally {
             lock.current = false;
-            if (owns()) setSubmitting(false);
+            if (current()) setSubmitting(false);
+            if (queued.current && mounted.current) {
+                queued.current = false;
+                void latestRefresh.current();
+            }
         }
     };
-    return { hosting, loading, busy: busy || submitting, error, refresh, operate };
+    return { hosting: currentHosting, loading, busy: busy || submitting, error, refresh, operate };
 }

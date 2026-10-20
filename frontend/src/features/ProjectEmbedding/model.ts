@@ -5,15 +5,19 @@ import type { ICatalogModel } from '../ModelCatalog/types';
 export interface IProjectEmbedding {
     projectId: string; revision: number; expectedDimension: number; model: ICatalogModel | null;
     modelPin: string | null; profile: IRagIndexProfile | null; blocker?: string;
+    activeGeneration:string;activeSnapshot:string|null;dataRevision:number;
 }
 export const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-export const eligibleEmbedding = (model: ICatalogModel, dimension: number): boolean => model.capability === 'embedding'
-    && model.runtime === 'ollama' && model.dimension === dimension && sha(model.manifestSha256);
+export const eligibleEmbedding = (model: ICatalogModel, dimension?: number): boolean => model.capability === 'embedding'
+    && Number.isSafeInteger(model.dimension)&&Number(model.dimension)>0&&Number(model.dimension)<=16000&&(dimension===undefined||model.dimension === dimension) && (model.runtime === 'ollama' ? sha(model.manifestSha256)
+        : ['remote-openai', 'remote-ollama'].includes(model.runtime) && !!model.modelVersion && sha(model.verificationSha256));
 
 /** Неполный ответ не подменяет подтверждённый выбор пустой моделью. */
 export function requireProjectEmbedding(value: IProjectEmbedding, projectId: string): IProjectEmbedding {
     if (!value || value.projectId !== projectId || !Number.isSafeInteger(value.revision) || value.revision < 0
-        || !Number.isSafeInteger(value.expectedDimension) || value.expectedDimension < 1
+        || !Number.isSafeInteger(value.expectedDimension) || value.expectedDimension < 0
+        ||typeof value.activeGeneration!=='string'||!/^(?:initial-[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/.test(value.activeGeneration)
+        ||!(value.activeSnapshot===null||sha(value.activeSnapshot))||!Number.isSafeInteger(value.dataRevision)||value.dataRevision<0
         || !(value.model === null || value.model && typeof value.model.id === 'string' && typeof value.model.name === 'string')
         || !(value.modelPin === null || sha(value.modelPin))
         || !(value.profile === null || value.profile && value.profile.provider === 'openai'

@@ -191,3 +191,35 @@ export async function prepareRuntimeSource(recipe, context, helpers) {
     for (const filename of new Set(executables)) { await fs.chmod(path.join(context.directory, filename), 0o755); }
     return { entrypoint, executables: [...new Set(executables)], upstream: { adapter: source.adapter, app, ...(preparedRuntime ? { runtime: preparedRuntime } : {}) } };
 }
+
+/** Metadata inspection may establish a missing upstream SHA, but never executes downloaded bytes. */
+export async function downloadRuntimeCandidate(asset, cacheDirectory, transport) {
+    if (asset.sha256) return downloadRuntimeAsset({ url: asset.url, sha256: asset.sha256, format: asset.format, entrypoint: 'candidate' }, cacheDirectory, transport);
+    const url = new URL(asset.url);
+    const response = await publicResponse(url, transport);
+    const declared = response.headers['content-length'];
+    if (declared !== undefined && (!/^\d+$/.test(declared) || Number(declared) !== asset.bytes)) { response.destroy(); throw new Error('Размер файла релиза изменился после просмотра.'); }
+    await fs.mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
+    const folder = await fs.lstat(cacheDirectory);
+    if (!folder.isDirectory() || folder.isSymbolicLink()) { response.destroy(); throw new Error('Кэш релиза должен быть обычной папкой.'); }
+    const temporary = path.join(cacheDirectory, randomUUID() + '.partial');
+    try {
+        let bytes = 0; const hash = createHash('sha256');
+        await pipeline(response, new Transform({ transform(chunk, _encoding, done) {
+            bytes += chunk.length;
+            if (bytes > Math.min(asset.bytes, runtime.LIMITS.compressedBytes)) { done(new Error('Файл релиза превышает заявленный размер.')); return; }
+            hash.update(chunk); done(null, chunk);
+        } }), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }));
+        if (!bytes || bytes !== asset.bytes) throw new Error('Загрузка файла релиза оборвалась.');
+        const sha256 = hash.digest('hex'), filename = path.join(cacheDirectory, sha256);
+        await fs.chmod(temporary, 0o400);
+        try { await fs.link(temporary, filename); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+        await fs.rm(temporary, { force: true });
+        const actual = await archiveHash(filename);
+        if (actual.sha256 !== sha256 || actual.compressedBytes !== bytes) throw new Error('Кэш релиза повреждён.');
+        const metadataPath = filename + '.json';
+        try { await fs.writeFile(metadataPath, JSON.stringify({ schemaVersion: 1, url: asset.url, sha256, compressedBytes: bytes }), { flag: 'wx', mode: 0o400 }); }
+        catch (error) { if (error.code !== 'EEXIST') throw error; }
+        return { filename, sha256, compressedBytes: bytes };
+    } finally { await fs.rm(temporary, { force: true }); }
+}

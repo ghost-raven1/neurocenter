@@ -51,7 +51,7 @@ describe('Изоляция проектных скиллов при добавл
     });
     it('Общие скиллы и MCP сохраняют существующее подключение к проекту', () => {
         expect(isToolInProject({kind:'skill',id:'common/helper',path:'common/helper',name:'Helper'},'prj-own',[
-            {assetKind:'skill',assetId:'helper'},
+            {assetKind:'skill',assetId:'common/helper'},
         ])).toBe(true);
         expect(isToolInProject({kind:'mcp',id:'project-prj-other/helper',name:'Helper'},'prj-own',[
             {assetKind:'mcp',assetId:'project-prj-other/helper'},

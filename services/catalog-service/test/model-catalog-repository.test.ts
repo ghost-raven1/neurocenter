@@ -19,7 +19,9 @@ describe('Транзакционный каталог моделей', () => {
             if (sql.includes('pg_try_advisory_xact_lock')) { return { rows: [{ locked: true }] }; }
             if (sql.startsWith('SELECT * FROM model_catalog')) { return { rows: [row] }; }
             if (sql.startsWith('SELECT id FROM projects') || sql.startsWith('SELECT id FROM model_catalog WHERE id=')) { return { rows: [{ id: row.id }] }; }
+            if (sql.startsWith('INSERT INTO model_catalog_versions')) { return { rows: [] }; }
             if (sql.startsWith('INSERT INTO model_catalog')) { return { rows: [{ ...row, id: values![0], name: values![1], descriptor: JSON.parse(String(values![2])) }] }; }
+            if (sql.startsWith('UPDATE model_catalog SET archived_at')) { return { rows: [{ ...row, archived_at: new Date(), revision: 2 }] }; }
             if (sql.startsWith('UPDATE model_catalog')) { return { rows: [{ ...row, name: values![1], descriptor: JSON.parse(String(values![2])), revision: 2 }] }; }
             if (sql.startsWith('INSERT INTO project_models') || sql.startsWith('DELETE FROM project_models')) { return { rows: [link] }; }
             return { rows: [] };
@@ -82,7 +84,7 @@ describe('Транзакционный каталог моделей', () => {
 
     it('Назначение проверяет проект и модель под блокировками перед созданием ссылки', async () => {
         await repository.assign('prj-example', row.id, actor);
-        const locks = query.mock.calls.filter(([sql]) => sql.includes('FOR KEY SHARE')).map(([sql]) => sql);
+        const locks = query.mock.calls.filter(([sql]) => /FOR (KEY )?SHARE/.test(sql)).map(([sql]) => sql);
         expect(locks).toHaveLength(2);
         expect(events()[0][1].slice(1, 4)).toEqual([actor, 'project.model.add', `prj-example · ${row.id}`]);
         const state = JSON.parse(events()[0][1][5]);
@@ -105,19 +107,20 @@ describe('Транзакционный каталог моделей', () => {
         expect(events()).toHaveLength(0);
     });
 
-    it('Удаление сохраняет прежнюю карточку в аудите', async () => {
+    it('Архивирование сохраняет прежнюю карточку, immutable snapshot и аудит без физического удаления', async () => {
         await repository.remove(row.id, { expectedRevision: 1 }, actor);
-        expect(events()[0][1].slice(1, 4)).toEqual([actor, 'model.delete', row.id]);
+        expect(events()[0][1].slice(1, 4)).toEqual([actor, 'model.archive', row.id]);
         expect(JSON.parse(events()[0][1][4])).toMatchObject({ id: row.id, revision: 1 });
-        expect(JSON.parse(events()[0][1][5])).toBeNull();
+        expect(JSON.parse(events()[0][1][5])).toMatchObject({ id: row.id, revision: 2, removedProjectRefs: false });
+        expect(query.mock.calls.some(([sql]) => sql.startsWith('DELETE FROM model_catalog'))).toBe(false);
+        expect(query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO model_catalog_versions'))).toHaveLength(2);
     });
 
-    it.each(['busy', 'assigned', 'builtin', 'stale'])('Удаление отклоняется без потери данных: %s', async scenario => {
+    it.each(['busy', 'assigned', 'stale'])('Удаление отклоняется без потери данных: %s', async scenario => {
         const previous = query.getMockImplementation()!;
         query.mockImplementation(async (sql: string, values?: unknown[]) => {
             if (scenario === 'busy' && sql.includes('pg_try_advisory_xact_lock')) { return { rows: [{ locked: false }] }; }
             if (scenario === 'assigned' && sql.startsWith('SELECT 1 FROM project_models')) { return { rows: [{}] }; }
-            if (scenario === 'builtin' && sql.startsWith('SELECT * FROM model_catalog')) { return { rows: [{ ...row, descriptor: { ...descriptor, source: 'builtin' } }] }; }
             return previous(sql, values);
         });
         await expect(repository.remove(row.id, { expectedRevision: scenario === 'stale' ? 2 : 1 }, actor)).rejects.toMatchObject({ status: 409 });
@@ -131,11 +134,7 @@ describe('Транзакционный каталог моделей', () => {
         expect(schema).toContain('REFERENCES projects(id) ON DELETE CASCADE');
         expect(schema).toContain('REFERENCES model_catalog(id) ON DELETE RESTRICT');
         expect(schema).toContain('model_catalog(lower(name))');
-        const seeds = query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO model_catalog'));
-        expect(seeds).toHaveLength(2);
-        expect(seeds.every(([sql]) => sql.includes('ON CONFLICT(id) DO UPDATE SET descriptor='))).toBe(true);
-        expect(seeds.every(([sql]) => sql.includes("jsonb_build_object('description',model_catalog.descriptor->'description')"))).toBe(true);
-        expect(seeds.every(([sql]) => !sql.includes('SET name=') && sql.includes("model_catalog.descriptor->>'model'=EXCLUDED.descriptor->>'model'"))).toBe(true);
+        expect(query.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE|DELETE FROM) model_catalog(?:\s|\()/.test(sql))).toBe(false);
         expect(query.mock.calls.some(([sql]) => sql.includes('project_assets'))).toBe(false);
     });
 });

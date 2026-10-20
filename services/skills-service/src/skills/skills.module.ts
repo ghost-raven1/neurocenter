@@ -9,6 +9,7 @@ import { SkillsService } from './skills.service';
 import { SkillDependenciesController } from './skill-dependencies.controller';
 import { deliverSkillAudit } from '../storage/skill-audit';
 import { reserveSkillDependencies } from '../storage/skill-dependency-reservation';
+import { SkillAssetImportController } from './asset-import.controller';
 
 const storagePath = process.env.SKILLS_STORAGE_PATH
     ? path.resolve(process.env.SKILLS_STORAGE_PATH)
@@ -18,7 +19,7 @@ const storagePath = process.env.SKILLS_STORAGE_PATH
  * Модуль скиллов: микросервис на файловом хранилище (CephFS-паттерн).
  */
 @Module({
-    controllers: [SkillsController, SkillDependenciesController],
+    controllers: [SkillsController, SkillDependenciesController, SkillAssetImportController],
     providers: [
         SkillsService,
         // Рабочее хранилище публикует pins только после подтверждения каталога.

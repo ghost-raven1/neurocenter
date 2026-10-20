@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { EventEmitter } from 'node:events';
-import { BadRequestException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 import { ModelInferenceController, modelInferenceBody } from '../src/models/inference.controller';
@@ -59,6 +59,16 @@ describe('Ограниченный запрос модели', () => {
 });
 
 describe('Права и совместимость inference API', () => {
+    it.each(['rights', 'model'] as const)('Поздний отзыв %s не выдаёт рассчитанный ответ', async change => {
+        const { controller, models, runtime, request } = harness();
+        runtime.infer.mockImplementation(async () => {
+            if (change === 'rights') models.getUsable.mockRejectedValue(new ForbiddenException('Роль отозвана'));
+            else models.getUsable.mockResolvedValue({ ...model(), manifestSha256: 'b'.repeat(64) });
+            return { model: 'qwen3:4b', embeddings: [[1, 0, -1]], prompt_eval_count: 7 };
+        });
+        await expect(controller.embeddings('model-one', request as unknown as Request, { input: ['Текст'] })).rejects.toBeInstanceOf(change === 'rights' ? ForbiddenException : ConflictException);
+        expect(runtime.infer).toHaveBeenCalledOnce(); expect(models.getUsable).toHaveBeenCalledTimes(2);
+    });
     it('Отказ в доступе прекращает обработку до runtime, включая подставленный projectId', async () => {
         const { controller, models, runtime, request } = harness();
         models.getUsable.mockRejectedValue(new ForbiddenException('Недоступная модель'));

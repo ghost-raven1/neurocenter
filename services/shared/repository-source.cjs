@@ -3,6 +3,8 @@ const {createHash}=require('node:crypto');
 const {portablePath}=require('./runtime-artifacts.cjs');
 const {validateRuntimeSource,runtimeSourceTargets}=require('./tool-runtime-source.cjs');
 const {isSourceEntrypoint,SOURCE_EXTENSIONS}=require('./source-entrypoint.cjs');
+const {validateReleaseInput,resolveGithubRelease}=require('./github-release-source.cjs');
+const {packageEntrypoints}=require('./source-candidates.cjs');
 const {RAG_PLUGIN_SOURCE,isPreparedRagRepository}=require('./opencode-rag-source.cjs');
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
@@ -30,7 +32,15 @@ function parseRepositoryUrl(value,options={}){
  const owner=decode(parts[0]||''),repository=decode(parts[1]||'').replace(/\.git$/i,'');
  if(!/^[a-z0-9][a-z0-9-]{0,38}$/i.test(owner)||!/^[a-z0-9._-]{1,100}$/i.test(repository)||repository==='.'||repository==='..')throw new Error('Некорректные владелец или имя репозитория GitHub.');
  let ref=options.ref===undefined||options.ref===''?undefined:reference(options.ref),subdirectory=options.subdirectory===undefined||options.subdirectory===''?undefined:relativePath(options.subdirectory,'Папка проекта');
- if(parts.length>2){
+ let release;
+ if(parts[2]==='releases'){
+  if(parts[3]==='latest'&&parts.length===4)release={tag:'latest'};
+  else if(parts[3]==='tag'&&parts.length>=5)release={tag:parts.slice(4).map(decode).join('/')};
+  else if(parts[3]==='download'&&parts.length>=6)release={tag:parts.slice(4,-1).map(decode).join('/'),asset:decode(parts.at(-1))};
+  else throw new Error('Используйте ссылку /releases/tag/тег или /releases/download/тег/файл.');
+  release=validateReleaseInput(release);
+  if(subdirectory)throw new Error('Подпапка относится к исходникам, а не к файлу релиза.');
+ }else if(parts.length>2){
   if(parts[2]!=='tree'||parts.length<4||parts.slice(3).some(part=>!part))throw new Error('Используйте ссылку на репозиторий или его /tree/ветка/папка.');
   const tail=parts.slice(3).map(decode).join('/');
   const treeRef=ref??reference(decode(parts[3]));
@@ -39,23 +49,41 @@ function parseRepositoryUrl(value,options={}){
   if(subdirectory&&treeDirectory&&subdirectory!==treeDirectory)throw new Error('Папка subdirectory не совпадает с папкой в ссылке tree.');
   ref=treeRef;subdirectory=subdirectory??treeDirectory;
  }
- return {url:`https://github.com/${owner.toLowerCase()}/${repository.toLowerCase()}`,owner:owner.toLowerCase(),repository:repository.toLowerCase(),...(ref?{ref}:{}),...(subdirectory?{subdirectory}:{})};
+ return {url:`https://github.com/${owner.toLowerCase()}/${repository.toLowerCase()}`,owner:owner.toLowerCase(),repository:repository.toLowerCase(),...(ref?{ref}:{}),...(subdirectory?{subdirectory}:{}),...(release?{release}:{})};
 }
 
 /** Builder принимает только полный commit; HTTP-форма может передать ветку до разрешения через GitHub. */
 function validateRepositorySource(value,{pinned=true}={}){
- if(!exact(value,pinned?['type','url','commit','subdirectory','entrypoint','runtimeSource','manifestSha256']:['type','url','ref','subdirectory','entrypoint'])||value.type!=='repository')throw new Error('Источник repository содержит неподдерживаемые поля.');
+ if(!exact(value,pinned?['type','url','commit','subdirectory','entrypoint','runtimeSource','manifestSha256','release','snapshotSha256']:['type','url','ref','subdirectory','entrypoint','release'])||value.type!=='repository')throw new Error('Источник repository содержит неподдерживаемые поля.');
  const parsed=parseRepositoryUrl(value.url,pinned?{subdirectory:value.subdirectory}:{ref:value.ref,subdirectory:value.subdirectory});
+ const release=value.release?validateReleaseInput(value.release):parsed.release;
+ if(value.release&&parsed.release&&(release.tag!==parsed.release.tag||parsed.release.asset&&release.asset!==parsed.release.asset))throw new Error('Поля релиза не совпадают со ссылкой.');
  const entrypoint=!pinned&&(value.entrypoint===undefined||value.entrypoint==='')?undefined:relativePath(value.entrypoint,'Файл запуска');
- if(entrypoint&&entrypoint!==manifestName&&!isSourceEntrypoint(entrypoint))throw new Error('Репозиторий должен содержать исполняемый JS/TS-файл запуска или neurocenter.tool.json, без деклараций типов.');
+ if(entrypoint&&/\.d\.[cm]?ts$/i.test(entrypoint))throw new Error('Нужен исполняемый JS/TS-файл, без деклараций типов.');
+ if(pinned&&!value.snapshotSha256&&!release&&entrypoint&&entrypoint!==manifestName&&!isSourceEntrypoint(entrypoint))throw new Error('Репозиторий должен содержать исполняемый JS/TS-файл запуска или neurocenter.tool.json, без деклараций типов.');
  if(pinned){
   if(typeof value.commit!=='string'||!commitPattern.test(value.commit))throw new Error('Репозиторий должен быть закреплён полным SHA commit (40 или 64 hex).');
+  if(release){
+   if(!release.id||!release.assetId||!release.sha256||!release.asset||!entrypoint||value.manifestSha256!==undefined||!value.runtimeSource)throw new Error('Релиз требует закреплённые id, SHA-256 и сгенерированную поставку.');
+   const runtimeSource=validateRuntimeSource(value.runtimeSource);
+   for(const bundle of Object.values(runtimeSource.assets))for(const asset of [bundle.app,bundle.runtime].filter(Boolean)){
+    const expected=`${parsed.url}/releases/download/${encodeURIComponent(release.tag)}/${encodeURIComponent(release.asset)}`;
+    if(asset.url!==expected||asset.sha256!==release.sha256)throw new Error('Поставка не совпадает с закреплённым файлом релиза.');
+   }
+   return {type:'repository',url:parsed.url,commit:value.commit.toLowerCase(),entrypoint,release,runtimeSource};
+  }
+  if(value.snapshotSha256!==undefined){
+   if(!/^[a-f0-9]{64}$/.test(value.snapshotSha256)||value.manifestSha256!==undefined||!value.runtimeSource)throw new Error('Сгенерированная поставка требует SHA-256 снимка и runtime.');
+   const runtimeSource=validateRuntimeSource(value.runtimeSource);
+   for(const bundle of Object.values(runtimeSource.assets))for(const asset of [bundle.app,bundle.runtime].filter(Boolean))if(asset.directory!=='.')throw new Error('Сгенерированная поставка должна использовать только закреплённую папку репозитория.');
+   return {type:'repository',url:parsed.url,commit:value.commit.toLowerCase(),...(parsed.subdirectory?{subdirectory:parsed.subdirectory}:{}),entrypoint,runtimeSource,snapshotSha256:value.snapshotSha256};
+  }
   const manifest=entrypoint===manifestName;
   if(manifest?typeof value.manifestSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.manifestSha256)||!value.runtimeSource:value.runtimeSource!==undefined||value.manifestSha256!==undefined)throw new Error('Источник manifest требует runtimeSource и SHA-256; у JS/TS-источника эти поля запрещены.');
   return {type:'repository',url:parsed.url,commit:value.commit.toLowerCase(),...(parsed.subdirectory?{subdirectory:parsed.subdirectory}:{}),entrypoint,
    ...(manifest?{runtimeSource:validateRuntimeSource(value.runtimeSource),manifestSha256:value.manifestSha256}:{})};
  }
- return {type:'repository',url:parsed.url,...(parsed.ref?{ref:parsed.ref}:{}),...(parsed.subdirectory?{subdirectory:parsed.subdirectory}:{}),...(entrypoint?{entrypoint}:{})};
+ return {type:'repository',url:parsed.url,...(parsed.ref?{ref:parsed.ref}:{}),...(parsed.subdirectory?{subdirectory:parsed.subdirectory}:{}),...(entrypoint?{entrypoint}:{}),...(release?{release}:{})};
 }
 
 async function githubJson(fetcher,pathname,{optional=false}={}){
@@ -66,7 +94,8 @@ async function githubJson(fetcher,pathname,{optional=false}={}){
  if(!response.ok)throw new Error(response.status===403||response.status===429?'GitHub временно ограничил запросы. Повторите позже.':'Публичный репозиторий, ветка или файл не найдены. Для ветки со слешем уточните ref.');
  const reader=response.body?.getReader();if(!reader)throw new Error('GitHub вернул пустой ответ.');
  const chunks=[];let bytes=0;
- try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>2*1024*1024){await reader.cancel();throw new Error('Описание GitHub превышает допустимый размер.');}chunks.push(part.value);}}
+ try{while(true){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>2*1024*1024){await reader.cancel().catch(()=>undefined);throw new Error('Описание GitHub превышает допустимый размер.');}chunks.push(part.value);}}
+ catch(error){if(error?.message==='Описание GitHub превышает допустимый размер.')throw error;throw new Error('Загрузка описания GitHub оборвалась. Повторите проверку.');}
  finally{reader.releaseLock();}
  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('GitHub вернул некорректный JSON.');}
 }
@@ -95,11 +124,12 @@ function validateRepositoryManifest(value){
 }
 
 /** Все чтения после commits/{ref} используют только полученный SHA; URL загрузки из API не исполняется. */
-async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,metadata:includeMetadata=true}={}){
+async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,metadata:includeMetadata=true,inspectAsset,inspectRepository}={}){
  const source=validateRepositorySource({type:'repository',...input},{pinned:false});
  const parsed=parseRepositoryUrl(source.url),base=`/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repository)}`;
  const repository=await githubJson(fetcher,base);
  if(!object(repository)||repository.private!==false||typeof repository.default_branch!=='string')throw new Error('Поддерживаются только публичные репозитории GitHub.');
+ if(source.release)return resolveGithubRelease({source,parsed,repository,base,githubJson,fetcher,inspectAsset});
  const ref=source.ref??reference(repository.default_branch);
  const resolved=await githubJson(fetcher,base+'/commits/'+encodeURIComponent(ref));
  if(!object(resolved)||typeof resolved.sha!=='string'||!commitPattern.test(resolved.sha))throw new Error('GitHub не подтвердил полный SHA commit.');
@@ -123,6 +153,10 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
    recommendedKind:'plugin',preparedAdapter:prepared.adapter,preparedVersion:prepared.version,supportedTargets:[...prepared.supportedTargets]};
  }
  if(source.entrypoint===manifestName)return manifestResult(await githubJson(fetcher,contentsPath(manifestName)));
+ if(source.entrypoint&&!isSourceEntrypoint(source.entrypoint)&&source.entrypoint!==manifestName){
+  if(typeof inspectRepository!=='function')throw new Error('Проверка готовой поставки репозитория недоступна.');
+  return {...result('',[]),...await inspectRepository({type:'repository',url:source.url,commit,...(source.subdirectory?{subdirectory:source.subdirectory}:{})},source.entrypoint)};
+ }
  if(source.entrypoint&&!includeMetadata){
   const entry=await githubJson(fetcher,contentsPath(source.entrypoint),{optional:true});
   if(!object(entry)||entry.type!=='file'||!Number.isSafeInteger(entry.size)||entry.size<1||entry.size>1048576)throw new Error('Файл запуска не найден в закреплённом commit или является ссылкой.');
@@ -137,17 +171,17 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
  const metadata=packageEntry?decodePackage(await githubJson(fetcher,contentsPath('package.json'))):{};
  const candidates=[];
  const add=value=>{if(typeof value!=='string')return;try{const entry=relativePath(value.replace(/^\.\//,''),'Файл запуска');if(isSourceEntrypoint(entry)&&!candidates.includes(entry))candidates.push(entry);}catch{}};
- const bins=typeof metadata.bin==='string'?[metadata.bin]:object(metadata.bin)?Object.values(metadata.bin):[];
- for(const value of [...bins,metadata.main,metadata.module,metadata.source])add(value);
+ const bins=(typeof metadata.bin==='string'?[metadata.bin]:object(metadata.bin)?Object.values(metadata.bin):[]).filter(value=>typeof value==='string'&&isSourceEntrypoint(value));
+ for(const value of bins.length?bins:[metadata.main,metadata.module,metadata.source])add(value);
  const exports=object(metadata.exports)&&metadata.exports['.']!==undefined?metadata.exports['.']:metadata.exports;
- if(typeof exports==='string')add(exports);else if(object(exports))for(const key of ['import','default','node','require']){const value=exports[key];if(typeof value==='string')add(value);else if(object(value))for(const nested of ['import','default','require'])add(value[nested]);}
- for(const baseName of ['index','main','plugin','server'])for(const suffix of SOURCE_EXTENSIONS){if(listings.get(baseName+'.'+suffix)?.type==='file')add(baseName+'.'+suffix);}
+ if(!bins.length&&typeof exports==='string')add(exports);else if(!bins.length&&object(exports))for(const key of ['import','default','node','require']){const value=exports[key];if(typeof value==='string')add(value);else if(object(value))for(const nested of ['import','default','require'])add(value[nested]);}
+ for(const baseName of ['index','main','plugin','server'])for(const suffix of SOURCE_EXTENSIONS){if(!bins.length&&listings.get(baseName+'.'+suffix)?.type==='file')add(baseName+'.'+suffix);}
  const src=listings.get('src');
  if(src?.type==='dir'){
   const nested=await githubJson(fetcher,contentsPath('src'),{optional:true});
   if(Array.isArray(nested)&&nested.length<=1000){
    for(const entry of nested.filter(object))knownEntries.set('src/'+entry.name,entry);
-   for(const baseName of ['index','main','plugin','server'])for(const suffix of SOURCE_EXTENSIONS){if(nested.some(entry=>entry?.name===baseName+'.'+suffix&&entry.type==='file'))add('src/'+baseName+'.'+suffix);}
+   for(const baseName of ['index','main','plugin','server'])for(const suffix of SOURCE_EXTENSIONS){if(!bins.length&&nested.some(entry=>entry?.name===baseName+'.'+suffix&&entry.type==='file'))add('src/'+baseName+'.'+suffix);}
   }
  }
  const wanted=source.entrypoint?[source.entrypoint,...candidates.filter(value=>value!==source.entrypoint)]:candidates;
@@ -157,9 +191,13 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
   if(object(file)&&file.type==='file'&&Number.isSafeInteger(file.size)&&file.size>0&&file.size<=1048576)verified.push(candidate);
   else if(source.entrypoint===candidate)throw new Error('Файл запуска не найден в закреплённом commit или является ссылкой.');
  }
- const entrypoint=source.entrypoint??verified[0];
- if(!entrypoint)throw new Error('В репозитории не найден JS/TS-файл запуска. Уточните папку проекта и entrypoint.');
- return result(entrypoint,verified,metadata);
+ const entrypoint=source.entrypoint??(verified.length===1?verified[0]:'');
+ if(!verified.length){
+  if(typeof inspectRepository==='function')return {...result('',[],metadata),...await inspectRepository({type:'repository',url:source.url,commit,...(source.subdirectory?{subdirectory:source.subdirectory}:{})})};
+  throw new Error('В репозитории не найден JS/TS-файл запуска. Уточните папку проекта и entrypoint.');
+ }
+ const detected=packageEntrypoints(metadata);
+ return {...result(entrypoint,verified,metadata),requiresEntrypointChoice:verified.length>1&&!source.entrypoint,runnableKinds:detected.runnableKinds,warnings:detected.runnableKinds.length?[]:['Не найдены команда запуска MCP или признаки плагина OpenCode. Обычный библиотечный export не является MCP.']};
 }
 
 module.exports={parseRepositoryUrl,validateRepositorySource,validateRepositoryManifest,normalizeRepositorySource:validateRepositorySource,resolveRepositorySource};

@@ -21,6 +21,7 @@ async function fixture(source) {
     await fs.copyFile(shared, path.join(workspace, 'services/shared/runtime-artifacts.cjs'));
     await fs.copyFile(ragContract, path.join(workspace, 'services/shared/rag-index-contract.cjs'));
     await fs.copyFile(ragUiContract, path.join(workspace, 'services/shared/rag-ui-contract.cjs'));
+    await fs.copyFile(path.join(bridge, '../../services/shared/opencode-model-scan.cjs'), path.join(workspace, 'services/shared/opencode-model-scan.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
     await fs.copyFile(path.join(bridge, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'));

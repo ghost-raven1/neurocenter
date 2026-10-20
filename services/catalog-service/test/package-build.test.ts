@@ -65,7 +65,7 @@ describe('Границы серверной сборки', () => {
             description: 'Описание', bin: {tool: './dist/cli.js', bad: '../../private.js'}, main: 'dist/index.js'}));
         vi.stubGlobal('fetch', fetch);
         expect(await resolveNpmSource('@scope/package')).toMatchObject({package: '@scope/package', version: '1.2.3',
-            specifier: '@scope/package@1.2.3', entrypoint: 'dist/cli.js', candidates: ['dist/cli.js', 'dist/index.js']});
+            specifier: '@scope/package@1.2.3', entrypoint: 'dist/cli.js', candidates: ['dist/cli.js']});
         expect(fetch.mock.calls[0][0]).toBe('https://registry.npmjs.org/%40scope%2Fpackage/latest');
         expect(fetch.mock.calls[0][1].redirect).toBe('error');
     });
@@ -117,12 +117,12 @@ describe('Границы серверной сборки', () => {
     it('Проверка npm находит root conditional exports без устаревшего поля main',async()=>{
         vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({name:'modern-plugin',version:'1.0.0',
             exports:{'.':{types:'./dist/index.d.ts',node:{import:'./dist/index.mjs',require:'./dist/index.cjs'}},'./private':'./dist/private.js'}})));
-        expect(await resolveNpmSource('modern-plugin@1.0.0')).toMatchObject({entrypoint:'dist/index.mjs',candidates:['dist/index.mjs','dist/index.cjs']});
+        expect(await resolveNpmSource('modern-plugin@1.0.0')).toMatchObject({entrypoint:'dist/index.mjs',candidates:['dist/index.mjs']});
     });
     it('Проверка npm использует module и не предлагает недопустимые export пути',async()=>{
         vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({name:'modern-plugin',version:'1.0.0',module:'./dist/plugin.js',
             exports:{'.':{import:'../../private.mjs',default:'./dist/plugin.js',require:'./dist/plugin.cjs'}}})));
-        expect(await resolveNpmSource('modern-plugin')).toMatchObject({entrypoint:'dist/plugin.js',candidates:['dist/plugin.js','dist/plugin.cjs']});
+        expect(await resolveNpmSource('modern-plugin')).toMatchObject({entrypoint:'dist/plugin.js',candidates:['dist/plugin.js']});
     });
     it('Npm preview и submit принимают TSX, который поддерживает общий compiler',async()=>{
         vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({name:'modern-plugin',version:'1.0.0',exports:{'.':'./src/index.tsx'}})));
@@ -137,6 +137,7 @@ const mocks = vi.hoisted(() => ({pool: {query: vi.fn(), connect: vi.fn(), end: v
 vi.mock('../src/database/pool', () => ({createPool: () => mocks.pool}));
 vi.mock('../../shared/capacity.cjs', () => ({reserveCapacity: mocks.reserve}));
 vi.mock('../src/devices/device-operations', () => ({notifyDeviceOperations: vi.fn()}));
+import {createToolAsset} from '@neurocenter/asset-contract';
 import { PackageBuildService } from '../src/package-build/package-build.service';
 import type { AccessDb } from '../src/access/access-db';
 import type { RuntimeArtifacts } from '../src/runtime-artifacts/runtime-artifacts';
@@ -154,7 +155,7 @@ describe('Владение очередью серверной сборки', ()
     afterEach(() => vi.unstubAllGlobals());
     const service = (roles: string[]) => {
         const builds = new PackageBuildService({claims: vi.fn().mockResolvedValue({userRoles: roles})} as unknown as AccessDb, {} as RuntimeArtifacts,
-            {ensureSchema: vi.fn()} as unknown as CatalogService);
+            {ensureSchema: vi.fn()} as unknown as CatalogService,{} as never);
         Object.assign(builds, {stagingRoot: async () => '/unused-test-stage'});
         return builds;
     };
@@ -185,9 +186,31 @@ describe('Владение очередью серверной сборки', ()
         await expect(builds.npm(actor, 'package')).rejects.toThrow('главный администратор');
         await expect(builds.repositorySource(actor, {url: 'https://github.com/owner/repo'})).rejects.toThrow('главный администратор');
         await expect(builds.archiveSource(actor, {name: 'invalid.zip', contentBase64: 'invalid'})).rejects.toThrow('главный администратор');
+        await expect(builds.exportAsset(actor,input.requestKey)).rejects.toThrow('главный администратор');
+        await expect(builds.importAsset(actor,{requestKey:input.requestKey})).rejects.toThrow('главный администратор');
         expect(fetch).not.toHaveBeenCalled();
         expect(mocks.pool.query).not.toHaveBeenCalled();
         vi.unstubAllGlobals();
+    });
+    it('Импорт source envelope отклоняет старую опись, private IDs и неподдержанные зависимости до IO', async () => {
+        const builds=service(['Главный админ']),actor={email:'admin@example.test',activeRole:'Главный админ'};
+        await expect(builds.importAsset(actor,{requestKey:input.requestKey,manifest:{tools:[]}})).rejects.toMatchObject({status:400});
+        const {descriptor}=artifactFixture(),asset=createToolAsset({id:'tool-local-import',version:'v1',source:{type:'archive',sha256:'a'.repeat(64),bytes:12},license:{spdx:'NOASSERTION'},publication:{name:'Fixture',description:'Fixture',kind:'mcp',revision:'v1',files:[],config:{transport:'stdio',extra:{runtimeArtifacts:[descriptor]}}},artifacts:[{descriptor}]});
+        await expect(builds.importAsset(actor,{requestKey:input.requestKey,asset:{...asset,catalogId:'private-id'}})).rejects.toMatchObject({status:400});
+        await expect(builds.importAsset(actor,{requestKey:input.requestKey,asset:{...asset,dependencies:[{id:'other',version:'v1',sha256:'b'.repeat(64)}]}})).rejects.toMatchObject({status:400,message:expect.stringContaining('зависимостями')});
+        const importArchive=vi.fn(),prepareLocal=vi.fn();Object.assign(builds,{artifacts:{importArchive},sources:{prepareLocal}});
+        for(const sourceSnapshotBase64 of [Buffer.from('old transport').toString('base64'),'',null,undefined]){
+            await expect(builds.importAsset(actor,{requestKey:input.requestKey,asset,sourceSnapshotBase64})).rejects.toMatchObject({status:400,message:'Импорт принимает только requestKey и asset.'});
+        }
+        expect(importArchive).not.toHaveBeenCalled();expect(prepareLocal).not.toHaveBeenCalled();
+        expect(mocks.pool.query).not.toHaveBeenCalled();
+    });
+    it('Отсутствующий архив даёт исправляемый конфликт до публикации и записи source receipt', async () => {
+        const builds=service(['Главный админ']),actor={email:'admin@example.test',activeRole:'Главный админ'},importArchive=vi.fn().mockRejectedValue(Object.assign(new Error('private fs path'),{code:'ENOENT'}));
+        Object.assign(builds,{artifacts:{importArchive}});
+        const {descriptor}=artifactFixture(),asset=createToolAsset({id:'tool-local-import',version:'v1',source:{type:'npm',name:'fixture',version:'1.0.0'},license:{spdx:'NOASSERTION'},publication:{name:'Fixture',description:'Fixture',kind:'mcp',revision:'v1',files:[],config:{transport:'stdio',extra:{runtimeArtifacts:[descriptor]}}},artifacts:[{descriptor}]});
+        await expect(builds.importAsset(actor,{requestKey:input.requestKey,asset})).rejects.toMatchObject({status:409,message:'Проверенный архив поставки отсутствует или повреждён. Загрузите исходную поставку повторно.'});
+        expect(importArchive).toHaveBeenCalledOnce();expect(mocks.pool.query).not.toHaveBeenCalled();
     });
     it('Preview архива проверяет актуальную роль и работает без владельца очереди или записи в PG', async () => {
         const builds = service(['Главный админ']);
@@ -209,6 +232,15 @@ describe('Владение очередью серверной сборки', ()
         expect(fetch).not.toHaveBeenCalled();
         expect(mocks.pool.query).toHaveBeenCalledWith('SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2', [actor.email, input.requestKey]);
         vi.unstubAllGlobals();
+    });
+    it('Библиотека и несколько npm-команд не попадают в очередь без подходящего явного запуска', async () => {
+        const builds = service(['Главный админ']), actor = {email: 'admin@example.test', activeRole: 'Главный админ'}, enqueue = vi.fn();
+        Object.assign(builds, {lease: mocks.lease, repository: {existing: vi.fn(), enqueue}});
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json({name: 'library', version: '1.0.0', main: 'index.js'}))
+            .mockResolvedValueOnce(Response.json({name: 'commands', version: '1.0.0', bin: {first: 'one.js', second: 'two.js'}})));
+        await expect(builds.create(actor, {...input, kind: 'mcp', source: {type: 'npm', specifier: 'library@1.0.0'}})).rejects.toThrow('не объявляет');
+        await expect(builds.create(actor, {...input, kind: 'mcp', source: {type: 'npm', specifier: 'commands@1.0.0'}})).rejects.toThrow('несколько команд');
+        expect(enqueue).not.toHaveBeenCalled(); expect(mocks.reserve).not.toHaveBeenCalled();
     });
     const runtime = {type: 'runtime', adapter: 'native', assets: {'darwin-arm64': {app: {directory: '.', entrypoint: 'bin/mcp', executables: ['bin/mcp']}}}};
     const manifestFetch = () => vi.fn(async (value: string) => {

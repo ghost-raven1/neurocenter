@@ -1,11 +1,17 @@
-import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Typography } from 'antd';
-import { useMemo, useRef, useState } from 'react';
+import {useEmbeddingTarget,EmbeddingTargetFields} from '../ProjectEmbedding/EmbeddingTarget';
+import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, Typography } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
+import { eligibleEmbedding } from '../ProjectEmbedding/model';
+import { useProjectReindex } from '../ProjectEmbedding/useProjectReindex';
+import { ProjectReindexStatus } from '../ProjectEmbedding/ProjectReindexStatus';
 import { modelCatalogApi } from './api';
 import { ModelCard } from './ModelCard';
 import { ModelDetails } from './ModelDetails';
 import { ModelEditModal } from './ModelEditModal';
+import { RemoteConnectionModal } from './RemoteConnectionModal';
+import { OpenCodeImportModal } from './OpenCodeImportModal';
 import { filterCatalogModels } from './modelCatalogState';
 import type { ICatalogModel } from './types';
 import { useModelCatalog } from './useModelCatalog';
@@ -21,29 +27,61 @@ export interface IModelCatalogProps {
 
 /** Проект получает право на модель; веса и общий хостинг не копируются в каждый проект. */
 export function ModelCatalog({ projectId, projectName, embedded, canManage, isMain }: IModelCatalogProps): JSX.Element {
-    const { captureOwner } = useAuthRequestOwner();
+    const { scope, captureOwner } = useAuthRequestOwner();
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
+    const embeddingTarget=useEmbeddingTarget(projectId);
+    const reindex = useProjectReindex(projectId, () => { void refresh(); });
     const [query, setQuery] = useState('');
     const [assignedOnly, setAssignedOnly] = useState(!!embedded);
     const [viewId, setViewId] = useState<string | null>(null);
     const [editing, setEditing] = useState<ICatalogModel | 'new' | null>(null);
+    const [connection, setConnection] = useState<ICatalogModel | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [connectionHint, setConnectionHint] = useState<{baseUrl:string;hasKey:boolean}>();
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const formScope = JSON.stringify([scope, projectId]), previousScope = useRef(formScope);
+    useEffect(() => {
+        if (previousScope.current === formScope) return;
+        previousScope.current = formScope;
+        setViewId(null); setEditing(null); setConnection(null); setImporting(false); setConnectionHint(undefined); setError(''); setBusy(null);
+    }, [formScope]);
     const lock = useRef(false);
     const assigned = useMemo(() => new Set(catalog?.assignedModelIds ?? []), [catalog]);
     const shown = useMemo(() => catalog ? filterCatalogModels(catalog, query, !!projectId && assignedOnly) : [], [catalog, query, projectId, assignedOnly]);
     const viewing = catalog?.items.find(model => model.id === viewId);
-    const mutate = async (model: ICatalogModel, action: 'assign' | 'remove'): Promise<void> => {
+    const archived = (): void => { setViewId(null); void refresh(); };
+    const assignmentReason=(model:ICatalogModel,connecting=false):string=>{
+        if(loading)return 'Дождитесь загрузки актуального каталога моделей.';
+        if(loadError)return 'Обновите каталог моделей перед изменением проекта.';
+        if(busy)return 'Дождитесь завершения изменения каталога моделей.';
+        if(reindex.plan?.state==='needs_input')return 'Подтвердите или отмените подготовленную смену модели.';
+        if(reindex.pending||reindex.busy)return 'Дождитесь завершения подключения модели и переиндексации.';
+        return (connecting||!assigned.has(model.id))&&eligibleEmbedding(model)&&embeddingTarget.blocked
+            ?embeddingTarget.reason||'Выберите, куда подключить модель: сервер или конкретную установку OpenCodeRAG.':'';
+    };
+    const connect = async (model:ICatalogModel):Promise<void>=>{
+        const owns=captureOwner();
+        if(!owns()||lock.current||loading||loadError||!catalog||reindex.pending||reindex.busy||reindex.plan?.state==='needs_input')return;
+        if(!projectId||!canManage||!assigned.has(model.id)||!eligibleEmbedding(model)||model.archivedAt||embeddingTarget.blocked)return;
+        lock.current=true;setBusy(model.id);setError('');
+        try{await reindex.request(model,undefined,embeddingTarget.value);}
+        catch(cause){if(owns())setError(errorMessage(cause,'Не удалось подготовить подключение модели. Повторите попытку.'));}
+        finally{lock.current=false;if(owns())setBusy(null);}
+    };
+    const mutate = async (model: ICatalogModel): Promise<void> => {
         const owns = captureOwner();
-        if (!owns() || lock.current || loading || loadError || !catalog) return;
-        if (action === 'assign' && (!projectId || !canManage) || action === 'remove' && !isMain) return;
+        if (!owns() || lock.current || loading || loadError || !catalog || reindex.pending || reindex.busy || reindex.plan?.state==='needs_input') return;
+        if (!projectId || !canManage) return;
         lock.current = true; setBusy(model.id); setError('');
         try {
-            const result = action === 'remove' ? await modelCatalogApi.remove(model)
-                : assigned.has(model.id) ? await modelCatalogApi.unassign(projectId!, model.id) : await modelCatalogApi.assign(projectId!, model.id);
+            const adding = !assigned.has(model.id);
+            if(adding&&eligibleEmbedding(model)&&embeddingTarget.blocked)throw new Error('Выберите, куда подключить модель: сервер или конкретную установку OpenCodeRAG.');
+            const result = adding ? await modelCatalogApi.assign(projectId, model.id) : await modelCatalogApi.unassign(projectId, model.id);
             if (result.ok !== true) throw new Error('Сервер не подтвердил изменение каталога моделей.');
             if (!owns()) return;
-            if (action === 'remove') setViewId(null);
+            if (adding && eligibleEmbedding(model)) await reindex.request(model,undefined,embeddingTarget.value);
+            if (!owns()) return;
             await refresh();
         } catch (cause) {
             if (owns()) setError(errorMessage(cause, 'Не удалось изменить каталог моделей. Повторите попытку.'));
@@ -54,36 +92,42 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     };
     return <div className="model-catalog">
         <div className="model-catalog__heading">
-            <div><Typography.Title level={4}>Модели{projectName ? ` для «${projectName}»` : ''}</Typography.Title>
-                <Typography.Paragraph type="secondary">{isMain ? 'Добавьте модель в каталог проекта и запустите её на сервере Нейроцентра.'
-                    : canManage ? 'Выберите модели для проекта. Хостингом управляет главный администратор.'
-                        : 'Модели, доступные команде проекта. Хостингом управляет главный администратор.'}</Typography.Paragraph></div>
-            {isMain && <Button type="primary" onClick={() => setEditing('new')}>Добавить модель</Button>}
+            <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
+                <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере и подключённые API.'}</Typography.Text></div>
+            {isMain && <Space wrap><Tooltip title={projectId ? 'Прочитать модели на выбранном компьютере' : 'Выберите проект, чтобы прочитать его конфигурацию OpenCode'}><span><Button disabled={!projectId} onClick={() => setImporting(true)}>Из OpenCode</Button></span></Tooltip><Button type="primary" onClick={() => setEditing('new')}>Добавить модель</Button></Space>}
         </div>
-        <Alert showIcon type="info" className="model-catalog__notice" message="Один хостинг для команды"
-            description="Модель добавляется в проект отдельно от запуска. Веса хранятся на сервере; установка моста для хостинга не требуется." />
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
             {projectId && canManage && <Checkbox checked={assignedOnly} onChange={event => setAssignedOnly(event.target.checked)}>Только в каталоге проекта</Checkbox>}
-            <Button loading={loading} disabled={!!busy} onClick={() => { void refresh(); }}>Обновить каталог</Button>
+            <Button loading={loading} disabled={!!busy} onClick={() => { void refresh(); }}>Обновить</Button>
         </Space>
         {loadError && <Alert className="model-catalog__notice" type={catalog ? 'warning' : 'error'} showIcon message={catalog ? 'Не удалось обновить модели — показаны предыдущие данные' : 'Каталог моделей не загружен'}
             description={loadError} action={<Button loading={loading} onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {error && !viewing && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
-        {!catalog && loading ? <Spin className="model-catalog__loading" /> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
-            {shown.map(model => <Col key={model.id} xs={24} lg={12} xxl={8}>
-                <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage && !loadError && !loading}
-                    canHost={isMain} busy={busy === model.id} onAssign={() => { void mutate(model, 'assign'); }} onView={() => { setError(''); setViewId(model.id); }} />
+        {projectId&&canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={reindex.busy||reindex.pending}/>}
+        {projectId && <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />}
+        {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
+            {shown.map(model => <Col key={model.id} xs={24} xl={12}>
+                <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)}
+                    canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
+                    onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
+                    onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)} />
             </Col>)}
         </Row> : <Empty description={query ? 'По этому запросу модели не найдены' : assignedOnly && projectId ? 'В проект пока не добавлены модели' : 'Пока нет доступных моделей'}>
             {(query || assignedOnly && canManage) && <Button onClick={() => { setQuery(''); setAssignedOnly(false); }}>Показать все модели</Button>}
         </Empty>)}
-        {viewing && <ModelDetails model={viewing} canManage={isMain} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
-            onEdit={() => { setEditing(viewing); setViewId(null); }} onRemove={() => { void mutate(viewing, 'remove'); }} />}
+        {viewing && <ModelDetails model={viewing} canManage={isMain && !loadError && !loading} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
+            onEdit={() => { setEditing(viewing); setViewId(null); }} onRemove={archived} onConfigure={() => { setConnection(viewing); setViewId(null); }} />}
         {isMain && editing && <ModelEditModal key={editing === 'new' ? 'new' : editing.id + ':' + editing.revision} model={editing === 'new' ? undefined : editing}
-            onClose={() => setEditing(null)} onSaved={async () => {
+            onClose={() => setEditing(null)} onSaved={async saved => {
+                const owns = captureOwner(); if (!owns()) return;
                 if (editing === 'new') { setQuery(''); setAssignedOnly(false); }
-                await refresh();
+                await refresh(); if (!owns()) return;
+                if (saved && saved.runtime !== 'ollama' && !saved.verificationSha256) setConnection(saved);
             }} />}
+        {isMain && connection && <RemoteConnectionModal key={`${connection.id}:${connection.revision}`} model={connection} hint={connectionHint} onClose={() => { setConnection(null); setConnectionHint(undefined); }} onSaved={refresh} />}
+        {isMain && importing && projectId && <OpenCodeImportModal key={`${scope}:${projectId}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, baseUrl, hasKey) => {
+            const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint({baseUrl,hasKey}); setConnection(model);
+        }} />}
     </div>;
 }

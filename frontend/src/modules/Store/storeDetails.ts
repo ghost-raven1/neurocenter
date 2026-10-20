@@ -62,6 +62,7 @@ interface IDetailsApi {
 
 /** Загружает полные данные выбранной карточки вместо устаревшего списка. */
 export async function loadStoreDetail(api: IDetailsApi, app: IStoreApp): Promise<TStoreDetail> {
+    if(app.projectCard)return app.projectCard;
     if (app.kind === 'skill') {
         if (!app.path) { throw new Error('У скилла не указан путь в каталоге. Обновите страницу каталога.'); }
         return { kind: 'skill', skill: await api.getSkill(app.path) };

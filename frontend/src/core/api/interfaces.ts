@@ -17,9 +17,6 @@ export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
 /** Scope скилла: общий или привязан к проекту. */
 export type TSkillScope = 'common' | 'project';
 
-/** Вид пакета. */
-export type TPackageKind = 'LOCAL_MCP' | 'REMOTE_PROFILE' | 'PLUGIN';
-
 /** Страница списка с пагинацией. */
 export interface IPage<T> {
     items: T[];
@@ -376,36 +373,6 @@ export interface IBackupStatus {
     restoreDrills: { at: string; result: string }[];
 }
 
-/** Пакет MCP/плагин. */
-export interface IPackage {
-    id: string;
-    collectionId: string;
-    name: string;
-    kind: TPackageKind;
-    currentVersionId: string;
-    compatibility: string;
-    variantsCount: number;
-    origin: string;
-    pinnedInCount: number;
-}
-
-/** Платформенный вариант пакета. */
-export interface IPackageVariant {
-    variantId: string;
-    os: string;
-    architecture: string;
-    runtime: string;
-    bytes: number;
-    entrypoint: string;
-}
-
-/** Детали пакета. */
-export interface IPackageDetail {
-    package: IPackage;
-    manifestHash: string;
-    variants: IPackageVariant[];
-}
-
 /** Файл MCP/плагина (манифест). */
 export interface IAiPluginFile {
     path: string;
@@ -449,6 +416,11 @@ export interface IProjectAsset {
     assetKind: 'mcp' | 'plugin' | 'skill';
     addedBy: string;
     addedAt: string;
+    version?: number | null;
+    manifest?: string | null;
+    pinOrigin?: 'unresolved' | 'assigned' | 'manual' | 'migration-current';
+    pinError?: string;
+    card?: IAiPlugin | ISkillFile;
 }
 
 /** Конфигурация подключения MCP/плагина (stdio/remote). */
@@ -526,14 +498,7 @@ export interface ILocalProjectsImportResult {
     createdNames: string[];
 }
 
-/** Итог импорта локальных MCP/плагинов в каталог. */
-export interface ILocalImportResult {
-    projectName: string;
-    imported: number;
-    updated: number;
-    skipped: number;
-    total: number;
-}
+
 
 /** Решение внешнего сервиса прав. */
 export interface IAccessDecision {

@@ -3,6 +3,7 @@ import {mkdir,lstat,realpath,rename,rm,open,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import {assertProductionModelKey,productionModelKeyIdentity} from './model-credentials.mjs';
 import {composeClient,composeConfiguration,containers,docker,maintenanceLock,serviceImageIds,applicationServices,repositoryRoot,saveDiagnostic} from './compose-client.mjs';
 import {volumeKeys} from './recovery-files.mjs';
 import {verifyBackup,writeManifest,projectDatabasePattern} from './recovery-manifest.mjs';
@@ -168,6 +169,7 @@ export async function restoreProduction({directory,projectName,files=[],source,e
     source=await realpath(source);if(/[,\x00-\x1f]/.test(source)){throw new Error('Некорректный путь копии');}
     progress('Проверяем весь комплект до создания целевого PostgreSQL');const manifest=await verifyBackup(source,expectedHash);
     const client=composeClient({directory,projectName,files});const config=await composeConfiguration(client);const names=volumeNames(config);const images=await serviceImageIds(config);
+    await productionModelKeyIdentity(directory,config);
     if(applicationServices.some(service=>images[service]!==manifest.images[service])||await imageId(config.services.postgres.image)!==manifest.postgresImage){throw new Error('Для восстановления нужны те же образы, что были при копировании; обновление выполняется отдельно');}
     return maintenanceLock(client,images['catalog-service'],'restore',async()=>{
         await assertNewTarget(client,names);const started=Date.now();
@@ -187,6 +189,7 @@ export async function restoreProduction({directory,projectName,files=[],source,e
         await volumeTransfer('verify',source,names,images['catalog-service']);
         const actual=await databaseInventory(postgres.Id);
         if(JSON.stringify(actual)!==JSON.stringify(manifest.databases)){throw new Error('Список восстановленных баз расходится с описью');}
+        await assertProductionModelKey(directory,config,input=>sql(postgres.Id,'catalog',input));
         // Старые коды подключения и индикатор online не переживают перенос на другой сервер.
         await sql(postgres.Id,'catalog','BEGIN; DELETE FROM bridge_pairs; UPDATE bridge_devices SET last_seen=NULL; COMMIT;');
         // Квитанция хранится отдельно от исходной копии; сессии и публичные приложения остаются остановлены.

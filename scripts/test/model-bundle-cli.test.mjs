@@ -1,125 +1,46 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
-import {copyFile,mkdtemp,mkdir,writeFile,symlink,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {readFile,writeFile,access,lstat,readdir,symlink} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {modelSourceFixture} from './model-source.fixture.mjs';
+import {parseModelBundleArguments} from '../models/bundle-cli.mjs';
 
-const scripts=fileURLToPath(new URL('../models/',import.meta.url));
+const execute=promisify(execFile),cli=fileURLToPath(new URL('../models/bundle-cli.mjs',import.meta.url));
+async function run(args,options={}){try{return {status:0,...await execute(process.execPath,[cli,...args],{timeout:20000,maxBuffer:1024*1024,...options})};}catch(error){return {status:error.code,stdout:error.stdout,stderr:error.stderr};}}
 
-/** Проверяется настоящий CLI и его guard; веса и сеть заменены изолированным исполнителем. */
-async function fixture(action) {
-    const root=await mkdtemp(path.join(tmpdir(),'nc-model-cli-')),directory=path.join(root,'physical'),cwd=path.join(root,'working');
-    await mkdir(directory);await mkdir(cwd);
-    for(const file of ['bundle-cli.mjs','bundle-errors.mjs'])await copyFile(path.join(scripts,file),path.join(directory,file));
-    await writeFile(path.join(directory,'bundle.mjs'),`
-        export async function readModelBundle(){
-            if(process.env.MODEL_CLI_FIXTURE_FAILURE==='access')throw Object.assign(new Error('PRIVATE_TOKEN_AND_PATH'),{code:'EACCES'});
-            return {};
-        }
-        export async function hydrateModelBundle(options){
-            if(process.env.MODEL_CLI_FIXTURE_FAILURE==='network')throw new TypeError('fetch failed',
-                {cause:Object.assign(new Error('PRIVATE_TOKEN_AND_PATH'),{code:'ENOTFOUND'})});
-            if(process.env.MODEL_CLI_FIXTURE_FAILURE)throw Object.assign(new Error('PRIVATE_TOKEN_AND_PATH'),{code:'EACCES'});
-            options.onProgress({stage:'ready',message:'Модели готовы.',completed:9,total:9,unit:'files'});
-            return {ok:true,downloadOnly:!!options.downloadOnly,verifyOnly:!!options.verifyOnly,models:2,files:9,bytes:1234};
-        }
-        export async function rollbackManagedModelBundle(){return {ok:true,rolledBack:true,models:2,revision:'fixture'};}
-        export async function recoverManagedModelBundle(directory){
-            if(!directory.endsWith('destination'))throw new Error('Неверный каталог восстановления CLI');
-            return {ok:true,recovered:true};
-        }
-        export async function packModelBundle(){throw new Error('Упаковка не вызывается в этой проверке.');}
-    `);
-    await writeFile(path.join(directory,'bundle-git-adoption.mjs'),`export async function adoptModelBundleFromGit({reference}){
-        if(reference!=='ORIG_HEAD')throw new Error('Неверная ссылка передана CLI');
-        return {ok:true,adopted:true,sourceCommit:'fixture',models:2,files:9};
-    }`);
-    await writeFile(path.join(directory,'bundle-manifest.mjs'),`export const modelLocks=async()=>[{fixture:true}];export const validateModelBundle=()=>{};`);
-    await writeFile(path.join(directory,'prefetch-cache.mjs'),`export async function copyPrefetchedModels({source,directory,locks,onProgress}){
-        if(!source.endsWith('prefetch')||!directory.endsWith('destination')||!locks[0].fixture)throw new Error('Неверная предзагрузка CLI');
-        onProgress({stage:'copying',message:'Предзагрузка использована.',completed:1,total:1});
-    }`);
-    const entry=path.join(directory,'bundle-cli.mjs');
-    const run=(args=[],options={})=>spawnSync(process.execPath,[entry,...args],{cwd,env:process.env,encoding:'utf8',timeout:3000,...options});
-    try {await action({root,directory,cwd,entry,run});} finally {await rm(root,{recursive:true,force:true});}
-}
-
-test('Успешный CLI оставляет в stdout один JSON, а прогресс отправляет в stderr',async()=>fixture(async({run})=>{
-    const result=run();assert.equal(result.status,0,result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout),{ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:1234});
-    assert.equal(result.stdout.trim().split('\n').length,1);assert.match(result.stderr,/Модели готовы/);
-}));
-
-test('Справка с флагом verify и длинным тире открывается до чтения описи и подготовки',async()=>fixture(async({run})=>{
-    for(const args of [['--help'],['—help'],['--verify-only','--help'],['--verify-only','—help'],
-        ['--download-only','-h'],['--pack','--help'],['--directory','missing','--manifest','missing','--help']]) {
-        const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
-        assert.equal(result.status,0,args.join(' ')+': '+result.stderr);
-        assert.match(result.stdout,/Использование:.*bundle-cli/);
-        assert.equal(result.stderr,'');assert.doesNotMatch(result.stdout,/"ok"|PRIVATE/);
-    }
-}));
-
-test('Неверные параметры CLI показывают справку вместо ошибки описи моделей',async()=>fixture(async({run})=>{
-    for(const args of [['--unknown'],['constructor'],['toString'],['__proto__'],['--directory'],['--verify-only','--download-only'],['--rollback','--verify-only'],['--rollback','--manifest','missing'],['--adopt-from-git'],['--adopt-from-git','ORIG_HEAD','--verify-only'],['--adopt-from-git','ORIG_HEAD','--manifest','missing'],['--source-directory','cache','--verify-only'],['--source-directory','cache','--rollback'],['--source-directory','cache','--adopt-from-git','ORIG_HEAD'],['--pack'],['--verify-only','--verify-only'],
-        ...['--verify-only','--download-only','--rollback','--pack'].map(flag=>['--recover-only',flag]),
-        ...['--manifest','--source-directory','--adopt-from-git'].map(flag=>['--recover-only',flag,'unused'])]) {
-        const result=run(args,{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
-        assert.equal(result.status,1);const report=JSON.parse(result.stdout);
-        assert.equal(report.error.code,'MODEL_BUNDLE_USAGE');
-        assert.match(result.stderr,/Использование:.*bundle-cli/);
-        assert.doesNotMatch(result.stderr,/Опись моделей не соответствует|PRIVATE/);
-    }
-}));
-
-for(const [mode,code] of [['access','EACCES'],['network','MODEL_NETWORK']])test(`Отказ CLI ${mode} возвращает безопасную причину в JSON и stderr`,async()=>fixture(async({run})=>{
-    const result=run([],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:mode}});
-    assert.equal(result.status,1);const report=JSON.parse(result.stdout);
-    assert.equal(report.ok,false);assert.equal(report.error.code,code);
-    assert.equal(typeof report.error.message,'string');assert.ok(report.error.message);
-    assert.equal(result.stdout.trim().split('\n').length,1);assert.equal(result.stderr.trim(),report.error.message);
-    assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE_TOKEN_AND_PATH/);
-}));
-
-test('Импорт CLI молчит и оставляет валидационную ошибку вызывающему коду',async()=>fixture(async({entry,cwd})=>{
-    const result=spawnSync(process.execPath,['--input-type=module','-e',`
-        const {runModelBundleCli}=await import(${JSON.stringify(pathToFileURL(entry).href)});
-        let rejected=false;try{await runModelBundleCli(['--unknown']);}catch{rejected=true;}
-        if(!rejected)process.exitCode=99;
-    `],{cwd,encoding:'utf8',timeout:3000});
-    assert.equal(result.status,0);assert.equal(result.stdout,'');assert.equal(result.stderr,'');
-}));
-
-for(const preserve of [false,true])test(`CLI через symlink выполняется из другого cwd${preserve?' с preserve-symlinks-main':''}`,
-    {skip:process.platform==='win32'},async()=>fixture(async({root,entry,cwd})=>{
-        const alias=path.join(root,'alias');await symlink(path.dirname(entry),alias);
-        const linkedEntry=path.join(alias,path.basename(entry));
-        const result=spawnSync(process.execPath,[...(preserve?['--preserve-symlinks-main']:[]),linkedEntry,'--verify-only'],
-            {cwd,env:process.env,encoding:'utf8',timeout:3000});
-        assert.equal(result.status,0,result.stderr);
-        assert.deepEqual(JSON.parse(result.stdout),{ok:true,downloadOnly:false,verifyOnly:true,models:2,files:9,bytes:1234});
-    }));
-
-
-test('CLI возврата использует сохранённую поставку без чтения новой описи',async()=>fixture(async({run})=>{
-    const result=run(['--rollback'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
-    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,rolledBack:true,models:2,revision:'fixture'});
-}));
-
-test('CLI восстановления использует только сохранённый журнал без чтения новой описи',async()=>fixture(async({run})=>{
-    const result=run(['--recover-only','--directory','destination'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
-    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,recovered:true});
-}));
-
-
-test('CLI регистрации по Git не читает актуальную опись и передаёт ссылку доказательства',async()=>fixture(async({run})=>{
-    const result=run(['--adopt-from-git','ORIG_HEAD'],{env:{...process.env,MODEL_CLI_FIXTURE_FAILURE:'access'}});
-    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{ok:true,adopted:true,sourceCommit:'fixture',models:2,files:9});
-}));
-
-test('CLI использует каталог предзагрузки перед штатной подготовкой',async()=>fixture(async({run})=>{
-    const result=run(['--source-directory','prefetch','--directory','destination']);assert.equal(result.status,0,result.stderr);
-    assert.equal(JSON.parse(result.stdout).ok,true);assert.match(result.stderr,/Предзагрузка использована/);assert.match(result.stderr,/Модели готовы/);
-}));
+test('CLI requires exact new asset and rejects every old source/default before I/O',()=>{
+    assert.deepEqual(parseModelBundleArguments(['--asset','new.json','--directory','data','--verify-only']),{asset:'new.json',directory:'data',verifyOnly:true});
+    for(const args of [[],['--directory','data'],['--manifest','old.json','--directory','data'],['--adopt-from-git','HEAD'],['--pack'],['--directory','data','--recover-only','--asset','new.json'],['constructor','x'],['--asset','x','--directory','data','--verify-only','--verify-only']])assert.throws(()=>parseModelBundleArguments(args));
+});
+test('Actual CLI installs from SHA cache offline and verifies immutable alias without network',async t=>{
+    const f=await modelSourceFixture(t);await f.prepare();const asset=await f.cached(),descriptor=path.join(f.output,'asset.json');
+    const hook=path.join(f.root,'deny-network.mjs');await writeFile(hook,"globalThis.fetch=()=>{throw new Error('NETWORK_FORBIDDEN')};\n");
+    const options={env:{...process.env,NODE_OPTIONS:'--import='+pathToFileURL(hook).href}},args=['--asset',descriptor,'--directory',f.target];
+    const first=await run([...args,'--blob-directory',f.blobs],options);assert.equal(first.status,0,first.stderr);
+    const report=JSON.parse(first.stdout);assert.equal(report.assetId,asset.id);assert.equal(report.version,asset.version);
+    const alias=path.join(f.target,'models/manifests/registry.ollama.ai/neurocenter',asset.delivery.lock.manifestSha256,'v1');assert.ok((await lstat(alias)).isFile());
+    await assert.rejects(access(path.join(f.target,'models/manifests/registry.ollama.ai/library/fixture-embedding/1')),{code:'ENOENT'});
+    const before=await readFile(alias),verified=await run([...args,'--verify-only'],options);assert.equal(verified.status,0,verified.stderr);assert.equal(JSON.parse(verified.stdout).verifyOnly,true);assert.deepEqual(await readFile(alias),before);
+    assert.equal((await readdir(f.root)).includes('.run'),true); // Producer lease belongs to this fixture only.
+});
+test('CLI rejects old native bundle JSON even when it is otherwise internally valid',async t=>{
+    const f=await modelSourceFixture(t);await f.prepare();const asset=await f.cached(),old=path.join(f.root,'old-bundle.json');await writeFile(old,JSON.stringify(asset.delivery.bundle));
+    const result=await run(['--asset',old,'--directory',f.target]);assert.notEqual(result.status,0);await assert.rejects(access(f.target),{code:'ENOENT'});
+});
+test('Missing/corrupt local content cannot trigger remote download or activate a model',async t=>{
+    const f=await modelSourceFixture(t);await f.prepare();const asset=await f.cached(),part=asset.delivery.bundle.files.flatMap(file=>file.parts||[])[0];
+    await writeFile(path.join(f.blobs,part.sha256+'.blob'),Buffer.alloc(part.size,9));
+    const result=await run(['--asset',path.join(f.output,'asset.json'),'--directory',f.target,'--blob-directory',f.blobs]);assert.notEqual(result.status,0);assert.match(result.stdout,/SHA|MODEL_BUNDLE/);
+    await assert.rejects(access(path.join(f.target,'models/manifests/registry.ollama.ai/neurocenter',asset.delivery.lock.manifestSha256,'v1')),{code:'ENOENT'});
+});
+test('Source descriptor symlink is rejected and foreign bytes remain intact',async t=>{
+    const f=await modelSourceFixture(t);const result=await f.prepare(),link=path.join(f.root,'linked.json');await symlink(result.descriptor,link);const before=await readFile(result.descriptor);
+    assert.notEqual((await run(['--asset',link,'--directory',f.target])).status,0);assert.deepEqual(await readFile(result.descriptor),before);
+});
+test('Help and module import perform no operation and need no asset configuration',async()=>{
+    const help=await run(['--help']);assert.equal(help.status,0);assert.match(help.stdout,/asset.json/);
+    const imported=await execute(process.execPath,['--input-type=module','-e',`await import(${JSON.stringify(new URL('../models/bundle-cli.mjs',import.meta.url).href)})`]);assert.equal(imported.stdout,'');assert.equal(imported.stderr,'');
+});

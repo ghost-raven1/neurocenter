@@ -6,21 +6,23 @@ import { useModelHosting } from '../src/features/ModelCatalog/useModelHosting';
 import type { ICatalogModel, IModelHosting } from '../src/features/ModelCatalog/types';
 
 const ui = vi.hoisted(() => ({ current: true, stateIndex: 0, writes: [] as unknown[], effects: [] as Array<() => void | (() => void)>,
-    initial: new Map<number, unknown>(), hook: null as ReturnType<typeof useModelHosting> | null }));
+    initial: new Map<number, unknown>(), refs: [] as Array<{ current: unknown }>, refIndex: 0, hook: null as ReturnType<typeof useModelHosting> | null }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(),
     useState: (initial: unknown) => {
         const index = ui.stateIndex++;
         return [ui.initial.has(index) ? ui.initial.get(index) : initial, (value: unknown) => { ui.writes.push(value); }];
     },
     useEffect: (effect: () => void | (() => void)) => { ui.effects.push(effect); },
+    useRef: (initial: unknown) => { const index = ui.refIndex++; return ui.refs[index] ||= { current: initial }; },
 }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ captureOwner: () => () => ui.current }) }));
 vi.mock('../src/features/ModelCatalog/api', () => ({ modelCatalogApi: { hosting: vi.fn(), operate: vi.fn() } }));
 const model = { id: 'model-a', revision: 1 } as ICatalogModel;
 const busy = { state: 'busy', message: 'Загружаем', checkedAt: null, operation: { state: 'running' } } as IModelHosting;
 const ready = { state: 'ready', message: 'Проверка пройдена', checkedAt: '2026-10-19T01:00:00Z' } as IModelHosting;
-function Probe() { ui.hook = useModelHosting(model); return null; }
-const render = () => renderToStaticMarkup(createElement(Probe));
+let activeModel = model;
+function Probe() { ui.hook = useModelHosting(activeModel); return null; }
+const render = () => { ui.stateIndex = 0; ui.refIndex = 0; return renderToStaticMarkup(createElement(Probe)); };
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
 function deferred() {
     let resolve!: (value: IModelHosting) => void, reject!: (value: unknown) => void;
@@ -29,12 +31,35 @@ function deferred() {
 }
 
 beforeEach(() => {
-    vi.clearAllMocks(); ui.current = true; ui.stateIndex = 0; ui.writes = []; ui.effects = []; ui.initial.clear(); ui.hook = null;
+    vi.clearAllMocks(); ui.current = true; ui.stateIndex = 0; ui.writes = []; ui.effects = []; ui.initial.clear(); ui.refs = []; ui.hook = null; activeModel = model;
     vi.mocked(modelCatalogApi.hosting).mockResolvedValue(ready);
 });
 afterEach(() => vi.useRealTimers());
 
 describe('Операции хостинга принадлежат исходной сессии', () => {
+    it('Смена версии сразу скрывает готовность и игнорирует результат проверки старой карточки', async () => {
+        ui.initial.set(0, ready); render();
+        const first = deferred(), second = deferred();
+        vi.mocked(modelCatalogApi.hosting).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+        const cleanup = ui.effects[0]();
+        cleanup?.(); activeModel = { ...model, revision: 2 }; render();
+        expect(ui.hook!.hosting).toBeNull();
+        const cleanupAgain = ui.effects[2]();
+        const before = ui.writes.length;
+        first.resolve(ready); await flush();
+        expect(ui.writes.slice(before)).not.toContain(ready);
+        expect(modelCatalogApi.hosting).toHaveBeenCalledTimes(2);
+        const updated = { ...ready, message: 'Проверена новая конфигурация' };
+        second.resolve(updated); await flush();
+        expect(ui.writes).toContain(updated); cleanupAgain?.();
+    });
+    it('Закрытая карточка не принимает поздний ответ операции', async () => {
+        render(); const cleanup = ui.effects[0](); await flush();
+        const pending = deferred(); vi.mocked(modelCatalogApi.operate).mockReturnValue(pending.promise);
+        const operation = ui.hook!.operate('start'); cleanup?.(); const before = ui.writes.length;
+        pending.resolve(busy); await operation;
+        expect(ui.writes).toHaveLength(before);
+    });
     it('Повтор setup после cleanup в StrictMode не теряет проверку при незавершённом запросе', async () => {
         render();
         const first = deferred(), second = deferred();

@@ -1,6 +1,7 @@
 import {randomBytes} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename,lstat,chmod,realpath,open,link,rm} from 'node:fs/promises';
 import path from 'node:path';
+import {ensureModelCredentialKey} from '../workspace/model-credentials.mjs';
 
 /** Явный env-файл Compose имеет приоритет над настройками dev-сессии оператора. */
 export function composeEnvironment(source=process.env){
@@ -72,6 +73,7 @@ export async function configureProduction(input,destination) {
     await secret('postgres_password',()=>randomBytes(32).toString('hex'));
     await secret('internal_token',()=>randomBytes(32).toString('hex'));
     await ensureMetricsToken(directory);
+    await ensureModelCredentialKey(directory);
     for(const [name,role,database] of [['catalog_url','nc_catalog','catalog'],['rag_url','nc_rag','rag'],['rag_provision_url','nc_provisioner','postgres'],['backup_url','nc_backup','rag']]){
         await secret(name,()=>`postgresql://${role}:${randomBytes(32).toString('hex')}@postgres:5432/${database}`);
     }

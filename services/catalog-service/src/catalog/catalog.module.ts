@@ -1,3 +1,15 @@
+import {SourceUploadController} from '../source-upload/source-upload.controller';
+import {SourceUploadService} from '../source-upload/source-upload.service';
+import {HostedRagGrantService} from '../models/hosted-rag-grant.service';
+import { ModelBundleRuntime } from '../models/model-bundle-runtime';
+import { OpenCodeModelImport } from '../models/opencode-model-import';
+import { RemoteConnectionController } from '../models/remote-connection.controller';
+import { RemoteConnectionService } from '../models/remote-connection.service';
+import { ModelRuntime } from '../models/model-runtime';
+import { AssetManagementController } from '../asset-sources/asset-management.controller';
+import { AssetManagementService } from '../asset-sources/asset-management.service';
+import { AssetSourcesController, AssetSupplyController } from '../asset-sources/asset-sources.controller';
+import { AssetSourcesService } from '../asset-sources/asset-sources.service';
 import {MaintenanceController} from '../maintenance/maintenance.controller';
 import {MaintenanceService} from '../maintenance/maintenance.service';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
@@ -24,6 +36,10 @@ import { ModelInferenceController } from '../models/inference.controller';
 import { OllamaClient } from '../models/ollama-client';
 import {ProjectEmbeddingService} from '../models/project-embedding.service';
 import {ProjectEmbeddingController} from '../models/project-embedding.controller';
+import {ProjectRagCoordinator} from '../models/project-rag-coordinator';
+import {ProjectRagSyncController,ProjectRagContextController} from '../models/project-rag.controller';
+import {ProjectReindexService} from '../models/project-reindex.service';
+import {ProjectReindexController,ProjectReindexInferenceController} from '../models/project-reindex.controller';
 import {DeviceEmbeddingService} from '../models/device-embedding.service';
 
 import { CatalogController } from './catalog.controller';
@@ -35,5 +51,5 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * Модуль каталога: проекты — PG-backed (БД `catalog`), остальное — mock.
  */
-@Module({ controllers: [MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
+@Module({ controllers: [SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
 export class CatalogModule {}

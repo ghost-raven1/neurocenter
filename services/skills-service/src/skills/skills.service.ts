@@ -2,10 +2,11 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 
 import { SKILLS_STORAGE } from '../storage/skills-storage.interface';
 import type { ISkillsStorage } from '../storage/skills-storage.interface';
-import { skillPath as validatePath, validateSkillCreate, skillDependencyPins } from './skill-validation';
+import { skillPath as validatePath, validateSkillCreate, skillDependencyPins,assertSkillDependencyReplacement } from './skill-validation';
 import { randomUUID } from 'node:crypto';
 import { validateResources } from './skill-resources';
 import {syncProjectSkills} from './skill-sync';
+import { archiveImportedSkill, importedSkillInput, importedSkillPayloadHash, importedSkillSnapshot, publishImportedSkill, skillCreateFromFile, type ISkillImportExpected } from './asset-import';
 import type {
     ISkillAuditReceipt,
     ISkillCreateRequest,
@@ -35,7 +36,7 @@ export class SkillsService implements OnApplicationBootstrap {
     ) {}
 
     /**
-     * Первый запуск: создаёт базовый каталог и seed-скиллы, если пусто.
+     * Первый запуск: готовит хранилище и восстанавливает журнал; состав каталога выбирается импортом.
      *
      * @returns {Promise<void>}
      */
@@ -72,6 +73,7 @@ export class SkillsService implements OnApplicationBootstrap {
                 : await this.walk('');
 
         return source.filter(file => {
+            if (file.meta.archivedAt) { return false; }
             const matchesQuery = needle === '' || file.meta.slug.toLowerCase().includes(needle) || file.meta.name.toLowerCase().includes(needle);
             const matchesMcp = mcpFilter === undefined || file.meta.mcp.includes(mcpFilter);
             const matchesPlugin = pluginFilter === undefined || file.meta.plugins.includes(pluginFilter);
@@ -128,6 +130,33 @@ export class SkillsService implements OnApplicationBootstrap {
         });
     }
 
+    /** Служебный import использует native validator и общую очередь записей коллекции. */
+    public async previewAssetSkill(raw: unknown) {
+        const input = importedSkillInput(raw), path = 'common/'+input.slug;
+        const current = await this.storage.existsSkill(path)?await this.storage.readSkill(path):undefined;
+        return {input,payloadHash:importedSkillPayloadHash(input),current:current?{
+            ...importedSkillSnapshot(current),name:current.meta.name,archivedAt:current.meta.archivedAt,
+            payloadHash:importedSkillPayloadHash(skillCreateFromFile(current)),
+        }:null};
+    }
+
+    public async importAssetSkill(raw: unknown, key: string, actor: string, expected?: ISkillImportExpected): Promise<ISkillFile> {
+        const input = importedSkillInput(raw);
+        return this.withWriteLock('common/'+input.slug,()=>publishImportedSkill(this.storage,input,key,actor,expected));
+    }
+
+    public async archiveAssetSkill(id: string, expected: ISkillImportExpected, actor: string, restore = false, requestKey?: string): Promise<ISkillFile> {
+        const path = sanitizeRelPath(id);
+        return this.withWriteLock(path,()=>archiveImportedSkill(this.storage,path,expected,actor,restore,requestKey));
+    }
+
+    public async inspectAssetSkill(id: string) {
+        const file = await this.getSkill(id);
+        return {...importedSkillSnapshot(file),name:file.meta.name,archivedAt:file.meta.archivedAt,payloadHash:importedSkillPayloadHash(skillCreateFromFile(file)),archive:file.meta.assetArchive};
+    }
+
+    public async archivedAssetSkills(): Promise<ISkillListSummary[]> { return (await this.walk('common')).filter(file=>!!file.meta.archivedAt); }
+
     /**
      * Обновление скилла: тело и/или метаданные, с бампом версии и записью в историю.
      *
@@ -152,6 +181,7 @@ export class SkillsService implements OnApplicationBootstrap {
         const existing = await this.storage.readSkill(path);
         if (request.expectedVersion !== undefined && (!Number.isSafeInteger(request.expectedVersion) || request.expectedVersion < 1)) { throw new BadRequestException('Некорректная ожидаемая версия.'); }
         if (request.expectedVersion !== undefined && request.expectedVersion !== existing.meta.version) { throw new ConflictException('Скилл уже изменили. Загрузите актуальную версию перед сохранением; ваш черновик сохранён в форме.'); }
+        assertSkillDependencyReplacement(existing.meta,request.meta);
         validateSkillCreate({path: path.slice(0, Math.max(0,path.lastIndexOf('/'))), slug: existing.meta.slug, name: request.name ?? existing.meta.name,
             body: request.body ?? existing.body, meta: { ...existing.meta, ...request.meta }});
         const now = new Date().toISOString();
@@ -175,7 +205,7 @@ export class SkillsService implements OnApplicationBootstrap {
             nextMeta.history = [...existing.meta.history, { version: nextMeta.version, at: now, author, note: request.note }];
         }
 
-        await this.storage.writeSkill(path, nextMeta, request.body ?? existing.body, resources, {actor:auditActor,source:'editor'});
+        await this.storage.writeSkill(path, nextMeta, request.body ?? existing.body, resources, {actor:auditActor,source:'editor'},existing);
 
         return this.withAuditReceipt(await this.storage.readSkill(path),path);
     }
@@ -189,6 +219,7 @@ export class SkillsService implements OnApplicationBootstrap {
     public async deleteSkill(skillPath: string, auditActor = 'skills-service'): Promise<{ ok: true; path: string } & ISkillAuditReceipt> {
         const path = sanitizeRelPath(skillPath);
         return this.withWriteLock(path,async()=>{
+            if(path==='common'||path.startsWith('common/')){throw new ConflictException('Скилл общего каталога удаляется через проверку последствий архивирования.');}
             if(path.length===0||!(await this.storage.existsSkill(path))){throw new NotFoundException(`Скилл не найден: ${skillPath}`);}
             await this.storage.deleteSkill(path,{actor:auditActor,source:'editor'});return this.withAuditReceipt({ok:true as const,path},path);
         });
@@ -247,7 +278,7 @@ export class SkillsService implements OnApplicationBootstrap {
 
             const skillPath = joinRel(dir, entry.name.replace(/\.md$/i, ''));
             const file = await this.readListedSkill(skillPath);
-            if (!file) { continue; }
+            if (!file || file.meta.archivedAt) { continue; }
 
             nodes.push({ name: file.meta.slug, path: skillPath, type: 'file', meta: file.meta });
         }

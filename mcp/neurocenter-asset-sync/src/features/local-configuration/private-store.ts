@@ -86,3 +86,13 @@ async function commitPrivateConfiguration(key: string, value: unknown, expected:
         await unchanged(root,stat);beforeCommit();await fs.rename(temporary,file); await unchanged(root,stat);
     } finally {await handle?.close(); await fs.rm(temporary,{force:true});}
 }
+
+/** CAS-удаление только собственного временного профиля при rollback journal. */
+export async function removePrivateConfiguration(key:string,expected:unknown):Promise<void>{
+    if(!safeName.test(key))throw new Error('Некорректный ключ настройки.');
+    const prior=writes;let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});writes=prior.then(()=>gate);await prior;
+    try{
+        if(JSON.stringify(await readPrivateConfiguration(key))!==JSON.stringify(expected))throw new Error('Настройка изменена в другом окне.');
+        const {root,stat}=await directory();await unchanged(root,stat);await fs.unlink(path.join(root,key+'.json'));await unchanged(root,stat);
+    }finally{release();}
+}

@@ -1,15 +1,18 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import { z } from 'zod';
 import { atomicText, syncDirectory } from '../../bridge/atomic-file.js';
-import { saveCompletion } from '../../bridge/completions.js';
+import { saveCompletion,pendingCompletions } from '../../bridge/completions.js';
 import { recoveryDirectory } from '../../bridge/installation-space.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
-import { hash, jobContext, stateDir } from '../../bridge/state.js';
+import { hash, jobContext, stateDir,readState,writeState } from '../../bridge/state.js';
 import { withWorkspaceIdentityLock } from '../../bridge/workspace-identity-state.js';
 import { safeTarget } from '../../bridge/workspace-paths.js';
 import { readRagProjectIdentity, verifiedRagProjectIdentity, type IRagProjectIdentity } from '../../lib/rag-project-identity.js';
+import {readPrivateConfiguration,writePrivateConfiguration,removePrivateConfiguration} from '../local-configuration/private-store.js';
+import {normalizeHostedProfile,profileKey} from '../rag-hosted/profile.js';
 import { matchesRestoreProof, restoreDirectoryProof, type RestoreDirectoryProof } from './restore-proof.js';
 
 const directory = () => path.join(stateDir(), 'rag-restores');
@@ -20,10 +23,12 @@ const identitySchema = z.object({ projectKey: z.string().min(1).max(128), instan
 const resultSchema = z.object({ ok: z.literal(true), applied: z.literal(true), complete: z.literal(true), remaining: z.literal(0),
     fingerprintVersion: z.literal(1), snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
     indexProfile: z.object({ provider: z.string().min(1).max(512), model: z.string().min(1).max(512), dimension: z.number().int().positive() }).strict(),
-    written: z.number().int().positive(), sourceCount: z.number().int().positive(), dimension: z.number().int().positive() }).strict();
+    written: z.number().int().nonnegative(), sourceCount: z.number().int().nonnegative(), dimension: z.number().int().positive() }).strict();
 const schema = z.object({ version: z.literal(1), pid: z.number().int().positive(), state: z.enum(['prepared', 'committed']),
     root: z.string(), store: z.string(), stage: z.string(), backup: z.string(), lock: z.string().max(1024),
     identity: identitySchema, before: proofSchema, after: proofSchema, result: resultSchema,
+    deferCompletion:z.literal(true).optional(),
+    privateConfiguration:z.object({key:z.string().regex(/^[a-f0-9]{64}$/),before:z.unknown().nullable(),after:z.unknown()}).strict().optional(),
     job: z.object({ id: z.string().uuid(), lease: z.string().uuid(), deviceId: z.string().uuid().optional() }).strict().optional(),
 }).strict();
 type RestoreIntent = z.infer<typeof schema>;
@@ -54,12 +59,18 @@ async function assertIntent(intent: RestoreIntent, root: string): Promise<void> 
     if (!verifiedRagProjectIdentity(identity, intent.identity.projectKey, { ...intent.identity, ok: true })) {
         throw new Error('Привязка папки изменилась. Автоматическое восстановление индекса остановлено.');
     }
+    if(intent.privateConfiguration){
+        const change=intent.privateConfiguration,after=normalizeHostedProfile(change.after);
+        if(after.root!==root||after.projectId!==intent.identity.projectKey||after.instanceId!==intent.identity.instanceId||after.bindingId!==intent.identity.bindingId
+            ||profileKey(after.server,root,after.instanceId)!==change.key||!after.grants.some(grant=>isDeepStrictEqual(grant.selection.profile,intent.result.indexProfile)))throw new Error('Профиль не соответствует журналу индекса.');
+        if(change.before!==null){const before=normalizeHostedProfile(change.before);if(before.root!==after.root||before.instanceId!==after.instanceId||before.server!==after.server)throw new Error('Прежний профиль не соответствует журналу индекса.');}
+    }
     if (intent.result.written !== intent.result.sourceCount || intent.result.dimension !== intent.result.indexProfile.dimension) {
         throw new Error('Повреждён результат восстановления индекса.');
     }
 }
 
-async function finish(intent: RestoreIntent): Promise<void> {
+async function finish(intent: RestoreIntent,recovery=false,final=false): Promise<void> {
     await assertIntent(intent, intent.root);
     const proof = (target: string) => restoreDirectoryProof(target, intent.lock);
     const remove = async (target: string, expected: RestoreDirectoryProof) => {
@@ -84,10 +95,30 @@ async function finish(intent: RestoreIntent): Promise<void> {
         if (!matchesRestoreProof(store, intent.after) || stage) { throw new Error('Восстановленный индекс изменился. Резервные файлы сохранены.'); }
         await remove(intent.backup, intent.before);
     }
+    if(intent.privateConfiguration){
+        const change=intent.privateConfiguration,current=await readPrivateConfiguration(change.key),before=change.before===null?undefined:change.before;
+        if(intent.state==='committed'){
+            if(JSON.stringify(current)!==JSON.stringify(change.after))throw new Error('Приватный профиль изменился после переключения. Журнал сохранён.');
+            const registry=await readState<unknown>('rag-hosted-connections');
+            if(registry!==undefined&&(!Array.isArray(registry)||registry.length>128||registry.some(key=>typeof key!=='string'||!/^[a-f0-9]{64}$/.test(key))))throw new Error('Повреждён список подключений RAG.');
+            const entries=(registry??[]) as string[];
+            if(!entries.includes(change.key)){if(entries.length>=128)throw new Error('Достигнут лимит подключений RAG.');await writeState('rag-hosted-connections',[...entries,change.key]);}
+        }else if(JSON.stringify(current)===JSON.stringify(change.after)){
+            if(before===undefined)await removePrivateConfiguration(change.key,change.after);else await writePrivateConfiguration(change.key,before,change.after);
+        }else if(JSON.stringify(current)!==JSON.stringify(before))throw new Error('Приватный профиль изменился. Автоматический rollback остановлен.');
+    }
     const activeLock = path.join(intent.store, 'index.lock');
     try { if (await readBoundedUtf8(activeLock, 1024) === intent.lock) { await fs.unlink(activeLock); await syncDirectory(intent.store); } }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
-    if (intent.job) {
+    if(intent.job&&intent.deferCompletion){
+        if(recovery||final){
+            const saved=(await pendingCompletions()).find(item=>item.id===intent.job!.id);
+            if(saved&&saved.lease!==intent.job.lease)throw new Error('Квитанция подключения относится к другой аренде.');
+            if(!saved)await saveCompletion({...intent.job,state:'failed',result:{},message:intent.state==='committed'
+                ?'Локальный индекс и подключение сохранены. Полная синхронизация не подтверждена после перезапуска; повторите подключение.'
+                :'Прерванная переиндексация отменена. Прежний локальный индекс и подключение сохранены.'});
+        }else if(intent.state==='committed')return;
+    }else if (intent.job) {
         await saveCompletion({ ...intent.job, state: intent.state === 'committed' ? 'succeeded' : 'failed',
             message: intent.state === 'committed' ? 'Семантический индекс восстановлен.' : 'Прерванное восстановление отменено; исходный индекс и настройки сохранены.',
             result: intent.state === 'committed' ? { projectId: intent.identity.projectKey, bindingId: intent.identity.bindingId, ...intent.result } : {} });
@@ -96,7 +127,7 @@ async function finish(intent: RestoreIntent): Promise<void> {
 }
 
 /** Под identity-lock запись intent предшествует обоим rename; prepared откатывается, committed завершает свою очистку. */
-export async function commitRagRestore(input: { root: string; store: string; stage: string; lock: string; overrides: string | null; identity: IRagProjectIdentity; result: Record<string, unknown> }): Promise<void> {
+export async function commitRagRestore(input: { root: string; store: string; stage: string; lock: string; overrides: string | null; identity: IRagProjectIdentity; result: Record<string, unknown>; privateConfiguration?:{key:string;before:unknown|null;after:unknown};deferCompletion?:true }): Promise<void> {
     await recoveryDirectory(directory());
     if (await readIntent(input.root)) { throw new Error('Предыдущее восстановление индекса ещё не завершено.'); }
     const before = await restoreDirectoryProof(input.store, input.lock), after = await restoreDirectoryProof(input.stage, input.lock, true);
@@ -108,7 +139,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
     }
     const intent = schema.parse({ version: 1, pid: process.pid, state: 'prepared', root: input.root, store: input.store, stage: input.stage,
         backup: input.stage + '-previous', lock: input.lock, identity: { projectKey: input.identity.projectKey, instanceId: input.identity.instanceId, bindingId: input.identity.bindingId },
-        before, after, result: Object.fromEntries(Object.keys(resultSchema.shape).map(key => [key, input.result[key]])), job: jobContext.getStore() });
+        before, after,...input.deferCompletion?{deferCompletion:true}:{},...input.privateConfiguration?{privateConfiguration:input.privateConfiguration}:{}, result: Object.fromEntries(Object.keys(resultSchema.shape).map(key => [key, input.result[key]])), job: jobContext.getStore() });
     await assertIntent(intent, input.root);
     const encoded = JSON.stringify(intent);
     if (Buffer.byteLength(encoded) > 16 * 1024 * 1024) { throw new Error('Журнал восстановления индекса превышает 16 МиБ. Исходный индекс сохранён.'); }
@@ -122,6 +153,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
             || !matchesRestoreProof(await restoreDirectoryProof(intent.stage, intent.lock), after)) {
             throw new Error('Индекс изменился перед переключением. Файлы сохранены.');
         }
+        if(intent.privateConfiguration){const change=intent.privateConfiguration;await writePrivateConfiguration(change.key,change.after,change.before===null?undefined:change.before);}
         await fs.rename(intent.store, intent.backup); await syncDirectory(path.dirname(intent.store));
         await fs.rename(intent.stage, intent.store); await syncDirectory(path.dirname(intent.store));
         intent.state = 'committed'; await atomicText(file, JSON.stringify(intent), 0o600);
@@ -132,7 +164,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
             catch (failure) { throw uncertain(failure); }
         }
         throw error;
-    } finally { inFlight.delete(input.root); await fs.rm(temporary, { force: true }); }
+    } finally { if(!input.deferCompletion||intent.state!=='committed')inFlight.delete(input.root); await fs.rm(temporary, { force: true }); }
 }
 
 /** Чтение и повтор сначала восстанавливают только известный intent, не угадывая случайные previous-папки. */
@@ -140,14 +172,23 @@ export async function recoverRagRestore(root: string): Promise<void> {
     const intent = await readIntent(root);
     if (!intent) { return; }
     const running = (pid: number) => alive(pid) && (pid !== process.pid || inFlight.has(root));
+    if(intent.deferCompletion&&intent.state==='committed'&&intent.pid===process.pid&&inFlight.has(root)&&jobContext.getStore()?.id===intent.job?.id)return;
     if (running(intent.pid)) { throw new Error('Восстановление индекса уже выполняется. Дождитесь завершения.'); }
     await withWorkspaceIdentityLock(async () => {
         const current = await readIntent(root);
         if (!current) { return; }
         if (running(current.pid)) { throw new Error('Восстановление индекса уже выполняется.'); }
-        await assertIntent(current, root); await finish(current);
+        await assertIntent(current, root); await finish(current,true);
     });
 }
+
+/** Общая квитанция задания сохраняется до очистки журнала локального переключения. */
+export async function finalizeRagReindex(root:string,jobId:string):Promise<void>{
+    const intent=await readIntent(root);if(!intent)return;
+    if(!intent.deferCompletion||intent.job?.id!==jobId)throw new Error('Журнал принадлежит другому подключению.');
+    try{await finish(intent,false,true);}finally{inFlight.delete(root);}
+}
+export function releaseRagReindex(root:string):void{inFlight.delete(root);}
 
 /** Worker доставляет прежний итог задания после восстановления файлов, без повторной загрузки снимка. */
 export async function recoverRagRestores(): Promise<void> {

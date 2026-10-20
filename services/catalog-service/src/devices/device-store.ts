@@ -14,6 +14,7 @@ import type { IAccessActor } from '../access/access.model';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { workspaceReport } from './device-report';
 import { migrateCatalog } from '../database/migrations';
+import {setupHostedRagGrantTable} from './hosted-rag-grant-schema';
 import { INSTALLATION_MIGRATIONS } from './installation-migrations';
 
 export const digest = (value: string): string =>
@@ -40,7 +41,10 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         max: 4,
     },'devices');
     constructor(readonly access: AccessDb) {}
-    async onModuleInit(): Promise<void> {
+    private initialization?:Promise<void>;
+    ready():Promise<void>{return this.initialization??=this.initialize();}
+    async onModuleInit(): Promise<void> {await this.ready();}
+    private async initialize(): Promise<void> {
         await this.pool.query(`CREATE TABLE IF NOT EXISTS bridge_devices (
             id text PRIMARY KEY,email text NOT NULL,role text NOT NULL,name text NOT NULL,fingerprint text NOT NULL,
             token_hash text UNIQUE NOT NULL,expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days',
@@ -62,6 +66,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             ALTER TABLE bridge_pairs ADD COLUMN IF NOT EXISTS issued_device_id text;
             ALTER TABLE bridge_devices ADD COLUMN IF NOT EXISTS paused_until timestamptz;`);
         await migrateCatalog(this.pool, INSTALLATION_MIGRATIONS);
+        await setupHostedRagGrantTable(this.pool);
     }
     async onModuleDestroy(): Promise<void> {
         await this.pool.end();

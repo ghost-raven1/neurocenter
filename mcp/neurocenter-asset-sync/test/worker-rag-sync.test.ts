@@ -33,7 +33,7 @@ describe('Мост отправляет полный индекс последо
             .mockResolvedValueOnce(JSON.stringify({...outcome,upserted:500,appliedNow:500,remaining:250,complete:false}));
         const result=await runRagBridgeJob(job,authorize,update);
         expect(syncRagDb).toHaveBeenCalledTimes(3);
-        for(const args of vi.mocked(syncRagDb).mock.calls) expect(args).toEqual([{projectKey:'project',project:folder,limit:500},folder,authorize]);
+        for(const args of vi.mocked(syncRagDb).mock.calls) expect(args).toEqual([{projectKey:'project',project:folder,limit:500},folder,authorize,{allowEmpty:undefined}]);
         expect(result).toMatchObject({ok:true,complete:true,remaining:0,upserted:1250,batches:3,bindingId:job.bindingId});
         expect(update.mock.calls.map(([percent])=>percent)).toEqual([38,76,99]);
     });

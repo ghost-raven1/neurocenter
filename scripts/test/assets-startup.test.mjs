@@ -1,60 +1,33 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,rm,stat} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {prepareStartupAssets} from '../assets/startup.mjs';
-import {configuration} from '../embedding/config.mjs';
-import {dataDirectory} from '../embedding/runtime.mjs';
-import {modelRuntimeEnvironment} from '../models/startup.mjs';
+const output={success(){},info(){}};
+const report={ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)};
 
-test('Запуск принимает только полный подтверждённый отчёт общей поставки',async()=>{
-    const input={root:'/project',output:{success() {},info() {}}};
-    const report={ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)};
+test('Запуск принимает только подтверждённый prefetch нового источника',async()=>{
+    const input={root:'/project',output};
     assert.deepEqual(await prepareStartupAssets(input,async()=>({status:0,stdout:JSON.stringify(report)})),report);
-    for(const result of [{status:1},{status:0,stdout:'{}'},{status:0,stdout:JSON.stringify({...report,verifyOnly:true})}]) {
+    for(const result of [{status:1},{status:0,stdout:'{}'},{status:0,stdout:JSON.stringify({...report,verifyOnly:true})},{status:0,stdout:JSON.stringify({...report,mode:'metadata'})}]){
         await assert.rejects(prepareStartupAssets(input,async()=>result),/Прежние сервисы не остановлены/);
     }
-    await assert.rejects(prepareStartupAssets(input,async()=>({error:Object.assign(new Error('cancelled'),{code:'ECANCELED'})})),{code:'ECANCELED'});
 });
-
-test('Prefetch, активация и Docker используют один пользовательский каталог внутри проекта',async t=>{
-    const root=await mkdtemp(path.join(os.tmpdir(),'neurocenter model path '));t.after(()=>rm(root,{recursive:true,force:true}));
-    const config=configuration({MODEL_STORAGE_PATH:'custom/models'},root);
-    assert.equal(config.data,path.join(root,'custom/models'));
-    assert.equal(await dataDirectory(config,'models/blobs',true),path.join(root,'custom/models/models/blobs'));
-    assert.ok((await stat(path.join(config.data,'models/blobs'))).isDirectory());
-    assert.equal(modelRuntimeEnvironment(root,{MODEL_STORAGE_PATH:'custom/models'}).MODEL_STORAGE_PATH,config.data);
-    assert.equal(configuration({EMBEDDING_DATA_DIR:'cache/models'},root).data,path.join(root,'cache/models'));
-    assert.throws(()=>configuration({MODEL_STORAGE_PATH:'../other'},root),/внутри проекта/);
-});
-
-test('Незавершённая активация восстанавливается до предзагрузки в выбранном каталоге',async t=>{
-    const root=await mkdtemp(path.join(os.tmpdir(),'neurocenter startup recovery '));t.after(()=>rm(root,{recursive:true,force:true}));
-    const directory=path.join(root,'custom/models'),managed=path.join(directory,'.bundle-managed');
-    await mkdir(managed,{recursive:true});await writeFile(path.join(managed,'pending.json'),'{}');
-    const calls=[],messages=[],output={success:value=>messages.push(value),info() {}};
-    const report={ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)};
-    await prepareStartupAssets({root,environment:{MODEL_STORAGE_PATH:'custom/models'},output},async(command,args)=>{
-        calls.push(args);return {status:0,stdout:JSON.stringify(args.includes('--recover-only')?{ok:true,recovered:true}:report)};
-    });
-    assert.equal(calls.length,2);assert.deepEqual(calls[0],[path.join(root,'scripts/models/bundle-cli.mjs'),'--directory',directory,'--recover-only']);
-    assert.equal(calls[1][0],path.join(root,'scripts/assets/cli.mjs'));
-    assert.match(messages[0],/Восстановлен/);
-});
-
-test('Отказ восстановления останавливает запуск до сети и не скрывает следующий шаг',async t=>{
-    const root=await mkdtemp(path.join(os.tmpdir(),'neurocenter startup failed recovery '));t.after(()=>rm(root,{recursive:true,force:true}));
-    const managed=path.join(root,'data/embedding/.bundle-managed');await mkdir(managed,{recursive:true});await writeFile(path.join(managed,'pending.json'),'{}');
+test('Prefetch не восстанавливает и не активирует теги моделей, выбор каталога остаётся в UI',async t=>{
+    const root=await mkdtemp(path.join(os.tmpdir(),'nc startup assets '));t.after(()=>rm(root,{recursive:true,force:true}));
+    const pending=path.join(root,'data/embedding/.bundle-managed/pending.json');await mkdir(path.dirname(pending),{recursive:true});await writeFile(pending,'оставить');
     const calls=[];
-    await assert.rejects(prepareStartupAssets({root,environment:{},output:{success() {},info() {}}},async(command,args)=>{
-        calls.push(args);return {status:1,stdout:JSON.stringify({ok:false,error:{code:'MODEL_MANAGED_CONFLICT'}})};
-    }),/восстановить.*recover-only.*Прежние сервисы не остановлены/);
-    assert.equal(calls.length,1);assert.ok(calls[0].includes('--recover-only'));
+    await prepareStartupAssets({root,environment:{},output},async(command,args)=>{calls.push(args);return {status:0,stdout:JSON.stringify(report)};});
+    assert.deepEqual(calls,[[path.join(root,'scripts/assets/cli.mjs')]]);assert.equal(await readFile(pending,'utf8'),'оставить');
 });
-
-test('Отмена предзагрузки сохраняет исходный SIGTERM для корректного кода завершения',async()=>{
-    await assert.rejects(prepareStartupAssets({root:'/project',environment:{},output:{success() {},info() {}}},async()=>({
-        signal:'SIGTERM',error:Object.assign(new Error('cancelled'),{code:'ECANCELED'}),
-    })),error=>error.code==='ECANCELED'&&error.signal==='SIGTERM');
+for(const signal of ['SIGINT','SIGTERM'])test('Отмена предзагрузки сохраняет '+signal,async()=>{
+    await assert.rejects(prepareStartupAssets({root:'/project',environment:{},output},async()=>({signal,error:Object.assign(new Error('cancelled'),{code:'ECANCELED'})})),
+        error=>error.code==='ECANCELED'&&error.signal===signal);
+});
+test('Standard требует точный отчёт withoutModels и передаёт ограничение в CLI',async()=>{
+    const input={root:'/project',environment:{},withoutModels:true,output},calls=[];
+    assert.equal((await prepareStartupAssets(input,async(command,args)=>{calls.push(args);return {status:0,stdout:JSON.stringify({...report,withoutModels:true})};})).withoutModels,true);
+    assert.deepEqual(calls,[['/project/scripts/assets/cli.mjs','--without-models']]);
+    for(const flag of [false,'true',1,undefined])await assert.rejects(prepareStartupAssets(input,async()=>({status:0,stdout:JSON.stringify({...report,withoutModels:flag})})),/Прежние сервисы не остановлены/);
 });

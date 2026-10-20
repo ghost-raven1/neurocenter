@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 
 import { buildPackage } from '../src/catalog/bundle-package';
 import { PluginRepository } from '../src/publication/plugin-repository';
-import { assertRemoteSkillUnreferenced, reserveSkillDependencies, setupSkillDependencyReservations } from '../src/publication/skill-dependency-registry';
+import { reserveSkillDependencies, setupSkillDependencyReservations } from '../src/publication/skill-dependency-registry';
 
 const config = { transport: 'remote' as const, url: 'https://example.test/mcp' };
 const dependency = { id: 'ai-plug-reserved', name: 'Закреплённый MCP', kind: 'mcp', files: [], config, metadata: { kind: 'mcp' } };
@@ -78,68 +78,11 @@ describe('Неизменяемые резервы зависимостей ск�
         expect(pool.connect).not.toHaveBeenCalled();
     });
 
-    it('Резерв блокирует удаление до сетевой проверки и записи аудита', async () => {
-        const remote = vi.fn(async () => {});
-        query.mockImplementation(async (sql: string) => {
-            if (sql.startsWith('SELECT * FROM ai_plugins WHERE')) { return { rows: [{ ...dependency, description: '', version: 1, dependencies: [], tags: [], origin: 'upload' }] }; }
-            if (sql.startsWith('SELECT 1 FROM skill_dependency_reservations')) { return { rows: [{ exists: 1 }] }; }
-            return { rows: [] };
-        });
-        await expect(new PluginRepository(pool, remote).delete(pin.id, 'qa')).rejects.toMatchObject({ status: 409 });
-        expect(remote).not.toHaveBeenCalled();
-        expect(query.mock.calls.some(([sql]) => /^(DELETE|INSERT) /.test(sql))).toBe(false);
-        expect(query.mock.calls.at(-1)).toEqual(['ROLLBACK']);
-    });
-
-    it('Недоступная проверка старого хранилища откатывает удаление', async () => {
-        query.mockImplementation(async (sql: string) => ({ rows: sql.startsWith('SELECT * FROM ai_plugins WHERE')
-            ? [{ ...dependency, description: '', version: 1, dependencies: [], tags: [], origin: 'upload' }] : [] }));
-        const remote = vi.fn(async () => { throw new Error('Проверка недоступна'); });
-        await expect(new PluginRepository(pool, remote).delete(pin.id, 'qa')).rejects.toThrow('Проверка недоступна');
-        expect(remote).toHaveBeenCalledWith(pin.id);
-        expect(query.mock.calls.some(([sql]) => /^(DELETE|INSERT) /.test(sql))).toBe(false);
-        expect(query.mock.calls.at(-1)).toEqual(['ROLLBACK']);
-    });
-});
-
-describe('Проверка ссылок в файловом сервисе перед удалением', () => {
-    beforeEach(() => {
-        vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN', 'owned-test-token');
-        vi.stubEnv('SKILLS_SERVICE_URL', 'http://skills.internal:4200');
-    });
-    afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-
-    it('Передаёт служебный токен и точный ID, ограничивает ожидание и запрещает перенаправления', async () => {
-        const request = vi.fn(async () => ({ status: 200, json: async () => ({ inUse: false }) }));
-        vi.stubGlobal('fetch', request);
-        await expect(assertRemoteSkillUnreferenced(pin.id)).resolves.toBeUndefined();
-        const [url, options] = request.mock.calls[0] as unknown as [URL, RequestInit];
-        expect(url.toString()).toBe('http://skills.internal:4200/internal/skill-dependencies/usage?assetId=ai-plug-reserved');
-        expect(options).toMatchObject({ headers: { 'x-neurocenter-internal': 'owned-test-token' }, redirect: 'error' });
-        expect(options.signal).toBeInstanceOf(AbortSignal);
-    });
-
-    it('Текущая или историческая ссылка возвращает конфликт', async () => {
-        vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, json: async () => ({ inUse: true }) })));
-        await expect(assertRemoteSkillUnreferenced(pin.id)).rejects.toMatchObject({ status: 409 });
-    });
-
-    it.each([null, [], {}, { inUse: 'false' }, { inUse: false, files: ['secret'] }])('Повреждённый ответ не разрешает удаление: %j', async body => {
-        vi.stubGlobal('fetch', vi.fn(async () => ({ status: 200, json: async () => body })));
-        await expect(assertRemoteSkillUnreferenced(pin.id)).rejects.toMatchObject({ status: 503 });
-    });
-
-    it.each(['status', 'network', 'json', 'token', 'url'])('Отказ %s останавливает удаление без утечки конфигурации', async failure => {
-        if (failure === 'token') { vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN', ''); }
-        if (failure === 'url') { vi.stubEnv('SKILLS_SERVICE_URL', 'not-a-url'); }
-        vi.stubGlobal('fetch', vi.fn(async () => {
-            if (failure === 'network') { throw new Error('owned-test-token'); }
-            return { status: failure === 'status' ? 500 : 200, json: async () => {
-                if (failure === 'json') { throw new Error('owned-test-token'); }
-                return { inUse: false };
-            } };
-        }));
-        await expect(assertRemoteSkillUnreferenced(pin.id)).rejects.toMatchObject({ status: 503 });
-        await expect(assertRemoteSkillUnreferenced(pin.id)).rejects.not.toThrow('owned-test-token');
+    it('Архив сохраняет резервы и immutable версии без прежней сетевой проверки удаления', async () => {
+        query.mockImplementation(async (sql:string)=>({rows:sql.startsWith('SELECT * FROM ai_plugins WHERE')?[{...dependency,description:'',version:1,dependencies:[],tags:[],origin:'upload'}]:[]}));
+        await expect(new PluginRepository(pool).delete(pin.id,'qa')).resolves.toBe(true);
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('DELETE '))).toBe(false);
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE ai_plugins SET archived_at'))).toBe(true);
+        expect(query.mock.calls.at(-1)).toEqual(['COMMIT']);
     });
 });

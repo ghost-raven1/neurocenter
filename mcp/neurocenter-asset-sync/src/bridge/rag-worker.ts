@@ -4,7 +4,7 @@ import { syncRagDb } from '../tools/sync-rag-db.js';
 import { locateStore } from '../lib/store.js';
 import { projectFolder, safeTarget } from './workspace.js';
 
-interface RagJob { kind: 'sync-rag' | 'restore-rag'; projectId: string; bindingId: string; }
+interface RagJob { kind: 'sync-rag' | 'restore-rag'; projectId: string; bindingId: string;allowEmpty?:boolean; }
 type Result = Record<string, unknown>;
 const SLICE_ROWS = 500;
 const counts = ['upserted','deleted','appliedNow','added','removed','dimension','localCount','written','sourceCount'];
@@ -51,7 +51,7 @@ export async function runRagBridgeJob(job: RagJob, authorize: () => Promise<void
     let upserted = 0, deleted = 0, batches = 0;
     while (true) {
         await authorize();
-        const result = checkedResult(await syncRagDb({projectKey:job.projectId,project:folder,limit:SLICE_ROWS},folder,authorize),job);
+        const result = checkedResult(await syncRagDb({projectKey:job.projectId,project:folder,limit:SLICE_ROWS},folder,authorize,{allowEmpty:job.allowEmpty}),job);
         await authorize();
         const remaining = Number(result.remaining), appliedNow = Number(result.appliedNow);
         const currentProfile = JSON.stringify(Object.entries(result.indexProfile as Result).sort(([a],[b])=>a.localeCompare(b)));
@@ -59,7 +59,7 @@ export async function runRagBridgeJob(job: RagJob, authorize: () => Promise<void
             throw new Error('Локальный индекс изменился между пакетами. Дождитесь завершения индексации и повторите синхронизацию.');
         }
         snapshotHash = result.snapshotHash; profile = currentProfile;
-        if (!Number.isSafeInteger(appliedNow) || appliedNow<0 || appliedNow>SLICE_ROWS || !Number.isSafeInteger(result.localCount) || Number(result.localCount)<=0
+        if (!Number.isSafeInteger(appliedNow) || appliedNow<0 || appliedNow>SLICE_ROWS || !Number.isSafeInteger(result.localCount) || Number(result.localCount)<0 || !job.allowEmpty&&result.localCount===0
             || remaining>0 && (appliedNow===0 || remaining>=previousRemaining) || result.complete!==(remaining===0)) {
             throw new Error('Синхронизация не подтвердила продвижение до полного индекса. Повторите после проверки модели и индексации.');
         }

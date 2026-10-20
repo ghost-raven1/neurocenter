@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, type OnModuleInit, type BeforeApplicationShutdown } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, Optional, type OnModuleInit, type BeforeApplicationShutdown } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
 import { ModelsService } from './models.service';
@@ -6,6 +6,9 @@ import { OllamaClient } from './ollama-client';
 import { ModelHostingRepository } from './hosting.repository';
 import { hostingOperation, type HostingAction, type IHostingJobRow, type IHostingProgress, type IModelHosting } from './hosting.types';
 import type { IModel } from './model.types';
+import { RemoteConnectionService } from './remote-connection.service';
+import { isRemoteModel } from './remote-model.types';
+import { ModelBundleRuntime } from './model-bundle-runtime';
 
 const lock = "hashtextextended('neurocenter:model-hosting',0)";
 const actions: readonly string[] = ['start', 'stop', 'check'];
@@ -19,7 +22,8 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
     private readonly starting = new Set<Promise<void>>();
     private stopping = false;
 
-    constructor(private readonly models: ModelsService, private readonly access: AccessDb, private readonly runtime: OllamaClient) {
+    constructor(private readonly models: ModelsService, private readonly access: AccessDb, private readonly runtime: OllamaClient,
+        @Optional() private readonly remote?: RemoteConnectionService, @Optional() private readonly bundles?: ModelBundleRuntime) {
         this.repository = new ModelHostingRepository(models.pool);
     }
 
@@ -55,6 +59,11 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         const latest = await this.currentJob(model.id);
         if (latest?.state === 'running') {
             return { state: 'busy', message: latest.message, checkedAt: await this.repository.checkedAt(model.id), operation: hostingOperation(latest) };
+        }
+        if (isRemoteModel(model)) {
+            if (!this.remote) throw new Error('Сервис удалённых подключений не зарегистрирован.');
+            const current = await this.remote.status(model);
+            return { ...current, ...(latest ? { operation: hostingOperation(latest) } : {}) };
         }
         const current = await this.runtime.status(model).catch(() => ({ state: 'unavailable' as const, message: 'Хостинг моделей недоступен или отключён администратором сервера.', checkedAt: null }));
         return { ...current, checkedAt: current.state === 'ready' || current.state === 'stopped' ? await this.repository.checkedAt(model.id) : null,
@@ -106,6 +115,8 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         const action = input.action as HostingAction;
         const model = await this.models.get(id);
         if (model.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
+        if (model.archivedAt) throw new ConflictException('Модель убрана из общего каталога. Существующие подключения сохранены.');
+        if (isRemoteModel(model) && action !== 'check') throw new BadRequestException('Для удалённого API доступна проверка подключения. Управление процессом выполняется у провайдера.');
         const lease = await this.models.pool.connect();
         let transferred = false, locked = false, released = false, discard = false;
         const disconnected = () => { discard = true; };
@@ -170,8 +181,18 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             const claims = await this.access.claims(row.actor);
             if (!claims.userRoles.includes('Главный админ')) { throw new Error('Права управления хостингом отозваны.'); }
             abort.signal.throwIfAborted();
-            if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
+            if (isRemoteModel(model)) {
+                if (!this.remote) throw new Error('Сервис удалённых подключений не зарегистрирован.');
+                await this.remote.check(model, row.actor, async () => {
+                    const current = await this.access.claims(row.actor);
+                    if (!current.userRoles.includes('Главный админ')) throw new Error('Права управления подключением отозваны.');
+                }, abort.signal);
+            } else if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
             else {
+                if (row.action === 'start') {
+                    if (!this.bundles) throw new Error('Исполнитель проверенных поставок моделей не зарегистрирован.');
+                    await this.bundles.prepare(model, progress, abort.signal);
+                }
                 const verified = row.action === 'start' ? await this.runtime.start(model, progress, abort.signal) : await this.runtime.check(model, abort.signal);
                 abort.signal.throwIfAborted();
                 await this.models.pinVerified(model, verified, row.actor, async () => {

@@ -4,7 +4,8 @@ import type {Socket} from 'node:net';
 import {DeviceEmbeddingService} from '../src/models/device-embedding.service';
 import {requireFeatureEnabled} from '../src/features/require-feature-enabled';
 import type {Device,DeviceStore} from '../src/devices/device-store';
-import type {ProjectEmbeddingService} from '../src/models/project-embedding.service';
+import type {HostedRagGrantService} from '../src/models/hosted-rag-grant.service';
+import {localModelAlias} from '../src/models/local-model-alias';
 import {OllamaClient} from '../src/models/ollama-client';
 import type {IConfiguredProjectEmbedding} from '../src/models/project-embedding.types';
 
@@ -15,7 +16,7 @@ const modelPin='b'.repeat(64),alias=`neurocenter/model-deadline/sha256/${modelPi
 const selected:IConfiguredProjectEmbedding={projectId,revision:1,expectedDimension:3,modelPin,profile:{provider:'openai',model:alias,dimension:3},
     model:{id:'model-deadline',name:'Тестовая модель',description:'',capability:'embedding',runtime:'ollama',model:'fixture:1',manifestSha256:modelPin,
         dimension:3,source:'builtin',revision:1,createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'}};
-const input={projectId,bindingId,instanceId,expectedRevision:1,expectedModelPin:modelPin,model:alias,input:['Первый текст','Второй текст']};
+const input={projectId,bindingId,instanceId,expectedRevision:1,expectedModelPin:modelPin,installation:{kind:'mcp' as const,id:'rag-fixture',version:1,manifest:'c'.repeat(64)},model:alias,input:['Первый текст','Второй текст']};
 const vectors={embeddings:[[1,0,0],[0,1,0]]};
 const claim={userRoles:['Разработчик'],projects:[{projectId,role:'Разработчик'}]};
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>{resolve=yes;});return {promise,resolve};}
@@ -26,10 +27,10 @@ function observed<T>(promise:Promise<T>){
 async function flush(){for(let index=0;index<24;index++)await Promise.resolve();}
 function fixture(runtime?:OllamaClient){
     const owned=vi.fn().mockResolvedValue(device),claims=vi.fn().mockResolvedValue(claim),query=vi.fn().mockResolvedValue({rows:[{id:projectId}]}),
-        requireCurrent=vi.fn().mockResolvedValue(selected),infer=vi.fn().mockResolvedValue(vectors);
+        requireGrant=vi.fn().mockResolvedValue(selected),infer=vi.fn().mockResolvedValue(vectors);
     const service=new DeviceEmbeddingService({owned,access:{claims},pool:{query}} as unknown as DeviceStore,
-        {requireCurrent} as unknown as ProjectEmbeddingService,runtime??{infer} as unknown as OllamaClient);
-    return {service,owned,claims,query,requireCurrent,infer};
+        runtime??{infer} as unknown as OllamaClient,{require:requireGrant} as unknown as HostedRagGrantService);
+    return {service,owned,claims,query,requireGrant,infer};
 }
 beforeEach(()=>{vi.useFakeTimers();vi.mocked(requireFeatureEnabled).mockReset().mockResolvedValue(undefined);});
 afterEach(()=>{vi.useRealTimers();});
@@ -43,13 +44,13 @@ describe('Абсолютный бюджет embedding устройства',()=>
         expect(context.infer.mock.calls[0][3]).toBeInstanceOf(AbortSignal);expect(context.infer.mock.calls[0][3].aborted).toBe(true);
         pending.resolve(vectors);await flush();expect(context.owned).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
     });
-    it.each(['owned','claims','query','requireCurrent'] as const)('Зависшая проверка %s завершается вовремя и не продолжает цепочку после deadline',async stage=>{
+    it.each(['owned','claims','query','requireGrant'] as const)('Зависшая проверка %s завершается вовремя и не продолжает цепочку после deadline',async stage=>{
         const context=fixture(),pending=deferred<unknown>();context[stage].mockReturnValueOnce(pending.promise);
         const result=observed(context.service.embed(device,input));await flush();
         await vi.advanceTimersByTimeAsync(105000);expect(result.done).toBe(true);expect(result.error).toMatchObject({status:503});
-        const counts=[context.owned,context.claims,context.query,context.requireCurrent].map(mock=>mock.mock.calls.length);
-        pending.resolve(({owned:device,claims:claim,query:{rows:[{id:projectId}]},requireCurrent:selected})[stage]);await flush();
-        expect([context.owned,context.claims,context.query,context.requireCurrent].map(mock=>mock.mock.calls.length)).toEqual(counts);
+        const counts=[context.owned,context.claims,context.query,context.requireGrant].map(mock=>mock.mock.calls.length);
+        pending.resolve(({owned:device,claims:claim,query:{rows:[{id:projectId}]},requireGrant:selected})[stage]);await flush();
+        expect([context.owned,context.claims,context.query,context.requireGrant].map(mock=>mock.mock.calls.length)).toEqual(counts);
         expect(context.infer).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
     });
     it('Проверка флагов входит в общий бюджет и не запускает поздний inference',async()=>{
@@ -94,7 +95,7 @@ describe('Абсолютный бюджет embedding устройства',()=>
     });
     it('Быстрый успешный ответ сохраняет свежую проверку до и после inference и очищает таймер',async()=>{
         const context=fixture();const value=await context.service.embed(device,input);
-        expect(value).toMatchObject({model:alias});expect(context.owned).toHaveBeenCalledTimes(2);expect(context.requireCurrent).toHaveBeenCalledTimes(2);
+        expect(value).toMatchObject({model:alias});expect(context.owned).toHaveBeenCalledTimes(2);expect(context.requireGrant).toHaveBeenCalledTimes(2);
         expect(context.infer).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
     });
 });
@@ -107,7 +108,7 @@ describe('Настоящий HTTP-транспорт embedding устройст�
         const server=http.createServer(async(req,res)=>{
             for await(const _chunk of req){/* Полностью читается только синтетический body. */}
             if(req.url==='/api/tags'){
-                tagsRequests++;res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({models:[{name:selected.model.model,digest:modelPin}]}));return;
+                tagsRequests++;res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({models:[{name:localModelAlias(selected.model),digest:modelPin}]}));return;
             }
             if(req.url!=='/api/embed'){res.writeHead(404).end();return;}
             const close=deferred<void>(),request=arrived[embeddingRequests++];res.once('close',()=>close.resolve());
@@ -119,7 +120,7 @@ describe('Настоящий HTTP-транспорт embedding устройст�
         const runtime=new OllamaClient({fetch:globalThis.fetch,env:{NODE_ENV:'test',MODEL_RUNTIME_URL:`http://127.0.0.1:${port}`}}),context=fixture(runtime);
         const replies:Array<Promise<unknown>>=[];
         const run=(signal?:AbortSignal)=>{const request=context.service.embed(device,input,signal);replies.push(request);return observed(request);};
-        const complete=(response:ServerResponse)=>response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({model:selected.model.model,...vectors}));
+        const complete=(response:ServerResponse)=>response.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({model:localModelAlias(selected.model),...vectors}));
         try{
             const timedOut=run(),first=await arrived[0].promise;
             await vi.advanceTimersByTimeAsync(105000);expect(timedOut.done).toBe(true);expect(timedOut.error).toMatchObject({status:503});

@@ -1,5 +1,5 @@
-import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
-import type { Pool, PoolClient } from 'pg';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import type { Pool } from 'pg';
 
 import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/dependency-pins.cjs';
 import { securityEvent } from '../access/security-events';
@@ -75,36 +75,4 @@ export async function reserveSkillDependencies(pool: Pool, raw: unknown): Promis
         return { reserved: entries.length };
     } catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
-}
-
-/** Сохранённый резерв защищает текущие, исторические и ещё не записанные файловые снимки. */
-export async function assertSkillReservationsUnreferenced(client: PoolClient, id: string): Promise<void> {
-    const used = await client.query('SELECT 1 FROM skill_dependency_reservations WHERE dependencies @> $1::jsonb LIMIT 1', [JSON.stringify([{ id }])]);
-    if (used.rows.length) {
-        throw new ConflictException('Инструмент закреплён в текущей или исторической версии скилла либо зарезервирован для её записи. Удаление нарушит восстановление.');
-    }
-}
-
-/** Старые файловые снимки проверяются при каждом удалении; отказ сервиса запрещает удаление. */
-export async function assertRemoteSkillUnreferenced(id: string): Promise<void> {
-    try {
-        const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
-        const base = new URL(process.env.SKILLS_SERVICE_URL || 'http://localhost:4200');
-        if (!token || !['http:', 'https:'].includes(base.protocol) || base.username || base.password) { throw new Error('Недоступна служебная конфигурация'); }
-        const url = new URL('/internal/skill-dependencies/usage', base);
-        url.searchParams.set('assetId', id);
-        const response = await fetch(url, { headers: { 'x-neurocenter-internal': token }, redirect: 'error', signal: AbortSignal.timeout(5000) });
-        if (response.status !== 200) { throw new Error('Сервис скиллов недоступен'); }
-        const usage: unknown = await response.json();
-        if (!usage || typeof usage !== 'object' || Array.isArray(usage)
-            || Object.keys(usage).some(key => key !== 'inUse') || typeof (usage as { inUse?: unknown }).inUse !== 'boolean') {
-            throw new Error('Некорректный ответ сервиса скиллов');
-        }
-        if ((usage as { inUse: boolean }).inUse) {
-            throw new ConflictException('Удаление остановлено: инструмент нужен сохранённым версиям скиллов. Удаление текущего файла не очищает историю.');
-        }
-    } catch (error) {
-        if (error instanceof ConflictException) { throw error; }
-        throw new ServiceUnavailableException('Не удалось проверить зависимости скиллов. Удаление остановлено; повторите после восстановления сервиса.');
-    }
 }

@@ -1,10 +1,11 @@
 import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Drawer, Empty, Input, List, Pagination, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Input, List, Pagination, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import { PageHeading } from '../../common/components/PageHeading';
+import AccessibleDrawer from '../../common/components/AccessibleDrawer';
 import StatusTag from '../../common/components/StatusTag';
 import type { IAuditEvent } from '../../core/api/interfaces';
 import { useAppDispatch } from '../../core/hooks';
@@ -12,7 +13,8 @@ import { useSectionUpdates } from '../../core/socket/useSectionUpdates';
 import { RootState } from '../../store';
 
 import AuditDetails from './AuditDetails';
-import { auditActorLabel, auditResourceLabel, describeAuditAction, filterAuditPage, formatAuditTime } from './auditHelpers';
+import { auditActorLabel, describeAuditAction, filterAuditPage, formatAuditTime } from './auditHelpers';
+import { auditEventSummary, auditResourceKind, auditResourceTitle } from './auditPresentation';
 import { startAuditRefresh } from './auditRefresh';
 import { fetchAudit } from './redux/actions';
 import { setPage } from './redux/reducers';
@@ -61,10 +63,10 @@ const Audit: FC = () => {
     const columns: ColumnsType<IAuditEvent> = [
         { title: 'Дата и время', dataIndex: 'at', key: 'at', width: 180, render: (value: string) => formatAuditTime(value) },
         { title: 'Действие', key: 'action', width: 170, render: (_: unknown, event) => actionTag(event) },
-        { title: 'Ресурс', key: 'resource', render: (_: unknown, event) => <Space direction="vertical" size={2}><Text type="secondary">{auditResourceLabel(event.resourceType)}</Text><Text>{event.resourceId || 'Не указан'}</Text></Space> },
+        { title: 'Ресурс', key: 'resource', render: (_: unknown, event) => <Space direction="vertical" size={2}><Text type="secondary">{auditResourceKind(event)}</Text><Text strong>{auditResourceTitle(event)}</Text>{auditEventSummary(event) && <Text type="secondary">{auditEventSummary(event)}</Text>}</Space> },
         { title: 'Исполнитель', dataIndex: 'actor', key: 'actor', width: 190, render: (value: string) => auditActorLabel(value) },
         { title: 'Результат', dataIndex: 'outcome', key: 'outcome', width: 130, render: (value: string) => <StatusTag status={value} /> },
-        { title: '', key: 'details', width: 105, render: (_: unknown, event) => <Button size="small" onClick={() => setSelected(event)} aria-label={`Подробности: ${describeAuditAction(event.action).label}, ${event.resourceId || event.id}`}>Подробнее</Button> },
+        { title: '', key: 'details', width: 105, render: (_: unknown, event) => <Button size="small" onClick={() => setSelected(event)} aria-label={`Подробности: ${describeAuditAction(event.action).label}, ${auditResourceTitle(event)}`}>Подробнее</Button> },
     ];
     const empty = <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -113,9 +115,10 @@ const Audit: FC = () => {
                     renderItem={event => <List.Item key={event.id} className="audit-page__event">
                         <div className="audit-page__event-header"><Text type="secondary">{formatAuditTime(event.at)}</Text><StatusTag status={event.outcome} /></div>
                         <div>{actionTag(event)}</div>
-                        <Text>{auditResourceLabel(event.resourceType)} · {event.resourceId || 'не указан'}</Text>
-                        <Text type="secondary">{auditActorLabel(event.actor)}</Text>
-                        <Button size="small" onClick={() => setSelected(event)} aria-label={`Подробности: ${describeAuditAction(event.action).label}, ${event.resourceId || event.id}`}>Подробнее</Button>
+                        <div className="audit-page__resource"><Text type="secondary">{auditResourceKind(event)}</Text><Text strong>{auditResourceTitle(event)}</Text></div>
+                        {auditEventSummary(event) && <Text className="audit-page__event-summary">{auditEventSummary(event)}</Text>}
+                        <Text type="secondary">Исполнитель: {auditActorLabel(event.actor)}</Text>
+                        <Button size="small" onClick={() => setSelected(event)} aria-label={`Подробности: ${describeAuditAction(event.action).label}, ${auditResourceTitle(event)}`}>Подробнее</Button>
                     </List.Item>}
                 />
             </div>
@@ -125,9 +128,9 @@ const Audit: FC = () => {
                 disabled={loading} locale={{ prev_page: 'Предыдущая страница', next_page: 'Следующая страница' }}
             />}
         </Card>
-        <Drawer title="Подробности события" open={Boolean(selected)} onClose={() => setSelected(null)} width="min(560px, 100vw)" destroyOnClose>
+        <AccessibleDrawer title="Подробности события" open={Boolean(selected)} onClose={() => setSelected(null)} width="min(560px, 100vw)" destroyOnClose>
             {selected && <AuditDetails key={selected.id} event={selected} />}
-        </Drawer>
+        </AccessibleDrawer>
     </div>;
 };
 

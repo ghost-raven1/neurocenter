@@ -87,7 +87,7 @@ vi.mock('antd', () => {
     return {
         Alert: ({type, message}: {type: string; message: string}) => { if (type === 'error') ui.errors.push(message); return null; },
         Button: (props: ButtonProps) => { ui.buttons.set(String(props.children), props); return null; },
-        Modal: ({open, children}: {open: boolean; children?: ReactNode}) => { if (open) ui.open = true; return open ? children : null; },
+        Modal: ({open, children, footer}: {open: boolean; children?: ReactNode; footer?: ReactNode}) => { if (open) ui.open = true; return open ? createElement('div', null, children, footer) : null; },
         Form: Object.assign(({children}: {children?: ReactNode}) => { ui.form = true; return children; }, {Item: content}),
         Input: Object.assign(input, {Search: input, TextArea: input}), Radio: {Group: () => null}, Select: input,
         Collapse: Object.assign(content, {Panel: content}), Checkbox: content, Col: content, Row: content, Empty: content,

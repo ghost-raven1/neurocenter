@@ -6,7 +6,10 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
+import {toolRuntimePath} from './supply-layout.mjs';
 import { readyManifest } from './manifest.mjs';
+import {exportBuiltAsset} from './source-envelope.mjs';
+import {capturePreparedSource} from './prepared-source-snapshot.mjs';
 import { packRuntime } from './pack.mjs';
 import { publishCatalog } from './publish.mjs';
 import { installDependencies } from './recipes/upstream.mjs';
@@ -182,6 +185,7 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
     const destination = await inspectBuildOutput(output);
     const files = await inspectRecipe(recipe, recipeDirectory, destination);
     if (dryRun) { return { ok: true, dryRun: true, key: recipe.key, kind: recipe.kind, targets: recipe.targets, output: destination }; }
+    const prepared=recipe.source.type==='prepared'?await capturePreparedSource():undefined,preparedInputs=prepared?.files;
     await fs.mkdir(destination, { recursive: true });
     if ((await fs.readdir(destination)).length) { throw new Error('Папка output перестала быть пустой.'); }
     const lockPath = path.join(destination, '.build-lock.json');
@@ -214,6 +218,8 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
                 }
                 const archivePath = `${recipe.key}-${target}.tar.gz`;
                 const descriptor = await packRuntime({ directory, archivePath: path.join(destination, archivePath), target, entrypoint, executables });
+                const finalArchive=path.join(destination,toolRuntimePath(descriptor.sha256));await fs.mkdir(path.dirname(finalArchive),{recursive:true});
+                await fs.rename(path.join(destination,archivePath),finalArchive);
                 const descriptorPath = `${recipe.key}-${target}.json`;
                 await fs.writeFile(path.join(destination, descriptorPath), JSON.stringify(descriptor, null, 2) + '\n', { flag: 'wx' });
                 artifacts.push({ archivePath, descriptorPath }); descriptors.push(descriptor);
@@ -228,9 +234,9 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
                 await onProgress?.({ type: 'build-progress', target, completed: descriptors.length, total: recipe.targets.length });
             } finally { await fs.rm(directory, { recursive: true, force: true }); }
         }
-        const manifest = { schemaVersion: 1, tools: [{ key: recipe.key, publication: publication(recipe, configuration(recipe, sourceConfig, descriptors)), artifacts }] };
-        const manifestPath = path.join(destination, 'ready.json');
-        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+        if(prepared&&(await capturePreparedSource()).revision!==prepared.revision)throw new Error('Исходники producer изменились во время сборки. Архивы сохранены, asset не опубликован; повторите сборку.');
+        const manifestPath=await exportBuiltAsset({recipe,recipeDirectory,destination,preparedInputs,
+            publication:publication(recipe,configuration(recipe,sourceConfig,descriptors)),descriptors,sources,locks});
         await readyManifest(manifestPath);
         verified = true;
         // Путь от provenance остаётся действительным при переносе готовой поставки.
@@ -239,10 +245,10 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
         await fs.writeFile(path.join(destination, 'provenance.json'), JSON.stringify({ schemaVersion: 1, recipePath: recipeSnapshot, recipeSha256: hash(JSON.stringify(recipe)),
             nodeVersion: process.versions.node, sources, locks, artifacts: descriptors, runtimeChecked: false }, null, 2) + '\n', { flag: 'wx' });
         const result = { ok: true, dryRun: false, manifest: manifestPath, key: recipe.key, targets: recipe.targets, runtimeChecked: false };
-        return publish ? { ...result, publication: await publishCatalog({ manifest: manifestPath, baseUrl: 'http://localhost:5173', dryRun: false }) } : result;
+        return publish ? { ...result, publication: await publishCatalog({ asset: manifestPath, baseUrl: 'http://localhost:5173', dryRun: false }) } : result;
     } catch (error) {
-        // ready.json существует только для полностью проверяемого комплекта; staging всегда удалён.
-        if (!verified) { await fs.rm(path.join(destination, 'ready.json'), { force: true }); }
+        // asset.json существует только для полностью проверяемого комплекта; staging всегда удалён.
+        if (!verified) { await fs.rm(path.join(destination, 'asset.json'), { force: true }); }
         throw error;
     } finally {
         await fs.rm(path.join(destination, '.source-cache'), { recursive: true, force: true });

@@ -29,7 +29,7 @@ describe('Приём сборки не переживает владельца �
         lease={query:vi.fn().mockResolvedValue({rows:[]})} as unknown as PoolClient;
         worker=deferred();unblock=()=>{};destroyed=false;
         service=new PackageBuildService({claims:vi.fn().mockResolvedValue({userRoles:['Главный админ']})} as unknown as AccessDb,
-            {} as RuntimeArtifacts,{} as CatalogService);
+            {} as RuntimeArtifacts,{} as CatalogService,{} as never);
         repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn()};
         Object.assign(service,{lease,repository,stagingRoot:async()=>'/unused-admission-stage',execute:vi.fn(()=>worker.promise)});
     });

@@ -11,10 +11,14 @@ const fixture = vi.hoisted(() => ({
     projectSelect: undefined as { onChange: (value: string) => void; value: string; options: Array<{value: string; label: string}> } | undefined,
     bridgeProject: undefined as string | undefined,
     push: vi.fn(), replace: vi.fn(), refresh: vi.fn(),
+    readBridge:vi.fn(),
 }));
 vi.mock('react-router-dom', () => ({ useLocation: () => fixture.location,
     useHistory: () => ({ push: fixture.push, replace: fixture.replace }) }));
 vi.mock('../src/modules/Projects/useAvailableProjects', () => ({ useAvailableProjects: () => fixture }));
+vi.mock('react-redux',()=>({useSelector:(selector:(state:unknown)=>unknown)=>selector({userBlock:{user:{activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]}}})}));
+vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>{fixture.readBridge();return {devices:[],device:undefined,devicesReady:false,errors:{devices:'',jobs:'',installations:''},loading:false,reload:vi.fn()};}}));
+vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
 vi.mock('../src/modules/Start/BridgeSetup', () => ({ BridgeSetup: ({ projectId }: { projectId?: string }) => {
     fixture.bridgeProject = projectId; return null;
 } }));
@@ -101,5 +105,21 @@ describe('Выбор папки из начала работы сохраняе�
         fixture.error = 'Список устарел'; render(); expect(fixture.bridgeProject).toBeUndefined();
         fixture.error = ''; fixture.location.search = '?step=1&p=prj-deleted'; render();
         expect(fixture.bridgeProject).toBeUndefined();
+    });
+
+    it('Возврат с последнего этапа доступен при отказе списка и сохраняет контекст', () => {
+        fixture.location.search='?step=2&p=prj-dossier-ko&extension=rag';fixture.error='Нет связи';
+        render();fixture.buttons.get('Назад')?.onClick?.();
+        expect(fixture.replace).toHaveBeenCalledExactlyOnceWith('/start?step=1&p=prj-dossier-ko&extension=rag#setup');
+    });
+    it('Пустой список и недоступный deep link имеют разные понятные состояния', () => {
+        fixture.projects=[];expect(render()).toContain('Нет доступных проектов');
+        fixture.projects=[{id:'prj-example',name:'example'}];
+        expect(render()).toContain('Проект недоступен');
+        expect(fixture.buttons.get('Выбрать папку и связать проект')?.disabled).toBe(true);
+    });
+    it('Читает подключения только в дочернем последнем этапе',()=>{
+        fixture.location.search='?step=0';render();fixture.location.search='?step=1';render();expect(fixture.readBridge).not.toHaveBeenCalled();
+        fixture.location.search='?step=2';render();expect(fixture.readBridge).toHaveBeenCalledOnce();
     });
 });

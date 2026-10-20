@@ -18,15 +18,15 @@ async function main() {
     const previous=await runPreviousHook({root,hook,args});
     if(previous) {process.exitCode=previous;return;}
     if(process.env.NEUROCENTER_ASSETS_SKIP_HOOK==='1'||!shouldSyncAfterHook(hook,args))return;
-    console.error('\nНейроцентр · Подготовка поставки после обновления Git');
-    const {modelBundleProgressReporter}=await import('../models/bundle-cli.mjs');
-    await prepareAssetsWithCancellation({root,environment:await assetEnvironment(root),onProgress:modelBundleProgressReporter()});
+    console.error('\nНейроцентр · Проверка источника ассетов после обновления Git');
+    const {assetProgressReporter}=await import('./progress.mjs');
+    await prepareAssetsWithCancellation({root,environment:await assetEnvironment(root),metadataOnly:true,onProgress:assetProgressReporter()});
     await installAssetHooks({root,node:runtime.node,onlyIfInstalled:true});
-    console.error('Поставка подготовлена. Миграции и перезапуск выполняются штатной командой запуска.');
+    console.error('Описания ассетов проверены. Карточки импортируются по выбору главного администратора.');
 }
 
 main().catch(error=>{
     console.error(error.message);
-    console.error('Код Git обновлён, но поставка не готова. Повторите: npm run assets:sync. Запуск повторит проверку.');
+    console.error('Код Git обновлён, но источник ассетов не проверен. Повторите: npm run assets:sync -- --metadata-only. Запуск повторит проверку.');
     process.exitCode=error.signal==='SIGINT'?130:error.signal==='SIGTERM'?143:1;
 });

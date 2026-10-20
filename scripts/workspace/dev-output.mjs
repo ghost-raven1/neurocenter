@@ -1,7 +1,7 @@
 const clean = value => String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
 
 /** Общий вывод dev-команд: цвета только в TTY, сообщения об ошибках — в stderr. */
-export function createDevOutput({stdout = process.stdout, stderr = process.stderr, env = process.env} = {}) {
+export function createDevOutput({stdout = process.stdout, stderr = process.stderr, env = process.env, defaultProfile} = {}) {
     const paint = (stream, code, value) => stream.isTTY && env.TERM !== 'dumb' && !Object.hasOwn(env, 'NO_COLOR')
         ? `\x1b[${code}m${value}\x1b[0m` : value;
     const line = value => stdout.write(`${value}\n`);
@@ -23,7 +23,7 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
         logs(name, text) { line(`\n${paint(stdout, '36', `── ${clean(name)} ──`)}\n${text}`); },
         help() {
             output.heading('Локальная среда', 'Запуск, остановка и проверка проекта');
-            output.info('Использование', 'scripts/dev.sh <команда>');
+            output.info('Использование', 'scripts/dev.sh <команда> [--profile fast|standard|full]');
             line('');
             for (const [command, description] of [
                 ['install', 'Подготовить Docker Compose и установить зависимости'],
@@ -34,11 +34,20 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
                 ['status', 'Проверить готовность сервисов'],
                 ['tail', 'Показать последние 20 строк логов каждого сервиса'],
             ]) { line(`  ${paint(stdout, '1', command.padEnd(10))} ${description}`); }
+            line('\n  Профиль выбирается только для up:');
+            line('    up --profile fast      приложения; ассеты берутся из существующего кэша');
+            line('    up --profile standard  мост и инструменты, без загрузки весов и запуска моделей');
+            line('    up --profile full      вся поставка и хостинг моделей');
+            if(defaultProfile)output.info('Профиль без параметров',defaultProfile);
+            line('  В full веса моделей занимают около 4.13 ГиБ; мост и инструменты требуют место отдельно.');
+            line('  Fast пропускает загрузку ассетов. npm и Docker могут обращаться к сети во всех профилях.');
+            line('  Кэш и уже работающий хостинг моделей сохраняются при выборе лёгкого профиля.');
+            line('  Подготовка файлов не добавляет карточки: состав общего каталога выбирается в «Ассетах».');
             line('');
             output.info('Требования', 'Node.js 24+, npm и Docker; Compose подготовит install');
             line('\n  Первый запуск:');
             line('    scripts/dev.sh install');
-            line('    scripts/dev.sh up');
+            line('    scripts/dev.sh up --profile standard');
             line('\n  Справка: scripts/dev.sh --help\n');
         },
     };

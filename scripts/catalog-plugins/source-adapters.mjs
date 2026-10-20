@@ -1,7 +1,11 @@
+import archiveSource from '../../services/shared/archive-source.cjs';
+import {inspectArchiveSource,prepareArchiveSource} from './archive-source.mjs';
 import { createRequire } from 'node:module';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Transform } from 'node:stream';
+import { crc32 } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { installDependencies } from './recipes/upstream.mjs';
@@ -23,6 +27,7 @@ const localDirectory = value => typeof value === 'string' && (value === '.' || r
 
 /** Источник меняет подготовку дерева, но не формат архива, одобрение или установку. */
 export function validateAdditionalSource(source) {
+    if(source.type==='archive')return archiveSource.validateArchiveSource(source);
     if (source.type === 'prepared') {
         if (!exact(source, ['type', 'adapter']) || !['opencode-rag', 'opencode-rag-plugin', 'opencode-snip', ...npmTools.map(tool => tool.key), ...filePlugins.map(tool => tool.key)].includes(source.adapter)) throw new Error('Неизвестный подготовленный адаптер.');
     } else if (source.type === 'repository') {
@@ -46,6 +51,7 @@ export function additionalSourceTargets(source) {
     if (source.type === 'repository' && ragSource.isPreparedRagRepository(source)) return RAG_SUPPORTED_TARGETS;
     if (source.type === 'release') return Object.keys(source.assets);
     if (source.type === 'runtime') return runtimeSource.runtimeSourceTargets(source);
+    if (source.type === 'archive') return runtimeSource.runtimeSourceTargets(source.runtimeSource);
     if (source.type === 'repository' && source.runtimeSource) return runtimeSource.runtimeSourceTargets(source.runtimeSource);
 }
 
@@ -79,6 +85,7 @@ async function projectFiles(source, recipeDirectory, limits = { filesCount: 100,
 
 /** Dry-run читает исходники и проверяет границы; зависимости и компилятор не запускаются. */
 export async function inspectAdditionalSource(source, { recipeDirectory, output }) {
+    if(source.type==='archive')return inspectArchiveSource(source,recipeDirectory);
     if (source.type === 'runtime') return inspectRuntimeSource(source, { recipeDirectory, output });
     if (source.type !== 'project') return;
     const { directory } = await projectFiles(source, recipeDirectory);
@@ -155,12 +162,18 @@ async function prepareProject(recipe, { directory, recipeDirectory, target }, { 
 
 export async function extractRelease(archive, asset, directory) {
     if ((await fs.stat(archive)).size > runtime.LIMITS.compressedBytes) throw new Error('Архив релиза превышает 256 МиБ.');
-    const names = new Set(); let count = 0, bytes = 0;
+    const names = new Set(), prefixes = new Map(); let count = 0, bytes = 0;
     const check = (name, size, type) => {
         const normalized = name.replace(/^(?:\.\/)+/, '').replace(/\/$/, '');
         if (!normalized && type === 'Directory') return;
-        if (!runtime.portablePath(normalized) || !['File', 'Directory'].includes(type) || names.has(normalized.toLowerCase())) throw new Error('Ссылка, повтор или небезопасный путь в релизе.');
-        names.add(normalized.toLowerCase());
+        if (!runtime.portablePath(normalized) || !['File', 'Directory'].includes(type) || names.has(normalized.normalize('NFC').toLowerCase())) throw new Error('Ссылка, повтор или небезопасный путь в релизе.');
+        const parts = normalized.split('/');
+        for (let length = 1; length <= parts.length; length++) {
+            const prefix = parts.slice(0, length).join('/'), key = prefix.normalize('NFC').toLowerCase();
+            if (prefixes.has(key) && prefixes.get(key) !== prefix) throw new Error('Конфликт регистра или Unicode в пути релиза.');
+            prefixes.set(key, prefix);
+        }
+        names.add(normalized.normalize('NFC').toLowerCase());
         if (type === 'File') { count++; bytes += size; }
         if (count > runtime.LIMITS.filesCount || bytes > runtime.LIMITS.unpackedBytes) throw new Error('Релиз превышает лимиты готового комплекта.');
     };
@@ -189,7 +202,9 @@ export async function extractRelease(archive, asset, directory) {
                         else {
                             await fs.mkdir(path.dirname(destination), { recursive: true });
                             const input = await new Promise((done, fail) => zip.openReadStream(entry, (error, stream) => error ? fail(error) : done(stream)));
-                            await pipeline(input, createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+                            let checksum = 0;
+                            await pipeline(input, new Transform({ transform(chunk, _encoding, done) { checksum = crc32(chunk, checksum); done(null, chunk); } }), createWriteStream(destination, { flags: 'wx', mode: 0o600 }));
+                            if (checksum !== entry.crc32) throw new Error('ZIP-файл повреждён: CRC не совпала.');
                         }
                         zip.readEntry();
                     })().catch(reject);
@@ -203,6 +218,7 @@ export async function extractRelease(archive, asset, directory) {
 
 export async function prepareAdditionalSource(recipe, context) {
     const source = recipe.source;
+    if(source.type==='archive')return prepareArchiveSource(recipe,context,{extractRelease});
     if (source.type === 'project') return prepareProject(recipe, context);
     if (source.type === 'repository') return ragSource.isPreparedRagRepository(source)
         ? prepareOpenCodeRagPlugin(context) : prepareRepository(recipe, context, { extractRelease, prepareProject });

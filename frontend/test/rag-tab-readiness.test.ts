@@ -24,10 +24,10 @@ describe('Подготовка знаний не зависит от досту�
         expect(html).toContain('Настройка модели и индекса');expect(html).not.toContain('Заиндексирован');
         expect(html).toContain('data-server-ready="unknown"');
         expect(html).toContain('data-project-embedding="project"');
-        expect(html).toContain('с локальной моделью автоматическая индексация включена по умолчанию');
-        expect(html).toContain('После подключения серверной модели выполните полное индексирование явно');
-        expect(html).toContain('подключение само не запускает индексацию');
-        expect(html).toContain('откройте интерфейс выбранной установки и явно запустите полное индексирование');
+        expect(html).toContain('перестроит локальный индекс и синхронизирует его с сервером одним действием');
+        expect(html).toContain('Прежний локальный индекс работает до проверки нового');
+        expect(html).not.toContain('подключение само не запускает индексацию');
+        expect(html).toContain('действие дождётся моста в очереди');
         expect(html).not.toContain('дождитесь индексации');
         expect(html).toContain('закройте OpenCode');
     });

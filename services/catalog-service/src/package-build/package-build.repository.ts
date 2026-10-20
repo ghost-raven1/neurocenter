@@ -30,7 +30,7 @@ export class PackageBuildRepository {
         if (!rows[0]) {throw new NotFoundException('Сборка по этому запросу ещё не найдена.');}
         return rows[0];
     }
-    async enqueue(actor: string, key: string, fingerprint: string, config: BuildConfiguration, lease?: PoolClient): Promise<BuildRow> {
+    async enqueue(actor: string, key: string, fingerprint: string, config: BuildConfiguration, lease?: PoolClient,retain?: (client:PoolClient)=>Promise<void>): Promise<BuildRow> {
         return this.transaction(async client => {
             await client.query('SELECT pg_advisory_xact_lock(72465396)');
             const previous = await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2', [actor, key]);
@@ -38,6 +38,7 @@ export class PackageBuildRepository {
                 if (previous.rows[0].request_hash !== fingerprint) { throw new ConflictException('Ключ запроса уже использован для другой сборки.'); }
                 return previous.rows[0];
             }
+            if(retain)await retain(client);
             const pending = await client.query<{count: number}>("SELECT count(*)::int AS count FROM tool_build_jobs WHERE state IN ('QUEUED','RUNNING')");
             if ((pending.rows[0]?.count ?? 0) >= 10) { throw new ConflictException('В очереди уже 10 сборок. Дождитесь освобождения места в «Операциях» и повторите запрос.'); }
             const {rows} = await client.query<BuildRow>(`INSERT INTO tool_build_jobs(id,actor,request_key,request_hash,config,state,message)

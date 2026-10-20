@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import type { IAccessActor } from '../access/access.model';
 import { projectLevel } from '../access/access.model';
@@ -6,7 +7,7 @@ import { securityEvent } from '../access/security-events';
 import type { IPackage } from '../catalog/bundle-package';
 import { DeviceArtifacts } from './device-artifacts';
 import { DeviceStore } from './device-store';
-import { assertDeviceCatalogAsset } from './device-catalog-access';
+import { assertDeviceCatalogAsset, projectAssignedPackage } from './device-catalog-access';
 import { installPlanView, type InstallPlanInput, type InstallPlanRow } from './install-plan.model';
 import { assertInstallablePackage, packageDependencies, resolveInstallationSet, verifyInstallationSet } from './installation-set';
 
@@ -30,15 +31,21 @@ export class InstallPlans {
             throw new BadRequestException('Выберите серверный проект.');
         }
         await this.permission(actor, input.projectId, 2);
-        await assertDeviceCatalogAsset(this.store.pool, input.projectId, input.assetKind, input.assetId);
-        const pkg = await this.artifacts.build(input.assetKind, input.assetId, input.version);
+        await assertDeviceCatalogAsset(this.store.pool,input.projectId,input.assetKind,input.assetId);
+        const pkg = await projectAssignedPackage(this.store.pool,input.projectId,input.assetKind,input.assetId,input.version)
+            ?? await this.artifacts.build(input.assetKind,input.assetId,input.version);
+        if(pkg.plugin.kind!==input.assetKind||pkg.plugin.id!==input.assetId||pkg.plugin.version!==input.version)throw new ConflictException('Project package identity differs from the requested tool.');
         const set = await resolveInstallationSet(this.store.pool,input.projectId,pkg,(kind,id,version) => this.artifacts.build(kind,id,version));
-        const { rows } = await this.store.pool.query<InstallPlanRow>(`INSERT INTO device_install_plans
-            (id,project_id,asset_kind,asset_id,version,manifest,package,created_by,installation_set) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            ON CONFLICT(project_id,asset_kind,asset_id,version,manifest) DO UPDATE SET manifest=EXCLUDED.manifest RETURNING *`,
-        [randomUUID(), input.projectId, input.assetKind, input.assetId, input.version, set?.manifest ?? pkg.manifest.sha256, pkg, actor.email, set ?? null]);
-        this.assertRow(rows[0]);
-        return installPlanView(rows[0]);
+        const client=await this.store.pool.connect();
+        try{
+            await client.query('BEGIN');
+            await assertDeviceCatalogAsset(client,input.projectId,input.assetKind,input.assetId,{version:pkg.plugin.version,manifest:pkg.manifest.sha256},true);
+            const {rows}=await client.query<InstallPlanRow>(`INSERT INTO device_install_plans
+                (id,project_id,asset_kind,asset_id,version,manifest,package,created_by,installation_set) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                ON CONFLICT(project_id,asset_kind,asset_id,version,manifest) DO UPDATE SET manifest=EXCLUDED.manifest RETURNING *`,
+                [randomUUID(),input.projectId,input.assetKind,input.assetId,input.version,set?.manifest??pkg.manifest.sha256,pkg,actor.email,set??null]);
+            this.assertRow(rows[0]);await client.query('COMMIT');return installPlanView(rows[0]);
+        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
     }
 
     async view(actor: IAccessActor, id: string) {
@@ -56,7 +63,6 @@ export class InstallPlans {
         const initial = await this.read(id);
         await this.permission(actor, initial.project_id, 3);
         this.assertRow(initial);
-        if (status === 'approved') { await this.catalog(initial); }
         const client = await this.store.pool.connect();
         try {
             await client.query('BEGIN');
@@ -67,6 +73,7 @@ export class InstallPlans {
             if (row.manifest !== input.expectedManifest || row.revision !== input.expectedRevision) {
                 throw new ConflictException('Решение по версии уже изменилось. Откройте план заново.');
             }
+            if(status==='approved')await this.catalog(row,client,true);
             if (row.status === status) { await client.query('COMMIT'); return installPlanView(row); }
             const saved = await client.query<InstallPlanRow>(`UPDATE device_install_plans SET status=$2,revision=revision+1,
                 approved_by=CASE WHEN $2='approved' THEN $3 ELSE approved_by END,
@@ -86,16 +93,16 @@ export class InstallPlans {
     async package(id: unknown, projectId: string, kind: unknown, assetId: unknown, version: unknown, expectedRevision: unknown, expectedManifest?: unknown): Promise<IPackage> {
         return (await this.delivery(id,projectId,kind,assetId,version,expectedRevision,expectedManifest)).package;
     }
-    async delivery(id: unknown, projectId: string, kind: unknown, assetId: unknown, version: unknown, expectedRevision: unknown, expectedManifest?: unknown) {
+    async delivery(id: unknown, projectId: string, kind: unknown, assetId: unknown, version: unknown, expectedRevision: unknown, expectedManifest?: unknown, db:Pick<PoolClient,'query'>=this.store.pool) {
         if (typeof id !== 'string' || !id) { throw new ConflictException('Сначала подготовьте план и получите одобрение версии у админа проекта.'); }
-        const row = await this.read(id);
+        const row = await this.read(id,db);
         this.assertRow(row);
         if (row.project_id !== projectId || row.asset_kind !== kind || row.asset_id !== assetId || row.version !== version || row.revision !== expectedRevision ||
             expectedManifest !== undefined && row.manifest !== expectedManifest) {
             throw new ConflictException('План не соответствует инструменту, версии или проекту.');
         }
         if (row.status !== 'approved') { throw new ConflictException('Эта версия ещё не одобрена или её одобрение отозвано админом проекта.'); }
-        await this.catalog(row);
+        await this.catalog(row,db);
         return {package: row.package, ...(row.installation_set ? { installSet: row.installation_set } : {})};
     }
 
@@ -127,9 +134,9 @@ export class InstallPlans {
             approvalRoot:{kind:row.asset_kind,id:row.asset_id,version:row.version},...(row.installation_set?{installSet:row.installation_set}:{})};
     }
 
-    private async read(id: string) {
+    private async read(id: string,db:Pick<PoolClient,'query'>=this.store.pool) {
         this.validId(id);
-        const { rows } = await this.store.pool.query<InstallPlanRow>('SELECT * FROM device_install_plans WHERE id=$1', [id]);
+        const { rows } = await db.query<InstallPlanRow>('SELECT * FROM device_install_plans WHERE id=$1', [id]);
         if (!rows[0]) { throw new NotFoundException('План установки не найден.'); }
         return rows[0];
     }
@@ -146,9 +153,8 @@ export class InstallPlans {
             throw new ConflictException('Сохранённый пакет не соответствует плану. Установка остановлена.');
         }
     }
-    private async catalog(row: InstallPlanRow) {
-        for (const pkg of row.installation_set?.packages ?? [row.package]) {
-            await assertDeviceCatalogAsset(this.store.pool,row.project_id,pkg.plugin.kind,pkg.plugin.id);
-        }
+    private async catalog(row:InstallPlanRow,db:Pick<PoolClient,'query'>=this.store.pool,lock=false) {
+        await assertDeviceCatalogAsset(db,row.project_id,row.asset_kind,row.asset_id,
+            {version:row.version,manifest:row.package.manifest.sha256},lock);
     }
 }

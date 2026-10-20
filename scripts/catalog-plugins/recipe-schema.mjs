@@ -39,7 +39,7 @@ export function validateRecipe(input) {
     const source = input.source;
     let normalizedSource = source;
     if (!object(source)) { throw new Error('Укажите объект source.'); }
-    if ((source.type === 'runtime' || source.type === 'repository' && source.runtimeSource) && input.kind !== 'mcp') { throw new Error('Автономный runtime поддерживает только MCP, не OpenCode plugin.'); }
+    if ((source.type === 'runtime' || source.type==='archive' || source.type === 'repository' && source.runtimeSource) && input.kind !== 'mcp') { throw new Error('Автономный runtime поддерживает только MCP, не OpenCode plugin.'); }
     if (source.type === 'npm') {
         if (!exact(source, ['type', 'package', 'version', 'entrypoint']) || typeof source.package !== 'string' || !packageName.test(source.package)
             || typeof source.version !== 'string' || !semver.test(source.version)) { throw new Error('Источник npm требует package, точную semver version и entrypoint. latest, URL, Git и диапазоны версий не поддерживаются.'); }

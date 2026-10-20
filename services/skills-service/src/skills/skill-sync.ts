@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {BadRequestException,ConflictException} from '@nestjs/common';
 import type {ISkillsStorage} from '../storage/skills-storage.interface';
 import type {ISkillFile,ISkillMeta,ISkillsSyncItem,ISkillsSyncResult} from './skills.model';
-import {skillPath,validateSkillCreate} from './skill-validation';
+import {skillPath,validateSkillCreate,assertSkillDependencyReplacement} from './skill-validation';
 
 /** Пакет полностью проверяется до записи; вызывается под блокировкой коллекции. */
 export async function syncProjectSkills(storage:ISkillsStorage,projectKey:string,items:ISkillsSyncItem[],context?:ISkillMutationContext):Promise<ISkillsSyncResult>{
@@ -15,7 +15,7 @@ export async function syncProjectSkills(storage:ISkillsStorage,projectKey:string
         const input=validateSkillCreate({path:directory,slug:item.slug,name:item.name,body:item.body as string,meta:{description:item.description,mcp:item.mcp,plugins:item.plugins,tags:item.tags,specialization:item.specialization,dependencies:item.dependencies}});
         if(seen.has(input.slug)){throw new BadRequestException('Идентификаторы скиллов не должны повторяться.');}seen.add(input.slug);
         if(item.version!==undefined&&(!Number.isSafeInteger(item.version)||item.version<1)){throw new BadRequestException('Версия скилла должна быть положительным целым числом.');}
-        return {input,version:item.version,dependenciesSpecified:item.dependencies!==undefined};
+        return {input,version:item.version,dependenciesSpecified:item.dependencies!==undefined,replacement:{mcp:item.mcp,plugins:item.plugins,...(item.dependencies!==undefined?{dependencies:item.dependencies}:{})}};
     });
     const entries=(await storage.listDir(directory)).filter(entry=>!entry.isDir&&entry.name.endsWith('.md'));
     if(!inputs.length&&entries.length){throw new ConflictException('Пустой источник не удаляет инструкции. Проверьте локальный каталог; отдельные скиллы можно удалить явно.');}
@@ -23,8 +23,9 @@ export async function syncProjectSkills(storage:ISkillsStorage,projectKey:string
     for(const entry of entries){const file=await storage.readSkill(directory+'/'+entry.name.slice(0,-3));before.set(file.path,file);}
     const changes:Array<{path:string;next:ISkillFile|null}>=[];
     const now=new Date().toISOString();let upserted=0;
-    for(const {input,version,dependenciesSpecified} of inputs){
+    for(const {input,version,dependenciesSpecified,replacement} of inputs){
         const relative=directory+'/'+input.slug;const previous=before.get(relative);
+        if(previous)assertSkillDependencyReplacement(previous.meta,replacement);
         if(previous&&version!==undefined&&version<previous.meta.version){throw new ConflictException(`Скилл «${input.name}» уже изменён на сервере. Загрузите актуальную версию перед синхронизацией.`);}
         const dependencies=dependenciesSpecified?input.meta?.dependencies:previous?.meta.dependencies;
         const fields={name:input.name,slug:input.slug,scope:'project' as const,projectId:projectKey,description:input.meta?.description,mcp:input.meta?.mcp||[],plugins:input.meta?.plugins||[],tags:input.meta?.tags||[],specialization:input.meta?.specialization,

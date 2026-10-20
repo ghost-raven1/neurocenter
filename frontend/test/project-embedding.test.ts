@@ -8,6 +8,7 @@ import {ProjectEmbedding,ProjectEmbeddingContent} from '../src/features/ProjectE
 import {ProjectEmbeddingConnection,ConnectEmbeddingAction} from '../src/features/ProjectEmbedding/ProjectEmbeddingConnection';
 import {embeddingConnectionInput} from '../src/features/ProjectEmbedding/connection';
 import {requireProjectEmbedding,type IProjectEmbedding} from '../src/features/ProjectEmbedding/model';
+import type {IProjectReindexPlan} from '../src/features/ProjectEmbedding/reindex';
 import {bridgeApi,type IBridgeJob} from '../src/features/McpBridge/api';
 import {ragUiFixture} from './ragUiFixture';
 
@@ -40,7 +41,7 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwne
     return{scope,captureOwner:ui.owners.get(key)!};
 }}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:()=>undefined}));
-vi.mock('../src/core/api/base',()=>({default:{get:vi.fn(),patch:vi.fn()}}));
+vi.mock('../src/core/api/base',()=>({default:{get:vi.fn(),patch:vi.fn(),post:vi.fn()}}));
 vi.mock('../src/features/ModelCatalog/api',()=>({modelCatalogApi:{list:vi.fn()}}));
 vi.mock('../src/features/McpBridge/api',()=>({bridgeApi:{create:vi.fn()}}));
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>ui.bridge}));
@@ -56,11 +57,12 @@ vi.mock('antd',async()=>{
     };
 });
 const model=(id:string,changes:Partial<ICatalogModel>={}):ICatalogModel=>({id,name:'Модель '+id,description:'',capability:'embedding',runtime:'ollama',model:'qwen3-embedding:4b',
-    manifestSha256:'c'.repeat(64),dimension:2560,source:'builtin',revision:1,createdAt:'2026-10-20',updatedAt:'2026-10-20',...changes});
+    manifestSha256:'c'.repeat(64),modelPin:(id==='a'?'d':'e').repeat(64),dimension:2560,source:'custom',revision:1,createdAt:'2026-10-20',updatedAt:'2026-10-20',...changes});
 let selection:IProjectEmbedding,catalog:IModelCatalog,current:ReturnType<typeof ragUiFixture>,mode:'panel'|'action'|'connection',canManage:boolean,canConnect:boolean;
+let serverProfile:IProjectEmbedding['profile']|undefined;
 let actionInput:ReturnType<typeof embeddingConnectionInput>;
 function render(){hooks.begin();ui.buttons.clear();ui.choices.clear();ui.consent=undefined;ui.ragUi=undefined;
-    const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:{provider:'ollama',model:'legacy:tag',dimension:2560},canManage,canConnect})
+    const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:serverProfile??selection.profile,canManage,canConnect})
         :mode==='connection'?createElement(ProjectEmbeddingConnection,{selection,disabled:false})
         :createElement(ConnectEmbeddingAction,{input:actionInput,selection,bridge:current.bridge,disabled:false,consent:'Модель А · компьютер А · /fixture/root/Проект',onPreferRagUi:ui.prefer});
     const html=renderToStaticMarkup(component);hooks.commit();return html;
@@ -69,55 +71,61 @@ async function settle(){for(let i=0;i<12;i++)await Promise.resolve();render();re
 function button(label:string){const item=ui.buttons.get(label);expect(item,`кнопка ${label}`).toBeDefined();return item!;}
 const choice=()=>ui.choices.get('Модель эмбеддингов проекта')!;
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:unknown)=>void;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
-const result=()=>({status:'connected',revision:selection.revision,modelPin:selection.modelPin,profile:selection.profile,requiresRestart:true});
+const result=()=>({status:'connected',revision:selection.revision,modelPin:selection.modelPin,profile:selection.profile,requiresRestart:true,
+    reindex:{complete:true,rowCount:3,snapshotHash:'f'.repeat(64),serverSynced:true}});
+const plan=(id='b'):IProjectReindexPlan=>({id:'12345678-1234-4234-8234-123456789012',projectId:'prj-one',state:'applied',digest:'c'.repeat(64),approved:true,progress:100,message:'Готово',createdAt:'2026-10-20T00:00:00Z',
+    data:{context:{revision:selection.revision,generation:selection.activeGeneration,dataRevision:selection.dataRevision},modelId:id,modelPin:model(id).modelPin!,
+        profile:{provider:'openai',model:`neurocenter/${id}/sha256/${model(id).modelPin}`,dimension:model(id).dimension!},sourceSnapshot:null,rowCount:0,requiredBytes:0}});
 function job(changes:Partial<IBridgeJob>={}):IBridgeJob{return current.job({kind:'connect-rag-model',...changes});}
 function checkedPlugin(){return{...current.item,assetId:'rag-plugin',assetKind:'plugin' as const,
     inspection:{...current.item.inspection!,assetId:'rag-plugin',assetKind:'plugin' as const}};}
 function consent(){render();expect(ui.consent?.checked).toBe(false);ui.consent!.onChange({target:{checked:true}});render();}
 beforeEach(()=>{
-    vi.clearAllMocks();mode='panel';canManage=true;canConnect=false;ui.scope='owner-a';ui.epoch=0;ui.owners.clear();
-    current=ragUiFixture();ui.bridge=current.bridge;current.device.report.root='/fixture/root';current.device.report.capabilities!.push('hosted-rag-model-v1');
-    current.item.hostedEmbedding={supported:true};current.item.inspection={schemaVersion:1,projectId:current.item.projectId,bindingId:current.binding.bindingId,assetId:current.item.assetId,
+    vi.resetAllMocks();mode='panel';canManage=true;canConnect=false;serverProfile=undefined;ui.scope='owner-a';ui.epoch=0;ui.owners.clear();
+    current=ragUiFixture();ui.bridge=current.bridge;current.device.report.root='/fixture/root';current.device.report.capabilities!.push('project-rag-generations-v1','hosted-rag-reindex-v1','hosted-rag-grants-v1','hosted-rag-profile-values-v1');
+    current.item.hostedEmbedding={supported:true,reindexSupported:true};current.item.inspection={schemaVersion:1,projectId:current.item.projectId,bindingId:current.binding.bindingId,assetId:current.item.assetId,
         assetKind:current.item.assetKind,version:current.item.version,manifest:current.item.manifest,checkedAt:'2026-10-20T01:00:00Z',readiness:'unverified',state:'checked',status:'synced',issues:[]};
-    selection={projectId:'prj-one',revision:2,expectedDimension:2560,model:model('a'),modelPin:'d'.repeat(64),profile:{provider:'openai',model:'nc-'+'d'.repeat(64),dimension:2560}};
+    selection={projectId:'prj-one',revision:2,expectedDimension:2560,model:model('a'),modelPin:'d'.repeat(64),profile:{provider:'openai',model:`neurocenter/a/sha256/${'d'.repeat(64)}`,dimension:2560},activeGeneration:'initial-'+'a'.repeat(32),activeSnapshot:null,dataRevision:0};
     catalog={items:[model('a'),model('b'),model('wrong',{dimension:384}),model('chat',{capability:'chat'}),model('unassigned'),model('unsealed',{manifestSha256:null})],assignedModelIds:['a','b','wrong','chat','unsealed']};
-    vi.mocked(base.get).mockImplementation(async()=>({data:selection}));vi.mocked(base.patch).mockImplementation(async(_url,body)=>({data:{...selection,revision:3,model:model((body as {modelId:string}).modelId)}}));
+    vi.mocked(base.get).mockImplementation(async url=>({data:String(url).endsWith('/reindex')?null:selection}));
+    vi.mocked(base.patch).mockImplementation(async()=>({data:{...selection,revision:3,model:null,modelPin:null,profile:null}}));
+    vi.mocked(base.post).mockImplementation(async(_url,body)=>{const next=plan((body as {modelId:string}).modelId);selection={...selection,revision:selection.revision+1,model:model(next.data.modelId),modelPin:next.data.modelPin,profile:next.data.profile};return{data:next};});
     vi.mocked(modelCatalogApi.list).mockResolvedValue(catalog);vi.mocked(bridgeApi.create).mockResolvedValue(job());
     actionInput=embeddingConnectionInput(current.item,current.binding,selection);
 });
 afterEach(()=>hooks.dispose());
 
 describe('Выбор embedding-модели проекта без скрытых операций',()=>{
-    it('Загружает выбор, показывает только назначенные совместимые модели и ничего не запускает',async()=>{
-        render();await settle();expect(choice().options.map(value=>value.value)).toEqual(['a','b']);expect(choice().value).toBe('a');
-        expect(base.patch).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();expect(button('Открыть модели в каталоге проекта').href).toBe('/projects/prj-one?tab=store&catalogTab=models');
+    it('Загружает выбор и назначенные embedding-модели всех размерностей без запуска операции',async()=>{
+        render();await settle();expect(choice().options.map(value=>value.value)).toEqual(['a','b','wrong']);expect(choice().value).toBe('a');
+        expect(base.patch).not.toHaveBeenCalled();expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();expect(button('Открыть модели в каталоге проекта').href).toBe('/projects/prj-one?tab=store&catalogTab=models');
     });
-    it('Черновик сохраняется только явной кнопкой с ожидаемой ревизией, двойной клик не повторяет PATCH',async()=>{
-        render();await settle();choice().onChange('b');render();expect(base.patch).not.toHaveBeenCalled();
-        const pending=deferred<{data:IProjectEmbedding}>();vi.mocked(base.patch).mockReturnValueOnce(pending.promise);
-        const save=button('Сохранить модель проекта');save.onClick!();save.onClick!();expect(base.patch).toHaveBeenCalledOnce();
-        expect(base.patch).toHaveBeenCalledWith('/api/projects/prj-one/embedding',{expectedRevision:2,modelId:'b'});
-        pending.resolve({data:{...selection,revision:3,model:model('b')}});await settle();expect(choice().value).toBe('b');expect(button('Сохранить модель проекта').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();
+    it('Явное подключение создаёт один reindex intent с ревизией и pin, двойной клик не повторяет POST',async()=>{
+        render();await settle();choice().onChange('b');render();expect(base.post).not.toHaveBeenCalled();
+        const pending=deferred<{data:IProjectReindexPlan}>();vi.mocked(base.post).mockReturnValueOnce(pending.promise);
+        const save=button('Подключить модель проекта');save.onClick!();save.onClick!();expect(base.post).toHaveBeenCalledOnce();
+        expect(base.post).toHaveBeenCalledWith('/api/projects/prj-one/embedding/reindex',{expectedSelectionRevision:2,expectedModelPin:model('b').modelPin,modelId:'b',requestKey:expect.any(String)});
+        const next=plan();selection={...selection,revision:3,model:model('b'),modelPin:next.data.modelPin,profile:next.data.profile};pending.resolve({data:next});await settle();expect(choice().value).toBe('b');expect(button('Подключить модель проекта').disabled).toBe(true);expect(base.patch).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
     });
-    it('Конфликт не стирает черновик; после чтения нового выбора следующий явный save использует новую ревизию',async()=>{
-        render();await settle();choice().onChange('b');render();vi.mocked(base.patch).mockRejectedValueOnce(new Error('Выбор уже изменён'));
-        button('Сохранить модель проекта').onClick!();await settle();expect(choice().value).toBe('b');expect(render()).toContain('Выбор уже изменён');
+    it('Конфликт не стирает черновик; после чтения выбора следующий явный intent использует новую ревизию',async()=>{
+        render();await settle();choice().onChange('b');render();vi.mocked(base.post).mockRejectedValueOnce(new Error('Выбор уже изменён'));
+        button('Подключить модель проекта').onClick!();await settle();expect(choice().value).toBe('b');expect(render()).toContain('Выбор уже изменён');
         selection={...selection,revision:7};button('Обновить сведения').onClick!();await settle();expect(choice().value).toBe('b');
-        button('Сохранить модель проекта').onClick!();await settle();expect(vi.mocked(base.patch).mock.calls[1][1]).toEqual({expectedRevision:7,modelId:'b'});
+        button('Подключить модель проекта').onClick!();await settle();expect(vi.mocked(base.post).mock.calls[1][1]).toEqual({expectedSelectionRevision:7,expectedModelPin:model('b').modelPin,modelId:'b',requestKey:expect.any(String)});
     });
     it('Изменившийся pin той же модели можно закрепить заново без выбора другой модели',async()=>{
         selection={...selection,blocker:'Закреплённая модель изменилась. Выберите её заново.'};render();await settle();
-        expect(button('Сохранить модель проекта').disabled).toBe(false);button('Сохранить модель проекта').onClick!();await settle();
-        expect(base.patch).toHaveBeenCalledWith('/api/projects/prj-one/embedding',{expectedRevision:2,modelId:'a'});
+        expect(button('Подключить модель проекта').disabled).toBe(false);button('Подключить модель проекта').onClick!();await settle();
+        expect(base.post).toHaveBeenCalledWith('/api/projects/prj-one/embedding/reindex',{expectedSelectionRevision:2,expectedModelPin:model('a').modelPin,modelId:'a',requestKey:expect.any(String)});
     });
     it('Удалённая модель со старым pin и профилем показывается с причиной и допускает очистку выбора',async()=>{
         selection={...selection,model:null,blocker:'Выбранная модель удалена из каталога.'};render();await settle();
-        expect(render()).toContain('Выбранная модель удалена из каталога');expect(button('Сохранить модель проекта').disabled).toBe(false);
-        button('Сохранить модель проекта').onClick!();await settle();expect(base.patch).toHaveBeenCalledWith('/api/projects/prj-one/embedding',{expectedRevision:2,modelId:null});
+        expect(render()).toContain('Выбранная модель удалена из каталога');expect(button('Отключить модель проекта').disabled).toBe(false);
+        button('Отключить модель проекта').onClick!();await settle();expect(base.patch).toHaveBeenCalledWith('/api/projects/prj-one/embedding',{expectedRevision:2,modelId:null});expect(base.post).not.toHaveBeenCalled();
     });
     it('Наблюдатель читает модель и несовместимый серверный профиль, но не видит управление',async()=>{
-        canManage=false;render();await settle();const html=render();expect(ui.choices.size).toBe(0);expect(ui.buttons.has('Сохранить модель проекта')).toBe(false);
-        expect(html).toContain('Модель a');expect(html).toContain('ollama · legacy:tag · 2560');expect(html).toContain('Текущая серверная копия сохранена');expect(html).toContain('нового проекта');expect(base.patch).not.toHaveBeenCalled();
+        canManage=false;serverProfile={provider:'ollama',model:'legacy:tag',dimension:2560};render();await settle();const html=render();expect(ui.choices.size).toBe(0);expect(ui.buttons.has('Подключить модель проекта')).toBe(false);
+        expect(html).toContain('Модель a');expect(html).toContain('ollama · legacy:tag · 2560');expect(html).toContain('Модель несовместима с существующей серверной копией');expect(html).toContain('команда продолжает работать с текущей');expect(base.patch).not.toHaveBeenCalled();expect(base.post).not.toHaveBeenCalled();
     });
     it('Сбой чтения можно повторить в той же форме без запуска моста',async()=>{
         vi.mocked(base.get).mockRejectedValueOnce(new Error('Сервис недоступен'));render();await settle();expect(render()).toContain('Сервис недоступен');
@@ -126,8 +134,8 @@ describe('Выбор embedding-модели проекта без скрытых
     it('Сбой каталога не скрывает свежую сохранённую модель и её подключение, но блокирует изменение выбора',async()=>{
         canConnect=true;vi.mocked(modelCatalogApi.list).mockRejectedValueOnce(new Error('Каталог временно недоступен'));
         render();await settle();expect(render()).toContain('Сохранённая модель');expect(render()).toContain('Модель a');expect(render()).toContain('Каталог временно недоступен');
-        expect(render()).not.toContain('Выбранная модель больше не доступна');expect(choice().disabled).toBe(true);expect(button('Сохранить модель проекта').disabled).toBe(true);
-        button('Сохранить модель проекта').onClick!();expect(base.patch).not.toHaveBeenCalled();consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        expect(render()).not.toContain('Выбранная модель больше не доступна');expect(choice().disabled).toBe(true);expect(button('Подключить модель проекта').disabled).toBe(true);
+        button('Подключить модель проекта').onClick!();expect(base.patch).not.toHaveBeenCalled();consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
         expect(bridgeApi.create).not.toHaveBeenCalled();button('Обновить сведения').onClick!();await settle();expect(choice().disabled).toBe(false);
     });
     it('Ошибка авторитетного выбора блокирует подключение даже при доступном каталоге',async()=>{
@@ -143,19 +151,28 @@ describe('Выбор embedding-модели проекта без скрытых
         canConnect=true;const old=deferred<IModelCatalog>();vi.mocked(modelCatalogApi.list).mockReturnValueOnce(old.promise);
         render();await settle();expect(render()).toContain('Модель a');expect(choice().disabled).toBe(true);consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
         hooks.dispose();ui.scope='owner-b';selection={...selection,model:model('b')};render();await settle();
-        old.resolve({items:[],assignedModelIds:[]});await settle();expect(choice().value).toBe('b');expect(choice().options.map(item=>item.value)).toEqual(['a','b']);expect(bridgeApi.create).not.toHaveBeenCalled();
+        old.resolve({items:[],assignedModelIds:[]});await settle();expect(choice().value).toBe('b');expect(choice().options.map(item=>item.value)).toEqual(['a','b','wrong']);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('Поздний GET закрытой формы и save прежнего владельца не подменяют новый выбор',async()=>{
         const old=deferred<{data:IProjectEmbedding}>();vi.mocked(base.get).mockReturnValueOnce(old.promise);render();hooks.dispose();
         selection={...selection,revision:8,model:model('b')};render();await settle();old.resolve({data:{...selection,revision:1,model:model('a')}});await settle();expect(choice().value).toBe('b');
-        const save=deferred<{data:IProjectEmbedding}>();vi.mocked(base.patch).mockReturnValueOnce(save.promise);choice().onChange('a');render();button('Сохранить модель проекта').onClick!();
-        ui.epoch++;hooks.dispose();render();await settle();save.resolve({data:{...selection,revision:9,model:model('a')}});await settle();expect(choice().value).toBe('b');
+        const save=deferred<{data:IProjectReindexPlan}>();vi.mocked(base.post).mockReturnValueOnce(save.promise);choice().onChange('a');render();button('Подключить модель проекта').onClick!();
+        ui.epoch++;hooks.dispose();render();await settle();save.resolve({data:plan('a')});await settle();expect(choice().value).toBe('b');
     });
     it('Ключ формы меняется вместе с проектом и владельцем, технически неполный DTO отклоняется',()=>{
         const first=ProjectEmbedding({projectId:'prj-one',serverHasData:false}).key;ui.scope='owner-b';
         expect(ProjectEmbedding({projectId:'prj-one',serverHasData:false}).key).not.toBe(first);
         expect(ProjectEmbedding({projectId:'prj-two',serverHasData:false}).key).not.toBe(first);
         expect(()=>requireProjectEmbedding({...selection,profile:{...selection.profile!,dimension:384}},'prj-one')).toThrow('неполный');
+    });
+    it.each(['activeGeneration','activeSnapshot','dataRevision'] as const)('Выбор без %s не считается текущим поколением',field=>{
+        const incomplete={...selection};delete (incomplete as Partial<IProjectEmbedding>)[field];
+        expect(()=>requireProjectEmbedding(incomplete,'prj-one')).toThrow('неполный');
+    });
+    it('Модель другой размерности создаёт reindex intent и не пишет прямой PATCH выбора',async()=>{
+        render();await settle();choice().onChange('wrong');render();button('Подключить модель проекта').onClick!();await settle();
+        expect(base.post).toHaveBeenCalledWith('/api/projects/prj-one/embedding/reindex',expect.objectContaining({modelId:'wrong',expectedModelPin:model('wrong').modelPin,expectedSelectionRevision:2}));
+        expect(base.patch).not.toHaveBeenCalled();
     });
 });
 
@@ -175,7 +192,7 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         current.bridge.jobs=[job({state:'succeeded',result:result()})];expect(render()).not.toContain('Подключение модели проверено');
         vi.mocked(bridgeApi.create).mockResolvedValueOnce(current.bridge.jobs[0]);button('Проверить отправленное подключение').onClick!();await settle();
         expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(vi.mocked(bridgeApi.create).mock.calls[0][0]);
-        expect(render()).toContain('Перезапустите OpenCode');expect(render()).toContain('Индекс не изменён');expect(render()).toContain('Для серверной модели автоматическая индексация отключена');
+        expect(render()).toContain('Перезапустите OpenCode');expect(render()).toContain('Локальный индекс перестроен и синхронизирован с сервером');expect(render()).toContain('Локальный поиск готов');
     });
     it('Чужая pending mutation и незавершённое подключение не дают создать новую операцию',()=>{
         mode='action';current.bridge.jobs=[job({kind:'bind-project'})];consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();
@@ -184,11 +201,17 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         mode='action';vi.mocked(bridgeApi.create).mockResolvedValueOnce(job({state:'succeeded',result:{...result(),modelPin:'f'.repeat(64)}}));
         consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();expect(render()).not.toContain('Подключение модели проверено');expect(render()).toContain('не подтверждено для текущей модели');
     });
+    it.each(['missing','unsynced'])('Подключение без завершённого receipt переиндексации не становится успехом (%s)',async state=>{
+        mode='action';const reindex=state==='missing'?undefined:{...result().reindex,serverSynced:false};
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce(job({state:'succeeded',result:{...result(),reindex}}));
+        consent();button('Подключить модель к OpenCodeRAG').onClick!();await settle();
+        expect(render()).not.toContain('Подключение модели проверено');expect(ui.prefer).not.toHaveBeenCalled();
+    });
     it('Старому мосту и пакету даёт конкретный путь обновления, а исправная установка показывает полный контекст согласия',()=>{
-        mode='connection';current.device.report.capabilities=current.device.report.capabilities!.filter(value=>value!=='hosted-rag-model-v1');
+        mode='connection';current.device.report.capabilities=current.device.report.capabilities!.filter(value=>value!=='hosted-rag-reindex-v1');
         render();expect(button('Обновить мост').href).toBe('/start');expect(bridgeApi.create).not.toHaveBeenCalled();
-        current.device.report.capabilities.push('hosted-rag-model-v1');current.item.hostedEmbedding=undefined;render();expect(ui.buttons.has('Открыть OpenCodeRAG в каталоге')).toBe(true);
-        current.item.hostedEmbedding={supported:true};const html=render();expect(html).toContain('/fixture/root/Проект');expect(html).toContain('Рабочий компьютер');expect(ui.consent?.checked).toBe(false);expect(bridgeApi.create).not.toHaveBeenCalled();
+        current.device.report.capabilities.push('hosted-rag-reindex-v1');current.item.hostedEmbedding=undefined;render();expect(ui.buttons.has('Открыть OpenCodeRAG в каталоге')).toBe(true);
+        current.item.hostedEmbedding={supported:true,reindexSupported:true};const html=render();expect(html).toContain('/fixture/root/Проект');expect(html).toContain('Рабочий компьютер');expect(ui.consent?.checked).toBe(false);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('При двух проверенных установках просит выбрать нужную и сохраняет отдельное согласие на подключение',()=>{
         mode='connection';const plugin={...current.item,assetId:'rag-plugin',assetKind:'plugin' as const,
@@ -200,12 +223,12 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
         installations.onChange(installations.options[1].value);render();expect(ui.consent?.checked).toBe(false);
         expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
-    it('Старому мосту с двумя установками объясняет обновление для совместной работы, сохраняя явное одиночное подключение',()=>{
-        mode='connection';current.bridge.installations=[current.item,checkedPlugin()];
+    it('Мост без immutable grants не разрешает подключение, обновление снимает блокировку',()=>{
+        mode='connection';current.device.report.capabilities=current.device.report.capabilities!.filter(value=>value!=='hosted-rag-grants-v1');current.bridge.installations=[current.item,checkedPlugin()];
         const html=render(),installations=ui.choices.get('Установка OpenCodeRAG для модели')!;
         expect(html).toContain('Для совместной работы MCP и плагина обновите мост и оба пакета OpenCodeRAG из каталога.');
         expect(button('Обновить мост').href).toBe('/start');expect(bridgeApi.create).not.toHaveBeenCalled();
-        installations.onChange(installations.options[0].value);consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);
+        installations.onChange(installations.options[0].value);consent();expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(true);
         current.device.report.capabilities!.push('hosted-rag-grants-v1');
         expect(render()).not.toContain('Для совместной работы MCP и плагина обновите мост');
         expect(ui.buttons.has('Обновить мост')).toBe(false);expect(button('Подключить модель к OpenCodeRAG').disabled).toBe(false);

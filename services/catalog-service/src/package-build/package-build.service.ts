@@ -1,5 +1,11 @@
-import { ConflictException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
+import {SourceUploadService} from '../source-upload/source-upload.service';
+import { inspectGithubReleaseAsset, inspectGithubRepository } from '../../../shared/release-inspection.cjs';
+import { ConflictException, ForbiddenException, Injectable, Optional, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
 import { createRequire } from 'node:module';
+import type {ToolAsset} from '@neurocenter/asset-contract';
+import {validateAsset,toToolPublication} from '@neurocenter/asset-contract';
+import {createHash} from 'node:crypto';
+import {AssetSourcesService} from '../asset-sources/asset-sources.service';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
@@ -21,8 +27,9 @@ import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
 import { PackageBuildRepository } from './package-build.repository';
 import { buildView, requestHash, validId, validateBuildInput, type BuildConfiguration, type BuildRow } from './package-build.model';
+import {createToolSupply,toolSupplyPlan} from './supply-export';
 
-interface PreparedTool {publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>}
+interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
 /** Один владелец исполняет очередь последовательно; после рестарта продолжаются ещё не начатые задания. */
 @Injectable()
@@ -41,7 +48,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private child?: ChildProcess;
     private stopping = false;
 
-    constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService) {}
+    constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService,private readonly sources:AssetSourcesService,@Optional() private readonly uploads?:SourceUploadService) {}
 
     async onModuleInit(): Promise<void> {
         await this.catalog.ensureSchema();
@@ -151,7 +158,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     }
     async repositorySource(actor: IAccessActor, input: Omit<RepositoryInput, 'type'>) {
         await this.requireMain(actor);
-        try {return await resolveRepositorySource(input);}
+        try {return await resolveRepositorySource(input, {inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository});}
         catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось проверить репозиторий GitHub.');}
     }
 
@@ -166,6 +173,41 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         return buildView(await this.repository.findByRequest(actor.email, key));
     }
 
+    /** Экспорт читает immutable source history, переживая cleanup staging и reload. */
+    async exportAsset(actor:IAccessActor,id:string){
+        return this.sources.exportLocal(await this.exportReference(actor,id));
+    }
+    private async exportReference(actor:IAccessActor,id:string){
+        await this.requireMain(actor);
+        if(!validId(id))throw new BadRequestException('Некорректный ID сборки.');
+        const row=await this.repository.get(id),result=row.result;
+        if(row.state!=='SUCCEEDED'||!result?.assetId||!result.sourceVersion||!result.sourceSha256)throw new ConflictException('Source descriptor этой сборки ещё не готов.');
+        return {assetId:result.assetId,sourceVersion:result.sourceVersion,sourceSha256:result.sourceSha256};
+    }
+    /** HEAD checks the immutable receipt without generating a second multi-gigabyte archive. */
+    async checkSupply(actor:IAccessActor,id:string){return toolSupplyPlan(await this.sources.exportLocalReceipt(await this.exportReference(actor,id)));}
+    async exportSupply(actor:IAccessActor,id:string,signal:AbortSignal){const plan=await this.checkSupply(actor,id);signal.throwIfAborted();return createToolSupply(plan,this.sources.blobs,signal);}
+
+    /** Импортирует тот же envelope и только проверяемые серверные SHA-файлы. */
+    async importAsset(actor:IAccessActor,raw:unknown){
+        await this.requireMain(actor);
+        if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['requestKey','asset'].includes(key)))throw new BadRequestException('Импорт принимает только requestKey и asset.');
+        const input=raw as {requestKey:string;asset:unknown};if(!validId(input.requestKey))throw new BadRequestException('Нужен UUID ключа импорта.');
+        let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(checked.kind!=='mcp'&&checked.kind!=='plugin')throw new BadRequestException('Нужен MCP/plugin asset.');
+        if(checked.dependencies?.length)throw new BadRequestException('Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.');
+        const asset=checked as ToolAsset,files=asset.delivery.artifacts.map(({descriptor})=>({archivePath:path.join(runtimeArtifactDirectory(),descriptor.sha256+'.tar.gz'),sha256:descriptor.sha256,bytes:descriptor.compressedBytes,filename:descriptor.sha256+'.tar.gz',target:descriptor.target}));
+        for(const [index,file]of files.entries()){
+            try{await this.artifacts.importArchive(file.archivePath,asset.delivery.artifacts[index].descriptor);}catch{throw new ConflictException('Проверенный архив поставки отсутствует или повреждён. Загрузите исходную поставку повторно.');}
+        }
+        const prepared=await this.sources.prepareLocal(asset,files,input.requestKey),bytes=createHash('sha256').update('neurocenter-source-asset\0'+asset.id+'\0'+asset.version).digest().subarray(0,16);
+        bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString('hex'),publicationKey=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        let result:unknown;
+        const saved=await new PluginRepository(this.pool).create({...toToolPublication(asset),publicationKey} as IAiPluginCreate,actor.email,async(client,card)=>{
+            await this.requireMain(actor);const source=await this.sources.recordLocal(client,prepared,card,actor.email);result={catalogId:card.id,name:card.name,version:card.version,...source};
+        });
+        return result||{catalogId:saved.id,name:saved.name,version:saved.version};
+    }
+
     async create(actor: IAccessActor, raw: unknown) {
         await this.requireMain(actor);
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
@@ -173,12 +215,19 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         if (previous) { return buildView(previous); }
         if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
         let source: BuildConfiguration['source'];
-        if (input.source.type === 'npm') {source = {type: 'npm', ...await resolveNpmSource(input.source.specifier, input.source.entrypoint)};}
+        if (input.source.type === 'npm') {
+            const resolved = await resolveNpmSource(input.source.specifier, input.source.entrypoint);
+            if (!resolved.runnableKinds.includes(input.kind)) {throw new BadRequestException('Пакет не объявляет исполняемый MCP или плагин OpenCode выбранного типа. Выберите пакет инструмента.');}
+            if (!resolved.entrypoint) {throw new BadRequestException('В пакете несколько команд запуска. Выберите исполняемый файл перед упаковкой.');}
+            source = {type: 'npm', ...resolved};
+        }
+        else if (input.source.type === 'upload') {if(!this.uploads)throw new ServiceUnavailableException('Сервис загрузки готовится к работе. Повторите позже.');source=await this.uploads.pin(actor,input.source);}
         else if (input.source.type === 'repository') {
             try {
-                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint});
+                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint, inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository});
+                if (!resolved.entrypoint) {throw new BadRequestException(resolved.requiresReleaseChoice ? 'Выберите файл релиза перед упаковкой.' : 'Выберите исполняемый файл перед упаковкой.');}
                 source = validateRepositorySource({type: 'repository', url: resolved.url, commit: resolved.commit, subdirectory: resolved.subdirectory, entrypoint: resolved.entrypoint,
-                    ...(resolved.runtimeSource ? {runtimeSource: resolved.runtimeSource, manifestSha256: resolved.manifestSha256} : {})});
+                    ...(resolved.runtimeSource ? {runtimeSource: resolved.runtimeSource, ...(resolved.manifestSha256 ? {manifestSha256: resolved.manifestSha256} : {})} : {}), ...(resolved.release ? {release: resolved.release} : {}), ...(resolved.snapshotSha256 ? {snapshotSha256: resolved.snapshotSha256} : {})});
             } catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось закрепить репозиторий GitHub.');}
         } else {source = input.source;}
         const {requestKey: _requestKey, ...configuration} = input;
@@ -188,11 +237,17 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...source.supportedTargets];}
             else if (config.targets.some(target => !source.supportedTargets!.includes(target))) {throw new BadRequestException('Для этого пакета нет готового адаптера одной из выбранных платформ. Выберите поддерживаемые платформы.');}
         }
+        if (source.type === 'upload') {
+            if(input.kind!=='mcp')throw new BadRequestException('Автономная поставка поддерживает MCP.');
+            const supported=runtimeSourceTargets(source.runtimeSource);
+            if(!Object.prototype.hasOwnProperty.call(raw,'targets'))config.targets=supported;
+            else if(config.targets.some(target=>!supported.includes(target as typeof supported[number])))throw new BadRequestException('Архив не поддерживает одну из выбранных платформ.');
+        }
         if (source.type === 'repository' && source.runtimeSource) {
-            if (input.kind !== 'mcp') {throw new BadRequestException('neurocenter.tool.json описывает автономный MCP. Измените тип инструмента.');}
+            if (input.kind !== 'mcp') {throw new BadRequestException('Поставка описывает автономный MCP. Измените тип инструмента.');}
             const supported = runtimeSourceTargets(source.runtimeSource);
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = supported;}
-            else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('В neurocenter.tool.json нет комплекта для одной из выбранных платформ. Выберите поддерживаемые платформы.');}
+            else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('В поставке нет комплекта для одной из выбранных платформ. Выберите поддерживаемые платформы.');}
         }
         if (source.type === 'repository' && isPreparedRagRepository(source)) {
             if (input.kind !== 'plugin') {throw new BadRequestException('OpenCodeRAG из этого репозитория устанавливается как плагин. Для MCP используйте отдельную карточку OpenCodeRAG.');}
@@ -209,7 +264,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 releaseDb = await reserveCapacity({resource: 'postgres', bytes: Buffer.byteLength(JSON.stringify(config)) + 131072});
                 await this.requireMain(actor);
                 this.currentLease(lease);
-                const row = await this.repository.enqueue(actor.email, input.requestKey, fingerprint, config, lease);
+                const row = source.type==='upload'
+                    ? await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,client=>this.uploads!.retain(client,actor.email,source))
+                    : await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease);
                 this.currentLease(lease);
                 if (row.state === 'QUEUED') {this.startWorker(root);}
                 void notifyDeviceOperations();
@@ -282,6 +339,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await fs.mkdir(stage, {mode: 0o700});
             await this.progress(row.id, 10, 'Подготовка исходников и закреплённой версии');
             await this.progress(row.id, 30, 'Сборка платформенных комплектов и проверка SHA');
+            if(row.config.source.type==='upload'){if(!this.uploads)throw new Error('Сервис сохранённых исходников недоступен.');await this.uploads.assertRetained(row.actor,row.config.source);}
             const manifest = await runPackageBuilder(row.config, stage, child => {
                 this.child = child;
                 if (child && (this.stopping || !this.lease)) {stopBuildProcess(child);}
@@ -294,15 +352,21 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const tools = await readyManifest(manifest);
             if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
             for (const artifact of tools[0].artifacts) { await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
-            await this.progress(row.id, 95, 'Публикация новой карточки каталога');
+            const sourcePath=tools[0].sourceSnapshotPath;
+            if(tools[0].asset.source.type==='archive'&&!sourcePath)throw new Error('Сборщик не вернул путь проверенного исходника.');
+            const prepared=await this.sources.prepareLocal(tools[0].asset,tools[0].artifacts.map(({archivePath,descriptor})=>{const item=descriptor as {sha256:string;compressedBytes:number;target:string};return {archivePath,sha256:item.sha256,bytes:item.compressedBytes,filename:item.sha256+'.tar.gz',target:item.target};}),row.request_key,undefined,sourcePath?{archivePath:sourcePath,stagingRoot:path.dirname(sourcePath)}:undefined);
+            await this.progress(row.id, 95, 'Публикация карточки и связанной версии ассета');
             const lease = this.lease;
             if (!lease || this.stopping) { throw new Error('Сборщик остановлен до публикации.'); }
             // COMMIT использует сессию advisory lock: потеря lease откатывает старую публикацию.
             await this.withLease(lease, async () => {
                 await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
+                if(row.config.source.type==='upload')await this.uploads!.assertRetained(row.actor,row.config.source);
                 this.currentLease(lease);
-                await new PluginRepository(this.pool).create(tools[0].publication, row.actor, (client, published) =>
-                    this.repository.completeWithPublication(client, row.id, {catalogId: published.id, name: published.name, version: published.version}), lease);
+                await new PluginRepository(this.pool).create(tools[0].publication,row.actor,async(client,published)=>{
+                    const source=await this.sources.recordLocal(client,prepared,published,row.actor);
+                    await this.repository.completeWithPublication(client,row.id,{catalogId:published.id,name:published.name,version:published.version,...source});
+                },lease);
             });
             await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
                 method: 'POST', headers: {'Content-Type': 'application/json', 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || ''},

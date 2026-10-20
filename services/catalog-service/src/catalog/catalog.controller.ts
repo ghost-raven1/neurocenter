@@ -25,7 +25,7 @@ import {
     IProjectMemberAdd,
     ISnapshotManifest,
 } from './dto';
-import { resolveFsRootPath, ILocalAssetInstall, ILocalAssetInstallResult } from './local-assets';
+import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
 import {
     MANIFEST,
@@ -295,6 +295,23 @@ export class CatalogController {
     public async listProjectAssets(@Param('id') id: string): Promise<IProjectAsset[]> {
         const project = await this.catalog.getProject(id);
         return this.catalog.listProjectAssets(project.id);
+    }
+
+    /** Exact snapshots доступны участнику проекта, в том числе после архивирования общего head. */
+    @Get('projects/:id/catalog')
+    public async projectCatalog(@Param('id') id:string,@Req() req:IHttpRequest) {
+        const project=await this.catalog.getProject(id);
+        if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<1)throw new ForbiddenException('Нет доступа к каталогу проекта.');
+        return this.catalog.projectCatalog(project.id);
+    }
+
+    @Patch('projects/:id/assets/pin')
+    public async pinProjectAsset(@Param('id') id:string,@Body() body:{assetId?:string;assetKind?:string;version?:number;expectedVersion?:number|null;expectedManifest?:string|null},@Req() req:IHttpRequest) {
+        const project=await this.catalog.getProject(id);
+        if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<3)throw new ForbiddenException('Версию закрепляет админ проекта.');
+        if(!body?.assetId||!body.assetKind)throw new BadRequestException('Выберите назначение проекта.');
+        const {assetId,assetKind,...input}=body;
+        await this.catalog.pinProjectAsset(project.id,assetId,assetKind,this.actor(req).email,input);return {ok:true};
     }
 
     /**
@@ -709,25 +726,11 @@ export class CatalogController {
         return this.catalog.getAiPluginPackage(id, version === undefined ? undefined : Number(version));
     }
 
-    /**
-     * Создать MCP/плагин.
-     *
-     * @param body — payload создания.
-     * @returns {Promise<unknown>}
-     */
-    /**
-     * Импорт локальных MCP/плагинов проекта в каталог (opencode.json + .opencode/plugins).
-     *
-     * @param body — `{ projectName }` имя локального проекта.
-     * @returns {Promise<unknown>}
-     */
+    /** Старый импорт серверной папки не создаёт карточки без проверенной source envelope. */
     @Post('ai-plugins/import-local')
-    public importLocalAiPlugins(@Body() body: { projectName?: string }, @Req() req: IHttpRequest) {
+    public importLocalAiPlugins(@Req() req: IHttpRequest): never {
         this.assertMainAdmin(req);
-        if (!body || !body.projectName) {
-            throw new BadRequestException('projectName is required');
-        }
-        return this.catalog.importLocalAiPlugins(body.projectName);
+        throw new GoneException('Импорт серверной папки отключён. Используйте «Каталог → Упаковать инструмент» или импорт связанных карточек в разделе «Ассеты».');
     }
 
     @Post('ai-plugins')
@@ -778,28 +781,9 @@ export class CatalogController {
         throw new GoneException('Серверный скан отключён. Подключите локальный MCP и выберите папку на своём компьютере.');
     }
 
-    /**
-     * Установить/удалить актив в локальный проект (~/.projects/<projectName>).
-     *
-     * @param body — параметры установки/удаления.
-     * @returns {Promise<unknown>}
-     */
+    /** Серверный установщик закрыт; установка проверенной поставки выполняется через мост. */
     @Post('local-assets/install')
-    public async installLocalAsset(@Body() body: ILocalAssetInstall, @Req() req: IHttpRequest): Promise<ILocalAssetInstallResult> {
-        const principal = this.bridgePrincipal(req);
-        if (!this.isMain(req)) {
-            if (!body.projectName) {
-                throw new BadRequestException('projectName is required');
-            }
-            const level = projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, body.projectName);
-            if (level < 2) {
-                throw new ForbiddenException('Установка активов доступна для роли «Разработчик» и выше');
-            }
-            if (!body.name || !(await this.catalog.isAssetInProject(body.projectName, body.kind, body.name))) {
-                throw new ForbiddenException(`Актив «${body.name}» отсутствует в проектном каталоге «${body.projectName}»`);
-            }
-        }
-        void principal;
+    public installLocalAsset(): never {
         throw new ConflictException('Установка в пользовательскую папку выполняется локальным мостом. Серверная запись файлов отключена; файлы не изменены.');
     }
 

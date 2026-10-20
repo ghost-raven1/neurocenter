@@ -4,11 +4,12 @@ import type {Pool} from 'pg';
 import {ModelsRepository} from '../src/models/models.repository';
 import {OllamaClient} from '../src/models/ollama-client';
 import {assertProjectEmbeddingModel} from '../src/models/project-embedding.validation';
+import {localModelAlias} from '../src/models/local-model-alias';
 import type {IModel} from '../src/models/model.types';
 
 const digest = 'a'.repeat(64), otherDigest = 'b'.repeat(64);
 const card: IModel = {id: 'model-fixture', name: 'Проверяемая модель', description: '', runtime: 'ollama',
-    model: 'fixture:one', capability: 'embedding', dimension: null, manifestSha256: null, source: 'custom',
+    model: 'fixture:one', capability: 'embedding', dimension: null, manifestSha256: digest, source: 'custom',
     revision: 1, createdAt: '2026-10-20T00:00:00Z', updatedAt: '2026-10-20T00:00:00Z'};
 const metadata = {manifestSha256: digest, dimension: 2560};
 const actor = 'fixture@example.test';
@@ -18,11 +19,11 @@ function runtime(options: {afterDigest?: string; dimension?: number; initialDige
     const calls: string[] = [];
     const fetch = vi.fn(async (url: string | URL | Request) => {
         const route = new URL(String(url)).pathname; calls.push(route);
-        if (route === '/api/tags') return Response.json({models: [{name: card.model, digest: ++tags === 1 ? options.initialDigest ?? digest : options.afterDigest ?? digest}]});
+        if (route === '/api/tags') return Response.json({models: [{name: localModelAlias(card), digest: ++tags === 1 ? options.initialDigest ?? digest : options.afterDigest ?? digest}]});
         if (route === '/api/show') return Response.json({capabilities: ['embedding']});
         if (route === '/api/embed') {
             const vector = Array.from({length: options.dimension ?? 2560}, (_, index) => index === 0 ? 1 : 0);
-            return Response.json({model: card.model, embeddings: [vector, vector]});
+            return Response.json({model: localModelAlias(card), embeddings: [vector, vector]});
         }
         throw new Error('Неожиданный синтетический маршрут');
     });
@@ -76,8 +77,8 @@ describe('Подтверждённые метаданные runtime', () => {
     });
 });
 
-describe('Первое закрепление пользовательской модели', () => {
-    it('Сохраняет выученную размерность и SHA с аудитом, после чего модель подходит для RAG', async () => {
+describe('Проверка импортированной модели и сохранение размерности', () => {
+    it('Сохраняет подтверждённую размерность импортированного SHA с аудитом, после чего модель подходит для RAG', async () => {
         const context = repository(), authorize = vi.fn(async () => undefined);
         const verified = await runtime().client.check(card);
         const pinned = await context.repository.pinVerified(card, verified, actor, authorize);
@@ -97,7 +98,7 @@ describe('Первое закрепление пользовательской �
     it('Конкурентная правка карточки не затирается результатом старого probe', async () => {
         const context = repository(); context.mutate({name: 'Новое имя', revision: 2});
         await expect(context.repository.pinVerified(card, metadata, actor, async () => undefined)).rejects.toMatchObject({status: 409});
-        expect(context.read()).toMatchObject({name: 'Новое имя', manifestSha256: null});
+        expect(context.read()).toMatchObject({name: 'Новое имя', manifestSha256: digest});
         expect(context.query.mock.calls.some(([sql]) => sql.startsWith('UPDATE'))).toBe(false);
     });
     it('Отзыв прав после получения блокировки откатывает закрепление', async () => {
@@ -107,7 +108,7 @@ describe('Первое закрепление пользовательской �
             throw new ForbiddenException('Права отозваны');
         })).rejects.toMatchObject({status: 403});
         expect(context.query.mock.calls.at(-1)?.[0]).toBe('ROLLBACK');
-        expect(context.read().manifestSha256).toBeNull();
+        expect(context.read().manifestSha256).toBe(digest);
     });
     it('Отказ аудита откатывает SHA, размерность и ревизию', async () => {
         const context = repository(), original = context.query.getMockImplementation()!;
@@ -116,18 +117,23 @@ describe('Первое закрепление пользовательской �
             return original(sql, values);
         });
         await expect(context.repository.pinVerified(card, metadata, actor, async () => undefined)).rejects.toThrow('Аудит недоступен');
-        expect(context.read()).toMatchObject({manifestSha256: null, dimension: null, revision: 1});
+        expect(context.read()).toMatchObject({manifestSha256: digest, dimension: null, revision: 1});
         expect(context.query.mock.calls.at(-1)?.[0]).toBe('ROLLBACK');
     });
     it.each([undefined, {manifestSha256: 'invalid', dimension: 2560}, {...metadata, dimension: 0}])('Некорректное или отсутствующее подтверждение не принимается: %j', async value => {
         const context = repository();
         await expect(context.repository.pinVerified(card, value as never, actor, async () => undefined)).rejects.toThrow();
-        expect(context.read().manifestSha256).toBeNull();
+        expect(context.read().manifestSha256).toBe(digest);
     });
     it('Другой SHA уже закреплённой модели не заменяется', async () => {
         const pinned = {...card, ...metadata}, context = repository(pinned);
         await expect(context.repository.pinVerified(pinned, {...metadata, manifestSha256: otherDigest}, actor, async () => undefined)).rejects.toMatchObject({status: 409});
         expect(context.read().manifestSha256).toBe(digest);
+    });
+    it('Runtime не закрепляет модель без импортированного SHA', async () => {
+        const unpinned = {...card, manifestSha256: null}, context = repository(unpinned);
+        await expect(context.repository.pinVerified(unpinned, metadata, actor, async () => undefined)).rejects.toMatchObject({status: 409});
+        expect(context.query.mock.calls.some(([sql]) => sql.startsWith('UPDATE'))).toBe(false);
     });
     it('Повреждённый существующий pin не считается отсутствующим и не заменяется', async () => {
         const damaged = {...card, manifestSha256: ''}, context = repository(damaged);

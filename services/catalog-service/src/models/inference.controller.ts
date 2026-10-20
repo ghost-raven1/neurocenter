@@ -1,7 +1,8 @@
-import { BadRequestException, Body, Controller, Param, Post, Query, Req, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, HttpException, Inject, Param, Post, Query, Req, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import { ModelsService } from './models.service';
-import { OllamaClient } from './ollama-client';
+import { ModelRuntime, type IModelInferenceRuntime } from './model-runtime';
+import { projectEmbeddingPin } from './project-embedding.validation';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -60,7 +61,7 @@ export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, o
 /** Модель выбирается по карточке, права проверяются заново перед каждым inference-запросом. */
 @Controller('api/models')
 export class ModelInferenceController {
-    constructor(private readonly models: ModelsService, private readonly runtime: OllamaClient) {}
+    constructor(private readonly models: ModelsService, @Inject(ModelRuntime) private readonly runtime: IModelInferenceRuntime) {}
     @Post(':id/ollama/api/embed')
     embed(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string) {
         return this.run(id, request, input, 'embed', false, projectId);
@@ -92,6 +93,8 @@ export class ModelInferenceController {
             if (request.aborted || request.res?.destroyed) { abort.abort(); }
             abort.signal.throwIfAborted();
             const result = await this.runtime.infer(model, endpoint, body, abort.signal);
+            const current = await this.models.getUsable(id, request, projectId);
+            if (projectEmbeddingPin(current) !== projectEmbeddingPin(model)) throw new ConflictException('Модель изменилась во время запроса. Обновите подключение.');
             if (!openai) { return result; }
             if (endpoint === 'embed') {
                 if (!Array.isArray(result.embeddings)) { throw new Error('Некорректные векторы'); }
@@ -102,7 +105,7 @@ export class ModelInferenceController {
                 choices: [{ index: 0, message: result.message, finish_reason: result.done_reason === 'length' ? 'length' : 'stop' }],
                 usage: { prompt_tokens: Number(result.prompt_eval_count) || 0, completion_tokens: Number(result.eval_count) || 0,
                     total_tokens: (Number(result.prompt_eval_count) || 0) + (Number(result.eval_count) || 0) } };
-        } catch { throw new ServiceUnavailableException('Модель не выполнила запрос. Проверьте состояние хостинга и ограничения модели.'); }
+        } catch (cause) { if (cause instanceof HttpException) throw cause; throw new ServiceUnavailableException('Модель не выполнила запрос. Проверьте состояние хостинга и ограничения модели.'); }
         finally { request.removeListener('aborted', disconnected); request.res?.removeListener('close', closed); }
     }
 }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { buildRecipe, inspectBuildOutput } from './build.mjs';
-import { readyManifest } from './manifest.mjs';
+import {loadRepository,assetDigest,validateIndex} from '@neurocenter/asset-contract';
 import { npmTools, filePlugins } from './generic.mjs';
 import { additionalSourceTargets } from './source-adapters.mjs';
 import { validateRecipe } from './recipe-schema.mjs';
@@ -17,9 +17,9 @@ export function builtinRecipes() {
         ...npmTools.map(tool => ({ key: tool.key, name: tool.name, kind: 'mcp', description: tool.description, tags: tool.tags, revision: `${tool.version}-pack.1` })),
         ...filePlugins.map(tool => ({ key: tool.key, name: tool.name, kind: 'plugin', description: tool.description, tags: tool.tags, revision: `${tool.revision ?? '1.0.0'}-pack.1` })),
         { key: 'opencode-rag', name: 'OpenCodeRAG', kind: 'mcp', revision: RAG_REVISION, tags: ['RAG', 'npm', 'Локальная настройка'],
-            description: 'Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; без настроек используется проектная локальная модель. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.' },
+            description: 'Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.' },
         { key: 'opencode-rag-plugin', name: 'OpenCodeRAG (плагин)', kind: 'plugin', revision: RAG_PLUGIN_REVISION, tags: ['RAG', 'GitHub', 'Автоиндексация'],
-            description: 'Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Без конфига использует локальную qwen3-embedding:4b на порту 11435 и автоиндексацию; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.' },
+            description: 'Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.' },
         { key: 'opencode-snip', name: 'opencode-snip', kind: 'plugin', revision: `${SNIP_PLUGIN_VERSION}+snip.${SNIP_VERSION}.pack.1`, tags: ['Терминал', 'GitHub Releases', 'Готовый комплект'],
             description: 'Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.' },
     ];
@@ -43,22 +43,19 @@ export async function prepareCatalog({ output, only, targets, dryRun = false }) 
             throw new Error('Папка поставки должна быть новой или пустой и не должна быть ссылкой.');
         }
     }
-    const manifest = { schemaVersion: 1, tools: [] };
-    for (const recipe of selected) {
-        const result = await buildRecipe({ recipe, recipePath: fileURLToPath(new URL(`./recipes/${recipe.key}.json`, import.meta.url)),
-            output: path.join(directory, recipe.key), dryRun });
-        if (dryRun) { manifest.tools.push(result); continue; }
-        const tool = JSON.parse(await fs.readFile(result.manifest, 'utf8')).tools[0];
-        manifest.tools.push({ ...tool, artifacts: tool.artifacts.map(artifact => ({
-            archivePath: `${recipe.key}/${artifact.archivePath}`, descriptorPath: `${recipe.key}/${artifact.descriptorPath}`,
-        })) });
+    const index={schemaVersion:1,assets:[]},plans=[];
+    for(const recipe of selected){
+        const temporary=path.join(directory,recipe.key);
+        const result=await buildRecipe({recipe,recipePath:fileURLToPath(new URL(`./recipes/${recipe.key}.json`,import.meta.url)),output:temporary,dryRun});
+        if(dryRun){plans.push(result);continue;}
+        const bytes=await fs.readFile(result.manifest),asset=JSON.parse(bytes.toString('utf8'));
+        const relative=`assets/${asset.id}/${asset.version}`,final=path.join(directory,relative);
+        await fs.mkdir(path.dirname(final),{recursive:true});await fs.rename(temporary,final);
+        index.assets.push({id:asset.id,kind:asset.kind,version:asset.version,path:relative+'/asset.json',sha256:assetDigest(bytes),current:true});
     }
-    if (dryRun) { return { ...manifest, dryRun: true }; }
-    const filename = path.join(directory, 'ready.json');
-    await fs.writeFile(filename, JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
-    try { await readyManifest(filename); }
-    catch (error) { await fs.rm(filename, { force: true }); throw error; }
-    return manifest;
+    if(dryRun)return {ok:true,dryRun:true,plans};
+    validateIndex(index);await fs.writeFile(path.join(directory,'index.json'),JSON.stringify(index,null,2)+'\n',{flag:'wx',mode:0o600});
+    await loadRepository(directory);return index;
 }
 
 export function parsePrepareArguments(args) {
@@ -83,9 +80,7 @@ export function parsePrepareArguments(args) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     process.umask(0o077);
     const options = parsePrepareArguments(process.argv.slice(2));
-    Promise.resolve().then(() => prepareCatalog(options))
-        .then(result => console.log(JSON.stringify({ ok: true, dryRun: options.dryRun,
-            ...(options.dryRun ? {} : { manifest: path.join(path.resolve(options.output), 'ready.json') }),
-            tools: result.tools.map(tool => ({ key: tool.key, name: tool.publication.name })) }, null, 2)))
-        .catch(error => { console.error(error instanceof Error ? error.message : 'Подготовка каталога не выполнена.'); process.exitCode = 1; });
+    Promise.resolve().then(()=>prepareCatalog(options))
+        .then(result=>console.log(JSON.stringify({ok:true,dryRun:options.dryRun,...(options.dryRun?{plans:result.plans}:{index:path.join(path.resolve(options.output),'index.json'),assets:result.assets})},null,2)))
+        .catch(error=>{console.error(error instanceof Error?error.message:'Подготовка ассетов не выполнена.');process.exitCode=1;});
 }

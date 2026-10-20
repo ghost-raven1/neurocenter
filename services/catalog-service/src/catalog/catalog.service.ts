@@ -1,19 +1,18 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, NotImplementedException } from '@nestjs/common';
 
 import { CatalogDb } from './catalog-db';
-import { IAccessDecisionList, IAiPlugin, IAiPluginConfig, IAiPluginCreate, IAiPluginFile, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, ILocalImportResult, ILocalProjectsImportResult, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
+import { IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginFile, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, ILocalProjectsImportResult, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
 import { measureProjectDataSize } from './fs-metrics';
 import { fetchProjectRetainedSize } from './project-retained-size';
 import { validateProjectSettings } from './project-validation';
 import { buildPackage, type IPackage } from './bundle-package';
 import { runAllBackups, stopBackups, IBackupRunResult } from './backup';
 import {backupPolicy} from '../backups/backup-policy';
-import { ILocalAssetInstall, ILocalAssetInstallResult, installLocalAsset, scanLocalAssets } from './local-assets';
+import { scanLocalAssets } from './local-assets';
 import { isMainAdmin, roleLevel } from './rbac';
 import {assertProjectCatalogAsset} from '../devices/project-skill';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import type { IOperationReadScope } from '../operations/operation.types';
-import { fetchSkillReferences, resolveSkillReference } from '../access/skill-reference';
 
 /**
  * Сервис каталога: PG-backed проекты (реальные) + идемпотентная схема при старте.
@@ -249,35 +248,6 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
-     * Устанавливает/удаляет актив в локальный проект и логирует реальную операцию.
-     *
-     * @param body - параметры установки/удаления.
-     * @returns {Promise<ILocalAssetInstallResult>} результат установки.
-     */
-    async installLocalAsset(body: ILocalAssetInstall, actor?: string): Promise<ILocalAssetInstallResult> {
-        let res: ILocalAssetInstallResult;
-
-        try {
-            res = await installLocalAsset(body);
-        } catch (error) {
-            const err = error as { message?: string };
-
-            throw new BadRequestException(typeof err.message === 'string' && err.message.length > 0 ? err.message : 'Некорректные параметры установки');
-        }
-        const found = body.projectName ? await this.db.getProject(body.projectName) : null;
-        void this.db.createOperation({
-            type: body.action === 'uninstall' ? 'DELETE' : 'INSTALL',
-            projectId: found?.id ?? body.projectName ?? null,
-            resourceType: body.kind,
-            resourceId: body.name,
-            actor,
-            state: 'SUCCEEDED',
-            message: `${body.action === 'uninstall' ? 'Удаление' : 'Установка'} ${body.kind} «${body.name}» → «${body.projectName}»`,
-        }).catch(() => undefined);
-        return res;
-    }
-
-    /**
      * Активные ассеты проекта (глоб. бандлы/скиллы в проектном каталоге).
      */
     listProjectAssets(projectId: string): Promise<IProjectAsset[]> {
@@ -289,28 +259,19 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      */
     async addProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<void> {
         assertProjectCatalogAsset(assetKind,assetId,projectId);
-        if (assetKind === 'skill') {
-            const canonical = resolveSkillReference(assetId, await fetchSkillReferences());
-            if (!canonical) { throw new BadRequestException('Скилл отсутствует или его короткое имя неоднозначно. Выберите существующий скилл по полному пути.'); }
-            assetId = canonical;
-            assertProjectCatalogAsset(assetKind,assetId,projectId);
-        }
+        if(assetKind==='skill'&&!assetId.includes('/'))throw new BadRequestException('Выберите скилл по полному пути каталога.');
         return this.db.addProjectAsset(projectId, assetId, assetKind, actor);
+    }
+
+    projectCatalog(projectId:string) { return this.db.projectCatalog(projectId); }
+
+    pinProjectAsset(projectId:string,id:string,kind:string,actor:string,input:unknown) {
+        assertProjectCatalogAsset(kind,id,projectId);
+        return this.db.pinProjectAsset(projectId,id,kind,actor,input);
     }
 
     removeProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<boolean> {
         return this.db.removeProjectAsset(projectId, assetId, assetKind, actor);
-    }
-
-    /**
-     * Добавлен ли актив (по имени) в проект (по имени проекта).
-     */
-    async isAssetInProject(projectName: string, assetKind: string, name: string): Promise<boolean> {
-        const project = await this.db.getProject(projectName);
-        if (!project) {
-            return false;
-        }
-        return this.db.hasProjectAssetByName(project.id, assetKind, name);
     }
 
     /**
@@ -590,125 +551,6 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         }
 
         return { ok: true, id: idOrName };
-    }
-
-    /**
-     * Преобразует сырой фрагмент `mcp.<name>` из opencode.json в конфиг каталога.
-     *
-     * @param {unknown} raw - значение из opencode.json.
-     * @returns {IAiPluginConfig | null} null, если значение не объект.
-     */
-    private mapMcpConfig(raw: unknown): IAiPluginConfig | null {
-        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-            return null;
-        }
-        const r = raw as Record<string, unknown>;
-        const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.length > 0 ? value : undefined);
-        const asStrings = (value: unknown): string[] | undefined => (Array.isArray(value) ? value.map(String) : undefined);
-        const asRecord = (value: unknown): Record<string, string> | undefined => (
-            value !== null && typeof value === 'object' && !Array.isArray(value)
-                ? (Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([ k, v ]) => [ k, String(v) ])))
-                : undefined
-        );
-
-        const commandString = asString(r.command);
-        // opencode local MCP: command — массив [исполняемый файл, ...аргументы]; env — поле `environment`.
-        const commandArray = Array.isArray(r.command) ? r.command.map(String) : undefined;
-
-        return {
-            transport: r.type === 'remote' || asString(r.url) !== undefined ? 'remote' : 'stdio',
-            command: commandArray && commandArray.length > 0 ? commandArray[0] : commandString,
-            args: commandArray ? commandArray.slice(1) : asStrings(r.args),
-            env: asRecord(r.env) ?? asRecord(r.environment),
-            url: asString(r.url),
-            headers: asRecord(r.headers),
-        };
-    }
-
-    /**
-     * Импорт локальных MCP/плагинов проекта в каталог (ai_plugins).
-     * MCP — с реальными конфигурациями из opencode.json, плагины — имена из .opencode/plugins.
-     * Идемпотентно: существующие записи с origin `local:*` обновляются, прочие — пропускаются.
-     *
-     * @param {string} projectName - имя локального проекта (~/projects/<name>).
-     * @returns {Promise<ILocalImportResult>} итоги импорта.
-     */
-    async importLocalAiPlugins(projectName: string): Promise<ILocalImportResult> {
-        const scan = await scanLocalAssets(undefined, projectName);
-        const entry = scan.projects.find((p) => p.project === projectName);
-
-        if (!entry) {
-            throw new NotFoundException(`local project not found: ${projectName}`);
-        }
-
-        let imported: number = 0;
-        let updated: number = 0;
-        let skipped: number = 0;
-        const total: number = entry.mcpServers.length + entry.plugins.length;
-        const toSlug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-        for (const name of entry.mcpServers) {
-            const config = this.mapMcpConfig(entry.mcpConfigs[name]);
-            const existing = await this.db.getAiPlugin(name);
-
-            if (existing) {
-                if (existing.origin.startsWith('local:')) {
-                    await this.db.updateAiPlugin(name, {
-                        description: `Локальный MCP-сервер (проект ${projectName})`,
-                        origin: `local:${projectName}`,
-                        tags: ['local', toSlug(projectName)],
-                        config: config ?? existing.config,
-                    });
-                    updated += 1;
-                } else {
-                    skipped += 1;
-                }
-                continue;
-            }
-
-            await this.db.createAiPlugin({
-                name,
-                kind: 'mcp',
-                description: `Локальный MCP-сервер (проект ${projectName})`,
-                version: 1,
-                tags: ['local', toSlug(projectName)],
-                origin: `local:${projectName}`,
-                config: config ?? null,
-            });
-            imported += 1;
-        }
-
-        for (const name of entry.plugins) {
-            const existing = await this.db.getAiPlugin(name);
-
-            if (existing) {
-                if (existing.origin.startsWith('local:')) {
-                    await this.db.updateAiPlugin(name, {
-                        description: `Локальный плагин (проект ${projectName})`,
-                        origin: `local:${projectName}`,
-                        tags: ['local', toSlug(projectName)],
-                    });
-                    updated += 1;
-                } else {
-                    skipped += 1;
-                }
-                continue;
-            }
-
-            await this.db.createAiPlugin({
-                name,
-                kind: 'plugin',
-                description: `Локальный плагин (проект ${projectName})`,
-                version: 1,
-                tags: ['local', toSlug(projectName)],
-                origin: `local:${projectName}`,
-            });
-            imported += 1;
-        }
-
-        this.logger.log(`импорт локальных активов ${projectName}: +${imported} обн.${updated} проп.${skipped} из ${total}`);
-
-        return { projectName, imported, updated, skipped, total };
     }
 
     /**

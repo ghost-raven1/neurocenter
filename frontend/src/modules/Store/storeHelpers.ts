@@ -33,15 +33,7 @@ const validSkillPath = (value: string): boolean => value.length > 0 && value.len
 export function resolveStoreSkillReference(reference: string, catalog: readonly StoreTool[]): string | undefined {
     if (!validSkillPath(reference)) { return undefined; }
     const skills = catalog.filter(app => app.kind === 'skill');
-    if (skills.some(app => (app.path ?? app.id) === reference)) { return reference; }
-    if (reference.includes('/') || reference === 'project' || reference.startsWith('project-')) { return undefined; }
-    const candidates = new Set(skills.flatMap(app => {
-        const path = app.path ?? app.id;
-        const parts = path.split('/');
-        if (!validSkillPath(path) || parts[0] === 'project' || parts[0].startsWith('project-')) { return []; }
-        return app.skillSlug === reference || parts[parts.length - 1] === reference ? [path] : [];
-    }));
-    return candidates.size === 1 ? [...candidates][0] : undefined;
+    return skills.some(app=>(app.path??app.id)===reference)?reference:undefined;
 }
 
 /** Возвращает исходную ссылку, чтобы снятие старого назначения удаляло именно его ID. */

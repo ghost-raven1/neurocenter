@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { syncRagDb } from '../src/tools/sync-rag-db.js';
 import { writeRows, deleteIds } from '../src/lib/lancedb.js';
 import { workspaceFixture } from './bridge-fixture.js';
-import { readyIndex, row, profile, metadata } from './rag-index-fixture.js';
+import { readyIndex, row, profile, metadata,receipt } from './rag-index-fixture.js';
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof import('../src/bridge/state.js')>(), authorizedFetch: transport.fetch }));
 
@@ -22,7 +22,7 @@ describe('Безопасная передача проверенного RAG-с�
             const body = JSON.parse(String(options.body)); requests.push(body);
             for (const value of body.chunks) { server[value.id] = value; }
             for (const id of body.deletes) { delete server[id]; }
-            return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length,
+            return Response.json({ ...receipt(body),upserted: body.chunks.length, deleted: body.deletes.length,
                 complete: body.snapshot.complete, snapshotHash: body.snapshot.hash });
         });
     });
@@ -78,7 +78,7 @@ describe('Безопасная передача проверенного RAG-с�
     });
     it('Сервер старой версии не принимает новую запись', async () => {
         transport.fetch.mockResolvedValue(Response.json({ ids: {} }));
-        await expect(run()).rejects.toThrow('V1'); expect(requests).toEqual([]);
+        await expect(run()).rejects.toThrow('формат поколений'); expect(requests).toEqual([]);
     });
     it('Другая модель с той же размерностью отклоняется до записи', async () => {
         transport.fetch.mockResolvedValue(Response.json({ ...metadata(Object.values(server)), indexProfile: { ...profile, model: 'different' } }));
@@ -86,27 +86,14 @@ describe('Безопасная передача проверенного RAG-с�
     });
     const emptyBoundManifest = () => ({ ...metadata([], false), indexProfile: { ...profile, model: 'previous-model' },
         usableVectorCount: 0, indexState: 'syncing' });
-    it('Пустой согласованный серверный профиль меняется только первой непустой порцией', async () => {
-        server = {};
-        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
-        expect(JSON.parse(await run())).toMatchObject({ complete: true, upserted: 2, deleted: 0 });
-        expect(requests.map(body => [body.chunks.length, body.deletes.length, body.snapshot.complete])).toEqual([[2, 0, false], [0, 0, true]]);
-        expect(requests[0]).toMatchObject({ indexProfile: profile, snapshot: { rowCount: 2, complete: false } });
+    it('Даже пустая generation другой модели требует управляемой переиндексации',async()=>{
+        server={};transport.fetch.mockImplementationOnce(async()=>Response.json(emptyBoundManifest()));
+        await expect(run()).rejects.toThrow('Модели');expect(requests).toEqual([]);
     });
-    it('Смена пустого профиля передаёт две непустые порции до отдельного seal', async () => {
-        await writeRows(store, Array.from({ length: 101 }, (_, index) => row(String(index))), true, 3);
-        server = {};
-        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
-        expect(JSON.parse(await run())).toMatchObject({ complete: true, upserted: 101, deleted: 0 });
-        expect(requests.map(body => [body.chunks.length, body.snapshot.complete])).toEqual([[100, false], [1, false], [0, true]]);
-        expect(requests.every(body => JSON.stringify(body.indexProfile) === JSON.stringify(profile))).toBe(true);
-    });
-    it('Следующий ограниченный проход использует уже сменившийся профиль без новых полей старого manifest', async () => {
-        server = {};
-        transport.fetch.mockImplementationOnce(async () => Response.json(emptyBoundManifest()));
-        expect(JSON.parse(await run({ limit: 1 }))).toMatchObject({ complete: false, upserted: 1, remaining: 1 });
-        expect(JSON.parse(await run({ limit: 1 }))).toMatchObject({ complete: true, upserted: 1, remaining: 0 });
-        expect(requests.map(body => [body.chunks.length, body.snapshot.complete])).toEqual([[1, false], [1, false], [0, true]]);
+    it('Порционный проход пустого индекса использует уже выбранную модель поколения',async()=>{
+        server={};expect(JSON.parse(await run({limit:1}))).toMatchObject({complete:false,upserted:1,remaining:1});
+        expect(JSON.parse(await run({limit:1}))).toMatchObject({complete:true,upserted:1,remaining:0});
+        expect(requests.map(body=>[body.chunks.length,body.snapshot.complete])).toEqual([[1,false],[1,false],[0,true]]);
     });
     it.each([
         { rowCount: 1 }, { ids: { ghost: 'old-content' } }, { fingerprints: { ghost: 'a'.repeat(64) } },
@@ -119,7 +106,7 @@ describe('Безопасная передача проверенного RAG-с�
     });
     it('Гонка с первым серверным писателем возвращает 409 без автоматического повтора и seal', async () => {
         transport.fetch.mockImplementation(async (_route, options) => {
-            if (!options) { return Response.json(emptyBoundManifest()); }
+            if (!options) { return Response.json(metadata([],false)); }
             requests.push(JSON.parse(String(options.body)));
             return Response.json({ message: 'Другой профиль уже записал первую строку.' }, { status: 409 });
         });
@@ -128,12 +115,12 @@ describe('Безопасная передача проверенного RAG-с�
         expect(requests[0]).toMatchObject({ snapshot: { complete: false } });
         expect(transport.fetch).toHaveBeenCalledTimes(2);
     });
-    it('Непроверенные legacy-строки полностью переотправляются и устаревшие удаляются', async () => {
+    it('Непроверенные строки без профиля требуют управляемой переиндексации', async () => {
         const implementation = transport.fetch.getMockImplementation()!;
         transport.fetch.mockImplementation(async (route, options) => !options
             ? Response.json({ ...metadata(Object.values(server), false), indexProfile: null, fingerprints: {}, incompleteRows: 3 })
             : implementation(route, options));
-        expect(JSON.parse(await run())).toMatchObject({ complete: true, upserted: 2, deleted: 1 });
+        await expect(run()).rejects.toThrow('Модели');expect(requests).toEqual([]);
     });
     it('Смена версии LanceDB после manifest не отправляет и не удаляет строки', async () => {
         transport.fetch.mockImplementationOnce(async () => {
@@ -163,13 +150,13 @@ describe('Безопасная передача проверенного RAG-с�
     it('Неполная серверная квитанция запрещает seal и удаления', async () => {
         server = { obsolete: row('obsolete') };
         transport.fetch.mockImplementationOnce(async () => Response.json(metadata(Object.values(server))))
-            .mockResolvedValueOnce(Response.json({ upserted: 1 }));
+            .mockImplementationOnce(async(_route,options)=>Response.json({...receipt(JSON.parse(String(options!.body))),upserted:1}));
         await expect(run()).rejects.toThrow('не все'); expect(requests).toEqual([]);
     });
     it('Отказ серверного seal не становится зелёным завершением', async () => {
         const implementation = transport.fetch.getMockImplementation()!;
         transport.fetch.mockImplementation(async (route, options) => options && JSON.parse(String(options.body)).snapshot.complete
-            ? Response.json({ complete: false }) : implementation(route, options));
+            ? Response.json({...receipt(JSON.parse(String(options.body))),complete:false}) : implementation(route,options));
         await expect(run()).rejects.toThrow('целостность');
     });
     it('Свежий idle watcher разрешает синхронизацию без остановки OpenCode', async () => {

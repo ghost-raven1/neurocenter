@@ -24,7 +24,7 @@ async function fixture(t, mode = 'ready') {
             require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'unexpected-command',command:${JSON.stringify(command)}})+'\\n');
             process.exitCode=92;`, {mode: 0o700});
     }
-    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -32,7 +32,6 @@ async function fixture(t, mode = 'ready') {
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
     for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
-    await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -62,7 +61,7 @@ async function fixture(t, mode = 'ready') {
         NO_COLOR: '1', TERM: 'dumb', NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`,
         DEV_CLI_RECORD: record, DEV_CLI_MODE: mode};
     async function run(...args) {
-        const result = spawnSync('/bin/bash', [path.join(checkout, 'scripts/dev.sh'), ...args], {
+        const result = spawnSync(path.join(checkout, 'scripts/dev.sh'), args, {
             cwd: checkout, env, encoding: 'utf8', timeout: 10000,
         });
         assert.equal(result.error, undefined);
@@ -106,6 +105,15 @@ test('Лишний аргумент отклоняется до сборки, Do
     assert.deepEqual(result.events, []);
     await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
 });
+
+for(const args of [['up','--profile'],['up','--profile='],['up','--profile','unknown'],['up','--profile=fast','--profile','full'],
+    ['up','--profile','fast','extra'],['build','--profile','fast'],['status','--profile=full']]) {
+    test(`Некорректный профиль ${args.join(' ')} отклоняется до побочных действий`,async t=>{
+        const f=await fixture(t),result=await f.run(...args);
+        assert.equal(result.status,1);assert.match(result.stderr,/Неизвестная команда или параметры/);
+        assert.deepEqual(result.events,[]);await assert.rejects(fs.access(path.join(f.checkout,'.run')),{code:'ENOENT'});
+    });
+}
 
 test('Статус показывает адреса всех сервисов и не меняет состояние процессов', async t => {
     const f = await fixture(t), result = await f.run('status');
@@ -172,6 +180,9 @@ test('Ошибка сборки видна в stderr и не подменяет�
     const f = await fixture(t), result = await f.run('build');
     assert.equal(result.status, 1);
     assert.match(result.stderr, /код\S*\s+7/);
-    assert.equal(result.events.filter(event => event.kind === 'npm').length, 1);
+    // Отказ корневой зависимости останавливает сборку до обращения к пакетам сервисов.
+    assert.deepEqual(result.events.filter(event => event.kind === 'npm').map(event=>event.args),[
+        ['ci','--ignore-scripts','--no-audit','--no-fund'],
+    ]);
     assert.doesNotMatch(result.stdout, /Нейроцентр готов|Сборка завершена/);
 });

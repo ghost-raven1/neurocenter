@@ -16,8 +16,6 @@ import {
     IRagQuota,
     IRagBootstrapResult,
     IRagRestoreResult,
-    IPackage,
-    IPackageDetail,
     IProfileReleaseResult,
     IProjectDetail,
     IProjectListParams,
@@ -37,7 +35,6 @@ import {
     IAiPluginVersion,
     IBundlePackage,
     IProjectAsset,
-    ILocalImportResult,
     ILocalProjectsImportResult,
     ISkillListSummary,
     ISkillPin,
@@ -66,6 +63,8 @@ export interface IBffApi {
     getProject: (id: string) => Promise<IProjectDetail>;
     listProjectMembers: (projectId: string) => Promise<IProjectMember[]>;
     listProjectAssets: (projectIdOrName: string) => Promise<IProjectAsset[]>;
+    projectCatalog: (projectId: string) => Promise<IProjectAsset[]>;
+    pinProjectAsset: (projectId: string,payload:{assetId:string;assetKind:string;version:number;expectedVersion:number|null;expectedManifest:string|null}) => Promise<{ok:boolean}>;
     addProjectAsset: (projectIdOrName: string, payload: { assetId: string; assetKind: 'mcp' | 'plugin' | 'skill' }) => Promise<{ ok: boolean }>;
     removeProjectAsset: (projectIdOrName: string, payload: { assetId: string; assetKind: 'mcp' | 'plugin' | 'skill' }) => Promise<{ ok: boolean }>;
     addProjectMember: (projectId: string, payload: IProjectMemberAdd) => Promise<IProjectMember>;
@@ -113,9 +112,6 @@ export interface IBffApi {
     updateQuotas: (projectId: string, payload: IQuota) => Promise<IQuota>;
     updateRetention: (projectId: string, payload: { retention: number }) => Promise<{ retention: number }>;
     /* PACKAGES */
-    listPackageCollections: () => Promise<{ id: string; title: string }[]>;
-    listPackages: (params: { collectionId: string }) => Promise<IPackage[]>;
-    getPackage: (packageId: string) => Promise<IPackageDetail>;
     listAiPlugins: (params?: { pageSize?: number; page?: number }) => Promise<{ items: IAiPlugin[]; total: number; page: number; size: number }>;
     getAiPlugin: (id: string) => Promise<IAiPlugin>;
     createAiPlugin: (body: IAiPluginCreate) => Promise<IAiPlugin>;
@@ -125,9 +121,6 @@ export interface IBffApi {
     activateAiPluginVersion: (id: string, version: number) => Promise<IAiPlugin>;
     getAiPluginPackage: (id: string, version?: number) => Promise<IBundlePackage>;
     deleteAiPlugin: (id: string) => Promise<{ ok: boolean; id: string }>;
-    importLocalAiPlugins: (projectName: string) => Promise<ILocalImportResult>;
-    scanLocalAssets: (params?: { q?: string; maxProjects?: number }) => Promise<{ root: string; query: string | null; projects: { project: string; path: string; skills: string[]; mcpServers: string[]; plugins: string[] }[]; scannedCount: number; totalProjects: number }>;
-    installLocalAsset: (body: { kind: 'mcp' | 'plugin' | 'skill'; name: string; projectName: string; content?: string; config?: Record<string, unknown>; origin?: string; files?: { path: string; content: string }[]; action?: 'install' | 'uninstall'; dryRun?: boolean }) => Promise<{ kind: string; name: string; action: string; targetPath: string; affected: string; dryRun: boolean }>;
     /* ACCESS */
     getDecisions: (scope: string) => Promise<IAccessDecisionList>;
     getAccessUsers: () => Promise<IAccessUsersList>;
@@ -147,6 +140,8 @@ const bffApi: IBffApi = {
     updateProject: async (id, payload) => base.patch<IProjectDetail>(`/api/projects/${id}`, payload).then(r => r.data),
     listProjectMembers: async (projectId) => base.get<IProjectMember[]>(`/api/projects/${projectId}/members`).then(r => r.data),
     listProjectAssets: async (projectIdOrName) => base.get<IProjectAsset[]>(`/api/projects/${encodeURIComponent(projectIdOrName)}/assets`).then(r => r.data),
+    projectCatalog: async projectId => base.get<IProjectAsset[]>(`/api/projects/${encodeURIComponent(projectId)}/catalog`).then(r=>r.data),
+    pinProjectAsset: async (projectId,payload) => base.patch<{ok:boolean}>(`/api/projects/${encodeURIComponent(projectId)}/assets/pin`,payload).then(r=>r.data),
     addProjectAsset: async (projectIdOrName, payload) => base.post<{ ok: boolean }>(`/api/projects/${encodeURIComponent(projectIdOrName)}/assets`, payload).then(r => r.data),
     removeProjectAsset: async (projectIdOrName, payload) => base.delete<{ ok: boolean }>(`/api/projects/${encodeURIComponent(projectIdOrName)}/assets`, { data: payload }).then(r => r.data),
     addProjectMember: async (projectId, payload) => base.post<IProjectMember>(`/api/projects/${projectId}/members`, payload).then(r => r.data),
@@ -184,9 +179,6 @@ const bffApi: IBffApi = {
     restore: async (checkpointId) => base.post<{ operationId: string }>('/api/maintenance/restore', { checkpointId }).then(r => r.data),
     updateQuotas: async (projectId, payload) => base.patch<IQuota>(`/api/projects/${projectId}/quotas`, payload).then(r => r.data),
     updateRetention: async (projectId, payload) => base.patch<{ retention: number }>(`/api/projects/${projectId}/retention`, payload).then(r => r.data),
-    listPackageCollections: async () => base.get<{ id: string; title: string }[]>('/api/packages/collections').then(r => r.data),
-    listPackages: async (params) => base.get<IPage<IPackage>>('/api/packages', { params }).then(r => r.data.items),
-    getPackage: async (packageId) => base.get<IPackageDetail>(`/api/packages/${packageId}`).then(r => r.data),
     listAiPlugins: async (params) => base
         .get<{ items: IAiPlugin[]; total: number; page: number; size: number }>('/api/ai-plugins', { params: { size: params?.pageSize ?? 100, ...(params?.page !== undefined ? {page: params.page} : {}) } })
         .then(r => r.data),
@@ -206,9 +198,6 @@ const bffApi: IBffApi = {
         .get<IBundlePackage>(`/api/ai-plugins/${encodeURIComponent(id)}/package`, { params: { version } })
         .then(r => r.data),
     deleteAiPlugin: async (id) => base.delete<{ ok: boolean; id: string }>(`/api/ai-plugins/${encodeURIComponent(id)}`).then(r => r.data),
-    importLocalAiPlugins: async (projectName: string) => base.post<ILocalImportResult>('/api/ai-plugins/import-local', { projectName }).then(r => r.data),
-    scanLocalAssets: async (params) => base.get('/api/local-assets/scan', { params }).then(r => r.data),
-    installLocalAsset: async (body) => base.post('/api/local-assets/install', body).then(r => r.data),
     getDecisions: async (scope) => base.get<IAccessDecisionList>('/api/me/decisions', { params: { scope } }).then(r => r.data),
     getAccessUsers: async () => base.get<IAccessUsersList>('/api/access/users').then(r => r.data),
 };

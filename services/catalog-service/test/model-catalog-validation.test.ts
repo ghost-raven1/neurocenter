@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { builtinModels } from '../src/models/builtin-models';
-import { validateModelAssignment, validateModelCreate, validateModelDelete, validateModelUpdate } from '../src/models/model-validation';
+import { validateModelAssignment, validateModelCreate, validateModelDescriptor, validateModelDelete, validateModelUpdate } from '../src/models/model-validation';
 
 const model = { name: '  Моя модель  ', description: '  Для проекта  ', capability: 'embedding', model: 'qwen3-embedding:4b', dimension: 2560 };
 
 describe('Валидация карточек моделей', () => {
     it('Нормализует метаданные и не принимает адрес runtime от пользователя', () => {
-        expect(validateModelCreate(model)).toEqual({ ...model, name: 'Моя модель', description: 'Для проекта' });
+        expect(validateModelCreate(model)).toEqual({ ...model, runtime: 'ollama', name: 'Моя модель', description: 'Для проекта' });
         expect(validateModelCreate({ name: 'Чат', capability: 'chat', model: 'team/model:1.0' })).toMatchObject({ dimension: null, description: '' });
         expect(() => validateModelCreate({ ...model, runtimeUrl: 'http://localhost:11434' })).toThrow('неподдерживаемые');
         expect(() => validateModelCreate({ ...model, manifestSha256: 'a'.repeat(64) })).toThrow('неподдерживаемые');
@@ -24,10 +23,11 @@ describe('Валидация карточек моделей', () => {
         expect(() => validateModelCreate({ ...model, ...changes })).toThrow();
     });
 
-    it('Редактирование меняет только название и описание с обязательной ревизией', () => {
+    it('Редактирование требует ревизию; удалённая техническая идентичность проверяется с текущим runtime', () => {
         expect(validateModelUpdate({ expectedRevision: 3, name: ' Новое ' })).toEqual({ expectedRevision: 3, name: 'Новое' });
         expect(() => validateModelUpdate({ name: 'Новое' })).toThrow('expectedRevision');
-        for (const changes of [{ model: 'other:1' }, { capability: 'vision' }, { dimension: 5 }, { source: 'builtin' }]) {
+        expect(validateModelUpdate({ expectedRevision: 1, model: 'other:1', dimension: 5, modelVersion: 'v2' })).toMatchObject({ model: 'other:1', dimension: 5, modelVersion: 'v2' });
+        for (const changes of [{ capability: 'vision' }, { runtime: 'remote-openai' }, { source: 'builtin' }]) {
             expect(() => validateModelUpdate({ expectedRevision: 1, ...changes })).toThrow('неподдерживаемые');
         }
         expect(() => validateModelDelete({ expectedRevision: '1' })).toThrow('expectedRevision');
@@ -42,13 +42,9 @@ describe('Валидация карточек моделей', () => {
         expect(() => validateModelAssignment(null)).toThrow('данные модели');
     });
 
-    it('Встроенные модели закреплены по SHA и не содержат адресов подключения', () => {
-        expect(builtinModels).toHaveLength(2);
-        for (const item of builtinModels) {
-            expect(item.descriptor.manifestSha256).toMatch(/^[a-f0-9]{64}$/);
-            expect(item.descriptor.runtime).toBe('ollama');
-            expect(item.descriptor.source).toBe('builtin');
-            expect(Object.keys(item.descriptor)).not.toContain('url');
-        }
+    it('Нативный descriptor локальной модели не содержит deployment адреса', () => {
+        const descriptor = validateModelDescriptor({ description: 'Модель из ассета', runtime: 'ollama', model: 'fixture:1', capability: 'embedding', dimension: 3, source: 'builtin', manifestSha256: 'a'.repeat(64) });
+        expect(descriptor.manifestSha256).toBe('a'.repeat(64));
+        expect(Object.keys(descriptor)).not.toContain('baseUrl');
     });
 });

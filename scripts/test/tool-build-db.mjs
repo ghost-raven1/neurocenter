@@ -15,12 +15,13 @@ const {PluginRepository} = require(path.join(dist, 'publication/plugin-repositor
 const {CatalogDb} = require(path.join(dist, 'catalog/catalog-db.js'));
 const {PackageBuildService} = require(path.join(dist, 'package-build/package-build.service.js'));
 const {RuntimeArtifacts} = require(path.join(dist, 'runtime-artifacts/runtime-artifacts.js'));
+const {AssetSourcesService}=require(path.join(dist,'asset-sources/asset-sources.service.js'));
 const adminUrl = process.env.TOOL_BUILD_TEST_PG_URL || 'postgresql://rag:rag@localhost:5432/postgres';
 const admin = new Pool({connectionString: adminUrl, max: 2});
 admin.on('error', error => {console.error('Тестовый административный пул: ' + error.code);});
 const database = 'nc_tool_build_test_' + randomBytes(8).toString('hex');
 const before = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
-let pool, catalog, builds, temporary, created = false, dropped = false, fatal;
+let pool, catalog, builds, sources, temporary, created = false, dropped = false, fatal;
 const previousEnvironment = {...process.env};
 const checks = [];
 try {
@@ -106,7 +107,9 @@ try {
     await mkdir(path.join(staging, oldStage.id), {recursive: true}); await writeFile(path.join(staging, oldStage.id, 'partial'), 'Незавершённая сборка');
     await mkdir(path.join(staging, unknown)); await writeFile(path.join(staging, unknown, 'keep'), 'Нет записи задания — не трогать');
     const access = {claims: async () => ({userRoles: ['Главный админ']})};
-    builds = new PackageBuildService(access, new RuntimeArtifacts({pool}), {ensureSchema: async () => undefined});
+    sources??=new AssetSourcesService({ensureSchema:async()=>undefined},access,new RuntimeArtifacts({pool}));
+    if(!sources.worker)await sources.onModuleInit();
+    builds = new PackageBuildService(access,new RuntimeArtifacts({pool}),{ensureSchema:async()=>undefined},sources);
     await builds.onModuleInit();
     assert.equal((await repository.get(oldStage.id)).state, 'FAILED');
     await assert.rejects(stat(path.join(staging, oldStage.id)), error => error.code === 'ENOENT');
@@ -124,6 +127,12 @@ try {
     do {result = await builds.get({email: actor, activeRole: 'Главный админ'}, job.id); if (['SUCCEEDED','FAILED'].includes(result.state)) {break;} await new Promise(resolve => setTimeout(resolve, 100));} while (Date.now() < deadline);
     assert.equal(result.state, 'SUCCEEDED', JSON.stringify(result));
     const card = (await pool.query('SELECT kind,config,files FROM ai_plugins WHERE id=$1', [result.result.catalogId])).rows[0];
+    assert.ok(result.result.assetId);assert.match(result.result.sourceVersion,/^build-[a-f0-9]{64}$/);
+    const exported=await builds.exportAsset({email:actor,activeRole:'Главный админ'},job.id);assert.equal(exported.id,result.result.assetId);assert.equal(exported.source.type,'archive');
+    assert.equal((await pool.query("SELECT count(*)::int n FROM asset_source_versions WHERE repository='local-archive' AND native_id=$1",[result.result.catalogId])).rows[0].n,1);
+    const sourcePath=await sources.blobs.checkedPath(exported.source.sha256,exported.source.bytes);
+    await sources.blobs.ingestLocal([{archivePath:sourcePath,sha256:exported.source.sha256,bytes:exported.source.bytes,filename:exported.source.sha256+'.source'}],randomUUID());
+    const imported=await builds.importAsset({email:actor,activeRole:'Главный админ'},{requestKey:randomUUID(),asset:exported});assert.equal(imported.catalogId,result.result.catalogId);
     assert.equal(card.kind, 'plugin'); assert.equal(card.config.extra.runtimeArtifacts.length, 1); assert.deepEqual(card.files, []);
     assert.equal((await pool.query('SELECT count(*)::int n FROM bridge_runtime_artifacts')).rows[0].n, 1);
     await assert.rejects(stat(marker), error => error.code === 'ENOENT');
@@ -133,7 +142,9 @@ try {
     const queued = [];
     for (let index = 0; index < 2; index++) queued.push(await repository.enqueue(actor, randomUUID(), 'resume-' + index,
         {...config, name: 'Ожидавшая сборка ' + index, source: {type: 'files', entrypoint: 'index.mjs', files: [{path: 'index.mjs', content: 'export default async()=>({})'}]}}));
-    builds = new PackageBuildService(access, new RuntimeArtifacts({pool}), {ensureSchema: async () => undefined});
+    sources??=new AssetSourcesService({ensureSchema:async()=>undefined},access,new RuntimeArtifacts({pool}));
+    if(!sources.worker)await sources.onModuleInit();
+    builds = new PackageBuildService(access,new RuntimeArtifacts({pool}),{ensureSchema:async()=>undefined},sources);
     await builds.onModuleInit();
     const resumedUntil = Date.now() + 60000;
     let resumed;
@@ -167,6 +178,7 @@ try {
 } catch (error) {fatal = error.stack || String(error); process.exitCode = 1; console.error(fatal);}
 finally {
     await builds?.onModuleDestroy();
+    await sources?.onApplicationShutdown();
     await catalog?.close();
     await pool?.end();
     if (created) {await admin.query(`DROP DATABASE "${database}"`); dropped = true;}

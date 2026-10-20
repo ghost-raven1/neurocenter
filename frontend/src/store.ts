@@ -5,7 +5,6 @@ import operationsReducer from './modules/Operations/redux/reducers';
 import accessReducer from './modules/Access/redux/reducers';
 import auditReducer from './modules/Audit/redux/reducers';
 import maintenanceReducer from './modules/Maintenance/redux/reducers';
-import packagesReducer from './modules/Packages/redux/reducers';
 import projectsReducer from './modules/Projects/redux/reducers';
 import ragReducer from './modules/Rag/redux/reducers';
 import skillsReducer from './modules/Skills/redux/reducers';
@@ -16,7 +15,6 @@ const rootReducer = combineReducers({
     operations: operationsReducer,
     skills: skillsReducer,
     rag: ragReducer,
-    packages: packagesReducer,
     maintenance: maintenanceReducer,
     audit: auditReducer,
     access: accessReducer,

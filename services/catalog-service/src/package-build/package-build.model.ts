@@ -1,3 +1,4 @@
+import {validateUploadBuildSource,type UploadBuildSource,type PinnedUploadSource} from '../source-upload/source-upload.model';
 import { BadRequestException } from '@nestjs/common';
 import { packageFiles, publicationHash, filePath } from '../publication/publication-validation';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
@@ -7,9 +8,9 @@ import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
 export type BuildState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
 export interface BuildSourceNpm { type: 'npm'; specifier: string; entrypoint?: string }
 export interface BuildSourceFiles { type: 'files'; files: Array<{path: string; content: string}>; entrypoint: string; args?: string[] }
-export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin'; name: string; description: string; tags?: string[]; targets?: string[]; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput}
-export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source'> {targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
-export interface BuildResult {catalogId: string; name: string; version: number}
+export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin'; name: string; description: string; tags?: string[]; targets?: string[]; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource}
+export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source'> {targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
+export interface BuildResult {catalogId: string; name: string; version: number; assetId?:string;sourceVersion?:string;sourceSha256?:string}
 export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string}
 export const buildView = (row: BuildRow) => ({id: row.id, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
     message: row.message, result: row.result, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at});
@@ -34,6 +35,7 @@ export function validateBuildInput(raw: unknown): BuildInput & {targets: string[
     if (raw.tags !== undefined && (!Array.isArray(raw.tags) || raw.tags.length > 20)) { throw new BadRequestException('Укажите до 20 тегов.'); }
     const tags = [...new Set(((raw.tags ?? []) as unknown[]).map(tag => text(tag, 'Тег', 40)))];
     const source = raw.source;
+    if (source.type === 'upload') {return {requestKey:raw.requestKey,kind:raw.kind as BuildInput['kind'],name,description,tags,targets:[...targets],source:validateUploadBuildSource(source)};}
     if (source.type === 'repository') {
         try {return {requestKey: raw.requestKey, kind: raw.kind as BuildInput['kind'], name, description, tags, targets: [...targets], source: validateRepositorySource(source, {pinned: false})};}
         catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Некорректный источник GitHub.');}

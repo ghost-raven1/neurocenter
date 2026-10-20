@@ -1,17 +1,27 @@
-import { ForbiddenException } from '@nestjs/common';
-import type { Pool } from 'pg';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { assertProjectCatalogAsset, isProjectSkill } from './project-skill';
-import { matchesLegacySkillReference } from '../access/skill-reference';
+import { checkedProjectPackage, projectAssetColumns, type IProjectPinRow } from '../catalog/project-asset-pins';
 
-/** Проектный каталог разрешает выбор инструмента; одобрение его кода проверяется отдельно. */
-export async function assertDeviceCatalogAsset(pool: Pool, projectId: unknown, kind: unknown, id: unknown): Promise<void> {
-    assertProjectCatalogAsset(kind, id, projectId);
-    if (isProjectSkill(kind, id, projectId)) { return; }
-    const result = await pool.query('SELECT 1 FROM project_assets WHERE project_id=$1 AND asset_kind=$2 AND asset_id=$3', [projectId, kind, id]);
-    if (result.rowCount) { return; }
-    if (kind === 'skill') {
-        const skills = await pool.query<{ asset_id: string }>("SELECT asset_id FROM project_assets WHERE project_id=$1 AND asset_kind='skill'", [projectId]);
-        if (await matchesLegacySkillReference(skills.rows.map(row => row.asset_id), String(id))) { return; }
+type Queryable=Pick<PoolClient,'query'>;
+/** Root назначения проверяется по exact package SHA; leaf разрешены immutable графом root. */
+export async function assertDeviceCatalogAsset(db:Queryable,projectId:unknown,kind:unknown,id:unknown,expected?:{version:number;manifest:string},lock=false):Promise<void>{
+    assertProjectCatalogAsset(kind,id,projectId);
+    if(isProjectSkill(kind,id,projectId))return;
+    const row=(await db.query<IProjectPinRow>(`SELECT ${projectAssetColumns} FROM project_assets WHERE project_id=$1 AND asset_kind=$2 AND asset_id=$3${lock?' FOR SHARE':''}`,[projectId,kind,id])).rows[0];
+    if(!row)throw new ForbiddenException('Админ проекта должен добавить этот инструмент в каталог проекта.');
+    if(expected){
+        const pkg=checkedProjectPackage(row);
+        if(pkg.plugin.version!==expected.version||pkg.manifest.sha256!==expected.manifest)throw new ConflictException('В проекте закреплена другая версия или SHA. Откройте новый план для актуального назначения.');
     }
-    throw new ForbiddenException('Админ проекта должен добавить этот инструмент в каталог проекта.');
+}
+
+/** Выдаёт immutable bytes назначения; архивирование head не требует связи с файловым сервисом. */
+export async function projectAssignedPackage(db:Queryable,projectId:string,kind:string,id:string,version:number){
+    if(isProjectSkill(kind,id,projectId))return null;
+    const row=(await db.query<IProjectPinRow>(`SELECT ${projectAssetColumns} FROM project_assets WHERE project_id=$1 AND asset_kind=$2 AND asset_id=$3`,[projectId,kind,id])).rows[0];
+    if(!row)throw new ForbiddenException('Добавьте инструмент в каталог проекта.');
+    const pkg=checkedProjectPackage(row);
+    if(pkg.plugin.version!==version)throw new ConflictException('В проекте закреплена другая версия. Обновите каталог проекта.');
+    return pkg;
 }

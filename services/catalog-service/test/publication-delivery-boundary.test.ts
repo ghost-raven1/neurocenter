@@ -61,10 +61,11 @@ describe('Старая внешняя команда остаётся досту
         const query = vi.fn(async (sql: string, params?: unknown[]) => {
             if (sql.startsWith('SELECT * FROM ai_plugins WHERE')) { return { rows: [legacy] }; }
             if (sql.startsWith('SELECT GREATEST')) { return { rows: [{ v: 2 }] }; }
+            if(sql.startsWith('UPDATE ai_plugins SET archived_at')){return {rows:[{...legacy,archived_at:params?.[1]}]};}
             if (sql.startsWith('UPDATE ai_plugins')) { return { rows: [{ ...legacy, version: 2, config: JSON.parse(String(params![7])), files: JSON.parse(String(params![8])) }] }; }
             return { rows: [] };
         });
-        const repository = new PluginRepository({ query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool, async () => undefined);
+        const repository = new PluginRepository({ query, connect: async () => ({ query, release: vi.fn() }) } as unknown as Pool);
         return { repository, query };
     };
 

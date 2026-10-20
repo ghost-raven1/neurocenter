@@ -25,7 +25,7 @@ export function ProjectEmbeddingConnection({ selection, disabled, onPreferRagUi 
     const installationPrompt = choices.length > 1 ? 'Выберите установку OpenCodeRAG для подключения модели.'
         : 'Установите или обновите OpenCodeRAG и проверьте его файлы в каталоге. Если установок несколько, выберите нужную.';
     const reason = !ready ? 'Дождитесь актуальных данных моста или обновите подключение.'
-        : embeddingConnectionBlocker(device, binding) || (!item ? installationPrompt : !eligible ? 'Выбранная установка OpenCodeRAG сейчас недоступна для подключения. Проверьте её файлы или выберите другую установку.' : '');
+        : embeddingConnectionBlocker(device, binding) || (!item ? installationPrompt : !item.hostedEmbedding?.reindexSupported?'Обновите выбранный OpenCodeRAG для подключения с переиндексацией.':!eligible ? 'Выбранная установка OpenCodeRAG сейчас недоступна для подключения. Проверьте её файлы или выберите другую установку.' : '');
     const input = item && binding && sha(binding.bindingId) && uuid(binding.instanceId) && selection.profile && selection.modelPin ? embeddingConnectionInput(item, binding, selection) : undefined;
     const target = JSON.stringify([scope, item && embeddingInstallationKey(item), selection.revision, selection.modelPin]);
     const installationOptions: Array<{value: string; label: string; disabled?: boolean}> = choices.map(row => ({value: embeddingInstallationKey(row), label: installationLabel(row)}));
@@ -49,7 +49,7 @@ export function ProjectEmbeddingConnection({ selection, disabled, onPreferRagUi 
             {reason.includes('Свяжите') && <Button href={projectBindingUrl(selection.projectId)}>Связать папку</Button>}
             {(reason.includes('Установите или обновите') || item && !eligible) && <Button href={projectRagCatalogUrl(selection.projectId)}>Открыть OpenCodeRAG в каталоге</Button>}</Space>
         {input && item && device && binding && <ConnectEmbeddingAction key={target} input={input} selection={selection} bridge={bridge} disabled={disabled || !!reason} onPreferRagUi={onPreferRagUi}
-            consent={`Подключить «${selection.model?.name}» (${selection.model?.model}) через ${installationLabel(item)} на компьютере «${device.name}», папка ${device.report.root || ''}/${binding.folderName}. Код и тексты для эмбеддингов будут отправляться на сервер Нейроцентра.`} />}
+            consent={`Подключить «${selection.model?.name}» (${selection.model?.model}) через ${installationLabel(item)} на компьютере «${device.name}», папка ${device.report.root || ''}/${binding.folderName}. Локальный индекс будет полностью перестроен, код и тексты отправятся провайдеру модели через Нейроцентр. Прежняя копия сохранится до проверки новой.`} />}
     </Space>;
 }
 const installationLabel = (row: {name: string; assetKind: string; version: number}): string => `${row.name} · ${row.assetKind === 'mcp' ? 'MCP' : 'плагин'} · версия ${row.version}`;
@@ -62,7 +62,9 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent,
     const [confirmed, setConfirmed] = useState(false);
     const pending = pendingEmbeddingAction(bridge.jobs, input.deviceId, input.projectId, input.expectedBindingId);
     const retrying = operation.canRetry(input);
-    const job = operation.job;
+    const job = operation.job||(!retrying&&bridge.jobsReady?bridge.jobs.find(candidate=>candidate.kind==='connect-rag-model'&&candidate.deviceId===input.deviceId&&candidate.projectId===input.projectId
+        &&candidate.assetId===input.assetId&&candidate.assetKind===input.assetKind&&Number(candidate.version)===input.version&&candidate.expectedManifest===input.expectedManifest
+        &&candidate.bindingId===input.expectedBindingId&&candidate.expectedInstanceId===input.expectedInstanceId&&embeddingConnected(candidate,selection)):undefined);
     const success = embeddingConnected(job, selection);
     const blocked = disabled || operation.busy || isPending(job) || pending;
     const binding=bridge.device?.report.bindings?.find(item=>item.projectId===input.projectId&&item.valid!==false);
@@ -86,9 +88,9 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent,
         {pending && !isPending(job) && <Typography.Text type="secondary">Дождитесь завершения текущего действия с папкой. Если ответ был потерян, затем проверьте отправленное подключение.</Typography.Text>}
         {operation.error && <Alert role="alert" type="error" showIcon message={operation.error} />}
         {success && <Alert role="status" type="info" showIcon message="Подключение модели проверено"
-            description="Перезапустите OpenCode. Индекс не изменён и его готовность не подтверждена. Для серверной модели автоматическая индексация отключена: полную переиндексацию запускайте отдельно после проверки настроек и сохранения нужной копии." />}
+            description="Локальный индекс перестроен и синхронизирован с сервером. Перезапустите OpenCode, чтобы открытая сессия использовала новое подключение." />}
         {success && <>
-            <Typography.Paragraph type="secondary">Следующий шаг — откройте интерфейс этой установки и явно запустите полное индексирование. Открытие окна само не перестраивает индекс.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">Локальный поиск готов. Интерфейс выбранной установки показывает результаты индексирования и поиска.</Typography.Paragraph>
             <Button type="link" href={'#'+ragUiAnchorId(input.projectId)}>Перейти к интерфейсу установки</Button>
         </>}
     </Space>;

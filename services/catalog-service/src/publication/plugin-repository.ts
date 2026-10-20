@@ -1,3 +1,4 @@
+import { nativeCardHash } from '../publication/native-hash';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
@@ -6,15 +7,16 @@ import type { IAiPlugin, IAiPluginCreate, IAiPluginUpdate, IAiPluginVersion, IPa
 import { object, publicationHash, validatePublication } from './publication-validation';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import { securityEvent } from '../access/security-events';
-import { assertPublicationDependencies, assertPublicationUnreferenced } from './publication-dependencies';
-import { assertRemoteSkillUnreferenced, assertSkillReservationsUnreferenced, setupSkillDependencyReservations } from './skill-dependency-registry';
+import { assertPublicationDependencies } from './publication-dependencies';
+import { setupSkillDependencyReservations } from './skill-dependency-registry';
 
 /** SQL публикаций отделён от каталога проектов; карточка и её версия меняются одной транзакцией. */
 export class PluginRepository {
-    constructor(private readonly pool: Pool, private readonly assertSkillUnreferenced: (id: string) => Promise<void> = assertRemoteSkillUnreferenced) {}
+    constructor(private readonly pool: Pool) {}
 
     async setup(): Promise<void> {
-        await this.pool.query(`ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_key TEXT;
+        await this.pool.query(`ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+            ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_key TEXT;
             ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_hash TEXT;
             CREATE UNIQUE INDEX IF NOT EXISTS ai_plugins_publication_key ON ai_plugins (publication_key);
             ALTER TABLE ai_plugin_versions ADD COLUMN IF NOT EXISTS metadata JSONB;
@@ -24,7 +26,7 @@ export class PluginRepository {
 
     async list(page: number, size: number, query: string, allowedIds?: string[]): Promise<IPage<IAiPlugin>> {
         const params: unknown[] = [];
-        const where: string[] = [];
+        const where: string[] = allowedIds===undefined?['archived_at IS NULL']:[];
         if (query) { params.push(`%${query}%`); where.push(`name ILIKE $${params.length}`); }
         if (allowedIds !== undefined) { params.push(allowedIds); where.push(`id=ANY($${params.length}::text[])`); }
         const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -41,7 +43,11 @@ export class PluginRepository {
     }
 
     /** Переданный idle-клиент сохраняет сессию владельца; его освобождает вызывающая сторона. */
-    async create(raw: IAiPluginCreate, author: string, afterCreate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<IAiPlugin> {
+    async create(raw: IAiPluginCreate, author: string, afterCreate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient, alreadyInTransaction = false, plannedId?: string): Promise<IAiPlugin> {
+        // Предварительный импорт закрепляет ID на сервере; публичное тело публикации такого поля не принимает.
+        if (plannedId !== undefined && !/^ai-plug-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(plannedId)) {
+            throw new BadRequestException('Некорректный серверный ID плана публикации.');
+        }
         const body = validatePublication(raw);
         const fingerprint = publicationHash(body);
         return this.transaction(async client => {
@@ -52,6 +58,7 @@ export class PluginRepository {
                 if (previous.rows[0]) {
                     if (previous.rows[0].publication_hash !== fingerprint) { throw new ConflictException('Этот запрос уже опубликован с другим содержимым. Начните новую публикацию.'); }
                     const plugin = toPlugin(previous.rows[0]);
+                    if (plannedId && plugin.id !== plannedId) { throw new ConflictException('План публикации уже связан с другой карточкой. Обновите предварительный просмотр.'); }
                     await afterCreate?.(client, plugin);
                     return plugin;
                 }
@@ -59,10 +66,13 @@ export class PluginRepository {
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`name:${body.name.toLowerCase()}`]);
             const duplicate = await client.query('SELECT id FROM ai_plugins WHERE lower(name)=lower($1)', [body.name]);
             if (duplicate.rows.length) { throw new ConflictException('Инструмент с таким названием уже есть в общем магазине. Откройте его для создания новой версии.'); }
+            if (plannedId && (await client.query('SELECT id FROM ai_plugins WHERE id=$1',[plannedId])).rows.length) {
+                throw new ConflictException('ID плана уже занят другой карточкой. Обновите предварительный просмотр.');
+            }
             const result = await client.query(
                 `INSERT INTO ai_plugins (id,name,kind,description,version,compatibility,tags,origin,revision,config,files,publication_key,publication_hash,dependencies)
                  VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13::jsonb) RETURNING *`,
-                [`ai-plug-${randomUUID()}`, body.name, body.kind, body.description, body.compatibility ?? null, body.tags,
+                [plannedId ?? `ai-plug-${randomUUID()}`, body.name, body.kind, body.description, body.compatibility ?? null, body.tags,
                     body.origin, body.revision, JSON.stringify(body.config), JSON.stringify(body.files), body.publicationKey ?? null, fingerprint, JSON.stringify(body.dependencies ?? [])],
             );
             const plugin = toPlugin(result.rows[0]);
@@ -82,6 +92,7 @@ export class PluginRepository {
         return this.transaction(async client => {
             const found = await client.query("SELECT * FROM ai_plugins WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'ai-plug-%') ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE", [idOrName]);
             if (!found.rows[0]) { return null; }
+            if(found.rows[0].archived_at){throw new ConflictException('Карточка находится в архиве. Сначала верните её в каталог.');}
             const current = toPlugin(found.rows[0]);
             const complete = async (plugin: IAiPlugin): Promise<IAiPlugin> => { await afterUpdate?.(client, plugin); return plugin; };
             if (body.expectedVersion !== undefined && current.version !== body.expectedVersion) { throw new ConflictException('Карточку уже изменили. Обновите её перед сохранением; введённый текст сохранён в форме.'); }
@@ -98,6 +109,26 @@ export class PluginRepository {
             await securityEvent(client, { actor: author, action: 'plugin.update', resourceId: saved.id, before: auditSummary(current), after: auditSummary(saved) });
             return complete(saved);
         }, borrowedClient, alreadyInTransaction);
+    }
+
+    /** Исторический source pin получает новую ordinal-версию без изменения действующего head. */
+    async snapshot(id: string, raw: IAiPluginCreate, actor: string, plannedVersion: number, expectedHeadHash: string,
+        client: PoolClient, committed: (card: IAiPlugin) => Promise<void>): Promise<void> {
+        const body=validatePublication(raw);
+        await this.transaction(async lease=>{
+            const found=await lease.query('SELECT * FROM ai_plugins WHERE id=$1 FOR UPDATE',[id]);
+            const current=found.rows[0]?toPlugin(found.rows[0]):null;
+            if(!current||nativeCardHash(current)!==expectedHeadHash||current.kind!==body.kind||current.name!==body.name){
+                throw new ConflictException('Текущая карточка изменилась перед сохранением исторической зависимости.');
+            }
+            await assertPublicationDependencies(lease,body.dependencies,{id,files:body.files});
+            const number=await lease.query('SELECT GREATEST(COALESCE(MAX(version),0),$2)+1 AS v FROM ai_plugin_versions WHERE ai_plugin_id=$1',[id,current.version]);
+            if(Number(number.rows[0]?.v)!==plannedVersion){throw new ConflictException('История карточки изменилась после предварительного просмотра.');}
+            const snapshot={...current,...body,id,version:plannedVersion,compatibility:body.compatibility??null,revision:body.revision??null};
+            await this.insertVersion(lease,snapshot,actor,'Историческая зависимость ассета; действующий head сохранён');
+            await securityEvent(lease,{actor,action:'plugin.snapshot',resourceId:id,before:{head:current.version},after:{head:current.version,snapshot:plannedVersion}});
+            await committed(snapshot);
+        },client,true);
     }
 
     async versions(id: string): Promise<IAiPluginVersion[]> {
@@ -128,23 +159,30 @@ export class PluginRepository {
         });
     }
 
-    /** Удалённая версия и исполнитель остаются в аудите той же транзакции. */
-    async delete(idOrName: string, actor: string): Promise<boolean> {
-        return this.transaction(async client => {
-            const found = await client.query("SELECT * FROM ai_plugins WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'ai-plug-%') ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE", [idOrName]);
-            if (!found.rows[0]) { return false; }
-            const plugin = toPlugin(found.rows[0]);
-            const id = plugin.id;
-            const used = await client.query('SELECT 1 FROM project_assets WHERE asset_id=$1 LIMIT 1', [id]);
-            if (used.rows.length) { throw new ConflictException('Инструмент используется в проектных каталогах. Сначала уберите его из проектов.'); }
-            await assertPublicationUnreferenced(client, id);
-            await assertSkillReservationsUnreferenced(client, id);
-            await this.assertSkillUnreferenced(id);
-            await client.query('DELETE FROM ai_plugin_versions WHERE ai_plugin_id=$1', [id]);
-            await client.query('DELETE FROM ai_plugins WHERE id=$1', [id]);
-            await securityEvent(client, { actor, action: 'plugin.delete', resourceId: id, before: auditSummary(plugin), after: null });
-            return true;
+    /** Старый HTTP DELETE использует тот же архив и не обходит проверку project refs. */
+    async delete(idOrName:string,actor:string):Promise<boolean> {
+        return this.transaction(async client=>{
+            const found=await client.query("SELECT * FROM ai_plugins WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'ai-plug-%') ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE",[idOrName]);
+            if(!found.rows[0]){return false;}
+            await this.archive(client,toPlugin(found.rows[0]).id,actor,{requireUnassigned:true});return true;
         });
+    }
+
+    /** История/пакеты/immutable pins сохраняются; project refs снимаются только после отдельного impact CAS. */
+    async archive(client:PoolClient,id:string,actor:string,options:{expectedHash?:string;removeProjectRefs?:boolean;requireUnassigned?:boolean;restore?:boolean}={}):Promise<void> {
+        const found=await client.query('SELECT * FROM ai_plugins WHERE id=$1 FOR UPDATE',[id]);
+        if(!found.rows[0]){throw new ConflictException('Карточка больше не доступна.');}
+        const row=found.rows[0],plugin=toPlugin(row);
+        if(options.expectedHash&&nativeCardHash(plugin)!==options.expectedHash){throw new ConflictException('Карточка изменилась после проверки последствий.');}
+        if(options.requireUnassigned&&(await client.query('SELECT 1 FROM project_assets WHERE asset_id=$1 LIMIT 1',[id])).rows.length){
+            throw new ConflictException('Инструмент используется в проектах. Откройте проверку последствий архивирования.');
+        }
+        if(options.removeProjectRefs){await client.query('DELETE FROM project_assets WHERE asset_id=$1 AND asset_kind=$2',[id,plugin.kind]);}
+        if(!!row.archived_at===!options.restore){return;}
+        // Старые инсталляции могут читать этот head по точному ID; видимость меняет только archived_at.
+        await client.query('UPDATE ai_plugins SET archived_at=$2,updated_at=now() WHERE id=$1',[id,options.restore?null:new Date().toISOString()]);
+        await securityEvent(client,{actor,action:options.restore?'plugin.restore':'plugin.archive',resourceId:id,before:auditSummary(plugin),
+            after:{...auditSummary(plugin),archived:!options.restore,removedProjectRefs:!!options.removeProjectRefs}});
     }
 
     private async saveVersion(client: PoolClient, plugin: IAiPlugin, author: string, note: string): Promise<IAiPlugin> {
@@ -190,12 +228,12 @@ function metadata(plugin: IAiPlugin): NonNullable<IAiPluginVersion['metadata']> 
         ...(plugin.dependencies?.length ? { dependencies: plugin.dependencies } : {}) };
 }
 
-function toPlugin(row: Record<string, unknown>): IAiPlugin {
+export function toPlugin(row: Record<string, unknown>): IAiPlugin {
     const dependencies = normalizeDependencyPins(row.dependencies);
     return { id: String(row.id), name: String(row.name), kind: row.kind === 'plugin' ? 'plugin' : 'mcp', description: String(row.description),
         version: Number(row.version), compatibility: row.compatibility as string | null, tags: row.tags as string[], origin: String(row.origin), revision: row.revision as string | null,
         config: row.config as IAiPlugin['config'], files: row.files as IAiPlugin['files'], createdAt: String(row.created_at), updatedAt: String(row.updated_at),
-        ...(dependencies.length ? { dependencies } : {}) };
+        ...(dependencies.length ? { dependencies } : {}),...(row.archived_at?{archivedAt:String(row.archived_at)}:{}) };
 }
 
 function toVersion(row: Record<string, unknown>): IAiPluginVersion {

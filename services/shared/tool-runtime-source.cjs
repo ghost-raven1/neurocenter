@@ -36,7 +36,7 @@ function validateRuntimeSource(value){
  const managed=['python','java','dotnet'].includes(value.adapter),assets={};
  for(const [target,bundle] of Object.entries(value.assets)){
   if(!exact(bundle,['app','runtime'])||managed&&!bundle.runtime||!managed&&bundle.runtime!==undefined)throw new Error('Python, Java и .NET требуют runtime; Go, Rust и native содержат готовую программу без runtime.');
-  const app=asset(bundle.app,{local:true}),runtime=bundle.runtime?asset(bundle.runtime):undefined;
+  const app=asset(bundle.app,{local:true}),runtime=bundle.runtime?asset(bundle.runtime,{local:true}):undefined;
   const extension={python:/\.py$/i,java:/\.jar$/i,dotnet:/\.dll$/i}[value.adapter];
   if(extension&&!extension.test(app.entrypoint))throw new Error('Точка входа приложения не соответствует adapter '+value.adapter+'.');
   assets[target]={app,...(runtime?{runtime}:{})};

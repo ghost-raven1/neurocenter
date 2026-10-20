@@ -7,7 +7,7 @@ import { authorizedFetch } from '../bridge/state.js';
 import { openIndexSnapshot } from '../features/rag-index/snapshot.js';
 import { exportRow } from '../features/rag-index/paths.js';
 import { assertIndexIdle, assertVerifiedIndex, assertSameProfile } from '../features/rag-index/readiness.js';
-import { FINGERPRINT_VERSION, rowFingerprint, indexSnapshotHash, normalizeIndexProfile, type ICanonicalRagRow } from '../features/rag-index/contract.js';
+import { FINGERPRINT_VERSION, rowFingerprint, indexSnapshotHash, normalizeIndexProfile, ragRequestHash, type ICanonicalRagRow } from '../features/rag-index/contract.js';
 
 const AUTO_APPLY_LIMIT = 1000;
 const BATCH = 100;
@@ -23,10 +23,12 @@ const manifestSchema = z.object({
     indexProfile: z.unknown(), complete: z.boolean(), snapshotHash: z.string().nullable(), ids: z.record(z.string()),
     usableVectorCount: z.number().int().nonnegative().optional(),
     indexState: z.enum(['unverified', 'syncing', 'ready']).optional(),
+    generation:z.string().regex(/^(?:initial-[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/),
+    selectionRevision:z.number().int().nonnegative(),dataRevision:z.number().int().nonnegative(),selectedProfile:z.unknown(),
 });
 
 /** Передаёт стабильный полный native-снимок порциями; готовность подтверждает отдельная серверная печать. */
-export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: () => Promise<void> = async () => {}): Promise<string> {
+export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: () => Promise<void> = async () => {},options:{allowEmpty?:boolean}={}): Promise<string> {
     const resolveIdentity = () => readRagProjectIdentity({ project: input.project, createIfMissing: input.dryRun || input.scanLimit ? false : input.createIfMissing }, cwd);
     const initial = await resolveIdentity();
     const projectKey = input.projectKey?.trim() || initial.value.projectKey;
@@ -40,7 +42,7 @@ export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: 
     const health = await assertIndexIdle(storePath);
     const snapshot = await openIndexSnapshot(storePath);
     try {
-        if (!snapshot.rowCount) { throw new Error('Локальный индекс пуст. Серверная база не изменена; выполните полную индексацию в OpenCode.'); }
+        if (!snapshot.rowCount&&!options.allowEmpty) { throw new Error('Локальный индекс пуст. Серверная база не изменена; выполните полную индексацию в OpenCode.'); }
         const indexProfile = await assertVerifiedIndex(located, snapshot.dimension);
         const assertCurrent = async () => {
             await authorize();
@@ -63,20 +65,15 @@ export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: 
         const response = await authorizedFetch(`/api/rag/manifest?projectKey=${encodeURIComponent(projectKey)}`);
         if (!response.ok) { throw new Error(`Не удалось прочитать серверную базу (HTTP ${response.status}).`); }
         const parsed = manifestSchema.safeParse(await response.json());
-        if (!parsed.success) { throw new Error('Сервер не поддерживает проверяемую передачу индекса V1. Обновите сервер перед синхронизацией.'); }
+        if (!parsed.success) { throw new Error('Сервер не поддерживает формат поколений RAG. Обновите сервер перед синхронизацией.'); }
         const baseline = parsed.data;
         await assertCurrent();
         const serverProfile = normalizeIndexProfile(baseline.indexProfile);
-        const legacy = !serverProfile && !baseline.complete && baseline.incompleteRows === baseline.rowCount;
-        // Только согласованная пустая копия допускает первую порцию с другой моделью; сервер повторно проверяет её под write-lock.
-        const emptyBaseline = baseline.rowCount === 0 && baseline.usableVectorCount === 0 && baseline.incompleteRows === 0
-            && Object.keys(baseline.ids).length === 0 && Object.keys(baseline.fingerprints).length === 0
-            && baseline.complete === false && baseline.snapshotHash === null && baseline.indexState === 'syncing';
-        if (!emptyBaseline && (serverProfile || (baseline.rowCount > 0 && !legacy))) { assertSameProfile(indexProfile, serverProfile); }
+        assertSameProfile(indexProfile,normalizeIndexProfile(baseline.selectedProfile));
+        if(serverProfile||baseline.rowCount>0)assertSameProfile(indexProfile,serverProfile);
         const added = Object.keys(fingerprints).filter(id => baseline.fingerprints[id] !== fingerprints[id]);
         const scanComplete = Object.keys(fingerprints).length === snapshot.rowCount;
         const removed = scanComplete ? Object.keys(baseline.ids).filter(id => !Object.hasOwn(fingerprints, id)) : [];
-        // Unverified legacy rows also need removal/replacement before a complete snapshot can be sealed.
         const total = added.length + removed.length;
         const common = { projectKey, fingerprintVersion: FINGERPRINT_VERSION, indexProfile, localCount: snapshot.rowCount, dimension: snapshot.dimension };
         if (!scanComplete || input.dryRun || (!input.limit && total > (input.maxRows ?? AUTO_APPLY_LIMIT))) {
@@ -98,12 +95,14 @@ export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: 
                 rows.push(row);
             }
         }
+        let dataRevision=baseline.dataRevision;
         const post = async (chunks: ICanonicalRagRow[], deletes: string[], complete = false) => {
             await assertCurrent();
+            const payload={projectKey,fingerprintVersion:FINGERPRINT_VERSION,indexProfile,
+                expectedGeneration:baseline.generation,expectedSelectionRevision:baseline.selectionRevision,expectedDataRevision:dataRevision,
+                snapshot:{hash:snapshotHash,rowCount:snapshot.rowCount,complete},chunks:chunks.map(row=>({...row,contentHash:contentHash(row.content)})),deletes};
             const result = await authorizedFetch('/api/rag/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-                projectKey, fingerprintVersion: FINGERPRINT_VERSION, indexProfile,
-                snapshot: { hash: snapshotHash, rowCount: snapshot.rowCount, complete },
-                chunks: chunks.map(row => ({ ...row, contentHash: contentHash(row.content) })), deletes,
+                ...payload,requestKey:ragRequestHash(payload),
             }) });
             if (!result.ok) {
                 let message = 'Подтверждённые порции сохранены; повторите синхронизацию.';
@@ -113,7 +112,9 @@ export async function syncRagDb(input: TSyncRagDbInput, cwd: string, authorize: 
                 } catch { /* Ответы прокси и внутренние детали не показываются. */ }
                 throw new Error(`Передача остановлена (HTTP ${result.status}). ${message}`);
             }
-            const receipt = await result.json() as { upserted?: number; deleted?: number; complete?: boolean; snapshotHash?: string };
+            const receipt = await result.json() as { upserted?: number; deleted?: number; complete?: boolean; snapshotHash?: string;generation?:string;selectionRevision?:number;dataRevision?:number };
+            if(receipt.generation!==baseline.generation||receipt.selectionRevision!==baseline.selectionRevision||receipt.dataRevision!==dataRevision+1){throw new Error('Сервер не подтвердил ревизию записанного пакета. Повторите чтение снимка.');}
+            dataRevision=receipt.dataRevision;
             if (chunks.length && receipt.upserted !== chunks.length) { throw new Error('Сервер подтвердил не все отправленные фрагменты. Снимок не завершён.'); }
             if (complete && (receipt.complete !== true || receipt.snapshotHash !== snapshotHash)) { throw new Error('Сервер не подтвердил целостность полного снимка. Повторите синхронизацию.'); }
             return receipt;

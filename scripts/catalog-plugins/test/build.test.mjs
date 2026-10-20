@@ -177,7 +177,7 @@ test('Две сборки в одну папку не перезаписываю
     const results = await Promise.allSettled([buildRecipe(options), buildRecipe(options)]);
     assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
     assert.equal(results.filter(result => result.status === 'rejected').length, 1);
-    assert.equal((await readyManifest(path.join(f.output, 'ready.json'))).length, 1);
+    assert.equal((await readyManifest(path.join(f.output, 'asset.json'))).length, 1);
     assert.equal((await fs.readdir(f.output)).some(name => name.startsWith('.build-')), false);
 });
 
@@ -247,7 +247,7 @@ await fs.writeFile(path.join(directory,'package-lock.json'),JSON.stringify({lock
         await fs.appendFile(fakeNpm, "if(process.argv[process.argv.indexOf('--os')+1]==='linux') throw new Error('Проверочная ошибка второй платформы');\n");
         const failedOutput = path.join(f.root, 'failed-output');
         await assert.rejects(buildRecipe({ recipePath: f.recipePath, output: failedOutput }), /Проверочная ошибка второй платформы/);
-        await assert.rejects(fs.access(path.join(failedOutput, 'ready.json')), { code: 'ENOENT' });
+        await assert.rejects(fs.access(path.join(failedOutput, 'asset.json')), { code: 'ENOENT' });
         assert.equal((await fs.readdir(failedOutput)).some(name => name.startsWith('.build-')), false);
     } finally { if (previous === undefined) { delete process.env.NPM_CLI_JS; } else { process.env.NPM_CLI_JS = previous; } }
 });

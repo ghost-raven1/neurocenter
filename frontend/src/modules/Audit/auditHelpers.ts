@@ -4,7 +4,7 @@ const ACTION_LABELS: Record<string, string> = {
     install: 'Установка', delete: 'Удаление', release: 'Выпуск', sync: 'Синхронизация',
     restore: 'Восстановление', create: 'Создание', update: 'Обновление', upload: 'Загрузка',
     verify: 'Проверка', transfer: 'Передача', move: 'Перемещение', cleanup: 'Очистка',
-    import: 'Импорт', publish: 'Публикация',
+    import: 'Импорт', publish: 'Публикация', activate: 'Возврат версии',
 };
 const ACTION_COLORS: Record<string, string> = {
     install: 'green', delete: 'red', release: 'geekblue', sync: 'purple', restore: 'volcano', create: 'blue', update: 'cyan',
@@ -40,7 +40,10 @@ export function describeAuditAction(action: string): { label: string; color: str
 export function auditResourceLabel(type: string): string { return RESOURCE_LABELS[type] ?? (type || 'Ресурс не указан'); }
 
 /** Старое техническое значение admin не выдаётся за подтверждённую почту пользователя. */
-export function auditActorLabel(actor: string): string { return !actor || actor === 'admin' ? 'Служебная запись' : actor; }
+export function auditActorLabel(actor: string): string {
+    if (!actor || actor === 'admin') { return 'Служебная запись'; }
+    return ({ 'builtin-catalog': 'Встроенный каталог', 'skills-service': 'Сервис скиллов' } as Record<string, string>)[actor] || actor;
+}
 
 /** Флаговый аудит раскрывает только подтверждённое булево состояние. */
 export function featureFlagAuditChanges(details:IAuditEvent['details']):{label:string;before:string;after:string}[] {
@@ -61,9 +64,14 @@ export function filterAuditPage(events: IAuditEvent[], search: string, outcome: 
     return events.filter(event => {
         if (outcome !== 'all' && event.outcome !== outcome) { return false; }
         if (!query) { return true; }
+        const names = [event.details?.before, event.details?.after].flatMap(value => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) { return []; }
+            const name = (value as Record<string, unknown>).name;
+            return typeof name === 'string' ? [name] : [];
+        });
         return [ event.action, describeAuditAction(event.action).label, event.resourceType,
             auditResourceLabel(event.resourceType), event.resourceId, event.actor, auditActorLabel(event.actor),
-            event.correlationId, event.id ]
+            event.correlationId, event.id, ...names ]
             .join(' ').toLocaleLowerCase('ru-RU').includes(query);
     });
 }

@@ -12,6 +12,8 @@ export function requiredFeatureFlag(method:string,rawPath:string,body:unknown):F
     if(verb==='POST'&&/^\/api\/models\/[^/]+\/ollama\/(api\/(embed|chat)|v1\/(embeddings|chat\/completions))$/.test(route))return 'model_hosting';
     if(verb==='POST'&&/^\/api\/models\/[^/]+\/hosting$/.test(route)&&object(body)&&typeof body.action==='string'&&['start','check'].includes(body.action))return 'model_hosting';
     if((verb==='POST'&&['/api/tool-builds','/api/tool-builds/archive'].includes(route))
+        ||(verb==='POST'&&route==='/api/tool-builds/uploads')
+        ||(verb==='PUT'&&/^\/api\/tool-builds\/uploads\/[^/]+\/content$/.test(route))
         ||(['GET','HEAD'].includes(verb)&&/^\/api\/tool-builds\/(npm|repository)$/.test(route)))return 'tool_builds';
     if(verb==='POST'&&(route==='/api/rag/sync'||route==='/api/device-jobs'&&object(body)&&body.kind==='sync-rag'))return 'rag_sync';
 }

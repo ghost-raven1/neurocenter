@@ -4,11 +4,11 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import {syncAssets} from './sync.mjs';
-import {modelBundleProgressReporter} from '../models/bundle-cli.mjs';
+import {assetProgressReporter} from './progress.mjs';
 import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from './environment.mjs';
 
-const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--root <проект>] [--models-directory <кэш моделей>] [--artifacts-directory <кэш инструментов>]';
+const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>]';
 
 /**
  * Системный каталог корневых сертификатов. Если HTTPS завершается корпоративным
@@ -34,16 +34,20 @@ function systemCaBundle() {
 /** CLI одинаков для Git hook и ручного восстановления; проверка не обращается к сети и не пишет файлы. */
 export function parseAssetsArguments(args) {
     if(args.some(value=>['--help','-h','—help'].includes(value)))return {help:true};
-    const options={},seen=new Set(),values={'--root':'root','--models-directory':'modelsDirectory','--artifacts-directory':'artifactsDirectory'};
+    const options={},seen=new Set(),values={'--root':'root','--artifacts-directory':'artifactsDirectory'};
     for(let index=0;index<args.length;index++) {
         const key=args[index];
+        if(key==='--asset'&&args[index+1]&&!args[index+1].startsWith('-')){(options.ids??=[]).push(args[++index]);continue;}
         if(seen.has(key))throw new Error('Параметр повторён.\n'+usage);seen.add(key);
         if(key==='--verify-only')options.verifyOnly=true;
         else if(key==='--download-only')options.verifyOnly=false;
+        else if(key==='--without-models')options.withoutModels=true;
+        else if(key==='--metadata-only')options.metadataOnly=true;
         else if(Object.hasOwn(values,key)&&args[index+1]&&!args[index+1].startsWith('-'))options[values[key]]=args[++index];
         else throw new Error(usage);
     }
     if(seen.has('--verify-only')&&seen.has('--download-only'))throw new Error('Выберите один режим поставки.\n'+usage);
+    if(options.ids&&new Set(options.ids).size!==options.ids.length)throw new Error('ID ассета повторён.\n'+usage);
     return options;
 }
 
@@ -64,7 +68,7 @@ export async function runAssetsCli(args=process.argv.slice(2)) {
     const interrupt=()=>cancellation.abort(Object.assign(new Error('Подготовка поставки прервана. Проверенный кэш сохранён; повторите команду.'),{code:'ECANCELED'}));
     process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
     try {
-        const report=await syncAssets({...options,root,environment,signal:cancellation.signal,onProgress:modelBundleProgressReporter()});
+        const report=await syncAssets({...options,root,environment,signal:cancellation.signal,onProgress:assetProgressReporter()});
         console.log(JSON.stringify(report));return report;
     } finally {process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);}
 }

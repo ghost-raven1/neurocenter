@@ -19,14 +19,14 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
         const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
         const hosted = source.hostedEmbedding;
-        const marker = hosted as {schemaVersion?: unknown;profileSchemaVersion?: unknown}|undefined;
+        const marker = hosted as {schemaVersion?: unknown;profileSchemaVersion?: unknown;reindexSchemaVersion?:unknown}|undefined;
         if (hosted !== undefined && (!hosted || typeof hosted !== 'object' || Array.isArray(hosted)
-            || Object.keys(hosted).some(key => !['schemaVersion','profileSchemaVersion'].includes(key)) || marker?.schemaVersion !== 1
+            || Object.keys(hosted).some(key => !['schemaVersion','profileSchemaVersion','reindexSchemaVersion'].includes(key)) || marker?.schemaVersion !== 1 || marker?.reindexSchemaVersion !== undefined && marker.reindexSchemaVersion !== 1
             || ('profileSchemaVersion' in hosted && marker?.profileSchemaVersion !== 2) || !ui)) {
             throw new Error('hostedEmbedding требует schemaVersion: 1 и необязательный profileSchemaVersion: 2 в закреплённом OpenCodeRAG с localUi.');
         }
         return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
-            ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1,...(marker?.profileSchemaVersion === 2 ? {profileSchemaVersion: 2} : {})}} : {}) };
+            ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1,...(marker?.profileSchemaVersion === 2 ? {profileSchemaVersion: 2} : {}),...(marker?.reindexSchemaVersion===1?{reindexSchemaVersion:1}:{})}} : {}) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
 }
 

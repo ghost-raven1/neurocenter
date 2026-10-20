@@ -69,6 +69,10 @@ export interface IStoreApp {
     config?: Record<string, unknown>;
     /** Файлы плагина (из каталога) — для one-click установки дерева. */
     files?: { path: string; content?: string }[];
+    /** Exact project snapshot не подменяется изменившимся head при открытии деталей. */
+    projectCard?: import('./storeDetails').TStoreDetail;
+    projectManifest?: string;
+    pinError?: string;
     /** Кол-во файлов (для бандлов). */
     filesCount?: number;
 }

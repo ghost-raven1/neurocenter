@@ -2,6 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { contentHash } from '../src/lib/lancedb.js';
 import { rowFingerprint, indexSnapshotHash, embeddingSignature } from '../src/features/rag-index/contract.js';
+export const generation='initial-d42d9c901272e5a92ea315c1470f60a5';
+export const context={generation,selectionRevision:1,dataRevision:0};
+export const receipt=(body:any)=>({...context,dataRevision:body.expectedDataRevision+1});
 export const profile = { provider: 'ollama', model: 'fixture-model', dimension: 3 };
 export const row = (id: string) => ({ id, content: id, description: null, filePath: 'README.md', startLine: null, endLine: null,
     language: null, kind: '', role: null, quirkType: null, tags: null, embedding: [0.1, 0.2, 0.3] });
@@ -15,7 +18,7 @@ export async function readyIndex(root: string, store = path.join(root, '.opencod
 }
 export function metadata(rows: unknown[], complete = true) {
     const fingerprints = Object.fromEntries(rows.map((value: any) => [value.id, rowFingerprint(value)]));
-    return { projectKey: 'test-project', fingerprintVersion: 1, indexProfile: profile, rowCount: rows.length, incompleteRows: 0,
+    return { ...context,selectedProfile:profile,projectKey: 'test-project', fingerprintVersion: 1, indexProfile: profile, rowCount: rows.length, incompleteRows: 0,
         indexState: complete ? 'ready' : 'syncing', complete, snapshotHash: complete ? indexSnapshotHash(profile, fingerprints) : null,
         fingerprints, ids: Object.fromEntries(rows.map((value: any) => [value.id, contentHash(value.content)])) };
 }

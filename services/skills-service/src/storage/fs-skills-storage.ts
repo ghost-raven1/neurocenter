@@ -1,13 +1,13 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { validateResources } from '../skills/skill-resources';
 import { SKILL_VERSIONS_DIRECTORY, versionRelative, preserveVersion, syncSkillDirectory } from './skill-versions';
 
 import type { ISkillFile, ISkillMeta, ISkillResource } from '../skills/skills.model';
 import { normalizeMeta, parseSkillFile, serializeSkillFile } from './frontmatter';
-import { buildSeedSkills } from './seed-data';
 import type { IStoredEntry, ISkillsStorage, ISkillChange } from './skills-storage.interface';
 import {SKILL_JOURNAL_DIRECTORY,readSkillText,recoverSkillJournals,recoverSkillScope,withSkillJournal,withSkillScope} from './skill-journal';
 import {reserveCapacity} from '../../../shared/capacity.cjs';
@@ -15,7 +15,7 @@ import { SkillAuditOutbox } from './skill-audit-outbox';
 import { skillAuditEvents, skillDirectoryAuditEvents, type ISkillMutationContext, type TDeliverSkillAudit } from './skill-audit';
 import { dependencyReservation, type ISkillDependencyReservation, type TReserveSkillDependencies } from './skill-dependency-reservation';
 import { safeSkillDirectoryPath, skillDirectoryState, type ISkillDirectoryChange } from './skill-directory-change';
-import { assertSkillDurability, uncertainSkillCommits } from './skill-durability';
+import { assertSkillDurability } from './skill-durability';
 
 /** Журнал файла в корне использует компонент `имя.md`, каталоги — своё имя. */
 const skillScope = (skillPath: string): string => skillPath.includes('/') ? skillPath.split('/')[0] : skillPath + '.md';
@@ -85,11 +85,6 @@ export class FsSkillsStorage implements ISkillsStorage {
         await fs.mkdir(this.baseDir, { recursive: true });
         await recoverSkillJournals(this.baseDir, changes => this.reserveRecoveryVersions(changes));
 
-        if (!uncertainSkillCommits(this.baseDir).length && process.env.NODE_ENV!=='production' && await this.isEmpty()) {
-            for (const seed of buildSeedSkills()) {
-                await this.writeSkill(seed.path, seed.meta, seed.body, undefined, { actor: 'skills-service', source: 'bootstrap' });
-            }
-        }
         await this.auditOutbox.start();
     }
 
@@ -171,10 +166,16 @@ export class FsSkillsStorage implements ISkillsStorage {
         return current;
     }
 
-    public async writeSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext): Promise<void> {
+    public async writeSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext, expected?: ISkillFile): Promise<void> {
         await withSkillScope(this.baseDir, skillScope(skillPath), async () => {
             this.assertDurability();
             await recoverSkillScope(this.baseDir, skillScope(skillPath), entries => this.reserveRecoveryVersions(entries));
+            if (expected) {
+                const raw = await readSkillText(await this.skillFileAbsolute(skillPath));
+                if (raw === null || !isDeepStrictEqual(this.parse(raw,skillPath),expected)) {
+                    throw new ConflictException('Скилл изменился после проверки. Обновите предварительный просмотр.');
+                }
+            }
             await this.applyChangesLocked([{path:skillPath,next:{path:skillPath,meta,body,resources}}], context, true);
         });
         await this.auditOutbox.afterMutation();

@@ -76,7 +76,7 @@ test('Метаданные ветки закрепляются commit до чт�
     const f = fixture();
     const result = await resolveRepositorySource({url: 'https://github.com/owner/repo/tree/main/packages/tool'}, {fetch: f.fetch});
     assert.deepEqual(result, {url: 'https://github.com/owner/repo', commit, ref: 'main', subdirectory: 'packages/tool', entrypoint: 'src/index.ts',
-        candidates: ['src/index.ts'], name: 'example-mcp', description: 'Поиск проекта', recommendedKind: 'mcp'});
+        candidates: ['src/index.ts'], name: 'example-mcp', description: 'Поиск проекта', recommendedKind: 'mcp', requiresEntrypointChoice: false, runnableKinds: ['mcp'], warnings: []});
     assert.equal(f.requests[1].url.pathname, '/repos/owner/repo/commits/main');
     assert.ok(f.requests.slice(2).every(request => request.url.searchParams.get('ref') === commit));
 });

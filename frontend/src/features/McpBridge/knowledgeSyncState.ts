@@ -8,7 +8,7 @@ export type KnowledgeJobKind = 'restore-rag' | 'sync-rag';
 export function knowledgeSyncBlocker(device?: IBridgeDevice): string {
     const common = bridgeOperationBlocker(device);
     if (common) { return common; }
-    if (!device?.report.capabilities?.includes('project-rag-sync-v1')) {
+    if (!device?.report.capabilities?.includes('project-rag-generations-v1')) {
         return 'Обновите мост для проверки профиля индекса и безопасной синхронизации знаний.';
     }
     return device.report.ragSupported === false ? device.report.ragError || 'Локальная LanceDB недоступна на этом компьютере.' : '';

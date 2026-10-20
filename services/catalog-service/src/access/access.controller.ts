@@ -4,7 +4,6 @@ import type { Request } from 'express';
 import { AccessDb } from './access-db';
 import { allowRequest, IAccessRequest } from './access-policy';
 import { IAccessActor } from './access.model';
-import { resolveSkillReadClaims } from './skill-reference';
 
 /** Проверяет служебную идентичность gateway и моста входа. */
 export function assertInternal(token: unknown): void {
@@ -27,7 +26,7 @@ export class AccessController {
     @Post('internal/access/authorize')
     async authorize(@Headers('x-neurocenter-internal') token: string,@Body() input: IAccessRequest & IAccessActor) {
         assertInternal(token);
-        const claims=await resolveSkillReadClaims(await this.access.claims(input.email),input.activeRole,input);
+        const claims=await this.access.claims(input.email);
         const allowed=allowRequest(claims,input.activeRole,input);
         return {allowed,claims};
     }

@@ -1,6 +1,6 @@
 import { renderSkillInstruction } from '../../../shared/skill-package.cjs';
 import { BadRequestException } from '@nestjs/common';
-import type { ISkillCreateRequest } from './skills.model';
+import type { ISkillCreateRequest,ISkillMeta } from './skills.model';
 import { validateResources } from './skill-resources';
 import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/dependency-pins.cjs';
 
@@ -8,6 +8,22 @@ import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/de
 export function skillDependencyPins(value: unknown): IDependencyPin[] {
     try { return normalizeDependencyPins(value); }
     catch (error) { throw new BadRequestException((error as Error).message); }
+}
+
+/** Stored legacy requirements stay readable; a new publication must replace them explicitly. */
+export function assertSkillDependencyReplacement(previous:Pick<ISkillMeta,'mcp'|'plugins'>,replacement?:Partial<ISkillMeta>):void{
+    if(!previous.mcp.length&&!previous.plugins.length)return;
+    if(!replacement||!Object.prototype.hasOwnProperty.call(replacement,'dependencies')||!Array.isArray(replacement.mcp)||replacement.mcp.length
+        ||!Array.isArray(replacement.plugins)||replacement.plugins.length){
+        throw new BadRequestException('Замените требования по имени явно: очистите mcp и plugins и укажите точные dependencies (или явно пустой список).');
+    }
+}
+
+/** Shared normalized payload projection; reading a historical record does not approve a new write. */
+export function skillPublicationMeta(meta:Partial<ISkillMeta>){
+    const dependencies=skillDependencyPins(meta.dependencies);
+    return {description:meta.description?.trim(),tags:[...new Set(meta.tags??[])],mcp:[...new Set(meta.mcp??[])],plugins:[...new Set(meta.plugins??[])],specialization:meta.specialization,
+        ...(dependencies.length?{dependencies}:{})};
 }
 
 /** Строгая проверка пути: удалять «..» и тем самым менять область доступа нельзя. */
@@ -36,8 +52,8 @@ export function validateSkillCreate(value: ISkillCreateRequest): ISkillCreateReq
         const list = meta[key];
         if (list !== undefined && (!Array.isArray(list) || list.length > 20 || list.some(item => typeof item !== 'string' || !item.trim() || item.length > 128 || /[\x00-\x1f]/.test(item)))) { throw new BadRequestException(`Поле ${key}: до 20 непустых строк.`); }
     }
+    if(meta.mcp?.length||meta.plugins?.length){throw new BadRequestException('Требования MCP/плагинов по имени не публикуются. Укажите точные dependencies: ID, версия и SHA-256; mcp и plugins должны быть пустыми.');}
     if (meta.specialization !== undefined && (typeof meta.specialization !== 'string' || meta.specialization.length > 256)) { throw new BadRequestException('Некорректная специализация скилла.'); }
     if (Buffer.byteLength(renderSkillInstruction({slug:value.slug,description:meta.description,mcp:meta.mcp,plugins:meta.plugins},value.body),'utf8') > 1024 * 1024) { throw new BadRequestException('Инструкция вместе с метаданными SKILL.md должна помещаться в 1 МиБ.'); }
-    return { ...value, resources: validateResources(value.resources), path, name: value.name.trim().normalize('NFC'), meta: { description: meta.description?.trim(), tags: [...new Set(meta.tags ?? [])], mcp: [...new Set(meta.mcp ?? [])], plugins: [...new Set(meta.plugins ?? [])], specialization: meta.specialization,
-        ...(dependencies.length ? { dependencies } : {}) } };
+    return { ...value, resources: validateResources(value.resources), path, name: value.name.trim().normalize('NFC'), meta: skillPublicationMeta({...meta,dependencies}) };
 }

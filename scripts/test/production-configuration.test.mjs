@@ -15,6 +15,8 @@ test('Сборщик получает отдельный секрет метри
         await configureProduction(fixture(),directory);
         assert.equal(await readFile(path.join(directory,'secrets/metrics_token'),'utf8'),metrics);
         assert.equal((await stat(path.join(directory,'secrets/metrics_token'))).mode&0o777,0o600);
+        const modelKey=await readFile(path.join(directory,'secrets/model_credential_key'),'utf8');
+        assert.match(modelKey,/^[A-Za-z0-9+/]{43}=\n$/);assert.ok(!(await readFile(path.join(directory,'.env'),'utf8')).includes(modelKey.trim()));
     }finally{await rm(directory,{recursive:true,force:true});}
 });
 test('Прежний конфиг дополняется ключом метрик без смены паролей или обхода симлинка',async()=>{

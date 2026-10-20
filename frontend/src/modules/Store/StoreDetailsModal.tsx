@@ -48,7 +48,7 @@ interface IHistoryState { key: string; value: IAiPluginVersion[] | null; error: 
 /** Полная инструкция, метаданные и действительная история выбранного инструмента. */
 const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
     const columns = Grid.useBreakpoint().sm ? 2 : 1;
-    const identity = viewApp ? `${viewApp.kind}:${viewApp.id}` : '';
+    const identity = viewApp ? `${viewApp.kind}:${viewApp.id}:${viewApp.version}:${viewApp.projectManifest??''}` : '';
     const [state, setState] = useState<IDetailState>({ key: '', value: null, error: null });
     const [reload, setReload] = useState(0);
     const [activeTab, setActiveTab] = useState('content');
@@ -118,7 +118,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, 
                 </div>
                 {!body.trim() ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Инструкция пока не добавлена" />
                     : source ? <pre className="store-details__source" tabIndex={0} aria-label="Исходник инструкции в Markdown">{body}</pre>
-                        : <InstructionPreview key={identity} body={body}><Suspense fallback={<div className="store-details__loading" role="status"><Spin tip="Готовим инструкцию…" /></div>}><StoreInstruction body={body} /></Suspense></InstructionPreview>}
+                        : <InstructionPreview key={identity} body={body}><Suspense fallback={<div className="store-details__loading" role="status"><Spin tip="Готовим инструкцию…" /></div>}><StoreInstruction key={`${identity}:${detail.skill.meta.version}`} skillKey={`${identity}:${detail.skill.meta.version}`} body={body} resources={detail.skill.resources} /></Suspense></InstructionPreview>}
             </section>;
         }
         return <StoreBundleContent plugin={detail.plugin} copying={copying} onCopy={value => { void copy(value); }} />;

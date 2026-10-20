@@ -9,15 +9,18 @@ export class BuildRequestUnresolvedError extends Error {
     }
 }
 interface SubmissionRequest {signature: string; key: string}
-/** Неизвестный исход сохраняет UUID даже при повторной отправке, смене формы или перезагрузке. */
+/** Неизвестный исход разрешает повтор только с восстановленным точным телом. */
 export function buildSubmissionRequest(signature: string, previous?: SubmissionRequest, retainedKey?: string): SubmissionRequest {
-    if (retainedKey) return {signature, key: retainedKey};
+    if (retainedKey) {
+        if(previous?.key!==retainedKey||previous.signature!==signature)throw new Error('Нельзя изменить сохранённый запрос упаковки под прежним UUID.');
+        return previous;
+    }
     return previous?.signature === signature ? previous : {signature, key: crypto.randomUUID()};
 }
 export function readPendingBuild(scope: string): string | undefined {
     return readBuildCheckpoint(scope, 'request');
 }
-/** В хранилище остаётся только UUID; исходники и параметры пакета туда не копируются. */
+/** Здесь только навигационный UUID; точное тело отдельно фиксируется в IndexedDB. */
 export function savePendingBuild(scope: string, key?: string): void {
     if (!saveBuildCheckpoint(scope, 'request', key) && key) throw new Error('Не удалось сохранить ключ сборки. Отправка остановлена. Разрешите хранение данных сайта в настройках браузера и повторите.');
 }

@@ -15,7 +15,7 @@ const distSource = 'console.log("isolated bridge runtime");\n';
 const buildId = hash('index.js\0' + distSource);
 const archiveName = target => `neurocenter-asset-sync-${target}-${version}.tgz`;
 const contextScripts = ['package-bridge-runtime.mjs', 'bridge-build-integrity.mjs', 'bridge-runtime-probe.mjs',
-    'bridge-windows-job.mjs', 'opencode-platforms.mjs'];
+    'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs'];
 
 /** Отдельный checkout и фальшивые сборщики: настоящий Docker, npm и сеть не используются. */
 async function fixture(t) {
@@ -35,12 +35,14 @@ async function fixture(t) {
     const calls = path.join(root, 'calls.jsonl'), bin = path.join(root, 'fake-bin');
     const runtime = path.join(root, 'bridge-dist/runtime');
     const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
-    await fs.mkdir(path.join(root, 'scripts'), {recursive: true});
+    await fs.mkdir(path.join(root, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(bridge, 'dist'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['prepare-bridge-runtimes.mjs', 'prepare-bridge-installers.mjs', 'bridge-runtime-release.mjs', 'release-request.mjs', ...contextScripts]) {
+    for (const file of ['prepare-bridge-runtimes.mjs', 'bridge-runtime-artifacts.mjs', 'release-request.mjs', ...contextScripts]) {
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
     }
+    await fs.mkdir(path.join(root, 'node_modules/@neurocenter'), {recursive: true});
+    await fs.symlink(path.join(repository, 'node_modules/@neurocenter/asset-contract'), path.join(root, 'node_modules/@neurocenter/asset-contract'), 'dir');
     await fs.mkdir(path.join(root, 'bridge-dist'), {recursive: true});
     for (const file of ['install.sh', 'install.ps1']) {
         await fs.copyFile(path.join(repository, 'bridge-dist', file), path.join(root, 'bridge-dist', file));
@@ -124,12 +126,7 @@ async function fixture(t) {
         if(process.env.RUNTIME_FIXTURE_NODE_MAJOR)Object.defineProperty(process.versions,'node',{value:process.env.RUNTIME_FIXTURE_NODE_MAJOR+'.0.0'});
         const record=value=>fs.appendFileSync(process.env.RUNTIME_FIXTURE_CALLS,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
-        globalThis.fetch=async url=>{
-            if(!process.env.RUNTIME_FIXTURE_RELEASE_TRANSPORT)return deny();
-            const responses=JSON.parse(fs.readFileSync(process.env.RUNTIME_FIXTURE_ROOT+'/release-payloads.json','utf8'));
-            if(!responses[url])return deny();
-            record({kind:'release-download',url});return new Response(Buffer.from(responses[url],'base64'));
-        };
+        globalThis.fetch=async ()=>deny();
         http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;
         net.Server.prototype.listen=deny;
         const rename=fs.promises.rename;
@@ -170,19 +167,6 @@ async function fixture(t) {
         await fs.writeFile(file + '.sha256', digest + '\n');
         return file;
     }
-    async function seedRelease(published = ['darwin-arm64','linux-x64'], releaseBuildId = buildId) {
-        const payloads = {};
-        const artifacts = published.map(target => {
-            const file = archiveName(target), bytes = Buffer.from('isolated released runtime ' + target);
-            const url = `https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v${version}/${file}`;
-            payloads[url] = bytes.toString('base64');
-            return {file, url, metadata: {version, target, buildId: releaseBuildId, nodeVersion: '24.22.0', ragSupported: true,
-                probeEngine: {version: opencodeVersion, file: 'bin/opencode-probe', sha256: 'a'.repeat(64)}, bytes: bytes.length, sha256: hash(bytes)}};
-        });
-        await fs.writeFile(path.join(root, 'scripts/bridge-runtime-release.json'), JSON.stringify({schemaVersion: 1, version,
-            buildId: releaseBuildId, release: 'bridge-v' + version, artifacts}));
-        await fs.writeFile(path.join(root, 'release-payloads.json'), JSON.stringify(payloads));
-    }
     function environment(overrides) {
         return {
                 PATH: [bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter),
@@ -218,37 +202,20 @@ async function fixture(t) {
         }).finally(() => clearTimeout(timer)).then(checked);
         return {completion};
     }
-    return {root, runtime, seed, seedRelease, run, start};
+    return {root, runtime, seed, run, start};
 }
 
-test('Linux-сервер по умолчанию получает также опубликованный Mac-пакет без чужой нативной сборки', async t => {
-    const f = await fixture(t); await f.seedRelease();
-    const result = await f.run([], {RUNTIME_FIXTURE_HOST: 'linux-x64', RUNTIME_FIXTURE_RELEASE_TRANSPORT: '1'});
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'release-download').length, 2);
-    assert.equal(result.events.some(event => ['exec','docker','native-build'].includes(event.kind)), false);
-    for (const target of ['darwin-arm64','linux-x64']) {
-        const file = path.join(f.runtime, archiveName(target));
-        assert.equal((await fs.readFile(file + '.sha256', 'utf8')).trim(), hash(await fs.readFile(file)));
-        assert.equal(JSON.parse(await fs.readFile(file + '.json', 'utf8')).buildId, buildId);
-    }
-});
-
-test('Явная цель при опубликованной поставке сохраняет выбор оператора', async t => {
-    const f = await fixture(t); await f.seedRelease();
-    const result = await f.run(['--targets=linux-x64'], {RUNTIME_FIXTURE_RELEASE_TRANSPORT: '1'});
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'release-download').length, 1);
-    await assert.rejects(fs.access(path.join(f.runtime, archiveName('darwin-arm64'))), {code: 'ENOENT'});
-});
-
-test('Изменённая сборка разработки не скачивает старый release с прежней версией пакета', async t => {
-    const f = await fixture(t); await f.seedRelease(undefined, 'e'.repeat(64));
-    const result = await f.run(['--targets=linux-x64']);
+test('Linux producer builds only its default target without downloading a published release', async t => {
+    const f = await fixture(t);
+    const result = await f.run([], {RUNTIME_FIXTURE_HOST: 'linux-x64'});
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.events.filter(event => event.kind === 'release-download').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'docker').length, 1);
-    assert.equal(JSON.parse(await fs.readFile(path.join(f.runtime, archiveName('linux-x64') + '.json'), 'utf8')).buildId, buildId);
+    assert.equal(result.events.filter(event => event.kind === 'native-build').length, 1);
+    const asset = JSON.parse(await fs.readFile(path.join(f.runtime, `neurocenter-bridge-${version}.asset.json`), 'utf8'));
+    assert.equal(asset.schemaVersion, 1); assert.equal(asset.kind, 'bridge');
+    assert.equal(asset.source.repository, 'https://github.com/ghost-raven1/neurocenter-assets');
+    assert.deepEqual(asset.delivery.release.artifacts.map(item => item.metadata.target), ['linux-x64']);
+    await assert.rejects(fs.access(path.join(f.runtime, archiveName('darwin-arm64'))), {code: 'ENOENT'});
 });
 
 test('Проверенный кеш текущего хоста и Linux x64 не запускает процессы и сеть', async t => {
@@ -257,8 +224,8 @@ test('Проверенный кеш текущего хоста и Linux x64 н�
     const result = await f.run();
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.events, []);
-    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='9\.8\.7'$/m);
-    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.ps1'), 'utf8'), /^\$Version = '9\.8\.7'$/m);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='__BRIDGE_VERSION__'$/m);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.ps1'), 'utf8'), /^\$Version = '__BRIDGE_VERSION__'$/m);
 });
 
 test('BRIDGE_RUNTIME_TARGETS выбирает только явно указанный готовый пакет', async t => {
@@ -311,7 +278,7 @@ test('Нативная сборка использует отдельный вы
     const archive = path.join(f.runtime, archiveName('darwin-arm64'));
     assert.equal((await fs.readFile(archive + '.sha256', 'utf8')).trim(), hash(await fs.readFile(archive)));
     assert.equal(JSON.parse(await fs.readFile(archive + '.json', 'utf8')).buildId, buildId);
-    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='9\.8\.7'$/m);
+    assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='__BRIDGE_VERSION__'$/m);
 });
 
 test('Сбой нативного сборщика после записи кандидата сохраняет предыдущий пакет', async t => {
@@ -406,12 +373,58 @@ test('Чужая блокировка отклоняет новую сборку
 test('Готовый кеш читается при чужой блокировке без её удаления', async t => {
     const f = await fixture(t), lock = path.join(f.root, '.run/bridge-runtimes.lock');
     await f.seed('linux-x64');
+    const initial = await f.run(['--targets=linux-x64']);
+    assert.equal(initial.status, 0, initial.stderr);
     await fs.mkdir(lock, {recursive: true});
     await fs.writeFile(path.join(lock, 'owner'), 'do not delete');
     const result = await f.run(['--targets=linux-x64']);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(result.events, []);
     assert.equal(await fs.readFile(path.join(lock, 'owner'), 'utf8'), 'do not delete');
+});
+
+test('Exported descriptor is stable across repeats and argument ordering', async t => {
+    const f = await fixture(t); await f.seed('darwin-arm64'); await f.seed('linux-x64');
+    const first = await f.run(['--targets=linux-x64,darwin-arm64']);
+    assert.equal(first.status, 0, first.stderr);
+    const filename = path.join(f.runtime, `neurocenter-bridge-${version}.asset.json`);
+    const before = await fs.readFile(filename);
+    const repeated = await f.run(['--targets=darwin-arm64,linux-x64']);
+    assert.equal(repeated.status, 0, repeated.stderr);
+    assert.deepEqual(repeated.events, []);
+    assert.deepEqual(await fs.readFile(filename), before);
+});
+
+test('Changing an exported platform set fails before building or replacing files', async t => {
+    const f = await fixture(t); await f.seed('linux-x64');
+    assert.equal((await f.run(['--targets=linux-x64'])).status, 0);
+    const filename = path.join(f.runtime, `neurocenter-bridge-${version}.asset.json`);
+    const before = await fs.readFile(filename);
+    const result = await f.run(['--targets=linux-x64,darwin-arm64']);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /Увеличьте версию/);
+    assert.deepEqual(result.events, []); assert.deepEqual(await fs.readFile(filename), before);
+    await assert.rejects(fs.access(path.join(f.runtime, archiveName('darwin-arm64'))), {code: 'ENOENT'});
+});
+
+test('A changed build cannot overwrite an already exported version', async t => {
+    const f = await fixture(t); const archive = await f.seed('linux-x64');
+    assert.equal((await f.run(['--targets=linux-x64'])).status, 0);
+    const before = await fs.readFile(archive);
+    const changed = 'console.log("changed build");\n';
+    await fs.writeFile(path.join(f.root, 'mcp/neurocenter-asset-sync/dist/index.js'), changed);
+    await fs.writeFile(path.join(f.root, 'mcp/neurocenter-asset-sync/dist/build.json'), JSON.stringify({version, buildId: hash('index.js\0' + changed)}));
+    const result = await f.run(['--targets=linux-x64']);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /Увеличьте версию/);
+    assert.deepEqual(result.events, []); assert.deepEqual(await fs.readFile(archive), before);
+});
+
+test('Corrupt exported bytes are reported without silently publishing a replacement', async t => {
+    const f = await fixture(t); const archive = await f.seed('linux-x64');
+    assert.equal((await f.run(['--targets=linux-x64'])).status, 0);
+    await fs.writeFile(archive, 'corrupt');
+    const result = await f.run(['--targets=linux-x64']);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /повреждены/);
+    assert.deepEqual(result.events, []); assert.equal(await fs.readFile(archive, 'utf8'), 'corrupt');
 });
 
 test('Параллельная подготовка отказывает до сборщика, пока первый процесс удерживает блокировку', async t => {

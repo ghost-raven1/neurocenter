@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
@@ -24,11 +24,19 @@ export default defineConfig((configEnv) => {
     const authTarget = env.VITE_AUTH_PROXY_TARGET || DEFAULT_AUTH_PROXY_TARGET;
     const apiTarget = env.VITE_API_PROXY_TARGET || DEFAULT_API_PROXY_TARGET;
 
-    const shared = {
+    const shared: ProxyOptions = {
         changeOrigin: true,
         xfwd: true,
         secure: false,
         cookieDomainRewrite: {},
+        configure(proxy) {
+            proxy.on('proxyRes', (upstream, _request, downstream) => {
+                // pipe() не закрывает ответ клиента при обрыве уже начавшейся загрузки.
+                const close = () => downstream.destroy();
+                upstream.once('aborted', close);
+                upstream.once('error', close);
+            });
+        },
     };
 
     return {

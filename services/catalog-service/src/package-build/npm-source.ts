@@ -2,19 +2,10 @@ import { BadRequestException } from '@nestjs/common';
 import { filePath } from '../publication/publication-validation';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
+import { packageEntrypoints } from '../../../shared/source-candidates.cjs';
 
 const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const namePattern = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
-
-/** Рассматривается только корневой export и условия Node; types и произвольные подпути не являются запуском. */
-function exportedEntries(value:unknown,depth=0):string[] {
-    if(typeof value==='string')return [value];
-    if(!value||typeof value!=='object'||depth>=4)return [];
-    if(Array.isArray(value))return value.slice(0,16).flatMap(item=>exportedEntries(item,depth+1));
-    const entries=value as Record<string,unknown>;
-    if(entries['.']!==undefined)return exportedEntries(entries['.'],depth+1);
-    return ['node','import','default','require'].flatMap(key=>exportedEntries(entries[key],depth+1));
-}
 
 function npmSpecifier(value: string): string {
     if (!value.startsWith('https://')) {return value;}
@@ -65,15 +56,16 @@ export async function resolveNpmSource(specifier: unknown, suppliedEntrypoint?: 
     const prepared = name === 'opencode-rag-plugin' ? {version: '2.4.4', recommendedKind: 'mcp' as const, supportedTargets: TARGETS.filter(target => target !== 'darwin-x64')}
         : name === 'opencode-snip' ? {version: '2.0.0', recommendedKind: 'plugin' as const, supportedTargets: [...TARGETS]} : undefined;
     if (prepared && metadata.version !== prepared.version) { throw new BadRequestException(`Для ${name} подготовлен совместимый адаптер версии ${prepared.version}. Укажите ${name}@${prepared.version}.`); }
-    const bin = typeof metadata.bin === 'string' ? [metadata.bin] : metadata.bin && typeof metadata.bin === 'object' ? Object.values(metadata.bin) : [];
-    const candidates: string[] = [];
-    for (const value of [...bin, metadata.main, metadata.module, ...exportedEntries(metadata.exports)]) {
-        if (typeof value !== 'string') { continue; }
-        try { const entry = filePath(value.replace(/^\.\//, '')); if (isSourceEntrypoint(entry) && !candidates.includes(entry)) { candidates.push(entry); } } catch { /* Непереносимый entrypoint не предлагается. */ }
+    const detected = packageEntrypoints(metadata);
+    const candidates = prepared ? ['entrypoint.mjs'] : detected.candidates;
+    if (suppliedEntrypoint && (!isSourceEntrypoint(suppliedEntrypoint) || !candidates.includes(filePath(suppliedEntrypoint)))) {
+        throw new BadRequestException('Выберите опубликованный исполняемый файл из списка пакета, без деклараций типов.');
     }
-    const entrypoint = suppliedEntrypoint ? filePath(suppliedEntrypoint) : candidates[0] ?? (prepared ? 'entrypoint.mjs' : undefined);
-    if (!isSourceEntrypoint(entrypoint)) { throw new BadRequestException('В npm не найден JS/TS-файл запуска. Укажите entrypoint опубликованного пакета, без деклараций типов.'); }
-    return {package: name, version: metadata.version, specifier: `${name}@${metadata.version}`, entrypoint, candidates,
+    const entrypoint = suppliedEntrypoint ? filePath(suppliedEntrypoint) : candidates.length === 1 ? candidates[0] : prepared ? 'entrypoint.mjs' : '';
+    if (!candidates.length && !prepared) throw new BadRequestException('В npm не найден исполняемый файл запуска. Выберите пакет инструмента.');
+    const runnableKinds = prepared ? [prepared.recommendedKind] : detected.runnableKinds;
+    return {package: name, version: metadata.version, specifier: `${name}@${metadata.version}`, entrypoint, candidates, runnableKinds, requiresEntrypointChoice: candidates.length > 1 && !suppliedEntrypoint,
+        warnings: runnableKinds.length ? [] : ['Пакет выглядит как библиотека: в нём нет команды запуска MCP или объявления плагина OpenCode. Выберите пакет инструмента.'],
         description: typeof metadata.description === 'string' ? metadata.description.slice(0, 2000) : '',
-        ...(prepared ? {recommendedKind: prepared.recommendedKind, supportedTargets: prepared.supportedTargets} : {})};
+        ...(prepared ? {recommendedKind: prepared.recommendedKind, supportedTargets: prepared.supportedTargets} : detected.recommendedKind ? {recommendedKind: detected.recommendedKind} : {})};
 }

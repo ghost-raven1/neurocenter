@@ -11,7 +11,7 @@ vi.mock('../src/features/require-feature-enabled',()=>({requireFeatureEnabled:re
 const bindingId='b'.repeat(64);
 const actor={email:'developer@example.test',activeRole:'Разработчик'};
 const device:Device={id:'computer',email:actor.email,role:actor.activeRole,name:'Мост',fingerprint:'a'.repeat(64),last_seen:null,revoked:false,
-    report:{protocolVersion:2,ragSupported:true,capabilities:['durable-completions','managed-installations','project-rag-sync-v1'],
+    report:{protocolVersion:2,ragSupported:true,capabilities:['durable-completions','managed-installations','project-rag-generations-v1'],
         bindings:[{projectId:'project',folderName:'папка',bindingId,valid:true}]}};
 const input={deviceId:device.id,projectId:'project',kind:'sync-rag',expectedBindingId:bindingId,requestKey:'11111111-1111-1111-1111-111111111111'};
 
@@ -20,7 +20,7 @@ describe('Задания знаний закреплены за выбранно
     const store={pool:{query,connect:async()=>({query,release:vi.fn()})},owned,access:{claims}} as unknown as DeviceStore;
     const service=new DeviceJobs(store,{} as DeviceArtifacts,{} as DeviceInstallations,{} as InstallPlans);
     const job={id:'job',device_id:device.id,email:actor.email,role:actor.activeRole,project_id:'project',kind:'sync-rag',state:'running',
-        lease:'lease',lease_until:new Date(Date.now()+60000),payload:{bindingId}};
+        lease:'lease',lease_until:new Date(Date.now()+60000),payload:{bindingId,ragProtocol:'project-rag-generations-v1'}};
     beforeEach(()=>{
         vi.restoreAllMocks();query.mockReset();owned.mockReset();claims.mockReset();enqueue.mockReset();requireFlag.mockReset().mockResolvedValue(undefined);
         owned.mockResolvedValue(device);enqueue.mockResolvedValue({id:'created'});
@@ -37,7 +37,7 @@ describe('Задания знаний закреплены за выбранно
     });
     it.each(['sync-rag','restore-rag'])('Создание %s сохраняет точный отпечаток папки',async kind=>{
         await expect(service.create(actor,{...input,kind})).resolves.toEqual({id:'created'});
-        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.any(String),expect.objectContaining({kind,payload:{bindingId}}),expect.any(Function));
+        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.any(String),expect.objectContaining({kind,payload:{bindingId,ragProtocol:'project-rag-generations-v1'}}),expect.any(Function));
     });
     it.each([undefined,'a'.repeat(64),'не хэш'])('Смена или отсутствие выбранной папки отклоняется: %s',async expectedBindingId=>{
         await expect(service.create(actor,{...input,expectedBindingId})).rejects.toHaveProperty('status');
@@ -53,12 +53,12 @@ describe('Задания знаний закреплены за выбранно
         expect(enqueue).not.toHaveBeenCalled();
     });
     it.each(['sync-rag','restore-rag'])('Выдача %s отклоняет старую очередь после перепривязки',async kind=>{
-        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT')&&sql.includes("state='queued'")?[{...job,kind,payload:{bindingId:'c'.repeat(64)}}]:[],rowCount:0}));
+        query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT')&&sql.includes("state='queued'")?[{...job,kind,payload:{bindingId:'c'.repeat(64),ragProtocol:'project-rag-generations-v1'}}]:[],rowCount:0}));
         expect(await service.claim(device)).toBeNull();
         expect(query.mock.calls.some(([sql])=>sql.startsWith("UPDATE bridge_jobs SET state='failed'"))).toBe(true);
     });
     it.each(['sync-rag','restore-rag'])('Повторная авторизация %s отклоняет новую папку',async kind=>{
-        query.mockResolvedValue({rows:[{...job,kind,payload:{bindingId:'c'.repeat(64)}}],rowCount:1});
+        query.mockResolvedValue({rows:[{...job,kind,payload:{bindingId:'c'.repeat(64),ragProtocol:'project-rag-generations-v1'}}],rowCount:1});
         await expect(service.authorize(device,job.id,job.lease)).rejects.toHaveProperty('status',409);
     });
     it('Старая очередь без привязки завершается отказом вместо бесконечного ожидания',async()=>{

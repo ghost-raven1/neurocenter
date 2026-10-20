@@ -36,6 +36,8 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
         return card;
     }
 
+    getPinned(id: string, pin: string): Promise<IModel | null> { validateModelId(id); return this.repository.getPinned(id, pin); }
+
     async getAccessible(id: string, req: Request): Promise<IModel> {
         const actor = await this.actor(req);
         if (!canReadCommon(actor.claims, actor.activeRole)) {
@@ -78,11 +80,11 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
         } else if (!canReadCommon(actor.claims, actor.activeRole)) {
             allowedIds = await this.repository.accessibleIds(this.projectIds(actor.claims, actor.activeRole));
         }
-        return { items: await this.repository.list(allowedIds), assignedModelIds };
+        return { items: await this.repository.list(allowedIds, projectId !== undefined ? assignedModelIds : allowedIds ?? []), assignedModelIds };
     }
 
     isAssigned(projectId: string, modelId: string): Promise<boolean> { return this.repository.isAssigned(projectId, modelId); }
-    create(raw: unknown, actor: string): Promise<IModel> { return this.repository.create(raw, actor); }
+    create(raw: unknown, actor: string, requestKey?: string): Promise<IModel> { return this.repository.create(raw, actor, requestKey); }
     update(id: string, raw: unknown, actor: string): Promise<IModel> { validateModelId(id); return this.repository.update(id, raw, actor); }
     /** Доверенные метаданные runtime фиксируются до инвалидации клиентского каталога. */
     async pinVerified(expected: IModel, verified: IModelVerification, actor: string, authorize: () => Promise<void>): Promise<IModel> {

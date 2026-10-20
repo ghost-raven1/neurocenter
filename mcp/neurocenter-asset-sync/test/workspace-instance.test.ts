@@ -79,11 +79,12 @@ describe('Локальная идентичность экземпляра пр�
         expect(Object.keys(await commitProjectBinding(prepared)).sort()).toEqual(['projectId', 'folderName', 'mode', 'preparation', 'instanceId', 'bindingId', 'previousBindingId'].sort());
     });
 
-    it('Удаление marker у зарегистрированной папки не разрешает тихо создать другую identity', async () => {
+    it('Удаление marker восстанавливает прежнюю identity зарегистрированной физической папки', async () => {
+        const instanceId = await projectInstanceId(projectId); const bindingId = await projectBindingId(projectId);
         await fs.rm(marker()); const registry = await fs.readFile(registryFile(), 'utf8');
-        await expect(bindProject(projectId, path.basename(fixture.root))).rejects.toThrow('потерял marker');
+        await bindProject(projectId, path.basename(fixture.root));
         expect(await fs.readFile(registryFile(), 'utf8')).toBe(registry);
-        await expect(fs.stat(marker())).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(await projectInstanceId(projectId)).toBe(instanceId); expect(await projectBindingId(projectId)).toBe(bindingId);
     });
 
     it('Свежая привязка не принимает скопированные управляемые данные с удалённым marker', async () => {

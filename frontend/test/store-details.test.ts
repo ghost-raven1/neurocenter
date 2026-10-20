@@ -77,8 +77,8 @@ describe('Подробности скилла в магазине', () => {
 
     it('Читает всю инструкцию с заголовками, списком и кодом', () => {
         const html = renderToStaticMarkup(createElement(StoreInstruction, { body: '# RAG index monitor\n\nОписание.\n\n## Эндпоинты\n- `GET /api/rag/projects`\n- `GET /api/rag/summary`\n\nПоследняя строка инструкции.' }));
-        expect(html).toContain('<h1>RAG index monitor</h1>');
-        expect(html).toContain('<h2>Эндпоинты</h2>');
+        expect(html).toMatch(/<h1[^>]*>RAG index monitor<\/h1>/);
+        expect(html).toMatch(/<h2[^>]*>Эндпоинты<\/h2>/);
         expect(html).toContain('<code>GET /api/rag/projects</code>');
         expect(html).toContain('Последняя строка инструкции.');
     });

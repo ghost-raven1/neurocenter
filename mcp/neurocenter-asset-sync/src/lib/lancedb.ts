@@ -400,3 +400,10 @@ export async function* readRowsByIds(
         }
     }
 }
+
+/** Пустой успешный rebuild сохраняет схему целевой размерности без фиктивного фрагмента. */
+export async function createEmptyIndex(storePath:string,dimension:number):Promise<void>{
+    if(!Number.isSafeInteger(dimension)||dimension<1||dimension>16000)throw new Error('Некорректная размерность пустого индекса.');
+    const db=await connectStore(storePath);let table:import('@lancedb/lancedb').Table|undefined;
+    try{if(!(await db.tableNames()).includes(TABLE))table=await db.createEmptyTable(TABLE,chunkSchema(dimension));}finally{table?.close();db.close();}
+}

@@ -30,7 +30,7 @@ const ui = vi.hoisted(() => ({
     projectId: 'project-a', owner: 'owner-a', owners: new Map<string, () => () => boolean>(),
     buttons: new Map<string, {disabled?: boolean; onClick: () => void}>(), errors: [] as string[], warnings: [] as string[],
     bridge: {device: {id: 'device-a', name: 'Компьютер', role: 'Разработчик', online: true, report: {
-        root: '/fixture/root', protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-sync-v1'],
+        root: '/fixture/root', protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-generations-v1'],
         bindings: [{projectId: 'project-a', bindingId: 'a'.repeat(64), instanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', valid: true}, {projectId: 'project-b', bindingId: 'b'.repeat(64), instanceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', valid: true}],
     }}, devicesReady: true, jobsReady: true, installationsReady: true, loading: false, jobs: [] as IBridgeJob[],
         errors: {devices: '', jobs: '', installations: ''}, reload: vi.fn(async () => undefined)},

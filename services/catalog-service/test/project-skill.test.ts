@@ -1,3 +1,4 @@
+import {buildPackage} from '../src/catalog/bundle-package';
 import {describe, expect, it, vi} from 'vitest';
 import {isProjectSkill,assertProjectCatalogAsset} from '../src/devices/project-skill';
 import {DeviceJobs} from '../src/devices/device-jobs';
@@ -38,8 +39,9 @@ describe('Скиллы собственного проекта', () => {
     });
 
     it.each([['project-prj-own/helper', true], ['common/helper', false], ['project-prj-other/helper', false]])('Повторная авторизация установки сохраняет проектную границу: %s', async (assetId, allowed) => {
-        const query = vi.fn().mockResolvedValueOnce({rows: [{kind: 'install', role: 'Разработчик', project_id: 'prj-own', payload: {assetKind: 'skill', assetId, bindingId: 'a'.repeat(64),package:{manifest:{sha256:'a'.repeat(64)}}}}]}).mockResolvedValue({rows: [], rowCount: 0});
-        const service = new DeviceJobs({pool: {query}} as unknown as DeviceStore, {} as DeviceArtifacts, {} as DeviceInstallations, {package:vi.fn().mockResolvedValue({})} as unknown as InstallPlans);
+        const pkg=buildPackage({kind:'skill',id:'project-prj-own/helper',name:'helper',version:1},[{path:'SKILL.md',content:'Fixture'}],'now');
+        const query = vi.fn().mockResolvedValueOnce({rows: [{kind: 'install', role: 'Разработчик', project_id: 'prj-own', payload: {assetKind: 'skill', assetId, bindingId: 'a'.repeat(64),package:pkg}}]}).mockResolvedValue({rows: [], rowCount: 0});
+        const service = new DeviceJobs({pool: {query}} as unknown as DeviceStore, {} as DeviceArtifacts, {} as DeviceInstallations, {package:vi.fn().mockResolvedValue(pkg)} as unknown as InstallPlans);
         const permission = vi.spyOn(service as unknown as {permission: () => Promise<unknown>}, 'permission').mockResolvedValue({});
         const result = service.authorize({id: 'computer',report:{capabilities:['install-set-v1'],bindings:[{projectId:'prj-own',bindingId:'a'.repeat(64)}]}} as unknown as Device, 'job', 'lease');
         if (allowed) { await expect(result).resolves.toMatchObject({ok: true}); }

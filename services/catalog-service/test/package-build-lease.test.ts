@@ -19,7 +19,7 @@ describe('Сборщик восстанавливает единственног
             const client=Object.assign(new EventEmitter(),{query:vi.fn(async(sql:string)=>({rows:sql.includes('pg_try_advisory_lock')?[{locked:state.available}]:[]})),release:vi.fn()});
             state.clients.push(client);return client;
         });
-        service=new PackageBuildService({} as AccessDb,{} as RuntimeArtifacts,{ensureSchema:vi.fn()} as unknown as CatalogService);
+        service=new PackageBuildService({} as AccessDb,{} as RuntimeArtifacts,{ensureSchema:vi.fn()} as unknown as CatalogService,{} as never);
         Object.assign(service,{cleanupStages:async()=>{},stagingRoot:async()=>'/unused-lease-stage'});
     });
     afterEach(async()=>{if(!destroyed)await service.onModuleDestroy();vi.useRealTimers();});

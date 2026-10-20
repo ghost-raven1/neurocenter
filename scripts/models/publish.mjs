@@ -1,77 +1,55 @@
-import {constants} from 'node:fs';
-import {readFile,writeFile,lstat,open,rename,unlink} from 'node:fs/promises';
+import {constants,createReadStream} from 'node:fs';
+import {readFile,writeFile,lstat,open} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
-import {promisify} from 'node:util';
+import {promisify,isDeepStrictEqual} from 'node:util';
 import path from 'node:path';
+import {validateAsset,serializeAsset} from '@neurocenter/asset-contract';
 import {packModelBundle} from './bundle.mjs';
-import {sha256,lockedFiles,releaseBaseUrl} from './bundle-manifest.mjs';
-import {safeDirectory,ensureSpace} from './bundle-files.mjs';
-import {readModelRegistry,registryModelLocks,validateModelRegistry} from './model-registry.mjs';
+import {sha256,lockedFiles,releaseBaseUrl,modelName,validateModelBundle} from './bundle-manifest.mjs';
+import {safeDirectory,ensureSpace,verifyFile} from './bundle-files.mjs';
+import {readModelAsset} from './source-asset.mjs';
 import {withAssetsLock} from '../assets/lock.mjs';
-import {readPreparedSupply} from './publication-stage.mjs';
 
-const execute=promisify(execFile),repository='ghost-raven1/neurocenter';
-const json=value=>JSON.stringify(value,null,2)+'\n';
+const execute=promisify(execFile),repository='ghost-raven1/neurocenter-assets';
 
-/** Рецепт из каталога не содержит весов, адресов сервера, GitHub-токенов или исполняемых команд. */
-export function modelSupplyRecipe(value) {
-    if(!value||value.schemaVersion!==1||Object.keys(value).some(key=>!['schemaVersion','id','name','descriptor'].includes(key))
-        ||!value.descriptor||!['custom','builtin'].includes(value.descriptor.source)
-        ||!(value.descriptor.manifestSha256===null||typeof value.descriptor.manifestSha256==='string'&&/^[a-f0-9]{64}$/.test(value.descriptor.manifestSha256)))throw new Error('Нужен рецепт поставки модели, экспортированный из каталога.');
-    const descriptor={...value.descriptor,source:'builtin',manifestSha256:'0'.repeat(64)};
-    const item={id:value.id,name:value.name,descriptor,lock:`./locks/${value.id}.lock.json`};
-    validateModelRegistry({schemaVersion:1,models:[item]});
-    return item;
-}
-
-async function smallFile(filename) {
-    const info=await lstat(filename);
-    if(!info.isFile()||info.isSymbolicLink()||info.size<1||info.size>128*1024)throw new Error('Нужен небольшой обычный файл манифеста модели.');
-    const file=await open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
-    try {
-        const current=await file.stat();
-        if(!current.isFile()||current.ino!==info.ino||current.dev!==info.dev||current.size!==info.size)throw new Error('Манифест модели изменился перед чтением.');
-        const bytes=await file.readFile();if(bytes.length!==info.size)throw new Error('Манифест модели изменился при чтении.');
-        return bytes;
-    } finally {await file.close();}
-}
-
-async function localLock(directory,item) {
-    const [name,tag]=item.descriptor.model.split(':'),relative=`models/manifests/registry.ollama.ai/${name.includes('/')?name:'library/'+name}`;
+/** Из прочитанных локальных байтов формируется lock; старый реестр или рецепт не нужен. */
+async function localModel({root,directory,model,id,name,capability,dimension,description,license}) {
+    if(typeof model!=='string'||!modelName.test(model))throw new Error('Укажите установленную модель namespace/name:tag через --model.');
+    if(capability!==undefined&&!['embedding','vision','chat'].includes(capability))throw new Error('Capability: embedding, vision или chat.');
+    if(dimension!==undefined&&(!Number.isSafeInteger(dimension)||dimension<1||dimension>16384))throw new Error('Dimension: целое число 1–16384.');
+    const [modelPath,tag]=model.split(':'),relative=`models/manifests/registry.ollama.ai/${modelPath.includes('/')?modelPath:'library/'+modelPath}`;
     await safeDirectory(directory,relative);
-    const bytes=await smallFile(path.join(directory,relative,tag)),manifest=JSON.parse(bytes);
-    const lock={schemaVersion:1,model:item.descriptor.model,manifestSha256:sha256(bytes),manifest,
-        ...(item.descriptor.dimension!==null?{dimension:item.descriptor.dimension}:{}),capability:item.descriptor.capability};
-    lockedFiles([lock]);return lock;
+    const filename=path.join(directory,relative,tag),handle=await open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+    let bytes;
+    try {const info=await handle.stat();if(!info.isFile()||info.nlink!==1||info.size<1||info.size>128*1024)throw new Error('Нужен обычный локальный manifest до 128 КиБ.');bytes=await handle.readFile();const after=await handle.stat();if(bytes.length!==info.size||after.mtimeMs!==info.mtimeMs)throw new Error('Manifest изменился во время чтения.');}
+    finally {await handle.close();}
+    const manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    capability??=/(?:embedding|embed)(?:[:._-]|$)/i.test(model)?'embedding':undefined;
+    if(!capability)throw new Error('Тип модели не определён однозначно. Укажите --capability embedding, vision или chat.');
+    if(dimension!==undefined&&capability!=='embedding')throw new Error('Размерность задаётся только embedding-модели.');
+    const image=(await readFile(path.join(root,'compose.embedding.yml'),'utf8')).match(/^\s*image:\s*(ollama\/ollama:[^\s]+@sha256:[a-f0-9]{64})\s*$/m)?.[1];
+    if(!image)throw new Error('Не найден закреплённый runtime image в compose.embedding.yml.');
+    const lock={schemaVersion:1,model,manifestSha256:sha256(bytes),manifest,image,registryManifestUrl:`https://registry.ollama.ai/v2/${modelPath.includes('/')?modelPath:'library/'+modelPath}/manifests/${tag}`,capability,...(dimension!==undefined?{dimension}:{})};
+    lockedFiles([lock]);
+    id??='model-'+model.replace(/[^a-z0-9]+/gi,'-').toLowerCase().replace(/-+$/,'');name??=model;
+    if(!/^model-[a-z0-9][a-z0-9-]{0,120}$/.test(id)||typeof name!=='string'||!name.trim()||name.length>128||/[\x00-\x1f\x7f]/.test(name))throw new Error('Проверьте --id model-name и --name до 128 символов.');
+    const card={id,name,descriptor:{description:description||`Локальная ${capability}-модель ${model}.`,capability,runtime:'ollama',model,manifestSha256:lock.manifestSha256,dimension:dimension??null,source:'builtin'}};
+    return {lock,card,license:{spdx:license||'NOASSERTION'}};
 }
 
-async function snapshot(filename) {
-    try {return await readFile(filename);} catch(error) {if(error.code==='ENOENT')return null;throw error;}
-}
-
-/** Изменённый checkout не затирается: снапшоты сверяются после длительной упаковки и загрузки. */
-async function installMetadata(changes) {
-    for(const change of changes) {
-        const current=await snapshot(change.filename);
-        if(!(current===null&&change.before===null||current&&change.before&&current.equals(change.before)))throw new Error('Метаданные поставки изменились. Релиз загружен; обновление checkout остановлено. Повторите команду с новым release.');
+/** Повтор проверяет каждый локальный part и итоговую SHA перед использованием готового выпуска. */
+async function preparedAsset(output,expected) {
+    try{await lstat(output);}catch(error){if(error.code==='ENOENT')return null;throw error;}
+    await safeDirectory(output);const asset=await readModelAsset(path.join(output,'asset.json'));
+    for(const key of ['id','version','source','card','license'])if(!isDeepStrictEqual(asset[key],expected[key]))throw new Error('Готовый output относится к другому ассету. Укажите новый --output.');
+    if(!isDeepStrictEqual(asset.delivery.lock,expected.lock))throw new Error('Manifest локальной модели изменился. Укажите новую версию и output.');
+    validateModelBundle(asset.delivery.bundle,[expected.lock]);
+    for(const file of asset.delivery.bundle.files.filter(file=>file.parts)){
+        const complete=(await import('node:crypto')).createHash('sha256');
+        for(const part of file.parts){const filename=path.join(output,part.name);if(!await verifyFile(filename,part))throw new Error('Часть готовой поставки повреждена.');for await(const bytes of createReadStream(filename,{flags:constants.O_RDONLY|constants.O_NOFOLLOW}))complete.update(bytes);}
+        if(complete.digest('hex')!==file.sha256)throw new Error('Итоговая SHA модели не совпала.');
     }
-    const installed=[];
-    try {
-        for(const change of changes) {
-            await safeDirectory(path.dirname(change.filename),'',true);
-            const temporary=change.filename+`.publish-${process.pid}.tmp`;
-            try {
-                await writeFile(temporary,change.bytes,{flag:'wx',mode:0o600});
-                await rename(temporary,change.filename);installed.push(change);
-            } finally {await unlink(temporary).catch(error=>{if(error.code!=='ENOENT')throw error;});}
-        }
-    } catch(error) {
-        for(const change of installed.reverse()) {
-            if(change.before===null)await unlink(change.filename);
-            else await writeFile(change.filename,change.before,{mode:0o600});
-        }
-        throw error;
-    }
+    return asset;
 }
 
 async function ghRun(args) {
@@ -81,8 +59,8 @@ async function ghRun(args) {
 /** Новый draft публикуется только после проверки перечня, размеров и серверных SHA загруженных assets. */
 export async function publishModelAssets({release,output,manifest,run=ghRun,onProgress=()=>{}}) {
     const assets=manifest.files.flatMap(file=>file.parts||[]).map(part=>({name:part.name,size:part.size,sha256:part.sha256}));
-    const metadata=await readFile(path.join(output,'bundle-release.json'));
-    assets.push({name:'bundle-release.json',size:metadata.length,sha256:sha256(metadata)});
+    const metadata=await readFile(path.join(output,'asset.json'));
+    assets.push({name:'asset.json',size:metadata.length,sha256:sha256(metadata)});
     const read=async()=>JSON.parse(await run(['api',`repos/${repository}/releases/tags/${release}`]));
     let remote;
     try {remote=await read();} catch(error) {if(!/\bHTTP 404\b/.test(error.stderr||''))throw error;}
@@ -91,10 +69,10 @@ export async function publishModelAssets({release,output,manifest,run=ghRun,onPr
         &&new Set(value.assets.map(item=>item.name)).size===value.assets.length
         &&value.assets.every(item=>assets.some(asset=>matching(item,asset)))
         &&(!complete||value.assets.length===assets.length);
-    if(remote&&!valid(remote,!remote.draft))throw new Error('Существующий release отличается от подготовленной поставки. Выберите новый --release. Файлы Git не изменены.');
+    if(remote&&!valid(remote,!remote.draft))throw new Error('Существующий release отличается от подготовленной поставки. Выберите новый --release. Исходный репозиторий не изменён.');
     if(!remote) {
         await onProgress({stage:'creating-release',message:'Создаём черновик поставки на GitHub.'});
-        await run(['release','create',release,'--repo',repository,'--draft','--title',release,'--notes','Закреплённая поставка локальных моделей Нейроцентра. SHA-256 каждого файла находится в bundle-release.json.']);
+        await run(['release','create',release,'--repo',repository,'--draft','--title',release,'--notes','Закреплённая поставка локальных моделей Нейроцентра. Source envelope asset.json закрепляет все части и SHA-256.']);
         remote={tag_name:release,draft:true,assets:[]};
     }
     if(remote.draft) {
@@ -108,53 +86,30 @@ export async function publishModelAssets({release,output,manifest,run=ghRun,onPr
         await run(['release','edit',release,'--repo',repository,'--draft=false']);
         remote=await read();
     }
-    if(!valid(remote,true)||remote.draft)throw new Error('GitHub не подтвердил публикацию моделей. Файлы Git не изменены.');
+    if(!valid(remote,true)||remote.draft)throw new Error('GitHub не подтвердил публикацию моделей. Исходный репозиторий не изменён.');
 }
 
-/** По умолчанию только упаковка. Git-метаданные меняются после явного --publish и успешной публикации. */
-export async function prepareModelSupply({root,recipe,release,directory,output,publish=false},dependencies={}) {
-    return withAssetsLock(root,()=>prepareSupply({root,recipe,release,directory,output,publish},dependencies),
-        {onProgress:dependencies.onProgress});
-}
-
-async function prepareSupply({root,recipe,release,directory,output,publish},dependencies) {
-    const progress=dependencies.onProgress||(()=>{});
-    releaseBaseUrl(`https://github.com/${repository}/releases/download/${release}`);
-    if(typeof publish!=='boolean')throw new Error('Некорректный режим публикации.');
-    const registryFile=path.join(root,'scripts/models/model-registry.json'),manifestFile=path.join(root,'scripts/models/bundle-release.json');
-    const oldRegistry=await snapshot(registryFile),oldManifest=await snapshot(manifestFile);
-    const registry=await readModelRegistry(registryFile),locks=await registryModelLocks(registryFile);
-    const receipt=JSON.parse(await smallFile(path.resolve(recipe))),item=modelSupplyRecipe(receipt);
-    directory=await safeDirectory(path.resolve(directory||path.join(root,'data/embedding')));
-    let lock=await localLock(directory,item);
-    if(receipt.descriptor.manifestSha256!==null&&receipt.descriptor.manifestSha256!==lock.manifestSha256)throw new Error('Локальный манифест отличается от SHA рецепта. Экспортируйте актуальный рецепт перед публикацией.');
-    item.descriptor.manifestSha256=lock.manifestSha256;
-    const existing=registry.models.findIndex(current=>current.id===item.id);
-    if(existing>=0) {
-        const previous=registry.models[existing];
-        for(const key of ['model','capability','dimension'])if(previous.descriptor[key]!==item.descriptor[key])throw new Error('Технические параметры существующего ID модели менять нельзя. Создайте отдельную карточку модели.');
-        lock={...locks[existing],...lock};item.lock=previous.lock;registry.models[existing]=item;locks[existing]=lock;
-    } else {registry.models.push(item);locks.push(lock);}
-    validateModelRegistry(registry);const files=lockedFiles(locks);
-    output=path.resolve(output||path.join(root,'.run/model-supply',release));
-    await safeDirectory(path.dirname(output),'',true);
-    const lockFile=path.resolve(path.dirname(registryFile),item.lock),oldLock=await snapshot(lockFile);
-    const baseUrl=`https://github.com/${repository}/releases/download/${release}`;
-    await progress({stage:'inspecting',message:'Проверяем локальную модель и ранее подготовленную поставку.'});
-    let manifest=await readPreparedSupply({output,registry,lock,locks,baseUrl});
-    if(!manifest) {
-        await ensureSpace(path.dirname(output),[...files.values()].reduce((sum,file)=>sum+(file.size||0),0),dependencies.readDisk);
-        await progress({stage:'packing',message:`Упаковываем все модели поставки: ${registry.models.length}. Файлы проверяются по SHA-256.`});
-        manifest=await (dependencies.pack||packModelBundle)({directory,output,baseUrl,locks});
-        await writeFile(path.join(output,'model-registry.json'),json(registry),{flag:'wx',mode:0o600});
-        await writeFile(path.join(output,'model.lock.json'),json(lock),{flag:'wx',mode:0o600});
-    }
-    if(publish) {
-        await publishModelAssets({release,output,manifest,run:dependencies.run,onProgress:progress});
-        await progress({stage:'updating-metadata',message:'Публикация подтверждена. Обновляем реестр, lock и опись поставки в checkout.'});
-        await installMetadata([{filename:lockFile,before:oldLock,bytes:Buffer.from(json(lock))},
-            {filename:registryFile,before:oldRegistry,bytes:Buffer.from(json(registry))},
-            {filename:manifestFile,before:oldManifest,bytes:Buffer.from(json(manifest))}]);
-    }
-    return {ok:true,published:publish,release,models:registry.models.length,files:manifest.files.length,parts:manifest.files.flatMap(file=>file.parts||[]).length,output};
+/** Один выбранный локальный manifest создаёт один source asset; Git checkout не меняется. */
+export async function prepareModelSupply(options,dependencies={}) {
+    return withAssetsLock(options.root,async()=>{
+        const {root,release,publish=false}=options,progress=dependencies.onProgress||(()=>{});
+        if(typeof release!=='string'||!release)throw new Error('Укажите неизменяемый --release.');
+        const baseUrl=releaseBaseUrl(`https://github.com/${repository}/releases/download/${release}`);
+        if(typeof publish!=='boolean')throw new Error('Некорректный режим публикации.');
+        const directory=await safeDirectory(path.resolve(options.directory||path.join(root,'data/embedding')));
+        const {lock,card,license}=await localModel({...options,directory});
+        const expected={schemaVersion:1,id:card.id,kind:'model',version:options.version||release,source:{type:'release',repository:`https://github.com/${repository}`,tag:release},license,compatibility:{},card,lock};
+        const output=path.resolve(options.output||path.join(root,'.run/model-supply',release,card.id));
+        await safeDirectory(path.dirname(output),'',true);
+        await progress({stage:'inspecting',message:'Проверяем локальный manifest и source envelope.'});
+        let asset=await preparedAsset(output,expected);
+        if(!asset){
+            const files=lockedFiles([lock]);await ensureSpace(path.dirname(output),[...files.values()].reduce((sum,file)=>sum+(file.size||0),0),dependencies.readDisk);
+            const bundle=await (dependencies.pack||packModelBundle)({directory,output,baseUrl,locks:[lock]});
+            const {lock:_,...metadata}=expected;asset=validateAsset({...metadata,delivery:{type:'model-bundle',lock,bundle}});
+            await writeFile(path.join(output,'asset.json'),serializeAsset(asset),{flag:'wx',mode:0o600});
+        }
+        if(publish)await publishModelAssets({release,output,manifest:asset.delivery.bundle,run:dependencies.run,onProgress:progress});
+        return {ok:true,published:publish,id:asset.id,version:asset.version,release,files:asset.delivery.bundle.files.length,parts:asset.delivery.bundle.files.flatMap(file=>file.parts||[]).length,output,descriptor:path.join(output,'asset.json')};
+    },{onProgress:dependencies.onProgress});
 }

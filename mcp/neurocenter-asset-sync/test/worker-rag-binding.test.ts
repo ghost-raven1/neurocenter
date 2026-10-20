@@ -43,7 +43,7 @@ describe('Worker не переносит задание знаний на дру
         vi.mocked(state.api).mockImplementation(async route=>{
             if(route==='jobs/claim') {
                 if(claimed) return null as never;claimed=true;
-                return {id,lease:'22222222-2222-2222-2222-222222222222',kind,project_id:'test-project',payload:{bindingId:binding}} as never;
+                return {id,lease:'22222222-2222-2222-2222-222222222222',kind,project_id:'test-project',payload:{bindingId:binding,ragProtocol:'project-rag-generations-v1'}} as never;
             }
             return {} as never;
         });

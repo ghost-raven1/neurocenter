@@ -8,7 +8,7 @@ const directory = fileURLToPath(new URL('./', import.meta.url));
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const [command, ...parameters] = process.argv.slice(2);
 const commands = { build: 'build.mjs', publish: 'publish.mjs', prepare: 'prepare.mjs' };
-if (!commands[command] && command !== 'check') throw new Error('Команды: build, publish, prepare, check.');
+if (!Object.hasOwn(commands, command) && command !== 'check') throw new Error('Команды: build, publish, prepare, check.');
 const runtime = nodeRuntime();
 const node = runtime.node;
 const tests = () => [...['test', 'recipes/test'].flatMap(folder => fs.readdirSync(path.join(directory, folder)).filter(file => file.endsWith('.test.mjs')).map(file => path.join(directory, folder, file))), path.join(root, 'scripts/test/catalog-plugin-publish.test.mjs')];

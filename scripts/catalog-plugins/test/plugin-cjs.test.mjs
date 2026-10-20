@@ -1,3 +1,4 @@
+import {readyManifest} from '../manifest.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -43,11 +44,11 @@ await fs.writeFile(path.join(base,'plugin.js'),${JSON.stringify(factory)});await
             await fs.writeFile(path.join(cache, asset.sha256), bytes, { flag: 'wx', mode: 0o400 });
             await fs.writeFile(path.join(cache, asset.sha256) + '.json', JSON.stringify({ schemaVersion: 1, url: asset.url, sha256: asset.sha256, compressedBytes: bytes.length }), { flag: 'wx' });
         } });
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: unpacked });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const provenance = JSON.parse(await fs.readFile(path.join(output, 'provenance.json'), 'utf8'));
         await inspect({ root, output, unpacked, descriptor, provenance });
     } finally {

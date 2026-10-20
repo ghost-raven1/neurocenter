@@ -6,6 +6,7 @@ import {ModelsService} from '../src/models/models.service';
 import {ProjectEmbeddingService} from '../src/models/project-embedding.service';
 import {ProjectEmbeddingController} from '../src/models/project-embedding.controller';
 import {allowRequest} from '../src/access/access-policy';
+import {ProjectRagCoordinator} from '../src/models/project-rag-coordinator';
 
 const {query}=vi.hoisted(()=>({query:vi.fn()}));
 vi.mock('../src/database/pool',()=>({createPool:()=>({query,connect:async()=>({query,release:vi.fn()})})}));
@@ -16,7 +17,7 @@ const request=(activeRole='Админ проекта')=>({headers:{'x-neurocente
     'x-bridge-actor':encodeURIComponent(JSON.stringify({email,activeRole}))}}) as unknown as Request;
 const catalog={ensureSchema:vi.fn(),getProject:vi.fn(async()=>({id:projectId}))};
 const modelService=new ModelsService(catalog as unknown as CatalogService,{claims} as unknown as AccessDb);
-const service=new ProjectEmbeddingService(modelService),controller=new ProjectEmbeddingController(service);
+const service=new ProjectEmbeddingService(modelService,new ProjectRagCoordinator(modelService)),controller=new ProjectEmbeddingController(service);
 beforeEach(()=>{
     vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','embedding-access-fixture');vi.resetAllMocks();claims.mockResolvedValue(assigned);
     query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id FROM projects')?[{id:projectId}]:[]}));

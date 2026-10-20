@@ -8,9 +8,9 @@ import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
 import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
-import {syncStartupCatalog} from './workspace/catalog-startup.mjs';
 import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
+import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -25,7 +25,8 @@ const services = [
     { name: 'frontend', label: 'Веб-интерфейс', dir: 'frontend', port: 5173 },
 ];
 const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
-const output = createDevOutput();
+const defaultProfile = 'fast';
+const output = createDevOutput({defaultProfile});
 let node;
 let logDir;
 
@@ -40,6 +41,11 @@ function run(command, args, cwd = root, env = process.env) {
     const result = spawnSync(command, args, { cwd, stdio: 'inherit', env });
     if (result.error) { throw result.error; }
     if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
+}
+
+/** Общий source contract устанавливается по HTTPS и integrity корневого lock-файла. */
+function prepareWorkspaceDependencies() {
+    run(node, [npmCli(process.env), 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
@@ -62,14 +68,7 @@ function forPackages(command, next) {
         }
         output.success(`${label} · ${((Date.now() - started) / 1000).toFixed(1)} с`);
     }
-    if (command === 'build') {
-        next('Подготовка переносимого пакета моста');
-        run('bash', [ path.join(root, 'scripts/package-bridge.sh') ]);
-        output.success('Пакет моста подготовлен');
-        next('Подготовка автономных пакетов моста');
-        run(node, [ path.join(root, 'scripts/prepare-bridge-runtimes.mjs') ]);
-        output.success('Автономные пакеты моста готовы');
-    }
+
 }
 
 function entryFor(service) {
@@ -167,13 +166,18 @@ async function health(deadline = Infinity, cancellation) {
     }));
 }
 
-async function start() {
-    const next = progress(packages.length + 10);
+async function start(profile) {
+    const prepareAssets = profile !== 'fast', prepareModels = profile === 'full';
+    output.info('Профиль запуска', {fast:'fast — приложения без подготовки ассетов',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и все модели'}[profile]);
+    const next = progress(packages.length + 9);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
+    next('Установка общего контракта ассетов');
+    prepareWorkspaceDependencies();
     next('Проверка поставки проекта');
-    await prepareStartupAssets({root,output,environment:process.env});
+    if (prepareAssets) { await prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels}); }
+    else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
     forPackages('build', next);
     next('Запуск PostgreSQL');
@@ -182,20 +186,21 @@ async function start() {
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
     output.success('PostgreSQL готов');
     next('Запуск хостинга моделей');
-    await startModelRuntime({root,output,environment:process.env});
-    next('Обновление встроенного каталога инструментов');
-    syncStartupCatalog({ node, root, output, environment: {
-        ...process.env, CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
-        RUNTIME_ARTIFACT_DIR: path.resolve(root, process.env.RUNTIME_ARTIFACT_DIR || 'data/runtime-artifacts'),
-    } });
+    if (prepareModels) { await startModelRuntime({root,output,environment:process.env}); }
+    else { output.info('Хостинг моделей', 'Подготовка весов и запуск runtime пропущены выбранным профилем.'); }
+    next('Каталог инструментов');
+    output.info('Состав каталога', 'Выбирается главным администратором на странице «Ассеты». Запуск сохраняет текущие карточки.');
+    const modelCredentials=await prepareDevModelCredentials(root,process.env);
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(logDir, { recursive: true });
 
+    const commonEnvironment={...process.env};
+    delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
     const shared = {
-        ...process.env,
+        ...commonEnvironment,
         ...modelRuntimeEnvironment(root,process.env),
         DEV_POSTGRES_CONTAINER: postgres.stdout.trim(),
         BACKUP_DIR: path.resolve(root, process.env.BACKUP_DIR || 'data/backups'),
@@ -205,7 +210,8 @@ async function start() {
         RAG_SERVICE_URL: 'http://127.0.0.1:4300',
         FEATURE_FLAGS_SERVICE_URL: 'http://127.0.0.1:4400',
         AUTH_SERVICE_URL: 'http://127.0.0.1:22222',
-        CATALOG_PG_URL: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+        CATALOG_PG_URL: process.env.CATALOG_PG_URL_FILE?undefined:process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+        ...(process.env.CATALOG_PG_URL_FILE?{CATALOG_PG_URL_FILE:path.resolve(root,process.env.CATALOG_PG_URL_FILE)}:{}),
         RAG_PG_URL: process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag',
         PROJECTS_ROOT: path.resolve(root, process.env.PROJECTS_ROOT || path.join(homedir(), 'projects')),
         SKILLS_STORAGE_PATH: path.resolve(root, process.env.SKILLS_STORAGE_PATH || 'data/skills'),
@@ -232,7 +238,7 @@ async function start() {
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
-                env: { ...shared, PORT: String(service.port) },
+                env: { ...shared, ...(service.name==='catalog'?modelCredentials:{}), PORT: String(service.port) },
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });
@@ -289,7 +295,17 @@ async function main() {
         output.help();
         return;
     }
-    if (args.length !== 1 || !commands.includes(command)) {
+    let profile = defaultProfile;
+    let seenProfile = false;
+    let invalid = !commands.includes(command);
+    for (let index = 1; index < args.length && !invalid; index++) {
+        const argument = args[index];
+        if (command !== 'up' || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
+        profile = argument === '--profile' ? args[++index] : argument.slice('--profile='.length);
+        seenProfile = true;
+        if (!['fast','standard','full'].includes(profile)) { invalid = true; }
+    }
+    if (invalid) {
         output.error(`Неизвестная команда или параметры: ${args.join(' ')}`);
         output.help();
         process.exitCode = 1;
@@ -317,15 +333,21 @@ async function main() {
     output.heading(titles[command]);
     if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); output.success('Проверки проекта завершены'); }
     else if (command === 'install') {
-        const next = progress(packages.length + 1);
+        const next = progress(packages.length + 2);
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
+        next('Установка общего контракта ассетов');
+        prepareWorkspaceDependencies();
         forPackages(command, next);
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }
-    else if (command === 'build') { forPackages(command, progress(packages.length + 2)); output.success('Проект собран'); }
-    else if (command === 'up') { await start(); }
+    else if (command === 'build') {
+        const next = progress(packages.length + 1);
+        next('Установка общего контракта ассетов'); prepareWorkspaceDependencies();
+        forPackages(command, next); output.success('Проект собран');
+    }
+    else if (command === 'up') { await start(profile); }
     else if (command === 'down') {
         const count = await stop();
         if (count) { output.success(`Остановлено процессов этого каталога: ${count}`); }

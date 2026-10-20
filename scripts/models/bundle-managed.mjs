@@ -10,7 +10,7 @@ const managed='.bundle-managed',queues=new Map(),leases=new Map();
 const namespace=process.platform==='linux'?await readlink('/proc/self/ns/pid').catch(()=>hostname()):hostname();
 const leaseTimeout=5000;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-const conflict=()=>Object.assign(new Error('Манифест существующего файла модели не принадлежит проверенной поставке. Данные сохранены. Для регистрации комплекта из прежней версии Git выполните npm run models:prepare -- --adopt-from-git ORIG_HEAD; пользовательский тег сохраните под другим именем.'),{code:'MODEL_MANAGED_CONFLICT'});
+const conflict=()=>Object.assign(new Error('Манифест существующего файла модели не принадлежит проверенной поставке. Данные сохранены. Проверьте immutable alias и журнал подготовки; пользовательские теги не перезаписываются.'),{code:'MODEL_MANAGED_CONFLICT'});
 const invalid=()=>new Error('Квитанция управляемой поставки моделей повреждена. Данные сохранены.');
 const plain=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 
@@ -209,9 +209,18 @@ export async function recoverManagedModelBundle(directory,{verifyOnly=false,down
     return exclusive(directory,async()=>({ok:true,recovered:await recover(directory)}));
 }
 
-async function activate(directory,tags,{onBytes=()=>{}}={}) {
+async function activate(directory,tags,{onBytes=()=>{},retainExistingTags=false}={}) {
     await recover(directory);
-    const state=await managedModelState(directory),next=revision(tags),changes=[];
+    const state=await managedModelState(directory),changes=[];
+    // Импорт immutable aliases дополняет набор под той же lease, сохраняя активные исторические pins.
+    if(retainExistingTags) {
+        for(const previous of state.tags) {
+            const replacement=tags.find(tag=>tag.path===previous.path);
+            if(replacement&&replacement.sha256!==previous.sha256)throw conflict();
+        }
+        tags=[...tags,...state.tags.filter(previous=>!tags.some(tag=>tag.path===previous.path))];
+    }
+    const next=revision(tags);
     // Проверка каждого blob предшествует любому изменению активных тегов.
     await assertBlobs(directory,tags);
     for(const tag of tags) {

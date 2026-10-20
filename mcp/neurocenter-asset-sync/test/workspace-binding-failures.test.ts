@@ -25,10 +25,9 @@ describe('Безопасные причины отказа привязки па
         expect(await fs.readFile(marker(), 'utf8')).toBe(raw);
     });
 
-    it('Удалённый marker зарегистрированной папки требует восстановления', async () => {
+    it('Подготовка восстановления удалённого marker зарегистрированной папки сама ничего не записывает', async () => {
         await fs.rm(marker());
-        const error = await prepareProjectBinding(input()).catch(reason => reason);
-        expect(workspaceBindingFailure(error)).toBe('marker-missing');
+        await expect(prepareProjectBinding(input())).resolves.toMatchObject({ mode: 'new', requiresFileVerification: false });
         await expect(fs.stat(marker())).rejects.toMatchObject({ code: 'ENOENT' });
     });
 

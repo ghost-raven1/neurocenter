@@ -11,7 +11,7 @@ const emptyErrors = (): TBridgeErrors => ({ devices: '', jobs: '', installations
 const STATUS_MAX_AGE_MS = 30000;
 
 /** Личные статусы MCP обновляются событиями, после reconnect читается сохранённая очередь. */
-export function useBridge() {
+export function useBridge(enabled=true) {
     const email =
         useSelector((state: RootState) => state.userBlock.user?.email) || '';
     const scope = useSelector((state: RootState) => state.userBlock.user ? authDataScope({ user: state.userBlock.user, policies: state.userBlock.policies }) : '');
@@ -29,7 +29,7 @@ export function useBridge() {
     const [, expireStatus] = useState(0);
     const generation = useRef(0);
     const reload = useCallback(async () => {
-        if (!email || scopeRef.current !== scope) { return; }
+        if (!enabled || !email || scopeRef.current !== scope) { return; }
         const seq = ++generation.current;
         setLoading(true);
         const receive = <T,>(resource: TBridgeResource, result: TBridgeReadResult<T>, save: (items: T[]) => void): void => {
@@ -58,7 +58,7 @@ export function useBridge() {
                 setLoading(false);
             }
         }
-    }, [email, scope]);
+    }, [email, scope,enabled]);
     useEffect(() => {
         if (devicesCheckedAt === undefined) { return; }
         // Даже зависший запрос не оставляет подтверждённый online у старого снимка.
@@ -82,7 +82,7 @@ export function useBridge() {
         } catch {
             setSelected('');
         }
-        if (!email) {
+        if (!enabled || !email) {
             setLoading(false);
             return;
         }
@@ -126,7 +126,7 @@ export function useBridge() {
             window.removeEventListener('focus', resume);
             document.removeEventListener('visibilitychange', resume);
         };
-    }, [email, reload]);
+    }, [email, reload,enabled]);
     const choose = (id: string): void => {
         setSelected(id);
         try {

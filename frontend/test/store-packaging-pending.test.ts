@@ -45,11 +45,12 @@ describe('Восстановление неизвестного ответа н�
         await vi.advanceTimersByTimeAsync(46_000);
         expect(await result).toBeInstanceOf(BuildRequestUnresolvedError);
     });
-    it('Повтор после неопределённого ответа сохраняет UUID даже при изменении формы или reload', () => {
+    it('Неопределённый ответ разрешает прежний UUID только для точного восстановленного запроса', () => {
         const first = buildSubmissionRequest('исходная форма');
         expect(buildSubmissionRequest('исходная форма', first)).toBe(first);
-        expect(buildSubmissionRequest('изменённая форма', first, key)).toEqual({signature: 'изменённая форма', key});
-        expect(buildSubmissionRequest('после reload', undefined, key).key).toBe(key);
+        expect(buildSubmissionRequest('исходная форма', first, first.key)).toBe(first);
+        expect(() => buildSubmissionRequest('изменённая форма', first, first.key)).toThrow('Нельзя изменить');
+        expect(() => buildSubmissionRequest('после reload без исходников', undefined, key)).toThrow('Нельзя изменить');
         expect(buildSubmissionRequest('новое явное задание', first).key).not.toBe(first.key);
     });
     it('Сбой сети не превращается в новый POST или ложную окончательную 404', async () => {

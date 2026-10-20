@@ -9,13 +9,22 @@ export interface IProjectEmbeddingSelection {
     model: IModel | null;
     modelPin: string | null;
     profile: IProjectEmbeddingProfile | null;
+    activeGeneration: string;
+    activeSnapshot: string | null;
+    dataRevision: number;
     blocker?: string;
+}
+/** Каталог — единственный владелец указателя; в RAG DB нет конкурирующего active head. */
+export interface IProjectRagContext {
+    projectId: string; revision: number; dataRevision: number; generation: string;
+    profile: IProjectEmbeddingProfile | null; snapshot: string | null;
 }
 export interface IConfiguredProjectEmbedding extends IProjectEmbeddingSelection {
     model: IModel; modelPin: string; profile: IProjectEmbeddingProfile;
 }
 export interface IProjectEmbeddingUpdate { expectedRevision: number; modelId: string | null }
 export interface IDeviceEmbeddingContext {
+    installation: import('../devices/hosted-rag-grants').IHostedInstallationIdentity;
     projectId: string; bindingId: string; instanceId: string;
     expectedRevision?: number; expectedModelPin?: string;
 }

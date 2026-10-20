@@ -20,7 +20,7 @@ function configuration(file) {
 
 for(const file of ['docker-compose.yml','compose.production.yml']) {
     test(`${file}: runtime остаётся внутренним и не получает Docker socket`,()=>{
-        const {services}=configuration(file);const runtime=services['model-runtime'],catalog=services['catalog-service'],prepare=services['model-volume-init'];
+        const {services}=configuration(file);const runtime=services['model-runtime'],catalog=services['catalog-service'];
         assert.equal(runtime.image,image);assert.ok(!runtime.ports?.length);assert.equal(runtime.environment.OLLAMA_NO_CLOUD,'1');
         assert.equal(runtime.environment.OLLAMA_MAX_LOADED_MODELS,'1');
         assert.equal(catalog.environment.MODEL_RUNTIME_URL,'http://model-runtime:11434');
@@ -28,13 +28,8 @@ for(const file of ['docker-compose.yml','compose.production.yml']) {
         assert.equal(catalog.depends_on['model-runtime'].condition,'service_healthy');
         const weights=runtime.volumes.find(mount=>mount.target==='/root/.ollama');
         const probe=catalog.volumes.find(mount=>mount.target==='/data/models');
-        const prepared=prepare.volumes.find(mount=>mount.target==='/models');
-        assert.equal(weights.source,probe.source);assert.equal(probe.read_only,true);
-        assert.equal(weights.source,prepared.source);assert.ok(!prepared.read_only);
-        assert.equal(runtime.depends_on['model-volume-init'].condition,'service_completed_successfully');
-        assert.equal(prepare.restart,'no');assert.equal(prepare.read_only,true);
-        assert.deepEqual(prepare.command,['node','/tools/scripts/models/bundle-cli.mjs','--directory','/models']);
-        assert.ok(!prepare.secrets?.length);assert.ok(!prepare.ports?.length);
+        assert.equal(weights.source,probe.source);assert.equal(probe.read_only,undefined);
+        assert.equal(services['model-volume-init'],undefined);
         assert.ok(!Object.values(services).some(service=>service.volumes?.some(mount=>mount.source?.includes('docker.sock'))));
     });
 }

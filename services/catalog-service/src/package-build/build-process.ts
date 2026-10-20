@@ -1,3 +1,5 @@
+import {stageUploadSource} from '../source-upload/stage-upload';
+import {createHash} from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -39,9 +41,11 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     onProgress?: (event: BuildProgress) => Promise<void>): Promise<string> {
     const source = path.join(stage, 'source');
     await fs.mkdir(source, {mode: 0o700});
-    const key = 'tool-' + path.basename(stage).replace(/[^a-z0-9.-]/gi, '-').toLowerCase();
+    const identity=config.source.type==='upload'?{...config,source:{...config.source,uploadId:undefined}}:config;
+    const key = 'tool-' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0,32);
     let recipeSource: Record<string, unknown>;
-    if (config.source.type === 'npm') {
+    if(config.source.type==='upload'){recipeSource=await stageUploadSource(config.source,stage);}
+    else if (config.source.type === 'npm') {
         const adapter = config.source.package === 'opencode-rag-plugin' ? 'opencode-rag' : config.source.package === 'opencode-snip' ? 'opencode-snip' : undefined;
         recipeSource = adapter ? {type: 'prepared', adapter} : {type: 'npm', package: config.source.package, version: config.source.version, entrypoint: config.source.entrypoint};
     }
@@ -55,7 +59,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         recipeSource = {type: 'project', directory: 'source', entrypoint: config.source.entrypoint};
     }
     const recipe = {schemaVersion: 1, key, name: config.name, kind: config.kind, description: config.description,
-        revision: config.source.type === 'npm' ? config.source.version : config.source.type === 'repository' ? 'git-' + config.source.commit : 'source-' + path.basename(stage), tags: config.tags, source: recipeSource,
+        revision: config.source.type==='upload'?'source-'+config.source.sha256:config.source.type === 'npm' ? config.source.version : config.source.type === 'repository' ? 'git-' + config.source.commit : 'source-' + createHash('sha256').update(JSON.stringify(config.source)).digest('hex'), tags: config.tags, source: recipeSource,
         config: config.kind === 'mcp' ? {transport: 'stdio', args: config.source.type === 'files' ? config.source.args ?? [] : []} : {}, targets: config.targets};
     const recipePath = path.join(stage, 'recipe.json'), output = path.join(stage, 'output');
     await fs.writeFile(recipePath, JSON.stringify(recipe), {flag: 'wx', mode: 0o600});
@@ -102,5 +106,5 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         child.once('close', code => {void progressChain.then(() => {cleanup(); code === 0 && !reason ? resolve() : reject(new Error(reason || 'Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.'));});});
     });
     await stagingBytes(stage);
-    return path.join(output, 'ready.json');
+    return path.join(output, 'asset.json');
 }

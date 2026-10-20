@@ -12,9 +12,14 @@ const fixture = vi.hoisted(() => ({
     bridge: undefined as unknown as ReturnType<typeof useBridge>,
     buttons: new Map<string, { onClick?: () => void; disabled?: boolean }>(),
     push: vi.fn(),
+    search: '',
+    connectAnother: undefined as (() => void) | undefined,
 }));
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => fixture.bridge }));
-vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: fixture.push, location: { pathname: '/start' } }) }));
+vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: fixture.push, location: { pathname: '/start', search: fixture.search } }) }));
+vi.mock('../src/features/McpBridge/BridgeDevicesManager', () => ({ BridgeDevicesManager: ({ onConnect }: { onConnect: () => void }) => {
+    fixture.connectAnother = onConnect; return null;
+} }));
 vi.mock('antd', async importOriginal => {
     const actual = await importOriginal<typeof import('antd')>();
     return { ...actual, Button: (props: Parameters<typeof actual.Button>[0]) => {
@@ -36,12 +41,27 @@ const setup = (windows = false, projectId?: string): string => renderToStaticMar
 
 beforeEach(() => {
     vi.clearAllMocks(); fixture.buttons.clear();
+    fixture.search = ''; fixture.connectAnother = undefined;
     fixture.bridge = { devices: [], device: undefined, jobs: [], installations: [], error: '',
         devicesReady: true, jobsReady: true, installationsReady: true, loading: false,
         errors: { devices: '', jobs: '', installations: '' }, reload: vi.fn(async () => undefined), choose: vi.fn() };
 });
 
 describe('Подключение компьютера с уже установленным мостом', () => {
+    it('Подключение из списка сразу раскрывает команды, даже если выбранный компьютер уже на связи', () => {
+        select([device()]);
+        expect(setup()).not.toContain('--connect-open');
+        expect(fixture.connectAnother).toBeDefined();
+        fixture.connectAnother?.();
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?step=1&addComputer=1');
+        fixture.search = new URL(fixture.push.mock.calls[0][0], origin).search;
+        expect(new URLSearchParams(fixture.search).has('connect')).toBe(false);
+        const html = setup();
+        expect(html).toContain('--connect-open');
+        expect(html).toContain('Копировать команду подключения');
+        expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
+    });
+
     it('Выбранный проект после настройки общей папки открывает свой мастер привязки', () => {
         const current = device(); current.report.root = '/fixture/projects'; select([current]); setup(false, 'prj-dossier-ko');
         fixture.buttons.get('Связать папку проекта')?.onClick?.();
@@ -80,10 +100,10 @@ describe('Подключение компьютера с уже установл
 
     it('Подключённый актуальный мост сразу разрешает переход к папкам', () => {
         select([device()]); const html = setup();
-        expect(html).toContain('Рабочий компьютер — на связи');
-        expect(html).toContain('Мост работает в фоне, даже когда окно OpenCode закрыто');
+        expect(html).toContain('Рабочий компьютер · мост на связи');
+        expect(html).toContain('Мост работает в фоне. Перейдите к папке проекта.');
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(false);
-        expect(html).toContain('Обновить мост');
+        expect(html).toContain('Подключение и обновление моста');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
     });
 

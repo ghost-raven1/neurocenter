@@ -11,7 +11,7 @@ import { localCapability, localPurpose, PROJECT_LOCAL_KINDS, PROJECT_LOCAL_APPLI
 import type { IPackage } from '../catalog/bundle-package';
 import type { IInstallationSet } from './installation-set';
 
-interface SourceJob {id:string;device_id:string;project_id:string|null;email:string;kind:string;payload:Record<string,unknown>}
+interface SourceJob {id:string;device_id:string;project_id:string|null;email:string;role?:string;kind:string;payload:Record<string,unknown>}
 type Payload=Record<string,unknown> & {package?:IPackage;installSet?:IInstallationSet};
 const conflict=()=>new ConflictException('План истёк или относится к другой папке, версии либо действию. Подготовьте его заново.');
 function identity(device:Device,input:{projectId?:string;expectedBindingId?:string}) {
@@ -48,7 +48,7 @@ export async function projectLocalJobPayload(store:DeviceStore,installations:Dev
     const effectiveKind=input.kind==='open-local-change-report'?(purpose==='adopt'?'apply-adopt-installation':'apply-local-restore'):input.kind;
     assertLocalFeature(device.report,localCapability(effectiveKind));
     const tuple=identity(device,input);let payload:Payload={...tuple};
-    if(input.kind==='scan-project-inventory')return payload;
+    if(['scan-project-inventory','scan-opencode-models'].includes(input.kind))return payload;
     if(purpose==='adopt') {
         if(saved){
             const source=saved.source_payload as Payload;
@@ -86,12 +86,13 @@ export async function projectLocalJobPayload(store:DeviceStore,installations:Dev
 /** Проверки повторяются при выдаче и перед записью, включая срок и назначение плана. */
 export async function assertProjectLocalJob(store:DeviceStore,installations:DeviceInstallations,plans:InstallPlans,device:Device,job:SourceJob):Promise<void> {
     if(!PROJECT_LOCAL_KINDS.includes(job.kind)&&!job.payload.localPlanPurpose)return;
+    if(job.kind==='scan-opencode-models'&&job.role!=='Главный админ')throw new ConflictException('Импорт конфигурации моделей доступен главному администратору.');
     const purpose=job.payload.localPlanPurpose as string|undefined;
     const effective=job.kind==='open-local-change-report'?(purpose==='adopt'?'apply-adopt-installation':'apply-local-restore'):job.kind;
     assertLocalFeature(device.report,localCapability(effective));
     const tuple=identity(device,{projectId:job.project_id!,expectedBindingId:job.payload.bindingId as string});
     if(tuple.instanceId!==job.payload.instanceId)throw conflict();
-    if(effective==='scan-project-inventory')return;
+    if(['scan-project-inventory','scan-opencode-models'].includes(effective))return;
     if(effective.includes('adopt'))await inventorySource(store,device,job.project_id!,job.payload);
     else {
         const pkg=await installations.inspectionPackage({email:device.email,activeRole:job.payload.role as string||device.role},{deviceId:device.id,

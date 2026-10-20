@@ -90,7 +90,7 @@ export async function downloadRepositoryArchive(raw, cacheDirectory, { fetch: re
 }
 
 /** Codeload содержит один корневой каталог с именем репозитория и точным commit. */
-async function repositoryRoot(archivePath, source) {
+export async function repositoryRoot(archivePath, source) {
     const { owner, repository } = repositorySource.parseRepositoryUrl(source.url);
     const expected = new Set([`${repository}-${source.commit}`, `${owner}-${repository}-${source.commit}`].map(value => value.toLowerCase()));
     const tar = require('tar');
@@ -129,6 +129,9 @@ async function preserveLicenses(from, destination) {
 
 /** Закреплённый рецепт поставки не может измениться между просмотром и упаковкой. */
 async function prepareRepositoryContent(recipe, context, directory, { prepareProject, extractRelease }) {
+    if (recipe.source.snapshotSha256) {
+        return prepareRuntimeSource({ ...recipe, source: recipe.source.runtimeSource }, { ...context, recipeDirectory: path.join(context.recipeDirectory, directory) }, { extractRelease });
+    }
     if (!recipe.source.runtimeSource) {
         return prepareProject({ ...recipe, source: { type: 'project', directory, entrypoint: recipe.source.entrypoint } },
             context, { limits: repositoryLimits });
@@ -147,8 +150,14 @@ async function prepareRepositoryContent(recipe, context, directory, { preparePro
 /** Репозиторий использует общий компилятор JS/TS или адаптер закреплённой автономной поставки. */
 export async function prepareRepository(recipe, context, { extractRelease, prepareProject }) {
     const source = repositorySource.validateRepositorySource(recipe.source);
+    if (source.release) {
+        const result = await prepareRuntimeSource({ ...recipe, source: source.runtimeSource }, context, { extractRelease });
+        await fs.writeFile(path.join(context.directory, 'repository.json'), JSON.stringify({ url: source.url, commit: source.commit, release: source.release }, null, 2) + '\n', { flag: 'wx' });
+        return { ...result, upstream: { ...result.upstream, repository: source.url, commit: source.commit, release: source.release } };
+    }
     const cache = context.cacheDirectory ?? path.join(path.dirname(context.directory), '.repository-cache');
     const archive = await downloadRepositoryArchive(source, cache);
+    if (source.snapshotSha256 && archive.sha256 !== source.snapshotSha256) throw new Error('Снимок репозитория изменился после проверки.');
     const root = await repositoryRoot(archive.archivePath, source);
     const extracted = await fs.mkdtemp(path.join(path.dirname(context.directory), '.repository-source-'));
     try {

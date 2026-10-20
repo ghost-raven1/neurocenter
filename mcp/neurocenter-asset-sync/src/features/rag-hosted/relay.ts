@@ -3,6 +3,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {hub,readState,type Credentials} from '../../bridge/state.js';
 import {assertHostedInstallation,requestProfile,type HostedProfile,type HostedRequestProfile} from './profile.js';
 const budget=1024*1024;
+export const hostedInstallationIdentity=(profile:HostedRequestProfile)=>({kind:profile.pkg.plugin.kind,id:profile.pkg.plugin.id,version:profile.pkg.plugin.version,manifest:profile.pkg.manifest.sha256});
 export interface HostedRelay {profile:HostedProfile;close:()=>Promise<void>}
 export function validateVectors(value:unknown,profile:HostedRequestProfile,count:number):void {
     const result=value as {model?:unknown;data?:Array<{index?:unknown;embedding?:unknown}>}|null;
@@ -16,7 +17,7 @@ export async function inferHosted(source:HostedRequestProfile,input:string|strin
     await assertHostedInstallation(profile);
     const credentials=await readState<Credentials>('credentials');if(!credentials?.token)throw new Error('Компьютер не подключён.');
     const response=await fetch(hub()+'/api/device-channel/embedding',{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+credentials.token},
-        body:JSON.stringify({projectId:profile.projectId,bindingId:profile.bindingId,instanceId:profile.instanceId,expectedRevision:profile.selection.revision,expectedModelPin:profile.selection.modelPin,model:profile.selection.profile.model,input}),signal});
+        body:JSON.stringify({installation:hostedInstallationIdentity(profile),projectId:profile.projectId,bindingId:profile.bindingId,instanceId:profile.instanceId,expectedRevision:profile.selection.revision,expectedModelPin:profile.selection.modelPin,model:profile.selection.profile.model,input}),signal});
     const length=Number(response.headers.get('content-length'));if(length>64*65535*24){await response.body?.cancel();throw new Error('Ответ модели превышает лимит.');}
     if(!response.ok){await response.body?.cancel();throw Object.assign(new Error('Серверная модель недоступна или подключение изменилось. Проверьте модель и права на проект.'),{status:response.status});}
     // Векторы ограничены числом входов и размерностью; тело читается с отдельным лимитом.
@@ -24,7 +25,12 @@ export async function inferHosted(source:HostedRequestProfile,input:string|strin
     const chunks:Uint8Array[]=[];let size=0;try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new Error('Ответ модели превышает лимит.');chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
     const result=JSON.parse(Buffer.concat(chunks).toString('utf8'));validateVectors(result,profile,Array.isArray(input)?input.length:1);return result;
 }
-function generation(profile:HostedRequestProfile):string{return JSON.stringify([profile.server,profile.root,profile.projectId,profile.bindingId,profile.instanceId,profile.pkg.manifest?.sha256,profile.selection.revision,profile.selection.modelPin,profile.selection.profile,profile.relay]);}
+/** Идентичность запроса зависит от значений профиля, а не порядка ключей после JSONB. */
+function generation(profile:HostedRequestProfile):string{
+    const selection=profile.selection,index=selection.profile;
+    return JSON.stringify([profile.server,profile.root,profile.projectId,profile.bindingId,profile.instanceId,profile.pkg.manifest?.sha256,
+        selection.revision,selection.modelPin,index.provider,index.model,index.dimension,profile.relay.port,profile.relay.key]);
+}
 export async function createHostedRelay(profile:HostedProfile):Promise<HostedRelay> {
     const relay:HostedRelay={profile:structuredClone(profile),close:async()=>{for(const controller of active)controller.abort();await new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();});}};
     const active=new Set<AbortController>();let busy=false;

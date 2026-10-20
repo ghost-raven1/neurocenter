@@ -9,7 +9,7 @@ describe('Недоступные назначения не исчезают из
         expect(unavailableProjectAssets([asset('common/helper'), asset('common/missing')], [skill], 'prj-a')).toEqual([asset('common/missing')]);
     });
     it('Сохраняет совместимость старого slug назначения', () => {
-        expect(unavailableProjectAssets([asset('helper')], [skill], 'prj-a')).toEqual([]);
+        expect(unavailableProjectAssets([asset('helper')], [skill], 'prj-a')).toEqual([asset('helper')]);
     });
     it('Карточка другого типа не скрывает отсутствующий MCP с таким же ID', () => {
         expect(unavailableProjectAssets([asset('common/helper', 'mcp')], [skill], 'prj-a')).toHaveLength(1);

@@ -1,3 +1,5 @@
+import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
+import {forwardSourceUpload} from './source-upload-stream';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
@@ -9,8 +11,10 @@ import { AuthGuardService, IAuthPayload } from '../auth/auth-guard.service';
 import {LiveService} from '../live/live.service';
 import { forwardRuntimeArtifact } from './runtime-artifact-stream';
 import { forwardBackupDownload } from './backup-download-stream';
+import {forwardToolAssetDocument,forwardToolSupply} from './tool-supply-stream';
 import {featureFlagFailure,requiredFeatureFlag} from '../features/feature-flag-gate';
 import {awaitEmbedding} from './embedding-deadline';
+import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -55,14 +59,17 @@ export class ProxyService {
         }
 
         const path = req.path;
+        const method = (req.method || 'GET').toUpperCase() as THttpMethod;
+        const coordinatedRagSync = method === 'POST' && canonicalAccessRoute(path) === '/api/rag/sync';
         const upstreamBase = /^\/api\/feature-flags(?:\/|$)/.test(path)
             ? this.featureFlagsUrl
+            : coordinatedRagSync
+            ? this.catalogUrl
             : path.startsWith('/api/rag')
             ? this.ragUrl
             : path.startsWith('/api/skills')
               ? this.skillsUrl
               : this.catalogUrl;
-        const method = (req.method || 'GET').toUpperCase() as THttpMethod;
         if(auth.deviceId && !((['GET','HEAD'].includes(method)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path)) || (method==='POST'&&['/api/skills/sync','/api/rag/sync'].includes(path)))){
             res.status(403).json({message:'Подключение MCP не даёт прав управления пользователями, каталогом или настройками сервера.'});return;
         }
@@ -92,6 +99,15 @@ export class ProxyService {
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
+            const uploadRoute=sourceUploadContentRoute(method,path);
+            if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res);return;}
+            const supplyPath=canonicalAccessRoute(path);
+            if(['GET','HEAD'].includes(method)&&/^\/api\/tool-builds\/[a-fA-F0-9-]{36}\/supply$/.test(supplyPath||'')){
+                await forwardToolSupply(this.http,`${this.catalogUrl}${supplyPath}`,this.buildHeaders(req.headers,auth),req,res);return;
+            }
+            if(method==='GET'&&/^\/api\/tool-builds\/[a-fA-F0-9-]{36}\/asset$/.test(supplyPath||'')){
+                await forwardToolAssetDocument(this.http,`${this.catalogUrl}${supplyPath}`,this.buildHeaders(req.headers,auth),req,res);return;
+            }
             if(['GET','HEAD'].includes(method)&&/\/backups\/[^/]+\/download\/*$/.test(path)){
                 await forwardBackupDownload(this.http,`${upstreamBase}${path}`,this.buildHeaders(req.headers,auth),req,res);return;
             }
@@ -99,7 +115,7 @@ export class ProxyService {
                 method,
                 ...(/^\/api\/models\/[^/]+\/ollama\//.test(path) ? {timeout: 610000, maxContentLength: 8 * 1024 * 1024} : {}),
                 responseType: 'json',
-                url: `${upstreamBase}${path}`,
+                url: `${upstreamBase}${coordinatedRagSync ? '/api/rag/sync' : path}`,
                 headers: this.buildHeaders(req.headers, auth),
                 params: req.query,
                 data: req.body,
@@ -113,7 +129,10 @@ export class ProxyService {
                 res.setHeader('Content-Type', contentType);
             }
 
-            res.send(filterResponse(upstream.data,decision.data.claims,auth.activeRole,path));
+            const body=filterResponse(upstream.data,decision.data.claims,auth.activeRole,path);
+            // Express send(null) means no body; an explicit JSON null is a valid empty selection.
+            if(body===null&&typeof contentType==='string'&&/^application\/(?:[a-z0-9.+_-]+\+)?json(?:\s*;|$)/i.test(contentType))res.json(null);
+            else res.send(body);
             if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)&&!/^\/api\/models\/[^/]+\/ollama\//.test(path)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
         } catch (error) {
             // eslint-disable-next-line no-console

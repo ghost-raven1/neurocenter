@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints } from '../../../shared/runtime-artifacts.cjs';
 import { verifyPackage, type IPackage } from '../catalog/bundle-package';
+import { assertProjectCatalogAsset } from './project-skill';
 import { assertDeviceCatalogAsset } from './device-catalog-access';
 import { parseLocalConfiguration } from './mcp-config-schema';
 
@@ -119,17 +120,17 @@ export function verifyInstallationSet(set: IInstallationSet): boolean {
 }
 
 /** Читает каждую закреплённую версию один раз; не подставляет head при конфликте. */
-export async function resolveInstallationSet(pool: Pool, projectId: string, root: IPackage,
+export async function resolveInstallationSet(_pool: Pool, _projectId: string, root: IPackage,
     build: (kind: string, id: string, version: number) => Promise<IPackage>): Promise<IInstallationSet | undefined> {
+    await assertDeviceCatalogAsset(_pool,_projectId,root.plugin.kind,root.plugin.id);
     const packages = new Map<string, IPackage>(); const visiting = new Set<string>();
     const visit = async (pkg: IPackage, parents: IPackage['plugin'][] = []) => {
+        assertProjectCatalogAsset(pkg.plugin.kind,pkg.plugin.id,_projectId);
         try { assertInstallablePackage(pkg); }
         catch (error) {
             const plugin = pkg?.plugin;
             if (!(error instanceof ConflictException) || !plugin || typeof plugin.name !== 'string' || !plugin.name || plugin.name.length > 500
                 || !validRef({kind: plugin.kind, id: plugin.id, version: plugin.version, manifest: pkg.manifest?.sha256})) { throw error; }
-            // Имя и путь зависимости раскрываются только после проверки её доступности в проекте.
-            await assertDeviceCatalogAsset(pool, projectId, plugin.kind, plugin.id);
             const current = packageIdentity(pkg), path = [...parents, current], dependency = parents.length > 0;
             throw new ConflictException({
                 statusCode: 409, error: 'Conflict', code: 'PACKAGE_NOT_INSTALLABLE',
@@ -144,7 +145,6 @@ export async function resolveInstallationSet(pool: Pool, projectId: string, root
             if (known.plugin.version !== pkg.plugin.version || known.manifest.sha256 !== pkg.manifest.sha256) { throw new ConflictException('В комплекте требуются несовместимые версии одной зависимости.'); }
             return;
         }
-        await assertDeviceCatalogAsset(pool,projectId,pkg.plugin.kind,pkg.plugin.id);
         packages.set(name,pkg); assertBudget([...packages.values()]); visiting.add(name);
         for (const pin of packageDependencies(pkg)) {
             const knownPin = packages.get(key(pin));

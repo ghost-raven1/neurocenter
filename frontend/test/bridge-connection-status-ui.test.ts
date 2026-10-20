@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IBridgeDevice } from '../src/features/McpBridge/api';
 import type { useBridge } from '../src/features/McpBridge/useBridge';
 import { BridgeConnection } from '../src/features/McpBridge/BridgeConnection';
+import { BridgeDeviceDetails } from '../src/features/McpBridge/BridgeDeviceDetails';
 
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: vi.fn(), location: { pathname: '/projects' } }) }));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope: 'fixture', captureOwner: () => () => true }) }));
 
 function fixture(): ReturnType<typeof useBridge> {
     const device: IBridgeDevice = { id: 'computer', name: 'Мой компьютер', role: 'Разработчик', fingerprint: 'fixture',
@@ -17,15 +19,17 @@ function fixture(): ReturnType<typeof useBridge> {
 }
 let bridge: ReturnType<typeof useBridge>;
 const render = (compact = false): string => renderToStaticMarkup(createElement(BridgeConnection, { bridge, compact }));
+const details = (): string => renderToStaticMarkup(createElement(BridgeDeviceDetails, { device: bridge.device! }));
 beforeEach(() => { bridge = fixture(); });
 
 describe('Статус и последний ответ выбранного моста', () => {
-    it('Ошибка обновления скрывает прежний онлайн-статус и сохраняет имя и папку', () => {
+    it('Ошибка обновления скрывает прежний онлайн-статус и сохраняет имя, а папка остаётся в сведениях', () => {
         bridge.devicesReady = false; bridge.errors.devices = 'Не удалось загрузить список компьютеров';
         const html = render();
         expect(html).toContain('Мой компьютер · статус не проверен');
         expect(html).not.toContain('мост на связи');
-        expect(html).toContain('/fixture/projects');
+        expect(html).not.toContain('/fixture/projects');
+        expect(details()).toContain('/fixture/projects');
         expect(html).toContain(bridge.errors.devices);
     });
 
@@ -53,8 +57,20 @@ describe('Статус и последний ответ выбранного м�
         expect(render()).toContain(`Мой компьютер · мост ${online ? 'на связи' : 'не в сети'}`);
     });
 
+    it.each([
+        { verified: true, online: true, status: 'мост на связи' },
+        { verified: true, online: false, status: 'мост не в сети' },
+        { verified: false, online: true, status: 'статус не проверен' },
+    ])('Длинное имя не объединяется со статусом «$status» в обрезаемый текст', ({ verified, online, status }) => {
+        bridge.device!.name = 'MacBook-Pro-Aleksej.local-с-длинным-именем';
+        bridge.device!.online = online; bridge.devicesReady = verified;
+        const html = render(true);
+        expect(html).toContain(`<span class="bridge-connection__device-status">${status}</span>`);
+        expect(html).toContain('class="bridge-connection__device-name"');
+    });
+
     it('Последний ответ содержит читаемое время и машинную ISO-дату', () => {
-        const html = render();
+        const html = details();
         expect(html).toContain('Последний ответ моста:');
         expect(html).toContain('<time dateTime="2026-10-19T03:00:00.000Z">');
         expect(html).toMatch(/<time dateTime="[^"]+">\d{2}\.\d{2}\.2026,\s*\d{2}:\d{2}:\d{2}<\/time>/);
@@ -62,16 +78,18 @@ describe('Статус и последний ответ выбранного м�
 
     it.each([null, '', 'invalid date'])('Не выводит повреждённое время последнего ответа %s', value => {
         bridge.device!.lastSeen = value;
-        const html = render();
+        const html = details();
         expect(html).toContain('Ответов моста ещё нет');
         expect(html).not.toContain('<time');
         expect(html).not.toContain('Invalid Date');
     });
 
-    it('Пояснение фоновой работы есть в подробном блоке и не дублируется в компактном', () => {
-        expect(render()).toContain('Фоновый мост работает независимо от окна OpenCode');
+    it('Технические сведения не перегружают компактный блок и доступны из списка компьютеров', () => {
         const compact = render(true);
         expect(compact).not.toContain('Фоновый мост работает');
-        expect(compact).toContain('Последний ответ моста:');
+        expect(compact).not.toContain('Последний ответ моста:');
+        expect(compact).not.toContain('0.9.4');
+        expect(compact).not.toContain('/fixture/projects');
+        expect(compact).toContain('Мои компьютеры (1)');
     });
 });

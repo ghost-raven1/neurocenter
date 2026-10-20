@@ -94,7 +94,7 @@ export interface IBridgeInstallation {
     configurationObservedAt?: string;
     configuration?: IMcpConfigurationStatus;
     ragUi?: { supported: true; mode: 'web' };
-    hostedEmbedding?: { supported: true };
+    hostedEmbedding?: { supported: true;reindexSupported?:true };
 }
 interface IBridgeJobInputBase {
     deviceId: string;
@@ -113,7 +113,7 @@ export type IBridgeJobInput = IBridgeJobInputBase & (
         expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}
     | {kind: 'connect-rag-model'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
         expectedManifest: string; expectedBindingId: string; expectedInstanceId: string;
-        expectedEmbeddingRevision: number; expectedEmbeddingPin: string}
+        expectedEmbeddingRevision: number; expectedEmbeddingPin: string;reindex:true}
     | {kind: 'uninstall' | 'inspect-installation'; assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string}
     | {kind: 'prepare-bind-project' | 'bind-project'; projectId: string; folderName: string; bindingMode: TWorkspaceBindingMode;
         expectedBindingId?: string; expectedInstanceId?: string; preparationJobId?: string; expectedPreparation?: string}
@@ -125,7 +125,7 @@ export type IBridgeJobInput = IBridgeJobInputBase & (
         assetId: string; assetKind: 'mcp'; version: number; expectedManifest: string; expectedBindingId: string;
         configurationPreparationJobId?: string; expectedConfigurationSchemaDigest?: string}
     | {kind: 'open-local-recovery-folder'; projectId: string; expectedBindingId: string}
-    | {kind: 'scan-project-inventory'; projectId: string; expectedBindingId: string}
+    | {kind: 'scan-project-inventory' | 'scan-opencode-models'; projectId: string; expectedBindingId: string}
     | {kind: 'prepare-adopt-installation'; projectId: string; assetId: string; assetKind: string; version: number;
         expectedBindingId: string; expectedManifest: string; planId: string; planRevision: number;
         inventoryJobId: string; scanId: string; candidateId: string; expectedInventoryDigest: string}

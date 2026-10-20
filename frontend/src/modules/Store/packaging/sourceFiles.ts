@@ -45,7 +45,9 @@ export function packagingEntrypoints(files: PackagingFile[], kind: 'mcp' | 'plug
         const bins = (typeof metadata.bin === 'string' ? [metadata.bin] : Object.values(metadata.bin ?? {})).filter((value): value is string => typeof value === 'string');
         candidates.push(...(kind === 'mcp' ? bins : [metadata.module, metadata.main].filter((value): value is string => typeof value === 'string')));
     } catch { /* Сервер сообщит об ошибке package.json при сборке; список файлов остаётся доступным. */ }
-    candidates.push('index.ts', 'index.js', 'src/index.ts', 'src/index.js', ...files.map(file => file.path));
+    if (!candidates.some(value => existing.has(value.replace(/^\.\//, '')))) {
+        candidates.push('index.ts', 'index.js', 'src/index.ts', 'src/index.js', ...files.map(file => file.path));
+    }
     return [...new Set(candidates.map(value => value.replace(/^\.\//, '')))].filter(value => existing.has(value)
         && /\.(?:[cm]?[jt]s|tsx)$/.test(value) && !/\.d\.[cm]?ts$/.test(value));
 }

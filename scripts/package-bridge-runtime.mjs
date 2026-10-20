@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { packageProbeEngine } from './bridge-runtime-probe.mjs';
 import { packageWindowsJobHelper } from './bridge-windows-job.mjs';
 import { verifyBridgeBuild } from './bridge-build-integrity.mjs';
+import {npmCli} from './workspace/node-runtime.mjs';
 
 // Собирать на целевой ОС и архитектуре: нативные модули не переносятся между платформами.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -31,10 +32,7 @@ try {
     const copiedManifest = JSON.parse(await fs.readFile(path.join(content, 'package.json'), 'utf8'));
     const copiedBuild = await verifyBridgeBuild(path.join(content, 'dist'), manifest.version);
     if (copiedManifest.version !== manifest.version || copiedBuild.buildId !== build.buildId) throw new Error('Сборка изменилась во время упаковки. Повторите упаковку неизменяемого кандидата.');
-    const candidates = [process.env.npm_execpath, path.resolve(path.dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js'), path.resolve(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')].filter(Boolean);
-    let npm;
-    for (const candidate of candidates) { if (await fs.access(candidate).then(() => true, () => false)) { npm = candidate; break; } }
-    if (!npm) throw new Error('Для сборки нужен npm рядом с Node.js; на компьютере пользователя npm не требуется.');
+    const npm=npmCli();
     execFileSync(process.execPath, [npm, 'ci', '--omit=dev', '--include=optional', '--no-audit', '--no-fund'], {
         cwd: content, stdio: 'inherit', env: { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH },
     });

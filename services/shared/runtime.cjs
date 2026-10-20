@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const secretNames = ['NEUROCENTER_METRICS_TOKEN', 'NEUROCENTER_INTERNAL_TOKEN', 'SSO_CLIENT_SECRET', 'CATALOG_PG_URL', 'RAG_PG_URL', 'RAG_PROVISION_PG_URL'];
+const secretNames = ['NEUROCENTER_MODEL_CREDENTIAL_KEY', 'NEUROCENTER_METRICS_TOKEN', 'NEUROCENTER_INTERNAL_TOKEN', 'SSO_CLIENT_SECRET', 'CATALOG_PG_URL', 'RAG_PG_URL', 'RAG_PROVISION_PG_URL'];
 const services = new Set(['api-gateway', 'catalog-service', 'skills-service', 'rag-sync-service', 'feature-flags-service', 'oauth2-bridge', 'bootstrap-admin']);
 
 /** Читает только известные секреты; ошибка не раскрывает ни путь, ни значение. */

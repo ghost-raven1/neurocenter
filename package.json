@@ -1,6 +1,9 @@
 {
   "name": "neurocenter-workspace",
   "private": true,
+  "dependencies": {
+    "@neurocenter/asset-contract": "https://codeload.github.com/ghost-raven1/neurocenter-assets/tar.gz/3cea243aa083802943235a0cbda64d7cb92126ca"
+  },
   "scripts": {
     "check": "node scripts/workspace/check.mjs",
     "assets:init": "node scripts/assets/setup.mjs",
@@ -13,19 +16,8 @@
     "models:verify": "node scripts/models/bundle-cli.mjs --verify-only",
     "models:publish": "node scripts/models/publish-cli.mjs",
     "bridge:prepare": "node scripts/prepare-bridge-runtimes.mjs",
-    "embedding:up": "node scripts/embedding/cli.mjs up",
-    "embedding:status": "node scripts/embedding/cli.mjs status",
-    "embedding:check": "node scripts/embedding/cli.mjs check",
-    "embedding:down": "node scripts/embedding/cli.mjs down",
-    "vision:up": "node scripts/vision/cli.mjs up",
-    "vision:status": "node scripts/vision/cli.mjs status",
-    "vision:check": "node scripts/vision/cli.mjs check",
-    "vision:down": "node scripts/vision/cli.mjs down",
-    "vision:describe": "node scripts/vision/describe.mjs",
     "tools:build": "node scripts/catalog-plugins/run.mjs build",
     "tools:publish": "node scripts/catalog-plugins/run.mjs publish",
-    "tools:sync": "node scripts/catalog-plugins/sync.mjs",
-    "tools:catalog": "node scripts/catalog-plugins/run.mjs prepare",
     "tools:check": "node scripts/catalog-plugins/run.mjs check"
   }
 }

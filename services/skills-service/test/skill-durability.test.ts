@@ -148,7 +148,7 @@ describe('Подтверждение устойчивости файлового
     });
     it.each(['update','delete','sync'] as const)('EIO после %s сохраняет видимый результат и историю до безопасного audit retry',async operation=>{
         const events:ISkillAuditEvent[]=[];const storage=store(async batch=>{events.push(...batch);});const service=new SkillsService(storage);
-        const created=await service.createSkill(input,'user',actor);
+        const created=await service.createSkill({...input,path:'project-durable'},'user',actor);
         const original=[{slug:'one',name:'Первый',body:'Первый',version:1},{slug:'old',name:'Старый',body:'Старый',version:1}];
         if(operation==='sync'){await service.syncSkills('qa',original,actor);}
         const count=events.length;let failing=true;fault(async()=>failing&&await committed());

@@ -114,11 +114,11 @@ describe('Резервирование ссылок до файловой пуб
         expect(await fs.readFile(filename, 'utf8')).toContain('prepared');
         await expect(contents('common/helper')).rejects.toMatchObject({ code: 'ENOENT' });
     });
-    it('Начальные скиллы без точных pins не требуют доступности каталога', async () => {
+    it('Инициализация не импортирует ассеты и не требует доступности каталога', async () => {
         const reserve = vi.fn(async () => fail());
         await new FsSkillsStorage(root, reserve).init();
         expect(reserve).not.toHaveBeenCalled();
-        expect(await fs.readdir(root)).toContain('common');
+        expect(await fs.readdir(root)).not.toContain('common');
     });
 });
 

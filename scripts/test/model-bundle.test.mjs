@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,readdir,rm,access,symlink,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {packModelBundle,hydrateModelBundle,readModelBundle} from '../models/bundle.mjs';
+import {packModelBundle,hydrateModelBundle} from '../models/bundle.mjs';
 import {sha256,validateModelBundle} from '../models/bundle-manifest.mjs';
 import {runModelBundleCli} from '../models/bundle-cli.mjs';
 
@@ -46,7 +46,7 @@ test('Упаковка содержит все закреплённые веса
     validateModelBundle(manifest,locks);
     assert.equal(manifest.files.length,5);assert.ok(manifest.files.filter(file=>file.parts).every(file=>file.parts.every(part=>part.size<=8)));
     assert.ok(!JSON.stringify(manifest).includes('PRIVATE'));
-    const names=await readdir(output);assert.ok(names.every(name=>name==='bundle-release.json'||/^model-[a-f0-9]{64}-\d{3}\.bin$/.test(name)));
+    const names=await readdir(output);assert.ok(names.every(name=>/^model-[a-f0-9]{64}-\d{3}\.bin$/.test(name)));
 }));
 
 test('Чистый импорт восстанавливает обе модели; повтор и verify не требуют сети',async()=>fixture(async({hydrate,calls,manifest,destination})=>{
@@ -184,9 +184,10 @@ test('Упаковка не создаёт вывод через символи�
     assert.deepEqual(await readdir(path.join(outside,'existing')),[]);
 }));
 
-test('Опись не читается через символическую ссылку в родительском пути',async()=>fixture(async({root,output})=>{
-    const alias=path.join(root,'alias');await symlink(root,alias);
-    await assert.rejects(readModelBundle(path.join(alias,path.basename(output),'bundle-release.json')),/символической ссылкой/);
+test('Native engine requires explicit locks and never restores a removed default registry',async()=>fixture(async({directory,output,manifest})=>{
+    await assert.rejects(packModelBundle({directory,output:output+'-new',baseUrl}),/Explicit model locks/);
+    await assert.rejects(hydrateModelBundle({directory:output+'-target',manifest}),/Explicit model locks/);
+    await assert.rejects(access(output+'-new'),{code:'ENOENT'});await assert.rejects(access(output+'-target'),{code:'ENOENT'});
 }));
 
 test('Опись не принимает обход путей, подменённую SHA, лишний файл или внешний release',async()=>fixture(async({manifest,locks})=>{

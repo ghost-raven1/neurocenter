@@ -99,6 +99,19 @@ describe('Атомарное восстановление RAG в подтвер�
         });
         await expect(run()).rejects.toThrow('снимок изменился'); expect(await ids()).toEqual(['local-original']);
     });
+    it('Другое поколение с тем же snapshotHash между страницами не становится источником восстановления', async () => {
+        source = [row('first'), row('second')];
+        transport.fetch.mockImplementationOnce(async () => page([source[0]!], true)).mockImplementationOnce(async route => {
+            expect(new URL(route,'http://fixture').searchParams.get('generation')).toBe(metadata(source).generation);
+            return Response.json({ ...metadata(source),generation:'initial-'+'e'.repeat(32),chunks:[source[1]!],hasMore:false });
+        });
+        await expect(run()).rejects.toThrow('снимок изменился'); expect(await ids()).toEqual(['local-original']);
+    });
+    it('Смена активного поколения перед commit сохраняет исходный индекс даже при одинаковых строках', async () => {
+        transport.fetch.mockImplementation(async route => route.includes('/manifest')
+            ? Response.json({...metadata(source),generation:'initial-'+'e'.repeat(32)}) : page());
+        await expect(run()).rejects.toThrow('Снимок изменился перед сохранением');expect(await ids()).toEqual(['local-original']);
+    });
     it('Недостающая строка не проходит проверку полного хеша', async () => {
         source = [row('first'), row('second')]; transport.fetch.mockImplementation(async () => page([source[0]!], false));
         await expect(run()).rejects.toThrow('Полнота'); expect(await ids()).toEqual(['local-original']);

@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
+import {readyManifest} from './manifest.mjs';
 
 const require = createRequire(new URL('../../mcp/neurocenter-asset-sync/package.json', import.meta.url));
 const { Client } = await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/client/index.js')));
@@ -14,7 +15,7 @@ const { StdioClientTransport } = await import(pathToFileURL(require.resolve('@mo
 
 /** Настоящий stdio и операции в одноразовой папке без изменения личного профиля. */
 export async function smokeCatalog(manifestFile) {
-    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+    const tools=await readyManifest(manifestFile);
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-catalog-smoke-')));
     const report = [];
     try {
@@ -25,15 +26,15 @@ export async function smokeCatalog(manifestFile) {
         await promisify(execFile)('git', ['init', '--quiet', project], { env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home } });
         const marker = path.join(root, 'registry-called');
         for (const command of ['npm', 'npx', 'bun', 'pnpm', 'yarn']) await fs.writeFile(path.join(tripwire, command), `#!/bin/sh\nprintf called > '${marker}'\nexit 99\n`, { mode: 0o700 });
-        for (const tool of manifest.tools) {
+        for (const tool of tools) {
             const publication = tool.publication;
             const directory = path.join(root, tool.key); await fs.mkdir(directory);
             let entrypoint;
             if (tool.artifacts.length) {
-                const selected = tool.artifacts.find(item => item.descriptorPath.includes('darwin-arm64'));
+                const selected = tool.artifacts.find(item => item.descriptor.target==='darwin-arm64');
                 if (!selected) { report.push({ key: tool.key, skipped: 'Нет native darwin-arm64 комплекта' }); continue; }
-                const descriptor = JSON.parse(await fs.readFile(path.resolve(path.dirname(manifestFile), selected.descriptorPath), 'utf8'));
-                await runtime.inspectRuntimeArchive(path.resolve(path.dirname(manifestFile), selected.archivePath), descriptor, { destination: directory });
+                const descriptor=selected.descriptor;
+                await runtime.inspectRuntimeArchive(selected.archivePath, descriptor, { destination: directory });
                 entrypoint = path.join(directory, descriptor.entrypoint);
             } else {
                 for (const file of publication.files) await fs.writeFile(path.join(directory, file.path), file.content);
@@ -110,6 +111,6 @@ export async function smokeCatalog(manifestFile) {
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-    if (!process.argv[2]) throw new Error('Укажите ready.json');
+    if (!process.argv[2]) throw new Error('Укажите asset.json');
     console.log(JSON.stringify(await smokeCatalog(path.resolve(process.argv[2])), null, 2));
 }

@@ -128,13 +128,23 @@ async function snapshot(input: WorkspaceBindingInput) {
             if (workspace.bindings[input.projectId] !== target.realpath) { throw new WorkspaceBindingError('resume-required', 'Повторная привязка требует явного возврата к ранее подключённой папке, новой копии или переноса.'); }
             previousBindingId = bindingId(instance);
         } else {
-            if (Object.values(registry.instances).some(previous => previous.realpath === target.realpath || samePhysical(previous.physical, target.physical))) {
-                throw new WorkspaceBindingError('marker-missing', 'Зарегистрированный экземпляр потерял marker. Восстановите привязку перед изменением идентичности.');
+            const registered = Object.values(registry.instances).filter(previous => previous.realpath === target.realpath || samePhysical(previous.physical, target.physical));
+            if (registered.length) {
+                const previous = registered[0]!;
+                if (previous.projectId !== input.projectId) { throw new WorkspaceBindingError('foreign-binding', 'Эта физическая папка зарегистрирована для другого проекта.'); }
+                if (registered.length !== 1 || previous.realpath !== target.realpath || !samePhysical(previous.physical, target.physical)) {
+                    throw new WorkspaceBindingError('marker-missing', 'Зарегистрированный экземпляр потерял marker, а физическая папка изменилась. Восстановите исходный каталог.');
+                }
+                if (workspace.bindings[input.projectId] !== target.realpath) { throw new WorkspaceBindingError('resume-required', 'Повторная привязка требует явного возврата к ранее подключённой папке, новой копии или переноса.'); }
+                // Удаление .opencode не меняет физический экземпляр: восстанавливаем только его прежний marker.
+                instance = previous;
+                previousBindingId = bindingId(previous);
+            } else {
+                try {
+                    await fs.lstat(await safeTarget(target.realpath, '.opencode/neurocenter'));
+                    throw new WorkspaceBindingError('marker-missing', 'В папке уже есть управляемые данные MCP без marker. Требуется восстановление исходной привязки и проверка файлов.');
+                } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
             }
-            try {
-                await fs.lstat(await safeTarget(target.realpath, '.opencode/neurocenter'));
-                throw new WorkspaceBindingError('marker-missing', 'В папке уже есть управляемые данные MCP без marker. Требуется восстановление исходной привязки и проверка файлов.');
-            } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
         }
     } else if (mode === 'adopt-legacy') {
         if (marker.marker?.version !== 1) { throw new WorkspaceBindingError('invalid-selection', 'Подтверждение старой привязки доступно только для marker v1.'); }
@@ -172,14 +182,15 @@ async function snapshot(input: WorkspaceBindingInput) {
         }
     }
     if (input.expectedBindingId !== undefined && input.expectedBindingId !== previousBindingId) { throw new WorkspaceBindingError('preparation-stale', 'Исходная привязка изменилась. Подготовьте действие заново.'); }
-    if (input.expectedInstanceId !== undefined && input.expectedInstanceId !== marker.marker?.instanceId) { throw new WorkspaceBindingError('preparation-stale', 'Экземпляр папки изменился. Подготовьте действие заново.'); }
+    const observedInstanceId = marker.marker?.instanceId ?? (mode === 'new' ? instance?.instanceId : undefined);
+    if (input.expectedInstanceId !== undefined && input.expectedInstanceId !== observedInstanceId) { throw new WorkspaceBindingError('preparation-stale', 'Экземпляр папки изменился. Подготовьте действие заново.'); }
     const workspaceRaw = await optionalText(path.join(stateDir(), 'workspace.json'));
     const registryRaw = await optionalText(registryFile());
     const state = { input: { projectId: input.projectId, folderName: input.folderName, mode,
         ...(input.expectedBindingId ? { expectedBindingId: input.expectedBindingId } : {}), ...(input.expectedInstanceId ? { expectedInstanceId: input.expectedInstanceId } : {}) },
         root, target, marker, source, sourceMarker, workspaceRaw, registryRaw, previousBindingId };
     const preparation: WorkspaceBindingPreparation = { ...state.input, preparation: hash(JSON.stringify(state)), requiresFileVerification: mode !== 'new',
-        ...(marker.marker?.instanceId ? { instanceId: marker.marker.instanceId } : {}), ...(previousBindingId ? { previousBindingId } : {}),
+        ...(observedInstanceId ? { instanceId: observedInstanceId } : {}), ...(previousBindingId ? { previousBindingId } : {}),
         ...(source ? { sourceFolderName: path.basename(source.realpath) } : {}) };
     return { ...state, preparation, workspace, registry, instance };
 }
@@ -211,13 +222,13 @@ export async function commitProjectBinding(prepared: WorkspaceBindingPreparation
                     ...(current.marker.marker?.instanceId ? { instanceId: current.marker.marker.instanceId } : {}), assertUnchanged });
                 await assertUnchanged();
             }
-            if (current.input.mode === 'new' && current.instance) {
+            if (current.input.mode === 'new' && current.instance && current.marker.marker) {
                 const result: WorkspaceBindingResult = { projectId: prepared.projectId, folderName: prepared.folderName, mode: 'new', preparation: prepared.preparation,
                     instanceId: current.instance.instanceId, bindingId: bindingId(current.instance), previousBindingId: bindingId(current.instance) };
                 await saveWorkspaceBindingCompletion(result);
                 return result;
             }
-            const instance: WorkspaceInstance = { instanceId: ['transfer', 'resume'].includes(current.input.mode) ? current.instance!.instanceId : randomUUID(),
+            const instance: WorkspaceInstance = current.input.mode === 'new' && current.instance ? current.instance : { instanceId: ['transfer', 'resume'].includes(current.input.mode) ? current.instance!.instanceId : randomUUID(),
                 projectId: prepared.projectId, server: hub(), realpath: current.target.realpath, physical: current.target.physical, bindingNonce: randomUUID() };
             // Старая запись той же физической папки не должна ожить при восстановлении marker из копии.
             for (const [key, previous] of Object.entries(current.registry.instances)) {

@@ -17,8 +17,8 @@ async function fixture(t, mode = 'ready') {
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/catalog-startup.mjs']) {
+    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs',
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'scripts/assets'));
@@ -77,12 +77,12 @@ test('dev install проверяет готовый Compose до установ�
     assert.deepEqual(result.events.slice(0, 3).map(event => event.args), [
         ['--version'], ['compose', 'version', '--short'], ['compose', 'up', '--help'],
     ]);
-    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length).fill('npm')]);
+    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm')]);
     const npm = result.events.filter(event => event.kind === 'npm');
-    assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), [...workspacePackages].sort());
+    assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), ['',...workspacePackages].sort());
     for (const event of npm) {
         assert.equal(event.node, process.versions.node);
-        assert.deepEqual(event.args, ['ci', '--no-audit', '--no-fund']);
+        assert.deepEqual(event.args, event.cwd===f.checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);
     }
     assert.match(result.stdout, /Compose 2\.40\.3 уже установлен/);
     assert.deepEqual(await fs.readdir(f.dockerConfig), ['config.json']);

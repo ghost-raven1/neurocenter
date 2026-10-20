@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildPackage } from '../src/catalog/bundle-package';
 import { DeviceJobs } from '../src/devices/device-jobs';
 import { assertInstallationSetBridge } from '../src/devices/device-compatibility';
 import type { Device, DeviceStore } from '../src/devices/device-store';
@@ -13,7 +14,7 @@ describe('Старый MCP не обходит реестр владельцев
         fingerprint: 'a'.repeat(64), last_seen: null, revoked: false,
         report: { protocolVersion: 2, bridgeVersion: '0.4.1', capabilities: ['durable-completions', 'managed-installations', 'package-v4'],
             bindings: [{ projectId: 'prj-own', bindingId: binding, valid: true }] } };
-    const pkg = { schemaVersion: 4, plugin: { id: 'project-prj-own/helper', kind: 'skill', version: 1 }, manifest: { sha256: 'a'.repeat(64) } };
+    const pkg=buildPackage({id:'project-prj-own/helper',kind:'skill',name:'helper',version:1},[{path:'SKILL.md',content:'Fixture'}],'now');
     const job = { id: 'job', device_id: oldDevice.id, email: actor.email, role: actor.activeRole, project_id: 'prj-own', kind: 'install',
         payload: { assetKind: 'skill', assetId: pkg.plugin.id, version: 1, bindingId: binding, package: pkg, planId: 'plan', planRevision: 1 } };
     const query = vi.fn(); const owned = vi.fn(); const delivery = vi.fn(); const removalPackage = vi.fn();

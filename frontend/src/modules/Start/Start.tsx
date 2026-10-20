@@ -1,17 +1,17 @@
-import { ApiOutlined, ArrowRightOutlined, CheckCircleOutlined, CopyOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Collapse, Select, Skeleton, Space, Steps, Typography, message } from 'antd';
+import { ApiOutlined, ArrowRightOutlined, CopyOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
+import { Button, Card, Collapse, Space, Steps, Typography, message } from 'antd';
 import { useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 
 import { CodeBlock } from '../../common/components/CodeBlock';
 import { PageHeading } from '../../common/components/PageHeading';
 import { useAvailableProjects } from '../Projects/useAvailableProjects';
-import { projectBindingUrl } from '../Projects/projectNavigation';
 import installDoc from './docs/OPENCODE-INSTALL.md?raw';
 import OpenCodeExtensions from './OpenCodeExtensions';
 import './Start.less';
 import {BridgeSetup} from './BridgeSetup';
 import { startQueryUrl, startStep } from './startQuery';
+import {StartProjectStep} from './StartProjectStep';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -58,7 +58,7 @@ const Start = () => {
                     <Steps current={step} onChange={go} size="small" responsive={false} labelPlacement="vertical" items={[
                         { title: 'OpenCode', icon: <RocketOutlined /> },
                         { title: 'Компьютер', icon: <ApiOutlined /> },
-                        { title: 'Проект', icon: <CheckCircleOutlined /> },
+                        { title: 'Проект', icon: <FolderOpenOutlined /> },
                     ]} />
                 </div>
                 <div className="start__step">
@@ -74,17 +74,7 @@ const Start = () => {
                         <BridgeSetup origin={window.location.origin} windows={windows} projectId={selectedProject?.id} onCopy={text=>{void copy(text);}}/>
                         <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
-                    {step === 2 && <>
-                        <Title level={3}>Свяжите папку с проектом</Title>
-                        <Paragraph type="secondary">Выберите серверный проект. Затем укажите его папку на своём компьютере. Названия папки и проекта могут отличаться.</Paragraph>
-                        {error && <Alert type="error" showIcon message="Не удалось загрузить проекты" description={error} action={<Button size="small" onClick={() => { void refresh(); }}>Повторить</Button>} />}
-                        {loading && !ready ? <Skeleton active paragraph={{rows:2}} /> : <Space direction="vertical" size={16} style={{width:'100%'}}>
-                            <Select aria-label="Проект для настройки" showSearch optionFilterProp="label" placeholder="Выберите проект" value={selectedProject?.id} onChange={selectProject} disabled={!ready || !!error} style={{width:'100%',maxWidth:420}} options={projects.map(item => ({value:item.id,label:item.name}))} notFoundContent={error ? 'Список проектов недоступен' : 'Сначала создайте или подключите проект'} />
-                            <Button type="primary" disabled={!selectedProject} onClick={() => { if (selectedProject) history.push(projectBindingUrl(selectedProject.id)); }}>Выбрать папку и связать проект <ArrowRightOutlined/></Button>
-                            <Text type="secondary">Когда папка связана, откройте каталог инструментов выбранного проекта.</Text>
-                            <Button type="primary" disabled={!project || !!error} onClick={() => history.push(`/store?p=${encodeURIComponent(project ?? '')}`)}>Подобрать инструменты <ArrowRightOutlined /></Button>
-                        </Space>}
-                    </>}
+                    {step === 2 && <StartProjectStep projects={projects} ready={ready} loading={loading} error={error} requestedProject={requestedProject} selectedProject={selectedProject} refresh={refresh} onSelect={selectProject} onBack={()=>go(1)}/>}
                 </div>
             </Card>
             <section className="start__hero">

@@ -34,6 +34,7 @@ import { useAvailableProjects } from '../Projects/useAvailableProjects';
 import { projectBindingUrl } from '../Projects/projectNavigation';
 import { storeProjectQuery, storeQueryUrl, storeSearchQuery } from './storeQuery';
 import { ToolPackagingModal } from './packaging/ToolPackagingModal';
+import { mergeProjectCatalog } from './projectCatalogSnapshots';
 import { useProjectCatalog } from './useProjectCatalog';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
 import { createProjectCatalogBatchController } from './projectCatalogBatch';
@@ -80,7 +81,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const isMain = isMainAdminRole(user?.activeRole);
     const { projects, ready: projectsReady, loading: projectsLoading, error: projectLoadError, scope: accessKey, refresh: refreshProjects } = useAvailableProjects();
 
-    const [catalog, setCatalog] = useState<IStoreApp[]>([]);
+    const [commonCatalog, setCatalog] = useState<IStoreApp[]>([]);
     const requestedTarget = presetTarget ?? storeProjectQuery(location.search);
     const selectedTarget = selectStoreTarget(projectsReady ? projects : [], requestedTarget, user);
     const targetProject = selectedTarget.project;
@@ -90,6 +91,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const canInstall = projectLevel >= 2;
     const { assets, loading: projectLoading, ready: projectCatalogReady, error: projectCatalogError, refresh: loadProject } = useProjectCatalog(targetProject?.id, accessKey);
     const projectCatalogUsable = projectCatalogReady && !projectCatalogError;
+    const catalog=useMemo(()=>mergeProjectCatalog(commonCatalog,assets),[commonCatalog,assets]);
     const [filter, setFilter] = useState<TFilter>('all');
     const query = storeSearchQuery(location.search);
     const [search, setSearch] = useState(() => query);
@@ -178,7 +180,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 ...((skills ?? [])).map(fromSkill),
             ];
             setCatalog(nextCatalog);
-            setViewApp(previous => previous ? (nextCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous) : null);
+            setViewApp(previous => previous?.projectManifest?previous:previous ? (nextCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous) : null);
         } catch {
             if (isCurrent()) { setLoadError(true); setCatalog([]); }
         } finally {
@@ -275,7 +277,13 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         const installation=currentInstallation(bridge.installations,installTarget(app));
         const installLabel=pendingAction&&!['install','uninstall'].includes(pendingAction.kind)?'Дождитесь локального действия':pending?(job?.state==='reconciling'?'Сверяем результат':job?.kind==='uninstall'?'Удаление через мост…':job?.state==='queued'?'В очереди моста':'Устанавливается…'):installation?(installation.version===app.version?'Установить повторно':`Обновить до версии ${app.version}`):'Установить через мост';
         return <Space direction="vertical" style={{width:'100%'}}>
-            {target && canInstall && (selected || canManage && !referenceBlocker) && <Button size="small" block type="primary" disabled={!projectCatalogUsable||!!installing||projectLoading||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</Button>}
+            {app.pinError&&<Text type="warning">{app.pinError}</Text>}
+            {selected&&canManage&&targetProject&&commonCatalog.some(item=>item.id===app.id&&item.kind===app.kind&&(app.pinError||item.version!==app.version))&&<Button size="small" block onClick={()=>{
+                const current=captureOwner();
+                const head=commonCatalog.find(item=>item.id===app.id&&item.kind===app.kind)!,ref=assets.find(item=>item.assetId===app.id&&item.assetKind===app.kind)!;
+                Modal.confirm({title:`Закрепить версию ${head.version} в проекте «${target}»?`,content:'Новая установка потребует одобрения этой версии. Файлы на компьютерах остаются на своих версиях.',okText:'Закрепить версию',cancelText:'Отмена',onOk:async()=>{if(!current())return;await bffApi.pinProjectAsset(targetProject.id,{assetId:ref.assetId,assetKind:ref.assetKind,version:head.version,expectedVersion:ref.version??null,expectedManifest:ref.manifest??null});if(current())await loadProject();}});
+            }}>{app.pinError?'Подтвердить версию проекта':'Закрепить новую версию'}</Button>}
+            {target && canInstall && (selected || canManage && !referenceBlocker) && <Button size="small" block type="primary" disabled={!!app.pinError||!projectCatalogUsable||!!installing||projectLoading||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</Button>}
             {target && canManage && !referenceBlocker && <Button size="small" block loading={installing===app.id} disabled={!!installing||!!localBusy||projectLoading||!projectCatalogUsable}
                 onClick={()=>{void doInstall(app,selected?'uninstall':'install');}}>{selected?'Убрать из каталога проекта':'Добавить в каталог проекта'}</Button>}
             {target && canManage && referenceBlocker && skillProject(app) !== targetProject?.id && <Text type="secondary">{referenceBlocker}</Text>}
@@ -294,6 +302,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     /** Недоступное действие объясняется в модалке, где пользователь читает инструмент. */
     const installationUnavailableReason = (app: IStoreApp): string => {
+        if(app.pinError)return app.pinError;
         if (!targetProject) {
             return skillProject(app)
                 ? 'Для установки выберите исходный проект этого скилла. В другой проект добавьте общий скилл или отдельную копию.'
@@ -436,7 +445,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}
                 onChooseProjectFolder={viewApp && targetProject && canInstall && isInProject(viewApp) && bridge.device && !bridgeInstallError && !binding ? () => { setViewApp(null); history.push(projectBindingUrl(targetProject.id)); } : undefined}
-                onInstall={viewApp&&canInstall&&projectCatalogUsable&&!bridgeInstallError&&binding&&bridge.jobsReady&&bridge.installationsReady&&(isInProject(viewApp)||canManage&&!projectSkillReferenceBlocker(viewApp,targetProject?.id))&&!(isPending(assetJobFor(viewApp))&&assetJobFor(viewApp)?.kind==='uninstall')?version=>{void localInstall({...viewApp,version});}:undefined}
+                onInstall={viewApp&&!viewApp.pinError&&canInstall&&projectCatalogUsable&&!bridgeInstallError&&binding&&bridge.jobsReady&&bridge.installationsReady&&(isInProject(viewApp)||canManage&&!projectSkillReferenceBlocker(viewApp,targetProject?.id))&&!(isPending(assetJobFor(viewApp))&&assetJobFor(viewApp)?.kind==='uninstall')?version=>{void localInstall({...viewApp,version});}:undefined}
                 installStatus={viewApp?jobFor(viewApp):undefined} installBusy={!!localBusy||!!installing} installUnavailableReason={viewApp?installationUnavailableReason(viewApp):undefined}/>
 
             <InstallPlanModal plan={localPlans.review?.plan ?? null} name={localPlans.review?.app.name}

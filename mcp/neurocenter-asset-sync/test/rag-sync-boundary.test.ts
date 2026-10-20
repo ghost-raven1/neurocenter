@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { syncRagDb } from '../src/tools/sync-rag-db.js';
 import { writeRows } from '../src/lib/lancedb.js';
 import { workspaceFixture } from './bridge-fixture.js';
-import { readyIndex, metadata } from './rag-index-fixture.js';
+import { readyIndex, metadata,receipt } from './rag-index-fixture.js';
 
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof import('../src/bridge/state.js')>(), authorizedFetch: transport.fetch }));
@@ -21,7 +21,7 @@ describe('Границы локального источника RAG при от
         transport.fetch.mockReset().mockImplementation(async (_url: string, init?: RequestInit) => {
             if (!init) { return Response.json(metadata([])); }
             const body = JSON.parse(String(init.body)); sent.push(body);
-            return Response.json({ upserted: body.chunks.length, deleted: body.deletes.length, complete: body.snapshot.complete, snapshotHash: body.snapshot.hash });
+            return Response.json({ ...receipt(body),upserted: body.chunks.length, deleted: body.deletes.length, complete: body.snapshot.complete, snapshotHash: body.snapshot.hash });
         });
     });
     afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await fs.rm(fixture.temporary, { recursive: true, force: true }); });

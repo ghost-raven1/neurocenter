@@ -6,7 +6,7 @@ import {assetEnvironment} from './environment.mjs';
 import {prepareAssetsWithCancellation} from './cancellation.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const help='npm run assets:init — подключить Git-хуки и подготовить поставку\n'
+const help='npm run assets:init — подключить Git-хуки и проверить описания ассетов\n'
     +'npm run assets:hooks — только подключить хуки; --uninstall — вернуть прежние хуки';
 
 async function main() {
@@ -21,11 +21,11 @@ async function main() {
     }
     if(args.includes('--uninstall')) {await uninstallAssetHooks({root});console.log('Прежняя настройка Git-хуков восстановлена.');return;}
     await installAssetHooks({root,node:runtime.node});
-    console.log('Git-хуки подключены: pull, rebase и смена ветки подготавливают поставку автоматически.');
+    console.log('Git-хуки подключены: pull, rebase и смена ветки проверяют описания ассетов; бинарники загружаются выбранным профилем.');
     if(args.includes('--hooks-only'))return;
-    const {modelBundleProgressReporter}=await import('../models/bundle-cli.mjs');
-    await prepareAssetsWithCancellation({root,environment:await assetEnvironment(root),onProgress:modelBundleProgressReporter()});
-    console.log('Поставка готова. Последующие обновления: git pull.');
+    const {assetProgressReporter}=await import('./progress.mjs');
+    await prepareAssetsWithCancellation({root,environment:await assetEnvironment(root),metadataOnly:true,onProgress:assetProgressReporter()});
+    console.log('Описания готовы. Выборочный импорт карточек: раздел «Ассеты».');
 }
 
 main().catch(error=>{console.error(error.message);process.exitCode=error.signal==='SIGINT'?130:error.signal==='SIGTERM'?143:1;});

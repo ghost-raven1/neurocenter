@@ -41,8 +41,8 @@ async function fixture(t, mode) {
     });
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs',
-        'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/catalog-startup.mjs']) {
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs',
+        'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
@@ -51,36 +51,11 @@ async function fixture(t, mode) {
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
     await fs.writeFile(path.join(checkout,'scripts/assets/cli.mjs'), `
         import {appendFileSync} from 'node:fs';
-        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'assets-sync'})+'\\n');
+        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'assets-sync',args:process.argv.slice(2)})+'\\n');
         if(process.env.DEV_START_MODE==='assets-error'){console.error('fixture assets failed');process.exit(37);}
-        console.log(JSON.stringify({ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64)}));`);
-    await fs.writeFile(path.join(checkout,'scripts/models/bundle-cli.mjs'), `
-        import {appendFileSync,rmSync} from 'node:fs';
-        if(process.argv.includes('--recover-only')){
-            appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-recovery'})+'\\n');
-            if(process.env.DEV_START_MODE==='assets-recover-error')process.exit(38);
-            rmSync(process.argv[3]+'/.bundle-managed/pending.json');
-            console.log(JSON.stringify({ok:true,recovered:true}));process.exit(0);
-        }
-        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-bundle',directory:process.argv[3]})+'\\n');
-        if(process.env.DEV_START_MODE==='model-bundle-error')process.exit(34);
-        if(process.env.DEV_START_MODE==='model-bundle-disk-error'){
-            console.log(JSON.stringify({ok:false,error:{code:'ENOSPC',requiredBytes:3*1024**3,availableBytes:1024**3,message:'PRIVATE child details'}}));
-            process.exit(1);
-        }
-        console.log(JSON.stringify({ok:true,downloadOnly:false,verifyOnly:false,models:2,files:9,bytes:4427274223}));`);
-    await fs.mkdir(path.join(checkout, 'mcp/neurocenter-asset-sync'), {recursive: true});
-    await fs.writeFile(path.join(checkout, 'scripts/package-bridge.sh'), '#!/bin/bash\nexit 0\n', {mode: 0o700});
-    await fs.writeFile(path.join(checkout, 'scripts/prepare-bridge-runtimes.mjs'), `
-        import {appendFileSync} from 'node:fs';
-        appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'runtime-prepare'})+'\\n');
-        if(process.env.DEV_START_MODE==='runtime-error')process.exit(31);`);
-    await fs.mkdir(path.join(checkout, 'services/catalog-service/dist/builtin-catalog'), {recursive: true});
-    await fs.writeFile(path.join(checkout, 'services/catalog-service/dist/builtin-catalog/sync.cli.js'), `
-        require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'catalog-sync',
-            manifest:process.argv[2],mode:process.argv[3],artifactDir:process.env.RUNTIME_ARTIFACT_DIR})+'\\n');
-        if(process.env.DEV_START_MODE==='catalog-error')process.exit(32);
-        console.log(JSON.stringify({ok:true,tools:[],partial:false,conflicts:[]}));`);
+        console.log(JSON.stringify({ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64),
+            ...(process.argv.includes('--without-models')?{withoutModels:true}:{})}));`);
+    await fs.mkdir(path.join(checkout,'mcp/neurocenter-asset-sync'),{recursive:true});
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -112,7 +87,7 @@ async function fixture(t, mode) {
             const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
             record({kind:'child-start',service,pid:process.pid,entry:process.argv[1],flagsUrl:process.env.FEATURE_FLAGS_SERVICE_URL});
             process.on('SIGTERM',()=>{record({kind:'child-stop',service,pid:process.pid});process.exit(0);});
-            if(service==='catalog'&&!process.env.DEV_START_MODE.startsWith('native-cancel-')){
+            if(service==='catalog'&&!process.env.DEV_START_MODE.startsWith('native-cancel-')&&!process.env.DEV_START_MODE.startsWith('profile-ready')){
                 const fail=()=>{record({kind:'child-exit',service,pid:process.pid});console.error('fixture catalog failure');process.exit(7);};
                 if(process.env.DEV_START_MODE==='immediate')fail();
                 const waiting=setInterval(()=>{
@@ -122,6 +97,20 @@ async function fixture(t, mode) {
             setInterval(()=>{},1000);
         `);
     }
+    await fs.mkdir(path.join(checkout,'services/catalog-service/node_modules/pg'),{recursive:true});
+    await fs.writeFile(path.join(checkout,'services/catalog-service/node_modules/pg/index.js'),`
+        const fs=require('node:fs');
+        module.exports.Client=class {
+            async connect(){}
+            async query(sql){
+                fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'model-key-db',readonly:sql.includes('READ ONLY'),publicIds:sql.includes("credential->>'keyId'")})+'\\n');
+                if(sql.includes('to_regclass'))return {rows:[{present:process.env.DEV_START_MODE==='model-key-conflict'}]};
+                if(sql.includes("credential->>'keyId'"))return {rows:[{ids:['a'.repeat(24)]}]};
+                return {rows:[]};
+            }
+            async end(){}
+        };
+    `);
     const hook = path.join(directory, 'isolated-network.mjs');
     await fs.writeFile(hook, `
         import fs from 'node:fs';
@@ -134,7 +123,7 @@ async function fixture(t, mode) {
         const spawn=childProcess.spawn;
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
-            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry});
+            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry,modelKeyFile:args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string'});
             return child;
         };
         const writeFileSync=fs.writeFileSync;
@@ -193,8 +182,10 @@ async function fixture(t, mode) {
         DEV_START_CALLS: calls, DEV_START_MARKER: marker, DEV_START_MODE: mode,
         DEV_START_CHECKOUT: checkout,
     };
-    async function run() {
-        cli = spawn(process.execPath, [path.join(checkout, 'scripts/dev.mjs'), 'up'], {cwd: checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
+    if(mode==='profile-ready-external')env.NEUROCENTER_MODEL_CREDENTIAL_KEY=Buffer.alloc(32,17).toString('base64');
+    async function run(...args) {
+        // Проверки полной поставки явно выбирают full, независимо от лёгкого default приложения.
+        cli = spawn(process.execPath, [path.join(checkout, 'scripts/dev.mjs'), 'up', ...(args.length ? args : ['--profile=full'])], {cwd: checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
         let stdout = '', stderr = '';
         cli.stdout.setEncoding('utf8').on('data', value => { stdout += value; });
         cli.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
@@ -210,6 +201,10 @@ async function fixture(t, mode) {
             cli.once('error', reject);
             cli.once('close', (code, signal) => resolve({code, signal}));
         }).finally(() => {clearTimeout(timer);clearInterval(cancel);});
+        if(status.code===0) {
+            const stopped=spawnSync(process.execPath,[path.join(checkout,'scripts/dev.mjs'),'down'],{cwd:checkout,env,encoding:'utf8',timeout:10000});
+            assert.equal(stopped.status,0,stopped.stdout+stopped.stderr);
+        }
         const events = await eventsFrom(calls);
         assert.equal(status.signal, null, stdout + stderr);
         assert.ok(events.every(event => !['unexpected-network', 'unexpected-probe'].includes(event.kind)));
@@ -232,17 +227,13 @@ test('Запуск называет завершившийся сервис, п�
     assert.match(result.stderr, /код\S*\s+7/);
     assert.match(result.stderr, /neurocenter-catalog\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
-    assert.equal(result.events.filter(event => event.kind === 'npm').length, 8);
-    assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 1);
-    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
-    assert.equal(result.events.find(event => event.kind === 'catalog-sync').artifactDir, path.join(f.checkout, 'data/runtime-artifacts'));
-    assert.ok(result.events.findIndex(event => event.kind === 'catalog-sync')
-        < result.events.findIndex(event => event.kind === 'child-spawn'));
-    assert.ok(result.events.findIndex(event => event.kind === 'runtime-prepare')
-        < result.events.findIndex(event => event.kind === 'child-spawn'));
+    assert.equal(result.events.filter(event => event.kind === 'npm').length, 9);
+    assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 0);
+
 });
 
-test('Ошибка поставки каталога показывает причину и не блокирует запуск сервисов', async t => {
+test('Полный запуск готовит файлы, сохраняя выбор карточек без автоматического импорта', async t => {
     const f = await fixture(t, 'catalog-error');
     await fs.mkdir(path.join(f.checkout, '.run'));
     const state = '[{"name":"catalog","pid":99999999}]\n';
@@ -250,33 +241,15 @@ test('Ошибка поставки каталога показывает при
     await fs.writeFile(stateFile, state);
     const result = await f.run();
     assert.equal(result.code, 1);
-    assert.match(result.stdout, /Код завершения: 32/);
-    assert.match(result.stderr, /запуск приложения продолжится/);
-    assert.match(result.stdout, /npm run tools:sync/);
+    assert.match(result.stdout, /Состав каталога.*Выбирается главным администратором/);
+    assert.doesNotMatch(result.stdout+result.stderr, /Код завершения: 32|Встроенный каталог не обновлён/);
     assert.notEqual(await fs.readFile(stateFile, 'utf8').catch(error => {
         if (error.code === 'ENOENT') return ''; throw error;
     }), state);
-    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 1);
-    assert.equal(result.events.find(event => event.kind === 'catalog-sync').mode, '--skip-conflicts');
+    assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 7);
     assert.ok(result.events.some(event => event.kind === 'health-start'));
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
-});
-
-test('Ошибка подготовки автономного моста сохраняет состояние работающего стека', async t => {
-    const f = await fixture(t, 'runtime-error');
-    await fs.mkdir(path.join(f.checkout, '.run'));
-    const state = '[{"name":"catalog","pid":99999999}]\n';
-    const stateFile = path.join(f.checkout, '.run/processes.json');
-    await fs.writeFile(stateFile, state);
-    const result = await f.run();
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /31/);
-    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
-    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'docker'
-        && event.args[0] === 'compose' && event.args[1] === 'up' && !event.args.includes('--help')).length, 0);
 });
 
 test('Ошибка общей поставки останавливает запуск до сборки и сохраняет прежние процессы', async t => {
@@ -287,48 +260,9 @@ test('Ошибка общей поставки останавливает зап
     const result = await f.run();
     assert.equal(result.code, 1); assert.match(result.stderr, /Поставка проекта не подготовлена/);
     assert.equal(await fs.readFile(filename, 'utf8'), state);
-    assert.equal(result.events.filter(event => event.kind === 'npm' || event.kind === 'child-spawn').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('up') && !event.args.includes('--help')).length, 0);
-});
-
-test('CLI запуска восстанавливает прерванную активацию раньше предзагрузки и сборки', async t => {
-    const f = await fixture(t, 'assets-recover'), managed = path.join(f.checkout, 'data/embedding/.bundle-managed');
-    await fs.mkdir(managed, {recursive: true}); await fs.writeFile(path.join(managed, 'pending.json'), '{}');
-    const result = await f.run();
-    assert.equal(result.code, 1); assert.match(result.stderr, /Каталог/); // Дальше завершается отдельный тестовый сервис.
-    assert.match(result.stdout, /Восстановлен согласованный комплект/);
-    const recovery = result.events.findIndex(event => event.kind === 'model-recovery');
-    const assets = result.events.findIndex(event => event.kind === 'assets-sync');
-    const build = result.events.findIndex(event => event.kind === 'npm');
-    assert.ok(recovery >= 0 && assets > recovery && build > assets);
-    await assert.rejects(fs.access(path.join(managed, 'pending.json')), {code: 'ENOENT'});
-});
-
-test('CLI не запускает предзагрузку и сборку, если журнал моделей нельзя восстановить', async t => {
-    const f = await fixture(t, 'assets-recover-error'), managed = path.join(f.checkout, 'data/embedding/.bundle-managed');
-    await fs.mkdir(managed, {recursive: true}); await fs.writeFile(path.join(managed, 'pending.json'), '{}');
-    await fs.mkdir(path.join(f.checkout, '.run')); const state = '[{"name":"catalog","pid":99999999}]\n';
-    await fs.writeFile(path.join(f.checkout, '.run/processes.json'), state);
-    const result = await f.run();
-    assert.equal(result.code, 1); assert.match(result.stderr, /Не удалось восстановить.*recover-only/);
-    assert.equal(await fs.readFile(path.join(f.checkout, '.run/processes.json'), 'utf8'), state);
-    assert.equal(result.events.filter(event => ['assets-sync', 'npm', 'child-spawn'].includes(event.kind)).length, 0);
-    assert.equal(await fs.readFile(path.join(managed, 'pending.json'), 'utf8'), '{}');
-});
-
-test('Ошибка поставки весов сохраняет прежние сервисы и не запускает пустой хостинг', async t => {
-    const f = await fixture(t, 'model-bundle-error');
-    await fs.mkdir(path.join(f.checkout, '.run'));
-    const state = '[{"name":"catalog","pid":99999999}]\n';
-    const stateFile = path.join(f.checkout, '.run/processes.json');
-    await fs.writeFile(stateFile, state);
-    const result = await f.run();
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /модели не подготовлены/);
-    assert.equal(await fs.readFile(stateFile, 'utf8'), state);
-    assert.equal(result.events.filter(event => event.kind === 'model-bundle').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'npm').length, 1);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('embedding')).length, 0);
+    assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('up') && !event.args.includes('--help')).length, 0);
 });
 
 test('Ошибка Docker хостинга объясняется и допускает запуск остальных сервисов',async t=>{
@@ -338,23 +272,8 @@ test('Ошибка Docker хостинга объясняется и допус�
     assert.match(result.stdout,/код 35/);
     assert.match(result.stdout,/model-hosting/);
     assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
-    assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,1);
+    assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,0);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
-});
-
-test('Нехватка места останавливает запуск с точными объёмами и сохраняет прежний стек',async t=>{
-    const f=await fixture(t,'model-bundle-disk-error');
-    await fs.mkdir(path.join(f.checkout,'.run'));
-    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');
-    await fs.writeFile(filename,state);
-    const result=await f.run();
-    assert.equal(result.code,1,result.stdout+result.stderr);
-    assert.match(result.stderr,/требуется свободно 3.00 ГиБ, доступно 1.00 ГиБ/);
-    assert.match(result.stdout,/Подробности подготовки/);
-    assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
-    assert.equal(await fs.readFile(filename,'utf8'),state);
-    assert.equal(result.events.filter(event=>event.kind==='catalog-sync'||event.kind==='child-spawn').length,0);
-    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.includes('embedding')).length,0);
 });
 
 test('Отмена зависшего хостинга завершает ожидание и сохраняет прежний стек',async t=>{
@@ -394,6 +313,7 @@ for(const [mode,code] of [['native-cancel-int',130],['native-cancel-term',143]])
         assert.match(result.stderr,/Запуск сервисов прерван/);
         assert.doesNotMatch(result.stdout,/Готов к работе/);
         assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+        for(const child of result.events.filter(event=>event.kind==='child-spawn'))assert.equal(child.modelKeyFile,child.entry.includes('/services/catalog-service/')?path.join(f.checkout,'.run/model-credentials/secrets/model_credential_key'):null);
         assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,7);
         await assert.rejects(fs.access(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
     });
@@ -409,6 +329,23 @@ test('Ошибка записи состояния после запуска п�
     assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
 });
 
+test('Dev key mismatch preserves old process state and stops before key generation or service launch',async t=>{
+    const f=await fixture(t,'model-key-conflict');await fs.mkdir(path.join(f.checkout,'.run'));
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
+    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,/Восстановите исходные/);
+    assert.equal(await fs.readFile(filename,'utf8'),state);await assert.rejects(fs.stat(path.join(f.checkout,'.run/model-credentials')),{code:'ENOENT'});
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
+    assert.ok(result.events.some(event=>event.kind==='model-key-db'&&event.readonly));assert.ok(result.events.some(event=>event.kind==='model-key-db'&&event.publicIds));
+});
+
+test('Dev operator master key reaches only catalog, never frontend or unrelated children',async t=>{
+    const f=await fixture(t,'profile-ready-external'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);
+    const children=result.events.filter(event=>event.kind==='child-spawn');assert.equal(children.length,7);
+    for(const child of children){assert.equal(child.modelKeyInline,child.entry.includes('/services/catalog-service/'));assert.equal(child.modelKeyFile,null);}
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/model-credentials')),{code:'ENOENT'});
+    assert.doesNotMatch(result.stdout+result.stderr,/ERERERER/);
+});
+
 test('Занятый порт объясняется до запуска сервисов и проверки HTTP', async t => {
     const f = await fixture(t, 'port-conflict'), result = await f.run();
     assert.equal(result.code, 1, result.stdout + result.stderr);
@@ -419,4 +356,31 @@ test('Занятый порт объясняется до запуска сер�
     assert.ok(result.events.some(event => event.kind === 'port-probe' && event.port === 4100));
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'health-start').length, 0);
+});
+
+for(const profile of ['fast','standard','full']) {
+    test(`Профиль ${profile} действительно выбирает поставку и запускает семь сервисов`,async t=>{
+        const f=await fixture(t,'profile-ready'),result=await f.run('--profile',profile);
+        assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);
+        assert.match(result.stdout,new RegExp(`Профиль запуска: ${profile}`));
+        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+        assert.equal(result.events.filter(event=>event.kind==='npm').length,9);
+        assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,profile==='fast'?0:1);
+        assert.equal(result.events.filter(event=>event.kind==='bridge-package').length,0);
+        assert.equal(result.events.filter(event=>event.kind==='runtime-prepare').length,0);
+        assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,0);
+        assert.equal(result.events.filter(event=>event.kind==='model-bundle').length,0);
+        assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.includes('embedding')).length,profile==='full'?1:0);
+        if(profile==='standard')assert.deepEqual(result.events.find(event=>event.kind==='assets-sync').args,['--without-models']);
+        const steps=[...result.stdout.matchAll(/\[(\d+)\/(\d+)\]/g)];
+        assert.equal(steps.at(-1)[1],steps.at(-1)[2]);
+    });
+}
+
+test('Ошибка standard-поставки сохраняет прежний стек до сборки и запуска новых процессов',async t=>{
+    const f=await fixture(t,'assets-error');await fs.mkdir(path.join(f.checkout,'.run'));
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
+    const result=await f.run('--profile=standard');assert.equal(result.code,1,result.stdout+result.stderr);
+    assert.match(result.stderr,/--without-models.*Прежние сервисы не остановлены/);assert.equal(await fs.readFile(filename,'utf8'),state);
+    assert.equal(result.events.filter(event=>['runtime-prepare','catalog-sync','child-spawn','model-bundle'].includes(event.kind)).length,0);
 });

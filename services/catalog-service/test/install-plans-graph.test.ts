@@ -28,12 +28,14 @@ describe('Одобрение полного графа установки', () =
     beforeEach(() => {
         saved = structuredClone(approved); allowed = new Set([root.plugin.id, dependency.plugin.id]);
         query.mockReset(); build.mockReset(); claims.mockReset(); connect.mockReset();
+        connect.mockResolvedValue({query,release:vi.fn()});
         claims.mockResolvedValue({ email: actor.email, userRoles: ['Главный админ'], projects: [] });
         build.mockImplementation(async (_kind, assetId) => assetId === root.plugin.id ? root : dependency);
         query.mockImplementation(async (sql: string, parameters: unknown[]) => {
             if (sql.includes('FROM device_install_plans')) { return { rows: [saved], rowCount: 1 }; }
             if (sql.includes('FROM projects')) { return { rows: [], rowCount: 1 }; }
-            if (sql.includes('FROM project_assets')) { return { rows: [], rowCount: allowed.has(String(parameters[2])) ? 1 : 0 }; }
+            if (sql.includes('FROM project_assets')) { return { rows: allowed.has(String(parameters[2]))?[{project_id:project,asset_kind:'skill',asset_id:root.plugin.id,asset_version:1,asset_manifest:root.manifest.sha256,pin_snapshot:{package:root}}]:[],rowCount:allowed.has(String(parameters[2]))?1:0 }; }
+            if(['BEGIN','COMMIT','ROLLBACK'].includes(sql)||sql.startsWith('INSERT INTO security_events'))return {rows:[],rowCount:0};
             if (sql.startsWith('INSERT INTO device_install_plans')) {
                 saved = { ...saved, id: String(parameters[0]), manifest: String(parameters[5]), package: parameters[6] as typeof root,
                     installation_set: parameters[8] as typeof installationSet, status: 'pending', revision: 0 };
@@ -49,7 +51,7 @@ describe('Одобрение полного графа установки', () =
         expect(plan.manifest).not.toBe(root.manifest.sha256);
         expect(plan.packages).toHaveLength(2);
         expect(plan.packages?.find(pkg => pkg.kind === 'plugin')?.files[0].content).toContain('Помощник');
-        expect(build.mock.calls).toEqual([['skill', root.plugin.id, 1], ['plugin', dependency.plugin.id, 2]]);
+        expect(build.mock.calls).toEqual([['plugin', dependency.plugin.id, 2]]);
         expect(saved.installation_set?.packages).toHaveLength(2);
     });
     it('Повторная выдача не перечитывает head ни корня, ни зависимости', async () => {
@@ -60,15 +62,11 @@ describe('Одобрение полного графа установки', () =
     it('Одобрение хэша только корня не разрешает полный комплект', async () => {
         await expect(service.delivery(id, project, 'skill', root.plugin.id, 1, 1, root.manifest.sha256)).rejects.toMatchObject({ status: 409 });
     });
-    it('Исчезнувшая из проекта зависимость останавливает повтор установки', async () => {
+    it('Dependency is authorized by approved root graph without a separate project assignment',async()=>{
         allowed.delete(dependency.plugin.id);
-        await expect(service.delivery(id, project, 'skill', root.plugin.id, 1, 1, installationSet.manifest)).rejects.toMatchObject({ status: 403 });
-        expect(build).not.toHaveBeenCalled();
-    });
-    it('Подготовка без зависимости в проектном каталоге не сохраняет частичный план', async () => {
-        allowed.delete(dependency.plugin.id);
-        await expect(service.prepare(actor, { projectId: project, assetKind: 'skill', assetId: root.plugin.id, version: 1 })).rejects.toMatchObject({ status: 403 });
-        expect(query.mock.calls.some(([sql]) => String(sql).startsWith('INSERT'))).toBe(false);
+        expect((await service.delivery(id,project,'skill',root.plugin.id,1,1,installationSet.manifest)).installSet).toEqual(installationSet);
+        const plan=await service.prepare(actor,{projectId:project,assetKind:'skill',assetId:root.plugin.id,version:1});
+        expect(plan.packages).toHaveLength(2);
     });
     it.each(['pending', 'revoked'] as const)('Статус %s останавливает всю группу', async status => {
         saved.status = status;
@@ -91,9 +89,9 @@ describe('Одобрение полного графа установки', () =
         await expect(service.decide(actor, id, { expectedManifest: saved.manifest, expectedRevision: 1 }, 'approved')).rejects.toMatchObject({ status: 409 });
         expect(connect).not.toHaveBeenCalled();
     });
-    it('Убрать зависимость из каталога нельзя обойти новым одобрением старого плана', async () => {
-        allowed.delete(dependency.plugin.id);
-        await expect(service.decide(actor, id, { expectedManifest: saved.manifest, expectedRevision: 1 }, 'approved')).rejects.toMatchObject({ status: 403 });
-        expect(connect).not.toHaveBeenCalled();
+    it('Removed root assignment cannot approve an earlier plan',async()=>{
+        allowed.delete(root.plugin.id);
+        await expect(service.decide(actor,id,{expectedManifest:saved.manifest,expectedRevision:1},'approved')).rejects.toMatchObject({status:403});
+        expect(connect).toHaveBeenCalledOnce();
     });
 });

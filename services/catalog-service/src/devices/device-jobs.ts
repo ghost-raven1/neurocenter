@@ -11,12 +11,13 @@ import { Device, DeviceStore, digest } from './device-store';
 import { DeviceArtifacts } from './device-artifacts';
 import {DeviceInstallations} from './device-installations';
 import {assertDeviceCatalogAsset} from './device-catalog-access';
+import type { IPackage } from '../catalog/bundle-package';
 import {InstallPlans} from './install-plans';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { enqueueDeviceJob } from './device-enqueue';
 import {findDeviceJobRequest} from './device-job-requests';
 import { assertManagedBridge, assertPackageBridge, assertInstallationSetBridge, assertInstallationInspectionBridge, assertExpectedBinding, managedBinding } from './device-compatibility';
-import {verifyInstallationSet,type IInstallationSet} from './installation-set';
+import {assertInstallablePackage,verifyInstallationSet,type IInstallationSet} from './installation-set';
 import { workspaceJobPayload, assertWorkspaceSource } from './workspace-jobs';
 import { localChangeJobPayload, assertLocalFeature, assertLocalChangeAvailable } from './local-change-jobs';
 
@@ -31,11 +32,12 @@ import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
 import { deviceJobRetryPolicy } from './device-job-retry';
-import { assertRagJobBinding, RAG_JOB_KINDS } from './rag-job-binding';
+import { assertRagJobBinding, assertRagJobProtocol, RAG_JOB_KINDS, RAG_GENERATION_PROTOCOL } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import {ragUiJobPayload,assertRagUiJob} from './rag-ui-jobs';
 import {requireFeatureEnabled} from '../features/require-feature-enabled';
 import { ProjectEmbeddingService } from '../models/project-embedding.service';
+import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
 const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId"`;
 
@@ -90,6 +92,13 @@ export class DeviceJobs {
         }
         return claims;
     }
+    /** Plan captures one exact installation without writing a job before server selection is promoted. */
+    async validateReindexTarget(actor:IAccessActor,projectId:string,target:import('../models/project-reindex.types').IReindexConnectionTarget):Promise<void>{
+        const device=await this.store.owned(actor,target.deviceId);await this.permission(device,actor.activeRole,projectId,2);
+        assertManagedBridge(device.report);assertLocalFeature(device.report,'hosted-rag-reindex-v1');assertLocalFeature(device.report,'hosted-rag-profile-values-v1');
+        const approved=await ragUiJobPayload(this.installations,this.plans,device,{...target,projectId,kind:'open-rag-ui',requestKey:randomUUID()});
+        if((approved?.package.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1)throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
+    }
     async create(actor: IAccessActor, input: JobInput) {
         if (
             !input ||
@@ -119,6 +128,7 @@ export class DeviceJobs {
             );
         }
         const device = await this.store.owned(actor, input.deviceId);
+        if(input.kind==='scan-opencode-models'&&actor.activeRole!=='Главный админ')throw new ForbiddenException('Импорт конфигурации моделей доступен главному администратору.');
         await this.permission(
             device,
             actor.activeRole,
@@ -140,7 +150,7 @@ export class DeviceJobs {
         }
         assertManagedBridge(device.report);
         if (RAG_JOB_KINDS.includes(input.kind)) {
-            payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId)};
+            payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId),ragProtocol:RAG_GENERATION_PROTOCOL};
         }
         if (input.kind === 'open-local-recovery-folder') {
             assertLocalFeature(device.report,'local-change-plan-v1');
@@ -274,7 +284,7 @@ export class DeviceJobs {
         }
         try {
             assertManagedBridge(device.report);
-            if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
+            if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
             await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
@@ -327,7 +337,7 @@ export class DeviceJobs {
             );
         }
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
-        if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
+        if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
@@ -351,6 +361,7 @@ export class DeviceJobs {
         if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall','inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime'].includes(job.kind) && job.payload.bindingId !== managedBinding(device.report, job.project_id || undefined)) {
             throw new ConflictException('Привязка папки изменилась после отправки задания. Повторите действие для актуальной папки.');
         }
+        await registerHostedRagGrant(this.store.pool,device,job,lease,()=>assertHostedRagJob(this.embedding,this.installations,this.plans,device,job));
         return { ok: true, projectId: job.project_id, role: job.role };
     }
     async authorizeConfiguration(device:Device,input:unknown){
@@ -366,7 +377,9 @@ export class DeviceJobs {
         if (!pkg?.manifest?.sha256) { throw new ConflictException('В задании нет закреплённого пакета. Подготовьте установку заново.'); }
         const set=job.payload.installSet as IInstallationSet|undefined;
         if(set && !verifyInstallationSet(set)){throw new ConflictException('Состав набора повреждён. Подготовьте установку заново.');}
-        await this.plans.package(job.payload.planId, job.project_id!, job.payload.assetKind, job.payload.assetId, job.payload.version, job.payload.planRevision, set?.manifest ?? pkg.manifest.sha256);
+        assertInstallablePackage(pkg as IPackage);
+        const approved=await this.plans.package(job.payload.planId, job.project_id!, job.payload.assetKind, job.payload.assetId, job.payload.version, job.payload.planRevision, set?.manifest ?? pkg.manifest.sha256);
+        if(approved.manifest.sha256!==pkg.manifest.sha256)throw new ConflictException('Job package differs from the approved immutable package.');
     }
     async update(
         device: Device,

@@ -11,7 +11,6 @@ export const versionsPolitics: IPolitic = { politicName: 'GET_PERMISSIONS_LANCED
 /** Политика скиллов. */
 export const skillsPolitics: IPolitic = { politicName: 'GET_PERMISSIONS_LANCEDB_SKILLS' };
 /** Политика MCP-пакетов. */
-export const packagesPolitics: IPolitic = { politicName: 'GET_PERMISSIONS_LANCEDB_PACKAGES' };
 /** Политика операций. */
 export const operationsPolitics: IPolitic = { politicName: 'GET_PERMISSIONS_LANCEDB_OPERATIONS' };
 /** Политика обслуживания. */
@@ -55,10 +54,6 @@ export const backupManageKey = 'maintenance#backup-manage';
 export const auditReadKey = 'audit#read';
 /** Ключ прав: управление операциями (retry/cancel). */
 export const operationManageKey = 'operations#manage';
-/** Ключ прав: скачать пакет. */
-export const packageDownloadKey = 'packages#download';
-/** Ключ прав: управление пакетами. */
-export const packageManageKey = 'packages#manage';
 /** Ключ прав: просмотр develop-индекса RAG. */
 export const ragReadKey = 'rag#read';
 
@@ -68,7 +63,6 @@ export const PROJECT_ROUTE = 'projects';
 export const PROJECT_DETAIL_ROUTE = 'projects-detail';
 export const OPERATIONS_ROUTE = 'operations';
 export const SKILLS_ROUTE = 'skills';
-export const PACKAGES_ROUTE = 'packages';
 export const MAINTENANCE_ROUTE = 'maintenance';
 export const AUDIT_ROUTE = 'audit';
 export const ACCESS_ROUTE = 'access';

@@ -1,95 +1,42 @@
 import path from 'node:path';
 import {realpathSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {packModelBundle,hydrateModelBundle,readModelBundle,rollbackManagedModelBundle,recoverManagedModelBundle} from './bundle.mjs';
+import {hydrateModelBundle,recoverManagedModelBundle,rollbackManagedModelBundle} from './bundle.mjs';
+import {readModelAsset,modelAssetRuntime,cachedModelTransport} from './source-asset.mjs';
+import {assetProgressReporter} from '../assets/progress.mjs';
 import {modelBundleFailure} from './bundle-errors.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const usage='Использование: node scripts/models/bundle-cli.mjs --directory <каталог моделей> [--download-only | --verify-only | --recover-only | --rollback | --adopt-from-git <commit|ORIG_HEAD>] [--manifest <опись>] [--source-directory <предзагрузка>]\nУпаковка: --pack --directory <исходные модели> --output <новый каталог> --base-url <закреплённый GitHub release>';
-const usageError=(message='Некорректные параметры команды.')=>Object.assign(new Error(message+'\n'+usage),{code:'MODEL_BUNDLE_USAGE'});
+export const usage='npm run models:prepare -- --asset <asset.json> --directory <каталог моделей> [--blob-directory <SHA-кэш>] [--verify-only]\n'
+    +'Проверка использует только локальные файлы. Подготовка читает только SHA-кэш импортированного ассета и не обращается к реестру Ollama.\n'
+    +'Восстановление журнала: --directory <каталог> --recover-only | --rollback';
+const fail=()=>Object.assign(new Error(usage),{code:'MODEL_BUNDLE_USAGE'});
 
-function formatBytes(bytes) {
-    const units=['Б','КиБ','МиБ','ГиБ'];let index=0,value=bytes;
-    while(value>=1024&&index<units.length-1) {value/=1024;index++;}
-    return `${index?value.toFixed(1):value} ${units[index]}`;
-}
-
-/** Диагностика содержит только стадию и счётчики, без локальных путей или адресов загрузки. */
-export function formatModelBundleProgress(value) {
-    if(!Number.isSafeInteger(value.completed)||!Number.isSafeInteger(value.total)||value.total<1)return value.message;
-    if(value.unit==='files')return `${value.message} ${value.completed}/${value.total} файлов`;
-    const percent=Math.min(100,Math.floor(value.completed/value.total*100));
-    return `${value.message} ${percent}% · ${formatBytes(value.completed)} / ${formatBytes(value.total)}`;
-}
-
-/** Смена стадии видна сразу; потоковые счётчики обновляются не чаще одного раза в две секунды. */
-export function modelBundleProgressReporter(write=value=>console.error(value),now=Date.now) {
-    let last=0,stage,message;
-    return value=>{
-        const current=now();
-        if(value.stage!==stage||value.message!==message||current-last>=2000||value.stage==='ready') {
-            write(formatModelBundleProgress(value));last=current;stage=value.stage;message=value.message;
-        }
-    };
-}
-
-/** CLI не принимает произвольные файлы весов и не исполняет команды из поставки. */
-export async function runModelBundleCli(args=process.argv.slice(2)) {
-    // npm run models:verify уже добавляет --verify-only перед пользовательским --help.
-    if(args.some(arg=>['--help','-h','—help'].includes(arg))) {console.log(usage);return;}
-    const options={directory:path.join(root,'data/embedding'),manifest:fileURLToPath(new URL('./bundle-release.json',import.meta.url))};
-    const values={'--directory':'directory','--manifest':'manifest','--output':'output','--base-url':'baseUrl','--adopt-from-git':'adoptFromGit','--source-directory':'sourceDirectory'};
-    const flags={'--download-only':'downloadOnly','--verify-only':'verifyOnly','--pack':'pack','--rollback':'rollback','--recover-only':'recoverOnly'};const seen=new Set();
+export function parseModelBundleArguments(args) {
+    const options={},seen=new Set(),fields={'--asset':'asset','--directory':'directory','--blob-directory':'blobs'},flags={'--verify-only':'verifyOnly','--recover-only':'recoverOnly','--rollback':'rollback'};
     for(let index=0;index<args.length;index++) {
-        const key=args[index];if(seen.has(key))throw usageError('Параметр указан повторно.');seen.add(key);
-        if(Object.hasOwn(flags,key))options[flags[key]]=true;
-        else if(Object.hasOwn(values,key)&&args[index+1]&&!args[index+1].startsWith('--'))options[values[key]]=args[++index];
-        else throw usageError();
+        const key=args[index];if(seen.has(key))throw fail();seen.add(key);
+        if(Object.hasOwn(fields,key)&&args[index+1]&&!args[index+1].startsWith('-'))options[fields[key]]=args[++index];
+        else if(Object.hasOwn(flags,key))options[flags[key]]=true;
+        else throw fail();
     }
-    if(options.pack) {
-        if(!options.output||!options.baseUrl||options.downloadOnly||options.verifyOnly||options.rollback||options.recoverOnly||options.adoptFromGit||options.sourceDirectory||seen.has('--manifest'))throw usageError();
-        const manifest=await packModelBundle({...options,directory:path.resolve(options.directory),output:path.resolve(options.output)});
-        console.log(JSON.stringify({ok:true,packed:true,files:manifest.files.length,parts:manifest.files.flatMap(file=>file.parts||[]).length}));return;
-    }
-    if(options.output||options.baseUrl||[options.downloadOnly,options.verifyOnly,options.rollback,options.recoverOnly,options.adoptFromGit].filter(Boolean).length>1)throw usageError();
-    if(options.sourceDirectory&&(options.verifyOnly||options.rollback||options.recoverOnly||options.adoptFromGit))throw usageError();
-    if(options.recoverOnly) {
-        if(seen.has('--manifest'))throw usageError();
-        console.log(JSON.stringify(await recoverManagedModelBundle(path.resolve(options.directory))));return;
-    }
-    if(options.adoptFromGit) {
-        if(seen.has('--manifest'))throw usageError();
-        const {adoptModelBundleFromGit}=await import('./bundle-git-adoption.mjs');
-        console.log(JSON.stringify(await adoptModelBundleFromGit({root,directory:path.resolve(options.directory),reference:options.adoptFromGit,onProgress:modelBundleProgressReporter()})));return;
-    }
-    if(options.rollback) {
-        if(seen.has('--manifest'))throw usageError();
-        console.log(JSON.stringify(await rollbackManagedModelBundle(path.resolve(options.directory))));return;
-    }
-    const manifest=await readModelBundle(path.resolve(options.manifest));
-    const directory=path.resolve(options.directory),onProgress=modelBundleProgressReporter();
-    let locks;
-    if(options.sourceDirectory) {
-        const {modelLocks,validateModelBundle}=await import('./bundle-manifest.mjs');
-        const {copyPrefetchedModels}=await import('./prefetch-cache.mjs');
-        locks=await modelLocks();validateModelBundle(manifest,locks);
-        await copyPrefetchedModels({source:path.resolve(options.sourceDirectory),directory,manifest,locks,onProgress});
-    }
-    const report=await hydrateModelBundle({...options,directory,manifest,locks,onProgress});
-    console.log(JSON.stringify(report));
+    if(!options.directory||[options.verifyOnly,options.recoverOnly,options.rollback].filter(Boolean).length>1)throw fail();
+    if(options.recoverOnly||options.rollback){if(options.asset||options.blobs)throw fail();}
+    else if(!options.asset||options.verifyOnly&&options.blobs)throw fail();
+    return options;
 }
 
-/** Node разрешает entrypoint через symlink; импорт модуля при этом не должен запускать CLI. */
-function isEntrypoint() {
-    try {return !!process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url));}
-    catch {return false;}
+/** Нет default-модели, Git adoption, standalone bundle JSON или скрытой загрузки весов. */
+export async function runModelBundleCli(args=process.argv.slice(2)) {
+    if(args.some(arg=>['--help','-h','—help'].includes(arg))){console.log(usage);return;}
+    const options=parseModelBundleArguments(args),directory=path.resolve(options.directory);
+    if(options.recoverOnly){console.log(JSON.stringify(await recoverManagedModelBundle(directory)));return;}
+    if(options.rollback){console.log(JSON.stringify(await rollbackManagedModelBundle(directory)));return;}
+    const asset=await readModelAsset(options.asset),{lock,bundle}=modelAssetRuntime(asset);
+    const report=await hydrateModelBundle({directory,manifest:bundle,locks:[lock],verifyOnly:options.verifyOnly===true,
+        retainExistingTags:true,onProgress:assetProgressReporter(),fetch:cachedModelTransport(asset,options.blobs||path.join(root,'data/runtime-artifacts/.asset-source-blobs'))});
+    console.log(JSON.stringify({...report,assetId:asset.id,version:asset.version,manifestSha256:lock.manifestSha256}));
 }
 
-if(isEntrypoint()) {
-    runModelBundleCli().catch(error=>{
-        const failure=modelBundleFailure(error);
-        console.error(failure.message);
-        if(failure.code==='MODEL_BUNDLE_USAGE')console.error(usage);
-        console.log(JSON.stringify({ok:false,error:failure}));process.exitCode=1;
-    });
-}
+function isEntrypoint(){try{return !!process.argv[1]&&realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url));}catch{return false;}}
+if(isEntrypoint())runModelBundleCli().catch(error=>{const failure=modelBundleFailure(error);console.error(failure.message);console.log(JSON.stringify({ok:false,error:failure}));process.exitCode=1;});

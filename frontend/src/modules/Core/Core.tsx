@@ -1,5 +1,5 @@
-import { AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, ToolOutlined } from '@ant-design/icons';
-import { Badge, Button, Grid, Layout, Menu, Space, Typography } from 'antd';
+import { AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
+import { Button, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -8,7 +8,6 @@ import { setUnauthorizedHandler } from '../../core/api';
 import { useAppDispatch } from '../../core/hooks';
 import type { IMenuItem } from '../../core/interfaces';
 import { LoginScreen } from '../../features/UserBlock';
-import { RoleSwitcher } from '../../features/UserBlock/components/RoleSwitcher';
 import { UserInfo } from '../../features/UserBlock/components/UserInfo';
 import { authInit } from '../../features/UserBlock/redux/actions';
 import { signOut } from '../../features/UserBlock/redux/reducers';
@@ -26,6 +25,7 @@ interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
 const navigation: Record<string, { title: string; icon: ReactNode }> = {
     start: { title: 'Начало работы', icon: <RocketOutlined /> },
+    assets: { title: 'Ассеты', icon: <DatabaseOutlined /> },
     store: { title: 'Каталог', icon: <AppstoreOutlined /> },
     projects: { title: 'Проекты', icon: <FolderOutlined /> },
     rag: { title: 'Базы знаний', icon: <DatabaseOutlined /> },
@@ -107,19 +107,18 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                         <Typography.Text type="secondary">Рабочее пространство</Typography.Text>
                         <span className="app__location-separator">/</span><Typography.Text strong>{selected?.label ?? 'Нейроцентр'}</Typography.Text>
                     </div>
-                    <Space size={16}>
-                        <span className="app__live" role="status" aria-label={live?'Онлайн-обновления сайта подключены. Статус моста смотрите в списке компьютеров.':'Обновления: нет связи. Статус моста смотрите в списке компьютеров.'}
-                            title={live?'Канал событий сайта подключён. Статус моста смотрите в списке компьютеров.':'Канал событий сайта восстанавливается. После подключения данные обновятся. Статус моста смотрите в списке компьютеров.'}>
-                            <Badge status={live?'success':'warning'}/><span className="app__live-label" aria-hidden="true">{live?'Онлайн-обновления':'Обновления: нет связи'}</span>
+                    <Space size={16} className="app__header-actions">
+                        <span className={`app__live${live ? '' : ' app__live--disconnected'}`} role="status" aria-label={live?'Автообновление данных подключено.':'Автообновление данных недоступно. Восстанавливаем соединение.'}
+                            title={live?'Изменения на сайте приходят автоматически. Статус компьютеров находится в списке мостов.':'Изменения на сайте временно не приходят автоматически. Восстанавливаем соединение. Статус компьютеров находится в списке мостов.'}>
+                            {live ? <SyncOutlined aria-hidden="true" /> : <DisconnectOutlined aria-hidden="true" />}<span className="app__live-label">{live?'Авто':'Нет авто'}<wbr />{live?'обновление':'обновления'}</span>
                         </span>
                         <OperationsButton triggerRef={operationsTrigger} open={operationsVisible} onClick={() => setOpsOpen(true)} />
-                        <div className="app__role"><RoleSwitcher /></div>
                         <UserInfo />
                     </Space>
                 </Layout.Header>
                 <Layout.Content id="main-content" tabIndex={-1} className="app__content"><div className="app__page">{children}</div></Layout.Content>
             </Layout>
-            <AccessibleDrawer title={brand} placement="left" width={280} open={compact && menuOpen} onClose={() => setMenuOpen(false)} className="app__mobile-menu">{menu}</AccessibleDrawer>
+            <AccessibleDrawer title="Нейроцентр" placement="left" width={280} open={compact && menuOpen} onClose={() => setMenuOpen(false)} className="app__mobile-menu">{menu}</AccessibleDrawer>
             <AccessibleDrawer title="Операции" width={compact ? '100%' : 960} open={operationsVisible} onClose={closeOperations}
                 afterOpenChange={open => {
                     if (!open && restoreOperationsFocus.current) {

@@ -20,7 +20,7 @@ export interface ISkillsStorage {
     existsSkill(skillPath: string): Promise<boolean>;
     readSkill(skillPath: string, version?: number): Promise<ISkillFile>;
     createSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext): Promise<boolean>;
-    writeSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext): Promise<void>;
+    writeSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext, expected?: ISkillFile): Promise<void>;
     applySkillChanges(changes:ISkillChange[], context?: ISkillMutationContext):Promise<void>;
     deleteSkill(skillPath: string, context?: ISkillMutationContext): Promise<void>;
     pendingAudit?(skillPath?: string, recursive?: boolean): Promise<boolean>;

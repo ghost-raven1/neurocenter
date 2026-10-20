@@ -6,13 +6,13 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {applicationServices,composeClient,composeConfiguration,containers,docker,serviceImageIds,repositoryRoot,saveDiagnostic} from './compose-client.mjs';
 import {withQuiescedProductionBackup} from './recovery.mjs';
-import {runCatalogSync} from './sync-catalog.mjs';
-import {runModelBundleSync} from './sync-models.mjs';
+import {ensureModelCredentialKey,modelCredentialIdentity} from '../workspace/model-credentials.mjs';
+import {assertProductionModelKey} from './model-credentials.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const imagePattern=/^sha256:[a-f0-9]{64}$/;
 const releasePattern=/^[a-z0-9][a-z0-9._-]{0,63}$/;
-const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,runCatalogSync,runModelBundleSync,withBackup:withQuiescedProductionBackup};
+const adapters={composeClient,composeConfiguration,containers,docker,serviceImageIds,withBackup:withQuiescedProductionBackup};
 const sameImages=(left,right)=>applicationServices.every(service=>left?.[service]===right?.[service]);
 
 /** План привязан к точным образам и квитанции репетиции, а не к подвижной метке latest. */
@@ -46,7 +46,7 @@ function releaseOf(text){
 }
 function topology(config){
     const value=structuredClone(config);
-    for(const service of [...applicationServices,'database-init','bootstrap-admin','capacity-collector','model-volume-init']){if(value.services?.[service]){delete value.services[service].image;}}
+    for(const service of [...applicationServices,'database-init','bootstrap-admin','capacity-collector']){if(value.services?.[service]){delete value.services[service].image;}}
     return value;
 }
 async function privateFile(filename){
@@ -100,7 +100,8 @@ export async function preflightUpdate(options,injected={}){
     const sql="SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM catalog_schema_migrations;";
     const applied=JSON.parse(await deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input:sql}));
     assertMigrationPrefix(applied,plan.catalogMigrations);
-    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector'],hasModelBundle:!!targetConfig.services['model-volume-init']};
+    const modelCredentialKey=await assertProductionModelKey(directory,targetConfig,input=>deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input}),{allowMissing:true});
+    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector'],modelCredentialKey};
 }
 
 /** Одна квитанция не допускает повтор миграций после успеха или неопределённого прерывания. */
@@ -120,17 +121,24 @@ export async function updateProduction(options,injected={}){
         if(existing.planSha256!==planHash||existing.projectName!==projectName){throw new Error('Идентификатор операции уже связан с другим планом');}
         if(existing.state!=='completed'){throw new Error('Операция прервана или завершилась ошибкой: повтор запрещён; проверьте квитанцию и восстановление');}
         if(sha(await privateFile(path.join(directory,'.env')))!==existing.targetEnvSha256){throw new Error('Настройки после обновления изменились');}
+        if(existing.modelCredentialKeyId&&(await modelCredentialIdentity(directory)).keyId!==existing.modelCredentialKeyId){throw new Error('Ключ шифрования моделей изменился после обновления');}
         const target=deps.composeClient({directory,projectName,files});await assertLive(target,plan.targetImages,plan.postgresImage,deps);
         return {...existing,repeated:true};
     }
-    const checked=await preflightUpdate(options,deps);const before=await privateFile(path.join(directory,'.env'));
+    let checked=await preflightUpdate(options,deps);
+    if(checked.modelCredentialKey.required){
+        await ensureModelCredentialKey(directory);const next=await preflightUpdate(options,deps);
+        if(checked.modelCredentialKey.keyId&&next.modelCredentialKey.keyId!==checked.modelCredentialKey.keyId)throw new Error('Ключ шифрования моделей изменился после preflight');
+        checked=next;
+    }
+    const before=await privateFile(path.join(directory,'.env'));
     const journal={format:'neurocenter-update-receipt-v1',planId:plan.id,planSha256:planHash,projectName,state:'planned',createdAt:new Date().toISOString(),
-        sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,rollback:plan.rollback,envSha256:checked.envSha256};
+        sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,rollback:plan.rollback,envSha256:checked.envSha256,modelCredentialKeyId:checked.modelCredentialKey.keyId};
     // wx разрешает только одному процессу владеть этой операцией.
     await writeFile(filename,JSON.stringify(journal,null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
     const save=async state=>{journal.state=state;await atomicWrite(filename,JSON.stringify(journal,null,2)+'\n');};
     const pinnedFile=path.join(folder,plan.id+'.compose.json');
-    const pinned={services:Object.fromEntries([...applicationServices,'database-init','bootstrap-admin',...(checked.hasCapacityCollector?['capacity-collector']:[]),...(checked.hasModelBundle?['model-volume-init']:[])].map(service=>[service,{image:plan.targetImages[applicationServices.includes(service)?service:'catalog-service']}]))};
+    const pinned={services:Object.fromEntries([...applicationServices,'database-init','bootstrap-admin',...(checked.hasCapacityCollector?['capacity-collector']:[])].map(service=>[service,{image:plan.targetImages[applicationServices.includes(service)?service:'catalog-service']}]))};
     let targetStarted=false;let failureRecorded=false;
     const recordFailure=async cause=>{
         failureRecorded=true;journal.failurePhase=journal.state;journal.failedAt=new Date().toISOString();
@@ -143,19 +151,17 @@ export async function updateProduction(options,injected={}){
         await writeFile(pinnedFile,JSON.stringify(pinned,null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
         return await deps.withBackup({directory,projectName,files,destination:options.backupDestination,offline:true,maxPauseMs:plan.maxPauseMs,progress:options.progress}, {
             beforePause:async()=>{
-                await preflightUpdate(options,deps);
+                const fresh=await preflightUpdate(options,deps);
+                if(fresh.modelCredentialKey.keyId!==journal.modelCredentialKeyId)throw new Error('Ключ шифрования моделей изменился после preflight');
                 if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены после preflight');}
-                // Большие архивы загружаются до остановки приложений; БД каталога ещё не меняется.
-                journal.catalogDownload=await deps.runCatalogSync(target,{downloadOnly:true});
-                if(checked.hasModelBundle){journal.modelDownload=await deps.runModelBundleSync(target,{downloadOnly:true});}
+
             },
             afterBackup:async(receipt,{remainingMs})=>{
                 try{
                     journal.backup=receipt;await save('backed-up');
                     if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены во время копирования');}
+                    if(journal.modelCredentialKeyId&&(await modelCredentialIdentity(directory)).keyId!==journal.modelCredentialKeyId)throw new Error('Ключ шифрования моделей изменился во время копирования');
                     await save('applying');targetStarted=true;
-                    journal.catalog=await deps.runCatalogSync(target,{timeout:remainingMs()});
-                    if(checked.hasModelBundle){journal.models=await deps.runModelBundleSync(target,{timeout:remainingMs()});}
                     await target.run(['up','-d','--no-build','--pull','never','--wait',...applicationServices,...(checked.hasCapacityCollector?['capacity-collector']:[])],{timeout:remainingMs()});
                     await assertLive(target,plan.targetImages,plan.postgresImage,deps);remainingMs();
                     const current=await privateFile(path.join(directory,'.env'));

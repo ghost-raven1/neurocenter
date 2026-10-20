@@ -9,19 +9,18 @@ import { fileURLToPath } from 'node:url';
 
 const script = fileURLToPath(new URL('../../bridge-dist/install.sh', import.meta.url));
 const version = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package.json', import.meta.url), 'utf8')).version;
+const renderedTemplate=(await fs.readFile(script,'utf8')).replace('__BRIDGE_VERSION__',version);
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 test('Оба установщика, протокол и lock-файл раздают текущую версию моста', async () => {
     const bash = await fs.readFile(script, 'utf8');
     const powershell = await fs.readFile(new URL('../../bridge-dist/install.ps1', import.meta.url), 'utf8');
-    const protocol = await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/src/bridge/protocol.ts', import.meta.url), 'utf8');
+    const {BRIDGE_VERSION} = await import(new URL('../../mcp/neurocenter-asset-sync/src/bridge/protocol.ts', import.meta.url));
     const lock = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package-lock.json', import.meta.url), 'utf8'));
-    const release = JSON.parse(await fs.readFile(new URL('../../scripts/bridge-runtime-release.json', import.meta.url), 'utf8'));
-    assert.equal(/^VERSION='([^']+)'/m.exec(bash)?.[1], version);
-    assert.equal(/^\$Version = '([^']+)'/m.exec(powershell)?.[1], version);
-    assert.equal(/BRIDGE_VERSION = '([^']+)'/.exec(protocol)?.[1], version);
+    assert.equal(/^VERSION='([^']+)'/m.exec(bash)?.[1], '__BRIDGE_VERSION__');
+    assert.equal(/^\$Version = '([^']+)'/m.exec(powershell)?.[1], '__BRIDGE_VERSION__');
+    assert.equal(BRIDGE_VERSION, version);
     assert.equal(lock.version, version); assert.equal(lock.packages[''].version, version);
-    assert.equal(release.version, version);
 });
 async function fixture(platform = 'Darwin', arch = 'arm64', libc = 'glibc') {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-offline-installer-')); roots.push(root);
@@ -91,11 +90,12 @@ esac
         BASE_URL: 'https://platform.example/api/bridge', INSTALL_DIR: path.join(root, 'installed'), TEST_ROOT: root,
         TEST_OS: platform, TEST_ARCH: arch, TEST_LIBC: libc, TEST_FORMATTER_NODE: process.execPath,
         TEST_NODE_PLATFORM: platform === 'Darwin' ? 'darwin' : 'linux', TEST_NODE_ARCH: ['arm64', 'aarch64'].includes(arch) ? 'arm64' : 'x64' };
-    const run = (overrides = {}, source = script) => {
+    const scriptPath=path.join(root,'install.sh');await fs.writeFile(scriptPath,renderedTemplate);
+    const run = (overrides = {}, source = scriptPath) => {
         const result = spawnSync('bash', [source], { env: { ...env, ...overrides }, encoding: 'utf8' });
         return result;
     };
-    return { root, env, run, pack };
+    return { root, env, run, pack, scriptPath };
 }
 for (const [platform, arch, libc, target] of [['Darwin', 'arm64', 'glibc', 'darwin-arm64'], ['Darwin', 'x86_64', 'glibc', 'darwin-x64'],
     ['Linux', 'x86_64', 'glibc', 'linux-x64'], ['Linux', 'aarch64', 'glibc', 'linux-arm64'],
@@ -208,7 +208,7 @@ test('Параллельный установщик не сообщает усп
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
     const gate = path.join(f.root, 'init-gate');
-    const child = spawn('bash', [script], { env: { ...f.env, TEST_INIT_GATE: gate, TEST_FAIL_INIT: '1' }, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn('bash', [f.scriptPath], { env: { ...f.env, TEST_INIT_GATE: gate, TEST_FAIL_INIT: '1' }, stdio: ['ignore', 'ignore', 'pipe'] });
     let error = ''; child.stderr.on('data', chunk => error += chunk);
     const finished = new Promise((resolve, reject) => { child.once('close', resolve); child.once('error', reject); });
     let second, firstCode;
@@ -256,7 +256,7 @@ test('Посторонняя папка не переименовывается 
 });
 test('Явное переподключение передаёт режим смены роли, обычный запуск сохраняет подключение', async () => {
     const f = await fixture(); const source = path.join(f.root, 'reconnect.sh');
-    await fs.writeFile(source, (await fs.readFile(script, 'utf8')).replace('__RECONNECT__', '1'));
+    await fs.writeFile(source, renderedTemplate.replace('__RECONNECT__', '1'));
     assert.equal(f.run({}, source).status, 0);
     assert.ok((await fs.readFile(path.join(f.root, 'events'), 'utf8')).includes('--reconnect-open'));
 });
@@ -285,7 +285,7 @@ test('Установщик показывает этапы и итог без с
 });
 test('Вывод работает при передаче скрипта в Bash через stdin, как curl | bash', async () => {
     const f = await fixture();
-    const result = spawnSync('bash', [], { env: f.env, input: await fs.readFile(script, 'utf8'), encoding: 'utf8' });
+    const result = spawnSync('bash', [], { env: f.env, input: renderedTemplate, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /\[4\/4\] Проверяем подключение/);
     assert.match(result.stdout, /Готово! MCP установлен и подключён/);

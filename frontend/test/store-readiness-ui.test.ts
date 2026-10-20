@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IBridgeDevice, IBridgeInstallation } from '../src/features/McpBridge/api';
 import type { useBridge } from '../src/features/McpBridge/useBridge';
 import { BridgeConnection } from '../src/features/McpBridge/BridgeConnection';
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope: 'fixture', captureOwner: () => () => true }) }));
 import { ProjectInstallationReadiness } from '../src/features/McpBridge/ProjectInstallationReadiness';
 import { LocalInstallations } from '../src/features/McpBridge/LocalInstallations';
 import { connectionBlocker, inspectionBlocker, inspectionNotice, installationBlocker } from '../src/features/McpBridge/readiness';

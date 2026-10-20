@@ -8,6 +8,8 @@ import { useHistory } from 'react-router-dom';
 import { useAppDispatch } from '../../../../core/hooks';
 import { RootState } from '../../../../store';
 import {authLogout} from '../../redux/actions';
+import { RoleSwitcher } from '../RoleSwitcher';
+import './UserInfo.less';
 
 const b = block('user-info');
 
@@ -40,6 +42,15 @@ const UserInfo: FC = () => {
 
     return (
         <Dropdown
+            dropdownRender={menu => <div className="user-info__dropdown">
+                <div className="user-info__account" onClick={event => event.stopPropagation()}>
+                    <strong>{user.displayName}</strong>
+                    <span className="user-info__email">{user.email}</span>
+                    <span className="user-info__role-label">Активная роль</span>
+                    <RoleSwitcher />
+                </div>
+                {menu}
+            </div>}
             menu={{
                 items: [
                     {

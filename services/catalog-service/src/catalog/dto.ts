@@ -285,6 +285,7 @@ export interface IAiPluginConfig {
 
 /** MCP-сервер или плагин — отдельная сущность каталога. */
 export interface IAiPlugin {
+    archivedAt?: string;
     id: string;
     name: string;
     kind: 'mcp' | 'plugin';
@@ -329,14 +330,7 @@ export interface ILocalProjectsImportResult {
     createdNames: string[];
 }
 
-/** Итог импорта локальных MCP/плагинов в каталог. */
-export interface ILocalImportResult {
-    projectName: string;
-    imported: number;
-    updated: number;
-    skipped: number;
-    total: number;
-}
+
 
 /** Payload обновления MCP/плагина. */
 export interface IAiPluginUpdate {
@@ -374,6 +368,10 @@ export interface IProjectAsset {
     assetKind: 'mcp' | 'plugin' | 'skill';
     addedBy: string;
     addedAt: string;
+    version?: number | null;
+    manifest?: string | null;
+    pinOrigin?: 'unresolved' | 'assigned' | 'manual' | 'migration-current';
+    pinError?: string;
 }
 
 /** Активность считается для всей области фильтра независимо от текущей страницы. */

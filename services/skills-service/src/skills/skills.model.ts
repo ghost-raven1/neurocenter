@@ -17,6 +17,11 @@ export interface IHistoryEntry {
 export interface ISkillMeta {
     /** Отличает новую публикацию после удаления от прежней истории того же пути. */
     generation?: string;
+    /** Архив скрывает общую карточку, сохраняя доступ к закреплённым версиям. */
+    archivedAt?: string;
+    /** Серверная квитанция восстанавливает итог после потерянного ответа файлового сервиса. */
+    assetArchive?: {requestKey:string;previousHash:string;payloadHash:string;version:number;restore:boolean};
+    assetImport?: {requestKey:string;payloadHash:string;version:number};
     name: string;
     slug: string;
     scope: TScope;

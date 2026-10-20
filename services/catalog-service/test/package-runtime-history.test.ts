@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { artifactFixture } from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import { CatalogService } from '../src/catalog/catalog.service';
-import { buildPackage } from '../src/catalog/bundle-package';
+import { buildPackage, type IPackage } from '../src/catalog/bundle-package';
 import type { IAiPlugin, IAiPluginConfig, IAiPluginVersion } from '../src/catalog/dto';
 import { DeviceArtifacts } from '../src/devices/device-artifacts';
 import {
@@ -30,9 +30,12 @@ const catalogFor = (cards: IAiPlugin[], versions: Map<string, IAiPluginVersion>)
     } as unknown as CatalogService;
     return { artifacts: new DeviceArtifacts(catalog), getAiPluginVersion };
 };
-const allowedPool = (ids: string[]) => ({ query: vi.fn(async (_sql: string, parameters: unknown[]) => ({
-    rows: [], rowCount: parameters[0] === projectId && parameters[1] === 'mcp' && ids.includes(String(parameters[2])) ? 1 : 0,
-})) }) as unknown as Pool;
+const allowedPool = (packages: IPackage[]) => ({ query: vi.fn(async (_sql: string, parameters: unknown[]) => {
+    const pkg=parameters[0]===projectId?packages.find(pkg=>pkg.plugin.kind===parameters[1]&&pkg.plugin.id===parameters[2]):undefined;
+    const rows=pkg?[{project_id:projectId,asset_kind:pkg.plugin.kind,asset_id:pkg.plugin.id,added_by:'admin',added_at:'then',
+        asset_version:pkg.plugin.version,asset_manifest:pkg.manifest.sha256,pin_origin:'assigned',pin_snapshot:{card:{},package:pkg}}]:[];
+    return {rows,rowCount:rows.length};
+}) }) as unknown as Pool;
 
 describe('Готовые комплекты точных исторических версий MCP', () => {
     it('Сохраняет артефакты корня и закреплённой зависимости, когда текущие карточки уже другие', async () => {
@@ -47,7 +50,7 @@ describe('Готовые комплекты точных исторически�
         expect(root.config?.extra?.runtimeArtifacts).toEqual([descriptor]);
         expect(root.config?.extra?.requirements).toEqual({ mcp: [], plugins: [], dependencies: [installationRef(dependency)] });
         expect(() => assertInstallablePackage(root)).not.toThrow();
-        const set = await resolveInstallationSet(allowedPool([rootId, dependencyId]), projectId, root,
+        const set = await resolveInstallationSet(allowedPool([root, dependency]), projectId, root,
             (kind, id, version) => artifacts.build(kind, id, version));
         expect(verifyInstallationSet(set!)).toBe(true);
         expect(set?.packages.map(pkg => ({ version: pkg.plugin.version, artifacts: pkg.config?.extra?.runtimeArtifacts })))
@@ -64,7 +67,7 @@ describe('Готовые комплекты точных исторически�
         expect(pkg.plugin.version).toBe(1);
         expect(pkg.config?.extra?.runtimeArtifacts).toBeUndefined();
         expect(() => assertInstallablePackage(pkg)).toThrow('Внешняя команда MCP не входит в закреплённый пакет');
-        await expect(resolveInstallationSet(allowedPool([id]), projectId, pkg, vi.fn())).rejects.toMatchObject({
+        await expect(resolveInstallationSet(allowedPool([pkg]), projectId, pkg, vi.fn())).rejects.toMatchObject({
             response: { code: 'PACKAGE_NOT_INSTALLABLE', dependency: false, package: { id, version: 1 } },
         });
     });

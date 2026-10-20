@@ -8,7 +8,7 @@ import { AppModule } from './app.module';
 
 /**
  * Точка входа rag-sync-service (порт по умолчанию 4300).
- * Body-лимит поднят (~20mb): sync-батчи несут эмбеддинги (2560-dim × N строк).
+ * Body-лимит поднят (~20mb): sync-батчи несут векторы выбранной проектом размерности.
  */
 async function bootstrap(): Promise<void> {
     // Prod: отключение role-gate недопустимо (прямой доступ к сервису = обход авторизации).
@@ -22,7 +22,7 @@ async function bootstrap(): Promise<void> {
     app.enableShutdownHooks();
     app.use(createObservability({service:'rag-sync-service'}).middleware);
     app.use((req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
-        if (req.path.startsWith('/api/') && (!process.env.NEUROCENTER_INTERNAL_TOKEN || req.headers['x-neurocenter-internal'] !== process.env.NEUROCENTER_INTERNAL_TOKEN)) {
+        if ((req.path.startsWith('/api/')||req.path.startsWith('/internal/')) && (!process.env.NEUROCENTER_INTERNAL_TOKEN || req.headers['x-neurocenter-internal'] !== process.env.NEUROCENTER_INTERNAL_TOKEN)) {
             res.status(403).json({message:'Запрос должен пройти через авторизованный шлюз.'}); return;
         }
         next();

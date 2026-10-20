@@ -23,6 +23,7 @@ const sourceSchema = z.object({
     projectKey: z.string(), fingerprintVersion: z.literal(1), complete: z.literal(true), indexState: z.literal('ready'),
     snapshotHash: z.string().regex(/^[a-f0-9]{64}$/), indexProfile: z.unknown(), rowCount: z.number().int().positive(),
     incompleteRows: z.literal(0),
+    generation:z.string().regex(/^(?:initial-[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/),
 });
 
 /** Загружает проверенный снимок в соседний staging и заменяет индекс только после полной проверки. */
@@ -62,7 +63,7 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
         for (;;) {
             await assertIdentity();
             await previous?.assertCurrent();
-            const response = await authorizedFetch(`/api/rag/chunks?projectKey=${encodeURIComponent(projectKey)}&limit=${PAGE_LIMIT}&offset=${offset}`);
+            const response = await authorizedFetch(`/api/rag/chunks?projectKey=${encodeURIComponent(projectKey)}&limit=${PAGE_LIMIT}&offset=${offset}${expected?'&generation='+encodeURIComponent(expected.generation):''}`);
             if (!response.ok) { throw new Error(`Восстановление остановлено (HTTP ${response.status}). Исходный локальный индекс сохранён.`); }
             const raw: unknown = await response.json();
             const metadata = sourceSchema.safeParse(raw);
@@ -86,7 +87,7 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
                 stage = await fs.mkdtemp(path.join(parent, '.neurocenter-rag-restore-'));
             } else {
                 assertSameProfile(indexProfile!, profile);
-                if (current.snapshotHash !== expected.snapshotHash || current.rowCount !== expected.rowCount) { throw new Error('Серверный снимок изменился во время скачивания. Локальный индекс сохранён.'); }
+                if (current.generation!==expected.generation||current.snapshotHash !== expected.snapshotHash || current.rowCount !== expected.rowCount) { throw new Error('Серверный снимок изменился во время скачивания. Локальный индекс сохранён.'); }
             }
             if (!page.data.chunks.length) { throw new Error('Сервер вернул неполный или пустой снимок. Локальный индекс сохранён.'); }
             const rows: Record<string, unknown>[] = [];
@@ -113,7 +114,7 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
         await assertIdentity();
         const check = await authorizedFetch(`/api/rag/manifest?projectKey=${encodeURIComponent(projectKey)}`);
         const latest = check.ok ? sourceSchema.safeParse(await check.json()) : null;
-        if (!latest?.success || latest.data.snapshotHash !== expected.snapshotHash || latest.data.rowCount !== expected.rowCount) { throw new Error('Снимок изменился перед сохранением. Повторите восстановление.'); }
+        if (!latest?.success ||latest.data.generation!==expected.generation|| latest.data.snapshotHash !== expected.snapshotHash || latest.data.rowCount !== expected.rowCount) { throw new Error('Снимок изменился перед сохранением. Повторите восстановление.'); }
         assertSameProfile(indexProfile, normalizeIndexProfile(latest.data.indexProfile));
         // Runtime-настройки принадлежат целевой папке, а не скачиваемому индексу.
         runtimeOverrides = await readOverrides();

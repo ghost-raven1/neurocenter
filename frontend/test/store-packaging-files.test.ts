@@ -65,8 +65,8 @@ describe('Исходники автономного инструмента', () 
     it('Для MCP предпочитает bin, для плагина main; отсутствующие и посторонние типы исключает', () => {
         const files = [{ path: 'package.json', content: JSON.stringify({ bin: { cli: './src/cli.ts' }, main: './index.js', module: 'missing.js' }) },
             { path: 'index.js', content: 'export default 1' }, { path: 'src/cli.ts', content: '' }, { path: 'README.md', content: '' }];
-        expect(packagingEntrypoints(files, 'mcp')).toEqual(['src/cli.ts', 'index.js']);
-        expect(packagingEntrypoints(files, 'plugin')).toEqual(['index.js', 'src/cli.ts']);
+        expect(packagingEntrypoints(files, 'mcp')).toEqual(['src/cli.ts']);
+        expect(packagingEntrypoints(files, 'plugin')).toEqual(['index.js']);
     });
     it('При ошибке package.json позволяет явно выбрать существующий файл', () => {
         expect(packagingEntrypoints([{ path: 'package.json', content: '{broken' }, { path: 'start.mjs', content: '' }], 'mcp')).toEqual(['start.mjs']);

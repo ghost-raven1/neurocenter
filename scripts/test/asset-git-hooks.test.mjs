@@ -28,8 +28,7 @@ async function fixture(t) {
     for(const file of ['assets/git-hook.mjs','assets/git-hooks.mjs','assets/environment.mjs','assets/cancellation.mjs','workspace/node-runtime.mjs']) {
         await copyFile(path.join(repo,'scripts',file),path.join(source,'scripts',file));
     }
-    await mkdir(path.join(source,'scripts/models'));
-    await writeFile(path.join(source,'scripts/models/bundle-cli.mjs'),'export const modelBundleProgressReporter=()=>()=>{};\n');
+    await writeFile(path.join(source,'scripts/assets/progress.mjs'),'export const assetProgressReporter=()=>()=>{};\n');
     await writeFile(path.join(source,'scripts/assets/sync.mjs'),`import {appendFile} from 'node:fs/promises';
         import {spawnSync} from 'node:child_process';
         export async function syncAssets({root,environment}) {
@@ -73,8 +72,8 @@ test('Pull с rebase тоже подготавливает конечную ре
 test('Отказ загрузки виден после pull и не объявляет готовность поставки',async t=>{
     const f=await fixture(t);await installAssetHooks({root:f.checkout});await f.advance();
     const result=git(f.checkout,['pull','--ff-only'],true,{...f.env,HOOK_TEST_FAIL:'1'});
-    assert.match(result.stderr,/Код Git обновлён, но поставка не готова/);
-    assert.match(result.stderr,/npm run assets:sync/);
+    assert.match(result.stderr,/Код Git обновлён, но источник ассетов не проверен/);
+    assert.match(result.stderr,/npm run assets:sync -- --metadata-only/);
     assert.equal(git(f.checkout,['rev-parse','HEAD']).stdout,git(f.source,['rev-parse','HEAD']).stdout);
 });
 
@@ -215,7 +214,7 @@ test('Строгое обновление проверяет поставку п
     updateRepository({directory:'/repo',environment:{NODE_BIN:'/node24'},run:(command,args,options)=>{
         calls.push({command,args,options});return {status:0,stdout:''};
     }});
-    assert.deepEqual(calls.map(call=>call.args),[['status','--porcelain','--untracked-files=no'],['pull','--ff-only'],['/repo/scripts/assets/cli.mjs']]);
+    assert.deepEqual(calls.map(call=>call.args),[['status','--porcelain','--untracked-files=no'],['pull','--ff-only'],['/repo/scripts/assets/cli.mjs','--metadata-only']]);
     assert.equal(calls[1].options.env.NEUROCENTER_ASSETS_SKIP_HOOK,'1');
     assert.equal(calls[2].options.env.NEUROCENTER_ASSETS_SKIP_HOOK,undefined);
 });

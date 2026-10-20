@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,stat} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,stat,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
@@ -8,12 +8,11 @@ import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {applicationServices} from '../production/compose-client.mjs';
-import {runCatalogSync} from '../production/sync-catalog.mjs';
-import {runModelBundleSync} from '../production/sync-models.mjs';
 import {validateUpdatePlan,assertMigrationPrefix,preflightUpdate,updateProduction} from '../production/update.mjs';
 import {pauseBudget} from '../production/recovery.mjs';
 import {digestFile,inventory} from '../production/recovery-files.mjs';
 import {verifyBackup} from '../production/recovery-manifest.mjs';
+import {ensureModelCredentialKey,modelCredentialIdentity} from '../workspace/model-credentials.mjs';
 
 const image=letter=>'sha256:'+letter.repeat(64);
 const source=Object.fromEntries(applicationServices.map(service=>[service,image('a')]));
@@ -21,7 +20,7 @@ const target=Object.fromEntries(applicationServices.map(service=>[service,image(
 const migration={version:1,name:'История установки',checksum:'c'.repeat(64)};
 const digest=value=>createHash('sha256').update(value).digest('hex');
 async function fixture(action){
-    const directory=await mkdtemp(path.join(tmpdir(),'nc-update-'));const calls=[];
+    const directory=await realpath(await mkdtemp(path.join(tmpdir(),'nc-update-')));const calls=[];
     const before="NEUROCENTER_RELEASE='old'\nRAG_MAX_QUOTA_BYTES='4096'\nPANEL_URL='https://panel.example.test'\n";
     await writeFile(path.join(directory,'.env'),before,{mode:0o600});
     const report={format:'neurocenter-update-rehearsal-v1',passed:true,copyOfData:true,settingsPreserved:true,repeatSafe:true,restoreVerified:true,sourceImages:source,targetImages:target,postgresImage:image('d')};
@@ -29,56 +28,66 @@ async function fixture(action){
     const plan={format:'neurocenter-update-v1',id:'test-update',sourceRelease:'old',targetRelease:'new',sourceImages:source,targetImages:target,postgresImage:image('d'),
         rollback:'restore-new-project',migrationCompatibility:'restore-required',catalogMigrations:[migration],rehearsalSha256:digest(raw),maxPauseMs:60000};
     const options={directory,projectName:'nc-update-test',plan,rehearsalFile,backupDestination:path.join(directory,'snapshot'),execute:true};
-    let live=source;let failStart=false;let beforeDeploy=async()=>{};let backupError;let alteredTarget=false;let catalogErrorPhase;let modelErrorPhase;
+    let live=source;let failStart=false;let beforeDeploy=async()=>{};let backupError;let alteredTarget=false;let storedKeyIds;
     const states=()=>[...applicationServices,'postgres'].map(service=>({Id:service,Image:service==='postgres'?image('d'):live[service],
         Config:{Labels:{'com.docker.compose.service':service}},State:{Running:true,Health:{Status:'healthy'}}}));
     const deps={
-        runCatalogSync:(client,options)=>runCatalogSync(client,options,{docker:async()=>''}),
-        runModelBundleSync:(client,options)=>runModelBundleSync(client,options,{docker:async()=>''}),
         composeClient:config=>({...config,run:async(args,settings)=>{
             calls.push({command:args,config,settings});
-            if(args[0]==='run'){
-                if(args.includes('/tools/scripts/models/bundle-cli.mjs')){
-                    if(modelErrorPhase===(args.includes('--download-only')?'download':'sync')){throw new Error('комплект моделей недоступен');}
-                    return JSON.stringify({ok:true,downloadOnly:args.includes('--download-only'),verifyOnly:false,models:2,files:9,bytes:4400000000});
-                }
-                if(catalogErrorPhase===(args.includes('--download-only')?'download':'sync')){throw new Error('каталог недоступен');}
-                return JSON.stringify({ok:true,dryRun:false,downloadOnly:args.includes('--download-only'),artifacts:0,tools:[]});
-            }
             if(args[0]==='up'){if(failStart){live=target;throw new Error('отказ миграции');}live=target;}return '';
         }}),
-        composeConfiguration:async client=>({services:Object.fromEntries([...applicationServices,'postgres','model-volume-init'].map(service=>[service,{image:service==='postgres'?'postgres':(client.release?'target':'source')+':'+service,environment:{QUOTA:alteredTarget&&client.release?'changed':'kept'}}])),volumes:{postgres:{name:'stable-postgres'}}}),
+        composeConfiguration:async client=>({services:Object.fromEntries([...applicationServices,'postgres'].map(service=>[service,{image:service==='postgres'?'postgres':(client.release?'target':'source')+':'+service,environment:{QUOTA:alteredTarget&&client.release?'changed':'kept'}}])),volumes:{postgres:{name:'stable-postgres'}},secrets:{model_credential_key:{file:path.join(directory,'secrets/model_credential_key')}}}),
         serviceImageIds:async config=>config.services.frontend.image.startsWith('target')?target:source,
         containers:async()=>states(),
-        docker:async args=>args[0]==='image'?JSON.stringify([{Id:image('d')}]):JSON.stringify([migration]),
+        docker:async(args,settings)=>args[0]==='image'?JSON.stringify([{Id:image('d')}]):settings?.input?.includes('to_regclass')?(storedKeyIds===undefined?'f':'t'):settings?.input?.includes("credential->>'keyId'")?JSON.stringify(storedKeyIds):JSON.stringify([migration]),
         withBackup:async(config,hooks)=>{calls.push({backup:true,config});await hooks.beforePause();if(backupError){throw backupError;}await beforeDeploy();calls.push({backupReady:true});return hooks.afterBackup({ok:true,sha256:'e'.repeat(64),destination:config.destination},{remainingMs:()=>60000});},
     };
-    try{await action({directory,before,options,plan,deps,calls,setLive:value=>{live=value;},failStart:()=>{failStart=true;},beforeDeploy:fn=>{beforeDeploy=fn;},failBackup:()=>{backupError=new Error('копия не создана');},alterTarget:()=>{alteredTarget=true;},failCatalog:(phase='download')=>{catalogErrorPhase=phase;},failModels:(phase='download')=>{modelErrorPhase=phase;}});}
+    try{await action({directory,before,options,plan,deps,calls,setLive:value=>{live=value;},failStart:()=>{failStart=true;},beforeDeploy:fn=>{beforeDeploy=fn;},failBackup:()=>{backupError=new Error('копия не создана');},alterTarget:()=>{alteredTarget=true;},setStoredKeyIds:ids=>{storedKeyIds=ids;}});}
     finally{await rm(directory,{recursive:true,force:true});}
 }
 
 test('Preflight проверяет план без остановки, копии и изменения настроек',async()=>fixture(async f=>{
     const checked=await preflightUpdate(f.options,f.deps);assert.equal(checked.dryRun,true);assert.deepEqual(f.calls,[]);assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
     await assert.rejects(stat(path.join(f.directory,'updates')),{code:'ENOENT'});
+    assert.deepEqual(checked.modelCredentialKey,{required:true,keyId:null});await assert.rejects(stat(path.join(f.directory,'secrets')),{code:'ENOENT'});
+}));
+test('Первичное обновление готовит постоянный ключ до паузы; повтор сохраняет его identity',async()=>fixture(async f=>{
+    let beforeStart;f.beforeDeploy(async()=>{beforeStart=await modelCredentialIdentity(f.directory);});
+    const result=await updateProduction(f.options,f.deps),filename=path.join(f.directory,'secrets/model_credential_key'),before=await readFile(filename);
+    assert.equal(result.modelCredentialKeyId,beforeStart.keyId);assert.ok(!JSON.stringify(result).includes(before.toString().trim()));
+    await updateProduction(f.options,f.deps);assert.deepEqual(await readFile(filename),before);
+}));
+test('Отсутствующий ключ с существующими stored credentials блокирует update до копии и запуска',async()=>fixture(async f=>{
+    f.setStoredKeyIds(['a'.repeat(24)]);await assert.rejects(updateProduction(f.options,f.deps),/Восстановите исходные/);
+    assert.deepEqual(f.calls,[]);await assert.rejects(stat(path.join(f.directory,'secrets/model_credential_key')),{code:'ENOENT'});
+}));
+test('Неправильный корректный key file блокирует update и сохраняется без скрытой ротации',async()=>fixture(async f=>{
+    const filename=await ensureModelCredentialKey(f.directory),before=await readFile(filename);f.setStoredKeyIds(['a'.repeat(24)]);
+    await assert.rejects(updateProduction(f.options,f.deps),/Восстановите исходные/);assert.deepEqual(await readFile(filename),before);assert.deepEqual(f.calls,[]);
+}));
+test('Потеря ключа во время копии останавливает update до target up',async()=>fixture(async f=>{
+    const filename=await ensureModelCredentialKey(f.directory);f.beforeDeploy(()=>rm(filename));
+    await assert.rejects(updateProduction(f.options,f.deps),/автоматическая замена запрещена/);
+    assert.equal(f.calls.some(row=>row.command?.[0]==='up'),false);await assert.rejects(stat(filename),{code:'ENOENT'});assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
+}));
+test('Подмена ключа и marker во время копии обнаруживается по identity квитанции',async()=>fixture(async f=>{
+    const filename=await ensureModelCredentialKey(f.directory);f.beforeDeploy(async()=>{await rm(filename);await rm(filename+'.id');await ensureModelCredentialKey(f.directory);});
+    await assert.rejects(updateProduction(f.options,f.deps),/Ключ шифрования моделей изменился во время копирования/);
+    assert.equal(f.calls.some(row=>row.command?.[0]==='up'),false);
+}));
+test('Повтор завершённого update с утраченным ключом не создаёт замену и не запускает миграции',async()=>fixture(async f=>{
+    await updateProduction(f.options,f.deps);const count=f.calls.length,filename=path.join(f.directory,'secrets/model_credential_key');await rm(filename);
+    await assert.rejects(updateProduction(f.options,f.deps),/автоматическая замена запрещена/);assert.equal(f.calls.length,count);await assert.rejects(stat(filename),{code:'ENOENT'});
 }));
 test('Новый релиз начинается только после копии; настройки и исходный env сохраняются',async()=>fixture(async f=>{
     const result=await updateProduction(f.options,f.deps);assert.equal(result.state,'completed');assert.equal(result.backup.sha256,'e'.repeat(64));
     assert.equal(f.calls[0].backup,true);assert.equal(f.calls[0].config.maxPauseMs,60000);
     const up=f.calls.find(row=>row.command?.[0]==='up');assert.ok(up.command.includes('--no-build'));assert.ok(up.command.includes('never'));assert.equal(up.settings.timeout,60000);
     assert.ok(up.command.includes('feature-flags-service'));
-    const sync=f.calls.filter(row=>row.command?.includes('dist/builtin-catalog/sync.cli.js'));assert.equal(sync.length,2);
-    assert.ok(sync[0].command.includes('--download-only'));assert.ok(!sync[1].command.includes('--download-only'));
-    assert.equal(sync[1].settings.timeout,60000);
-    const copied=f.calls.findIndex(row=>row.backupReady);assert.ok(f.calls.indexOf(sync[0])<copied&&copied<f.calls.indexOf(sync[1]));
-    assert.ok(f.calls.indexOf(sync[1])<f.calls.indexOf(up));assert.ok(result.catalog.ok);
-    const models=f.calls.filter(row=>row.command?.includes('/tools/scripts/models/bundle-cli.mjs'));assert.equal(models.length,2);
-    assert.ok(models[0].command.includes('--download-only'));assert.ok(!models[1].command.includes('--download-only'));
-    assert.ok(f.calls.indexOf(models[0])<copied&&copied<f.calls.indexOf(models[1]));
-    assert.equal(models[1].settings.timeout,60000);assert.ok(f.calls.indexOf(models[1])<f.calls.indexOf(up));
-    assert.equal(result.models.models,2);
+    assert.equal(f.calls.some(row=>row.command?.[0]==='run'),false);
+    assert.ok(f.calls.findIndex(row=>row.backupReady)<f.calls.indexOf(up));
     const pinned=JSON.parse(await readFile(up.config.files.at(-1),'utf8'));assert.equal(pinned.services['catalog-service'].image,image('b'));
     assert.equal(pinned.services['feature-flags-service'].image,image('b'));
-    assert.equal(pinned.services['model-volume-init'].image,image('b'));
     assert.equal(await readFile(path.join(f.directory,'updates/test-update.env.before'),'utf8'),f.before);
     assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before.replace("'old'","'new'"));
     assert.equal((await stat(path.join(f.directory,'updates/test-update.json'))).mode&0o777,0o600);
@@ -132,34 +141,6 @@ test('SIGTERM во время applying сохраняет комплект и з
 test('Ошибка копии останавливает обновление до запуска новых образов',async()=>fixture(async f=>{
     f.failBackup();await assert.rejects(updateProduction(f.options,f.deps),/копия/);
     assert.ok(f.calls.filter(row=>row.command).every(row=>row.command.includes('--download-only')));assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
-}));
-test('Ошибка загрузки каталога до паузы не запускает новый релиз и сохраняет настройки',async()=>fixture(async f=>{
-    f.failCatalog();await assert.rejects(updateProduction(f.options,f.deps),/каталог/);
-    assert.equal(f.calls.filter(row=>row.command?.[0]==='run').length,1);
-    assert.equal(f.calls.some(row=>['up','stop'].includes(row.command?.[0])),false);
-    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
-}));
-test('Ошибка публикации после копии останавливает rollout и сохраняет комплект для восстановления',async()=>fixture(async f=>{
-    f.failCatalog('sync');await assert.rejects(updateProduction(f.options,f.deps),/каталог/);
-    assert.equal(f.calls.some(row=>row.command?.[0]==='up'),false);
-    assert.equal(f.calls.at(-1).command[0],'stop');
-    const receipt=JSON.parse(await readFile(path.join(f.directory,'updates/test-update.json'),'utf8'));
-    assert.equal(receipt.state,'failed');assert.equal(receipt.failurePhase,'applying');assert.ok(receipt.backup.sha256);
-    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
-}));
-test('Ошибка загрузки моделей до паузы сохраняет работающий релиз без остановки',async()=>fixture(async f=>{
-    f.failModels();await assert.rejects(updateProduction(f.options,f.deps),/моделей/);
-    assert.equal(f.calls.some(row=>['up','stop'].includes(row.command?.[0])),false);
-    assert.equal(f.calls.some(row=>row.backupReady),false);
-    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
-}));
-test('Ошибка активации моделей после копии останавливает rollout и сохраняет прежние настройки',async()=>fixture(async f=>{
-    f.failModels('sync');await assert.rejects(updateProduction(f.options,f.deps),/моделей/);
-    assert.equal(f.calls.some(row=>row.command?.[0]==='up'),false);
-    assert.equal(f.calls.at(-1).command[0],'stop');
-    const receipt=JSON.parse(await readFile(path.join(f.directory,'updates/test-update.json'),'utf8'));
-    assert.equal(receipt.state,'failed');assert.ok(receipt.backup.sha256);assert.ok(receipt.modelDownload.ok);
-    assert.equal(await readFile(path.join(f.directory,'.env'),'utf8'),f.before);
 }));
 test('Конфликт настройки после копии блокирует миграции и сохраняет чужое изменение',async()=>fixture(async f=>{
     f.beforeDeploy(()=>writeFile(path.join(f.directory,'.env'),f.before+"CUSTOM='сохранить'\n"));

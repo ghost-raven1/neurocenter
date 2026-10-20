@@ -1,3 +1,4 @@
+import {createToolAsset,serializeAsset} from '@neurocenter/asset-contract';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -5,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {artifactFixture} from '../../test/runtime-artifact-fixture.cjs';
 import {readyManifest} from '../manifest.mjs';
+import {toolRuntimePath} from '../supply-layout.mjs';
 
 const localUi={schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs',args:['ui','--port','0','--no-open']};
 async function fixture(kind,files,run){
@@ -12,11 +14,10 @@ async function fixture(kind,files,run){
     try{
         const artifact=artifactFixture(files,'darwin-arm64');
         const descriptor={...artifact.descriptor,entrypoint:kind==='mcp'?'opencode-rag.mjs':'rag-plugin.mjs'};
-        await fs.writeFile(path.join(root,'runtime.tar.gz'),artifact.archive);await fs.writeFile(path.join(root,'runtime.json'),JSON.stringify(descriptor));
-        const manifest={schemaVersion:1,tools:[{key:'rag-'+kind,publication:{name:'OpenCodeRAG '+kind,kind,description:'Проверка UI поставки',revision:'fixture.pack.5',files:[],
-            config:{...(kind==='mcp'?{transport:'stdio',args:['mcp']}:{entrypoint:'rag-plugin.mjs'}),extra:{runtimeArtifacts:[descriptor],localUi,hostedEmbedding:{schemaVersion:1}}}},
-            artifacts:[{archivePath:'runtime.tar.gz',descriptorPath:'runtime.json'}]}]};
-        const filename=path.join(root,'ready.json');await fs.writeFile(filename,JSON.stringify(manifest));await run(filename);
+        await fs.mkdir(path.join(root,'artifacts'));await fs.writeFile(path.join(root,toolRuntimePath(descriptor.sha256)),artifact.archive);await fs.writeFile(path.join(root,'runtime.json'),JSON.stringify(descriptor));
+        const publication={name:'OpenCodeRAG '+kind,kind,description:'Проверка UI поставки',revision:'fixture.pack.5',files:[],config:{...(kind==='mcp'?{transport:'stdio',args:['mcp']}:{entrypoint:'rag-plugin.mjs'}),extra:{runtimeArtifacts:[descriptor],localUi,hostedEmbedding:{schemaVersion:1}}}};
+        const asset=createToolAsset({id:'rag-'+kind,version:'fixture-v1',source:{type:'npm',name:'fixture-rag',version:'1.0.0'},license:{spdx:'NOASSERTION'},publication,artifacts:[{descriptor}]});
+        const filename=path.join(root,'asset.json');await fs.writeFile(filename,serializeAsset(asset));await run(filename);
     }finally{await fs.rm(root,{recursive:true,force:true});}
 }
 for(const kind of ['mcp','plugin'])test(`Поставка ${kind} сохраняет hosted-декларацию и проверяет UI файл в настоящей SHA-описи`,async()=>{

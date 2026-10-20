@@ -1,11 +1,12 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BridgeConnection } from '../src/features/McpBridge/BridgeConnection';
+import { BridgeDeviceDetails } from '../src/features/McpBridge/BridgeDeviceDetails';
 import { BridgeSetup } from '../src/modules/Start/BridgeSetup';
+import type {IBridgeDevice} from '../src/features/McpBridge/api';
 
 const fixture = vi.hoisted(() => {
-    const device = { id: 'computer', name: 'Компьютер', role: 'Разработчик', fingerprint: '', online: true, lastSeen: null,
+    const device:IBridgeDevice = { id: 'computer', name: 'Компьютер', role: 'Разработчик', fingerprint: '', online: true, lastSeen: null,
         report: { bridgeVersion: '0.9.0', protocolVersion: 2,
             capabilities: ['durable-completions', 'managed-installations', 'install-set-v1', 'workspace-instance-v1'] } };
     return { bridge: { device, devices: [device], devicesReady: true, jobsReady: true, installationsReady: true,
@@ -13,31 +14,45 @@ const fixture = vi.hoisted(() => {
         choose: vi.fn(), reload: vi.fn(async () => undefined) } };
 });
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => fixture.bridge }));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope: 'fixture', captureOwner: () => () => true }) }));
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: vi.fn(), location: { pathname: '/start' } }) }));
 
-const capabilities = [...fixture.bridge.device.report.capabilities];
+const capabilities = [...(fixture.bridge.device.report.capabilities??[])];
 const setup = () => renderToStaticMarkup(createElement(BridgeSetup, { origin: 'https://panel.example.test', windows: false, onCopy: vi.fn() }));
 beforeEach(() => {
-    fixture.bridge.device.report.bridgeVersion = '0.9.0';
-    fixture.bridge.device.report.capabilities = [...capabilities];
+    fixture.bridge.device.online=true;fixture.bridge.device.lastSeen=null;
+    fixture.bridge.device.report={bridgeVersion:'0.9.0',protocolVersion:2,capabilities:[...capabilities]};
 });
 
 describe('Обновление уже подключённого моста', () => {
+    it('Новый offline-компьютер без heartbeat ожидает первый выход на связь, а не объявляется устаревшим',()=>{
+        fixture.bridge.device.online=false;fixture.bridge.device.report={};
+        const html=setup();expect(html).toContain('Ожидаем первого выхода на связь');expect(html).not.toContain('Обновите мост');
+        expect(html).not.toContain('Для новых возможностей обновите программу');
+    });
+    it('Известный совместимый offline-мост не требует переустановки',()=>{
+        fixture.bridge.device.online=false;fixture.bridge.device.lastSeen='2026-10-20T00:00:00Z';
+        const html=setup();expect(html).toContain('сейчас не отвечает');expect(html).not.toContain('Обновите мост');
+    });
+    it('Известный старый offline-мост всё ещё получает явную рекомендацию обновления',()=>{
+        fixture.bridge.device.online=false;fixture.bridge.device.lastSeen='2026-10-20T00:00:00Z';fixture.bridge.device.report={};
+        expect(setup()).toContain('Обновите мост');
+    });
     it('Показывает сообщённую компьютером версию, даже когда протокол совместим', () => {
-        const html = renderToStaticMarkup(createElement(BridgeConnection, { bridge: fixture.bridge, compact: true }));
+        const html = renderToStaticMarkup(createElement(BridgeDeviceDetails, { device: fixture.bridge.device }));
         expect(html).toContain('версия моста: 0.9.0');
     });
     it('Не подменяет отсутствующую версию текущей версией исходников', () => {
         fixture.bridge.device.report.bridgeVersion = '';
-        const html = renderToStaticMarkup(createElement(BridgeConnection, { bridge: fixture.bridge, compact: true }));
+        const html = renderToStaticMarkup(createElement(BridgeDeviceDetails, { device: fixture.bridge.device }));
         expect(html).toContain('версия моста не передана');
     });
-    it('Совместимому компьютеру явно предлагает обновление через текущий установщик', () => {
+    it('Совместимому компьютеру оставляет подключение и обновление в раскрываемом разделе', () => {
         const html = setup();
         const button = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2].includes('Обновить мост'));
-        expect(button).toBeDefined();
-        expect(button?.[1]).not.toContain('disabled');
+        expect(button).toBeUndefined();
         expect(html).toContain('Подключение и обновление моста');
+        expect(html).not.toContain('Подключить установленный мост');
         expect(html).not.toContain('Подключить другой компьютер');
     });
     it('При обновлении объясняет сохранение подключения и повторную проверку версии', () => {

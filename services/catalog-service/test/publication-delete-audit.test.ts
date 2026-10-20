@@ -17,7 +17,7 @@ describe('Удаление MCP/плагина и транзакционный а
     beforeEach(() => {
         query = vi.fn(async (sql: string) => ({ rows: sql.startsWith('SELECT * FROM ai_plugins WHERE') ? [row] : [] }));
         release = vi.fn();
-        repository = new PluginRepository({ connect: async () => ({ query, release }) } as unknown as Pool, async () => {});
+        repository = new PluginRepository({ connect: async () => ({ query, release }) } as unknown as Pool);
     });
 
     const events = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO security_events'));
@@ -26,24 +26,24 @@ describe('Удаление MCP/плагина и транзакционный а
         expect(await repository.delete(row.id, actor)).toBe(true);
         expect(events(query)).toHaveLength(1);
         const event = events(query)[0][1] as unknown[];
-        expect(event.slice(1, 4)).toEqual([actor, 'plugin.delete', row.id]);
+        expect(event.slice(1, 4)).toEqual([actor, 'plugin.archive', row.id]);
         expect(JSON.parse(String(event[4]))).toMatchObject({ id: row.id, name: row.name, kind: 'mcp', version: 3,
             filesCount: 1, contentHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
-        expect(JSON.parse(String(event[5]))).toBeNull();
+        expect(JSON.parse(String(event[5]))).toMatchObject({archived:true,removedProjectRefs:false});
         expect(JSON.stringify(event)).not.toMatch(/private-token|private-source|Authorization/);
         expect(query.mock.calls.find(([sql]) => sql.includes('FROM ai_plugins WHERE'))?.[0]).toContain('FOR UPDATE');
         expect(query.mock.calls.at(-1)).toEqual(['COMMIT']);
         expect(release).toHaveBeenCalledOnce();
     });
 
-    it('Отказ аудита откатывает удаление карточки и истории версий', async () => {
+    it('Отказ аудита откатывает архивирование без удаления карточки и истории версий', async () => {
         const original = query.getMockImplementation()!;
         query.mockImplementation(async (sql: string) => {
             if (sql.startsWith('INSERT INTO security_events')) { throw new Error('Аудит недоступен'); }
             return original(sql);
         });
         await expect(repository.delete(row.id, actor)).rejects.toThrow('Аудит недоступен');
-        expect(query.mock.calls.some(([sql]) => sql === 'DELETE FROM ai_plugin_versions WHERE ai_plugin_id=$1')).toBe(true);
+        expect(query.mock.calls.some(([sql]) => sql.startsWith('UPDATE ai_plugins SET archived_at'))).toBe(true);
         expect(query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
         expect(query.mock.calls.at(-1)).toEqual(['ROLLBACK']);
         expect(release).toHaveBeenCalledOnce();

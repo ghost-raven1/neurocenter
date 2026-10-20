@@ -17,6 +17,7 @@ import type { IProjectRow } from './project-row';
 import {setupInstallPlans} from '../devices/install-plan-schema';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
 import type { IProjectMemberRow } from './project-member-repository';
+import { setupProjectAssetPins } from './project-asset-pins';
 import { ProjectAssetRepository } from './project-asset-repository';
 import { reserveSkillDependencies } from '../publication/skill-dependency-registry';
 import { SkillAuditRepository } from '../publication/skill-audit-repository';
@@ -166,6 +167,7 @@ export class CatalogDb {
                  PRIMARY KEY (project_id, asset_id, asset_kind)
                );`
         );
+        await setupProjectAssetPins(this.pool);
         // Production-перезапуск не назначает проекту невыбранную серверную папку.
         if(process.env.NODE_ENV!=='production'){await this.seedFsRootPaths();}
         if(process.env.NODE_ENV!=='production'){await this.seedProjectMembers();}
@@ -316,12 +318,16 @@ export class CatalogDb {
      */
     public async listProjectAssets(projectId: string): Promise<IProjectAsset[]> {
         const res = await this.pool.query(
-            'SELECT asset_id AS "assetId", asset_kind AS "assetKind", added_by AS "addedBy", added_at AS "addedAt" '
+            'SELECT asset_id AS "assetId", asset_kind AS "assetKind", added_by AS "addedBy", added_at AS "addedAt", asset_version AS version,asset_manifest AS manifest,pin_origin AS "pinOrigin" '
             + 'FROM project_assets WHERE project_id = $1 ORDER BY added_at DESC',
             [projectId],
         );
         return (res.rows as unknown[]) as IProjectAsset[];
     }
+
+    public projectCatalog(projectId:string) { return this.projectAssets.catalog(projectId); }
+
+    public pinProjectAsset(projectId:string,id:string,kind:string,actor:string,input:unknown) { return this.projectAssets.pin(projectId,id,kind,actor,input); }
 
     /** Файловый сервис закрепляет зависимости до публикации текущего файла или снимка. */
     public reserveSkillDependencies(raw: unknown): Promise<{ reserved: number }> {
@@ -345,20 +351,6 @@ export class CatalogDb {
      */
     public removeProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<boolean> {
         return this.projectAssets.remove(projectId, assetId, assetKind, actor);
-    }
-
-    /**
-     * Есть ли актив (по имени) в проектном каталоге. asset_id = `ai-plug-<slug>`
-     * (mcp/plugin) или `<slug>` (skill).
-     */
-    public async hasProjectAssetByName(projectId: string, assetKind: string, name: string): Promise<boolean> {
-        const plugin = assetKind === 'skill' ? null : await this.plugins.get(name);
-        const assetId = assetKind === 'skill' ? slugify(name) : plugin?.id ?? name;
-        const res = await this.pool.query(
-            'SELECT 1 FROM project_assets WHERE project_id = $1 AND asset_kind = $2 AND asset_id = $3',
-            [projectId, assetKind, assetId],
-        );
-        return Number((res.rows as unknown[]).length) > 0;
     }
 
     public listAiPluginVersions(pluginId: string): Promise<IAiPluginVersion[]> { return this.plugins.versions(pluginId); }
@@ -607,14 +599,6 @@ interface ICreateProjectBody {
 }
 
 
-function slugify(name: string): string {
-    return name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)+/g, '')
-        .slice(0, 64)
-        .concat(name.trim() === '' ? 'x' : '');
-}
 
 
 

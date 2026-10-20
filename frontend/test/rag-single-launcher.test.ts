@@ -24,15 +24,15 @@ vi.mock('../src/features/McpBridge/useLocalJob',()=>({useLocalJob:()=>({job:fixt
 vi.mock('../src/features/McpBridge/ragUi/useRagUiLauncher',()=>({useRagUiLauncher:()=>({busy:false,error:'',submitted:undefined,submit:fixture.open})}));
 
 beforeEach(()=>{
-    vi.clearAllMocks();const current=ragUiFixture();current.device.report.root='/fixture/root';current.device.report.capabilities!.push('hosted-rag-model-v1','hosted-rag-grants-v1');
-    current.item.hostedEmbedding={supported:true};current.item.inspection={schemaVersion:1,projectId:current.item.projectId,bindingId:current.binding.bindingId,
+    vi.clearAllMocks();const current=ragUiFixture();current.device.report.root='/fixture/root';current.device.report.capabilities!.push('project-rag-generations-v1','hosted-rag-reindex-v1','hosted-rag-grants-v1','hosted-rag-profile-values-v1');
+    current.item.hostedEmbedding={supported:true,reindexSupported:true};current.item.inspection={schemaVersion:1,projectId:current.item.projectId,bindingId:current.binding.bindingId,
         assetId:current.item.assetId,assetKind:current.item.assetKind,version:current.item.version,manifest:current.item.manifest,
         checkedAt:'2026-10-20T01:00:00Z',readiness:'unverified',state:'checked',status:'synced',issues:[]};
     fixture.bridge=current.bridge;
     const model={id:'model-one',name:'Синтетическая модель',description:'',capability:'embedding' as const,runtime:'ollama' as const,model:'qwen3-embedding:4b',
-        manifestSha256:'c'.repeat(64),dimension:2560,source:'custom' as const,revision:2,createdAt:'2026-10-20',updatedAt:'2026-10-20'};
-    const pin='d'.repeat(64);fixture.selection={projectId:current.binding.projectId,revision:1,expectedDimension:2560,model,modelPin:pin,profile:{provider:'openai',model:'neurocenter/model-one/sha256/'+pin,dimension:2560}};
-    fixture.job=current.job({kind:'connect-rag-model',state:'succeeded',result:{status:'connected',revision:1,modelPin:pin,profile:fixture.selection.profile,requiresRestart:true}});
+        manifestSha256:'c'.repeat(64),modelPin:'d'.repeat(64),dimension:2560,source:'custom' as const,revision:2,createdAt:'2026-10-20',updatedAt:'2026-10-20'};
+    const pin='d'.repeat(64);fixture.selection={projectId:current.binding.projectId,revision:1,expectedDimension:2560,model,modelPin:pin,profile:{provider:'openai',model:'neurocenter/model-one/sha256/'+pin,dimension:2560},activeGeneration:'initial-'+'e'.repeat(32),activeSnapshot:'f'.repeat(64),dataRevision:3};
+    fixture.job=current.job({kind:'connect-rag-model',state:'succeeded',result:{status:'connected',revision:1,modelPin:pin,profile:fixture.selection.profile,requiresRestart:true,reindex:{complete:true,serverSynced:true,rowCount:3,snapshotHash:fixture.selection.activeSnapshot}}});
 });
 
 describe('Единственный запуск интерфейса знаний на странице проекта',()=>{

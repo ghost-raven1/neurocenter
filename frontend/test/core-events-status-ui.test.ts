@@ -26,7 +26,8 @@ vi.mock('../src/features/UserBlock/components/UserInfo', () => ({ UserInfo: () =
 vi.mock('../src/features/UserBlock/redux/actions', () => ({ authInit: vi.fn() }));
 vi.mock('../src/features/UserBlock/redux/reducers', () => ({ signOut: vi.fn() }));
 vi.mock('../src/common/components/LazySection', () => ({ lazySection: () => () => null }));
-vi.mock('../src/common/components/AccessibleDrawer', () => ({ default: () => null }));
+vi.mock('../src/common/components/AccessibleDrawer', () => ({ default: ({ open, title, children }: { open: boolean; title: ReactNode; children?: ReactNode }) =>
+    open ? createElement('section', { 'data-drawer': true }, title, children) : null }));
 vi.mock('../src/modules/Operations/OperationsButton', () => ({ default: () => null }));
 vi.mock('../src/features/McpBridge/BridgePairing', () => ({ BridgePairing: () => null }));
 vi.mock('antd', () => {
@@ -37,10 +38,10 @@ vi.mock('antd', () => {
         Badge: ({ status }: { status: string }) => createElement('i', { 'data-status': status }) };
 });
 
-function render(live: boolean, compact: boolean): string {
+function render(live: boolean, compact: boolean, menuOpen = false): string {
     fixture.compact = compact;
     // Снимок оболочки: меню и операции закрыты; проверяем только представление канала событий.
-    fixture.states = [false, false, live];
+    fixture.states = [menuOpen, false, live];
     return renderToStaticMarkup(createElement(Core, { modulesStructure: [], children: 'Содержимое страницы' }));
 }
 
@@ -48,17 +49,28 @@ describe('Канал событий сайта отделён от доступ�
     it.each([false, true])('Подключённый канал имеет точную подпись и доступное имя, компактный режим=%s', compact => {
         const html = render(true, compact);
         expect(html).toContain('role="status"');
-        expect(html).toContain('aria-label="Онлайн-обновления сайта подключены. Статус моста смотрите в списке компьютеров."');
-        expect(html).toContain('Канал событий сайта подключён');
-        expect(html).toContain('Онлайн-обновления');
+        expect(html).toContain('aria-label="Автообновление данных подключено."');
+        expect(html).toContain('Изменения на сайте приходят автоматически');
+        expect(html.replaceAll('<wbr/>','')).toContain('class="app__live-label">Автообновление</span>');
         expect(html).not.toContain('На связи');
     });
 
     it('Потеря канала обозначена как недоступность обновлений сайта', () => {
         const html = render(false, true);
-        expect(html).toContain('Обновления: нет связи');
-        expect(html).toContain('Канал событий сайта восстанавливается');
-        expect(html).toContain('Статус моста смотрите в списке компьютеров');
-        expect(html).toContain('data-status="warning"');
+        expect(html.replaceAll('<wbr/>','')).toContain('Нет автообновления');
+        expect(html).toContain('Автообновление данных недоступно. Восстанавливаем соединение.');
+        expect(html).toContain('Статус компьютеров находится в списке мостов');
+        expect(html).toContain('app__live--disconnected');
+    });
+
+    it('Мобильное меню оставляет короткий заголовок без слогана', () => {
+        const html = render(true, true, true);
+        expect(html).toContain('<section data-drawer="true">Нейроцентр');
+        expect(html).not.toContain('Рабочее пространство команды');
+        expect(html).not.toContain('app__brand');
+    });
+
+    it('Постоянная боковая панель сохраняет название и существующее описание', () => {
+        expect(render(true, false)).toContain('Рабочее пространство команды');
     });
 });

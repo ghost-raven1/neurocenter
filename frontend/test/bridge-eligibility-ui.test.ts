@@ -49,7 +49,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
         expect(html).toContain('Обновите мост для проверки профиля индекса');
     });
     it('Проверенный контракт RAG разрешает отправить задание для текущей папки',()=>{
-        fixture.bridge.device.report.capabilities.push('project-rag-sync-v1');
+        fixture.bridge.device.report.capabilities.push('project-rag-generations-v1');
         const html=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'project',canWrite:true}));
         expect(buttonAttributes(html,'Скачать в проект через мост')).not.toContain('disabled');
         expect(buttonAttributes(html,'Синхронизировать с сервером')).not.toContain('disabled');
@@ -60,7 +60,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
         {name:'Проверенный полный снимок',summary:readySummary,blocked:false},
         {name:'Недоступная сводка',summary:undefined,blocked:false},
     ])('$name: скачивание учитывает серверную готовность, отправка индекса доступна',({summary,blocked})=>{
-        fixture.bridge.device.report.capabilities.push('project-rag-sync-v1');
+        fixture.bridge.device.report.capabilities.push('project-rag-generations-v1');
         const serverReady=summary ? ragSummaryState(summary).verified : undefined;
         const html=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'project',canWrite:true,serverReady}));
         expect(buttonAttributes(html,'Скачать в проект через мост').includes('disabled')).toBe(blocked);

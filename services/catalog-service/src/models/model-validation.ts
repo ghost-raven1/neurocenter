@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { IModelCreate, IModelUpdate, TModelCapability } from './model.types';
+import type { IModelDescriptor, IModelUpdate, IValidatedModelCreate, TModelCapability, TModelRuntime } from './model.types';
 
 const capabilities: readonly TModelCapability[] = ['embedding', 'vision', 'chat'];
 const modelName = /^(?:[a-z0-9_-]+\/)?[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$/i;
@@ -32,14 +32,21 @@ export function expectedModelRevision(value: unknown): number {
     return Number(value);
 }
 
-/** Модель загружается только из реестра Ollama; произвольный URL и неявный latest не принимаются. */
-export function validateModelCreate(value: unknown): Required<IModelCreate> {
+/** Адрес и секрет удалённого API задаются отдельно; карточка не перенаправляет запросы. */
+export function validateModelCreate(value: unknown): IValidatedModelCreate {
     const body = record(value);
-    fields(body, ['name', 'description', 'capability', 'model', 'dimension']);
+    fields(body, ['name', 'description', 'capability', 'model', 'dimension', 'runtime', 'modelVersion']);
+    const runtime = body.runtime ?? 'ollama';
+    if (!['ollama', 'remote-openai', 'remote-ollama'].includes(String(runtime))) { throw new BadRequestException('Выберите управляемый Ollama или удалённый API OpenAI/Ollama.'); }
     if (!capabilities.includes(body.capability as TModelCapability)) { throw new BadRequestException('Выберите назначение модели: embedding, vision или chat.'); }
-    if (typeof body.model !== 'string' || body.model.length > 200 || /[\x00-\x20\x7f]/.test(body.model) || !modelName.test(body.model)) {
+    if (typeof body.model !== 'string' || body.model.length > 200 || /[\x00-\x20\x7f]/.test(body.model)
+        || (runtime === 'ollama' ? !modelName.test(body.model) : !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(body.model) || body.model.includes('://'))) {
         throw new BadRequestException('Укажите имя модели Ollama с явным тегом, например qwen3:4b. Адрес реестра задавать нельзя.');
     }
+    if (runtime !== 'ollama' && (typeof body.modelVersion !== 'string' || !body.modelVersion.trim() || body.modelVersion.length > 128 || /[\x00-\x1f\x7f]/.test(body.modelVersion))) {
+        throw new BadRequestException('Укажите версию удалённой модели или API. Этот идентификатор не подтверждает SHA весов провайдера.');
+    }
+    if (runtime === 'ollama' && body.modelVersion !== undefined) { throw new BadRequestException('Версия управляемой Ollama задаётся тегом модели.'); }
     let dimension: number | null = null;
     if (body.dimension !== undefined && body.dimension !== null) {
         if (body.capability !== 'embedding' || !Number.isSafeInteger(body.dimension) || Number(body.dimension) < 1 || Number(body.dimension) > 16384) {
@@ -47,16 +54,39 @@ export function validateModelCreate(value: unknown): Required<IModelCreate> {
         }
         dimension = Number(body.dimension);
     }
-    return { name: name(body.name), description: description(body.description ?? ''), capability: body.capability as TModelCapability, model: body.model, dimension };
+    return { name: name(body.name), description: description(body.description ?? ''), capability: body.capability as TModelCapability, model: body.model, dimension,
+        runtime: runtime as TModelRuntime, ...(runtime === 'ollama' ? {} : { modelVersion: String(body.modelVersion).trim() }) };
 }
 
-/** Техническое имя и назначение опубликованной модели остаются неизменными для всех проектов. */
+/** Проверяет нативный descriptor ассета без deployment URL, ключей и чужого результата probe. */
+export function validateModelDescriptor(value: unknown): IModelDescriptor {
+    const body = record(value);
+    fields(body, ['description', 'capability', 'runtime', 'model', 'manifestSha256', 'dimension', 'source', 'modelVersion', 'verificationSha256']);
+    if (!['builtin', 'custom'].includes(String(body.source))) { throw new BadRequestException('Некорректное происхождение модели.'); }
+    const { name: _name, ...validated } = validateModelCreate({ name: 'Модель', description: body.description, capability: body.capability,
+        runtime: body.runtime, model: body.model, dimension: body.dimension, ...(body.modelVersion === undefined ? {} : { modelVersion: body.modelVersion }) });
+    const manifest = body.manifestSha256;
+    if (!(manifest === null || typeof manifest === 'string' && /^[a-f0-9]{64}$/.test(manifest))) { throw new BadRequestException('Некорректный SHA манифеста модели.'); }
+    if (validated.runtime !== 'ollama' && (manifest !== null || body.verificationSha256 !== null)) {
+        throw new BadRequestException('Удалённый ассет не содержит SHA весов или проверки подключения другой площадки.');
+    }
+    if (validated.runtime === 'ollama' && body.verificationSha256 !== undefined && body.verificationSha256 !== null) { throw new BadRequestException('Управляемая модель закрепляется SHA весов.'); }
+    return { ...validated, manifestSha256: manifest, source: body.source as IModelDescriptor['source'],
+        ...(validated.runtime === 'ollama' ? {} : { verificationSha256: null }) };
+}
+
+/** Техническое изменение удалённого API проходит повторную проверку и создаёт новый immutable pin. */
 export function validateModelUpdate(value: unknown): IModelUpdate {
     const body = record(value);
-    fields(body, ['expectedRevision', 'name', 'description']);
+    fields(body, ['expectedRevision', 'name', 'description', 'model', 'modelVersion', 'dimension']);
+    if (body.model !== undefined && (typeof body.model !== 'string' || !body.model.trim())) throw new BadRequestException('Укажите идентификатор модели API.');
+    if (body.modelVersion !== undefined && (typeof body.modelVersion !== 'string' || !body.modelVersion.trim())) throw new BadRequestException('Укажите версию модели API.');
+    if (body.dimension !== undefined && body.dimension !== null && (!Number.isSafeInteger(body.dimension) || Number(body.dimension) < 1 || Number(body.dimension) > 16384)) throw new BadRequestException('Размерность: целое число от 1 до 16384.');
     return { expectedRevision: expectedModelRevision(body.expectedRevision),
         ...(body.name !== undefined ? { name: name(body.name) } : {}),
-        ...(body.description !== undefined ? { description: description(body.description) } : {}) };
+        ...(body.description !== undefined ? { description: description(body.description) } : {}),
+        ...(body.model !== undefined ? { model: String(body.model) } : {}), ...(body.modelVersion !== undefined ? { modelVersion: String(body.modelVersion) } : {}),
+        ...(body.dimension === undefined ? {} : { dimension: body.dimension as number | null }) };
 }
 
 export function validateModelDelete(value: unknown): number {

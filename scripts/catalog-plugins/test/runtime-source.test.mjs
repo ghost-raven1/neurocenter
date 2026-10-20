@@ -1,3 +1,4 @@
+import {readyManifest} from '../manifest.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -164,12 +165,12 @@ test('Готовый Go/Rust/native binary проходит общий builder �
             const output = path.join(root, adapter);
             const result = await buildRecipe({ recipe: recipe(source(adapter, { directory: 'app', entrypoint: 'tool' })), recipePath: path.join(root, 'recipe.json'), output });
             assert.equal(result.runtimeChecked, false);
-            const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8')), tool = manifest.tools[0];
+            const [tool]=await readyManifest(result.manifest);
             assert.match(tool.publication.compatibility, /Автономный/); assert.doesNotMatch(tool.publication.compatibility, /JavaScript/);
-            const artifact = tool.artifacts[0], descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+            const artifact = tool.artifacts[0], descriptor = artifact.descriptor;
             assert.equal(descriptor.entrypoint, 'app/tool'); assert.equal(descriptor.executable, true);
             const unpacked = path.join(root, adapter + '-unpacked');
-            await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: unpacked });
+            await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
             const child = spawn(path.join(unpacked, descriptor.entrypoint), ['--exit=7'], { stdio: 'ignore' });
             const [code] = await once(child, 'exit'); assert.equal(code, 7);
         }

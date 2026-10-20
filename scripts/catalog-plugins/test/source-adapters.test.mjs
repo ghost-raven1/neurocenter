@@ -1,3 +1,4 @@
+import {readyManifest} from '../manifest.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -23,11 +24,11 @@ test('Исходный TS-плагин компилируется, упаков�
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe, recipePath: path.join(root, 'recipe.json'), output });
         assert.equal(result.runtimeChecked, false);
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         const extracted = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: extracted });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: extracted });
         const { default: plugin } = await import(pathToFileURL(path.join(extracted, descriptor.entrypoint)));
         assert.deepEqual(await plugin({ directory: 'Тест' }), { name: 'Тест' });
         assert.match(await fs.readFile(path.join(output, 'provenance.json'), 'utf8'), /esbuild/);
@@ -41,12 +42,12 @@ for (const extension of ['cjs', 'js', 'ts', 'cts']) test(`CommonJS-проект 
         await fs.writeFile(path.join(root, `source/index.${extension}`), "module.exports=async input=>({directory:input.directory}); if(require.main===module)console.log('CJS_MAIN');");
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe: { ...recipe, source: { type: 'project', directory: 'source', entrypoint: `index.${extension}` } }, recipePath: path.join(root, 'recipe.json'), output });
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         assert.equal(descriptor.entrypoint, 'entrypoint.cjs.mjs');
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: unpacked });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const entrypoint = path.join(unpacked, descriptor.entrypoint);
         assert.equal(execFileSync(process.execPath, [path.join(unpacked, 'entrypoint.cjs')], { encoding: 'utf8' }).trim(), 'CJS_MAIN');
         const { default: plugin } = await import(pathToFileURL(entrypoint));
@@ -61,11 +62,11 @@ test('ESM-проект .mts компилируется в JS и сохраняе
         await fs.writeFile(path.join(root, 'source/index.mts'), "import {fileURLToPath} from 'node:url';\nexport default async (input: {directory: string}) => ({directory: input.directory});\nif(process.argv[1]===fileURLToPath(import.meta.url))console.log('MTS_MAIN');");
         const output = path.join(root, 'output');
         const result = await buildRecipe({recipe: {...recipe, source: {type: 'project', directory: 'source', entrypoint: 'index.mts'}}, recipePath: path.join(root, 'recipe.json'), output});
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8')), artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const [built]=await readyManifest(result.manifest),artifact=built.artifacts[0];
+        const descriptor = artifact.descriptor;
         assert.equal(descriptor.entrypoint, 'entrypoint.mjs');
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, {destination: unpacked});
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, {destination: unpacked});
         const entrypoint = path.join(unpacked, descriptor.entrypoint);
         assert.equal(execFileSync(process.execPath, [entrypoint], {encoding: 'utf8'}).trim(), 'MTS_MAIN');
         const {default: plugin} = await import(pathToFileURL(entrypoint));
@@ -111,12 +112,12 @@ await fs.writeFile(path.join(directory,'package-lock.json'),JSON.stringify({lock
         for (const key of npmEnvironment) { process.env[key] = 'https://untrusted.example'; }
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe: { ...recipe, source: { type: 'project', directory: 'source', entrypoint: 'index.js' } }, recipePath: path.join(root, 'recipe.json'), output });
-        const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
+        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
         const artifact = manifest.tools[0].artifacts[0];
-        const descriptor = JSON.parse(await fs.readFile(path.join(output, artifact.descriptorPath), 'utf8'));
+        const descriptor = artifact.descriptor;
         assert.equal(descriptor.entrypoint, 'entrypoint.cjs.mjs');
         const unpacked = path.join(root, 'unpacked');
-        await runtime.inspectRuntimeArchive(path.join(output, artifact.archivePath), descriptor, { destination: unpacked });
+        await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         assert.equal(execFileSync(process.execPath, [path.join(unpacked, 'entrypoint.cjs')], { encoding: 'utf8' }).trim(), 'HELPER_MAIN');
         assert.equal(await fs.readFile(path.join(unpacked, 'node_modules/fixture-helper/asset.txt'), 'utf8'), 'HELPER_MAIN');
         assert.equal(await fs.readFile(path.join(unpacked, 'node_modules/fixture-helper/LICENSE'), 'utf8'), 'Fixture license');

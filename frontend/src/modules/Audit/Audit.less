@@ -11,6 +11,8 @@
     &__event-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; width: 100%; font-size: 12px; }
     &__event .ant-typography { overflow-wrap: anywhere; }
     &__event .ant-tag { margin-right: 0; }
+    &__resource { display: flex; flex-direction: column; gap: 3px; }
+    &__event-summary { color: @brand-primary; font-size: 13px; overflow-wrap: anywhere; }
     @media (max-width: 767px) {
         &__desktop { display: none; }
         &__mobile { display: block; }
@@ -28,6 +30,9 @@
     .ant-alert { margin: 16px 0; }
     .ant-alert-content { min-width: 0; }
     .audit-page__detail-meta { margin-top: 20px; }
+    .audit-page__change-values { display: block; min-width: 0; overflow-wrap: anywhere; }
+    .audit-page__changes .ant-descriptions-item-label { padding-bottom: 4px; color: #617387; }
+    .audit-page__technical { margin-top: 24px; border-top: 1px solid @brand-border; }
     .audit-page__operation-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 26px 0 18px; }
     .audit-page__loading { text-align: center; padding: 28px; }
     .audit-page__log .ant-list-item { display: block; }

@@ -47,16 +47,15 @@ test('Неизвестное исключение и поддельная пуб
 });
 
 
-test('Конфликт прежнего тега предлагает регистрацию из Git без раскрытия исходной ошибки',()=>{
+test('Конфликт чужого тега не предлагает удалённый legacy путь и не раскрывает исходную ошибку',()=>{
     const result=modelBundleFailure({code:'MODEL_MANAGED_CONFLICT',message:'PRIVATE /models/token'});
-    assert.equal(result.code,'MODEL_MANAGED_CONFLICT');assert.match(result.message,/--adopt-from-git ORIG_HEAD/);assert.doesNotMatch(result.message,/PRIVATE|token/);
-    const failed=modelBundleFailure({code:'MODEL_GIT_ADOPTION',message:'PRIVATE repo path'});
-    assert.equal(failed.code,'MODEL_GIT_ADOPTION');assert.match(failed.message,/commit-предок HEAD/);assert.doesNotMatch(failed.message,/PRIVATE/);
+    assert.equal(result.code,'MODEL_MANAGED_CONFLICT');assert.match(result.message,/immutable alias/);assert.doesNotMatch(result.message,/PRIVATE|token/);
+
 });
 
 test('Незавершённое переключение сохраняет конкретную команду восстановления в JSON',()=>{
     const result=modelBundleFailure({code:'MODEL_RECOVERY_REQUIRED',message:'PRIVATE /models/token'});
-    assert.equal(result.code,'MODEL_RECOVERY_REQUIRED');assert.match(result.message,/npm run models:prepare -- --recover-only/);
+    assert.equal(result.code,'MODEL_RECOVERY_REQUIRED');assert.match(result.message,/npm run models:prepare -- --directory <каталог моделей> --recover-only/);
     assert.doesNotMatch(result.message,/PRIVATE|token|models:sync/);
     assert.deepEqual(modelBundleFailure(JSON.parse(JSON.stringify(result))),result);
 });

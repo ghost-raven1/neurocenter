@@ -54,5 +54,6 @@ export function useProjectEmbedding(projectId: string) {
         finally { lock.current = false; if (current()) setSaving(false); }
     };
     return { selection, catalog, loading, catalogLoading, catalogError, catalogAccessDenied, saving, readError, saveError, modelId, refresh, save,
+        applied:()=>{setDraft(undefined);void refresh();},
         choose: (id: string | null) => { if (!lock.current) { setDraft(id); setSaveError(''); } } };
 }

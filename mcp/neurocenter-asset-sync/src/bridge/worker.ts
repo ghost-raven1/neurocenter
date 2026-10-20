@@ -1,3 +1,5 @@
+import {reindexHostedRag} from '../features/rag-hosted/reindex.js';
+import {finalizeRagReindex,releaseRagReindex,recoverRagRestore} from '../features/rag-index/restore-recovery.js';
 import {probeInstalledRagMcp} from '../features/rag-ui/mcp-startup.js';
 import {localRagUi} from '../features/rag-ui/contract.js';
 import {openRagUi,closeRagUis,closeOwnRagUi} from '../features/rag-ui/index.js';
@@ -20,6 +22,7 @@ import {
     commitProjectBinding,
     recoverPendingWorkspaceIdentity,
     workspaceReport,
+    projectFolder,
     projectBindingId,
     type WorkspaceBindingMode,
     type WorkspaceBindingPreparation,
@@ -56,9 +59,9 @@ interface Job {
     project_id?: string;
     lease: string;
     payload: ProjectLocalPayload & ConfigurationPayload & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
-        mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;
+        mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;
-        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection };
+        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
 }
 
 /** Один worker на профиль и площадку; WS будит очередь, heartbeat страхует разрыв транспорта. */
@@ -197,8 +200,14 @@ export async function runWorker(): Promise<void> {
                         result=await openRagUi({projectId:current.project_id||'',bindingId:current.payload.bindingId||'',instanceId:current.payload.instanceId||'',pkg:current.payload.package},async()=>{await authorize();});
                     } else if(current.kind==='connect-rag-model'&&current.payload.package&&current.payload.embedding){
                         await update(20,'Проверяем выбранную модель и доступ через мост.');
-                        result=await connectHostedRag(current.project_id||'',current.payload.bindingId||'',current.payload.instanceId||'',
-                            current.payload.package,current.payload.embedding,async()=>{await authorize();});
+                        if((current.payload.reindex!==true)||current.payload.ragReindexProtocol!=='hosted-rag-reindex-v1')throw new Error('Обновите задание переиндексации до поддерживаемого формата.');
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},async()=>{
+                            const connected=await connectHostedRag(current.project_id||'',current.payload.bindingId||'',current.payload.instanceId||'',
+                                current.payload.package!,current.payload.embedding!,async()=>{await authorize();},publication=>reindexHostedRag({projectId:current.project_id||'',bindingId:current.payload.bindingId||'',instanceId:current.payload.instanceId||'',pkg:current.payload.package!},publication,async()=>{await authorize();},update));
+                            const synced=await runRagBridgeJob({kind:'sync-rag',projectId:current.project_id||'',bindingId:current.payload.bindingId||'',allowEmpty:true},async()=>{await authorize();},update);
+                            if(!connected.reindex||synced.snapshotHash!==connected.reindex.snapshotHash)throw new Error('Серверная копия нового индекса не подтверждена. Повторите подключение.');
+                            return {...connected,reindex:{...connected.reindex,serverSynced:true}};
+                        });
                     } else if (current.kind === 'open-local-recovery-folder') {
                         await authorize(); await openLocalRecoveryFolder(current.project_id || '');
                         result = {projectId:current.project_id,bindingId:current.payload.bindingId,opened:true};
@@ -243,6 +252,7 @@ export async function runWorker(): Promise<void> {
                                     current.project_id || '', current.payload.package!, authorize, update,
                                 ));
                     } else if (['restore-rag','sync-rag'].includes(current.kind)) {
+                        if(current.payload.ragProtocol!=='project-rag-generations-v1')throw new Error('Задание создано до обновления формата RAG. Запустите новую синхронизацию знаний в Нейроцентре.');
                         if(current.kind==='restore-rag'){await authorize();await closeOwnRagUi(current.project_id||'');await authorize();}
                         result = await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runRagBridgeJob({
                             kind:current.kind as 'restore-rag'|'sync-rag',projectId:current.project_id || '',bindingId:current.payload.bindingId || '',
@@ -276,7 +286,7 @@ export async function runWorker(): Promise<void> {
                                 : current.kind === 'prepare-local-change' ? 'Сравнение подготовлено. Проверьте изменения перед восстановлением.'
                                 : current.kind === 'open-local-change-report' ? 'Полное сравнение открыто на подключённом компьютере.'
                                 : current.kind === 'open-rag-ui' ? 'Локальный интерфейс готов; отдельное окно запрошено на компьютере.'
-                                : current.kind === 'connect-rag-model' ? 'Подключение модели проверено. Перезапустите OpenCode; индекс проверяется отдельно.'
+                                : current.kind === 'connect-rag-model' ? 'Подключение модели и локальный индекс проверены.'
                                 : current.kind === 'open-local-recovery-folder' ? 'Резервные копии открыты на подключённом компьютере.'
                                 : ['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? 'Одобренные файлы восстановлены; локальный вариант сохранён.'
                                 : current.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена.'
@@ -289,9 +299,11 @@ export async function runWorker(): Promise<void> {
                                     : 'Синхронизация базы знаний завершена',
                         result: result as Record<string, unknown>,
                     });
+                    if(current.kind==='connect-rag-model'&&current.payload.reindex)await finalizeRagReindex(await projectFolder(current.project_id||''),current.id);
                     await deliverCompletions();
                 } catch (error) {
                     clearInterval(renew);
+                    if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
                     // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
                     if (current.kind !== 'inspect-installation') { await recoverFileJobs(); }
                     if (current.kind === 'bind-project') { await recoverPendingWorkspaceIdentity(); }

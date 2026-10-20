@@ -1,13 +1,9 @@
 import {randomUUID} from 'node:crypto';
 import {mkdir,lstat,open} from 'node:fs/promises';
 import path from 'node:path';
-import {configuration} from '../embedding/config.mjs';
-import {dataDirectory} from '../embedding/runtime.mjs';
+import {configuration} from './runtime-config.mjs';
+import {dataDirectory} from './runtime-directory.mjs';
 import {runModelStartupProcess} from './startup-process.mjs';
-import {modelBundleFailure} from './bundle-errors.mjs';
-import {readModelBundle} from './bundle.mjs';
-import {modelLocks,modelBundleSummary} from './bundle-manifest.mjs';
-import {fileURLToPath} from 'node:url';
 
 /** Подробности команды остаются в закрытом файле; исключения и настройки не печатаются в общий вывод. */
 async function saveRuntimeDiagnostic(root,result) {
@@ -33,41 +29,20 @@ function assertNotCancelled(result) {
 /** Сообщение остаётся видимым во время молчащей проверки SHA или ожидания Docker. */
 const waiting = (output,label) => elapsed => output.info(label,`Прошло ${Math.floor(elapsed/1000)} с; операция продолжается. Ctrl+C — прервать запуск.`);
 
-/** Native dev использует тот же контейнер и веса, что и команды embedding/vision. */
+/** Native dev запускает общий контейнер; выбранные версии моделей подготавливает каталог. */
 export function modelRuntimeEnvironment(root,environment=process.env) {
     const config=configuration(environment,root);
     return {MODEL_RUNTIME_URL:environment.MODEL_RUNTIME_URL||config.baseUrl,
         MODEL_STORAGE_PATH:config.data};
 }
 
-/** Встроенные веса входят в поставку и готовятся до запуска runtime; пользовательские модели добавляются отдельно. */
+/** Запускает runtime; модели добавляются только явным импортом и установкой через каталог. */
 export async function startModelRuntime({root,environment=process.env,output},run=runModelStartupProcess) {
     if(environment.MODEL_HOSTING_ENABLED==='false') {
         output.info('Хостинг моделей','Отключён настройкой MODEL_HOSTING_ENABLED');return {ok:true,disabled:true};
     }
     const config=configuration(environment,root);
-    const expected=modelBundleSummary(await readModelBundle(fileURLToPath(new URL('./bundle-release.json',import.meta.url))),await modelLocks());
     await dataDirectory(config,'',true);
-    output.info('Проверка и подготовка весов','Проверяем SHA-256 полного комплекта; отсутствующие части загрузятся с продолжением из кеша.');
-    const prepared=await run(process.execPath,[path.join(root,'scripts/models/bundle-cli.mjs'),'--directory',config.data],
-        {cwd:root,env:environment,encoding:'utf8',stdio:['ignore','pipe','inherit'],maxBuffer:2*1024*1024,timeout:2*60*60*1000,
-            onTick:waiting(output,'Подготовка весов')});
-    assertNotCancelled(prepared);
-    let bundle;
-    try {bundle=JSON.parse(prepared.stdout);} catch { /* Неподтверждённая поставка не считается готовой. */ }
-    if(prepared.error||prepared.status!==0||bundle?.ok!==true||bundle.downloadOnly!==false||bundle.verifyOnly!==false
-        ||bundle.models!==expected.models||bundle.files!==expected.files||bundle.bytes!==expected.bytes) {
-        const failure=modelBundleFailure(prepared.error?.code==='ETIMEDOUT'?{code:'MODEL_BUNDLE_TIMEOUT'}:
-            prepared.error||bundle?.error||{code:prepared.status===0?'MODEL_BUNDLE_PROTOCOL':'MODEL_BUNDLE_FAILED'});
-        output.warning(failure.message);
-        if(Number.isInteger(prepared.status))output.info('Код подготовки моделей',String(prepared.status));
-        if(prepared.signal)output.info('Сигнал подготовки моделей',prepared.signal);
-        const diagnostic=await saveRuntimeDiagnostic(root,prepared);
-        if(diagnostic)output.info('Подробности подготовки',diagnostic);
-        output.info('Повторить только подготовку','npm run models:prepare');
-        throw new Error(`Встроенные модели не подготовлены: ${failure.message} Прежние сервисы не остановлены.`);
-    }
-    output.success(`Все модели поставки находятся в проекте: ${expected.models}; файлы проверены по SHA-256`);
     output.info('Запуск контейнера моделей','Ожидаем Docker и готовность runtime. Первая загрузка образа может занять несколько минут; предел ожидания — 10 минут.');
     let result;
     try {
@@ -77,7 +52,7 @@ export async function startModelRuntime({root,environment=process.env,output},ru
                 onTick:waiting(output,'Docker: запуск хостинга')});
         assertNotCancelled(result);
         if(result.error||result.status!==0)throw new Error('Не удалось подготовить контейнер моделей.');
-        output.success('Хостинг моделей готов; встроенные веса уже доступны');
+        output.success('Хостинг моделей готов; выберите модели в каталоге');
         return {ok:true};
     } catch(error) {
         if(error.code==='ECANCELED')throw error;

@@ -18,14 +18,12 @@ COPY services/shared/ /shared/
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 
-# Сервер и операторский CLI используют общий сборщик и закреплённый catalog-release.json.
+# Сервер использует общий native builder; source assets приходят из единого репозитория.
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
 COPY scripts/models/ /tools/scripts/models/
 COPY scripts/release-request.mjs /tools/scripts/release-request.mjs
-COPY scripts/embedding/model.lock.json /tools/scripts/embedding/model.lock.json
-COPY scripts/vision/model.lock.json /tools/scripts/vision/model.lock.json
 COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mjs
-RUN mkdir -p /tools/services && ln -s /app /tools/services/catalog-service && ln -s /shared /tools/services/shared
+RUN mkdir -p /tools/services && ln -s /app /tools/services/catalog-service && ln -s /shared /tools/services/shared && ln -s /app/node_modules /tools/node_modules
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=catalog-service

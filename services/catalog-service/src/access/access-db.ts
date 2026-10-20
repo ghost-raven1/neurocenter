@@ -7,7 +7,10 @@ import {setupSecurityEvents,securityEvent} from './security-events';
 @Injectable()
 export class AccessDb implements OnModuleInit, OnModuleDestroy {
     private readonly pool = createPool({ connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 3 },'access');
-    async onModuleInit(): Promise<void> {
+    private initialization?:Promise<void>;
+    ready():Promise<void>{return this.initialization??=this.initialize();}
+    async onModuleInit(): Promise<void> {await this.ready();}
+    private async initialize(): Promise<void> {
         await this.pool.query(`CREATE TABLE IF NOT EXISTS platform_users (
             email TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
             is_main_admin BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true,

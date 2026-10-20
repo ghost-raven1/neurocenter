@@ -108,14 +108,13 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
         await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
         await fs.mkdir(path.join(checkout,'scripts/assets'));
         await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
-        await fs.copyFile(path.join(root,'scripts/workspace/catalog-startup.mjs'),path.join(checkout,'scripts/workspace/catalog-startup.mjs'));
         for (const directory of workspacePackages) await fs.mkdir(path.join(checkout, directory), {recursive: true});
         await fs.writeFile(path.join(bin, 'docker'), `#!${process.execPath}
             const args=process.argv.slice(2).join(' ');
@@ -135,8 +134,8 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         });
         assert.equal(result.status, 0, result.stderr);
         const calls = (await fs.readFile(records, 'utf8')).trim().split('\n').map(value => JSON.parse(value));
-        assert.deepEqual(calls.map(call => path.relative(checkout, call.cwd)).sort(), [...workspacePackages].sort());
-        for (const call of calls) {assert.ok(Number(call.node.split('.')[0]) >= 24); assert.deepEqual(call.args, ['ci', '--no-audit', '--no-fund']);}
+        assert.deepEqual(calls.map(call => path.relative(checkout, call.cwd)).sort(), ['',...workspacePackages].sort());
+        for (const call of calls) {assert.ok(Number(call.node.split('.')[0]) >= 24); assert.deepEqual(call.args,call.cwd===checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);}
         assert.doesNotMatch(result.stderr, /REAL_NETWORK_FORBIDDEN/);
         await assert.rejects(fs.access(networkCalls), {code: 'ENOENT'});
         assert.deepEqual(await fs.readdir(dockerConfig), []);
@@ -148,7 +147,8 @@ test('Общий check проверяет свежий dist, новые конт
     for (const file of ['scripts/test/auth-security.mjs', 'scripts/test/blitz-flow.test.mjs', 'scripts/test/tool-runtime-source.test.mjs',
         'scripts/test/repository-source.test.mjs', 'scripts/catalog-plugins/test/runtime-source.test.mjs', 'scripts/test/workspace-check.test.mjs',
         'scripts/test/compose-install-integration.test.mjs',
-        'scripts/test/vision-hosting.test.mjs', 'scripts/test/vision-input.test.mjs', 'scripts/test/vision-image-fixture.test.mjs']) assert.ok(files.includes(file), file);
+        'scripts/test/assets-sync.test.mjs', 'scripts/test/assets-startup.test.mjs', 'scripts/test/model-runtime-topology.test.mjs',
+        'scripts/test/model-startup.test.mjs', 'scripts/test/dev-model-credentials.test.mjs', 'scripts/test/production-model-credentials.test.mjs']) assert.ok(files.includes(file), file);
     assert.equal(files.length, new Set(files).size);
     assert.ok(!files.includes('scripts/test/qa-api.mjs')); assert.ok(!files.includes('scripts/test/production-stack.mjs'));
     for (const directory of workspacePackages) {

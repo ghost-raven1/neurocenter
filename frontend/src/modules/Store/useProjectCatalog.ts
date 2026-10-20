@@ -11,7 +11,7 @@ export function useProjectCatalog(projectId: string | undefined, accessScope: st
     const [snapshot, setSnapshot] = useState({ scope: '', state: initialProjectCatalogState() });
     const controller = useMemo(() => createProjectCatalogController({
         getScope: () => current.current,
-        read: () => bffApi.listProjectAssets(projectId!),
+        read: () => bffApi.projectCatalog(projectId!),
         onChange: state => setSnapshot({ scope, state }),
     }), [scope, projectId]);
     useLayoutEffect(() => {

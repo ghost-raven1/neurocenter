@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {verifyFile} from '../models/bundle-files.mjs';
-import {formatModelBundleProgress,modelBundleProgressReporter} from '../models/bundle-cli.mjs';
+import {formatAssetProgress,assetProgressReporter} from '../assets/progress.mjs';
 
 test('SHA-проверка сообщает байты до завершения чтения файла',async()=>{
     const directory=await mkdtemp(path.join(tmpdir(),'nc-model-progress-'));
@@ -23,16 +23,16 @@ test('SHA-проверка сообщает байты до завершения
 });
 
 test('Терминал показывает объём, процент и количество файлов без внутренних путей',()=>{
-    assert.equal(formatModelBundleProgress({message:'Загрузка.',completed:1024**3,total:4*1024**3}),'Загрузка. 25% · 1.0 ГиБ / 4.0 ГиБ');
-    assert.equal(formatModelBundleProgress({message:'Проверка.',completed:2,total:9,unit:'files'}),'Проверка. 2/9 файлов');
-    assert.equal(formatModelBundleProgress({message:'Подготовка.',completed:0,total:0}),'Подготовка.');
-    const value=formatModelBundleProgress({message:'Проверка.',completed:1024,total:2048,path:'/private/user-project/weights'});
+    assert.equal(formatAssetProgress({message:'Загрузка.',completed:1024**3,total:4*1024**3}),'Загрузка. 25% · 1.0 ГиБ / 4.0 ГиБ');
+    assert.equal(formatAssetProgress({message:'Проверка.',completed:2,total:9,unit:'files'}),'Проверка. 2/9 файлов');
+    assert.equal(formatAssetProgress({message:'Подготовка.',completed:0,total:0}),'Подготовка.');
+    const value=formatAssetProgress({message:'Проверка.',completed:1024,total:2048,path:'/private/user-project/weights'});
     assert.equal(value,'Проверка. 50% · 1.0 КиБ / 2.0 КиБ');
 });
 
 test('Стадия видна сразу, счётчик обновляется раз в две секунды, готовность не теряется',()=>{
     let now=100;const lines=[];
-    const report=modelBundleProgressReporter(line=>lines.push(line),()=>now);
+    const report=assetProgressReporter(line=>lines.push(line),()=>now);
     report({stage:'verifying',message:'Проверка SHA.',completed:0,total:100});
     now=200;report({stage:'verifying',message:'Проверка SHA.',completed:10,total:100});
     assert.equal(lines.length,1);

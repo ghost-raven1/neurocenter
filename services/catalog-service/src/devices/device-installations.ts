@@ -1,3 +1,4 @@
+import type {PoolClient} from 'pg';
 import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 import {
     BadRequestException,
@@ -166,7 +167,7 @@ export class DeviceInstallations {
             }
             let ragUi: {supported:true;mode:'web'}|undefined;
             try{if(localRagUi({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig}))ragUi={supported:true,mode:'web'};}catch{/* Неизвестный descriptor не обещает интерфейс. */}
-            return { ...item,...(ragUi?{ragUi}:{}),...(ragUi&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
+            return { ...item,...(ragUi?{ragUi}:{}),...(ragUi&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true,...((installedConfig?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion===1?{reindexSupported:true}:{})}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
                 ...(!item.bindingId ? { legacyBinding: true } : {}),
                 ...(verifiedInspection ? { inspection:verifiedInspection } : {}),
                 ...(verifiedRuntime && isCurrentBinding ? {runtime:verifiedRuntime} : {}),
@@ -188,8 +189,8 @@ export class DeviceInstallations {
         return this.installedPackage(actor, input);
     }
     /** Диагностика читает тот же сохранённый пакет и не требует нового одобрения кода. */
-    async inspectionPackage(actor: IAccessActor, input: InstallationInput): Promise<IPackage> {
-        return this.installedPackage(actor, input);
+    async inspectionPackage(actor: IAccessActor, input: InstallationInput,db?:Pick<PoolClient,'query'>): Promise<IPackage> {
+        return this.installedPackage(actor, input,db);
     }
     /** Чтение копий сохраняет исходный граф даже после отзыва одобрения. */
     async inspectionDelivery(actor:IAccessActor,input:InstallationInput):Promise<{package:IPackage;installSet?:IInstallationSet}> {
@@ -217,7 +218,7 @@ export class DeviceInstallations {
         }
         return {package:pkg};
     }
-    private async installedPackage(actor: IAccessActor, input: InstallationInput): Promise<IPackage> {
+    private async installedPackage(actor: IAccessActor, input: InstallationInput,db:Pick<PoolClient,'query'>=this.store.pool): Promise<IPackage> {
         if (
             !input.assetId ||
             typeof input.assetId !== 'string' ||
@@ -234,7 +235,7 @@ export class DeviceInstallations {
         if (typeof input.bindingId !== 'string' || !/^[a-f0-9]{64}$/.test(input.bindingId)) {
             throw new ConflictException('Подтвердите текущую папку проекта. Установки без привязки удаляются только после ручной сверки.');
         }
-        const { rows } = await this.store.pool.query(
+        const { rows } = await db.query(
             `${latest} SELECT installed_action AS kind,jsonb_set(jsonb_set(payload,'{package}',installed_package),'{bindingId}',to_jsonb(installed_binding)) AS payload FROM latest WHERE device_id=$2 AND project_id=$3 AND installed_package->'plugin'->>'id'=$4 AND installed_package->'plugin'->>'kind'=$5 AND installed_binding=$6`,
             [
                 actor.email,

@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { AccessDb } from '../src/access/access-db';
 import type { ModelsService } from '../src/models/models.service';
 import type { OllamaClient } from '../src/models/ollama-client';
+import type { ModelBundleRuntime } from '../src/models/model-bundle-runtime';
 import type { IModel } from '../src/models/model.types';
 import type { IHostingJobRow, IHostingProgress } from '../src/models/hosting.types';
 
@@ -27,7 +28,7 @@ function harness(locked = true) {
     const access = { claims: vi.fn(async () => ({ userRoles: ['Главный админ'] })) };
     const runtime = { start: vi.fn(async () => ({manifestSha256: 'a'.repeat(64), dimension: 3})), check: vi.fn(async () => ({manifestSha256: 'a'.repeat(64), dimension: 3})), stop: vi.fn(async () => undefined), status: vi.fn(async () => ({ state: 'ready', message: 'Готова', checkedAt: null })) };
     const repository = { setup: vi.fn(async () => undefined), latest: vi.fn(async () => undefined as IHostingJobRow | undefined), checkedAt: vi.fn(async () => null), interruptStale: vi.fn(async () => undefined), create: vi.fn(async (_lease, _id, action) => job(action)), update: vi.fn(async () => undefined) };
-    const service = new ModelHostingService(models as unknown as ModelsService, access as unknown as AccessDb, runtime as unknown as OllamaClient);
+    const service = new ModelHostingService(models as unknown as ModelsService, access as unknown as AccessDb, runtime as unknown as OllamaClient, undefined, {prepare:vi.fn(async()=>undefined)} as unknown as ModelBundleRuntime);
     Object.defineProperty(service, 'repository', { value: repository });
     return { service, lease, pool, models, access, runtime, repository };
 }

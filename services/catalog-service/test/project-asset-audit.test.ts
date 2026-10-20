@@ -14,7 +14,7 @@ describe('Транзакционный аудит состава проектн�
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.query.mockImplementation(async (sql: string) => {
-            if (sql.includes('FROM ai_plugins')) { return { rows: [{ id: row.asset_id, kind: row.asset_kind }] }; }
+            if (sql.includes('FROM ai_plugins')) { return { rows: [{ id:row.asset_id,kind:row.asset_kind,name:'audit-fixture',description:'fixture',version:1,files:[{path:'server.mjs',content:'export const fixture=1'}],config:{transport:'stdio',command:'node',entrypoint:'server.mjs'},tags:[],dependencies:[] }] }; }
             if (sql.startsWith('INSERT INTO project_assets') || sql.startsWith('DELETE FROM project_assets')) { return { rows: [row], rowCount: 1 }; }
             return { rows: [] };
         });
@@ -64,7 +64,7 @@ describe('Транзакционный аудит состава проектн�
 
     it('Назначение блокирует существующую карточку до INSERT для совместимости с DELETE', async () => {
         await db.addProjectAsset(row.project_id, row.asset_id, 'mcp', actor);
-        expect(mocks.query.mock.calls.find(([sql]) => sql.includes('FROM ai_plugins'))?.[0]).toContain('FOR KEY SHARE');
+        expect(mocks.query.mock.calls.find(([sql]) => sql.includes('FROM ai_plugins'))?.[0]).toContain('FOR SHARE');
     });
 
     it('Отсутствующий или неверно указанный тип карточки не оставляет ссылку и аудит', async () => {
@@ -72,7 +72,7 @@ describe('Транзакционный аудит состава проектн�
         mocks.query.mockImplementation(async (sql: string) => sql.includes('FROM ai_plugins') ? { rows: [] } : original(sql));
         await expect(db.addProjectAsset(row.project_id, row.asset_id, 'mcp', actor)).rejects.toMatchObject({ status: 404 });
         mocks.query.mockImplementation(async (sql: string) => sql.includes('FROM ai_plugins') ? { rows: [{ id: row.asset_id, kind: 'plugin' }] } : original(sql));
-        await expect(db.addProjectAsset(row.project_id, row.asset_id, 'mcp', actor)).rejects.toMatchObject({ status: 400 });
+        await expect(db.addProjectAsset(row.project_id, row.asset_id, 'mcp', actor)).rejects.toMatchObject({ status: 409 });
         expect(events()).toHaveLength(0);
         expect(mocks.query.mock.calls.some(([sql]) => sql.startsWith('INSERT INTO project_assets'))).toBe(false);
     });

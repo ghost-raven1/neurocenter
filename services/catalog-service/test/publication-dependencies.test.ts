@@ -32,6 +32,7 @@ describe('Целостность закреплённых зависимосте
             }
             if (sql.startsWith('INSERT INTO ai_plugins')) { return { rows: [{ ...row, dependencies: [pin] }] }; }
             if (sql.startsWith('SELECT GREATEST')) { return { rows: [{ v: 2 }] }; }
+            if(sql.startsWith('UPDATE ai_plugins SET archived_at')){return {rows:[{...row,archived_at:params?.[1]}]};}
             if (sql.startsWith('UPDATE ai_plugins')) { return { rows: [{ ...row, version: 2, dependencies: JSON.parse(String(params![9])) }] }; }
             return { rows: [] };
         });
@@ -80,12 +81,10 @@ describe('Целостность закреплённых зависимосте
         await expect(repository.create({ ...input, dependencies: [historicalPin] }, 'qa-author')).resolves.toMatchObject({ id: row.id });
     });
 
-    it('Используемая в чужом head или истории зависимость не удаляется', async () => {
-        referenced = true;
-        await expect(repository.delete(row.id, 'qa-author')).rejects.toMatchObject({ status: 409 });
-        const read = query.mock.calls.find(([sql]) => sql.includes("metadata->'dependencies'"));
-        expect(read?.[0]).toContain('ai_plugin_id<>$1');
-        expect(read?.[1]).toEqual([row.id, JSON.stringify([{ id: row.id }])]);
-        expect(query.mock.calls.some(([sql]) => sql.startsWith('DELETE '))).toBe(false);
+    it('Архив используемой зависимости сохраняет head и все исторические pins', async () => {
+        referenced=true;await expect(repository.delete(row.id,'qa-author')).resolves.toBe(true);
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('DELETE '))).toBe(false);
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE ai_plugins SET archived_at'))).toBe(true);
+        expect(query.mock.calls.at(-1)).toEqual(['COMMIT']);
     });
 });

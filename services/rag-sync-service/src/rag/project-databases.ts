@@ -18,7 +18,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     private readonly baseUrl=process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag';
     private readonly admin=createPool({connectionString:this.baseUrl,max:2},'rag-admin');
     private readonly provisioner=process.env.RAG_PROVISION_PG_URL?createPool({connectionString:process.env.RAG_PROVISION_PG_URL,max:1},'rag-provisioner'):this.admin;
-    private readonly legacy=new RagDb({url:this.baseUrl,dim:Number(process.env.RAG_DIM || 2560)});
+    private readonly migrationSource=new RagDb({url:this.baseUrl});
     private readonly cache=new Map<string,ICacheEntry>();
     private readonly pending=new Map<string,Promise<void>>();
     private readonly migrated=new Set<string>();
@@ -29,7 +29,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     async ready():Promise<void>{await Promise.all([this.admin.query('SELECT 1'),this.provisioner.query('SELECT 1')]);}
 
     async onModuleInit():Promise<void> {
-        await this.legacy.setup();
+        await this.migrationSource.setup();
         await this.admin.query(`CREATE TABLE IF NOT EXISTS neurocenter_project_databases (
             project_id TEXT PRIMARY KEY, database_name TEXT NOT NULL UNIQUE,
             migration_offset BIGINT NOT NULL DEFAULT 0, migrated BOOLEAN NOT NULL DEFAULT false,
@@ -38,7 +38,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     }
     async onModuleDestroy():Promise<void> {
         await Promise.all([...this.cache.values()].map(item=>item.db.close()));
-        await this.legacy.close(); await this.admin.end();
+        await this.migrationSource.close(); await this.admin.end();
         if(this.provisioner!==this.admin){await this.provisioner.end();}
     }
 
@@ -66,7 +66,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
             entry=this.cache.get(project.id);
             if (!entry) {
                 const url=new URL(this.baseUrl); url.pathname=`/${projectDatabaseName(project.id)}`;
-                const db=new RagDb({url:url.toString(),dim:Number(process.env.RAG_DIM || 2560)});
+                const db=new RagDb({url:url.toString()});
                 entry={db,used:Date.now(),active:0}; this.cache.set(project.id,entry);
             }
             entry.active++; entry.used=Date.now();
@@ -116,21 +116,26 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
             const state=await client.query('SELECT migrated,migration_offset FROM neurocenter_project_databases WHERE project_id=$1',[project.id]);
             if (state.rows[0].migrated) { return; }
             const url=new URL(this.baseUrl); url.pathname=`/${database}`;
-            target=new RagDb({url:url.toString(),dim:Number(process.env.RAG_DIM || 2560)}); await target.setup();
-            const canonicalCount=await this.legacy.count(project.id);
+            target=new RagDb({url:url.toString()}); await target.setup();
+            const generation=(id:string)=>'initial-'+createHash('md5').update(id).digest('hex');
+            const canonicalCount=await this.migrationSource.count(project.id,generation(project.id));
             // Имя из пространства ID не может быть источником чужого старого индекса.
             const source=canonicalCount>0 || project.name.startsWith('prj-') ? project.id : project.name;
-            await target.reserveLegacyQuota(project.id,await this.legacy.legacyQuotaBytes(source,project.id));
+            await target.reserveMigrationQuota(project.id,await this.migrationSource.migrationQuotaBytes(source,project.id));
+            const sourceSummary=await this.migrationSource.summary(source,generation(source));
             let offset=Number(state.rows[0].migration_offset);
             while (true) {
-                const rows=await this.legacy.rowsPage(source,500,offset);
+                const rows=await this.migrationSource.rowsPage(source,generation(source),500,offset);
                 if (!rows.length) { break; }
-                await target.applyDelta(project.id,rows,[]);
+                await target.applyDelta(project.id,generation(project.id),rows,[],sourceSummary.indexProfile?{indexProfile:sourceSummary.indexProfile,
+                    snapshot:{hash:sourceSummary.snapshotHash||'0'.repeat(64),rowCount:sourceSummary.rowCount,complete:false}}:{indexProfile:null});
                 offset+=rows.length;
                 await client.query('UPDATE neurocenter_project_databases SET migration_offset=$2 WHERE project_id=$1',[project.id,offset]);
             }
-            const expected=await this.legacy.count(source);
-            if (await target.count(project.id)<expected) { throw new Error('Проверка переноса проектной базы не пройдена.'); }
+            const expected=await this.migrationSource.count(source,generation(source));
+            if (await target.count(project.id,generation(project.id))<expected) { throw new Error('Проверка переноса проектной базы не пройдена.'); }
+            if(sourceSummary.complete&&sourceSummary.indexProfile&&sourceSummary.snapshotHash){await target.applyDelta(project.id,generation(project.id),[],[],{
+                indexProfile:sourceSummary.indexProfile,snapshot:{hash:sourceSummary.snapshotHash,rowCount:sourceSummary.rowCount,complete:true}});}
             await client.query('UPDATE neurocenter_project_databases SET migrated=true WHERE project_id=$1',[project.id]);
         } finally {
             releaseCapacity();

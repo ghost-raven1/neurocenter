@@ -1,54 +1,47 @@
-import {mkdtemp,mkdir,realpath,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,realpath,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {gzipSync} from 'node:zlib';
-import {createHash} from 'node:crypto';
-import {packModelBundle} from '../models/bundle.mjs';
-import {opencodeVersion} from '../opencode-platforms.mjs';
+import {assetDigest,serializeAsset} from '@neurocenter/asset-contract';
 import {syncAssets} from '../assets/sync.mjs';
-
-export const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+export const sha=assetDigest;
 export const ampleDisk=async()=>({bavail:64n*1024n**3n,bsize:1n});
-export const clone=value=>JSON.parse(JSON.stringify(value));
+export const clone=structuredClone;
 
-function archive(bytes) {
-    const header=Buffer.alloc(512);header.write('index.mjs');
-    const octal=(value,start,length)=>header.write(value.toString(8).padStart(length-1,'0')+'\0',start,length,'ascii');
-    octal(0o644,100,8);octal(0,108,8);octal(0,116,8);octal(bytes.length,124,12);octal(0,136,12);header.fill(32,148,156);
-    header[156]=48;header.write('ustar\0',257,6,'ascii');header.write('00',263,2,'ascii');
-    header.write(header.reduce((sum,byte)=>sum+byte,0).toString(8).padStart(6,'0')+'\0 ',148,8,'ascii');
-    return gzipSync(Buffer.concat([header,bytes,Buffer.alloc((512-bytes.length%512)%512),Buffer.alloc(1024)]));
-}
-
-export async function assetFixture(t) {
-    const root=await realpath(await mkdtemp(path.join(tmpdir(),'nc-assets-')));
-    t.after(()=>rm(root,{recursive:true,force:true}));
-    const json=async(relative,value)=>{const filename=path.join(root,relative);await mkdir(path.dirname(filename),{recursive:true});await writeFile(filename,JSON.stringify(value));};
-    const payloads=new Map(),calls=[],version='9.8.7',buildId='b'.repeat(64),bridgeBytes=Buffer.from('pinned bridge');
-    const artifact={file:`neurocenter-asset-sync-linux-x64-${version}.tgz`,metadata:{version,buildId,target:'linux-x64',nodeVersion:'24.22.0',ragSupported:true,
-        probeEngine:{version:opencodeVersion,file:'bin/opencode-probe',sha256:'c'.repeat(64)},bytes:bridgeBytes.length,sha256:sha(bridgeBytes)}};
-    artifact.url=`https://github.com/ghost-raven1/neurocenter/releases/download/bridge-v${version}/${artifact.file}`;payloads.set(artifact.url,bridgeBytes);
-    const bridge={schemaVersion:1,version,buildId,release:'bridge-v'+version,artifacts:[artifact]};
-    await json('scripts/bridge-runtime-release.json',bridge);await json('mcp/neurocenter-asset-sync/package.json',{version});
-    const source=Buffer.from('export const safe=true;'),tar=archive(source),descriptor={target:'linux-x64-glibc',sha256:sha(tar),compressedBytes:tar.length,unpackedBytes:source.length,filesCount:1,entrypoint:'index.mjs'};
-    const url=`https://github.com/ghost-raven1/neurocenter/releases/download/catalog-fixture.1/${descriptor.sha256}.tar.gz`;payloads.set(url,tar);
-    const catalog={schemaVersion:1,release:'catalog-fixture.1',tools:[{key:'fixture',publication:{kind:'plugin',name:'Fixture',revision:'1.0.0',files:[],config:{extra:{runtimeArtifacts:[descriptor]}}},legacyOrigins:[],artifacts:[{url,descriptor}]}]};
-    await json('scripts/catalog-plugins/catalog-release.json',catalog);
-    const sourceModels=path.join(root,'source'),output=path.join(root,'packed'),locks=[],models=[];
-    for(const [name,capability] of [['fixture-embedding','embedding'],['fixture-vision','vision']]) {
-        const weights=Buffer.from(name+' weights'),digest=sha(weights),manifest={schemaVersion:2,config:{digest:'sha256:'+digest,size:weights.length},layers:[]};
-        const manifestBytes=Buffer.from(JSON.stringify(manifest)),manifestSha256=sha(manifestBytes),model=name+':1';
-        const lock={schemaVersion:1,model,manifest,manifestSha256};locks.push(lock);
-        const lockPath=`scripts/${capability}/model.lock.json`;await json(lockPath,lock);
-        models.push({id:'model-'+name,name,descriptor:{description:'fixture',capability,runtime:'ollama',model,manifestSha256,dimension:capability==='embedding'?4:null,source:'builtin'},lock:`../${capability}/model.lock.json`});
-        await mkdir(path.join(sourceModels,'models/blobs'),{recursive:true});await writeFile(path.join(sourceModels,'models/blobs/sha256-'+digest),weights);
-        const tag=path.join(sourceModels,'models/manifests/registry.ollama.ai/library',name,'1');await mkdir(path.dirname(tag),{recursive:true});await writeFile(tag,manifestBytes);
-    }
-    await json('scripts/models/model-registry.json',{schemaVersion:1,models});
-    const bundle=await packModelBundle({directory:sourceModels,output,locks,baseUrl:'https://github.com/ghost-raven1/neurocenter/releases/download/models-fixture.1',partBytes:8});
-    await json('scripts/models/bundle-release.json',bundle);
-    for(const file of bundle.files)for(const part of file.parts||[])payloads.set(bundle.releaseBaseUrl+'/'+part.name,await readFile(path.join(output,part.name)));
-    const fetch=async(url,options)=>{calls.push(url);options.signal?.throwIfAborted();if(!payloads.has(url))throw new Error('Unexpected URL');return new Response(payloads.get(url),{headers:{'content-length':String(payloads.get(url).length)}});};
-    const run=options=>syncAssets({root,environment:{},fetch,readDisk:ampleDisk,...options});
-    return {root,json,bridge,catalog,bundle,payloads,calls,fetch,run,locks,receipt:path.join(root,'.run/assets-ready.json')};
+/** Малые синтетические bytes проходят настоящий новый source contract, без старых supply manifests. */
+export async function assetFixture(t){
+    const root=await realpath(await mkdtemp(path.join(tmpdir(),'nc asset source ')));t.after(()=>rm(root,{recursive:true,force:true}));
+    const payloads=new Map(),calls=[],commit='a'.repeat(40),raw=`https://raw.githubusercontent.com/ghost-raven1/neurocenter-assets/${commit}/`;
+    const source={type:'release',repository:'https://github.com/example/assets',tag:'v1.0.0'},base={schemaVersion:1,source,license:{spdx:'MIT'},compatibility:{packageFormat:5},version:'1.0.0'};
+    const toolBytes=Buffer.from('synthetic runtime archive'),toolSha=sha(toolBytes),toolUrl=`https://github.com/example/assets/releases/download/v1.0.0/${toolSha}.tar.gz`;
+    const tool={...base,id:'fixture-tool',kind:'plugin',card:{kind:'plugin',name:'Fixture plugin',description:'Описание',revision:'1.0.0',files:[],config:{}},
+        delivery:{type:'runtime-artifacts',artifacts:[{url:toolUrl,descriptor:{target:'linux-x64-glibc',sha256:toolSha,compressedBytes:toolBytes.length,unpackedBytes:10,filesCount:1,entrypoint:'index.mjs'}}]}};
+    payloads.set(toolUrl,toolBytes);
+    const bridgeBytes=Buffer.from('synthetic bridge'),bridgeSha=sha(bridgeBytes),buildId='b'.repeat(64),file='neurocenter-asset-sync-linux-x64-1.0.0.tgz';
+    const bridge={...base,id:'fixture-bridge',kind:'bridge',compatibility:{bridgeProtocol:2},card:{name:'Bridge',description:'Описание'},delivery:{type:'bridge-release',
+        release:{schemaVersion:1,version:'1.0.0',buildId,release:'bridge-v1.0.0',artifacts:[{file,url:`https://github.com/example/assets/releases/download/bridge-v1.0.0/${file}`,
+            metadata:{version:'1.0.0',buildId,target:'linux-x64',nodeVersion:'24.22.0',ragSupported:true,bytes:bridgeBytes.length,sha256:bridgeSha,
+                probeEngine:{version:'1.14.48',file:'bin/opencode-probe',sha256:'c'.repeat(64)}}}]}}};
+    payloads.set(bridge.delivery.release.artifacts[0].url,bridgeBytes);
+    const skill={...base,id:'fixture-skill',kind:'skill',card:{path:'common',slug:'fixture-skill',name:'Skill',body:'Инструкция',meta:{description:'Описание'}},delivery:{type:'inline'}};
+    const weights=Buffer.from('synthetic weights'),weightSha=sha(weights),manifest={schemaVersion:2,config:{digest:'sha256:'+weightSha,size:weights.length},layers:[]};
+    const manifestBytes=Buffer.from(JSON.stringify(manifest)),manifestSha=sha(manifestBytes),releaseBaseUrl='https://github.com/example/assets/releases/download/models-v1.0.0';
+    const part={name:`model-${weightSha}-001.bin`,size:weights.length,sha256:weightSha};payloads.set(releaseBaseUrl+'/'+part.name,weights);
+    const model={...base,id:'model-fixture',kind:'model',card:{id:'model-fixture',name:'Model',descriptor:{description:'Описание',capability:'embedding',runtime:'ollama',model:'fixture:1',manifestSha256:manifestSha,dimension:4,source:'builtin'}},
+        delivery:{type:'model-bundle',lock:{schemaVersion:1,model:'fixture:1',dimension:4,capability:'embedding',registryManifestUrl:'https://registry.ollama.ai/v2/library/fixture/manifests/1',manifestSha256:manifestSha,manifest,image:'ollama/ollama@sha256:'+'d'.repeat(64)},
+            bundle:{schemaVersion:1,kind:'neurocenter-model-bundle',releaseBaseUrl,files:[{path:'models/manifests/registry.ollama.ai/library/fixture/1',size:manifestBytes.length,sha256:manifestSha,inlineBase64:manifestBytes.toString('base64')},
+                {path:'models/blobs/sha256-'+weightSha,size:weights.length,sha256:weightSha,parts:[part]}]}}};
+    let assets=[tool,bridge,skill,model],index,pin;
+    const json=async(relative,value)=>{const filename=path.join(root,relative);await mkdir(path.dirname(filename),{recursive:true});await writeFile(filename,JSON.stringify(value)+'\n');};
+    const publish=async(records=assets)=>{
+        assets=records;index={schemaVersion:1,assets:[]};
+        for(const record of records){const asset=record.asset??record,current=record.current??true,bytes=serializeAsset(asset),relative=`assets/${asset.id}/${asset.version}/asset.json`;
+            index.assets.push({id:asset.id,version:asset.version,kind:asset.kind,path:relative,sha256:sha(bytes),current});payloads.set(raw+relative,Buffer.from(bytes));}
+        const bytes=Buffer.from(JSON.stringify(index)+'\n');payloads.set(raw+'index.json',bytes);
+        pin={schemaVersion:1,repository:'ghost-raven1/neurocenter-assets',commit,index:{path:'index.json',sha256:sha(bytes)}};await json('services/shared/asset-source.lock.json',pin);
+    };
+    await publish();
+    const request=async(url,options={})=>{url=String(url);calls.push(url);options.signal?.throwIfAborted();const bytes=payloads.get(url);if(!bytes)throw new Error('Unexpected synthetic URL');return new Response(bytes,{headers:{'content-length':String(bytes.length)}});};
+    const run=options=>syncAssets({root,environment:{},fetch:request,readDisk:ampleDisk,...options});
+    return {root,json,publish,tool,bridge,skill,model,payloads,calls,fetch:request,run,raw,get index(){return index;},get pin(){return pin;},
+        blob:sha=>path.join(root,'data/runtime-artifacts/.asset-source-blobs',sha+'.blob'),receipt:path.join(root,'.run/assets-ready.json')};
 }

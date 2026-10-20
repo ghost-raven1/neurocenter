@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { IModel, IModelList } from './model.types';
 import { validateModelAssignment } from './model-validation';
@@ -16,7 +16,13 @@ export class ModelsController {
     get(@Param('id') id: string, @Req() req: Request): Promise<IModel> { return this.models.getAccessible(id, req); }
 
     @Post('models')
-    async create(@Body() body: unknown, @Req() req: Request): Promise<IModel> { return this.models.create(body, await this.models.requireMain(req)); }
+    async create(@Body() body: unknown, @Req() req: Request): Promise<IModel> {
+        const actor = await this.models.requireMain(req);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || !('requestKey' in body) || typeof body.requestKey !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(body.requestKey)) throw new BadRequestException('Передайте ключ создания модели для безопасного повтора.');
+        const { requestKey, ...input } = body;
+        if (!('runtime' in input) || !['remote-openai', 'remote-ollama'].includes(String(input.runtime))) throw new BadRequestException('Локальная модель добавляется импортом проверенного ассета. Здесь можно создать подключение удалённого API.');
+        return this.models.create(input, actor, requestKey);
+    }
 
     @Patch('models/:id')
     async update(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<IModel> {
