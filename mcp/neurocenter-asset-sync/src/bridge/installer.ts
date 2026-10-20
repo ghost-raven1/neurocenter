@@ -6,6 +6,10 @@ import { withProjectFiles, commitChanges } from './installation-files.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger } from './installation-ledger.js';
 import { planInstall } from './installation-planner.js';
+import { CONFIG_PATHS } from './installation-files.js';
+import { parse, type ParseError } from 'jsonc-parser';
+import { isHostedMcpUrl, requestHostedMcpConnection } from '../features/mcp-host/connect.js';
+import { verifyHostedMcpChannel } from '../features/mcp-host/verify.js';
 import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
 
 type Authorize = () => Promise<unknown>;
@@ -40,8 +44,13 @@ async function installPackages(projectId: string, packages: Package[], pkg: Pack
             bases.add(base);
             ledger.assertInstall(key, member);
         }
-        for (const member of ordered) { await planInstall(plan, member); }
+        for (const member of ordered) { await planInstall(plan, member, { hostedMcp: (p) => requestHostedMcpConnection(projectId, p) }); }
         await ledger.install(packageRef(pkg), manifest, ordered);
+        const hostedChannels = await plannedHostedChannels(plan);
+        for (const url of hostedChannels) {
+            try { await verifyHostedMcpChannel(url); }
+            catch (error) { throw new Error('Не удалось подтвердить хост MCP на площадке: ' + (error as Error).message); }
+        }
         await progress(35, multiple ? 'Граф зависимостей, конфигурация и локальные файлы проверены' : 'Пакет и локальные файлы проверены');
         await authorize();
         if (await projectFolder(projectId) !== root) {
@@ -58,9 +67,31 @@ async function installPackages(projectId: string, packages: Package[], pkg: Pack
             readiness: 'unverified',
             note: packages.some(member=>{try{return member.plugin.kind==='mcp'&&!!localRagUi(member);}catch{return false;}})
                 ? 'Подключение opencode-rag mcp включено. Уже открытый OpenCode перезапустите для перечитывания конфигурации.'
-                : 'Файлы установлены. OpenCode перечитает конфигурацию при следующем запуске; авторизация внешнего MCP выполняется отдельно.',
+                : hostedChannels.length
+                    ? 'Управляемый MCP работает на площадке. OpenCode перечитает конфигурацию при следующем запуске.'
+                    : 'Файлы установлены. OpenCode перечитает конфигурацию при следующем запуске; авторизация внешнего MCP выполняется отдельно.',
         };
         const recoveryPath = await commitChanges(root, changes, { action: 'install', assetKey: key, manifest, result });
         return { ...result, recoveryPath };
     });
+}
+
+/** Планируемые записи MCP-хоста в снимке конфигурации: проверяются до фиксации файлов. */
+async function plannedHostedChannels(plan: InstallationPlan): Promise<string[]> {
+    for (const candidate of CONFIG_PATHS) {
+        const text = await plan.read(candidate);
+        if (text === null) { continue; }
+        const errors: ParseError[] = [];
+        const parsed = parse(text, errors, { allowTrailingComma: true }) as Record<string, unknown> | null;
+        if (errors.length || !parsed || Array.isArray(parsed) || typeof parsed !== 'object') { continue; }
+        const entries = (parsed.mcp ?? {}) as Record<string, unknown>;
+        if (!entries || Array.isArray(entries) || typeof entries !== 'object') { continue; }
+        const urls: string[] = [];
+        for (const item of Object.values(entries)) {
+            if (item && typeof item === 'object' && (item as { type?: unknown }).type === 'remote'
+                && isHostedMcpUrl((item as { url?: unknown }).url)) { urls.push((item as { url: string }).url); }
+        }
+        return urls;
+    }
+    return [];
 }

@@ -4,7 +4,7 @@ import { parse } from 'jsonc-parser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { install } from '../src/bridge/installer.js';
 import { uninstall } from '../src/bridge/uninstaller.js';
-import { assetBase, assetKey, receiptPath } from '../src/bridge/installation-receipt.js';
+import { assetBase, receiptPath } from '../src/bridge/installation-receipt.js';
 import { readText } from '../src/bridge/installation-files.js';
 import { writeState } from '../src/bridge/state.js';
 import { packageFixture, workspaceFixture } from './bridge-fixture.js';
@@ -86,7 +86,8 @@ describe('Безопасное удаление локального инстр�
         await install('test-project', pkg, authorize, progress);
         const file = path.join(fixture.root, 'opencode.json');
         const config = JSON.parse(await fs.readFile(file, 'utf8'));
-        config.mcp['neurocenter_' + assetKey(pkg)].enabled = false;
+        const receiptValue = JSON.parse(await fs.readFile(path.join(fixture.root, receiptPath(pkg)), 'utf8'));
+        config.mcp[receiptValue.config.key].enabled = false;
         await fs.writeFile(file, JSON.stringify(config));
         await expect(uninstall('test-project', pkg, authorize, progress)).rejects.toThrow(
             'вручную',

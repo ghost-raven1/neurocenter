@@ -5,7 +5,7 @@ import { parse, modify, applyEdits } from 'jsonc-parser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { install, installSet } from '../src/bridge/installer.js';
 import { prepareLocalChange, applyLocalChange, localChangeReportPath, type LocalChangeSummary } from '../src/bridge/local-change-plan.js';
-import { assetBase, assetKey, receiptPath } from '../src/bridge/installation-receipt.js';
+import { assetBase, receiptPath } from '../src/bridge/installation-receipt.js';
 import { journalDirectory } from '../src/bridge/installation-journal.js';
 import { LEDGER_PATH } from '../src/bridge/installation-ledger.js';
 import { hash, stateDir } from '../src/bridge/state.js';
@@ -28,7 +28,7 @@ describe('Явное сравнение и восстановление лока
     }
     async function editMcp(pkg: ReturnType<typeof packageFixture>, value: unknown) {
         const receipt = JSON.parse(await read(receiptPath(pkg)));
-        await write(receipt.config.path, applyEdits(await read(receipt.config.path), modify(await read(receipt.config.path), ['mcp', 'neurocenter_' + assetKey(pkg)], value, {})));
+        await write(receipt.config.path, applyEdits(await read(receipt.config.path), modify(await read(receipt.config.path), ['mcp', receipt.config.key], value, {})));
         return receipt;
     }
     it('Сравнение не изменяет проект и не передаёт серверу текст или локальные пути', async () => {

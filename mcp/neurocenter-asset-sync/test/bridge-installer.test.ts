@@ -159,7 +159,7 @@ describe('Локальная установка из очереди MCP', () => 
         expect(result.model).toBe('local/test');
         expect(result.mcp.other.url).toBe('https://example.test/mcp');
         const installed = Object.entries(result.mcp).find(([key]) =>
-            key.startsWith('neurocenter_'),
+            key.startsWith('neurocenter_') || key.startsWith('neurocenter-'),
         )![1] as { command: string[]; environment: Record<string, string> };
         expect(installed.command.slice(-2)).toEqual([
             'два слова',

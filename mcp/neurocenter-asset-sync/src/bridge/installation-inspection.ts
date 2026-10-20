@@ -5,10 +5,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse, type ParseError } from 'jsonc-parser';
-import { hash, stateDir } from './state.js';
+import { hash, hub, stateDir } from './state.js';
+import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
 import { verify, type Package } from './package.js';
 import { projectFolder, projectBindingId, safeTarget } from './workspace.js';
-import { assetBase, assetKey, receiptPath, removalReceipt, sameValue, type Receipt } from './installation-receipt.js';
+import { assetBase, legacyMcpConfigKey, mcpConfigKey, receiptPath, removalReceipt, sameValue, type Receipt } from './installation-receipt.js';
 import { CONFIG_PATHS } from './installation-files.js';
 import { LEDGER_PATH } from './installation-ledger.js';
 import { inspectLedger } from './inspection-ledger.js';
@@ -91,8 +92,6 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
     };
     try {
         verify(pkg);
-        await resolvePreparedRuntimeArtifact(pkg);
-        if (!options.lockHeld && await busy(root)) { return occupied('inspection-busy'); }
         const rawReceipt = await read(receiptPath(pkg), 256 * 1024);
         let receipt: Receipt | undefined;
         if (rawReceipt === null) { issue('receipt-missing', 'missing'); }
@@ -104,6 +103,13 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
                 catch { issue('receipt-mismatch', 'modified'); }
             } catch { issue('receipt-invalid'); }
         }
+        const receiptValue = (receipt?.config?.value ?? null) as { type?: unknown; url?: unknown } | null;
+        const hostedInstallation = pkg.plugin.kind === 'mcp' && !!receiptValue && typeof receiptValue === 'object'
+            && receiptValue.type === 'remote' && isHostedMcpUrl(receiptValue.url)
+            && (() => { try { return new URL(receiptValue.url).origin === hub(); } catch { return false; } })();
+        // Платформа исполняет комплекс: локальный кэш для такой установки не требуется.
+        if (!hostedInstallation) { await resolvePreparedRuntimeArtifact(pkg); }
+        if (!options.lockHeld && await busy(root)) { return occupied('inspection-busy'); }
         const ledger = await read(LEDGER_PATH, 4 * 1048576);
         if (ledger === null) { issue('ledger-missing'); }
         else if (ledger) {
@@ -116,7 +122,7 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
             else if (bytes && (bytes.length !== file.size || hash(bytes) !== file.sha256)) { issue('file-modified', 'modified'); }
         }
         if (pkg.plugin.kind !== 'skill') {
-            const expected = expectedConnection(configRoot, pkg);
+            const expected = hostedInstallation && receipt?.config ? receipt.config.value : expectedConnection(configRoot, pkg);
             if (receipt?.config) {
                 const match = connectionMatches(receipt.config.value, expected, pkg);
                 if (match === 'runtime') { issue('runtime-path-unverified'); }
@@ -132,7 +138,8 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
                     if (errors.length || !config || typeof config !== 'object' || Array.isArray(config)) { throw new Error(); }
                     if (pkg.plugin.kind === 'mcp') {
                         if (config.mcp !== undefined && (!config.mcp || typeof config.mcp !== 'object' || Array.isArray(config.mcp))) { throw new Error(); }
-                        const value = (config.mcp as Record<string, unknown> | undefined)?.['neurocenter_' + assetKey(pkg)];
+                        const mcpEntries = (config.mcp as Record<string, unknown> | undefined) ?? {};
+                        const value = mcpEntries[mcpConfigKey(pkg)] ?? mcpEntries[legacyMcpConfigKey(pkg)];
                         if (value !== undefined) { candidates.push({ relative, value }); }
                     } else {
                         if (config.plugin !== undefined && !Array.isArray(config.plugin)) { throw new Error(); }

@@ -4,7 +4,7 @@ import { CONFIG_PATHS } from './installation-files.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger, LEDGER_PATH } from './installation-ledger.js';
 import { inspectLedger } from './inspection-ledger.js';
-import { assetBase, assetKey, receiptPath, removalReceipt, sameValue, type Receipt } from './installation-receipt.js';
+import { assetBase, assetKey, legacyMcpConfigKey, mcpConfigKey, receiptPath, removalReceipt, sameValue, type Receipt } from './installation-receipt.js';
 import { verify, type Package } from './package.js';
 import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
 import { InventoryReader } from './project-inventory-reader.js';
@@ -78,25 +78,26 @@ export async function adoptionPlan(root: string, frozen: FrozenAdoption): Promis
             files: Object.fromEntries(member.files.map(file => [base + '/' + file.path, file.sha256])),
             ...(member.files.some(file => file.encoding) ? { encodings: Object.fromEntries(member.files.filter(file => file.encoding).map(file => [base + '/' + file.path, file.encoding!])) } : {}) };
         if (member.plugin.kind !== 'skill') {
-            const expectedValue = expectedAdoptConnection(root, member); const configKey = 'neurocenter_' + assetKey(member);
-            const matches: Array<{ path: string; value: unknown }> = [];
+            const expectedValue = expectedAdoptConnection(root, member); const configKey = mcpConfigKey(member); const legacyKey = legacyMcpConfigKey(member);
+            const matches: Array<{ path: string; value: unknown; key: string }> = [];
             for (const [relative, config] of configs) {
                 if (member.plugin.kind === 'mcp') {
                     for (const [entryKey, value] of Object.entries(config.mcp as Record<string, unknown> ?? {})) {
-                        if (entryKey === configKey) { matches.push({ path: relative, value }); }
+                        // Квитанция фиксирует фактический ключ подключения, какой бы ни был на диске.
+                        if (entryKey === configKey || entryKey === legacyKey) { matches.push({ path: relative, value, key: entryKey }); }
                         else if (sameValue(value, expectedValue) || commandInside(value, root, member)) { throw new Error('Подключение имеет другого владельца или неоднозначно.'); }
                     }
                 } else {
                     for (const value of config.plugin as unknown[] ?? []) {
-                        if (sameValue(value, expectedValue) || configSpecInside(value, root, member)) { matches.push({ path: relative, value }); }
+                        if (sameValue(value, expectedValue) || configSpecInside(value, root, member)) { matches.push({ path: relative, value, key: 'plugin' }); }
                     }
                 }
             }
             if (matches.length !== 1 || !sameValue(matches[0]!.value, expectedValue)) { throw new Error('Подключение не совпадает с одобренным пакетом или неоднозначно.'); }
-            receipt.config = { path: matches[0]!.path, key: member.plugin.kind === 'mcp' ? configKey : 'plugin', value: expectedValue };
+            receipt.config = { path: matches[0]!.path, key: matches[0]!.key, value: expectedValue };
             if (knownReceipts.some(item => item.key !== assetKey(member) && typeof item.value.config?.path === 'string'
                 && item.value.config.path.normalize('NFC').toLowerCase() === receipt.config!.path.normalize('NFC').toLowerCase()
-                && (member.plugin.kind === 'mcp' ? item.value.config.key === configKey : sameValue(item.value.config.value, expectedValue)))) { throw new Error('Подключение уже принадлежит другому инструменту.'); }
+                && (member.plugin.kind === 'mcp' ? item.value.config.key === configKey || item.value.config.key === legacyKey : sameValue(item.value.config.value, expectedValue)))) { throw new Error('Подключение уже принадлежит другому инструменту.'); }
         }
         if (existing && !sameValue(existing, receipt)) { throw new Error('Существующая квитанция зависимости отличается от точного пакета.'); }
         if (!existing) { await plan.write(receiptPath(member), JSON.stringify(receipt, null, 2) + '\n'); }

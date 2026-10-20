@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { install } from '../src/bridge/installer.js';
 import { inspectInstallation } from '../src/bridge/installation-inspection.js';
-import { assetBase, assetKey, receiptPath } from '../src/bridge/installation-receipt.js';
+import { assetBase, assetKey, mcpConfigKey, receiptPath } from '../src/bridge/installation-receipt.js';
 import { canonicalV4, verify, type Package } from '../src/bridge/package.js';
 import { hash, stateDir } from '../src/bridge/state.js';
 import { uninstall } from '../src/bridge/uninstaller.js';
@@ -115,7 +115,7 @@ describe.runIf(Boolean(requested))('Реальные готовые инстру
             if (pkg.plugin.kind === 'plugin') {
                 expect(config.plugin).toEqual([...personal.plugin, pathToFileURL(entrypoint).href]);
             } else {
-                const connection = config.mcp['neurocenter_' + assetKey(pkg)];
+                const connection = config.mcp[mcpConfigKey(pkg)];
                 expect(connection.type).toBe('local');
                 expect(path.isAbsolute(connection.command[0])).toBe(true);
                 if (pkg.config?.extra?.localConfiguration) {

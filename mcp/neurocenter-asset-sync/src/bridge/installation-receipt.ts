@@ -13,6 +13,13 @@ export const sameValue = (a: unknown, b: unknown): boolean =>
     JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 export const assetKey = (pkg: Package): string =>
     hash(pkg.plugin.kind + ':' + pkg.plugin.id).slice(0, 24);
+export const legacyMcpConfigKey = (pkg: Package): string =>
+    'neurocenter_' + assetKey(pkg);
+/** Читаемое имя MCP из названия инструмента; хэш-ключ остаётся запасным, если имя не slug-ируется. */
+export const mcpConfigKey = (pkg: Package): string => {
+    const slug = pkg.plugin.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return /^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) ? 'neurocenter-' + slug : legacyMcpConfigKey(pkg);
+};
 export const assetBase = (pkg: Package): string =>
     pkg.plugin.kind === 'skill'
         ? `.opencode/skills/${pkg.plugin.name}`
@@ -59,14 +66,15 @@ export function removalReceipt(text: string, pkg: Package): Receipt {
             'В квитанции скилла обнаружена посторонняя конфигурация.',
         );
     }
+    const connectionKeys =
+        pkg.plugin.kind === 'mcp'
+            ? [mcpConfigKey(pkg), legacyMcpConfigKey(pkg)]
+            : ['plugin'];
     if (
         pkg.plugin.kind !== 'skill' &&
         (!receipt.config ||
             !CONFIG_PATHS.includes(receipt.config.path) ||
-            receipt.config.key !==
-                (pkg.plugin.kind === 'mcp'
-                    ? 'neurocenter_' + assetKey(pkg)
-                    : 'plugin'))
+            !connectionKeys.includes(receipt.config.key))
     ) {
         throw new Error(
             'Квитанция подключения повреждена. Конфигурация не изменена.',

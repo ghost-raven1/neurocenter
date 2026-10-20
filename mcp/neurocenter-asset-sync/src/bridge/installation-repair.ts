@@ -5,7 +5,7 @@ import { parse, type ParseError } from 'jsonc-parser';
 import type { Package } from './package.js';
 import type { InstallationPlan } from './installation-plan.js';
 import { CONFIG_PATHS } from './installation-files.js';
-import { assetBase, assetKey, removalReceipt, type Receipt } from './installation-receipt.js';
+import { assetBase, legacyMcpConfigKey, mcpConfigKey, removalReceipt, type Receipt } from './installation-receipt.js';
 
 function previousRoot(receipt: Receipt, pkg: Package): string | undefined {
     if (pkg.config?.extra?.runtimeArtifacts || pkg.config?.extra?.localConfiguration) { return undefined; }
@@ -32,7 +32,7 @@ export async function repairReceipt(plan: InstallationPlan, raw: string, pkg: Pa
     if (pkg.plugin.kind === 'skill') { return receipt; }
     const sourceRoot = previousRoot(receipt, pkg);
     const candidates: Array<{ path: string; value: unknown }> = [];
-    const key = 'neurocenter_' + assetKey(pkg);
+    const mcpKeys = new Set([mcpConfigKey(pkg), legacyMcpConfigKey(pkg)]);
     const runtime = runtimeArtifactConnection(pkg);
     const bases = [...new Set([plan.root, sourceRoot].filter((root): root is string => !!root))].map(root => path.join(root, assetBase(pkg)));
     if (runtime) { bases.push(path.dirname(runtime.entrypoint)); }
@@ -53,7 +53,9 @@ export async function repairReceipt(plan: InstallationPlan, raw: string, pkg: Pa
         if (errors.length || !config || typeof config !== 'object' || Array.isArray(config)) { throw new Error('Исправьте JSON/JSONC конфигурации перед восстановлением.'); }
         if (pkg.plugin.kind === 'mcp') {
             if (config.mcp !== undefined && (!config.mcp || typeof config.mcp !== 'object' || Array.isArray(config.mcp))) { throw new Error('Поле mcp должно быть объектом.'); }
-            const value = (config.mcp as Record<string, unknown> | undefined)?.[key];
+            const mcpEntries = (config.mcp as Record<string, unknown> | undefined) ?? {};
+            const entryKey = [...mcpKeys].find(known => mcpEntries[known] !== undefined);
+            const value = entryKey === undefined ? undefined : mcpEntries[entryKey];
             if (value !== undefined) { candidates.push({ path: relative, value }); }
         } else {
             if (config.plugin !== undefined && !Array.isArray(config.plugin)) { throw new Error('Поле plugin должно быть массивом.'); }

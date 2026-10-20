@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { inspectInstallation } from '../src/bridge/installation-inspection.js';
 import { install, installSet } from '../src/bridge/installer.js';
 import { uninstall } from '../src/bridge/uninstaller.js';
-import { assetBase, assetKey, receiptPath } from '../src/bridge/installation-receipt.js';
+import { assetBase, assetKey, mcpConfigKey, receiptPath } from '../src/bridge/installation-receipt.js';
 import { LEDGER_PATH } from '../src/bridge/installation-ledger.js';
 import { hash, stateDir } from '../src/bridge/state.js';
 import { writeState } from '../src/bridge/state.js';
@@ -143,7 +143,7 @@ describe('Проверка известной установки без запи
         const file = path.join(fixture.root, 'opencode.json');
         if (state === 'missing') { await fs.rm(file); }
         else if (state === 'invalid') { await fs.writeFile(file, '{"mcp":'); }
-        else { const value = JSON.parse(await fs.readFile(file, 'utf8')); value.mcp['neurocenter_' + assetKey(pkg)].enabled = false; await fs.writeFile(file, JSON.stringify(value)); }
+        else { const value = JSON.parse(await fs.readFile(file, 'utf8')); value.mcp[mcpConfigKey(pkg)].enabled = false; await fs.writeFile(file, JSON.stringify(value)); }
         const result = await inspectInstallation('test-project', pkg);
         expect(result.status).toBe(state === 'missing' ? 'missing' : state === 'invalid' ? 'unknown' : 'modified');
         expect(result.issues).toContain('config-' + state);
@@ -153,7 +153,7 @@ describe('Проверка известной установки без запи
         const value = JSON.parse(await fs.readFile(receipt(pkg), 'utf8')); value.config.value.environment = { TOKEN: 'ТАЙНЫЙ_ТОКЕН' };
         await fs.writeFile(receipt(pkg), JSON.stringify(value));
         const configFile = path.join(fixture.root, 'opencode.json'); const config = JSON.parse(await fs.readFile(configFile, 'utf8'));
-        config.mcp['neurocenter_' + assetKey(pkg)] = value.config.value; await fs.writeFile(configFile, JSON.stringify(config));
+        config.mcp[mcpConfigKey(pkg)] = value.config.value; await fs.writeFile(configFile, JSON.stringify(config));
         const result = await inspectInstallation('test-project', pkg);
         expect(result.status).toBe('modified'); expect(result.issues).toContain('receipt-mismatch'); expect(result.issues).toContain('config-modified');
         expect(JSON.stringify(result)).not.toContain('ТАЙНЫЙ_ТОКЕН');
@@ -163,7 +163,7 @@ describe('Проверка известной установки без запи
         const value = JSON.parse(await fs.readFile(receipt(pkg), 'utf8')); value.config.value.command[0] = '/tmp/никогда-не-запускать';
         await fs.writeFile(receipt(pkg), JSON.stringify(value));
         const configFile = path.join(fixture.root, 'opencode.json'); const config = JSON.parse(await fs.readFile(configFile, 'utf8'));
-        config.mcp['neurocenter_' + assetKey(pkg)] = value.config.value; await fs.writeFile(configFile, JSON.stringify(config));
+        config.mcp[mcpConfigKey(pkg)] = value.config.value; await fs.writeFile(configFile, JSON.stringify(config));
         expect(await inspectInstallation('test-project', pkg)).toMatchObject({ state: 'checked', status: 'unknown', issues: ['runtime-path-unverified'], readiness: 'unverified' });
     });
     it('Два подключения одного инструмента в разных конфигурациях считаются неоднозначными', async () => {

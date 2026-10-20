@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hash } from './state.js';
 import { projectFolder, projectBindingId, projectInstanceId } from './workspace.js';
 import { CONFIG_PATHS, commitChanges, withProjectFiles } from './installation-files.js';
-import { assetBase, assetKey, sameValue } from './installation-receipt.js';
+import { assetBase, assetKey, legacyMcpConfigKey, mcpConfigKey, sameValue } from './installation-receipt.js';
 import { packageRef, sortedRefs, type InstallSet } from './install-set.js';
 import type { Package } from './package.js';
 import { validateChanges } from './installation-journal.js';
@@ -38,7 +38,7 @@ export async function prepareAdoptInstallation(projectId: string, pkg: Package, 
         const prepared = await adoptionPlan(root, frozen);
         if (CONFIG_PATHS.includes(candidate.path)) {
             const selector = scan.selectors[candidate.candidateId]; const config = prepared.configs.get(candidate.path);
-            if (!config || (pkg.plugin.kind === 'mcp' ? selector !== 'mcp:neurocenter_' + assetKey(pkg)
+            if (!config || (pkg.plugin.kind === 'mcp' ? selector !== 'mcp:' + mcpConfigKey(pkg) && selector !== 'mcp:' + legacyMcpConfigKey(pkg)
                 : !selector?.startsWith('plugin:') || !sameValue((config.plugin as unknown[] | undefined)?.[Number(selector.slice(7))], expectedAdoptConnection(root, pkg)))) {
                 throw new Error('Выбранное подключение не соответствует одобренному инструменту.');
             }

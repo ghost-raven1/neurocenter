@@ -3,10 +3,11 @@ import { runtimeArtifactConnection } from '../features/runtime-artifacts/connect
 import { configurationConnection } from '../features/local-configuration/launcher-descriptor.js';
 import { pathToFileURL } from 'node:url';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
-import { hash } from './state.js';
+import { hash, hub } from './state.js';
 import { safeTarget } from './workspace.js';
 import type { Package } from './package.js';
-import { assetBase, assetKey, receiptPath as managedReceiptPath, sameValue as same, type Receipt } from './installation-receipt.js';
+import { assetBase, legacyMcpConfigKey, mcpConfigKey, receiptPath as managedReceiptPath, sameValue as same, type Receipt } from './installation-receipt.js';
+import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
 import { CONFIG_PATHS } from './installation-files.js';
 import type { InstallationPlan } from './installation-plan.js';
 import { repairReceipt } from './installation-repair.js';
@@ -23,18 +24,29 @@ function parsePreviousReceipt(raw: string, base: string): Receipt {
 }
 
 /** Готовит пакет без записи: все участники набора используют один снимок конфигурации. */
-export async function planInstall(plan: InstallationPlan, pkg: Package, options: { repair?: boolean; runtimeRepairPreview?: boolean } = {}): Promise<void> {
+export interface PlanInstallOptions { repair?: boolean; runtimeRepairPreview?: boolean; hostedMcp?: (pkg: Package) => Promise<string> }
+
+export async function planInstall(plan: InstallationPlan, pkg: Package, options: PlanInstallOptions = {}): Promise<void> {
     const root = plan.root;
     if (options.runtimeRepairPreview && !options.repair) { throw new Error('Пропуск проверки кэша допустим только в явном сравнении восстановления.'); }
-    if (!options.runtimeRepairPreview) { await resolvePreparedRuntimeArtifact(pkg); plan.expectRuntimeArtifact(pkg); }
     const runtime = runtimeArtifactConnection(pkg);
     const configured = configurationConnection(root, pkg);
-    const key = assetKey(pkg);
     const base = assetBase(pkg);
     const receiptPath = managedReceiptPath(pkg);
+    const wantsHosted = pkg.plugin.kind === 'mcp' && !!runtime && !configured
+        && (pkg.config?.transport ?? 'local') !== 'remote' && pkg.config?.extra?.hostedMcp === true;
+    const useHosted = wantsHosted && !options.repair && !!options.hostedMcp;
     const raw = await plan.read(receiptPath);
     if (options.repair && !raw) { throw new Error('Нет квитанции текущей установки. Автоматическое восстановление недоступно.'); }
     const previous = raw ? options.repair ? await repairReceipt(plan, raw, pkg) : parsePreviousReceipt(raw, base) : undefined;
+    const previousHosted = !!previous?.config && previous.config.value !== null && typeof previous.config.value === 'object'
+        && (previous.config.value as { type?: unknown; url?: unknown }).type === 'remote'
+        && isHostedMcpUrl((previous.config.value as { url?: unknown }).url);
+    // Платформа исполняет комплекс: локальный архив для него не скачивается и не проверяется.
+    if (!options.runtimeRepairPreview && !useHosted && !(options.repair && previousHosted)) {
+        await resolvePreparedRuntimeArtifact(pkg);
+        plan.expectRuntimeArtifact(pkg);
+    }
     const planned = new Map(
         pkg.files.map((file) => [`${base}/${file.path}`, file]),
     );
@@ -113,7 +125,13 @@ export async function planInstall(plan: InstallationPlan, pkg: Package, options:
                 'Исправьте JSON/JSONC конфигурации OpenCode. Файл не изменён.',
             );
         }
-        const mcpKey = 'neurocenter_' + key;
+        const mcpKey = mcpConfigKey(pkg);
+        const legacyKey =
+            previous?.config?.key === legacyMcpConfigKey(pkg) &&
+            legacyMcpConfigKey(pkg) !== mcpKey
+                ? legacyMcpConfigKey(pkg)
+                : undefined;
+        const mcpEntries = (parsed.mcp ?? {}) as Record<string, unknown>;
         let value: unknown;
         let editPath: (string | number)[];
         if (pkg.plugin.kind === 'mcp') {
@@ -129,9 +147,12 @@ export async function planInstall(plan: InstallationPlan, pkg: Package, options:
             ) {
                 throw new Error('Поле mcp должно быть объектом.');
             }
-            const existing = (
-                parsed.mcp as Record<string, unknown> | undefined
-            )?.[mcpKey];
+            // Старые установки ещё хранят хэш-ключ: имя мигрируется один раз по квитанции.
+            const migrated = legacyKey !== undefined ? mcpEntries[legacyKey] : undefined;
+            const existing = mcpEntries[mcpKey] ?? migrated;
+            if (!options.repair && legacyKey !== undefined && mcpEntries[mcpKey] !== undefined) {
+                throw new Error('Подключение MCP изменено вручную.');
+            }
             if (
                 !options.repair && (previous?.config
                     ? !same(existing, previous.config.value)
@@ -158,35 +179,48 @@ export async function planInstall(plan: InstallationPlan, pkg: Package, options:
                     ...(config.oauth === false ? { oauth: false } : {}),
                 };
             } else {
-                if (!runtime && !config.command) {
-                    throw new Error('Не задана команда MCP.');
+                const previousValue = previous?.config?.value as { type?: unknown; url?: unknown } | undefined;
+                const previousIsHosted = !!previousValue && typeof previousValue === 'object'
+                    && previousValue.type === 'remote' && isHostedMcpUrl(previousValue.url)
+                    && new URL(previousValue.url).origin === hub();
+                if (previousIsHosted) {
+                    // Билет живёт до истечения: обновление и восстановление не переподключают канал.
+                    value = { type: 'remote', enabled: true, url: previousValue.url };
+                } else if (useHosted) {
+                    // Комплекс исполняет площадка: билет выдаётся здесь, локальный процесс не поднимается.
+                    const channelPath = await options.hostedMcp!(pkg);
+                    value = { type: 'remote', enabled: true, url: new URL(channelPath, hub()).href };
+                } else {
+                    if (!runtime && !config.command) {
+                        throw new Error('Не задана команда MCP.');
+                    }
+                    if (
+                        !runtime && pkg.files.length &&
+                        (!config.entrypoint ||
+                            !pkg.files.some(
+                                (file) => file.path === config.entrypoint,
+                            ))
+                    ) {
+                        throw new Error(
+                            'Точка входа MCP отсутствует в пакете.',
+                        );
+                    }
+                    value = {
+                        type: 'local',
+                        enabled: true,
+                        command: runtime ? runtime.command : pkg.files.length
+                            ? [
+                                  process.execPath,
+                                  await safeTarget(
+                                      root,
+                                      `${base}/${config.entrypoint}`,
+                                  ),
+                                  ...(config.args || []),
+                              ]
+                            : [config.command, ...(config.args || [])],
+                        ...(config.env ? { environment: config.env } : {}),
+                    };
                 }
-                if (
-                    !runtime && pkg.files.length &&
-                    (!config.entrypoint ||
-                        !pkg.files.some(
-                            (file) => file.path === config.entrypoint,
-                        ))
-                ) {
-                    throw new Error(
-                        'Точка входа MCP отсутствует в пакете.',
-                    );
-                }
-                value = {
-                    type: 'local',
-                    enabled: true,
-                    command: runtime ? runtime.command : pkg.files.length
-                        ? [
-                              process.execPath,
-                              await safeTarget(
-                                  root,
-                                  `${base}/${config.entrypoint}`,
-                              ),
-                              ...(config.args || []),
-                          ]
-                        : [config.command, ...(config.args || [])],
-                    ...(config.env ? { environment: config.env } : {}),
-                };
             }
             editPath = ['mcp', mcpKey];
             receipt.config = { path: configPath, key: mcpKey, value };
@@ -231,16 +265,17 @@ export async function planInstall(plan: InstallationPlan, pkg: Package, options:
                 spec,
             ];
         }
-        const out = applyEdits(
-            source,
-            modify(source, editPath, value, {
-                formattingOptions: {
-                    insertSpaces: true,
-                    tabSize: 2,
-                    eol: '\n',
-                },
-            }),
-        );
+        const formatting = {
+            formattingOptions: {
+                insertSpaces: true,
+                tabSize: 2,
+                eol: '\n',
+            },
+        };
+        let out = applyEdits(source, modify(source, editPath, value, formatting));
+        if (pkg.plugin.kind === 'mcp' && legacyKey !== undefined && mcpEntries[legacyKey] !== undefined) {
+            out = applyEdits(out, modify(out, ['mcp', legacyKey], undefined, formatting));
+        }
         if (out !== text) {
             await plan.write(configPath, out);
         }
