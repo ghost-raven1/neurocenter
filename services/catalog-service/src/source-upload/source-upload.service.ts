@@ -1,5 +1,5 @@
 import {ensureCatalogSchema} from '../database/catalog-schema';
-import {BadRequestException,ConflictException,ForbiddenException,Injectable,NotFoundException,type OnModuleDestroy,type OnModuleInit} from '@nestjs/common';
+import {BadRequestException,ConflictException,ForbiddenException,HttpException,Injectable,NotFoundException,type OnModuleDestroy,type OnModuleInit} from '@nestjs/common';
 import {randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import type {Readable} from 'node:stream';
@@ -8,7 +8,7 @@ import {AccessDb} from '../access/access-db';
 import {normalizeEmail,type IAccessActor} from '../access/access.model';
 import {createPool} from '../database/pool';
 import {runtimeArtifactDirectory} from '../runtime-artifacts/runtime-artifacts';
-import {reserveCapacity} from '../../../shared/capacity.cjs';
+import {CapacityError,reserveCapacity} from '../../../shared/capacity.cjs';
 import {inspectUploadArchive} from '../../../shared/upload-inspection.cjs';
 import {SourceUploadRepository} from './source-upload.repository';
 import {UploadFiles} from './source-upload.files';
@@ -73,6 +73,7 @@ export class SourceUploads{
    });ready=true;return uploadView(updated);
   }catch(error){
    if(token)await client.query("UPDATE tool_source_uploads SET state=CASE WHEN state='CANCELLED' THEN state ELSE 'WAITING' END,lease_token=NULL,updated_at=now() WHERE id=$1 AND lease_token=$2",[id,token]).catch(()=>undefined);
+   if(error instanceof CapacityError)throw new HttpException(error.message,error.statusCode);
    if(error instanceof BadRequestException||error instanceof ConflictException||error instanceof ForbiddenException||error instanceof NotFoundException)throw error;
    if(error instanceof Error&&!('code' in error)&&!/https?:|\/tmp\/|\/var\/|postgres|password|token|secret/i.test(error.message)&&!controller.signal.aborted)throw new BadRequestException(error.message.slice(0,500));
    throw new BadRequestException(controller.signal.aborted?'Передача файла отменена. Можно повторить тот же файл.':'Архив повреждён или не содержит готовой поддерживаемой поставки.');

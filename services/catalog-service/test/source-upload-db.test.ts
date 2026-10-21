@@ -1,4 +1,4 @@
-import {afterEach,beforeEach,describe,expect,it} from 'vitest';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {Pool} from 'pg';
 import {randomUUID,createHash} from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -8,6 +8,9 @@ import {Readable} from 'node:stream';
 import {SourceUploads} from '../src/source-upload/source-upload.service';
 import {type PinnedUploadSource} from '../src/source-upload/source-upload.model';
 import {ensureCatalogSchema} from '../src/database/catalog-schema';
+import {reserveCapacity} from '../../shared/capacity.cjs';
+const capacityPolicy=await vi.importActual<typeof import('../../shared/capacity.cjs')&{createCapacityGuard(options:{required:()=>boolean;statfs:()=>Promise<unknown>}):typeof reserveCapacity}>('../../shared/capacity.cjs');
+vi.mock('../../shared/capacity.cjs',async original=>{const policy=await original<typeof import('../../shared/capacity.cjs')>();return {...policy,reserveCapacity:vi.fn(policy.reserveCapacity)};});
 const connectionString=process.env.CATALOG_TEST_PG_URL;
 const actor={email:'admin@example.test',activeRole:'Главный админ'},other={email:'other@example.test',activeRole:'Главный админ'};
 const sha=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
@@ -15,6 +18,7 @@ function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfac
 describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem',()=>{
  let admin:Pool,pool:Pool,root:string,database:string,uploads:SourceUploads;
  beforeEach(async()=>{
+  vi.mocked(reserveCapacity).mockReset().mockImplementation(capacityPolicy.reserveCapacity);
   const url=new URL(connectionString!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw Error('Only disposable local PostgreSQL databases allowed');url.pathname='/postgres';
   database='nc_source_upload_test_'+randomUUID().replaceAll('-','');admin=new Pool({connectionString:url.href,max:1});await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;
   pool=new Pool({connectionString:url.href,max:8});root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-source-upload-db-'));
@@ -95,11 +99,31 @@ describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem'
   await failed;await uploads.cleanup();expect((await uploads.get(actor,upload.id)).state).toBe('CANCELLED');expect(await fs.readdir(root)).toEqual([]);
  });
  it('Concurrent streams reserve capacity for cancellation and status queries instead of exhausting the PG pool',async()=>{
-  const rows=await Promise.all([0,1,2,3].map(()=>uploads.create(actor,intent()))),streams=rows.slice(0,3).map(row=>uploads.content(actor,row.id,new Readable({read(){}}),64));
-  const failures=streams.map(stream=>expect(stream).rejects.toMatchObject({status:400}));
-  for(let index=0;index<100&&(await uploads.get(actor,rows[0].id)).state!=='UPLOADING';index++)await new Promise(resolve=>setTimeout(resolve,5));
-  await expect(uploads.content(actor,rows[3].id,Readable.from([executable()]),64)).rejects.toThrow('три файла');
-  await Promise.all(rows.slice(0,3).map(row=>uploads.cancel(actor,row.id)));await Promise.all(failures);
+  const earlyErrors:Array<string|undefined>=[];
+  const rows=await Promise.all([0,1,2,3].map(()=>uploads.create(actor,intent()))),disk=await fs.statfs(root,{bigint:true});
+  // This case checks the PG pool under three leases, independently of the host's free disk space.
+  vi.mocked(reserveCapacity).mockImplementation(capacityPolicy.createCapacityGuard({required:()=>false,statfs:async()=>({...disk,bavail:8n*1024n**3n/disk.bsize})}));
+  const streams=rows.slice(0,3).map((row,index)=>uploads.content(actor,row.id,new Readable({read(){}}),64).catch(error=>{earlyErrors[index]=error.message;throw error;}));
+  const failures=Promise.allSettled(streams.map(stream=>expect(stream).rejects.toMatchObject({status:400})));
+  try{
+   await expect.poll(async()=>Promise.all(rows.slice(0,3).map(async(row,index)=>({state:(await uploads.get(actor,row.id)).state,error:earlyErrors[index]}))),{timeout:3000,interval:10}).toEqual(Array.from({length:3},()=>({state:'UPLOADING',error:undefined})));
+   await expect(uploads.content(actor,rows[3].id,Readable.from([executable()]),64)).rejects.toThrow('три файла');
+  }finally{
+   try{
+    const cancelled=await Promise.allSettled(rows.slice(0,3).map(row=>uploads.cancel(actor,row.id)));
+    const errors=[...cancelled,...await failures].filter(result=>result.status==='rejected').map(result=>result.reason);
+    if(errors.length)throw new AggregateError(errors,'Concurrent upload cleanup failed.');
+   }finally{vi.mocked(reserveCapacity).mockImplementation(capacityPolicy.reserveCapacity);}
+  }
+ });
+ it.each([['CAPACITY_LOW',507],['CAPACITY_UNAVAILABLE',503]] as const)('Capacity refusal %s keeps its HTTP status before writing source bytes',async(code,status)=>{
+  const upload=await uploads.create(actor,intent()),failure=Reflect.construct(capacityPolicy.CapacityError,[code,'runtime-artifacts']);
+  vi.mocked(reserveCapacity).mockRejectedValueOnce(failure);
+  const receive=vi.spyOn(uploads.files,'receive');
+  try{
+   await expect(uploads.content(actor,upload.id,Readable.from([executable()]),64)).rejects.toMatchObject({status,message:failure.message});
+   expect(receive).not.toHaveBeenCalled();expect((await uploads.get(actor,upload.id)).state).toBe('WAITING');expect(await fs.readdir(root)).toEqual([]);
+  }finally{receive.mockRestore();}
  });
  it('A disconnected response after the complete durable body still settles READY for exact UUID recovery',async()=>{
   const metadata=(await ready()).upload.metadata!;let entered!:()=>void,release!:()=>void;
