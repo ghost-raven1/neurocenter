@@ -13,6 +13,7 @@ import { AppModule } from './app.module';
 import {LiveService} from './live/live.service';
 import {allowBrowserOrigin,browserSecurity,panelOrigin} from './security/browser-security';
 import {sourceUploadConnection} from './proxy/source-upload-stream';
+import {setupApiDocumentation} from './docs/setup-api-documentation';
 
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
@@ -44,6 +45,7 @@ async function bootstrap(): Promise<void> {
 
     // Соединение получает только собственную комнату после проверки актуальной сессии.
     const auth = app.get(AuthGuardService);
+    setupApiDocumentation(app, auth);
     const live=app.get(LiveService);live.attach(io);
     io.use(async (socket,next) => {
         try {

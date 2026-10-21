@@ -7,8 +7,19 @@ RUN npm ci --no-audit --no-fund
 COPY services/api-gateway/ .
 COPY services/shared/ /shared/
 COPY bridge-dist/ /app/bridge-dist/
-RUN npm run build
+COPY scripts/openapi/ /scripts/openapi/
+COPY services/catalog-service/src/ /openapi/services/catalog-service/src/
+COPY services/skills-service/src/ /openapi/services/skills-service/src/
+COPY services/rag-sync-service/src/ /openapi/services/rag-sync-service/src/
+COPY services/feature-flags-service/src/ /openapi/services/feature-flags-service/src/
+COPY services/oauth2-bridge/src/ /openapi/services/oauth2-bridge/src/
+COPY services/api-gateway/src/ /openapi/services/api-gateway/src/
+COPY services/api-gateway/package.json /openapi/services/api-gateway/package.json
+COPY services/shared/ /openapi/services/shared/
+RUN ln -s /app/node_modules /openapi/node_modules
+RUN NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
+RUN rm -rf /openapi /scripts/openapi
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=api-gateway

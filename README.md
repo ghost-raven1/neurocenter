@@ -115,6 +115,7 @@ Production запускает сервисы и миграции, а импор�
 
 ## Документация
 
+- [API и Swagger](docs/api.md).
 - [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
 - [Упаковка инструментов](scripts/catalog-plugins/README.md).
 - [Установка Docker Compose](docs/compose-install.md).

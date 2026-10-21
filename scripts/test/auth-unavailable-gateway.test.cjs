@@ -72,6 +72,7 @@ async function socketCallbacks(authenticate) {
         require:id=>{
             if(id==='@nestjs/core')return {NestFactory:{create:async()=>app}};
             if(id==='socket.io')return {Server:class{use(callback){callbacks.middleware=callback;}on(event,callback){callbacks[event]=callback;}}};
+            if(id==='./docs/setup-api-documentation')return {setupApiDocumentation(){}};
             if(id==='../../shared/runtime.cjs'||id==='./app.module')return {};
             if(id==='../../shared/observability.cjs')return {createObservability:()=>({middleware(){}})};
             return nativeRequire(id);

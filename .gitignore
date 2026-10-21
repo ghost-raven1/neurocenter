@@ -23,6 +23,7 @@ build/
 coverage/
 **/.*-dist/
 *.tsbuildinfo
+/services/api-gateway/src/docs/openapi.json
 .run/
 .cache/
 
