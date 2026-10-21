@@ -34,7 +34,7 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'services/catalog-service/tsconfig.build.json','services/catalog-service/src/catalog/dto.ts',
     'services/catalog-service/src/devices/mcp-config-schema.ts','services/catalog-service/src/publication/publication-runtime.ts',
     'services/catalog-service/src/publication/publication-validation.ts',
-    'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts',
+    'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/skill-source.mjs',
 ].sort());
 const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
 

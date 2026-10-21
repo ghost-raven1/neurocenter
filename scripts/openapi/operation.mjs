@@ -10,6 +10,8 @@ function security(route){
     const {path,http}=route;
     if(path.startsWith('/api/bridge/')||/^\/auth\/(?:login|callback|logout)$/.test(path)||/^\/api\/device-channel\/pair\/(?:start|poll)$/.test(path)||path.startsWith('/api/mcp-host/m/'))return [];
     if(path.startsWith('/api/device-channel/')||path==='/api/mcp-host/connect')return [{deviceBearer:[]}];
+    // Learning records and human decisions are private to browser sessions; devices use the bound channel.
+    if(/^\/api\/projects\/[^/]+\/learning(?:\/|$)/.test(path))return [{sessionCookie:[]}];
     const bearerRead=['get','head'].includes(http)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path);
     const bearerSync=http==='post'&&['/api/skills/sync','/api/rag/sync'].includes(path);
     const bearerPublication=SNAPSHOT_PUBLICATION.test(path);

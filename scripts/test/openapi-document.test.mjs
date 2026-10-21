@@ -42,6 +42,7 @@ interface Input {
   values: readonly string[];
   metadata: Record<string, unknown>;
   timestamp: Date;
+  selected: Omit<{visible:string; secret:string}, 'secret'>;
 }
 interface Filters { required: string; optional?: 'on' | 'off' }
 interface Recursive { next?: Recursive; value: string }
@@ -83,13 +84,14 @@ test('Static Nest decorators, aliases, prefix arrays and gateway boundaries defi
 
 test('Typed bodies preserve required fields, literal unions, null, collections and explicit unknown data', () => {
     const schema = fixtureDocument.paths['/api/sample'].post.requestBody.content['application/json'].schema;
-    assert.deepEqual(schema.required, ['name', 'kind', 'enabled', 'nullable', 'values', 'metadata', 'timestamp']);
+    assert.deepEqual(schema.required, ['name', 'kind', 'enabled', 'nullable', 'values', 'metadata', 'timestamp','selected']);
     assert.deepEqual(schema.properties.kind, {type:'string', enum:['skill','plugin']});
     assert.equal(schema.properties.name.description, 'Human readable name.');
     assert.equal(schema.properties.nullable.nullable, true);
     assert.deepEqual(schema.properties.values, {type:'array', items:{type:'string'}});
     assert.deepEqual(schema.properties.timestamp, {type:'string', format:'date-time'});
     assert.equal(schema.properties.metadata.additionalProperties['x-neurocenter-untyped'], true);
+    assert.deepEqual(schema.properties.selected,{type:'object',properties:{visible:{type:'string'}},required:['visible']});
     const update = fixtureDocument.paths['/api/sample/{id}'].put;
     assert.equal(update.requestBody.content['application/json'].schema['x-neurocenter-untyped'], true);
     assert.equal(update.responses['202'].description, 'Successful response.');
@@ -131,13 +133,79 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 177);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 218);
+    assert.equal(Object.keys(actual.paths).length, 200);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 245);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
     assert.equal(actual.paths['/api/feature-flags'].get['x-neurocenter-service'], 'feature-flags-service');
+});
+
+test('Learning has the audited browser surface and only four device-bound channels', () => {
+    const prefix='/api/projects/{id}/learning';
+    const browser={
+        '':['get'], '/context':['get'], '/history':['get'], '/requests/{key}':['get'],
+        '/experiences':['get','post'], '/experiences/{recordId}':['get'],
+        '/hypotheses':['get','post'], '/hypotheses/{recordId}':['get'],
+        '/hypotheses/{hypothesisId}/checks':['get','post'], '/hypotheses/{hypothesisId}/checks/{checkId}':['get'],
+        '/candidates':['get','post'], '/candidates/{recordId}':['get'],
+        '/candidates/{candidateId}/approve':['post'], '/candidates/{candidateId}/reject':['post'],
+        '/candidates/{candidateId}/revoke':['post'], '/candidates/{candidateId}/activate':['post'],
+        '/analyses':['post'], '/analyses/{analysisId}':['get'], '/analyses/requests/{key}':['get'],
+    };
+    const device=['context','record','observe','propose'].map(suffix=>'/api/device-channel/learning/'+suffix);
+    const expected=[...Object.keys(browser).map(suffix=>prefix+suffix),...device].sort();
+    assert.deepEqual(Object.keys(actual.paths).filter(pathname=>pathname.includes('/learning')).sort(),expected);
+    for(const [suffix,methods] of Object.entries(browser)){
+        const pathname=prefix+suffix,operations=actual.paths[pathname];
+        assert.deepEqual(Object.keys(operations).sort(),[...methods].sort(),pathname);
+        for(const operation of Object.values(operations))assert.deepEqual(operation.security,[{sessionCookie:[]}],pathname);
+    }
+    for(const pathname of device){
+        assert.deepEqual(Object.keys(actual.paths[pathname]),['post']);
+        assert.deepEqual(actual.paths[pathname].post.security,[{deviceBearer:[]}]);
+    }
+    for(const suffix of ['approve','reject','revoke','activate','analyses'])assert.equal(actual.paths['/api/device-channel/learning/'+suffix],undefined);
+});
+
+test('Learning requests expose their validated input contracts and CAS without trusting device review', () => {
+    const prefix='/api/projects/{id}/learning';
+    const body=pathname=>actual.paths[pathname].post.requestBody.content['application/json'].schema;
+    const required=(schema,names)=>assert.deepEqual([...schema.required].sort(),[...names].sort());
+    const experience=body(prefix+'/experiences');
+    required(experience,['requestKey','expectedRevision','title','summary','outcome','evidence']);
+    assert.equal(experience.properties.expectedRevision.type,'number');
+    assert.deepEqual([...experience.properties.outcome.enum].sort(),['failed','mixed','succeeded','unknown']);
+    required(experience.properties.evidence.items,['kind','status','summary']);
+    const hypothesis=body(prefix+'/hypotheses');
+    required(hypothesis,['requestKey','expectedRevision','subject','title','statement','rationale','verificationPlan','experienceIds']);
+    assert.deepEqual([...hypothesis.properties.subject.enum].sort(),['agent','project']);
+    const check=body(prefix+'/hypotheses/{hypothesisId}/checks');
+    required(check,['requestKey','expectedRevision','method','result','summary','experienceIds']);
+    assert.deepEqual([...check.properties.method.enum].sort(),['human_review','llm_assessment']);
+    const candidate=body(prefix+'/candidates');
+    required(candidate,['requestKey','expectedRevision','hypothesisId','checkId','key','kind','title','content']);
+    assert.deepEqual([...candidate.properties.kind.enum].sort(),['instruction','lesson']);
+    for(const action of ['approve','reject','revoke','activate']){
+        const schema=body(prefix+'/candidates/{candidateId}/'+action);
+        required(schema,['requestKey','expectedRevision']);assert.equal(schema.properties.reason.type,'string');
+    }
+    const analysis=body(prefix+'/analyses');
+    required(analysis,['requestKey','expectedRevision','experienceIds']);assert.equal(analysis.properties.modelId.type,'string');
+    const receipt=jsonResponse(actual.paths[prefix+'/analyses'].post,'201');
+    assert.deepEqual([...receipt.properties.state.enum].sort(),['completed','failed','queued','running','unknown']);
+    const context=body('/api/device-channel/learning/context');
+    required(context,['projectId','bindingId','instanceId']);assert.equal(context.properties.input,undefined);
+    for(const [channel,input] of [['record',experience],['propose',hypothesis]]){
+        const schema=body('/api/device-channel/learning/'+channel);
+        required(schema,['projectId','bindingId','instanceId','input']);
+        assert.deepEqual(schema.properties.input,input);
+    }
+    const observation=body('/api/device-channel/learning/observe');
+    required(observation,['projectId','bindingId','instanceId','input']);
+    required(observation.properties.input,['requestKey','title','summary','outcome','evidence']);
+    assert.equal(observation.properties.input.properties.expectedRevision,undefined,'Observed metadata appends without inventing a browser revision.');
 });
 
 test('Bridge installer configuration exposes the trusted public Gateway origin', () => {

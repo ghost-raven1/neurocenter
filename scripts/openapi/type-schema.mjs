@@ -39,7 +39,8 @@ export function createSchemaMapper(ts,checker){
         if(type.getCallSignatures().length)return unknown('Executable values are not a JSON response contract.');
         const index=checker.getIndexTypeOfType(type,ts.IndexKind.String)||checker.getIndexTypeOfType(type,ts.IndexKind.Number);
         const declarations=type.getSymbol()?.declarations||[];
-        if(name!=='Record'&&declarations.some(item=>/node_modules[/\\](?:@types[/\\](?:node|express)|typescript)|typescript[/\\]lib[/\\]lib\./.test(item.getSourceFile().fileName))){
+        // Mapped utilities such as Omit describe selected JSON fields, rather than a runtime library object.
+        if(name!=='Record'&&!(type.objectFlags&ts.ObjectFlags.Mapped)&&declarations.some(item=>/node_modules[/\\](?:@types[/\\](?:node|express)|typescript)|typescript[/\\]lib[/\\]lib\./.test(item.getSourceFile().fileName))){
             return unknown('A framework or runtime object has no declared JSON serialization.');
         }
         const properties={},required=[];
