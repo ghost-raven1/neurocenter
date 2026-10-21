@@ -6,6 +6,8 @@ import {configureProduction,ensureMetricsToken} from './configuration.mjs';
 import {ensureModelCredentialKey} from '../workspace/model-credentials.mjs';
 import {assertProductionModelKey} from './model-credentials.mjs';
 import {composeClient,composeConfiguration,maintenanceLock} from './compose-client.mjs';
+import {runSchemaCommands} from './schema-migrations.mjs';
+import {prepareSchemaInitialization} from './schema-initialization.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const args=process.argv.slice(2);const mode=args[0]||'configure';
@@ -57,6 +59,12 @@ async function main() {
     await maintenanceLock(client,config.services['catalog-service'].image,mode,async()=>{
         await compose(['up','-d','--wait','postgres']);
         await compose(['--profile','setup','run','--rm','database-init']);
+        const schemas=await runSchemaCommands(client,'check');
+        const initialization=await prepareSchemaInitialization({directory,projectName,client,config,schemas});
+        try{
+            await runSchemaCommands(initialization?.client??client,'migrate',{beforeEach:initialization?.assertCurrent});
+            await initialization?.complete();
+        }finally{await initialization?.close();}
         await assertProductionModelKey(directory,config,input=>client.run(['exec','-T','postgres','psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input}));
         if(mode==='seed'){await compose(['--profile','setup','run','--rm','bootstrap-admin']);}
         if(mode==='up'){

@@ -12,6 +12,8 @@ import {updateProduction} from '../production/update.mjs';
 import {defaultPolicy} from '../../services/shared/maintenance-policy.cjs';
 import {seedProductionRuntimeArtifact,verifyProductionRuntimeArtifact} from './production-runtime-artifact.fixture.mjs';
 import {recordProductionHealth} from './production-health.fixture.mjs';
+import {inspectSchemaManifests,runSchemaCommands} from '../production/schema-migrations.mjs';
+import {captureMigrationState,assertMigrationStatePreserved} from './production-migration-state.fixture.mjs';
 
 process.umask(0o077);
 const sourceRelease=process.env.NEUROCENTER_UPDATE_SOURCE_RELEASE||'verify-20261018-v09-final';
@@ -24,7 +26,7 @@ await mkdir(copies,{recursive:true,mode:0o700});
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const sqlQuote=value=>"'"+String(value).replace(/'/g,"''")+"'";
 const cases=[],timings={};const sides=[];
-let sourceImages,targetImages,postgresImage,originalBackup,updateReceipt,rehearsalReport,fatal,artifact;
+let sourceImages,targetImages,targetSchemaManifests,postgresImage,originalBackup,updateReceipt,rehearsalReport,fatal,artifact;
 const startedAt=new Date().toISOString();
 const check=async(name,action)=>{const before=Date.now();await action();cases.push({name,passed:true,durationMs:Date.now()-before});console.log('OK '+name);};
 const writeJson=(filename,value)=>writeFile(filename,JSON.stringify(value,null,2)+'\n',{mode:0o600});
@@ -59,16 +61,22 @@ async function pause(side,client=side.client){await client.run(['stop','--timeou
 async function fingerprint(side){
     const result={};
     const databases=JSON.parse(await query(side,'postgres',"SELECT json_agg(datname ORDER BY datname) FROM pg_database WHERE datname IN ('catalog','rag') OR datname ~ '^nc_rag_[a-f0-9]{32}$';"));
-    for(const database of databases){
-        result[database]={};
-        const tables=JSON.parse(await query(side,database,"SELECT coalesce(json_agg(tablename ORDER BY tablename),'[]'::json) FROM pg_tables WHERE schemaname='public';"));
-        for(const table of tables){
-            assert.match(table,/^[a-z_]+$/);const row=table==='bridge_devices'?"to_jsonb(t)-'last_seen'":'to_jsonb(t)';
-            const raw=table==='bridge_pairs'?'[]':await query(side,database,`SELECT coalesce(json_agg(${row} ORDER BY (${row})::text),'[]'::json) FROM ${table} t;`);
-            result[database][table]=hash(raw);
-        }
-    }
+    for(const database of databases)result[database]=await captureMigrationState(sql=>query(side,database,sql));
     return result;
+}
+async function assertPreserved(side,before,{migrated=false}={}){
+    if(!migrated){assert.deepEqual(await fingerprint(side),before);return;}
+    const databases=JSON.parse(await query(side,'postgres',"SELECT json_agg(datname ORDER BY datname) FROM pg_database WHERE datname IN ('catalog','rag') OR datname ~ '^nc_rag_[a-f0-9]{32}$';"));
+    assert.deepEqual(databases,Object.keys(before));
+    for(const database of databases)await assertMigrationStatePreserved(sql=>query(side,database,sql),before[database],{requireReceiptMigration:true});
+}
+async function assertTargetSchemas(side,client){
+    const schemas=await runSchemaCommands(client,'check');
+    for(const result of Object.values(schemas)){assert.equal(result.ready,true);assert.deepEqual(result.pending,[]);}
+    for(const [service,table] of [['catalog-service','catalog_schema_migrations'],['feature-flags-service','feature_flags_schema_migrations']]){
+        const rows=JSON.parse(await query(side,'catalog',`SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM ${table}`));
+        assert.deepEqual(rows,targetSchemaManifests[service]);
+    }
 }
 async function filesFingerprint(side){
     const projects=JSON.parse(await side.client.run(['exec','-T','catalog-service','node','-e',fileScript]));
@@ -96,6 +104,7 @@ try{
         })));
         [sourceImages,targetImages]=await Promise.all([inspect(sourceRelease),inspect(targetRelease)]);
         assert.ok(applicationServices.some(service=>sourceImages[service]!==targetImages[service]));
+        targetSchemaManifests=await inspectSchemaManifests(targetImages,docker);
         postgresImage=JSON.parse(await docker(['image','inspect','pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2']))[0].Id;
     });
     const source=await createSide('source');
@@ -137,13 +146,13 @@ try{
     await writeJson(pinned,{services:Object.fromEntries([...applicationServices,'capacity-collector'].map(service=>[service,{image:targetImages[service==='capacity-collector'?'catalog-service':service]}]))});
     const manualTarget=composeClient({...manual,files:[...manual.files,pinned],release:targetRelease});
     await check('Настоящий переход 0.9 → P0 на копии сохраняет все строки, настройки и файлы',async()=>{
-        await pause(manual);const beforeTime=Date.now();await up(manual,manualTarget);timings.manualUpgradeMs=Date.now()-beforeTime;
-        await recordProductionHealth(manualTarget,stage,'update-manual-target-ready');assert.deepEqual(await fingerprint(manual),before);assert.deepEqual(await filesFingerprint(manual),beforeFiles);await verifyProductionRuntimeArtifact(manualTarget,artifact);
+        await pause(manual);const beforeTime=Date.now();await runSchemaCommands(manualTarget,'migrate');await up(manual,manualTarget);timings.manualUpgradeMs=Date.now()-beforeTime;
+        await recordProductionHealth(manualTarget,stage,'update-manual-target-ready');await assertPreserved(manual,before,{migrated:true});await assertTargetSchemas(manual,manualTarget);assert.deepEqual(await filesFingerprint(manual),beforeFiles);await verifyProductionRuntimeArtifact(manualTarget,artifact);
         assert.equal(await readFile(path.join(manual.directory,'.env'),'utf8'),manualEnv);
     });
     await check('Повторный запуск и рестарт настоящих catalog/RAG не повторяют миграции и не сбрасывают настройки',async()=>{
         await manualTarget.run(['restart','catalog-service','rag-sync-service']);await up(manual,manualTarget);
-        assert.deepEqual(await fingerprint(manual),before);assert.deepEqual(await filesFingerprint(manual),beforeFiles);await pause(manual,manualTarget);await verifyFilesOffline(manual);await cleanupSide(manual);
+        await assertPreserved(manual,before,{migrated:true});await assertTargetSchemas(manual,manualTarget);assert.deepEqual(await filesFingerprint(manual),beforeFiles);await pause(manual,manualTarget);await verifyFilesOffline(manual);await cleanupSide(manual);
     });
     const rollback=await createSide('rollback');
     await check('Возврат выполняется restore исходного комплекта в новый проект с прежними образами',async()=>{
@@ -156,7 +165,7 @@ try{
             sourceImages,targetImages,postgresImage,sourceRelease,targetRelease,realBlitz:false,syntheticDataOnly:true,checkedAt:new Date().toISOString(),sourceBackupSha256:originalBackup.sha256,sourceBackupBytes:originalBackup.bytes,timings,proofCases:cases.map(item=>item.name)};
         await writeJson(rehearsalFile,rehearsalReport);
     });
-    const migrations=JSON.parse(await docker(['run','--rm','--network','none','--read-only','--entrypoint','node',targetImages['catalog-service'],'-e',"const {createHash}=require('crypto');const {INSTALLATION_MIGRATIONS}=require('/app/dist/devices/installation-migrations.js');console.log(JSON.stringify(INSTALLATION_MIGRATIONS.map(item=>({version:item.version,name:item.name,checksum:createHash('sha256').update(item.sql).digest('hex')}))));"]));
+    const migrations=targetSchemaManifests['catalog-service'];
     const plan={format:'neurocenter-update-v1',id:'rehearsal-'+run,sourceRelease,targetRelease,sourceImages,targetImages,postgresImage,catalogMigrations:migrations,
         migrationCompatibility:'restore-required',rollback:'restore-new-project',rehearsalSha256:hash(await readFile(rehearsalFile)),maxPauseMs:900000};
     await writeJson(path.join(fixture,'plan.json'),plan);
@@ -169,7 +178,8 @@ try{
     await check('Настоящий updateProduction создаёт новую копию, меняет семь образов и сохраняет настройки',async()=>{
         const beforeTime=Date.now();updateReceipt=await updateProduction({...options,execute:true});timings.orchestratedUpdateMs=Date.now()-beforeTime;
         assert.equal(updateReceipt.state,'completed');assert.equal(updateReceipt.repeated,false);await verifyBackup(updateReceipt.backup.destination,updateReceipt.backup.sha256);
-        await recordProductionHealth(source.client,stage,'update-orchestrated-target-ready');assert.deepEqual(await fingerprint(source),before);assert.deepEqual(await filesFingerprint(source),beforeFiles);await verifyProductionRuntimeArtifact(source.client,artifact);
+        const targetClient=composeClient({...source,files:[...source.files,path.join(source.directory,'updates',plan.id+'.compose.json')],release:targetRelease});
+        await recordProductionHealth(source.client,stage,'update-orchestrated-target-ready');await assertPreserved(source,before,{migrated:true});await assertTargetSchemas(source,targetClient);assert.deepEqual(await filesFingerprint(source),beforeFiles);await verifyProductionRuntimeArtifact(source.client,artifact);
         const afterEnv=await readFile(path.join(source.directory,'.env'),'utf8');assert.equal(afterEnv.replace("NEUROCENTER_RELEASE='"+targetRelease+"'","NEUROCENTER_RELEASE='"+sourceRelease+"'"),sourceEnv);
     });
     await check('Повтор production update не делает новую копию и не повторяет операции',async()=>{

@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -110,7 +111,7 @@ fs.appendFileSync(${JSON.stringify(openerLog)}, JSON.stringify({ args, sha256: c
         if(workSocket)await new Promise(resolve=>workSocket.close(resolve));
         if (server && server.listening) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
         await devices?.onModuleDestroy();
-        if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); cleanup.ownDatabaseDropped = !(await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount; }
+        if (created) { await admin.query(`DROP DATABASE "${database}"`); cleanup.ownDatabaseDropped = !(await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount; }
         const after = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
         cleanup.originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(after);
         cleanup.originalCatalogDataPreserved = JSON.stringify(devBefore) === JSON.stringify(await devSnapshot());
@@ -129,17 +130,13 @@ fs.appendFileSync(${JSON.stringify(openerLog)}, JSON.stringify({ args, sha256: c
         const { DeviceJobs } = await load('services/catalog-service/dist/devices/device-jobs.js');
         const { DeviceInstallations } = await load('services/catalog-service/dist/devices/device-installations.js');
         const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-        const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-        const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
         const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
         const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
         const claims = async email => ({ email, userRoles: roleAllowed?['Главный админ', 'Разработчик', 'Наблюдатель']:['Наблюдатель'], projects: [projectId, legacyProjectId].map(id => ({ projectId: id, projectName: id, role: roleAllowed?'Админ проекта':'Наблюдатель' })) });
         devices = new DeviceStore({ claims }); await devices.onModuleInit();
         assert.equal((await devices.pool.query('SELECT current_database() AS name')).rows[0].name, database);
-        await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('${projectId}'),('${legacyProjectId}');
-            CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-            CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
-        await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+        await seedInstallationProjects(devices.pool,[projectId,legacyProjectId],actor);
+
         const { artifactFixture } = await import('./runtime-artifact-fixture.cjs');
         const { runtimeArtifactTarget } = await load('mcp/neurocenter-asset-sync/src/features/runtime-artifacts/model.ts');
         const { RuntimeArtifacts } = await load('services/catalog-service/dist/runtime-artifacts/runtime-artifacts.js');
@@ -156,7 +153,7 @@ readline.createInterface({input:process.stdin}).on('line',raw=>{const q=JSON.par
         pkg=buildPackage({kind:'mcp',id:assetId,name:'v09-root',version:1},[],'now',{transport:'stdio',extra:{runtimeArtifacts:[archive.descriptor],requirements:{dependencies:[{kind:'mcp',id:childAssetId,version:1,manifest:childPkg.manifest.sha256}]}}});
         const artifacts={build:async(kind,id,version)=>{assert.equal(kind,'mcp');assert.equal(version,1);const selected=id===assetId?pkg:id===childAssetId?childPkg:undefined;assert.ok(selected);return selected;}};
         installations=new DeviceInstallations(devices);plans=new InstallPlans(devices,artifacts);jobs=new DeviceJobs(devices,artifacts,installations,plans);controller=new DeviceController(devices,jobs,installations,runtimeArtifacts);
-        for(const id of [projectId,legacyProjectId])for(const tool of [assetId,childAssetId])await devices.pool.query('INSERT INTO project_assets VALUES($1,$2,$3)',[id,'mcp',tool]);
+        for(const id of [projectId,legacyProjectId])for(const member of [pkg,childPkg])await pinInstallationPackage(devices.pool,id,member,actor);
         const engine=process.env.RELIABLE_V09_PROBE_ENGINE;
         if(engine){const copied=path.join(temporary,'runtime/bin');await fs.mkdir(copied,{recursive:true});workerExecutable=path.join(copied,'node');await fs.copyFile(process.execPath,workerExecutable);await fs.chmod(workerExecutable,0o700);await fs.copyFile(engine,path.join(copied,'opencode-probe'));await fs.chmod(path.join(copied,'opencode-probe'),0o700);await fs.writeFile(path.join(temporary,'runtime/runtime.json'),JSON.stringify({probeEngine:{file:'bin/opencode-probe',version:'1.14.48',sha256:digest(await fs.readFile(engine))}}));}
         const credential = randomBytes(32).toString('hex');

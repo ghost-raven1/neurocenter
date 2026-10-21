@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -50,22 +51,18 @@ try {
     const { DeviceJobs } = await load('services/catalog-service/dist/devices/device-jobs.js');
     const { DeviceInstallations } = await load('services/catalog-service/dist/devices/device-installations.js');
     const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-    const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-    const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
     const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
     const { assertInstallationInspection } = await load('services/catalog-service/dist/devices/installation-inspection.js');
     const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
     const claims = async email => ({ email, userRoles: ['Главный админ', 'Разработчик'], projects: [{ projectId, projectName: 'Проверка', role: 'Админ проекта' }] });
     devices = new DeviceStore({ claims }); await devices.onModuleInit();
-    await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('fixture');
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
-    await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+    await seedInstallationProjects(devices.pool,['fixture'],actor);
+
     const artifactService = { build: async (_kind, id, version) => { assert.equal(id, assetId); assert.ok(packages.has(version)); return packages.get(version); } };
     installations = new DeviceInstallations(devices); plans = new InstallPlans(devices, artifactService); jobs = new DeviceJobs(devices, artifactService, installations, plans);
     for (const version of [1, 2, 3]) packages.set(version, buildPackage({ kind: 'mcp', id: assetId, name: 'binding-fixture', version },
         [{ path: 'index.mjs', content: `// Тестовая версия ${version}\nexport default {};\n` }], 'now', { transport: 'stdio', command: 'node', entrypoint: 'index.mjs' }));
-    await devices.pool.query('INSERT INTO project_assets VALUES($1,$2,$3)', [projectId, 'mcp', assetId]);
+    await pinInstallationPackage(devices.pool,projectId,packages.get(1),actor);
     const credential = randomBytes(32).toString('hex');
     const pair = await devices.start({ name: 'Изолированное устройство', fingerprint: 'e'.repeat(64), credentialHash: createHash('sha256').update(credential).digest('hex') });
     await devices.approve(actor, pair.userCode); const connected = await devices.poll(pair.deviceCode); token = credential; deviceId = connected.deviceId;
@@ -118,7 +115,7 @@ try {
         await devices.heartbeat(await devices.identity(token), await workspaceReport()); return projectBindingId(projectId);
     };
     const state = async id => (await devices.pool.query('SELECT * FROM bridge_jobs WHERE id=$1', [id])).rows[0];
-    const create = version => { const plan = approvedPlans.get(version); return jobs.create(actor, { deviceId, projectId, kind: 'install', assetKind: 'mcp', assetId, version,
+    const create = async version => { await pinInstallationPackage(devices.pool,projectId,packages.get(version),actor); const plan = approvedPlans.get(version); return jobs.create(actor, { deviceId, projectId, kind: 'install', assetKind: 'mcp', assetId, version,
         planId: plan.id, planRevision: plan.revision, expectedManifest: plan.manifest, requestKey: randomUUID() }); };
     const remove = async version => jobs.create(actor, { deviceId, projectId, kind: 'uninstall', assetKind: 'mcp', assetId,
         expectedBindingId: await projectBindingId(projectId), expectedManifest: packages.get(version).manifest.sha256, requestKey: randomUUID() });
@@ -136,7 +133,7 @@ try {
         [inspectionId,deviceId,actor.email,actor.activeRole,projectId,{package:packages.get(version),bindingId,assetId,assetKind:'mcp',version},startedAt,result]);
         return result;
     };
-    for (const version of [1, 2, 3]) { const pending = await plans.prepare(actor, { projectId, assetKind: 'mcp', assetId, version });
+    for (const version of [1, 2, 3]) { await pinInstallationPackage(devices.pool,projectId,packages.get(version),actor); const pending = await plans.prepare(actor, { projectId, assetKind: 'mcp', assetId, version });
         approvedPlans.set(version, await plans.decide(actor, pending.id, { expectedManifest: pending.manifest, expectedRevision: pending.revision }, 'approved')); }
     await check('Реальный worker устанавливает первую версию в папку А', async () => {
         bindingA = originalBindingA = await bind(folderA); installedA=await run(await create(1)); assert.equal(await fs.readFile(file(folderA), 'utf8'), packages.get(1).files[0].content);
@@ -257,7 +254,7 @@ try {
 finally {
     await stopWorker(); if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await devices?.onModuleDestroy();
-    if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); ownDatabaseDropped = true; }
+    if (created) { await admin.query(`DROP DATABASE "${database}"`); ownDatabaseDropped = true; }
     const afterDatabases = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(afterDatabases);
     await admin.end(); await fs.rm(temporary, { recursive: true, force: true }); await fs.mkdir(path.dirname(reportPath), { recursive: true });

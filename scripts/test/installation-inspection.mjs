@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -63,22 +64,18 @@ try {
     const { DeviceJobs } = await load('services/catalog-service/dist/devices/device-jobs.js');
     const { DeviceInstallations } = await load('services/catalog-service/dist/devices/device-installations.js');
     const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-    const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-    const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
     const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
     const { assertInstallationInspection } = await load('services/catalog-service/dist/devices/installation-inspection.js');
     const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
     const claims = async email => ({ email, userRoles: ['Главный админ', 'Разработчик', 'Наблюдатель'], projects: [{ projectId, projectName: 'Проверка', role: 'Админ проекта' }] });
     devices = new DeviceStore({ claims }); await devices.onModuleInit();
-    await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('fixture');
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
-    await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+    await seedInstallationProjects(devices.pool,['fixture'],actor);
+
     const pkg = buildPackage({ kind: 'mcp', id: assetId, name: 'inspection-fixture', version: 1 },
         [{ path: 'index.mjs', content: '// Этот маркер появится только при ошибочном запуске проверяемого кода.\nimport { writeFileSync } from "node:fs";\nwriteFileSync(new URL("executed.txt", import.meta.url), "Код не должен запускаться");\nexport default {};\n' }], 'now', { transport: 'stdio', command: 'node', entrypoint: 'index.mjs' });
     const artifactService = { build: async () => pkg };
     installations = new DeviceInstallations(devices); plans = new InstallPlans(devices, artifactService); jobs = new DeviceJobs(devices, artifactService, installations, plans);
-    await devices.pool.query('INSERT INTO project_assets VALUES($1,$2,$3)', [projectId, 'mcp', assetId]);
+    await pinInstallationPackage(devices.pool,projectId,pkg,actor);
     const credential = randomBytes(32).toString('hex');
     const pair = await devices.start({ name: 'Компьютер сверки', fingerprint: 'd'.repeat(64), credentialHash: digest(credential) });
     await devices.approve(actor, pair.userCode); const connected = await devices.poll(pair.deviceCode); token = credential; deviceId = connected.deviceId;
@@ -103,7 +100,7 @@ try {
     const origin = `http://127.0.0.1:${server.address().port}`; process.env.NEUROCENTER_URL = origin; process.env.API_GATEWAY_URL = origin;
     const { writeState } = await load('mcp/neurocenter-asset-sync/dist/bridge/state.js');
     const { setRoot, bindProject, workspaceReport, projectBindingId } = await load('mcp/neurocenter-asset-sync/dist/bridge/workspace.js');
-    const { assetBase, assetKey, receiptPath } = await load('mcp/neurocenter-asset-sync/dist/bridge/installation-receipt.js');
+    const { assetBase, receiptPath } = await load('mcp/neurocenter-asset-sync/dist/bridge/installation-receipt.js');
     const { inspectInstallation } = await load('mcp/neurocenter-asset-sync/dist/bridge/installation-inspection.js');
     const { parse } = createRequire(path.join(root, 'mcp/neurocenter-asset-sync/package.json'))('jsonc-parser');
     project = path.join(temporary, 'проекты', 'Только для проверки'); await fs.mkdir(project, { recursive: true });
@@ -155,7 +152,7 @@ try {
     });
     await check('Изменённое подключение обнаруживается без выдачи настроек, ключей или локальных путей', async () => {
         const secret = 'private-fixture-' + randomBytes(12).toString('hex'); const config = parse(originalConfig.toString());
-        config.mcp['neurocenter_' + assetKey(pkg)].environment = { API_KEY: secret };
+        config.mcp[JSON.parse(originalReceipt.toString()).config.key].environment = { API_KEY: secret };
         await fs.writeFile(configPath, JSON.stringify(config)); const result = await scan();
         assert.equal(result.status, 'modified'); assert.ok(result.issues.includes('config-modified'));
         const serialized = JSON.stringify(result); assert.ok(!serialized.includes(secret)); assert.ok(!serialized.includes(project)); assert.ok(!Object.hasOwn(result, 'config'));
@@ -204,7 +201,7 @@ try {
 finally {
     await stopWorker(); if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await devices?.onModuleDestroy();
-    if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); ownDatabaseDropped = true; }
+    if (created) { await admin.query(`DROP DATABASE "${database}"`); ownDatabaseDropped = true; }
     const afterDatabases = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(afterDatabases);
     await admin.end(); await fs.rm(temporary, { recursive: true, force: true }); await fs.mkdir(path.dirname(reportPath), { recursive: true });

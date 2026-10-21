@@ -14,6 +14,19 @@ const ragUiContract = fileURLToPath(new URL('../../services/shared/rag-ui-contra
 const snapshotContract = fileURLToPath(new URL('../../services/shared/project-snapshot.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+test('RAG Dockerfile передаёт MCP все реальные shared build inputs до компиляции',async()=>{
+    const dockerfile=await fs.readFile(new URL('../../services/rag-sync-service/Dockerfile',import.meta.url),'utf8');
+    const beforeBuild=dockerfile.split(/^RUN npm run build\s*$/m)[0].replace(/\\\r?\n/g,' ');
+    const copied=new Set(beforeBuild.split('\n').filter(line=>line.startsWith('COPY ')&&line.trim().endsWith('/app/services/shared/'))
+        .flatMap(line=>line.trim().split(/\s+/).slice(1,-1)));
+    const build=await fs.readFile(path.join(bridge,'scripts/build.mjs'),'utf8');
+    const inputs=[...build.matchAll(/\.\.\/\.\.\/services\/shared\/([a-z0-9-]+\.cjs)/g)].map(match=>match[1]);
+    assert.ok(inputs.length>0);
+    for(const input of inputs)for(const name of [input,input.replace(/\.cjs$/,'.d.cts')]){
+        assert.ok(copied.has('services/shared/'+name),'Missing MCP build input: '+name);
+        await fs.access(new URL('../../services/shared/'+name,import.meta.url));
+    }
+});
 async function fixture(source) {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-build-')); roots.push(workspace);
     const root = path.join(workspace, 'mcp/neurocenter-asset-sync');

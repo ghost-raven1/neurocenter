@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -8,8 +9,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const { Pool } = require('pg');
 const { InstallPlans } = require('../../services/catalog-service/dist/devices/install-plans.js');
-const { setupInstallPlans } = require('../../services/catalog-service/dist/devices/install-plan-schema.js');
-const { setupSecurityEvents } = require('../../services/catalog-service/dist/access/security-events.js');
+const { ensureCatalogSchema } = require('../../services/catalog-service/dist/database/catalog-schema.js');
 const { buildPackage } = require('../../services/catalog-service/dist/catalog/bundle-package.js');
 const url = process.env.INSTALLATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
 const admin = new Pool({ connectionString: url });
@@ -21,13 +21,12 @@ const denied = (action, status = 409) => assert.rejects(action, error => error.s
 try {
     await admin.query(`CREATE DATABASE "${database}"`); created = true;
     const target = new URL(url); target.pathname = '/' + database; pool = new Pool({ connectionString: target.href });
-    await pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('prj-fixture'),('prj-foreign');
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        INSERT INTO project_assets VALUES('prj-fixture','skill','common/fixture');`);
-    await setupInstallPlans(pool); await setupSecurityEvents(pool);
+    await ensureCatalogSchema(pool);await seedInstallationProjects(pool,['prj-fixture','prj-foreign'],actor);
+
     const claims = async email => ({ email, userRoles: ['Главный админ','Админ проекта','Разработчик','Наблюдатель'],
         projects: [{ projectId: 'prj-fixture', role: 'Админ проекта' }], pluginIds: [], skillPaths: [] });
     let head = buildPackage({ id: 'common/fixture', name: 'fixture', kind: 'skill', version: 1 }, [{ path: 'SKILL.md', content: 'Исходная версия' }], '2026-01-01', { extra: { generation: 'first' } });
+    const originalHead=structuredClone(head);await pinInstallationPackage(pool,'prj-fixture',head,actor);
     let reads = 0;
     const plans = new InstallPlans({ pool, access: { claims } }, { build: async () => { reads++; return structuredClone(head); } });
     const input = { projectId: 'prj-fixture', assetKind: 'skill', assetId: 'common/fixture', version: 1 };
@@ -35,7 +34,7 @@ try {
     const decision = item => ({ expectedManifest: item.manifest, expectedRevision: item.revision });
     const pinned = item => plans.package(item.id, input.projectId, input.assetKind, input.assetId, input.version, item.revision, item.manifest);
     await check('Миграция повторяется без неявного одобрения каталога', async () => {
-        await setupInstallPlans(pool); assert.equal((await pool.query('SELECT count(*)::int AS n FROM device_install_plans')).rows[0].n, 0);
+        await ensureCatalogSchema(pool); assert.equal((await pool.query('SELECT count(*)::int AS n FROM device_install_plans')).rows[0].n, 0);
         plan = await plans.prepare(actor, input); assert.equal(plan.status, 'pending'); assert.equal(plan.revision, 0); await denied(pinned(plan));
     });
     await check('Наблюдатель и админ чужого проекта не готовят план, разработчик не одобряет', async () => {
@@ -73,8 +72,10 @@ try {
     });
     await check('Удаление и пересоздание head не меняет одобренный снимок и требует нового решения', async () => {
         head = buildPackage(head.plugin, [{ path: 'SKILL.md', content: 'Новая публикация с тем же номером' }], '2026-01-02', { extra: { generation: 'second' } });
-        const next = await plans.prepare(actor, input); assert.notEqual(next.id, plan.id); assert.notEqual(next.manifest, plan.manifest); assert.equal(next.status, 'pending');
-        const before = reads; assert.equal((await pinned(plan)).files[0].content, 'Исходная версия'); assert.equal(reads, before); await denied(pinned(next));
+        const preserved=await plans.prepare(actor,input);assert.equal(preserved.id,plan.id);
+        await pinInstallationPackage(pool,input.projectId,head,actor);const next = await plans.prepare(actor, input); assert.notEqual(next.id, plan.id); assert.notEqual(next.manifest, plan.manifest); assert.equal(next.status, 'pending');
+        const before = reads;await denied(pinned(plan));await denied(pinned(next));assert.equal(reads,before);
+        await pinInstallationPackage(pool,input.projectId,originalHead,actor);assert.equal((await pinned(plan)).files[0].content,'Исходная версия');
     });
     await check('Отзыв и повторное одобрение не оживляют старую ревизию очереди', async () => {
         const revoked = await plans.decide(actor, plan.id, decision(plan), 'revoked'); assert.equal(revoked.revision, 2); await denied(pinned(plan));

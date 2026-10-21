@@ -1,28 +1,33 @@
 import assert from 'node:assert/strict';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {mkdir,writeFile,mkdtemp,readdir,rm} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import {mkdir,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
-// Эти SQL-сценарии владеют пустым хранилищем; HTTP/история проверяются отдельно.
-const emptySkillStore=await mkdtemp(path.join(tmpdir(),'nc-empty-skill-refs-'));
-const assertEmptySkillStore=async()=>assert.deepEqual(await readdir(emptySkillStore),[]);
+const skillDirectory=await mkdtemp(path.join(tmpdir(),'nc-project-skill-refs-'));
 const dist=process.env.PUBLICATION_TEST_DIST || fileURLToPath(new URL('../../services/catalog-service/dist/',import.meta.url));
 const {ProjectAssetRepository}=require(path.join(dist,'catalog/project-asset-repository.js'));
 const {PluginRepository}=require(path.join(dist,'publication/plugin-repository.js'));
-const {setupSecurityEvents}=require(path.join(dist,'access/security-events.js'));
+const {ensureCatalogSchema}=require(path.join(dist,'database/catalog-schema.js'));
 const {listAuditHistory}=require(path.join(dist,'catalog/audit-history.js'));
+const skillsDist=process.env.SKILLS_TEST_DIST||fileURLToPath(new URL('../../services/skills-service/dist/',import.meta.url));
+const {FsSkillsStorage}=require(path.join(skillsDist,'storage/fs-skills-storage.js'));
+const {SkillsService}=require(path.join(skillsDist,'skills/skills.service.js'));
+const {SkillAssetImportController}=require(path.join(skillsDist,'skills/asset-import.controller.js'));
+const originalSkillsUrl=process.env.SKILLS_SERVICE_URL,originalInternalToken=process.env.NEUROCENTER_INTERNAL_TOKEN;
+const token=randomBytes(24).toString('hex');
 const adminUrl=process.env.PUBLICATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
 const reportPath=process.env.PROJECT_ASSETS_TEST_REPORT || fileURLToPath(new URL('../../.run/project-assets-db-smoke.json',import.meta.url));
 const database='nc_project_assets_test_'+randomBytes(8).toString('hex');
 const admin=new Pool({connectionString:adminUrl,max:2});
 const beforeDatabases=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
 const scenarios=[];
-let pool,assets,plugins,created=false,ownDatabaseDropped=false,fatal;
+let pool,assets,plugins,skillServer,skillStorage,created=false,ownDatabaseDropped=false,fatal;
 const projectA='prj-own-qa-a',projectB='prj-own-qa-b';
 const resource=(projectId,assetId,kind='mcp')=>`${projectId} · ${kind} · ${assetId}`;
 const input=suffix=>({name:`Проверка состава ${suffix} ${randomUUID()}`,kind:'mcp',description:'Только изолированная проверка',
@@ -74,20 +79,9 @@ try{
     await admin.query(`CREATE DATABASE "${database}"`);created=true;
     const url=new URL(adminUrl);url.pathname='/'+database;
     pool=new Pool({connectionString:url.href,max:6,options:'-c statement_timeout=10000 -c lock_timeout=7000'});
-    await pool.query(`CREATE TABLE projects(id text PRIMARY KEY);
-        CREATE TABLE ai_plugins (
-            id text PRIMARY KEY,name text NOT NULL UNIQUE,kind text NOT NULL DEFAULT 'mcp',description text NOT NULL DEFAULT '',
-            version integer NOT NULL DEFAULT 1,compatibility text,tags text[] NOT NULL DEFAULT '{}',origin text NOT NULL DEFAULT 'upload',
-            revision text,config jsonb,files jsonb NOT NULL DEFAULT '[]',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-        CREATE TABLE ai_plugin_versions(ai_plugin_id text NOT NULL,version integer NOT NULL,files jsonb NOT NULL,config jsonb,
-            author text NOT NULL DEFAULT 'admin',note text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(ai_plugin_id,version));
-        CREATE TABLE project_assets(project_id text NOT NULL REFERENCES projects(id),asset_id text NOT NULL,asset_kind text NOT NULL,
-            added_by text NOT NULL,added_at timestamptz NOT NULL DEFAULT now(),UNIQUE(project_id,asset_id,asset_kind));
-        CREATE TABLE operations(operation_id text,started_at timestamptz,created_at timestamptz,actor text,resource_type text,
-            type text,resource_id text,state text);`);
-    await pool.query('INSERT INTO projects(id) VALUES($1),($2)',[projectA,projectB]);
-    await setupSecurityEvents(pool);
-    plugins=new PluginRepository(pool,assertEmptySkillStore);await plugins.setup();
+    await ensureCatalogSchema(pool);
+    await pool.query('INSERT INTO projects(id,name) VALUES($1,$2),($3,$4)',[projectA,'Project assets A',projectB,'Project assets B']);
+    plugins=new PluginRepository(pool);
     assets=new ProjectAssetRepository(pool);
 
     const shared=await plugins.create(input('повторы'),'qa-publisher');
@@ -129,7 +123,25 @@ try{
     assert.equal((await events(projectB,shared.id,'remove')).length,0);
     scenarios.push('Настоящий SQL CHECK отказа аудита откатывает DELETE и сохраняет назначение');
 
-    const skillId='skill-own-qa';
+    skillStorage=new FsSkillsStorage(skillDirectory);await skillStorage.init();
+    const skills=new SkillsService(skillStorage),skillImports=new SkillAssetImportController(skills);
+    await skills.createSkill({path:'common',slug:'skill-own-qa',name:'Own skill fixture',body:'Use the exact packaged version.',meta:{description:'Isolated assignment fixture',mcp:[],plugins:[],dependencies:[]}},'qa');
+    process.env.NEUROCENTER_INTERNAL_TOKEN=token;
+    skillServer=createServer(async(req,res)=>{
+        try{
+            let value;
+            if(req.method==='POST'&&req.url==='/internal/asset-sources/skills/inspect'){
+                const chunks=[];for await(const chunk of req)chunks.push(chunk);
+                value=await skillImports.inspect(req,JSON.parse(Buffer.concat(chunks).toString()));
+            }else if(req.method==='GET'&&req.url==='/api/skills/_package/common/skill-own-qa?version=1'){
+                assert.equal(req.headers['x-neurocenter-internal'],token);value=await skills.getSkill('common/skill-own-qa',1);
+            }else{res.writeHead(404);res.end();return;}
+            res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(value));
+        }catch(error){res.writeHead(error.getStatus?.()||500,{'content-type':'application/json'});res.end(JSON.stringify({message:error.message}));}
+    });
+    await new Promise((resolve,reject)=>{skillServer.once('error',reject);skillServer.listen(0,'127.0.0.1',resolve);});
+    process.env.SKILLS_SERVICE_URL='http://127.0.0.1:'+skillServer.address().port;
+    const skillId='common/skill-own-qa';
     await assets.add(projectA,skillId,'skill','qa-skill-adder');
     assert.equal((await events(projectA,skillId,'add','skill'))[0].after_state.assetKind,'skill');
     assert.equal(await assets.remove(projectA,skillId,'skill','qa-skill-remover'),true);
@@ -141,19 +153,19 @@ try{
     assert.equal((await events(projectA,'ai-plug-missing','add')).length,0);
     scenarios.push('Отсутствующая карточка получает 404 без осиротевшей связи и события');
 
-    await assert.rejects(assets.add(projectA,shared.id,'plugin','qa-invalid'),error=>error.status===400);
+    await assert.rejects(assets.add(projectA,shared.id,'plugin','qa-invalid'),error=>error.status===409);
     assert.equal(await count("SELECT count(*)::int AS n FROM project_assets WHERE asset_id=$1 AND asset_kind='plugin'",[shared.id]),0);
     assert.equal((await events(projectA,shared.id,'add','plugin')).length,0);
     scenarios.push('Неверный тип существующей карточки получает 400 без связи и события');
 
     const addFirst=await plugins.create(input('назначение первое'),'qa-publisher');
-    const addGate=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR KEY SHARE'));
+    const addGate=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR SHARE'));
     const deleteObserver=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR UPDATE'));
     const adding=observed(new ProjectAssetRepository(addGate.pool).add(projectA,addFirst.id,'mcp','qa-race-adder'));
     let deleting;
     try{
-        const addPid=await within(addGate.acquired,'назначение получило KEY SHARE');
-        deleting=observed(new PluginRepository(deleteObserver.pool,assertEmptySkillStore).delete(addFirst.id,'qa-race-deleter'));
+        const addPid=await within(addGate.acquired,'назначение получило SHARE');
+        deleting=observed(new PluginRepository(deleteObserver.pool).delete(addFirst.id,'qa-race-deleter'));
         const deletePid=await within(deleteObserver.attempt,'удаление запросило UPDATE');
         await assertBlockedBy(deletePid,addPid);
     }finally{addGate.release();deleteObserver.release();}
@@ -161,26 +173,26 @@ try{
     assert.ok(await plugins.get(addFirst.id));
     assert.equal(await count('SELECT count(*)::int AS n FROM project_assets WHERE asset_id=$1',[addFirst.id]),1);
     assert.equal((await events(projectA,addFirst.id,'add')).length,1);
-    assert.equal(await count("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[addFirst.id]),0);
-    scenarios.push('Назначение первым удерживает KEY SHARE: DELETE действительно ждёт строку и получает 409 после COMMIT');
+    assert.equal(await count("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.archive'",[addFirst.id]),0);
+    scenarios.push('Назначение первым удерживает SHARE: архив действительно ждёт строку и получает 409 по назначенному exact pin после COMMIT');
 
     const deleteFirst=await plugins.create(input('удаление первое'),'qa-publisher');
     const deleteGate=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR UPDATE'));
-    const addObserver=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR KEY SHARE'));
-    const deletingFirst=observed(new PluginRepository(deleteGate.pool,assertEmptySkillStore).delete(deleteFirst.id,'qa-race-deleter'));
+    const addObserver=controlledPool(sql=>sql.includes('FROM ai_plugins')&&sql.includes('FOR SHARE'));
+    const deletingFirst=observed(new PluginRepository(deleteGate.pool).delete(deleteFirst.id,'qa-race-deleter'));
     let addingAfterDelete;
     try{
         const deletePid=await within(deleteGate.acquired,'удаление получило UPDATE');
         addingAfterDelete=observed(new ProjectAssetRepository(addObserver.pool).add(projectA,deleteFirst.id,'mcp','qa-race-adder'));
-        const addPid=await within(addObserver.attempt,'назначение запросило KEY SHARE');
+        const addPid=await within(addObserver.attempt,'назначение запросило SHARE');
         await assertBlockedBy(addPid,deletePid);
     }finally{deleteGate.release();addObserver.release();}
-    assert.equal(await successful(deletingFirst),true);await rejected(addingAfterDelete,404);
-    assert.equal(await plugins.get(deleteFirst.id),null);
+    assert.equal(await successful(deletingFirst),true);await rejected(addingAfterDelete,409);
+    assert.ok((await plugins.get(deleteFirst.id)).archivedAt);assert.ok(await plugins.version(deleteFirst.id,1));
     assert.equal(await count('SELECT count(*)::int AS n FROM project_assets WHERE asset_id=$1',[deleteFirst.id]),0);
     assert.equal((await events(projectA,deleteFirst.id,'add')).length,0);
-    assert.equal(await count("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[deleteFirst.id]),1);
-    scenarios.push('DELETE первым удерживает UPDATE: назначение действительно ждёт строку и получает 404 без связи после COMMIT');
+    assert.equal(await count("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.archive'",[deleteFirst.id]),1);
+    scenarios.push('Архив первым удерживает UPDATE: назначение действительно ждёт и получает 409; история сохранена, новой связи нет');
 
     const history=await listAuditHistory(pool,1,100);
     const visible=history.items.filter(event=>event.action.startsWith('project.asset.'));
@@ -195,7 +207,10 @@ try{
 }catch(error){fatal=error.stack||String(error);console.error(fatal);process.exitCode=1;}
 finally{
     await pool?.end();
-    await rm(emptySkillStore,{recursive:true,force:true});
+    if(skillServer)await new Promise(resolve=>{skillServer.close(resolve);skillServer.closeAllConnections();});
+    await skillStorage?.onModuleDestroy();await rm(skillDirectory,{recursive:true,force:true});
+    if(originalSkillsUrl===undefined)delete process.env.SKILLS_SERVICE_URL;else process.env.SKILLS_SERVICE_URL=originalSkillsUrl;
+    if(originalInternalToken===undefined)delete process.env.NEUROCENTER_INTERNAL_TOKEN;else process.env.NEUROCENTER_INTERNAL_TOKEN=originalInternalToken;
     if(created){await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);ownDatabaseDropped=true;}
     const afterDatabases=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     const originalDatabasesPreserved=JSON.stringify(beforeDatabases)===JSON.stringify(afterDatabases);

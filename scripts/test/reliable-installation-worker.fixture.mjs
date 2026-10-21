@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -104,7 +105,7 @@ fs.appendFileSync(${JSON.stringify(openerLog)}, JSON.stringify({ args, sha256: c
         await stopWorker(); cleanup.workerStopped = true;
         if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
         await devices?.onModuleDestroy();
-        if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); cleanup.ownDatabaseDropped = !(await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount; }
+        if (created) { await admin.query(`DROP DATABASE "${database}"`); cleanup.ownDatabaseDropped = !(await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount; }
         const after = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
         cleanup.originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(after);
         cleanup.originalCatalogDataPreserved = JSON.stringify(devBefore) === JSON.stringify(await devSnapshot());
@@ -123,22 +124,18 @@ fs.appendFileSync(${JSON.stringify(openerLog)}, JSON.stringify({ args, sha256: c
         const { DeviceJobs } = await load('services/catalog-service/dist/devices/device-jobs.js');
         const { DeviceInstallations } = await load('services/catalog-service/dist/devices/device-installations.js');
         const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-        const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-        const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
         const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
         const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
         const claims = async email => ({ email, userRoles: ['Главный админ', 'Разработчик', 'Наблюдатель'], projects: [projectId, legacyProjectId].map(id => ({ projectId: id, projectName: id, role: 'Админ проекта' })) });
         devices = new DeviceStore({ claims }); await devices.onModuleInit();
         assert.equal((await devices.pool.query('SELECT current_database() AS name')).rows[0].name, database);
-        await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('${projectId}'),('${legacyProjectId}');
-            CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-            CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
-        await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+        await seedInstallationProjects(devices.pool,[projectId,legacyProjectId],actor);
+
         pkg = buildPackage({ kind: 'mcp', id: assetId, name: 'reliable-worker-fixture', version: 1 },
             [{ path: 'index.mjs', content: '// Одобренная версия; при установке и восстановлении код не запускается.\nexport default {};\n' }], 'now', { transport: 'stdio', command: 'node', entrypoint: 'index.mjs' });
         const artifacts = { build: async (kind, id, version) => { assert.equal(kind, 'mcp'); assert.equal(id, assetId); assert.equal(version, 1); return pkg; } };
         installations = new DeviceInstallations(devices); plans = new InstallPlans(devices, artifacts); jobs = new DeviceJobs(devices, artifacts, installations, plans);
-        for (const id of [projectId, legacyProjectId]) await devices.pool.query('INSERT INTO project_assets VALUES($1,$2,$3)', [id, 'mcp', assetId]);
+        for (const id of [projectId,legacyProjectId]) await pinInstallationPackage(devices.pool,id,pkg,actor);
         const credential = randomBytes(32).toString('hex');
         const pair = await devices.start({ name: 'Проверка надежных установок', fingerprint: '7'.repeat(64), credentialHash: digest(credential) });
         await devices.approve(actor, pair.userCode); const connected = await devices.poll(pair.deviceCode); token = credential; deviceId = connected.deviceId;

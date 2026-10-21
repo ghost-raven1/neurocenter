@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const catalogDist = process.env.PUBLICATION_TEST_DIST || path.join(root, 'services/catalog-service/dist');
 const skillsDist = process.env.SKILLS_TEST_DIST || path.join(root, 'services/skills-service/dist');
 const { SkillAuditRepository } = require(path.join(catalogDist, 'publication/skill-audit-repository.js'));
-const { setupSecurityEvents } = require(path.join(catalogDist, 'access/security-events.js'));
+const { ensureCatalogSchema } = require(path.join(catalogDist, 'database/catalog-schema.js'));
 const { FsSkillsStorage } = require(path.join(skillsDist, 'storage/fs-skills-storage.js'));
 const { SkillsService } = require(path.join(skillsDist, 'skills/skills.service.js'));
 const { SkillsController } = require(path.join(skillsDist, 'skills/skills.controller.js'));
@@ -69,8 +69,8 @@ try {
     await admin.query(`CREATE DATABASE "${database}"`); created = true;
     const url = new URL(adminUrl); url.pathname = '/' + database;
     pool = new Pool({ connectionString: url.href, max: 4 });
-    await setupSecurityEvents(pool);
-    const repository = new SkillAuditRepository(pool); await repository.setup();
+    await ensureCatalogSchema(pool);
+    const repository = new SkillAuditRepository(pool);
     server = createServer(async (req, res) => {
         const send = (status, data) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); };
         try {

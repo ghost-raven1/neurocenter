@@ -30,11 +30,7 @@ try{
     const pool=store.pool;
     secondPool=new Pool({connectionString:url.href,max:3});
     for(const current of [pool,secondPool])current.on('error',error=>{if(!cleaning)backgroundErrors.push(error.code||'unknown');});
-    await pool.query(`CREATE TABLE projects(id text PRIMARY KEY);
-        INSERT INTO projects(id) VALUES('${projectId}');
-        CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,
-        resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb,
-        created_at timestamptz NOT NULL DEFAULT now(),bytes_done bigint NOT NULL DEFAULT 0,bytes_total bigint NOT NULL DEFAULT 0,retries integer NOT NULL DEFAULT 0)`);
+    await pool.query('INSERT INTO projects(id,name) VALUES($1,$2)',[projectId,'Isolated bridge requests']);
     const device=async(owner=email)=>{
         const id=randomUUID();await pool.query(`INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash)
             VALUES($1,$2,$3,'Изолированная очередь',$4,$5)`,[id,owner,role,'a'.repeat(64),randomBytes(32).toString('hex')]);return id;

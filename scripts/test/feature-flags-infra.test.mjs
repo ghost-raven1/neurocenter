@@ -52,7 +52,7 @@ test('Новый сервис входит в установку, сборку, 
 test('План семи приложений принимается, старый комплект из шести не подменяет миграцию топологии',()=>{
     const plan={format:'neurocenter-update-v1',id:'feature-flags-fixture',sourceRelease:'old',targetRelease:'new',
         sourceImages:images(),targetImages:images(),postgresImage:image,rollback:'restore-new-project',
-        migrationCompatibility:'backward-compatible',rehearsalSha256:'b'.repeat(64),maxPauseMs:60000,catalogMigrations:[]};
+        migrationCompatibility:'backward-compatible',rehearsalSha256:'b'.repeat(64),maxPauseMs:60000,catalogMigrations:[{version:0,name:'fixture baseline',checksum:'c'.repeat(64)}]};
     assert.equal(validateUpdatePlan(plan),plan);
     const old=structuredClone(plan);delete old.sourceImages['feature-flags-service'];delete old.targetImages['feature-flags-service'];
     assert.throws(()=>validateUpdatePlan(old),/7 образов/);

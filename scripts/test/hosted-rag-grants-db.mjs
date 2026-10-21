@@ -9,8 +9,8 @@ const root=fileURLToPath(new URL('../../',import.meta.url)),require=createRequir
 require.extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021,experimentalDecorators:true,emitDecoratorMetadata:true,esModuleInterop:true}}).outputText,file);
 const source=file=>require(path.join(root,'services/catalog-service/src',file+'.ts'));
 const {Pool}=require('pg'),{AccessDb}=source('access/access-db'),{DeviceStore}=source('devices/device-store'),{DeviceInstallations}=source('devices/device-installations'),{InstallPlans}=source('devices/install-plans');
-const {setupModelsSchema,ModelsRepository}=source('models/models.repository'),{ProjectEmbeddingRepository}=source('models/project-embedding.repository'),{setupInstallPlans}=source('devices/install-plan-schema'),{setupProjectAssetPins}=source('catalog/project-asset-pins');
-const {setupHostedRagGrantRevocations}=source('devices/hosted-rag-grant-schema'),{registerHostedRagGrant,completeHostedRagGrant,readHostedRagGrant}=source('devices/hosted-rag-grants');
+const {ensureCatalogSchema}=source('database/catalog-schema');
+const {backfillHostedRagGrants}=source('devices/hosted-rag-grant-backfill'),{registerHostedRagGrant,completeHostedRagGrant,readHostedRagGrant}=source('devices/hosted-rag-grants');
 const {HostedRagGrantService}=source('models/hosted-rag-grant.service'),{DeviceEmbeddingService}=source('models/device-embedding.service'),{saveModelVersion,modelFromRow}=source('models/model-history'),{projectEmbeddingPin}=source('models/project-embedding.validation'),{buildPackage}=source('catalog/bundle-package');
 const adminUrl=process.env.REMOTE_MODEL_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres',admin=new Pool({connectionString:adminUrl,max:1}),database='nc_hosted_grants_'+randomUUID().replaceAll('-','');
 const before=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate')).rows.map(row=>row.datname),originalPg=process.env.CATALOG_PG_URL,originalFetch=globalThis.fetch;
@@ -18,10 +18,10 @@ let created=false,pool,access,store,fatal;const checks=[];
 const check=async(name,action)=>{try{await action();checks.push({name,ok:true});}catch(error){checks.push({name,ok:false,error:error.message});throw error;}};
 try{
  await admin.query('CREATE DATABASE "'+database+'"');created=true;const url=new URL(adminUrl);url.pathname='/'+database;process.env.CATALOG_PG_URL=url.href;pool=new Pool({connectionString:url.href,max:8});
- await pool.query(`CREATE TABLE projects(id TEXT PRIMARY KEY,name TEXT NOT NULL); CREATE TABLE project_members(project_id TEXT,user_id TEXT,principal_name TEXT,role TEXT,PRIMARY KEY(project_id,user_id)); CREATE TABLE project_assets(project_id TEXT,asset_id TEXT,asset_kind TEXT,added_by TEXT,added_at TIMESTAMPTZ DEFAULT now(),PRIMARY KEY(project_id,asset_kind,asset_id));`);
- access=new AccessDb();await access.ready();store=new DeviceStore(access);await store.ready();await setupModelsSchema(pool);await new ProjectEmbeddingRepository(pool).setup();await setupProjectAssetPins(pool);await setupInstallPlans(pool);
+ await ensureCatalogSchema(pool);
+ access=new AccessDb();await access.ready();store=new DeviceStore(access);await store.ready();
  const projectId='prj-grants',email='grants@example.test',bindingId='a'.repeat(64),instanceId=randomUUID(),role='Разработчик';
- await pool.query('INSERT INTO projects VALUES($1,$2)',[projectId,'Grant fixture']);await pool.query('INSERT INTO platform_users(email) VALUES($1)',[email]);await pool.query('INSERT INTO project_members VALUES($1,$2,$3,$4)',[projectId,'user',email,role]);
+ await pool.query('INSERT INTO projects(id,name) VALUES($1,$2)',[projectId,'Grant fixture']);await pool.query('INSERT INTO platform_users(email) VALUES($1)',[email]);await pool.query('INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES($1,$2,$3,$4,$5)',[projectId,'user',email,'Grant fixture user',role]);
  const report={capabilities:['workspace-instance-v1','opencode-rag-ui-v1','hosted-rag-model-v1','hosted-rag-grants-v1','package-v5'],bindings:[{projectId,bindingId,instanceId,valid:true}]};
  const device=async id=>{await pool.query('INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report) VALUES($1,$2,$3,$1,$4,$5,$6)',[id,email,role,'a'.repeat(64),randomUUID(),JSON.stringify(report)]);return store.owned({email,activeRole:role},id);};
  const first=await device(randomUUID()),second=await device(randomUUID());
@@ -126,11 +126,11 @@ try{
   const result={status:'connected',revision:2,modelPin:selections[1].modelPin,profile:selections[1].profile,requiresRestart:true};
   await pool.query('UPDATE bridge_jobs SET result=$2 WHERE id=$1',[trusted.id,JSON.stringify(result)]);await pool.query('UPDATE bridge_jobs SET result=$2 WHERE id=$1',[bad.id,JSON.stringify({...result,modelPin:'e'.repeat(64)})]);
   await pool.query("DELETE FROM bridge_hosted_grant_migrations WHERE name='trusted-succeeded-connections-v1'");
-  await setupHostedRagGrantRevocations(pool,(record,db)=>grants.validateMigration(record,db));
+  await backfillHostedRagGrants(pool,(record,db)=>grants.validateMigration(record,db));
   assert.equal((await readHostedRagGrant(pool,second,input(packages[1],1))).job_id,trusted.id);
   assert.equal((await pool.query('SELECT 1 FROM bridge_hosted_rag_grants WHERE job_id=$1',[bad.id])).rows.length,0);
   await pool.query('UPDATE bridge_hosted_rag_grants SET revoked_at=now() WHERE job_id=$1',[trusted.id]);
-  await setupHostedRagGrantRevocations(pool,async()=>{});await assert.rejects(readHostedRagGrant(pool,second,input(packages[1],1)));assert.ok(oldA.id&&oldB.id);
+  await backfillHostedRagGrants(pool,async()=>{});await assert.rejects(readHostedRagGrant(pool,second,input(packages[1],1)));assert.ok(oldA.id&&oldB.id);
  });
 }catch(error){fatal=error;}
 finally{

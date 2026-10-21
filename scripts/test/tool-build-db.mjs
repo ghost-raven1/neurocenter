@@ -31,8 +31,7 @@ try {
     pool.on('error', error => {console.error('Тестовый пул: ' + error.code);});
     process.env.NODE_ENV = 'production';
     catalog = new CatalogDb(url.href); await catalog.setup();
-    await pool.query(`CREATE TABLE bridge_runtime_artifacts(sha256 text PRIMARY KEY,compressed_bytes bigint,unpacked_bytes bigint,files_count integer)`);
-    const repository = new PackageBuildRepository(pool); await repository.setup();
+    const repository = new PackageBuildRepository(pool);
     const actor = 'builder@example.test', requestKey = randomUUID();
     const config = {kind: 'plugin', name: 'Тестовый плагин', description: 'Проверка', tags: [], targets: ['darwin-arm64'],
         source: {type: 'files', entrypoint: 'index.mjs', files: [{path: 'index.mjs', content: 'export default async () => ({})'}]}};

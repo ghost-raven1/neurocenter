@@ -1,20 +1,17 @@
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {mkdir,writeFile,mkdtemp,readdir,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
-// Эти SQL-сценарии владеют пустым хранилищем; HTTP/история проверяются отдельно.
-const emptySkillStore=await mkdtemp(path.join(tmpdir(),'nc-empty-skill-refs-'));
-const assertEmptySkillStore=async()=>assert.deepEqual(await readdir(emptySkillStore),[]);
 const dist=process.env.PUBLICATION_TEST_DIST || fileURLToPath(new URL('../../services/catalog-service/dist/',import.meta.url));
 const {PluginRepository}=require(path.join(dist,'publication/plugin-repository.js'));
+const {ProjectAssetRepository}=require(path.join(dist,'catalog/project-asset-repository.js'));
 const {buildPackage}=require(path.join(dist,'catalog/bundle-package.js'));
-const {setupSecurityEvents}=require(path.join(dist,'access/security-events.js'));
+const {ensureCatalogSchema}=require(path.join(dist,'database/catalog-schema.js'));
 const {listAuditHistory}=require(path.join(dist,'catalog/audit-history.js'));
 const root=new URL('../../',import.meta.url);
 // Сценарии публикации создают собственную БД, не добавляя даже временных строк в рабочий каталог.
@@ -49,7 +46,7 @@ const controlledRepository=(pause)=>{
             return result;
         },release(){client.release();}};
     }};
-    return{repository:new PluginRepository(controlledPool,assertEmptySkillStore),attempt,acquired,release:()=>releaseGate()};
+    return{repository:new PluginRepository(controlledPool),attempt,acquired,release:()=>releaseGate()};
 };
 const assertGraphBlocked=async(pid)=>{
     const deadline=Date.now()+5000;
@@ -72,18 +69,8 @@ try{
     await admin.query(`CREATE DATABASE "${database}"`);created=true;
     const url=new URL(adminUrl);url.pathname='/'+database;
     pool=new Pool({connectionString:url.href,max:5});
-    await pool.query(`CREATE TABLE ai_plugins (
-        id text PRIMARY KEY,name text NOT NULL UNIQUE,kind text NOT NULL DEFAULT 'mcp',description text NOT NULL DEFAULT '',
-        version integer NOT NULL DEFAULT 1,compatibility text,tags text[] NOT NULL DEFAULT '{}',origin text NOT NULL DEFAULT 'upload',
-        revision text,config jsonb,files jsonb NOT NULL DEFAULT '[]',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-        CREATE TABLE ai_plugin_versions(ai_plugin_id text NOT NULL,version integer NOT NULL,files jsonb NOT NULL,config jsonb,
-        author text NOT NULL DEFAULT 'admin',note text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(ai_plugin_id,version));
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        CREATE TABLE operations(operation_id text,started_at timestamptz,created_at timestamptz,actor text,resource_type text,
-            type text,resource_id text,state text);`);
-    await setupSecurityEvents(pool);
-    repository=new PluginRepository(pool,assertEmptySkillStore);
-    await repository.setup();
+    await ensureCatalogSchema(pool);
+    repository=new PluginRepository(pool);
     const body=input('русское название');
     const repeated=await Promise.all([repository.create(body,'qa-publication'),repository.create(body,'qa-publication')]);
     ids.push(repeated[0].id);
@@ -134,13 +121,13 @@ try{
     const restoredWithoutPins=await repository.activate(ids[0],1,'qa-editor');
     assert.equal(restoredWithoutPins.dependencies,undefined);
     report.push('Восстановление старой версии без pins не наследует зависимости текущего head');
-    await assert.rejects(repository.delete(other.id,'qa-delete'),error=>error.status===409);
+    assert.equal(await repository.delete(other.id,'qa-delete'),true);assert.ok((await repository.get(other.id)).archivedAt);
     assert.equal((await repository.versions(other.id)).length,2);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[other.id])).rows[0].n,0);
-    report.push('Закреплённая в head чужой карточки зависимость получает 409 без потери своих точных версий и ложного аудита');
+    report.push('Архив зависимости сохраняет обе точные версии и pin чужого head без события физического удаления');
     await repository.update(pinned.id,{dependencies:[],expectedVersion:restoredPins.version},'qa-editor');
-    await assert.rejects(repository.delete(other.id,'qa-delete'),error=>error.status===409);
-    report.push('После удаления pins из всех текущих head исторические версии продолжают защищать зависимость от DELETE');
+    assert.equal(await repository.delete(other.id,'qa-delete'),true);assert.ok((await repository.get(other.id)).archivedAt);
+    report.push('После очистки head исторический pin сохраняется; повтор архива не дублирует событие');
     for(const badPin of [{...pin,version:999},{...pin,kind:'plugin'},{...pin,manifest:'f'.repeat(64)},{...pin,id:'ai-plug-missing'}]){
         const invalid=input('невалидная зависимость '+randomUUID());
         await assert.rejects(repository.create({...invalid,dependencies:[badPin]},'qa-publication'),error=>error.status===409);
@@ -166,10 +153,10 @@ try{
         await assertGraphBlocked(deletePid);
     }finally{publisherGate.release();}
     const publishedBeforeDelete=await concurrentPublication;
-    await assert.rejects(concurrentDelete,error=>error.status===409);
+    assert.equal(await concurrentDelete,true);assert.ok((await repository.get(publishFirstDependency.id)).archivedAt);
     assert.deepEqual(publishedBeforeDelete.dependencies,[publishFirstPin]);
     assert.ok(await repository.get(publishFirstDependency.id));
-    report.push('Публикация первой держит настоящий advisory lock: конкурентный DELETE ждёт, затем получает 409 по сохранённому pin');
+    report.push('Публикация первой держит настоящий advisory lock: конкурентный архив ждёт и сохраняет опубликованный exact pin');
     const deleteFirstDependency=await repository.create(input('зависимость удаление первое'),'qa-publication');
     const deleteFirstPin=await dependencyPin(deleteFirstDependency);
     const deleteGate=controlledRepository(true),publicationObserver=controlledRepository(false);
@@ -183,9 +170,9 @@ try{
         await assertGraphBlocked(publicationPid);
     }finally{deleteGate.release();}
     assert.equal(await deletedFirst,true);
-    await assert.rejects(publicationAfterDelete,error=>error.status===409);
-    assert.equal((await pool.query('SELECT id FROM ai_plugins WHERE name=$1',[rejectedPublication.name])).rowCount,0);
-    report.push('DELETE первым держит настоящий advisory lock: публикация ждёт, перечитывает отсутствующую версию и откатывается с 409');
+    const publishedAfterArchive=await publicationAfterDelete;
+    assert.deepEqual(publishedAfterArchive.dependencies,[deleteFirstPin]);assert.ok(await repository.version(deleteFirstDependency.id,1));
+    report.push('Архив первым держит настоящий advisory lock: публикация ждёт и читает сохранённую историческую версию');
     const failure=input('откат при ошибке');
     const brokenPool={async connect(){const client=await pool.connect();return{query(sql,params){if(String(sql).startsWith('INSERT INTO ai_plugin_versions')){throw new Error('qa-version-write-failed');}return client.query(sql,params);},release(){client.release();}};}};
     await assert.rejects(new PluginRepository(brokenPool).create(failure,'qa-publication'),/qa-version-write-failed/);
@@ -200,40 +187,44 @@ try{
     report.push('Публикация, изменение и восстановление имеют один аудит на мутацию; сбой аудита откатывает карточку, содержимое настроек в журнал не попадает');
     const deletable=await repository.create(input('удаление с аудитом'),'qa-publication');
     const deletableVersions=await repository.versions(deletable.id);
-    await pool.query("ALTER TABLE security_events ADD CONSTRAINT qa_delete_audit_failure CHECK (action<>'plugin.delete') NOT VALID");
+    await pool.query("ALTER TABLE security_events ADD CONSTRAINT qa_delete_audit_failure CHECK (action<>'plugin.archive') NOT VALID");
     await assert.rejects(repository.delete(deletable.id,'qa-delete'),error=>error.code==='23514');
     await pool.query('ALTER TABLE security_events DROP CONSTRAINT qa_delete_audit_failure');
-    assert.ok(await repository.get(deletable.id));
+    assert.equal((await repository.get(deletable.id)).archivedAt,undefined);
     assert.deepEqual(await repository.versions(deletable.id),deletableVersions);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[deletable.id])).rows[0].n,0);
-    report.push('Ошибка INSERT аудита реально откатывает DELETE карточки и всех её версий в PostgreSQL');
-    await pool.query('INSERT INTO project_assets(project_id,asset_kind,asset_id) VALUES($1,$2,$3)',['prj-own-qa','mcp',deletable.id]);
+    report.push('Ошибка INSERT аудита откатывает архивирование карточки, все версии остаются неизменны');
+    await pool.query('INSERT INTO projects(id,name) VALUES($1,$2)',['prj-own-qa','Publication deletion fixture']);
+    await new ProjectAssetRepository(pool).add('prj-own-qa',deletable.id,'mcp','qa');
     await assert.rejects(repository.delete(deletable.id,'qa-delete'),error=>error.status===409);
     assert.ok(await repository.get(deletable.id));
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[deletable.id])).rows[0].n,0);
     await pool.query('DELETE FROM project_assets WHERE asset_id=$1',[deletable.id]);
     report.push('Используемый MCP получает 409 без потери карточки и без ложного события удаления');
     const removals=await Promise.all([repository.delete(deletable.id,'qa-delete'),repository.delete(deletable.id,'qa-delete')]);
-    assert.equal(removals.filter(Boolean).length,1);
-    assert.equal(await repository.get(deletable.id),null);
-    assert.equal((await repository.versions(deletable.id)).length,0);
-    const deletion=(await pool.query("SELECT actor,before_state,after_state FROM security_events WHERE resource_id=$1 AND action='plugin.delete'",[deletable.id])).rows;
+    assert.equal(removals.every(Boolean),true);
+    assert.ok((await repository.get(deletable.id)).archivedAt);
+    assert.deepEqual(await repository.versions(deletable.id),deletableVersions);
+    await assert.rejects(new ProjectAssetRepository(pool).add('prj-own-qa',deletable.id,'mcp','qa'),error=>error.status===409);
+    assert.equal((await repository.list(1,100,'')).items.some(item=>item.id===deletable.id),false);
+    const deletion=(await pool.query("SELECT actor,before_state,after_state FROM security_events WHERE resource_id=$1 AND action='plugin.archive'",[deletable.id])).rows;
     assert.equal(deletion.length,1);assert.equal(deletion[0].actor,'qa-delete');
-    assert.equal(deletion[0].before_state.name,deletable.name);assert.equal(deletion[0].after_state,null);
+    assert.equal(deletion[0].before_state.name,deletable.name);assert.equal(deletion[0].after_state.archived,true);
     assert.equal('config' in deletion[0].before_state || 'files' in deletion[0].before_state,false);
     assert.match(deletion[0].before_state.contentHash,/^[a-f0-9]{64}$/);
-    assert.equal(await repository.delete(deletable.id,'qa-delete'),false);
-    report.push('Два конкурентных удаления и повтор оставляют одно событие с исполнителем и отпечатком удалённой версии');
+    assert.equal(await repository.delete(deletable.id,'qa-delete'),true);
+    assert.equal(await repository.delete('ai-plug-missing','qa-delete'),false);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM security_events WHERE resource_id=$1 AND action='plugin.archive'",[deletable.id])).rows[0].n,1);
+    report.push('Два конкурентных архива и повтор оставляют одно событие; новые назначения запрещены, история и версии сохранены');
     const history=await listAuditHistory(pool,1,100);
-    const visible=history.items.find(event=>event.resourceId===deletable.id&&event.action==='plugin.delete');
+    const visible=history.items.find(event=>event.resourceId===deletable.id&&event.action==='plugin.archive');
     assert.ok(visible);assert.equal(visible.actor,'qa-delete');assert.equal(visible.source,'security');
     assert.equal(visible.outcome,'SUCCEEDED');assert.equal(visible.details,null);
-    report.push('Общая страница аудита читает событие после удаления карточки без раскрытия исходных конфигураций');
+    report.push('Общая страница аудита читает событие архивирования без раскрытия исходных конфигураций');
     console.log(JSON.stringify({ok:true,scenarios:report.length},null,2));
 }catch(error){fatal=error.stack||String(error);console.error(fatal);process.exitCode=1;}
 finally{
     await pool?.end();
-    await rm(emptySkillStore,{recursive:true,force:true});
     if(created){await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);ownDatabaseDropped=true;}
     const afterDatabases=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     const originalDatabasesPreserved=JSON.stringify(beforeDatabases)===JSON.stringify(afterDatabases);

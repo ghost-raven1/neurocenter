@@ -7,12 +7,11 @@ import {fileURLToPath} from 'node:url';
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const {Pool} = require('pg');
-const dist = process.env.PUBLICATION_SCENARIO_DIST || fileURLToPath(new URL('../../services/catalog-service/.scenario-audit-dist/', import.meta.url));
+const dist = process.env.PUBLICATION_SCENARIO_DIST || fileURLToPath(new URL('../../services/catalog-service/dist/', import.meta.url));
 const {PluginRepository} = require(path.join(dist, 'publication/plugin-repository.js'));
 const {ProjectAssetRepository} = require(path.join(dist, 'catalog/project-asset-repository.js'));
 const {buildPackage} = require(path.join(dist, 'catalog/bundle-package.js'));
-const {setupSecurityEvents} = require(path.join(dist, 'access/security-events.js'));
-const {setupInstallPlans} = require(path.join(dist, 'devices/install-plan-schema.js'));
+const {ensureCatalogSchema} = require(path.join(dist, 'database/catalog-schema.js'));
 const {InstallPlans} = require(path.join(dist, 'devices/install-plans.js'));
 const {resolveInstallationSet} = require(path.join(dist, 'devices/installation-set.js'));
 const historical = process.env.PUBLICATION_SCENARIO_MODE === 'historical-red';
@@ -54,27 +53,18 @@ try {
     const url = new URL(adminUrl); url.pathname = '/' + database;
     pool = new Pool({connectionString: url.href, max: 5});
     pool.on('error', error => poolErrors.push(error.code || error.message));
-    await pool.query(`CREATE TABLE ai_plugins (
-        id text PRIMARY KEY,name text NOT NULL UNIQUE,kind text NOT NULL DEFAULT 'mcp',description text NOT NULL DEFAULT '',
-        version integer NOT NULL DEFAULT 1,compatibility text,tags text[] NOT NULL DEFAULT '{}',origin text NOT NULL DEFAULT 'upload',
-        revision text,config jsonb,files jsonb NOT NULL DEFAULT '[]',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-        CREATE TABLE ai_plugin_versions(ai_plugin_id text NOT NULL,version integer NOT NULL,files jsonb NOT NULL,config jsonb,
-        author text NOT NULL DEFAULT 'admin',note text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(ai_plugin_id,version));
-        CREATE TABLE projects(id text PRIMARY KEY);
-        CREATE TABLE project_assets(project_id text NOT NULL,asset_kind text NOT NULL,asset_id text NOT NULL,added_by text NOT NULL,added_at timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY(project_id,asset_kind,asset_id));`);
-    await setupSecurityEvents(pool); await setupInstallPlans(pool);
-    // SQL-тест использует собственный пустой skill store; сетевой сервис не подменяет проверяемый граф.
-    repository = new PluginRepository(pool, async () => undefined); await repository.setup();
+    await ensureCatalogSchema(pool);
+    repository = new PluginRepository(pool);
     const assets = new ProjectAssetRepository(pool);
-    await pool.query('INSERT INTO projects(id) VALUES($1)', [project]);
+    await pool.query('INSERT INTO projects(id,name) VALUES($1,$2)', [project,'Publication scenario fixture']);
     const base = await repository.create(input('Базовая зависимость'), actor.email);
     const basePin = await pinFor(base);
     const oldOwner = await repository.create(input('Исторический владелец pin', {dependencies: [basePin]}), actor.email);
     await repository.update(oldOwner.id, {dependencies: [], expectedVersion: 1}, actor.email);
-    await assert.rejects(repository.delete(base.id, actor.email), error => error.status === 409);
+    assert.equal(await repository.delete(base.id, actor.email),true);assert.ok((await repository.get(base.id)).archivedAt);
+    const restore=await pool.connect();try{await restore.query('BEGIN');await repository.archive(restore,base.id,actor.email,{restore:true});await restore.query('COMMIT');}finally{restore.release();}
     assert.equal((await repository.versions(base.id)).length, 1);
-    checks.push('S14: удалённый из head pin остаётся в истории и блокирует DELETE; точная версия сохранена');
+    checks.push('S14: архив зависимости сохраняет исторический pin и точную версию; явное восстановление возвращает возможность назначения');
 
     const b = await repository.create(input('B зависит от A1', {dependencies: [basePin]}), actor.email);
     const bPin = await pinFor(b);
@@ -122,8 +112,8 @@ try {
         const legacyHistory = await repository.versions(legacy.id);
         await rejectWithoutMutation(() => repository.activate(legacy.id, 2, actor.email), legacy.id, 'plugin.activate');
         assert.deepEqual(await repository.versions(legacy.id), legacyHistory);
-        await assert.rejects(repository.delete(legacyChild.id, actor.email), error => error.status === 409);
-        checks.push('S14: активация старого циклического снимка отклонена до новой версии/аудита; история и защита её pins сохранены');
+        assert.equal(await repository.delete(legacyChild.id, actor.email),true);assert.ok(await repository.version(legacyChild.id,1));
+        checks.push('S14: активация старого циклического снимка отклонена до новой версии/аудита; история и точные pins сохраняются при архивировании');
 
         const fragile = await repository.create(input('Временно недоступная точная leaf'), actor.email);
         const fragileVersion = (await pool.query('SELECT * FROM ai_plugin_versions WHERE ai_plugin_id=$1', [fragile.id])).rows[0];
@@ -161,6 +151,8 @@ try {
     const sameRight = await repository.create(input('Правая совместимая ветвь', {dependencies: [sharedPin1]}), actor.email);
     const diamond = await repository.create(input('Совместимый ромб', {dependencies: [await pinFor(left), await pinFor(sameRight)]}), actor.email);
     for (const item of [shared, left, sameRight, diamond]) await assets.add(project, item.id, item.kind, actor.email);
+    const currentSharedPin=await pinFor(shared2);
+    await assets.pin(project,shared.id,shared.kind,actor.email,{version:1,expectedVersion:2,expectedManifest:currentSharedPin.manifest});
     const set = await resolveInstallationSet(pool, project, await packageFor(diamond.kind, diamond.id, diamond.version), packageFor);
     assert.equal(set.packages.length, 4);
     assert.equal(set.packages.find(pkg => pkg.plugin.id === shared.id).plugin.version, 1);
@@ -182,10 +174,16 @@ try {
     const reapproved = await plans.decide(actor, prepared.id, {expectedRevision: revoked.revision, expectedManifest: revoked.manifest}, 'approved');
     assert.ok(await plans.delivery(reapproved.id, project, diamond.kind, diamond.id, 1, reapproved.revision, reapproved.manifest));
     await assets.remove(project, shared.id, shared.kind, actor.email);
-    await assert.rejects(plans.delivery(reapproved.id, project, diamond.kind, diamond.id, 1, reapproved.revision, reapproved.manifest), error => error.status === 403);
-    await assets.add(project, shared.id, shared.kind, actor.email);
+    const withoutLeaf=await plans.delivery(reapproved.id, project, diamond.kind, diamond.id, 1, reapproved.revision, reapproved.manifest);
+    assert.equal(withoutLeaf.installSet.manifest,reapproved.manifest);
+    assert.equal(withoutLeaf.installSet.packages.find(pkg=>pkg.plugin.id===shared.id).plugin.version,1);
+    await assets.remove(project,diamond.id,diamond.kind,actor.email);
+    await assert.rejects(plans.delivery(reapproved.id,project,diamond.kind,diamond.id,1,reapproved.revision,reapproved.manifest),error=>error.status===403);
+    await assets.add(project,diamond.id,diamond.kind,actor.email);
+    await assets.pin(project,diamond.id,diamond.kind,actor.email,{version:1,expectedVersion:2,expectedManifest:(await pinFor(await repository.get(diamond.id))).manifest});
     assert.ok(await plans.delivery(reapproved.id, project, diamond.kind, diamond.id, 1, reapproved.revision, reapproved.manifest));
-    checks.push('S15: повторное одобрение явно возобновляет доставку; удаление leaf из проекта блокирует комплект, возврат исправляет сценарий');
+    checks.push('S15: одобренный immutable граф разрешает exact leaf без отдельного назначения; удаление root запрещает доставку, явный возврат прежнего root pin восстанавливает её');
+
 } catch (error) { fatal = error.stack || String(error); process.exitCode = 1; console.error(fatal); }
 finally {
     await pool?.end();

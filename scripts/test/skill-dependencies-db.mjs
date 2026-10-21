@@ -13,7 +13,7 @@ const catalogDist=process.env.PUBLICATION_TEST_DIST||fileURLToPath(new URL('../.
 const skillsDist=process.env.SKILLS_TEST_DIST||fileURLToPath(new URL('../../services/skills-service/dist/',import.meta.url));
 const {PluginRepository}=require(path.join(catalogDist,'publication/plugin-repository.js'));
 const {reserveSkillDependencies:reserveSql}=require(path.join(catalogDist,'publication/skill-dependency-registry.js'));
-const {setupSecurityEvents}=require(path.join(catalogDist,'access/security-events.js'));
+const {ensureCatalogSchema}=require(path.join(catalogDist,'database/catalog-schema.js'));
 const {buildPackage}=require(path.join(catalogDist,'catalog/bundle-package.js'));
 const {FsSkillsStorage}=require(path.join(skillsDist,'storage/fs-skills-storage.js'));
 const {reserveSkillDependencies:reserveHttp,dependencyReservation}=require(path.join(skillsDist,'storage/skill-dependency-reservation.js'));
@@ -76,14 +76,8 @@ try{
     await admin.query(`CREATE DATABASE "${database}"`);created=true;
     const url=new URL(adminUrl);url.pathname='/'+database;
     pool=new Pool({connectionString:url.href,max:7,options:'-c statement_timeout=12000 -c lock_timeout=8000'});reservationPool=pool;
-    await pool.query(`CREATE TABLE ai_plugins(id text PRIMARY KEY,name text NOT NULL UNIQUE,kind text NOT NULL DEFAULT 'mcp',
-        description text NOT NULL DEFAULT '',version integer NOT NULL DEFAULT 1,compatibility text,tags text[] NOT NULL DEFAULT '{}',
-        origin text NOT NULL DEFAULT 'upload',revision text,config jsonb,files jsonb NOT NULL DEFAULT '[]',
-        created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-        CREATE TABLE ai_plugin_versions(ai_plugin_id text NOT NULL,version integer NOT NULL,files jsonb NOT NULL,config jsonb,
-        author text NOT NULL DEFAULT 'admin',note text NOT NULL DEFAULT '',created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(ai_plugin_id,version));
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);`);
-    await setupSecurityEvents(pool);repository=new PluginRepository(pool);await repository.setup();
+    await ensureCatalogSchema(pool);
+    repository=new PluginRepository(pool);
     server=createServer(async(req,res)=>{
         const send=(status,data)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));};
         try{
@@ -116,29 +110,28 @@ try{
     const first=await plugin('текущий'),firstPin=pinFor(first),firstMeta=meta('current',[firstPin]);
     await storage.createSkill('common/current',firstMeta,'Инструкция');
     assert.equal(await reservationCount(),1);assert.ok(await exists('common/current'));
-    await assert.rejects(repository.delete(first.id,'qa'),error=>error.status===409);
+    assert.equal(await repository.delete(first.id,'qa'),true);
+    assert.equal((await repository.version(first.id,1)).version,firstPin.version);
     const nextMeta={...firstMeta,version:2,dependencies:[]};
     await storage.writeSkill('common/current',nextMeta,'Новая инструкция');await storage.deleteSkill('common/current');
-    await assert.rejects(repository.delete(first.id,'qa'),error=>error.status===409);
+    assert.equal(await repository.delete(first.id,'qa'),true);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM security_events WHERE resource_id=$1 AND action='plugin.archive'",[first.id])).rows[0].n,1);
     assert.equal(await exists('common/current'),false);
-    scenarios.push('Новый скилл резервирует точный pin; очистка head и удаление файла не снимают защиту истории');
+    scenarios.push('Скилл резервирует точный pin; архив инструмента, очистка head и удаление файла сохраняют immutable версию и единственный archive audit');
 
     const old=await plugin('старая история'),oldPin=pinFor(old);
     await legacy.createSkill('common/legacy',meta('legacy',[oldPin]),'Старая версия');
     assert.equal(await reservationCount(),1);
-    await assert.rejects(repository.delete(old.id,'qa'),error=>error.status===409);
+    assert.equal(await repository.delete(old.id,'qa'),true);assert.equal((await repository.version(old.id,1)).version,oldPin.version);
     await legacy.deleteSkill('common/legacy');
-    await assert.rejects(repository.delete(old.id,'qa'),error=>error.status===409);
-    scenarios.push('Незарегистрированный старый файл и снимок удалённого поколения защищены полным чтением файлового сервиса');
+    assert.equal(await repository.delete(old.id,'qa'),true);assert.equal((await repository.version(old.id,1)).version,oldPin.version);
+    scenarios.push('Незарегистрированный исторический файл и снимок удалённого поколения остаются читаемы после архивирования зависимости');
 
     const free=await plugin('проверка отказов');scanMode='unavailable';
-    await assert.rejects(repository.delete(free.id,'qa'),error=>error.status===503);
-    scanMode='malformed';await assert.rejects(repository.delete(free.id,'qa'),error=>error.status===503);scanMode='normal';
-    await writeFile(path.join(directory,'common/corrupt.md'),'Повреждённые метаданные');
-    await assert.rejects(repository.delete(free.id,'qa'),error=>error.status===503);
-    await rm(path.join(directory,'common/corrupt.md'));
-    assert.ok(await repository.get(free.id));assert.equal(await repository.delete(free.id,'qa'),true);
-    scenarios.push('Недоступный сервис, неверный JSON и повреждённый файл дают 503 без удаления; после исправления повтор успешен');
+    assert.equal(await repository.delete(free.id,'qa'),true);scanMode='normal';
+    assert.ok((await repository.get(free.id)).archivedAt);assert.ok(await repository.version(free.id,1));
+    assert.equal(await repository.delete('ai-plug-no-such-fixture','qa'),false);
+    scenarios.push('Архив не требует недоступного файлового сервиса: история сохранена; неизвестный ID не создаёт карточку');
 
     const badMeta=meta('bad',[{...firstPin,manifest:'f'.repeat(64)}]);
     await assert.rejects(storage.createSkill('common/bad',badMeta,'Не публиковать'),error=>error.status===409);
@@ -159,10 +152,10 @@ try{
 
     const lost=await plugin('потеря подтверждения'),lostPin=pinFor(lost),lostMeta=meta('lost',[lostPin]);reserveMode='lost-ack';
     await assert.rejects(storage.createSkill('common/lost',lostMeta,'Инструкция'),error=>error.status===503);
-    assert.equal(await exists('common/lost'),false);await assert.rejects(repository.delete(lost.id,'qa'),error=>error.status===409);
+    assert.equal(await exists('common/lost'),false);assert.equal(await repository.delete(lost.id,'qa'),true);assert.ok(await repository.version(lost.id,1));
     const beforeRetry=await reservationCount();await storage.createSkill('common/lost',lostMeta,'Инструкция');
     assert.equal(await reservationCount(),beforeRetry);
-    scenarios.push('Потеря HTTP ACK после SQL COMMIT не публикует файл; резерв защищает цель, повтор идемпотентен');
+    scenarios.push('Потеря HTTP ACK после SQL COMMIT не публикует файл; резерв и архив сохраняют точную историю, повтор идемпотентен');
 
     const racing=await plugin('резерв первым'),racingPin=pinFor(racing),reserveGate=gatePool(),deleteObserver=gatePool();
     reservationPool=reserveGate.pool;
@@ -173,8 +166,9 @@ try{
         deletion=observed(new PluginRepository(deleteObserver.pool).delete(racing.id,'qa'));
         await assertBlocked(await within(deleteObserver.attempt),reservePid);
     }finally{reserveGate.release();deleteObserver.release();}
-    await successful(creating);await rejected(deletion,409);reservationPool=pool;
-    scenarios.push('Резерв первым удерживает настоящий graph lock: DELETE ждёт и получает 409, файл ссылается на существующую цель');
+    await successful(creating);assert.equal(await successful(deletion),true);reservationPool=pool;
+    assert.ok(await repository.version(racing.id,1));assert.equal(await exists('common/reserve-first'),true);
+    scenarios.push('Резерв первым удерживает настоящий graph lock: архив ждёт и сохраняет точный pin опубликованного файла');
 
     const deleted=await plugin('удаление первым'),deletedPin=pinFor(deleted),deleteGate=gatePool(),reserveObserver=gatePool();
     const deleting=observed(new PluginRepository(deleteGate.pool).delete(deleted.id,'qa'));
@@ -184,18 +178,18 @@ try{
         creation=observed(storage.createSkill('common/delete-first',meta('delete-first',[deletedPin]),'Не публиковать'));
         await assertBlocked(await within(reserveObserver.attempt),deletePid);
     }finally{deleteGate.release();reserveObserver.release();}
-    assert.equal(await successful(deleting),true);await rejected(creation,409);reservationPool=pool;
-    assert.equal(await exists('common/delete-first'),false);
-    scenarios.push('DELETE первым удерживает настоящий graph lock: регистрация ждёт, затем получает 409 без файловой публикации');
+    assert.equal(await successful(deleting),true);await successful(creation);reservationPool=pool;
+    assert.equal(await exists('common/delete-first'),true);assert.ok(await repository.version(deleted.id,1));
+    scenarios.push('Архив первым удерживает настоящий graph lock: регистрация ждёт и использует сохранённую точную историческую версию');
 
     const journalTarget=await plugin('журнал'),journalPin=pinFor(journalTarget),raw=serializeSkillFile(meta('journal',[journalPin]),'Сохранённый текст');
     const journalDir=path.join(directory,'.neurocenter-sync-journal');await mkdir(journalDir,{recursive:true});
     const journalFile=path.join(journalDir,createHash('sha256').update('common').digest('hex')+'.json');
     await writeFile(journalFile,JSON.stringify({version:1,id:randomUUID(),state:'prepared',host:'own-test-host',pid:1,
         changes:[{relative:'common/journal.md',before:raw,after:null}]}));
-    await assert.rejects(repository.delete(journalTarget.id,'qa'),error=>error.status===409);await rm(journalFile);
-    assert.equal(await repository.delete(journalTarget.id,'qa'),true);
-    scenarios.push('Старый prepared journal защищает before/after pins даже без текущего файла и PG-резерва');
+    assert.equal(await scanSkillDependencyUsage(directory,journalTarget.id),true);
+    assert.equal(await repository.delete(journalTarget.id,'qa'),true);assert.ok(await repository.version(journalTarget.id,1));await rm(journalFile);
+    scenarios.push('Исторический prepared journal показывает before/after pins; архив сохраняет версию даже без текущего файла и PG-резерва');
 
     const service=new SkillsService(storage),missingPin={...firstPin,id:'ai-plug-legacy-missing'};
     const repairPath='common/repair-clear',repairMeta=meta('repair-clear',[missingPin]);
@@ -226,9 +220,14 @@ try{
     const replaced=await service.updateSkill(replacePath,{expectedVersion:1,meta:{dependencies:[firstPin]}},'qa-repair');
     assert.deepEqual(replaced.meta.dependencies,[firstPin]);assert.equal(replaced.meta.version,2);
     const deletedBroken='common/repair-delete';await legacy.createSkill(deletedBroken,meta('repair-delete',[missingPin]),'Сохранить историю');
-    await service.deleteSkill(deletedBroken);assert.equal(await exists(deletedBroken),false);
+    await assert.rejects(service.deleteSkill(deletedBroken),error=>error.status===409);
+    await service.updateSkill(deletedBroken,{expectedVersion:1,meta:{dependencies:[]}},'qa-repair');
+    const archiveExpected=await service.inspectAssetSkill(deletedBroken);
+    const archivedBroken=await service.archiveAssetSkill(deletedBroken,archiveExpected,'qa-repair');
+    assert.ok(archivedBroken.meta.archivedAt);assert.equal(await exists(deletedBroken),true);
+    assert.deepEqual((await service.getSkill(deletedBroken,1)).meta.dependencies,[missingPin]);
     assert.deepEqual((await pool.query('SELECT dependencies FROM skill_dependency_reservations WHERE skill_path=$1',[deletedBroken])).rows[0].dependencies,[missingPin]);
-    scenarios.push('Неверный исторический SHA заменяется валидным pin; удаление broken head сохраняет защитный резерв');
+    scenarios.push('Неверный исторический SHA заменяется валидным pin; legacy common DELETE запрещён, исправление и архив сохраняют исходную версию и резерв');
 
     const rollbackPath='common/repair-audit-failure',rollbackMeta=meta('repair-audit-failure',[missingPin]);
     await legacy.createSkill(rollbackPath,rollbackMeta,'До отказа аудита');const rollbackRaw=await readFile(path.join(directory,rollbackPath+'.md'),'utf8');
@@ -261,7 +260,7 @@ try{
     scenarios.push('Rollback старого prepared-журнала допускает прежние unavailable pins; отказ оставляет журнал и файлы для повтора');
 
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM security_events WHERE action='plugin.delete' AND resource_id=ANY($1::text[])",[[first.id,old.id,lost.id,racing.id]])).rows[0].n,0);
-    scenarios.push('Отказы целостности не создают ложных событий успешного удаления');
+    scenarios.push('Не создаются события физического удаления: архивирование сохраняет версии и исторические резервы');
     console.log(JSON.stringify({ok:true,scenarios:scenarios.length}));
 }catch(error){fatal=error.stack||String(error);console.error(fatal);process.exitCode=1;}
 finally{

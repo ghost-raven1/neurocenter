@@ -13,7 +13,7 @@ const {Pool}=require('pg');
 const catalogDist=process.env.PUBLICATION_TEST_DIST||fileURLToPath(new URL('../../services/catalog-service/dist/',import.meta.url));
 const skillsDist=process.env.SKILLS_TEST_DIST||fileURLToPath(new URL('../../services/skills-service/dist/',import.meta.url));
 const {SkillAuditRepository}=require(path.join(catalogDist,'publication/skill-audit-repository.js'));
-const {setupSecurityEvents}=require(path.join(catalogDist,'access/security-events.js'));
+const {ensureCatalogSchema}=require(path.join(catalogDist,'database/catalog-schema.js'));
 const {listAuditHistory}=require(path.join(catalogDist,'catalog/audit-history.js'));
 const {FsSkillsStorage}=require(path.join(skillsDist,'storage/fs-skills-storage.js'));
 const {deliverSkillAudit}=require(path.join(skillsDist,'storage/skill-audit.js'));
@@ -84,9 +84,7 @@ try{
     await admin.query(`CREATE DATABASE "${database}"`);created=true;
     const url=new URL(adminUrl);url.pathname='/'+database;
     pool=new Pool({connectionString:url.href,max:5,options:'-c statement_timeout=12000 -c lock_timeout=8000'});
-    await setupSecurityEvents(pool);repository=new SkillAuditRepository(pool);await repository.setup();
-    await pool.query(`CREATE TABLE operations(operation_id text,started_at timestamptz,created_at timestamptz,actor text,
-        resource_type text,type text,resource_id text,state text)`);
+    await ensureCatalogSchema(pool);repository=new SkillAuditRepository(pool);
     server=createServer(async(req,res)=>{
         const send=(status,data)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));};
         try{
@@ -108,13 +106,21 @@ try{
     const createdSkill=await service.createSkill(request('crud'),'qa-author',actor);
     assert.equal(createdSkill.audit,undefined);assert.equal(await count('common/crud'),1);
     await service.updateSkill('common/crud',{expectedVersion:1,body:'Обновлённый закрытый текст'},'qa-author',actor);
-    await service.deleteSkill('common/crud',actor);
+    await assert.rejects(service.deleteSkill('common/crud',actor),error=>error.status===409);
+    const expectedArchive=await service.inspectAssetSkill('common/crud'),archiveKey=randomUUID();
+    const archivedSkill=await service.archiveAssetSkill('common/crud',expectedArchive,actor,false,archiveKey);
+    assert.ok(archivedSkill.meta.archivedAt);
+    await service.archiveAssetSkill('common/crud',expectedArchive,actor,false,archiveKey);
+    assert.equal((await service.getSkill('common/crud',1)).body,createdSkill.body);
     const crudRows=await rows('common/crud');
-    assert.deepEqual(crudRows.map(row=>row.action),['skill.create','skill.update','skill.delete']);
-    assert.ok(crudRows.every(row=>row.actor===actor));assert.equal(crudRows[0].before_state,null);assert.equal(crudRows[2].after_state,null);
+    assert.deepEqual(crudRows.map(row=>row.action),['skill.create','skill.update','skill.update']);
+    assert.ok(crudRows.every(row=>row.actor===actor));assert.equal(crudRows[0].before_state,null);assert.equal(crudRows[2].before_state.version,2);assert.equal(crudRows[2].after_state.version,3);
     assert.equal(crudRows[1].before_state.version,1);assert.equal(crudRows[1].after_state.version,2);
     assert.ok(crudRows.every(row=>(row.after_state||row.before_state).source==='editor'));
-    scenarios.push('Реальные FS/service/HTTP/SQL: CRUD создаёт по одному событию с доверенным actor и сводками версий');
+    const projectSkill=await service.createSkill({...request('crud-project'),path:'project-prj-audit'},'qa-author',actor);
+    await service.deleteSkill(projectSkill.path,actor);
+    assert.deepEqual((await rows(projectSkill.path)).map(row=>row.action),['skill.create','skill.delete']);
+    scenarios.push('Реальные FS/service/HTTP/SQL: common DELETE запрещён, архив имеет один аудит и сохраняет версии; project CRUD пишет create/delete с доверенным actor');
 
     const stable=await service.createSkill(request('noop'),'qa-author',actor);
     const stableRaw=await readFile(path.join(directory,'common/noop.md'),'utf8');

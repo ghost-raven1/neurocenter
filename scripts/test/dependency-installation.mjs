@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -57,17 +58,13 @@ try {
     const { DeviceJobs } = await load('services/catalog-service/dist/devices/device-jobs.js');
     const { DeviceInstallations } = await load('services/catalog-service/dist/devices/device-installations.js');
     const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-    const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-    const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
     const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
     const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
     const { installationRef, installationRefs, verifyInstallationSet } = await load('services/catalog-service/dist/devices/installation-set.js');
     const claims = async email => ({ email, userRoles: ['Главный админ', 'Разработчик'], projects: [{ projectId, projectName: 'Проверка', role: 'Админ проекта' }] });
     devices = new DeviceStore({ claims }); await devices.onModuleInit();
-    await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('fixture');
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
-    await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+    await seedInstallationProjects(devices.pool,['fixture'],actor);
+
     const artifactService = { build: async (kind, id, version) => {
         const pkg = artifacts.get(kind + ':' + id + ':' + version); assert.ok(pkg, 'Точная версия фикстуры существует'); return pkg;
     } };
@@ -87,7 +84,7 @@ try {
     const skill = makeSkill('common/main', [left, right, plugin]);
     const second = makeSkill('common/second', [shared]);
     const members = [skill, left, right, shared, plugin];
-    for (const pkg of [...members, second]) await devices.pool.query('INSERT INTO project_assets VALUES($1,$2,$3)', [projectId, pkg.plugin.kind, pkg.plugin.id]);
+    for (const pkg of [...members,second]) await pinInstallationPackage(devices.pool,projectId,pkg,actor);
     const credential = randomBytes(32).toString('hex');
     const pair = await devices.start({ name: 'Изолированный компьютер', fingerprint: 'f'.repeat(64), credentialHash: createHash('sha256').update(credential).digest('hex') });
     await devices.approve(actor, pair.userCode); const connected = await devices.poll(pair.deviceCode); token = credential; deviceId = connected.deviceId;
@@ -243,7 +240,7 @@ finally {
     await stopWorker();
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await devices?.onModuleDestroy();
-    if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); ownDatabaseDropped = true; }
+    if (created) { await admin.query(`DROP DATABASE "${database}"`); ownDatabaseDropped = true; }
     const afterDatabases = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(afterDatabases);
     await admin.end(); await fs.rm(temporary, { recursive: true, force: true });

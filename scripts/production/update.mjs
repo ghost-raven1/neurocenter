@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import {readFile,writeFile,mkdir,lstat,rename,open,rm} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,mkdtemp,lstat,rename,open,rm} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 import {applicationServices,composeClient,composeConfiguration,containers,docker,serviceImageIds,repositoryRoot,saveDiagnostic} from './compose-client.mjs';
 import {withQuiescedProductionBackup} from './recovery.mjs';
 import {ensureModelCredentialKey,modelCredentialIdentity} from '../workspace/model-credentials.mjs';
 import {assertProductionModelKey} from './model-credentials.mjs';
+import {schemaServices,validateSchemaManifest,inspectSchemaManifests,runSchemaCommands} from './schema-migrations.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const imagePattern=/^sha256:[a-f0-9]{64}$/;
@@ -35,8 +37,12 @@ export function validateUpdatePlan(plan){
 
 /** Старый/изменённый префикс миграций отклоняется до остановки приложений. */
 export function assertMigrationPrefix(applied,target){
-    if(!Array.isArray(target)||target.some((row,index)=>row?.version!==index+1||typeof row.name!=='string'||!row.name||!(/^[a-f0-9]{64}$/).test(row.checksum||''))){throw new Error('Некорректная опись миграций нового образа');}
-    if(!Array.isArray(applied)||applied.length>target.length||applied.some((row,index)=>!isDeepStrictEqual(row,target[index]))){throw new Error('История миграций несовместима с новым образом');}
+    validateSchemaManifest('catalog-service',target);
+    if(target.some((row,index)=>row.version!==index)){throw new Error('Некорректная опись миграций нового образа');}
+    const historical=Array.isArray(applied)&&applied[0]?.version===1;
+    const offset=historical?1:0;
+    if(!Array.isArray(applied)||(historical&&applied.length>5)||applied.length+offset>target.length
+        ||applied.some((row,index)=>!isDeepStrictEqual(row,target[index+offset]))){throw new Error('История миграций несовместима с новым образом');}
 }
 
 function releaseOf(text){
@@ -84,7 +90,7 @@ async function assertLive(client,expected,postgresImage,deps){
     }
 }
 
-/** Preflight читает Docker/БД и проверяет настройки; контейнеры и копии не создаёт. */
+/** Preflight запускает временные read-only проверки образов/БД без серверов, DDL и копирования данных. */
 export async function preflightUpdate(options,injected={}){
     const deps={...adapters,...injected};const {plan,directory,projectName,files=[]}=options;
     validateUpdatePlan(plan);await rehearsal(options.rehearsalFile,plan);
@@ -95,13 +101,24 @@ export async function preflightUpdate(options,injected={}){
     if(!isDeepStrictEqual(topology(sourceConfig),topology(targetConfig))){throw new Error('Обновление меняет настройки, секреты или тома; нужна отдельная процедура');}
     const [sourceImages,targetImages,postgres]=await Promise.all([deps.serviceImageIds(sourceConfig),deps.serviceImageIds(targetConfig),deps.docker(['image','inspect',sourceConfig.services.postgres.image])]);
     if(!sameImages(sourceImages,plan.sourceImages)||!sameImages(targetImages,plan.targetImages)||JSON.parse(postgres)[0]?.Id!==plan.postgresImage){throw new Error('Локальные образы расходятся с планом выпуска');}
+    const schemaManifests=await inspectSchemaManifests(plan.targetImages,deps.docker);
+    if(!isDeepStrictEqual(schemaManifests['catalog-service'],plan.catalogMigrations))throw new Error('Опись миграций плана расходится с точным новым образом каталога');
     await assertLive(source,plan.sourceImages,plan.postgresImage,deps);
     const pg=(await deps.containers(source)).find(item=>item.Config?.Labels?.['com.docker.compose.service']==='postgres');
+    const journalExists=await deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input:"SELECT to_regclass('catalog_schema_migrations') IS NOT NULL;"});
+    if(!['t','f'].includes(journalExists))throw new Error('Не удалось проверить журнал миграций каталога');
     const sql="SELECT coalesce(json_agg(json_build_object('version',version,'name',name,'checksum',checksum) ORDER BY version),'[]'::json) FROM catalog_schema_migrations;";
-    const applied=JSON.parse(await deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input:sql}));
+    const applied=journalExists==='t'?JSON.parse(await deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input:sql})):[];
     assertMigrationPrefix(applied,plan.catalogMigrations);
     const modelCredentialKey=await assertProductionModelKey(directory,targetConfig,input=>deps.docker(['exec','-i',pg.Id,'psql','-X','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1','-At'],{input}),{allowMissing:true});
-    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector'],modelCredentialKey};
+    const temporary=await mkdtemp(path.join(os.tmpdir(),'neurocenter-schema-preflight-'));
+    let schemas;
+    try{
+        const overlay=path.join(temporary,'pinned-schemas.json');
+        await writeFile(overlay,JSON.stringify({services:Object.fromEntries(schemaServices.map(service=>[service,{image:plan.targetImages[service]}]))}),{flag:'wx',mode:0o600});
+        schemas=await runSchemaCommands(deps.composeClient({directory,projectName,files:[...files,overlay],release:plan.targetRelease}),'check');
+    }finally{await rm(temporary,{recursive:true,force:true});}
+    return {ok:true,dryRun:true,planId:plan.id,sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,envSha256:sha(env),rollback:plan.rollback,hasCapacityCollector:!!targetConfig.services['capacity-collector'],modelCredentialKey,schemaManifests,schemas};
 }
 
 /** Одна квитанция не допускает повтор миграций после успеха или неопределённого прерывания. */
@@ -133,7 +150,7 @@ export async function updateProduction(options,injected={}){
     }
     const before=await privateFile(path.join(directory,'.env'));
     const journal={format:'neurocenter-update-receipt-v1',planId:plan.id,planSha256:planHash,projectName,state:'planned',createdAt:new Date().toISOString(),
-        sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,rollback:plan.rollback,envSha256:checked.envSha256,modelCredentialKeyId:checked.modelCredentialKey.keyId};
+        sourceRelease:plan.sourceRelease,targetRelease:plan.targetRelease,rollback:plan.rollback,envSha256:checked.envSha256,modelCredentialKeyId:checked.modelCredentialKey.keyId,schemaManifests:checked.schemaManifests};
     // wx разрешает только одному процессу владеть этой операцией.
     await writeFile(filename,JSON.stringify(journal,null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
     const save=async state=>{journal.state=state;await atomicWrite(filename,JSON.stringify(journal,null,2)+'\n');};
@@ -162,6 +179,7 @@ export async function updateProduction(options,injected={}){
                     if(sha(await privateFile(path.join(directory,'.env')))!==journal.envSha256){throw new Error('Настройки изменены во время копирования');}
                     if(journal.modelCredentialKeyId&&(await modelCredentialIdentity(directory)).keyId!==journal.modelCredentialKeyId)throw new Error('Ключ шифрования моделей изменился во время копирования');
                     await save('applying');targetStarted=true;
+                    journal.schemas=await runSchemaCommands(target,'migrate',{remainingMs});await save('applying');
                     await target.run(['up','-d','--no-build','--pull','never','--wait',...applicationServices,...(checked.hasCapacityCollector?['capacity-collector']:[])],{timeout:remainingMs()});
                     await assertLive(target,plan.targetImages,plan.postgresImage,deps);remainingMs();
                     const current=await privateFile(path.join(directory,'.env'));

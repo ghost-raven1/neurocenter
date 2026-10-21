@@ -15,8 +15,8 @@ const require=createRequire(new URL('../../services/catalog-service/package.json
 const ts=require('typescript');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021,experimentalDecorators:true,emitDecoratorMetadata:true,esModuleInterop:true}}).outputText,filename);
 const {Pool}=require('pg');
-const {setupModelsSchema,ModelsRepository}=require(path.join(root,'services/catalog-service/src/models/models.repository.ts'));
-const {setupSecurityEvents}=require(path.join(root,'services/catalog-service/src/access/security-events.ts'));
+const {ModelsRepository}=require(path.join(root,'services/catalog-service/src/models/models.repository.ts'));
+const {ensureCatalogSchema}=require(path.join(root,'services/catalog-service/src/database/catalog-schema.ts'));
 const {RemoteConnectionService}=require(path.join(root,'services/catalog-service/src/models/remote-connection.service.ts'));
 const {RemoteConnectionRepository}=require(path.join(root,'services/catalog-service/src/models/remote-connection.repository.ts'));
 const {projectEmbeddingPin}=require(path.join(root,'services/catalog-service/src/models/project-embedding.validation.ts'));
@@ -43,8 +43,7 @@ const check=async(name,action)=>{try{await action();checks.push({name,ok:true});
 try {
     await admin.query('CREATE DATABASE "'+database+'"');created=true;
     const url=new URL(adminUrl);url.pathname='/'+database;pool=new Pool({connectionString:url.href,max:5});
-    await pool.query('CREATE TABLE projects(id TEXT PRIMARY KEY,name TEXT NOT NULL); CREATE TABLE project_embedding_settings(project_id TEXT PRIMARY KEY REFERENCES projects(id),model_id TEXT)');
-    await setupSecurityEvents(pool);await setupModelsSchema(pool);
+    await ensureCatalogSchema(pool);
     const models=new ModelsRepository(pool);
     const service=new RemoteConnectionService({pool,get:id=>models.get(id)});
     const privateRepo=service.repository;
@@ -154,7 +153,8 @@ try {
         assert.notEqual(card.verificationSha256,original.verificationSha256);
     });
     await check('Connection removal blocks active RAG projects and catalog-only archive preserves old inference',async()=>{
-        await pool.query("INSERT INTO projects VALUES('prj-fixture','Protected project')");await pool.query("INSERT INTO project_embedding_settings VALUES('prj-fixture',$1)",[card.id]);
+        await pool.query("INSERT INTO projects(id,name) VALUES('prj-fixture','Protected project')");
+        await pool.query("INSERT INTO project_embedding_settings(project_id,revision,model_id,model_pin,dimension,updated_by,active_generation) VALUES('prj-fixture',1,$1,$2,3,'qa','initial-00000000000000000000000000000001')",[card.id,projectEmbeddingPin(card)]);
         await models.assign('prj-fixture',card.id,'qa');
         await assert.rejects(models.unassign('prj-fixture',card.id,'qa'),/текущим индексом/);
         assert.equal(await models.isAssigned('prj-fixture',card.id),true);
@@ -183,11 +183,10 @@ try {
     });
     await check('OpenCode import validates owner, exact device/binding/instance, expiry and idempotence without copying keys',async()=>{
         const deviceId='11111111-1111-4111-8111-111111111111',jobId='22222222-2222-4222-8222-222222222222',candidateId='33333333-3333-4333-8333-333333333333',instanceId='44444444-4444-4444-8444-444444444444',bindingId='a'.repeat(64);
-        await pool.query("CREATE TABLE bridge_devices(id TEXT PRIMARY KEY,email TEXT,report JSONB,revoked BOOLEAN,expires_at TIMESTAMPTZ); CREATE TABLE bridge_jobs(id TEXT PRIMARY KEY,device_id TEXT,email TEXT,role TEXT,kind TEXT,state TEXT,project_id TEXT,payload JSONB,result JSONB)");
         const report={bindings:[{projectId:'prj-fixture',bindingId,instanceId,folderName:'fixture'}]};
         const now=new Date(),scan={schemaVersion:1,projectId:'prj-fixture',bindingId,instanceId,scanId:jobId,checkedAt:now.toISOString(),expiresAt:new Date(now.getTime()+900000).toISOString(),warnings:[],candidates:[{candidateId,provider:'team',name:'Imported',model:'imported-model-v1',modelVersion:'v1',capability:'chat',runtime:'remote-openai',baseUrl:endpoint,hasKey:true,credentialSource:'auth',blocker:null}],digest:''};scan.digest=modelScanDigest(scan);
-        await pool.query("INSERT INTO bridge_devices VALUES($1,'qa',$2,false,now()+interval '1 hour')",[deviceId,JSON.stringify(report)]);
-        await pool.query("INSERT INTO bridge_jobs VALUES($1,$2,'qa','Главный админ','scan-opencode-models','succeeded','prj-fixture',$3,$4)",[jobId,deviceId,JSON.stringify({bindingId,instanceId}),JSON.stringify(scan)]);
+        await pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report,revoked,expires_at) VALUES($1,'qa','Главный админ','Remote model import fixture',$2,$3,$4,false,now()+interval '1 hour')",[deviceId,'a'.repeat(64),randomBytes(32).toString('hex'),JSON.stringify(report)]);
+        await pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,kind,state,project_id,payload,result,request_key,request_hash) VALUES($1,$2,'qa','Главный админ','scan-opencode-models','succeeded','prj-fixture',$3,$4,$1,$5)",[jobId,deviceId,JSON.stringify({bindingId,instanceId}),JSON.stringify(scan),'b'.repeat(64)]);
         let permitted=true;
         const modelService={pool,requireMain:async()=>{if(!permitted)throw Error('Role revoked');return 'qa';},resolveProject:async()=>({id:'prj-fixture'})};
         const devices={owned:async(actor,id)=>{const result=await pool.query('SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked',[id,actor.email]);if(!result.rows[0])throw Error('Not owned');return result.rows[0];}};

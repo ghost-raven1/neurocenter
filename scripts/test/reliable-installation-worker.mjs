@@ -77,7 +77,7 @@ try {
         assert.ok(plan.files.some(file => file.path === receipt.config.path && file.beforeSha256 === digest(text)));
         await f.run(await f.apply(plan)); const updated = await fs.readFile(config, 'utf8');
         assert.ok(updated.includes('// ЛИЧНЫЙ_КОММЕНТАРИЙ')); assert.equal(f.parse(updated).privateValue, secret);
-        assert.ok(f.parse(updated).mcp['neurocenter_' + f.receipts.assetKey(f.pkg)]);
+        assert.ok(f.parse(updated).mcp[f.receipts.mcpConfigKey(f.pkg)]);
         assert.equal((await f.inspectInstallation(projectId, f.pkg)).status, 'synced'); await assertNoPrivateBeforeOnServer(secret);
     });
     await check('Неверная binding и роль наблюдателя не создают repair задания', async () => {

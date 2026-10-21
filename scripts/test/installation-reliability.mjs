@@ -1,3 +1,4 @@
+import {seedInstallationProjects,pinInstallationPackage} from './installation-catalog.fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -57,17 +58,13 @@ try {
     const { completeDeviceJob } = await load('services/catalog-service/dist/devices/device-completion.js');
     const { buildPackage } = await load('services/catalog-service/dist/catalog/bundle-package.js');
     const { InstallPlans } = await load('services/catalog-service/dist/devices/install-plans.js');
-    const { setupInstallPlans } = await load('services/catalog-service/dist/devices/install-plan-schema.js');
-    const { setupSecurityEvents } = await load('services/catalog-service/dist/access/security-events.js');
     devices = new DeviceStore({ claims }); await devices.onModuleInit();
-    await devices.pool.query(`CREATE TABLE projects(id text PRIMARY KEY); INSERT INTO projects VALUES('fixture');
-        CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text);
-        CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,started_at timestamptz,finished_at timestamptz,error text,log jsonb);`);
+    await seedInstallationProjects(devices.pool,['fixture'],actor);
     installations = new DeviceInstallations(devices);
     const artifacts = { build: async (kind, id, version) => {
         const pkg = manifests.get(id + ':' + version); assert.ok(pkg, 'Известный тестовый пакет'); return pkg;
     } };
-    await setupInstallPlans(devices.pool); await setupSecurityEvents(devices.pool);
+
     plans = new InstallPlans(devices, artifacts);
     jobs = new DeviceJobs(devices, artifacts, installations, plans);
     const makePackage = (version, id = 'fixture-mcp') => {
@@ -75,7 +72,7 @@ try {
         manifests.set(id + ':' + version, pkg); return pkg;
     };
     for (const version of [1, 2, 3]) makePackage(version);
-    await devices.pool.query("INSERT INTO project_assets VALUES('fixture','mcp','fixture-mcp')");
+    await pinInstallationPackage(devices.pool,'fixture',manifests.get('fixture-mcp:1'),actor);
     const secret = randomBytes(32).toString('hex');
     const pair = await devices.start({ name: 'Временный компьютер', fingerprint: 'a'.repeat(64), credentialHash: createHash('sha256').update(secret).digest('hex') });
     await devices.approve(actor, pair.userCode);
@@ -130,6 +127,7 @@ try {
     await waitFor(async () => (await devices.list(actor)).find(item => item.id === deviceId)?.report.protocolVersion === 2, 'heartbeat нового моста');
     await check('Подготовленная версия требует реального решения админа и сохраняет событие одобрения', async () => {
         for (const version of [1,2,3]) {
+            await pinInstallationPackage(devices.pool,'fixture',manifests.get('fixture-mcp:'+version),actor);
             const plan = await plans.prepare(actor,{projectId:'fixture',assetKind:'mcp',assetId:'fixture-mcp',version});
             assert.equal(plan.status,'pending');
             await assert.rejects(jobs.create(actor,{deviceId,projectId:'fixture',kind:'install',assetKind:'mcp',assetId:'fixture-mcp',version,planId:plan.id,planRevision:plan.revision,requestKey:randomUUID()}),error=>error.status===409);
@@ -141,7 +139,8 @@ try {
         }
         assert.equal((await devices.pool.query("SELECT count(*)::int AS n FROM security_events WHERE action='installation.approved'")).rows[0].n,3);
     });
-    const create = version => {
+    const create = async version => {
+        await pinInstallationPackage(devices.pool,'fixture',manifests.get('fixture-mcp:'+version),actor);
         const plan=approvedPlans.get(version); assert.ok(plan,'Версия одобрена до отправки задания');
         return jobs.create(actor, { deviceId, projectId: 'fixture', kind: 'install', assetId: 'fixture-mcp', assetKind: 'mcp', version, planId:plan.id,planRevision:plan.revision,requestKey: randomUUID() });
     };
@@ -192,7 +191,7 @@ try {
     await stopWorker();
     await check('Повторное одобрение заменяет только очередь прежней ревизии и не подменяет начатую установку', async () => {
         const assetId='approval-replacement'; makePackage(1,assetId);
-        await devices.pool.query("INSERT INTO project_assets VALUES('fixture','mcp',$1)",[assetId]);
+        await pinInstallationPackage(devices.pool,'fixture',manifests.get(assetId+':1'),actor);
         let plan=await plans.prepare(actor,{projectId:'fixture',assetKind:'mcp',assetId,version:1});
         const decide=async status=>{
             plan=await plans.decide(actor,plan.id,{expectedManifest:plan.manifest,expectedRevision:plan.revision},status);
@@ -276,10 +275,10 @@ try {
     });
     await check('Позднее подтверждение старой версии не вытесняет новую установку из истории', async () => {
         const history=[];
-        await devices.pool.query("INSERT INTO project_assets VALUES('fixture','mcp','order-test')");
+
         const bindingId=await projectBindingId('fixture');
         for (const [version,started] of [[1,'2026-01-01'],[2,'2026-01-02']]) {
-            makePackage(version,'order-test');
+            makePackage(version,'order-test');await pinInstallationPackage(devices.pool,'fixture',manifests.get('order-test:'+version),actor);
             const plan=await plans.prepare(actor,{projectId:'fixture',assetKind:'mcp',assetId:'order-test',version});
             const approved=await plans.decide(actor,plan.id,{expectedManifest:plan.manifest,expectedRevision:plan.revision},'approved');
             const job=await jobs.create(actor,{deviceId,projectId:'fixture',kind:'install',assetKind:'mcp',assetId:'order-test',version,planId:approved.id,planRevision:approved.revision,requestKey:randomUUID()});
@@ -310,7 +309,7 @@ finally {
     await stopWorker();
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await devices?.onModuleDestroy();
-    if (created) { await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`); droppedDatabase = true; }
+    if (created) { await admin.query(`DROP DATABASE "${database}"`); droppedDatabase = true; }
     const afterDatabases = (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;
     const originalDatabasesPreserved = JSON.stringify(beforeDatabases) === JSON.stringify(afterDatabases);
     await admin.end(); await fs.rm(temporary, { recursive: true, force: true });
