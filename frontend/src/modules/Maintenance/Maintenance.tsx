@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
 import { CloudServerOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Descriptions, Empty, List, Progress, Row, Space, Spin, Tag, Typography, message } from 'antd';
 import { FC, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -20,6 +21,7 @@ import FullBackupSettings from './FullBackupSettings';
 import WebRestore from './restore/WebRestore';
 import RetiredRagDatabases from '../../features/RetiredRagDatabases/RetiredRagDatabases';
 import { FeatureFlagsPanel } from '../../features/FeatureFlags/FeatureFlagsPanel';
+import { RagQuotaPolicy } from '../../features/RagQuotaPolicy/RagQuotaPolicy';
 import './Maintenance.less';
 
 const { Paragraph, Text, Title } = Typography;
@@ -94,6 +96,7 @@ const AccountMaintenance: FC = () => {
             />
             <Row gutter={[ 24, 24 ]}>
                 <Col span={24}><FeatureFlagsPanel /></Col>
+                <Col span={24}><RagQuotaPolicy /></Col>
                 <Col span={24}><FullBackupSettings /></Col>
                 <Col span={24}><WebRestore account={restoreAccount} /></Col>
                 <Col span={24}><RetiredRagDatabases /></Col>
@@ -122,9 +125,9 @@ const AccountMaintenance: FC = () => {
                         {createError && <Alert className="maintenance-page__notice" type="error" showIcon message="Копия не подтверждена" description={createError} />}
                         {!!createdBackup?.warnings?.length&&<Alert className="maintenance-page__notice" type="warning" showIcon message="Копия создана с предупреждением" description={createdBackup.warnings.join(' ')} />}
                         {backingUp && <Alert className="maintenance-page__notice" type="info" showIcon message="Создаём полный дамп каталога" description="Дождитесь ответа сервера. Результат появится здесь после завершения." />}
-                        <Button type="primary" size="large" loading={backingUp} disabled={backupAccessDenied} onClick={() => void handleBackup()} icon={<DatabaseOutlined />}>
+                        <FeatureButton features={['project_backups']} type="primary" size="large" loading={backingUp} disabled={backupAccessDenied} onClick={() => void handleBackup()} icon={<DatabaseOutlined />}>
                             {backingUp ? 'Создаём копию…' : createError ? 'Повторить создание копии' : 'Создать копию каталога'}
-                        </Button>
+                        </FeatureButton>
                         {createdBackup && !backupAccessDenied && <div className="maintenance-page__created" aria-live="polite">
                             <Text strong>Файлы последнего запуска · {formatBackupTime(createdBackup.createdAt)}</Text>
                             <List

@@ -40,7 +40,7 @@ export default function RagQuotaPanel({projectKey}:{projectKey:string}):JSX.Elem
                 </Col>
                 <Col xs={24} md={12}>
                     <Form form={form} layout="vertical" onFinish={values=>void save(values)} onValuesChange={()=>{edited.current=true;setDirty(true);setSaveError('');}}>
-                        <Form.Item name="limitMiB" label="Новый лимит (МиБ)" extra={`1 ГиБ = 1024 МиБ. Максимум для нового лимита: ${formatRagBytes(quota.maximumBytes)}.`} validateFirst rules={[{required:true,message:'Укажите лимит.'},{validator:(_,value)=>{try{ragLimitBytes(value,Math.max(quota.maximumBytes,quota.limitBytes));return Promise.resolve();}catch(failure){return Promise.reject(failure);}}}]}>
+                        <Form.Item name="limitMiB" label="Новый лимит (МиБ)" extra={`1 ГиБ = 1024 МиБ. Максимум сервера: ${formatRagBytes(quota.maximumBytes)}. Его меняет главный администратор в обслуживании.`} validateFirst rules={[{required:true,message:'Укажите лимит.'},{validator:(_,value)=>{try{ragLimitBytes(value,Math.max(quota.maximumBytes,quota.limitBytes));return Promise.resolve();}catch(failure){return Promise.reject(failure);}}}]}>
                             <InputNumber inputMode="decimal" min={1/MEBIBYTE} max={Math.max(quota.maximumBytes,quota.limitBytes)/MEBIBYTE} step={256} disabled={saving} className="rag-quota__input" />
                         </Form.Item>
                         <Button type="primary" htmlType="submit" loading={saving} disabled={!dirty||!!error||loading}>Сохранить лимит</Button>

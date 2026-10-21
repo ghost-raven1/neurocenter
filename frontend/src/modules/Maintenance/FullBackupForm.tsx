@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Col, Form, Input, InputNumber, Row, Select, Space, Switch, Typography } from 'antd';
 import type { FormInstance } from 'antd';
 import type { FC } from 'react';
@@ -27,11 +28,12 @@ const FullBackupForm: FC<IFullBackupFormProps> = ({
     form, ready, revision, statusRevision, saving, saveError, onSave, onUseSavedPolicy,
 }) => {
     const enabled = Form.useWatch('enabled', form);
+    const availability = useFeatureAvailability('project_backups');
 
     return (
         <Form
             className="maintenance-page__settings" form={form} layout="vertical"
-            onFinish={values => void onSave(values)} disabled={saving} hidden={!ready}
+            onFinish={values => { if(availability.enabled || !values.enabled) void onSave(values); }} disabled={saving} hidden={!ready}
             scrollToFirstError={{ block: 'center' }}
         >
             <section className="maintenance-page__form-section" aria-labelledby="maintenance-schedule-title">
@@ -154,9 +156,9 @@ const FullBackupForm: FC<IFullBackupFormProps> = ({
             />}
             <div className="maintenance-page__form-actions">
                 <Space wrap>
-                    <Button type="primary" htmlType="submit" loading={saving} disabled={revision === null}>
+                    <FeatureButton features={enabled ? ['project_backups'] : []} type="primary" htmlType="submit" loading={saving} disabled={revision === null}>
                         Сохранить настройки
-                    </Button>
+                    </FeatureButton>
                     <Button disabled={saving} onClick={onUseSavedPolicy}>Загрузить сохранённые значения</Button>
                 </Space>
                 <Typography.Text type="secondary">Ревизия формы: {revision}</Typography.Text>
