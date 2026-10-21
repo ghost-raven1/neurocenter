@@ -71,6 +71,7 @@ export const fromPlugin = (p: IAiPlugin): IStoreApp => ({
     version: p.version,
     tags: p.tags,
     origin: p.origin,
+    revision: p.revision,
     config: (p.config ?? undefined) as Record<string, unknown> | undefined,
     files: (p.files ?? []).map(f => ({ path: f.path, content: f.content })),
 });

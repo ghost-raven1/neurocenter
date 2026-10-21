@@ -14,9 +14,13 @@
 }
 .store-card__identity { display: flex; gap: 12px; align-items: flex-start; min-width: 0; > div { min-width: 0; } }
 .store-card__icon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; background: @brand-tint; color: @brand-primary; font-size: 20px; }
-.store-card__title.ant-btn { display: block; padding: 0; height: auto; max-width: 100%; text-align: left; color: #172d41; font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
-.store-card__tags { min-height: 28px; margin-top: 12px; }
-.store-card__meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: #617387; margin-top: auto; padding: 16px 0 12px; }
+.store-card__title.ant-btn { display: block; padding: 0; height: auto; max-width: 100%; margin-bottom: 5px; text-align: left; white-space: normal; overflow-wrap: anywhere; color: #172d41; font-size: 14px; line-height: 21px; font-weight: 650; }
+.store-card__title.ant-btn:focus-visible { outline: 2px solid @brand-focus; outline-offset: 3px; border-radius: 3px; }
+.store-card__description.ant-typography { min-height: 66px; margin-bottom: 0; line-height: 22px; overflow-wrap: anywhere; }
+.store-card__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; .ant-tag { margin-right: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; } }
+.store-card__facts { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; font-size: 11px; line-height: 17px; .ant-typography { font-size: inherit; overflow-wrap: anywhere; } }
+.store-card__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; font-size: 11px; color: #617387; margin-top: auto; padding: 14px 0 12px; .ant-typography { font-size: inherit; overflow-wrap: anywhere; } }
+.store-card__edition { margin-left: auto; }
 .store-card__actions { border-top: 1px solid #edf1f5; padding-top: 12px; .ant-row { margin: 0 !important; } .ant-btn { height: 34px; } .ant-col { min-width: 0; } }
 @media (max-width: 575px) { .store__destination { padding: 16px; align-items: stretch; .ant-select { width: 100% !important; } } .store .ant-radio-button-wrapper { padding: 0 10px; } }
 @media (max-width: 575px) {

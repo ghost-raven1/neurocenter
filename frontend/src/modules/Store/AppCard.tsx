@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Card, Tag, Typography } from 'antd';
 import { FC, ReactNode } from 'react';
+import {storeCardPlatforms,storeCardRevision,storeCardSource} from './storeCardPresentation';
 
 const { Text, Paragraph } = Typography;
 
@@ -27,7 +28,7 @@ export interface IStoreStats {
 }
 
 /** Цветной бейдж типа (иконка + подпись) — общий вид для карточки и модалки. */
-export const KindBadge: FC<{ kind: TStoreKind }> = ({ kind }) => {
+export const KindBadge: FC<{ kind: TStoreKind; icon?:boolean }> = ({ kind,icon=true }) => {
     const k = KIND[kind];
     return (
         <span
@@ -43,7 +44,7 @@ export const KindBadge: FC<{ kind: TStoreKind }> = ({ kind }) => {
                 fontWeight: 600,
             }}
         >
-            { k.icon }
+            { icon&&k.icon }
             { k.label }
         </span>
     );
@@ -61,6 +62,8 @@ export interface IStoreApp {
     version: number;
     tags: string[];
     origin: string;
+    /** Закреплённая ревизия поставки отличается от номера редакции карточки. */
+    revision?: string|null;
     /** Путь скилла в каталоге (для резолва content). */
     path?: string;
     /** Техническое имя скилла; отображаемое название не определяет проектное назначение. */
@@ -98,13 +101,23 @@ interface IAppCardProps {
  * @returns JSX-элемент карточки
  */
 const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action }) => {
+    const source=storeCardSource(app.origin),revision=storeCardRevision(app.revision),platforms=storeCardPlatforms(app.config);
+    const description=app.description.trim(),tags=[...new Set(app.tags.map(tag=>tag.trim()).filter(Boolean))].slice(0,3);
     return (
         <Card className="store-card" title={
-            <div className="store-card__identity"><span className="store-card__icon">{KIND[app.kind].icon}</span><div><Button type="link" className="store-card__title" title={app.name} aria-label={`Подробнее: ${app.name}`} onClick={onView}>{app.name}</Button><KindBadge kind={app.kind} /></div></div>
+            <div className="store-card__identity"><span className="store-card__icon" aria-hidden="true">{KIND[app.kind].icon}</span><div><Button type="link" className="store-card__title" title={app.name} aria-label={`Подробнее: ${app.name}`} onClick={onView}>{app.name}</Button><KindBadge kind={app.kind} icon={false} /></div></div>
         } extra={installed ? <Tag color="green">В проекте</Tag> : undefined}>
-            <Paragraph type="secondary" ellipsis={{rows:3,tooltip:app.description}} style={{minHeight:66,marginBottom:0,lineHeight:'22px'}}>{app.description || 'Описание пока не добавлено. Откройте инструмент, чтобы прочитать его инструкцию.'}</Paragraph>
-            <div className="store-card__tags">{app.tags.slice(0,3).map(tag => <Tag key={tag}>{tag}</Tag>)}</div>
-            <div className="store-card__meta"><span>{stats?.installs ? <><DownloadOutlined /> {stats.installs} установок</> : 'В каталоге'}</span><Text type="secondary">Версия {app.version}</Text></div>
+            <Paragraph className="store-card__description" type="secondary" ellipsis={{rows:3,tooltip:description}}>{description || 'Описание пока не добавлено.'}</Paragraph>
+            {tags.length>0&&<div className="store-card__tags">{tags.map(tag => <Tag key={tag}>{tag}</Tag>)}</div>}
+            {(source||platforms)&&<div className="store-card__facts">
+                {source&&<Text type="secondary" className="store-card__source" title={source.label}>{source.label}</Text>}
+                {platforms&&<Text type="secondary" title={platforms.title}>Платформы: {platforms.label}</Text>}
+            </div>}
+            <div className="store-card__meta">
+                {revision&&<Text type="secondary">Поставка {revision}</Text>}
+                {!!stats?.installs&&<span><DownloadOutlined /> {stats.installs} установок</span>}
+                <Text type="secondary" className="store-card__edition">Редакция {app.version}</Text>
+            </div>
             <div className="store-card__actions">{action}</div>
         </Card>
     );

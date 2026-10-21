@@ -9,6 +9,7 @@ import { KindBadge, type IStoreApp } from './AppCard';
 import StoreDetailsInstallStatus, { StoreDetailsInstallButton } from './StoreDetailsInstall';
 import { formatDetailDate, keepDetailAfterRefreshError, loadStoreDetail, sortSkillHistory, type IStoreInstallStatus, type TStoreDetail } from './storeDetails';
 import { StoreBundleContent } from './StoreBundleContent';
+import {storeCardRevision,storeCardSource} from './storeCardPresentation';
 import './StoreDetailsModal.less';
 
 const { Text, Paragraph } = Typography;
@@ -147,14 +148,16 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, 
             </>;
         }
         const { plugin } = detail;
+        const origin=storeCardSource(plugin.origin),revision=storeCardRevision(plugin.revision);
         return <Descriptions column={columns} layout="vertical" colon={false} size="small">
             <Descriptions.Item label="Идентификатор" span={columns}><Text code className="store-details__path">{plugin.id}</Text></Descriptions.Item>
-            <Descriptions.Item label="Версия">{plugin.version}</Descriptions.Item>
+            <Descriptions.Item label="Редакция каталога">{plugin.version}</Descriptions.Item>
+            {revision&&<Descriptions.Item label="Версия поставки">{revision}</Descriptions.Item>}
             <Descriptions.Item label="Совместимость">{plugin.compatibility || 'Не указана'}</Descriptions.Item>
             <Descriptions.Item label="Опубликован">{formatDetailDate(plugin.createdAt)}</Descriptions.Item>
             <Descriptions.Item label="Обновлён">{formatDetailDate(plugin.updatedAt)}</Descriptions.Item>
-            <Descriptions.Item label="Источник" span={columns}><Text className="store-details__path">{plugin.origin || 'Не указан'}</Text></Descriptions.Item>
-            {plugin.revision && <Descriptions.Item label="Ревизия" span={columns}><Text code className="store-details__path">{plugin.revision}</Text></Descriptions.Item>}
+            <Descriptions.Item label="Источник" span={columns}>{origin?.href?<Typography.Link href={origin.href} target="_blank" rel="noopener noreferrer" className="store-details__path">{origin.label}</Typography.Link>:<Text className="store-details__path">{origin?.label || (plugin.origin?'Публичный источник не определён':'Не указан')}</Text>}</Descriptions.Item>
+            {plugin.revision && !revision && <Descriptions.Item label="Ревизия источника" span={columns}><Text code className="store-details__path">{plugin.revision}</Text></Descriptions.Item>}
         </Descriptions>;
     };
 
@@ -177,7 +180,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, 
         if (history.error) { return <Alert type="error" showIcon message={history.error} action={<Button onClick={() => setHistoryReload(value => value + 1)}>Повторить</Button>} />; }
         return !history.value?.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="История версий пока пуста" /> : <Timeline className="store-details__history">
             {[...history.value].sort((left, right) => right.version - left.version).map(entry => <Timeline.Item key={entry.version} color={entry.version === detail.plugin.version ? 'var(--brand-primary)' : 'gray'}>
-                <Space wrap><Text strong>Версия {entry.version}</Text>{entry.version === detail.plugin.version && <Tag color="cyan">Текущая</Tag>}</Space>
+                <Space wrap><Text strong>Редакция {entry.version}</Text>{entry.version === detail.plugin.version && <Tag color="cyan">Текущая</Tag>}</Space>
                 <div><Text type="secondary">{formatDetailDate(entry.createdAt)} · {entry.author || 'Автор не указан'}</Text></div>
                 <Paragraph>{entry.note || 'Комментарий к версии не добавлен'}</Paragraph>
             </Timeline.Item>)}
@@ -214,7 +217,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, 
             : !detail ? <div className="store-details__loading" role="status" aria-live="polite"><Spin tip="Загружаем содержимое…" /></div>
                 : <>
                     <div className="store-details__summary">
-                        <Space wrap><Tag className="store-details__version">Версия {version}</Tag>{(tags ?? []).map(tag => <Tag key={tag}>{tag}</Tag>)}</Space>
+                        <Space wrap><Tag className="store-details__version">{detail.kind==='skill'?'Версия':'Редакция'} {version}</Tag>{detail.kind==='bundle'&&storeCardRevision(detail.plugin.revision)&&<Tag>Поставка {storeCardRevision(detail.plugin.revision)}</Tag>}{(tags ?? []).map(tag => <Tag key={tag}>{tag}</Tag>)}</Space>
                         <Paragraph className="store-details__description" type={description?.trim() ? undefined : 'secondary'}>{description?.trim() || 'Описание пока не добавлено.'}</Paragraph>
                         {projectName && <Text type="secondary" className="store-details__project">Выбранный проект: {projectName}</Text>}
                     </div>
