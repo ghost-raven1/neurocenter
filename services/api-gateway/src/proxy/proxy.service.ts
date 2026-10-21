@@ -232,7 +232,9 @@ export class ProxyService {
             catch(error){if(!open()){timeoutReply();return;}throw error;}
             if(!open()){timeoutReply();return;}
             if(!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
-            const failure=await awaitEmbedding(featureFlagsFailure(this.http,this.featureFlagsUrl,['model_hosting']),abort.signal);
+            let failure:Awaited<ReturnType<typeof featureFlagsFailure>>;
+            try{failure=await awaitEmbedding(featureFlagsFailure(this.http,this.featureFlagsUrl,['model_hosting']),abort.signal);}
+            catch(error){if(!open()){timeoutReply();return;}throw error;}
             if(!open()){timeoutReply();return;}
             if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             try{
