@@ -1,3 +1,4 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import { LocalAssetIngest } from './local-asset-ingest';
 import {LocalSkillIngest} from './local-skill-ingest';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
@@ -67,23 +68,24 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
             assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>({...view(asset,sha256,receipts.find(row=>row.external_id===asset.id)),...(supply?{supply:supply.get(asset.id)}:{})})),
             localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};
     }
-    async refresh(){await this.sources.refresh();return this.view();}
-    async uploadArchive(req:Request,signal:AbortSignal){const actor=await this.actor(req);await this.archives.receive(actor,req,req.headers['content-length'],signal);return this.view();}
+    async refresh(){await requireFeaturesEnabled(['asset_sources']);await this.sources.refresh();return this.view();}
+    async uploadArchive(req:Request,signal:AbortSignal){const actor=await this.actor(req);await requireFeaturesEnabled(['asset_sources']);await this.archives.receive(actor,req,req.headers['content-length'],signal);return this.view();}
     kickImports():void{this.worker.kick();}
     async start(actor:string,body:unknown){
         const input=body as {requestKey?:unknown;ids?:unknown;commit?:unknown};
         if(!input||!uuid(input.requestKey)||!Array.isArray(input.ids)||!input.ids.length||input.ids.length>50||input.ids.some(id=>typeof id!=='string')||new Set(input.ids).size!==input.ids.length
             ||typeof input.commit!=='string'||!/^[a-f0-9]{40}$/.test(input.commit)||Object.keys(input).some(key=>!['requestKey','ids','commit'].includes(key))){throw new BadRequestException('Передайте сохранённый ключ, commit и от 1 до 50 выбранных ассетов.');}
+        await requireFeaturesEnabled(['asset_sources']);
         const snapshot=await this.sources.get(input.commit);try{selectAssets(snapshot.assets,input.ids);}catch{throw new ConflictException('Выбранный граф не соответствует точной описи источника.');}
         const job=await this.jobs.create(actor,input.requestKey,snapshot.pin,input.ids,undefined,!!snapshot.archive_sha256||assetSourceMode()==='offline');this.worker.kick();return importView(job);
     }
     async job(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}return importView(await this.jobs.get(id,actor));}
     async request(key:string,actor:string){if(!uuid(key)){throw new BadRequestException('Некорректный запрос импорта.');}return importView(await this.jobs.byRequest(actor,key));}
-    async retry(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}const job=await this.jobs.retry(id,actor);this.worker.kick();return importView(job);}
+    async retry(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}await requireFeaturesEnabled(['asset_sources']);const job=await this.jobs.retry(id,actor);this.worker.kick();return importView(job);}
     async resolve(id:string,actor:string,body:unknown){
         const input=body as {expectedDigest?:unknown};
         if(!uuid(id)||!input||typeof input.expectedDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedDigest)||Object.keys(input).some(key=>key!=='expectedDigest')){throw new BadRequestException('Передайте точный digest сохранённого конфликта.');}
-        const job=await this.jobs.resolve(id,actor,input.expectedDigest);this.worker.kick();return importView(job);
+        await requireFeaturesEnabled(['asset_sources']);const job=await this.jobs.resolve(id,actor,input.expectedDigest);this.worker.kick();return importView(job);
     }
     async cancel(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}return importView(await this.jobs.cancel(id,actor));}
     /** Только server runtime получает native bundle и проверенные пути; этот payload не выдаётся UI/устройствам. */

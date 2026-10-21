@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {ISourceReceipt} from '../src/asset-sources/import-types';
 import {AssetSourcesService} from '../src/asset-sources/asset-sources.service';

@@ -5,6 +5,7 @@ import {
     Get,
     Headers,
     Param,
+    Query,
     Post,
     Req,
     Res,
@@ -124,9 +125,11 @@ export class DeviceController {
         @Req() req: Request,
         @Param('id') id: string,
         @Body() input: { lease: string },
+        @Query('phase') phase?:string,
     ) {
-        return this.jobs.authorize(await this.device(req), id, input.lease);
+        return this.jobs.authorize(await this.device(req), id, input.lease,phase==='snapshot-receipt'?{snapshotReceipt:true}:undefined);
     }
+    @Post('internal/device-channel/agents/compile') async compileAgents(@Req() req:Request,@Body() input:unknown){return this.jobs.compileAgents(await this.device(req),input);}
     @Post('internal/device-channel/configuration-authorize') async configurationAuthorize(@Req() req:Request,@Body() input:unknown){
         return this.jobs.authorizeConfiguration(await this.device(req),input);
     }

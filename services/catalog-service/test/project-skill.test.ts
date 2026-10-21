@@ -6,6 +6,7 @@ import type {Device, DeviceStore} from '../src/devices/device-store';
 import type {DeviceArtifacts} from '../src/devices/device-artifacts';
 import type {DeviceInstallations} from '../src/devices/device-installations';
 import type {InstallPlans} from '../src/devices/install-plans';
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 
 describe('Скиллы собственного проекта', () => {
     it('Запись чужого скилла в каталоге не обходит область проекта при выдаче задания',async()=>{

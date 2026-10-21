@@ -87,7 +87,7 @@ export class SnapshotService implements OnModuleInit,OnModuleDestroy {
         if(!snapshotUuid(jobId)||!snapshotUuid(lease))throw new ForbiddenException('Нужна действующая аренда публикации.');
         const job=(await this.pool.query("SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now()",[jobId,device.id,lease])).rows[0];
         if(!job||job.kind!=='publish-project-snapshot'||job.project_id!==project||job.payload.snapshotId!==id)throw new ForbiddenException('Задание не разрешает эту публикацию.');
-        await this.jobs.authorize(device,jobId,lease);
+        await this.jobs.authorize(device,jobId,lease,receipt?{snapshotReceipt:true}:undefined);
         const actor={email:device.email,activeRole:String(job.role)};
         const row=await this.repository.transaction(project,actor,3,async client=>{
             const value=await this.repository.row(client,project,id,true);

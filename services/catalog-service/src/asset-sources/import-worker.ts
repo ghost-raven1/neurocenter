@@ -1,3 +1,5 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
 import {AgentAssetAdapter} from './asset-agent-adapter';
 import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { selectAssets, toBridgeRelease, type BridgeAsset } from '@neurocenter/asset-contract';
@@ -85,7 +87,7 @@ export class AssetImportWorker {
     private async process(initial:IImportJob,client:PoolClient,signal:AbortSignal):Promise<void>{
         let job=initial;
         try{
-            await this.check(job,client,signal);
+            await this.check(job,client,signal); await requireFeaturesEnabled(['asset_sources']);
             if(!job.items.length){
                 const items=await this.prepare(job),conflict=items.some(item=>item.action==='conflict');
                 job=await this.jobs.save(client,job,conflict?'NEEDS_INPUT':'RUNNING',conflict?'Импорт остановлен до скачивания: исправьте указанные конфликты.':'План проверен. Загружаем и проверяем выбранные файлы.',items);
@@ -93,7 +95,7 @@ export class AssetImportWorker {
             }else{job=await this.jobs.save(client,job,'RUNNING','Продолжаем сохранённые этапы импорта.');}
             for(let index=0;index<job.items.length;index++){
                 let item=job.items[index];if(item.state==='SUCCEEDED'){continue;}
-                await this.check(job,client,signal);
+                await this.check(job,client,signal); await requireFeaturesEnabled(['asset_sources',...requiredAssetFeatures(item.resolved.asset.kind)]);
                 item={...item,state:'RUNNING',message:'Проверяем файлы поставки'};job.items[index]=item;
                 job=await this.jobs.save(client,job,'RUNNING','Обрабатываем «'+item.name+'»');
                 const blobs=await this.blobs.importAsset(item.resolved.asset,item.requestKey,signal,job.cache_only===true);

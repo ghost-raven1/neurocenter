@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {RAG_PLUGIN_SOURCE, isPreparedRagRepository} from '../../shared/opencode-rag-source.cjs';
 import {resolveRepositorySource} from '../../shared/repository-source.cjs';

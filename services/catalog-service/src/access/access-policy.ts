@@ -41,6 +41,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (/^\/api\/(asset-sources|asset-imports|asset-management)(?:\/|$)/.test(route)) { return main; }
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
+    if (route === '/api/model-usage') return read && ['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole);
     if(route==='/api/agents'){return read||main&&request.method.toUpperCase()==='POST';}
     if(/^\/api\/agents\/agent-[a-z0-9][a-z0-9-]{0,120}$/.test(route)){return read||main&&request.method.toUpperCase()==='PATCH';}
     if (route === '/api/model-chats' || route.startsWith('/api/model-chats/')) {
@@ -48,11 +49,15 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
         const method = request.method.toUpperCase(), id = '[a-f0-9-]{36}', root = '/api/model-chats';
         // The executor additionally checks personal ownership and the current model/project assignment.
         if (route === root) return ['GET', 'HEAD', 'POST'].includes(method);
+        if (route === root + '/agents' || route === root + '/research-tools') return ['GET', 'HEAD'].includes(method);
         if (new RegExp(`^${root}/${id}$`).test(route)) return ['GET', 'HEAD', 'PATCH', 'DELETE'].includes(method);
+        if (new RegExp(`^${root}/${id}/(?:research-tools|research-steps/${id}|turns/${id}/research-steps)$`).test(route)) return ['GET', 'HEAD'].includes(method);
         if (new RegExp(`^${root}/${id}/history$`).test(route)) return ['GET', 'HEAD'].includes(method);
+        if (new RegExp(`^${root}/${id}/agents$`).test(route)) return ['GET', 'HEAD'].includes(method);
+        if (new RegExp(`^${root}/${id}/participants$`).test(route)) return method === 'PUT';
         if (new RegExp(`^${root}/${id}/attachments/${id}$`).test(route)) return ['GET', 'HEAD', 'DELETE'].includes(method);
         if (new RegExp(`^${root}/${id}/turns/${id}$`).test(route)) return method === 'DELETE';
-        return method === 'POST' && new RegExp(`^${root}/${id}/(?:attachments|context-preview|turns(?:/${id}/(?:retry|cancel))?)$`).test(route);
+        return method === 'POST' && new RegExp(`^${root}/${id}/(?:attachments|context-preview|turns(?:/${id}/(?:retry|cancel|complete))?)$`).test(route);
     }
     if (route === '/api/models') { return read || main; }
     const model = /^\/api\/models\/[^/]+(?:\/(.*))?$/.exec(route);

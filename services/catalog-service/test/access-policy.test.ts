@@ -5,6 +5,15 @@ import {AccessDb} from '../src/access/access-db';
 const claims:IAccessClaims={email:'member@example.test',userRoles:['Админ проекта','Разработчик','Наблюдатель'],projects:[{projectId:'prj-a',projectName:'Мой проект',role:'Админ проекта'},{projectId:'prj-b',projectName:'Другой рабочий',role:'Разработчик'},{projectId:'prj-read',projectName:'Чтение',role:'Наблюдатель'}],pluginIds:['approved'],skillPaths:['common/approved']};
 const request=(method:string,path:string,body?:Record<string,unknown>,query?:Record<string,unknown>)=>({method,path,body,query});
 describe('Единая ролевая модель каталога',()=>{
+    it('Источники и private traces чата читаются рабочей ролью, неизвестные маршруты не расширяют policy',()=>{
+        const id='a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
+        for(const path of ['/api/model-chats/research-tools',`/api/model-chats/${id}/research-tools`,`/api/model-chats/${id}/research-steps/${id}`]){
+            expect(allowRequest(claims,'Разработчик',request('GET',path))).toBe(true);
+            expect(allowRequest(claims,'Наблюдатель',request('GET',path))).toBe(false);
+            expect(allowRequest(claims,'Разработчик',request('POST',path))).toBe(false);
+        }
+        expect(allowRequest(claims,'Разработчик',request('GET',`/api/model-chats/${id}/research-steps/secret`))).toBe(false);
+    });
     it('Контракт полного пакета сохраняет права на исходный скилл и не расширяет запись',()=>{
         for(const role of claims.userRoles){
             expect(allowRequest(claims,role,request('GET','/api/skills/_package/project-prj-a/helper'))).toBe(true);

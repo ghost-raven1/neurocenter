@@ -1,3 +1,5 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
 import {SourceUploadService} from '../source-upload/source-upload.service';
 import { inspectGithubReleaseAsset, inspectGithubRepository } from '../../../shared/release-inspection.cjs';
 import { ConflictException, ForbiddenException, Injectable, Optional, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
@@ -150,15 +152,15 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     }
 
     async npm(actor: IAccessActor, specifier: unknown, entrypoint?: string) {
-        await this.requireMain(actor);
+        await this.requireMain(actor); await requireFeaturesEnabled(['tool_builds']);
         return resolveNpmSource(specifier, entrypoint);
     }
     async archiveSource(actor: IAccessActor, input: unknown) {
-        await this.requireMain(actor);
+        await this.requireMain(actor); await requireFeaturesEnabled(['tool_builds']);
         return readSourceArchive(input);
     }
     async repositorySource(actor: IAccessActor, input: Omit<RepositoryInput, 'type'>) {
-        await this.requireMain(actor);
+        await this.requireMain(actor); await requireFeaturesEnabled(['tool_builds']);
         try {return await resolveRepositorySource(input, {inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository,inspectSkill:files=>inspectSkillSource(files,{metadataOnly:true})});}
         catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось проверить репозиторий GitHub.');}
     }
@@ -195,6 +197,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['requestKey','asset'].includes(key)))throw new BadRequestException('Импорт принимает только requestKey и asset.');
         const input=raw as {requestKey:string;asset:unknown};if(!validId(input.requestKey))throw new BadRequestException('Нужен UUID ключа импорта.');
         let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(!['mcp','plugin','skill'].includes(checked.kind))throw new BadRequestException('Нужен MCP/plugin/skill asset.');
+        await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(checked.kind)]);
         if(checked.dependencies?.length)throw new BadRequestException('Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.');
         if(checked.kind==='skill')return this.importSkillAsset(actor,checked as SkillAsset,input.requestKey);
         const asset=checked as ToolAsset,files=asset.delivery.artifacts.map(({descriptor})=>({archivePath:path.join(runtimeArtifactDirectory(),descriptor.sha256+'.tar.gz'),sha256:descriptor.sha256,bytes:descriptor.compressedBytes,filename:descriptor.sha256+'.tar.gz',target:descriptor.target}));
@@ -215,6 +218,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
         const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
         if (previous) { return buildView(previous); }
+        await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(input.kind)]);
         if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
         let source: BuildConfiguration['source'];
         if (input.source.type === 'npm') {
@@ -337,7 +341,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         const stage = path.join(root, row.id);
         let releaseDisk: () => void = () => undefined;
         try {
-            await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
+            await this.requireMain({email: row.actor, activeRole: 'Главный админ'}); await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(row.config.kind)]);
             if (!this.lease || this.stopping) { throw new Error('Сборщик останавливается.'); }
             releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: row.config.kind==='skill'&&row.config.source.type==='files'?64*1024**2:stagingLimit, path: root});
             await fs.mkdir(stage, {mode: 0o700});
@@ -378,7 +382,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 body: JSON.stringify({sections: ['catalog', 'operations', 'audit']}), signal: AbortSignal.timeout(1500),
             }).catch(() => undefined);
         } catch (error) {
-            const message = error instanceof ForbiddenException ? 'Права главного администратора отозваны. Публикация остановлена.'
+            const message = error instanceof ForbiddenException ? (error.message.startsWith('Функция «')?error.message:'Права главного администратора отозваны. Публикация остановлена.')
                 : error instanceof Error && !/postgres|password|token|secret|connection|https?:\/\//i.test(error.message) ? error.message.slice(0, 500)
                 : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.';
             await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);

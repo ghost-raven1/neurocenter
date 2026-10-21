@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {afterAll,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
 import {Client,Pool} from 'pg';
 import {randomUUID,createHash} from 'node:crypto';
@@ -14,6 +15,7 @@ import type {ModelRuntime} from '../src/models/model-runtime';
 import type {IProjectReindexPlan} from '../src/models/project-reindex.types';
 import {RagDb,type IUpsertRow} from '../../rag-sync-service/src/rag/rag-db';
 import {indexSnapshotHash,rowFingerprint,ragRequestHash} from '../../shared/rag-index-contract.cjs';
+import {defaultFeatureFlags,evaluateFeatureFlags} from '../../shared/feature-flags.cjs';
 
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:async()=>()=>{}}));
 const connection=process.env.RAG_CONTRACT_TEST_PG_URL,request={} as Request;
@@ -141,7 +143,7 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
         process.env.NEUROCENTER_INTERNAL_TOKEN='isolated-http-fixture-token';
         ragApp.use((req:{path:string;headers:Record<string,string>},res:{status:(code:number)=>{json:(body:unknown)=>void};json:(body:unknown)=>void},next:()=>void)=>{
             if(req.path.startsWith('/internal/')&&req.headers['x-neurocenter-internal']!==process.env.NEUROCENTER_INTERNAL_TOKEN){res.status(403).json({message:'Internal token required'});return;}
-            if(req.path==='/internal/feature-flags/evaluated'){res.json({flags:{model_hosting:true,rag_sync:true,tool_builds:true}});return;}next();
+            if(req.path==='/internal/feature-flags/evaluated'){res.json(evaluateFeatureFlags(defaultFeatureFlags()));return;}next();
         });
         try{
             await catalogApp.listen(0,'127.0.0.1');await ragApp.listen(0,'127.0.0.1');

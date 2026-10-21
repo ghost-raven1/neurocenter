@@ -47,8 +47,17 @@ export async function projectLocalJobPayload(store:DeviceStore,installations:Dev
     if(PROJECT_LOCAL_APPLIES.includes(input.kind)&&purpose!==localPurpose(input.kind))throw conflict();
     const effectiveKind=input.kind==='open-local-change-report'?(purpose==='adopt'?'apply-adopt-installation':'apply-local-restore'):input.kind;
     assertLocalFeature(device.report,localCapability(effectiveKind));
+    if(input.kind==='scan-opencode-models'){
+        if(device.role!=='Главный админ'||!['global','project'].includes(String(input.scope)))throw new BadRequestException('Выберите общий или проектный источник OpenCode на компьютере главного администратора.');
+        if(Object.keys(input).some(key=>!['deviceId','kind','requestKey','scope',...(input.scope==='project'?['projectId','expectedBindingId']:[])].includes(key)))throw new BadRequestException('Передайте только выбранный источник OpenCode и его привязку.');
+        if(input.scope==='global'){
+            if(input.projectId!==undefined||input.expectedBindingId!==undefined)throw new BadRequestException('Общий источник OpenCode не относится к проектной папке.');
+            return {scope:'global',deviceId:device.id};
+        }
+        return {scope:'project',...identity(device,input)};
+    }
     const tuple=identity(device,input);let payload:Payload={...tuple};
-    if(['scan-project-inventory','scan-opencode-models'].includes(input.kind))return payload;
+    if(input.kind==='scan-project-inventory')return payload;
     if(purpose==='adopt') {
         if(saved){
             const source=saved.source_payload as Payload;
@@ -90,6 +99,11 @@ export async function assertProjectLocalJob(store:DeviceStore,installations:Devi
     const purpose=job.payload.localPlanPurpose as string|undefined;
     const effective=job.kind==='open-local-change-report'?(purpose==='adopt'?'apply-adopt-installation':'apply-local-restore'):job.kind;
     assertLocalFeature(device.report,localCapability(effective));
+    if(job.kind==='scan-opencode-models'){
+        if(device.role!=='Главный админ')throw conflict();
+        if(job.payload.scope==='global'&&job.project_id===null&&job.payload.deviceId===device.id)return;
+        if(job.payload.scope!=='project'||!job.project_id)throw conflict();
+    }
     const tuple=identity(device,{projectId:job.project_id!,expectedBindingId:job.payload.bindingId as string});
     if(tuple.instanceId!==job.payload.instanceId)throw conflict();
     if(['scan-project-inventory','scan-opencode-models'].includes(effective))return;

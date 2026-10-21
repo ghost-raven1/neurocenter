@@ -7,7 +7,7 @@ import type { ProjectEmbeddingService } from '../src/models/project-embedding.se
 import type { JobInput } from '../src/devices/device-job.model';
 import {DeviceJobs} from '../src/devices/device-jobs';
 
-vi.mock('../src/features/require-feature-enabled', () => ({requireFeatureEnabled:vi.fn().mockResolvedValue(undefined)}));
+vi.mock('../src/features/require-feature-enabled', () => ({requireFeaturesEnabled:vi.fn().mockResolvedValue(undefined),requireFeatureEnabled:vi.fn().mockResolvedValue(undefined)}));
 
 describe('Подключение модели использует точный выбор проекта и одобренный OpenCodeRAG', () => {
     const bindingId='b'.repeat(64), pin='d'.repeat(64), manifest='a'.repeat(64), instanceId='11111111-1111-4111-8111-111111111111';

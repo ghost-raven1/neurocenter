@@ -1,3 +1,4 @@
+import {defaultFeatureFlags,evaluateFeatureFlags} from '../../shared/feature-flags.cjs';
 import 'reflect-metadata';
 import {EventEmitter} from 'node:events';
 import {afterAll,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
@@ -69,7 +70,7 @@ describe('Public routing keeps the canonical owner and fail-closed policy',()=>{
         const request=vi.fn().mockResolvedValue({status:200,data:{path:'common/checked'},headers:{}});
         const proxy=new ProxyService({get:(key:string)=>({CATALOG_SERVICE_URL:'http://catalog.fixture',SKILLS_SERVICE_URL:'http://skills.fixture'}[key])} as never,
             {authenticate:async()=>({userId:'fixture',...actor,policies:[]})} as never,{mutation:vi.fn()} as never);
-        Object.assign(proxy,{http:{post:async()=>({status:200,data:{allowed:true,claims}}),request}});
+        Object.assign(proxy,{http:{get:async()=>({status:200,data:evaluateFeatureFlags(defaultFeatureFlags())}),post:async()=>({status:200,data:{allowed:true,claims}}),request}});
         const req=Object.assign(new EventEmitter(),{path:route,method,headers:{},query:{},body:method==='POST'?{path:'common',slug:'checked'}:undefined}) as Request;
         const response={status:vi.fn().mockReturnThis(),send:vi.fn(),json:vi.fn(),setHeader:vi.fn()};
         await proxy.forward(req,response as unknown as Response);

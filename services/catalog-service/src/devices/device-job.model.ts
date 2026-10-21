@@ -16,6 +16,7 @@ export interface JobInput {
     projectId?: string;
     kind: string;
     requestKey: string;
+    scope?: 'global'|'project';
     assetKind?: string;
     assetId?: string;
     version?: number;

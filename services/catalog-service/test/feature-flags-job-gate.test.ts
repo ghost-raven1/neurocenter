@@ -1,9 +1,10 @@
+import {defaultFeatureFlags} from '../../shared/feature-flags.cjs';
 import {describe,expect,it,vi} from 'vitest';
 import {requireFeatureEnabled} from '../src/features/require-feature-enabled';
 
 describe('Серверная проверка флага перед постановкой задания',()=>{
     const env={FEATURE_FLAGS_SERVICE_URL:'http://flags.test',NEUROCENTER_INTERNAL_TOKEN:'fixture-token'};
-    const flags={model_hosting:true,tool_builds:true,rag_sync:true};
+    const flags=defaultFeatureFlags();
     it('Читает подтверждённое значение без кеша через служебный адрес',async()=>{
         const request=vi.fn(async()=>new Response(JSON.stringify({flags})));
         await requireFeatureEnabled('rag_sync',env,request as typeof fetch);

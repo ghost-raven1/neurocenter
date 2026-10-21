@@ -1,3 +1,4 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {BadRequestException,ConflictException,ForbiddenException,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type {Request} from 'express';
@@ -21,6 +22,7 @@ export class SnapshotVerifier {
         if(!snapshotUuid(input.workerId)||input.sdkVersion!=='0.29.0'||!/^sha256:[a-f0-9]{64}$/.test(input.imageDigest)
             ||process.env.SNAPSHOT_VERIFIER_IMAGE_DIGEST&&process.env.SNAPSHOT_VERIFIER_IMAGE_DIGEST!==input.imageDigest)throw new BadRequestException('Нужен поддерживаемый SDK и закреплённый образ исполнителя.');
         await this.repository.pool.query('INSERT INTO project_snapshot_verifiers(id,last_seen,sdk_version,image_digest) VALUES($1,now(),$2,$3) ON CONFLICT(id) DO UPDATE SET last_seen=now(),sdk_version=$2,image_digest=$3',[input.workerId,input.sdkVersion,input.imageDigest]);
+        await requireFeaturesEnabled(['project_snapshots']);
         const candidate=(await this.repository.pool.query<SnapshotRow>(`SELECT * FROM project_snapshots WHERE status='VERIFYING'
             AND (verifier_owner IS NULL OR verifier_lease_until<=now()) ORDER BY created_at LIMIT 1`)).rows[0];
         if(!candidate)return null;

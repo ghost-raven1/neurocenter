@@ -1,4 +1,4 @@
-import {BadRequestException,ConflictException,HttpException,Inject,Injectable,NotFoundException,OnApplicationShutdown,OnModuleInit} from '@nestjs/common';
+import {BadRequestException,ConflictException,ForbiddenException,HttpException,Inject,Injectable,NotFoundException,OnApplicationShutdown,OnModuleInit} from '@nestjs/common';
 import {randomUUID} from 'node:crypto';
 import type {Request} from 'express';
 import {normalizeLearningAnalysisInput,type LearningAnalysisInput} from '../../../shared/project-learning.cjs';
@@ -11,6 +11,8 @@ import {requireLearningHuman} from './learning-access';
 import {analysisView,type AnalysisRow,type LearningAnalysis} from './learning-analysis.types';
 import {analysisRequestHash,LearningAnalysisRepository} from './learning-analysis.repository';
 import {learningAnalysisHypotheses,learningAnalysisMessages} from './learning-analysis-prompt';
+import {withModelUsage} from '../model-usage/model-usage.context';
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 
 const uuid=(value:string):string=>{
  if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value))throw new BadRequestException('Некорректный идентификатор анализа.');return value;
@@ -49,8 +51,10 @@ export class LearningAnalysisService implements OnModuleInit,OnApplicationShutdo
    if(previous.request_hash!==analysisRequestHash(scope.projectId,input))throw new ConflictException('Ключ запроса уже относится к другому анализу.');
    return analysisView(previous);
   }
+  await requireFeaturesEnabled(['project_learning','model_hosting']);
   const snapshot=await this.learning.analysisInput(req,scope.projectId,input),model=await this.usableModel(req,scope.projectId,input.modelId);
   learningAnalysisMessages(snapshot.experiences);
+  await requireFeaturesEnabled(['project_learning','model_hosting']);
   const row=await this.repository.enqueue(snapshot,input,projectEmbeddingPin(model));this.schedule(0);return analysisView(row);
  }
  private async usableModel(req:Request,id:string,modelId:string){
@@ -72,8 +76,9 @@ export class LearningAnalysisService implements OnModuleInit,OnApplicationShutdo
    await this.repository.current(row);signal.throwIfAborted();
    const model=await this.usableModel(req,row.project_id,row.model_id);
    if(projectEmbeddingPin(model)!==row.model_pin)throw new ConflictException('Выбранная модель изменилась.');
-   const result=await this.runtime.infer(model,'chat',{messages:learningAnalysisMessages(row.experiences),think:false,
-    options:model.runtime==='ollama'?{temperature:0,num_predict:2048,num_ctx:8192}:{}},signal);
+   await requireFeaturesEnabled(['project_learning','model_hosting']);signal.throwIfAborted();
+   const result=await withModelUsage({purpose:'learning',actorEmail:row.actor_email,projectId:row.project_id,operationId:row.id},()=>this.runtime.infer(model,'chat',{messages:learningAnalysisMessages(row.experiences),think:false,
+    options:model.runtime==='ollama'?{temperature:0,num_predict:2048,num_ctx:8192}:{}},signal));
    signal.throwIfAborted();const current=await this.usableModel(req,row.project_id,row.model_id);
    if(projectEmbeddingPin(current)!==row.model_pin)throw new ConflictException('Выбранная модель изменилась во время анализа.');
    const hypotheses=learningAnalysisHypotheses(result,row.input.experienceIds);
@@ -87,9 +92,10 @@ export class LearningAnalysisService implements OnModuleInit,OnApplicationShutdo
    const interrupted=signal.aborted;
    const status=cause instanceof HttpException?cause.getStatus():503;
    const denied=status===403||status===404;
+   const disabled=cause instanceof ForbiddenException&&cause.message.startsWith('Функция «');
    const conflict=status===409;
-   await this.repository.fail(row,interrupted?'unknown':'failed',interrupted?'ANALYSIS_INTERRUPTED':denied?'ACCESS_CHANGED':conflict?'SOURCE_CHANGED':'MODEL_FAILED',
-    interrupted?'Анализ прерван. Неизвестный результат не запускает модель повторно.':denied?'Доступ к проекту или модели изменился.':conflict?'Модель или привязка анализа изменились. Создайте новый анализ.':'Модель не вернула полный проверяемый результат. Проверьте подключение и доступность модели.');
+   await this.repository.fail(row,interrupted?'unknown':'failed',interrupted?'ANALYSIS_INTERRUPTED':disabled?'FEATURE_DISABLED':denied?'ACCESS_CHANGED':conflict?'SOURCE_CHANGED':'MODEL_FAILED',
+    interrupted?'Анализ прерван. Неизвестный результат не запускает модель повторно.':disabled?cause.message:denied?'Доступ к проекту или модели изменился.':conflict?'Модель или привязка анализа изменились. Создайте новый анализ.':'Модель не вернула полный проверяемый результат. Проверьте подключение и доступность модели.');
   }finally{if(this.abort===abort)this.abort=undefined;}
  }
 }

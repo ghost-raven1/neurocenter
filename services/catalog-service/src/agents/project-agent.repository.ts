@@ -41,7 +41,7 @@ export class ProjectAgentRepository {
     private async saved(db:Db,projectId:string,id:string):Promise<{revision:number;assignment:ProjectAgentAssignment}>{
         const next=(await db.query<{revision:number}>('UPDATE project_agent_sets SET revision=revision+1,updated_at=now() WHERE project_id=$1 RETURNING revision',[projectId])).rows[0].revision;
         const snapshot=await this.snapshot(projectId,db);
-        try{createProjectAgentsPayload({schemaVersion:1,projectId,bindingId:'0'.repeat(64),instanceId:'00000000-0000-4000-8000-000000000000',revision:Number(next),agents:snapshot.agents});}
+        try{createProjectAgentsPayload({schemaVersion:2,projectId,bindingId:'0'.repeat(64),instanceId:'00000000-0000-4000-8000-000000000000',revision:Number(next),agents:snapshot.agents});}
         catch{throw new BadRequestException('Проект допускает до 32 агентов с разными именами OpenCode и общий размер настроек до 2 МиБ.');}
         const row=(await db.query<AgentAssignmentRow>('SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2',[projectId,id])).rows[0];
         return {revision:Number(next),assignment:await this.assignment(row,db)};

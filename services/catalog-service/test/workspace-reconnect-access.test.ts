@@ -5,6 +5,7 @@ import type { DeviceArtifacts } from '../src/devices/device-artifacts';
 import type { DeviceInstallations } from '../src/devices/device-installations';
 import type { InstallPlans } from '../src/devices/install-plans';
 import type { ProjectEmbeddingService } from '../src/models/project-embedding.service';
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 
 const { enqueue } = vi.hoisted(() => ({ enqueue: vi.fn() }));
 vi.mock('../src/devices/device-enqueue', () => ({ enqueueDeviceJob: enqueue }));

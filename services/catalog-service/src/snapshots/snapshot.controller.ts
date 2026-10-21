@@ -33,7 +33,7 @@ export class ProjectSnapshotsController {
         res.setHeader('Connection','close');res.json(await this.snapshots.upload(req,id,sid,sha));
     }
     @Post('snapshot-uploads/:sid/complete') async complete(@Req() req:Request,@Param('id') id:string,@Param('sid') sid:string,@Body() body:{manifestSha256:string}){
-        const {actor}=await this.snapshots.publication(req,id,sid);return this.snapshots.repository.finishUpload(id,sid,actor,body?.manifestSha256);
+        const {actor}=await this.snapshots.publication(req,id,sid,true);return this.snapshots.repository.finishUpload(id,sid,actor,body?.manifestSha256);
     }
     @Get('versions/:sid/blobs/:sha') async download(@Req() req:Request,@Res() res:Response,@Param('id') id:string,@Param('sid') sid:string,@Param('sha') sha:string){
         await this.snapshots.binary(res,()=>this.snapshots.download(req,id,sid,sha));

@@ -1,3 +1,4 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {Injectable,OnApplicationShutdown,OnModuleInit,ForbiddenException} from '@nestjs/common';
 import type {Request} from 'express';
 import {canReadCommon,projectLevel} from '../access/access.model';
@@ -27,11 +28,13 @@ export class AgentsService implements OnModuleInit,OnApplicationShutdown {
         return {items:common?await this.cards.list():await this.cards.assigned(projects),assignments:[],revision:null,deliveries:[]};
     }
     async get(req:Request,id:string){const allowed=await this.list(req);const card=allowed.items.find(row=>row.id===id);if(!card)throw new ForbiddenException('Агент не назначен доступному проекту.');return card;}
-    async create(req:Request,raw:unknown){const actor=await this.access.actor(req),result=await this.cards.create(actor,raw);await notifyModelCatalogChange();return result;}
-    async update(req:Request,id:string,raw:unknown){const actor=await this.access.actor(req),result=await this.cards.update(actor,id,raw);await notifyModelCatalogChange();return result;}
+    async create(req:Request,raw:unknown){const actor=await this.access.actor(req);await requireFeaturesEnabled(['agents']);const result=await this.cards.create(actor,raw);await notifyModelCatalogChange();return result;}
+    async update(req:Request,id:string,raw:unknown){const actor=await this.access.actor(req);await requireFeaturesEnabled(['agents']);const result=await this.cards.update(actor,id,raw);await notifyModelCatalogChange();return result;}
     private async project(req:Request,id:string){const actor=await this.access.actor(req),project=await this.access.resolveProject(req,id,3,actor);return {actor,project};}
-    async assign(req:Request,id:string,raw:unknown){const {actor,project}=await this.project(req,id),result=await this.projects.assign(actor,project.id,raw);await notifyModelCatalogChange();return result;}
-    async configure(req:Request,id:string,agentId:string,raw:unknown){const {actor,project}=await this.project(req,id),result=await this.projects.update(actor,project.id,agentId,raw);await notifyModelCatalogChange();return result;}
+    async assign(req:Request,id:string,raw:unknown){const {actor,project}=await this.project(req,id);await requireFeaturesEnabled(['agents']);const result=await this.projects.assign(actor,project.id,raw);await notifyModelCatalogChange();return result;}
+    async configure(req:Request,id:string,agentId:string,raw:unknown){const {actor,project}=await this.project(req,id);
+        const disabling=!!raw&&typeof raw==='object'&&!Array.isArray(raw)&&(raw as Record<string,unknown>).enabled===false&&Object.keys(raw).every(key=>['enabled','expectedRevision','requestKey'].includes(key));
+        if(!disabling)await requireFeaturesEnabled(['agents']);const result=await this.projects.update(actor,project.id,agentId,raw);await notifyModelCatalogChange();return result;}
     async remove(req:Request,id:string,agentId:string,raw:unknown){const {actor,project}=await this.project(req,id),result=await this.projects.remove(actor,project.id,agentId,raw);await notifyModelCatalogChange();return result;}
     async connect(req:Request,id:string,raw:unknown){
         const {actor,project}=await this.project(req,id),input=object(raw,['requestKey','expectedRevision','deviceId','expectedBindingId','expectedInstanceId']);request(input.requestKey);revision(input.expectedRevision);

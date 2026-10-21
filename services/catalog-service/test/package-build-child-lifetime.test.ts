@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';

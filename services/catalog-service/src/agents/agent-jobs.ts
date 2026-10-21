@@ -8,6 +8,7 @@ import {managedBinding,assertExpectedBinding} from '../devices/device-compatibil
 import {assertLocalFeature} from '../devices/local-change-jobs';
 import {ProjectAgentRepository} from './project-agent.repository';
 import {revision} from './agent-validation';
+import {agentModelRequirements} from './agent-model-requirements';
 function context(device:Device,projectId:string|undefined,expected:unknown,instance:unknown){
     assertLocalFeature(device.report,PROJECT_AGENTS_CAPABILITY);
     const bindingId=managedBinding(device.report,projectId);assertExpectedBinding(bindingId,expected,true);
@@ -22,18 +23,19 @@ export async function agentConfigurationJobPayload(store:DeviceStore,device:Devi
     revision(input.expectedAgentsRevision);const target=context(device,input.projectId,input.expectedBindingId,input.expectedInstanceId);
     const snapshot=await new ProjectAgentRepository(store.pool).snapshot(input.projectId!);
     if(snapshot.revision!==input.expectedAgentsRevision||snapshot.revision<1)throw new ConflictException('Настройки агентов изменились. Примените актуальную ревизию.');
-    return createProjectAgentsPayload({schemaVersion:1,projectId:input.projectId!,...target,...snapshot});
+    return createProjectAgentsPayload({schemaVersion:2,projectId:input.projectId!,...target,...snapshot,modelRequirements:await agentModelRequirements(store.pool,input.projectId!,snapshot.agents)});
 }
 /** Rechecked before lease delivery and before local commit; editing desired state invalidates an old queued snapshot. */
 export async function assertAgentConfigurationJob(store:DeviceStore,device:Device,job:Pick<Job,'kind'|'payload'|'project_id'>,db:Pick<PoolClient,'query'>=store.pool):Promise<void>{
     if(job.kind!==PROJECT_AGENTS_JOB)return;
     const payload=normalizeProjectAgentsPayload(job.payload),target=context(device,job.project_id??undefined,payload.bindingId,payload.instanceId);
     const snapshot=await new ProjectAgentRepository(store.pool).snapshot(job.project_id!,db);
-    if(snapshot.revision<1||!isDeepStrictEqual(createProjectAgentsPayload({schemaVersion:1,projectId:job.project_id!,...target,...snapshot}),payload))throw new ConflictException('Это задание относится к прежней настройке агентов. Примените текущую ревизию.');
+    const {compilation:_compilation,...base}=payload;
+    if(snapshot.revision<1||!isDeepStrictEqual(createProjectAgentsPayload({schemaVersion:2,projectId:job.project_id!,...target,...snapshot,modelRequirements:await agentModelRequirements(db,job.project_id!,snapshot.agents)}),base))throw new ConflictException('Это задание относится к прежней настройке агентов. Примените текущую ревизию.');
 }
 /** Old valid receipts remain historical evidence and cannot confirm a newer desired revision or another target. */
 export function assertAgentConfigurationResult(job:Pick<Job,'kind'|'payload'|'project_id'>,result:Record<string,unknown>,failed:boolean):void{
     if(job.kind!==PROJECT_AGENTS_JOB)return;
-    try{if(failed){if(Object.keys(result).length)throw Error('Private failure');}else{const checked=validateProjectAgentsResult(result,job.payload);if(checked.projectId!==job.project_id)throw Error('Wrong project');}}
+    try{if(failed){if(Object.keys(result).length&&(Object.keys(result).some(key=>!['code','agentId','modelId','action'].includes(key))||result.code!=='OPENCODE_AGENT_MODEL_SETUP_REQUIRED'||result.action!=='sync-opencode-models'||typeof result.agentId!=='string'||!normalizeProjectAgentsPayload(job.payload).agents.some(agent=>agent.id===result.agentId)||result.modelId!==undefined&&result.modelId!==normalizeProjectAgentsPayload(job.payload).agents.find(agent=>agent.id===result.agentId)?.model?.replace(/^neurocenter\//,'')))throw Error('Private failure');}else{const checked=validateProjectAgentsResult(result,job.payload);if(checked.projectId!==job.project_id)throw Error('Wrong project');}}
     catch{throw new ConflictException('Квитанция настройки агентов не соответствует исходному набору, ревизии и папке.');}
 }

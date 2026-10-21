@@ -1,3 +1,4 @@
+import {defaultFeatureFlags,evaluateFeatureFlags} from '../../shared/feature-flags.cjs';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import type {Device,DeviceStore} from '../src/devices/device-store';
 import {DeviceEmbeddingService} from '../src/models/device-embedding.service';
@@ -19,7 +20,7 @@ beforeEach(()=>{
     vi.resetAllMocks();owned.mockResolvedValue(device);claims.mockResolvedValue({email,userRoles:['Разработчик'],projects:[{projectId,projectName:'Проект',role:'Разработчик'}]});
     query.mockResolvedValue({rows:[{id:projectId}]});requireGrant.mockResolvedValue(configured);
     infer.mockResolvedValue({embeddings:[[1,0,0],[0,1,0]],prompt_eval_count:4});
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({flags:{model_hosting:true,tool_builds:true,rag_sync:true}})}));
+    vi.stubGlobal('fetch',vi.fn(async()=>Response.json(evaluateFeatureFlags(defaultFeatureFlags()))));
 });
 afterEach(()=>vi.unstubAllGlobals());
 describe('Embedding-брокер подключённого устройства',()=>{
@@ -54,7 +55,7 @@ describe('Embedding-брокер подключённого устройства
         expect(infer).toHaveBeenCalledOnce();
     });
     it.each(['disabled','unavailable'])('Флаг %s блокирует только inference, контекст остаётся читаемым',async mode=>{
-        vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>({flags:{model_hosting:mode!=='disabled',tool_builds:true,rag_sync:true}})} as Response);
+        vi.mocked(fetch).mockImplementation(async()=>Response.json(evaluateFeatureFlags({...defaultFeatureFlags(),model_hosting:mode!=='disabled'})));
         if(mode==='unavailable')vi.mocked(fetch).mockRejectedValue(Error('Synthetic unavailable'));
         await expect(service.context(device,context)).resolves.toEqual(configured);
         await expect(service.embed(device,input)).rejects.toMatchObject({status:mode==='disabled'?403:503});expect(infer).not.toHaveBeenCalled();

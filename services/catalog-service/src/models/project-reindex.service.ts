@@ -11,7 +11,8 @@ import { assertProjectEmbeddingModel, projectEmbeddingPin } from './project-embe
 import { ProjectRagCoordinator } from './project-rag-coordinator';
 import type { IReindexRow, IProjectReindexPlan, IGenerationReceipt } from './project-reindex.types';
 import {DeviceJobs} from '../devices/device-jobs';
-import {requireFeatureEnabled} from '../features/require-feature-enabled';
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {withModelUsage} from '../model-usage/model-usage.context';
 
 const sha=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -61,6 +62,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
                 plan=previous.rows[0];if(plan.data.modelId!==input.modelId||plan.data.modelPin!==input.expectedModelPin||plan.data.context.revision!==input.expectedSelectionRevision||ragRequestHash(plan.data.connection??null)!==ragRequestHash(connection??null))throw new ConflictException('Ключ повтора уже закреплён за другим планом.');
                 await db.query('COMMIT');return this.format(plan);
             }
+            await requireFeaturesEnabled(['rag_sync']);
             await this.coordinator.requireIdle(db,project.id);const context=await this.coordinator.context(project.id,db);
             if(context.revision!==input.expectedSelectionRevision)throw new ConflictException('Модель проекта уже изменена. Обновите сведения.');
             const model=await this.target(db,project.id,input.modelId,input.expectedModelPin);
@@ -85,7 +87,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     private async prepare(row:IReindexRow):Promise<void>{
         if(this.running.has(row.id))return;this.running.add(row.id);
         try{
-            await this.models.resolveProject(this.request(row),row.project_id,3);
+            await this.models.resolveProject(this.request(row),row.project_id,3); await requireFeaturesEnabled(['rag_sync']);
             const source=await this.coordinator.client.call<{hash:string;rows:number;bytes:number;availableBytes:number}>('source',{projectId:row.project_id,generation:row.data.context.generation});
             if(!sha(source.hash)||!Number.isSafeInteger(source.rows)||source.rows<0||!Number.isSafeInteger(source.bytes)||source.bytes<0)throw new ConflictException('Исходный снимок не прошёл проверку.');
             const data={...row.data,sourceSnapshot:source.hash,rowCount:source.rows,requiredBytes:source.bytes+source.rows*row.data.profile.dimension*4};
@@ -121,7 +123,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     private async enqueue(row:IReindexRow):Promise<void>{
         if(!row.data.connection||row.connection_job_id||row.connection_error)return;
         try{
-            const current=await this.coordinator.context(row.project_id);
+            await requireFeaturesEnabled(['rag_sync']);const current=await this.coordinator.context(row.project_id);
             if(current.generation!==row.id)throw new ConflictException('Выбор проекта изменился до подключения компьютера.');
             const job=await this.jobs.create({email:row.actor,activeRole:row.active_role},{...row.data.connection,kind:'connect-rag-model',reindex:true,projectId:row.project_id,requestKey:row.connection_request_key??row.id,expectedEmbeddingRevision:current.revision,expectedEmbeddingPin:row.data.modelPin});
             await this.models.pool.query('UPDATE project_reindex_plans SET connection_job_id=$2,connection_error=NULL WHERE id=$1',[row.id,job.id]);
@@ -140,6 +142,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     async start(request:Request,projectId:string,id:string,input:unknown):Promise<IProjectReindexPlan>{
         const row=await this.owned(request,projectId,id,3),body=input as {digest?:unknown};
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).join(',')!=='digest'||body.digest!==row.digest)throw new ConflictException('План изменился. Проверьте новое описание последствий.');
+        await requireFeaturesEnabled(['rag_sync']);
         if(row.state==='needs_input'){await this.models.pool.query("UPDATE project_reindex_plans SET state='building',approved=true,message='Собираем новое поколение.',updated_at=now() WHERE id=$1 AND state='needs_input'",[id]);}
         else if(!['building','ready','applied'].includes(row.state))throw new ConflictException('Этот план уже завершён или устарел. Подготовьте новый.');
         this.launch();return this.get(request,projectId,id);
@@ -147,7 +150,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     private async advance(row:IReindexRow):Promise<void>{
         if(this.running.has(row.id))return;this.running.add(row.id);
         try{
-            await this.models.resolveProject(this.request(row),row.project_id,3);
+            await this.models.resolveProject(this.request(row),row.project_id,3);await requireFeaturesEnabled(['rag_sync']);
             let receipt:IGenerationReceipt;
             try{receipt=await this.coordinator.client.call<IGenerationReceipt>(`generations/${row.id}?projectId=${encodeURIComponent(row.project_id)}`);}
             catch(error){
@@ -218,6 +221,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     }
     async retry(request:Request,projectId:string,id:string):Promise<IProjectReindexPlan>{
         const row=await this.owned(request,projectId,id,3);if(row.state!=='failed')throw new ConflictException('Повтор доступен только для прерванного плана.');
+        await requireFeaturesEnabled(['rag_sync']);
         if(row.data.sourceSnapshot){await this.coordinator.client.call(`generations/${id}/retry`,{projectId:row.project_id}).catch(error=>{if(error?.getStatus?.()!==404)throw error;});}
         await this.models.pool.query("UPDATE project_reindex_plans SET state=$2,message='Повторяем незавершённую операцию.',updated_at=now() WHERE id=$1 AND state='failed'",[id,row.data.sourceSnapshot?'building':'preparing']);
         this.launch();return this.get(request,projectId,id);
@@ -228,9 +232,9 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
         if(!Array.isArray(value.input)||!value.input.length||value.input.length>32||value.input.some(text=>typeof text!=='string'||!text.trim())||Buffer.byteLength(JSON.stringify(value.input))>256*1024)throw new BadRequestException('Некорректный батч переиндексации.');
         await this.models.resolveProject(this.request(row),row.project_id,3);
         if(!await this.models.isAssigned(row.project_id,row.data.modelId))throw new ConflictException('Модель больше не назначена этому проекту.');
-        await requireFeatureEnabled('model_hosting');
+        await requireFeaturesEnabled(['rag_sync','model_hosting']);
         const model=await readPinnedModel(this.models.pool,row.data.modelId,row.data.modelPin);if(!model)throw new ConflictException('Закреплённая модель недоступна.');
-        const result=await this.runtime.infer(model,'embed',{input:value.input,truncate:false},AbortSignal.timeout(105000));
+        const result=await withModelUsage({purpose:'reindex',actorEmail:row.actor,projectId:row.project_id,operationId:row.id,requiredFeatures:['rag_sync']},()=>this.runtime.infer(model,'embed',{input:value.input,truncate:false},AbortSignal.timeout(105000)));
         const current=await this.models.pool.query('SELECT state FROM project_reindex_plans WHERE id=$1',[row.id]);if(current.rows[0]?.state!=='building')throw new ConflictException('Переиндексация отменена.');
         await this.models.resolveProject(this.request(row),row.project_id,3);return {embeddings:result.embeddings};
     }

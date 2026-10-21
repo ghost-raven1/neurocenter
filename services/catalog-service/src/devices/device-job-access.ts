@@ -34,7 +34,7 @@ export async function reclaimUnauthorizedQueuedJobs(client:PoolClient,device:Dev
     const {rows:projects}=await client.query<{id:string}>('SELECT id FROM projects WHERE id=ANY($1::text[])',[projectIds]);
     const existing=new Set(projects.map(project=>project.id));
     const permitted=(job:QueuePermission)=>hasDeviceJobPermission(claims,job.role,device.role,job.project_id??undefined,jobMinimumLevel(job.kind))
-        && (job.project_id?existing.has(job.project_id):job.kind==='choose-root');
+        && (job.project_id?existing.has(job.project_id):job.kind==='choose-root'||job.kind==='scan-opencode-models'&&job.role==='Главный админ'&&device.role==='Главный админ');
     if(claims.email!==device.email||!permitted(incoming))throw new ForbiddenException('Роль или доступ к проекту изменились. Обновите права перед новым действием.');
     const invalid=queued.filter(job=>!permitted(job)).map(job=>job.id);
     if(!invalid.length)return false;

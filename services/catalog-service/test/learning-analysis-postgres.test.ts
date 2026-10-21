@@ -13,6 +13,9 @@ import type {IModel} from '../src/models/model.types';
 import {assertLearningAnalysisSchema} from '../src/learning/learning-analysis-schema-verification';
 import {requireRetirementIdle} from '../src/retired-rag/retirement-guards';
 import {RemoteModelClient} from '../src/models/remote-model-client';
+import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
+
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 
 const projectId='prj-agents';
 const request={headers:{'x-bridge-actor':encodeURIComponent(JSON.stringify(main))}} as unknown as Request;
@@ -34,6 +37,7 @@ describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',(
  beforeAll(async()=>{fixture=await database();pool=fixture.pool;});
  afterAll(async()=>{await fixture?.close();});
  beforeEach(async()=>{
+  vi.mocked(requireFeaturesEnabled).mockReset().mockResolvedValue(undefined);
   await reset(pool);model={...baseModel};available=true;modelCalls=0;
   await pool.query('TRUNCATE model_catalog CASCADE');
   const {id,name,revision:_revision,createdAt:_created,updatedAt:_updated,...descriptor}=baseModel;
@@ -48,6 +52,20 @@ describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',(
   repository=service.repository;
  });
  afterEach(async()=>{await service.onApplicationShutdown();await learning.onApplicationShutdown();vi.restoreAllMocks();});
+ it('disabled hosting refuses a new analysis before a durable enqueue',async()=>{
+  vi.mocked(requireFeaturesEnabled).mockRejectedValue(new ForbiddenException('Функция «Хостинг моделей» отключена главным администратором.'));
+  await expect(create()).rejects.toHaveProperty('status',403);expect(await count('project_learning_analyses')).toBe(0);expect(modelCalls).toBe(0);
+ });
+ it('a saved queued payload is denied after disable and is not silently inferred when re-enabled',async()=>{
+  const job=await create();vi.mocked(requireFeaturesEnabled).mockRejectedValue(new ForbiddenException('Функция «Хостинг моделей» отключена главным администратором.'));
+  await worker().work();expect((await service.get(request,projectId,job.id))).toMatchObject({state:'failed',error:{code:'FEATURE_DISABLED'}});expect(modelCalls).toBe(0);
+  expect((await service.byKey(request,projectId,job.requestKey)).id).toBe(job.id);
+  vi.mocked(requireFeaturesEnabled).mockResolvedValue(undefined);await worker().work();expect(modelCalls).toBe(0);expect(await count('project_learning_hypotheses')).toBe(0);
+ });
+ it('a flag change during an already paid call preserves its checked result without a second inference',async()=>{
+  const job=await create(),answer=await resultFor();infer.mockImplementationOnce(async()=>{modelCalls++;vi.mocked(requireFeaturesEnabled).mockRejectedValue(new ForbiddenException('Функция «Хостинг моделей» отключена главным администратором.'));return answer;});
+  await worker().work();expect((await service.get(request,projectId,job.id)).state).toBe('completed');expect(modelCalls).toBe(1);expect(await count('project_learning_hypotheses')).toBe(1);
+ });
  it('runs once, persists only hypotheses with exact model/source provenance and leaves context inactive',async()=>{
   const job=await create();expect(job.state).toBe('queued');await worker().work();
   const done=await service.get(request,projectId,job.id);expect(done.state).toBe('completed');expect(done.hypothesisIds).toHaveLength(1);expect(modelCalls).toBe(1);

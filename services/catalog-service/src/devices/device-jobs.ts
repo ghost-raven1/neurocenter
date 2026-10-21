@@ -1,4 +1,5 @@
 import {PROJECT_AGENTS_JOB} from '../../../shared/project-agents.cjs';
+import {compileAgentJob} from '../agents/agent-job-compiler';
 import {agentConfigurationJobPayload,assertAgentConfigurationJob} from '../agents/agent-jobs';
 import {projectSnapshotPayload,assertProjectSnapshotJob,SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import {
@@ -39,7 +40,8 @@ import { deviceJobRetryPolicy } from './device-job-retry';
 import { assertRagJobBinding, assertRagJobProtocol, RAG_JOB_KINDS, RAG_GENERATION_PROTOCOL } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import {ragUiJobPayload,assertRagUiJob} from './rag-ui-jobs';
-import {requireFeatureEnabled} from '../features/require-feature-enabled';
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {requiredJobFeatures} from '../../../shared/feature-policy.cjs';
 import { ProjectEmbeddingService } from '../models/project-embedding.service';
 import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
@@ -141,7 +143,7 @@ export class DeviceJobs {
             input.kind === 'choose-root' ? undefined : input.projectId,
             jobMinimumLevel(input.kind),
         );
-        if (input.kind !== 'choose-root' && !input.projectId) {
+        if (input.kind !== 'choose-root' && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
             throw new BadRequestException('Выберите серверный проект.');
         }
         const requestHash = digest(
@@ -149,7 +151,7 @@ export class DeviceJobs {
         );
         const previous=await findDeviceJobRequest(this.store.pool,view,{email:actor.email,deviceId:input.deviceId,requestKey:input.requestKey,requestHash});
         if(previous)return previous;
-        if(input.kind==='sync-rag')await requireFeatureEnabled('rag_sync');
+        if(input.kind!==PROJECT_AGENTS_JOB)await requireFeaturesEnabled(requiredJobFeatures(input.kind,input));
         let payload: Record<string, unknown> = {};
         if (['restore-rag', 'sync-rag'].includes(input.kind) && device.report.ragSupported === false) {
             throw new ConflictException('Локальная LanceDB недоступна на выбранном компьютере. Проверьте ОС и архитектуру автономного пакета MCP.');
@@ -224,11 +226,12 @@ export class DeviceJobs {
             assertPackageBridge(device.report,pkg);
             payload={assetId:pkg.plugin.id,assetKind:pkg.plugin.kind,version:pkg.plugin.version,package:pkg,bindingId};
         }
+        if(input.kind===PROJECT_AGENTS_JOB)await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));
         return enqueueDeviceJob(this.store.pool, view, {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },()=>this.store.access.claims(actor.email));
+        },async()=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));return this.store.access.claims(actor.email);});
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
     private async readScope(actor: IAccessActor) {
@@ -321,15 +324,18 @@ export class DeviceJobs {
                 job.project_id || undefined,
                 jobMinimumLevel(job.kind),
             );
+            await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
             if (job.kind === 'install') {
                 await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
                 await this.assertJobPlan(job);
             }
-        } catch {
+        } catch (error) {
             // Отказ до выдачи задания — серверное решение, локальная запись ещё не началась.
             const legacyRag = isLegacyRagJob(job);
-            const message = legacyRag ? RAG_UPGRADE_MESSAGE : job.kind === 'inspect-installation' ? 'Проверка файлов недоступна: доступ или версия MCP изменились.'
-                : 'Действие недоступно: доступ, привязка, одобрение или версия MCP изменились.';
+            const response=error instanceof ForbiddenException?error.getResponse():null;
+            const disabled=response&&typeof response==='object'&&'code' in response&&response.code==='feature-disabled'&&'message' in response&&typeof response.message==='string'?response.message:null;
+            const message = disabled ?? (legacyRag ? RAG_UPGRADE_MESSAGE : job.kind === 'inspect-installation' ? 'Проверка файлов недоступна: доступ или версия MCP изменились.'
+                : 'Действие недоступно: доступ, привязка, одобрение или версия MCP изменились.');
             await transitionDeviceJobs(this.store.pool,`UPDATE bridge_jobs SET state='failed',message=$4,result=${legacyRag?'$5':'NULL'},updated_at=now()
                 WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now() RETURNING *`,
             [job.id,device.id,job.lease,message,...(legacyRag?[RAG_UPGRADE_RESULT]:[])],{state:'FAILED',message});
@@ -338,7 +344,7 @@ export class DeviceJobs {
         await notifyDeviceOperations();
         return { ...job, state: 'running' };
     }
-    async authorize(device: Device, id: string, lease: string) {
+    async authorize(device: Device, id: string, lease: string,options?:{snapshotReceipt?:boolean}) {
         const { rows } = await this.store.pool.query(
             "SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now()",
             [id, device.id, lease],
@@ -350,6 +356,8 @@ export class DeviceJobs {
             );
         }
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
+        if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
+        if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
         if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
@@ -373,15 +381,16 @@ export class DeviceJobs {
             await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
             await this.assertJobPlan(job);
         }
-        if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall','inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime'].includes(job.kind) && job.payload.bindingId !== managedBinding(device.report, job.project_id || undefined)) {
+        if (!(job.kind==='scan-opencode-models'&&job.payload.scope==='global'&&job.project_id===null) && [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall','inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime'].includes(job.kind) && job.payload.bindingId !== managedBinding(device.report, job.project_id || undefined)) {
             throw new ConflictException('Привязка папки изменилась после отправки задания. Повторите действие для актуальной папки.');
         }
         await registerHostedRagGrant(this.store.pool,device,job,lease,()=>assertHostedRagJob(this.embedding,this.installations,this.plans,device,job));
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
+    async compileAgents(device:Device,input:unknown){return compileAgentJob(this.store,device,input,(id,lease)=>this.authorize(device,id,lease));}
     async authorizeConfiguration(device:Device,input:unknown){
         return authorizeMcpConfigurationSave(this.store,this.installations,this.plans,device,input,
-            (role,projectId)=>this.permission(device,role,projectId,2));
+            async(role,projectId)=>{await this.permission(device,role,projectId,2);await requireFeaturesEnabled(requiredJobFeatures('open-mcp-configuration'));});
     }
     /** Общие инструменты требуют выбора админа; собственные проектные скиллы доступны по роли. */
     private async assertCatalogAsset(projectId: unknown, kind: unknown, id: unknown): Promise<void> {

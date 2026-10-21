@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {ConflictException} from '@nestjs/common';
 import {assetDigest,serializeAsset,type ResolvedAsset,type ToolAsset} from '@neurocenter/asset-contract';

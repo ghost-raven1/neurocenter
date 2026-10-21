@@ -1,3 +1,5 @@
+import {APP_GUARD} from '@nestjs/core';
+import {FeaturePolicyGuard} from '../features/feature-policy.guard';
 import {CatalogRequestsController} from '../catalog-requests/catalog-requests.controller';
 import {CatalogRequestsService} from '../catalog-requests/catalog-requests.service';
 import {AgentsController} from '../agents/agents.controller';
@@ -24,6 +26,8 @@ import {SourceUploadService} from '../source-upload/source-upload.service';
 import {HostedRagGrantService} from '../models/hosted-rag-grant.service';
 import { ModelBundleRuntime } from '../models/model-bundle-runtime';
 import { OpenCodeModelImport } from '../models/opencode-model-import';
+import { OpenCodeModelSyncController } from '../models/opencode-model-sync.controller';
+import { OpenCodeModelSyncService } from '../models/opencode-model-sync.service';
 import { RemoteConnectionController } from '../models/remote-connection.controller';
 import { RemoteConnectionService } from '../models/remote-connection.service';
 import { ModelRuntime } from '../models/model-runtime';
@@ -34,6 +38,7 @@ import { AssetSourcesService } from '../asset-sources/asset-sources.service';
 import {BridgeSourceService} from '../asset-sources/bridge-source.service';
 import {BridgeSourceController} from '../asset-sources/bridge-source.controller';
 import {MaintenanceController} from '../maintenance/maintenance.controller';
+import {RagQuotaPolicyController} from '../maintenance/rag-quota-policy.controller';
 import {MaintenanceService} from '../maintenance/maintenance.service';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { ProjectBackupController } from '../backups/project-backup.controller';
@@ -41,6 +46,8 @@ import { ProjectBackupService } from '../backups/project-backup.service';
 import { Module } from '@nestjs/common';
 import { ModelChatController } from '../model-chat/chat.controller';
 import { ModelChatService } from '../model-chat/chat.service';
+import { ModelUsageController } from '../model-usage/model-usage.controller';
+import { ModelUsageService } from '../model-usage/model-usage.service';
 import { AccessController } from '../access/access.controller';
 import { AccessDb } from '../access/access-db';
 import {DeviceStore} from '../devices/device-store';
@@ -76,5 +83,5 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * PostgreSQL-backed каталог и его очереди; файловые скиллы обслуживает skills-service.
  */
-@Module({ controllers: [ModelChatController,LearningController,DeviceLearningController,LearningAnalysisController,BridgeSourceController,CatalogRequestsController,AgentsController,SnapshotVerifierController,LegacyRetirementController,ProjectSnapshotsController,RetiredRagController,RestoreController,RestoreRunnerController,OperationActionsController,SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [ModelChatService,LearningService,DeviceLearningService,LearningAnalysisService,BridgeSourceService,CatalogRequestsService,AgentsService,LegacyRetirementService,SnapshotService,RetiredRagService,RestoreService,OperationActionsService,SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
+@Module({ controllers: [RagQuotaPolicyController,ModelUsageController,OpenCodeModelSyncController,ModelChatController,LearningController,DeviceLearningController,LearningAnalysisController,BridgeSourceController,CatalogRequestsController,AgentsController,SnapshotVerifierController,LegacyRetirementController,ProjectSnapshotsController,RetiredRagController,RestoreController,RestoreRunnerController,OperationActionsController,SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [{provide:APP_GUARD,useClass:FeaturePolicyGuard},ModelUsageService,OpenCodeModelSyncService,ModelChatService,LearningService,DeviceLearningService,LearningAnalysisService,BridgeSourceService,CatalogRequestsService,AgentsService,LegacyRetirementService,SnapshotService,RetiredRagService,RestoreService,OperationActionsService,SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,inject:[ModelUsageService],useFactory:(usage:ModelUsageService)=>new OllamaClient({usage})}], exports:[CatalogService] })
 export class CatalogModule {}

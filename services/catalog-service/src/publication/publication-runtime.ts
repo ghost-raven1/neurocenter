@@ -8,14 +8,19 @@ import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding'].includes(key))) {
-        throw new BadRequestException('В extra поддерживаются только runtimeArtifacts, localConfiguration, localUi и hostedEmbedding. Зависимости задаются отдельно.');
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp'].includes(key))) {
+        throw new BadRequestException('В extra поддерживаются runtimeArtifacts, localConfiguration, localUi, hostedEmbedding, hostedMcp и researchMcp. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
     try {
         const artifacts = normalizeRuntimeArtifacts(source.runtimeArtifacts);
         validateRuntimeArtifactEntrypoints(kind, artifacts);
         if (transport === 'remote' && artifacts.length) { throw new Error('Удалённому MCP не нужен локальный готовый комплект.'); }
+        if(source.hostedMcp!==undefined&&(typeof source.hostedMcp!=='boolean'||kind!=='mcp'||transport==='remote'||!artifacts.length))throw new Error('hostedMcp требует локальный MCP с готовым комплектом Gateway.');
+        const research=source.researchMcp as {adapter?:unknown;tools?:unknown}|undefined;
+        if(research!==undefined&&(!research||typeof research!=='object'||Array.isArray(research)||Object.keys(research).some(key=>!['adapter','tools'].includes(key))
+            ||research.adapter!=='exa'||!Array.isArray(research.tools)||research.tools.length!==2||!['web_search_exa','web_fetch_exa'].every(name=>(research.tools as unknown[]).includes(name))
+            ||source.hostedMcp!==true))throw new Error('researchMcp требует одобренные search/fetch инструменты Exa и hostedMcp: true.');
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
         const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
         const hosted = source.hostedEmbedding;
@@ -26,6 +31,7 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
             throw new Error('hostedEmbedding требует schemaVersion: 1 и необязательный profileSchemaVersion: 2 в закреплённом OpenCodeRAG с localUi.');
         }
         return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
+            ...(source.hostedMcp!==undefined?{hostedMcp:source.hostedMcp}:{}),...(research?{researchMcp:{adapter:'exa',tools:['web_search_exa','web_fetch_exa']}}:{}),
             ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1,...(marker?.profileSchemaVersion === 2 ? {profileSchemaVersion: 2} : {}),...(marker?.reindexSchemaVersion===1?{reindexSchemaVersion:1}:{})}} : {}) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
 }
