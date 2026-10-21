@@ -24,7 +24,7 @@ async function fixture(t, mode = 'ready') {
             require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'unexpected-command',command:${JSON.stringify(command)}})+'\\n');
             process.exitCode=92;`, {mode: 0o700});
     }
-    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }

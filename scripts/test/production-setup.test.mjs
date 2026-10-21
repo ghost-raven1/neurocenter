@@ -18,6 +18,7 @@ async function fixture(t,mode,fail='',initial={}){
     const scripts=path.join(directory,'scripts/production'),config=path.join(directory,'config'),calls=path.join(directory,'calls.jsonl');
     await mkdir(scripts,{recursive:true});await mkdir(path.join(directory,'scripts/workspace'));await writeFile(path.join(directory,'scripts/workspace/model-credentials.mjs'),'export const ensureModelCredentialKey=async()=>{};');await mkdir(config,{mode:0o700});await writeFile(path.join(config,'.env'),"NEUROCENTER_RELEASE='fixture'\n",{mode:0o600});await writeFile(path.join(config,'tls'),'fixture');
     await copyFile(path.join(root,'scripts/production/setup.mjs'),path.join(scripts,'setup.mjs'));
+    await copyFile(path.join(root,'scripts/workspace/docker-build-ca.mjs'),path.join(directory,'scripts/workspace/docker-build-ca.mjs'));
     await copyFile(path.join(root,'scripts/production/schema-migrations.mjs'),path.join(scripts,'schema-migrations.mjs'));
     await copyFile(path.join(root,'scripts/production/schema-initialization.mjs'),path.join(scripts,'schema-initialization.mjs'));
     await writeFile(path.join(scripts,'configuration.mjs'),'export const ensureMetricsToken=async()=>{};export const configureProduction=async()=>{};');

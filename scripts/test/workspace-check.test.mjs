@@ -131,7 +131,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});

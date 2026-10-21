@@ -8,6 +8,7 @@ import {assertProductionModelKey} from './model-credentials.mjs';
 import {composeClient,composeConfiguration,maintenanceLock} from './compose-client.mjs';
 import {runSchemaCommands} from './schema-migrations.mjs';
 import {prepareSchemaInitialization} from './schema-initialization.mjs';
+import {withDockerBuildCa} from '../workspace/docker-build-ca.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const args=process.argv.slice(2);const mode=args[0]||'configure';
@@ -46,7 +47,7 @@ async function main() {
     if(mode==='check'){await compose(['config','--quiet']);console.log('Структура production-конфига корректна.');return;}
     if(mode==='build'){
         await readFile(path.join(directory,'.env'),'utf8');
-        await compose(['build']);return;
+        await withDockerBuildCa(root,process.env,({environment})=>client.run(['build'],{inherit:true,environment}));return;
     }
     if(mode==='status'){await compose(['ps']);return;}
     await ensureMetricsToken(directory);

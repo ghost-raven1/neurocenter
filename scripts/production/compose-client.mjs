@@ -11,8 +11,8 @@ export const repositoryRoot=fileURLToPath(new URL('../../',import.meta.url));
 export const applicationServices=['frontend','api-gateway','oauth2-bridge','rag-sync-service','skills-service','catalog-service','feature-flags-service'];
 
 /** Потоки дампов не попадают в память или логи оператора. */
-export async function docker(args,{input, inputFile, outputFile, inherit=false, timeout=30*60*1000,release}={}){
-    const environment=composeEnvironment();
+export async function docker(args,{input, inputFile, outputFile, inherit=false, timeout=30*60*1000,release,environment:source=process.env}={}){
+    const environment=composeEnvironment(source);
     if(release!==undefined){if(!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(release)||release==='latest'){throw new Error('Некорректная постоянная метка релиза');}environment.NEUROCENTER_RELEASE=release;}
     const child=spawn('docker',args,{cwd:repositoryRoot,env:environment,stdio:inherit?'inherit':['pipe','pipe','pipe']});
     let output='';let stderr='';let tooLarge=false;
