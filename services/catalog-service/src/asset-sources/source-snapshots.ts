@@ -14,8 +14,9 @@ export class AssetSourceSnapshots {
         const snapshot=await this.latest(),last=(await this.pool.query<{attempted_at:Date;message:string}>('SELECT attempted_at,message FROM asset_source_refresh WHERE id=true')).rows[0];
         return {snapshot,last};
     }
-    async get(commit:string):Promise<ISourceSnapshot> {
-        const saved=(await this.pool.query<ISourceSnapshot>('SELECT * FROM asset_source_snapshots WHERE commit=$1',[commit])).rows[0];
+    async get(commit:string,repository='ghost-raven1/neurocenter-assets'):Promise<ISourceSnapshot> {
+        const saved=(await this.pool.query<ISourceSnapshot>(`SELECT pin,index,assets,checked_at FROM asset_source_snapshots WHERE commit=$1 AND pin->>'repository'=$2
+            UNION ALL SELECT pin,index,assets,checked_at FROM bridge_source_checks WHERE commit=$1 AND repository=$2 LIMIT 1`,[commit,repository])).rows[0];
         if(!saved){throw new ConflictException('Выбранная проверенная версия источника уже недоступна. Обновите список.');}return saved;
     }
     private async remote(url:string,maximum:number):Promise<Uint8Array> {

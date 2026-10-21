@@ -1,0 +1,10 @@
+.bridge-source {
+    display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 1px solid @brand-border; border-radius: 10px; background: @brand-surface;
+    &__versions { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 13px; }
+    &__actions { row-gap: 8px; }
+    &__job { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid @brand-border; }
+    .bridge-source__settings { margin-top: 0; }
+    &__settings .ant-collapse-content-box { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+    &__settings .ant-typography { margin-bottom: 0; }
+    @media (max-width: 600px) { padding: 12px; &__versions { flex-direction: column; } }
+}

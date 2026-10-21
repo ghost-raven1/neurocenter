@@ -10,11 +10,12 @@ import {roleLevel} from '../../features/UserBlock/roles';
 import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
 import type {IBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {projectBindingUrl} from '../Projects/projectNavigation';
+import {BridgeSourcePanel} from '../../features/McpBridge/BridgeSourcePanel';
 
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projectId}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string})=>{
+export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projectId,canManageSource=false}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean})=>{
     const bridge=useBridge();const history=useHistory();
     const connectionRequested=new URLSearchParams(history.location.search).get('addComputer')==='1';
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
@@ -53,6 +54,8 @@ export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projec
     </Space>;
     return <Space direction="vertical" size={16} style={{width:'100%'}}>
         <Typography.Title level={3} style={{margin:0}}>Подключение компьютера</Typography.Title>
+        <BridgeSourcePanel installer={installer} device={device} verified={bridge.devicesReady&&!bridge.errors.devices} windows={windows} canManage={canManageSource}
+            onInstall={()=>{setAction('install');setInstallerPanels(['another']);}}/>
         {bridge.devices.length>0?<>
             <BridgeConnection bridge={bridge} compact showReadinessNotice={false}/>
             {!healthy&&<Alert type="warning" showIcon

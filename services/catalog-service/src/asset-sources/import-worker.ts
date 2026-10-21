@@ -13,6 +13,7 @@ import { ModelAssetAdapter } from './asset-model-adapter';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import type { IImportItem, IImportJob, ISourceReceipt } from './import-types';
 import { publicationHash } from '../publication/publication-validation';
+import {assertBridgeHead} from './bridge-source-head';
 
 /** Проверяется и перед supply, и под SQL row lock перед публикацией. Отзыв прав не обходится фоновой задачей. */
 export async function authorizeImportActor(client:Pick<PoolClient,'query'>,actor:string,lock=false):Promise<void> {
@@ -44,7 +45,7 @@ export class AssetImportWorker {
         const current=await this.jobs.get(job.id,undefined,client);if(current.cancel_requested){throw new ConflictException('Импорт остановлен пользователем. Уже опубликованные карточки сохранены.');}
     }
     private async prepare(job:IImportJob):Promise<IImportItem[]>{
-        const source=await this.sources.get(job.source.commit),records=selectAssets(source.assets,job.selected_ids);
+        const source=await this.sources.get(job.source.commit,job.source.repository),records=selectAssets(source.assets,job.selected_ids);
         if(records.length>100){throw new ConflictException('Замыкание импорта превышает 100 ассетов. Разделите выбор.');}
         const [receipts,versions]=await Promise.all([this.jobs.receipts(job.source.repository),this.jobs.versions(job.source.repository)]),items:IImportItem[]=[];
         for(const resolved of records){
@@ -56,6 +57,7 @@ export class AssetImportWorker {
                 case 'agent':item=await this.agents.preview(resolved,key,items,receipt,version,overrideHash);break;
                 case 'model':item=await this.models.preview(resolved,key,items,receipt,version,overrideHash);break;
                 case 'bridge':{
+                    if(!version)await assertBridgeHead(this.pool,resolved.asset);
                     const release=toBridgeRelease(resolved.asset as BridgeAsset);
                     item={resolved,requestKey:key,name:resolved.asset.card.name,state:'PENDING',action:version?'unchanged':receipt?'update':'create',
                         preserveHead:!!version||!!receipt&&!resolved.current,native:{kind:'bridge',id:resolved.asset.id,version:version?.native_version??Math.max(0,...versions.filter(value=>value.external_id===resolved.asset.id).map(value=>value.native_version),...items.filter(value=>value.native?.kind==='bridge'&&value.native.id===resolved.asset.id).map(value=>value.native!.version))+1,hash:resolved.sha256},

@@ -25,7 +25,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
  const actors={main:{email:'main@packaging.example.test',role:'Главный админ'},developer:{email:'developer@packaging.example.test',role:'Разработчик'}};
  const {Pool}=requireCatalog('pg'),admin=new Pool({connectionString:adminUrl.href,max:1});
  const url=new URL(adminUrl);url.pathname='/'+database;const pool=new Pool({connectionString:url.href,max:4});
- const state={authAvailable:true,skillsAvailable:true,loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()};
+ const state={authAvailable:true,skillsAvailable:true,loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()},responseBytes=new WeakMap();
  let catalog,skills,gateway,upstream,vite,io,access,created=false;
  const cookie=key=>{assert.ok(actors[key]);return cookieName+'='+key;};
  const selected=req=>String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(cookieName+'='))?.slice(cookieName.length+1);
@@ -52,7 +52,14 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
    if(!state.skillsAvailable&&parsed.origin===process.env.SKILLS_SERVICE_URL)return Response.json({message:'Synthetic skills outage.'},{status:503});
    if(['api.github.com','raw.githubusercontent.com','codeload.github.com','github.com','registry.npmjs.org'].includes(parsed.hostname)){
     state.externalCalls.push(target);const value=state.github.get(target);
-    if(value!==undefined)return value instanceof Response?value.clone():Response.json(value);
+    if(typeof value==='function')return value(input,options);
+    if(value instanceof Response){
+     // A tee clone can wait forever on cancel while its original branch remains unread.
+     if(!responseBytes.has(value))responseBytes.set(value,value.arrayBuffer());
+     const bytes=await responseBytes.get(value);
+     return new Response([204,205,304].includes(value.status)?null:bytes,{status:value.status,statusText:value.statusText,headers:value.headers});
+    }
+    if(value!==undefined)return Response.json(value);
     return Response.json({message:'Synthetic source is unavailable.'},{status:503});
    }
    if(!['127.0.0.1','localhost'].includes(parsed.hostname))throw Error('QA forbids external request: '+parsed.hostname);
@@ -94,15 +101,16 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
   const {ProxyService}=requireGateway('./dist/proxy/proxy.service.js'),{ProxyController}=requireGateway('./dist/proxy/proxy.controller.js');
   const {AuthGuardService}=requireGateway('./dist/auth/auth-guard.service.js'),{browserSecurity}=requireGateway('./dist/security/browser-security.js');
   const {LiveService}=requireGateway('./dist/live/live.service.js'),{LiveController}=requireGateway('./dist/live/live.controller.js');
+  const {BridgeController}=requireGateway('./dist/bridge/bridge.controller.js'),{BridgeSupplyService}=requireGateway('./dist/bridge/bridge-supply.service.js');
   const live=new LiveService(),liveApi={mutation:live.mutation.bind(live),sections:live.sections.bind(live)};
   const config={get:key=>process.env[key]},auth=new AuthGuardService(config),proxy=new ProxyService(config,auth,liveApi);
-  class GatewayFixtureModule{}Module({controllers:[ProxyController,LiveController],providers:[{provide:ProxyService,useValue:proxy},{provide:LiveService,useValue:liveApi}]})(GatewayFixtureModule);
+  class GatewayFixtureModule{}Module({controllers:[BridgeController,ProxyController,LiveController],providers:[{provide:ProxyService,useValue:proxy},{provide:LiveService,useValue:liveApi},{provide:BridgeSupplyService,useValue:new BridgeSupplyService(config)}]})(GatewayFixtureModule);
   gateway=await GatewayFactory.create(GatewayFixtureModule,{logger:false,bodyParser:false,abortOnError:false});gateway.use(browserSecurity);gateway.use(express.json({limit:'50mb'}));
   gateway.use((req,_res,next)=>{state.requests.push({method:req.method,path:req.path});next();});
   const {Server}=requireGateway('socket.io');io=new Server(gateway.getHttpServer(),{cors:{origin:(_origin,done)=>done(null,true),credentials:true}});
   live.attach(io);
   io.use(async(socket,next)=>{try{if(await auth.authenticate(socket.request))return next();}catch{}next(Error('QA login required.'));});
-  await gateway.listen(0,'127.0.0.1');const gatewayUrl='http://127.0.0.1:'+gateway.getHttpServer().address().port;process.env.API_GATEWAY_URL=gatewayUrl;
+  await gateway.listen(0,'127.0.0.1');const gatewayUrl='http://127.0.0.1:'+gateway.getHttpServer().address().port;process.env.API_GATEWAY_URL=gatewayUrl;process.env.API_PUBLIC_URL=gatewayUrl;
   let base=gatewayUrl;process.env.PANEL_URL=base;
   if(browser){
    const {createServer}=await import(pathToFileURL(requireCatalog.resolve('../../frontend/node_modules/vite/dist/node/index.js')).href);

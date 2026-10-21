@@ -131,8 +131,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 174);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 214);
+    assert.equal(Object.keys(actual.paths).length, 177);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 218);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
@@ -144,6 +144,22 @@ test('Bridge installer configuration exposes the trusted public Gateway origin',
     const config = actual.paths['/api/bridge/config'].get;
     assert.deepEqual(config.security, []);
     assert.equal(jsonResponse(config).properties.origin.type, 'string');
+});
+test('Bridge source documents revision-checked configuration, explicit imports and cached metadata checks',()=>{
+    const source=actual.paths['/api/bridge-source'];
+    assert.deepEqual(source.get.security,[{sessionCookie:[]}]);
+    const view=jsonResponse(source.get);
+    assert.equal(view.properties.url.type,'string');assert.equal(view.properties.revision.type,'number');
+    assert.equal(view.properties.available.properties.repositoryCommit.type,'string');
+    assert.equal(view.properties.imported.properties.targets.items.type,'string');
+    const save=source.put.requestBody.content['application/json'].schema;
+    assert.deepEqual(save.required,['url','expectedRevision']);
+    const check=actual.paths['/api/bridge-source/check'].post;
+    assert.deepEqual(check.requestBody.content['application/json'].schema.required,['expectedRevision']);
+    assert.equal(check.requestBody.content['application/json'].schema.properties.force.type,'boolean');
+    assert.equal(check.responses['201'],undefined);assert.ok(check.responses['200']);
+    const selected=actual.paths['/api/bridge-source/import'].post.requestBody.content['application/json'].schema;
+    assert.deepEqual(selected.required,['expectedRevision','commit','assetId','requestKey']);
 });
 
 test('Actual project and skill contracts include usable typed bodies, responses and queries', () => {

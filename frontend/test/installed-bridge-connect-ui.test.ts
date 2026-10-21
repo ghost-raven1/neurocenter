@@ -16,6 +16,7 @@ const fixture = vi.hoisted(() => ({
     connectAnother: undefined as (() => void) | undefined,
 }));
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => fixture.bridge }));
+vi.mock('../src/features/McpBridge/BridgeSourcePanel', () => ({BridgeSourcePanel:()=>null}));
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: fixture.push, location: { pathname: '/start', search: fixture.search } }) }));
 vi.mock('../src/features/McpBridge/BridgeDevicesManager', () => ({ BridgeDevicesManager: ({ onConnect }: { onConnect: () => void }) => {
     fixture.connectAnother = onConnect; return null;

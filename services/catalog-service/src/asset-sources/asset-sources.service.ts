@@ -14,6 +14,8 @@ import { AssetImportRepository } from './import-repository';
 import { AssetImportWorker } from './import-worker';
 import { importView, type ISourceReceipt } from './import-types';
 import {assetCardState,sourceAssetView} from './asset-source-view';
+import {bridgeSupplyIdentity} from './bridge-source-head';
+import {validBridgeVersion} from './bridge-source-version';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -60,6 +62,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
             localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};
     }
     async refresh(){await this.sources.refresh();return this.view();}
+    kickImports():void{this.worker.kick();}
     async start(actor:string,body:unknown){
         const input=body as {requestKey?:unknown;ids?:unknown;commit?:unknown};
         if(!input||!uuid(input.requestKey)||!Array.isArray(input.ids)||!input.ids.length||input.ids.length>50||input.ids.some(id=>typeof id!=='string')||new Set(input.ids).size!==input.ids.length
@@ -93,11 +96,15 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     /** Gateway запрашивает только уже импортированную immutable release; никакого network/legacy fallback. */
     async bridgeSupply(version?:string){
         if(version!==undefined&&(typeof version!=='string'||!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version))){throw new BadRequestException('Некорректная версия моста.');}
+        const selected=(await this.pool.query<{installed_repository:string|null;installed_asset_id:string|null}>('SELECT installed_repository,installed_asset_id FROM bridge_source_settings WHERE singleton')).rows[0];
         const rows=version?(await this.pool.query<ISourceReceipt>(`SELECT * FROM asset_source_versions WHERE asset_kind='bridge' AND descriptor->'delivery'->'release'->>'version'=$1 ORDER BY created_at DESC`,[version])).rows
-            :(await this.pool.query<ISourceReceipt>("SELECT * FROM asset_source_receipts WHERE asset_kind='bridge' ORDER BY updated_at DESC")).rows;
+            :selected?.installed_repository?(await this.pool.query<ISourceReceipt>("SELECT * FROM asset_source_receipts WHERE asset_kind='bridge' AND repository=$1 AND external_id=$2 AND active",[selected.installed_repository,selected.installed_asset_id])).rows
+            :(await this.pool.query<ISourceReceipt>("SELECT * FROM asset_source_receipts WHERE asset_kind='bridge' AND active ORDER BY updated_at DESC")).rows;
         if(!rows.length){throw new NotFoundException('Мост ещё не импортирован. Главный администратор должен добавить его на странице «Ассеты».');}
-        if(new Set(rows.map(row=>row.external_id)).size!==1){throw new ConflictException('Импортировано несколько несовместимых источников моста. Требуется выбор администратора.');}
+        if(version&&new Set(rows.map(row=>bridgeSupplyIdentity(row.descriptor as BridgeAsset))).size!==1)throw new ConflictException('История этой версии моста содержит разные поставки. Установка остановлена.');
+        if(!version&&new Set(rows.map(row=>row.external_id)).size!==1){throw new ConflictException('Импортировано несколько несовместимых источников моста. Требуется выбор администратора.');}
         const row=rows[0],release=toBridgeRelease(row.descriptor as BridgeAsset);
+        if(!validBridgeVersion(release.version))throw new ConflictException('Поставка моста содержит неподдерживаемую версию. Нужен формат 1.2.3 без ведущих нулей.');
         const artifacts=[];
         for(const artifact of release.artifacts){
             const sha=String(artifact.metadata.sha256??''),blob=row.blobs.find(blob=>blob.sha256===sha);

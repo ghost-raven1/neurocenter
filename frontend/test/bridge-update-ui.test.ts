@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => {
         choose: vi.fn(), reload: vi.fn(async () => undefined) } };
 });
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => fixture.bridge }));
+vi.mock('../src/features/McpBridge/BridgeSourcePanel', () => ({BridgeSourcePanel:()=>null}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope: 'fixture', captureOwner: () => () => true }) }));
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: vi.fn(), location: { pathname: '/start' } }) }));
 

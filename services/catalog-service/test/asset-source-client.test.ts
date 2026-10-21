@@ -44,11 +44,14 @@ describe('Закреплённый серверный источник ассе�
         expect(f.request.mock.calls.length).toBeLessThanOrEqual(1);
     });
     it.each([
-        {commit:'main'}, {repository:'other/repo'}, {index:{path:'../index.json',sha256:'b'.repeat(64)}},
+        {commit:'main'}, {repository:'https://github.com/other/repo'}, {repository:'owner/../repo'}, {repository:'owner/.'}, {repository:'owner/repo.git'}, {index:{path:'../index.json',sha256:'b'.repeat(64)}},
         {index:{path:'https://internal/index.json',sha256:'b'.repeat(64)}}, {index:{path:'/index.json',sha256:'b'.repeat(64)}},
         {index:{path:'index.json',sha256:'bad'}}, {token:'secret'},
     ])('Не принимает незакреплённый или небезопасный source pin: %j',overrides=>{
         const f = fixture(); expect(()=>validateSourcePin({...f.pin,...overrides})).toThrow();
+    });
+    it.each(['other/repo','other/.github','other/_bridge'])('Оператор может закрепить другой публичный GitHub-источник %s',repository=>{
+        const f=fixture();expect(validateSourcePin({...f.pin,repository})).toEqual({...f.pin,repository});
     });
     it('Останавливается на изменившемся index до чтения отдельных ассетов',async()=>{
         const f = fixture(); f.files.set('index.json',f.files.get('index.json')+' ');

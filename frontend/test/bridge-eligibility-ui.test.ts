@@ -6,6 +6,7 @@ vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi', () => ({ OpenCodeRagUi:
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope:'fixture', captureOwner:() => () => true }) }));
 import { LocalProjectsFolder } from '../src/modules/Projects/local/LocalProjectsFolder';
 import { BridgeSetup } from '../src/modules/Start/BridgeSetup';
+vi.mock('../src/features/McpBridge/BridgeSourcePanel', () => ({BridgeSourcePanel:()=>null}));
 import type { IBridgeJob } from '../src/features/McpBridge/api';
 import type { IRagSummary } from '../src/core/api/interfaces';
 import { ragSummaryState } from '../src/modules/Projects/components/ragSummaryState';

@@ -14,7 +14,7 @@ export function validateSourcePin(value:unknown):IAssetSourcePin {try{return val
 export class AssetSourceClient {
     readonly pin:IAssetSourcePin;
     private readonly source:SourceClient;
-    constructor(pin:unknown,request:typeof fetch=fetch){this.pin=validateSourcePin(pin);this.source=new SourceClient(this.pin,{contract,fetch:request});}
+    constructor(pin:unknown,request:typeof fetch=fetch,signal?:AbortSignal){this.pin=validateSourcePin(pin);this.source=new SourceClient(this.pin,{contract,fetch:request,signal});}
     async index(){try{return await this.source.index();}catch(error){return httpError(error);}}
     async descriptor(entry:contract.IndexEntry){try{return await this.source.descriptor(entry);}catch(error){return httpError(error);}}
     async select(ids:unknown){try{return await this.source.select(ids);}catch(error){return httpError(error);}}

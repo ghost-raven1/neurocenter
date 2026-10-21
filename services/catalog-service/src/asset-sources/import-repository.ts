@@ -6,13 +6,14 @@ import type { IAssetSourcePin } from './source-client';
 import { importPlanDigest } from './import-types';
 import type { IImportItem, IImportJob, ISourceReceipt, TImportState } from './import-types';
 import { securityEvent } from '../access/security-events';
+import {assertBridgeHead} from './bridge-source-head';
 
 /** Намерение и точные описи переживают reload и restart; частичный импорт не маскируется общим успехом. */
 export class AssetImportRepository {
     constructor(readonly pool: Pool) {}
 
-    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[]): Promise<IImportJob> {
-        const fingerprint = publicationHash({source,ids:[...ids].sort()});
+    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number): Promise<IImportJob> {
+        const fingerprint = publicationHash({source,ids:[...ids].sort(),...(bridgeSourceRevision!==undefined?{bridgeSourceRevision}:{})});
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
@@ -22,12 +23,16 @@ export class AssetImportRepository {
                 if (previous.rows[0].request_hash !== fingerprint) { throw new ConflictException('Этот запрос уже относится к другому выбору ассетов или источнику.'); }
                 await client.query('COMMIT'); return previous.rows[0];
             }
+            if(bridgeSourceRevision!==undefined){
+                const settings=(await client.query<{revision:number;url:string;check_commit:string;error:string|null}>('SELECT revision,url,check_commit,error FROM bridge_source_settings WHERE singleton FOR UPDATE')).rows[0];
+                if(!settings||settings.revision!==bridgeSourceRevision||settings.check_commit!==source.commit||settings.error||settings.url!=='https://github.com/'+source.repository)throw new ConflictException('Источник моста изменился до сохранения импорта. Обновите проверку.');
+            }
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-queue']);
             const pending = await client.query<{count:number}>("SELECT count(*)::int AS count FROM asset_source_jobs WHERE state IN ('QUEUED','RUNNING')");
             if ((pending.rows[0]?.count??0) >= 10) { throw new ConflictException('В очереди уже 10 импортов. Дождитесь завершения текущих операций.'); }
-            const {rows} = await client.query<IImportJob>(`INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message)
-                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости') RETURNING *`,
-            [randomUUID(),actor,requestKey,fingerprint,JSON.stringify(source),JSON.stringify(ids)]);
+            const {rows} = await client.query<IImportJob>(`INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message,bridge_source_revision)
+                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости',$7) RETURNING *`,
+            [randomUUID(),actor,requestKey,fingerprint,JSON.stringify(source),JSON.stringify(ids),bridgeSourceRevision??null]);
             await securityEvent(client,{actor,action:'asset.import.request',resourceId:rows[0].id,before:null,
                 after:{repository:source.repository,commit:source.commit,ids}});
             await client.query('COMMIT'); return rows[0];
@@ -69,7 +74,13 @@ export class AssetImportRepository {
 
     /** Вызывается в той же транзакции, что native-публикация и SUCCEEDED конкретного элемента. */
     async receipt(client: PoolClient, job: IImportJob, item: IImportItem, blobs: ISourceReceipt['blobs']): Promise<void> {
-        return this.persistReceipt(client,{repository:job.source.repository,commit:job.source.commit,origin:'repository'},job.actor,item,blobs);
+        if(item.resolved.asset.kind==='bridge'&&!item.preserveHead){
+            const settings=(await client.query<{revision:number;url:string}>('SELECT revision,url FROM bridge_source_settings WHERE singleton FOR UPDATE')).rows[0];
+            if(job.bridge_source_revision!=null&&(settings?.revision!==job.bridge_source_revision||settings.url!=='https://github.com/'+job.source.repository))throw new ConflictException('Источник моста изменился во время подготовки. Текущая поставка сохранена.');
+            await assertBridgeHead(client,item.resolved.asset);
+        }
+        await this.persistReceipt(client,{repository:job.source.repository,commit:job.source.commit,origin:'repository'},job.actor,item,blobs);
+        if(item.resolved.asset.kind==='bridge'&&!item.preserveHead)await client.query('UPDATE bridge_source_settings SET installed_repository=$1,installed_asset_id=$2 WHERE singleton',[job.source.repository,item.resolved.asset.id]);
     }
 
     /** Локальная сборка использует тот же immutable versionmap, без вымышленного public commit. */

@@ -2,6 +2,7 @@ import { ApiOutlined, ArrowRightOutlined, CopyOutlined, FolderOpenOutlined, Rock
 import { Button, Card, Collapse, Space, Steps, Typography, message } from 'antd';
 import { useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
+import {useSelector} from 'react-redux';
 
 import { CodeBlock } from '../../common/components/CodeBlock';
 import { PageHeading } from '../../common/components/PageHeading';
@@ -15,6 +16,8 @@ import {StartProjectStep} from './StartProjectStep';
 import {useBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
 import {openCodeInstallerCommand} from '../../features/McpBridge/connectionCommands';
+import {isMainAdminRole} from '../../features/UserBlock/roles';
+import type {RootState} from '../../store';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -38,6 +41,7 @@ const Start = () => {
     const go = (next: number): void => history.replace(startQueryUrl(location.search, { step: next }, location.hash));
     const selectProject = (value: string): void => history.replace(startQueryUrl(location.search, { project: value }, location.hash));
     const installer=useBridgeInstaller(step<2);
+    const canManageBridgeSource=useSelector((state:RootState)=>!!state.userBlock.user&&state.userBlock.user.userRoles.includes(state.userBlock.user.activeRole)&&isMainAdminRole(state.userBlock.user.activeRole));
     const windows = /Windows/i.test(navigator.userAgent);
     const instructions = installer.origin?installDoc
         .replace('__INSTALL_POSIX__',()=>openCodeInstallerCommand(installer.origin!,false))
@@ -73,7 +77,7 @@ const Start = () => {
                         {installer.origin&&<Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>}
                     </>}
                     {step === 1 && <>
-                        <BridgeSetup origin={window.location.origin} installer={installer} windows={windows} projectId={selectedProject?.id} onCopy={text=>{void copy(text);}}/>
+                        <BridgeSetup origin={window.location.origin} installer={installer} windows={windows} projectId={selectedProject?.id} canManageSource={canManageBridgeSource} onCopy={text=>{void copy(text);}}/>
                         <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
                     {step === 2 && <StartProjectStep projects={projects} ready={ready} loading={loading} error={error} requestedProject={requestedProject} selectedProject={selectedProject} refresh={refresh} onSelect={selectProject} onBack={()=>go(1)}/>}

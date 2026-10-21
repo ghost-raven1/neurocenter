@@ -3,10 +3,10 @@ const safePath=value=>typeof value==='string'&&Buffer.byteLength(value)<=240&&!/
     &&value.split('/').every(part=>part.length>0&&!['.','..'].includes(part));
 const fail=(code,message)=>Object.assign(new Error(message),{code});
 
-/** Источник закрепляет оператор; URL и ref не принимаются из пользовательского ввода. */
+/** Оператор выбирает публичный GitHub repository; каждый импорт закрепляет commit и SHA описи. */
 function validateSourcePin(pin){
     if(!pin||typeof pin!=='object'||Array.isArray(pin)||Object.keys(pin).some(key=>!['schemaVersion','repository','commit','index'].includes(key))
-        ||pin.schemaVersion!==1||pin.repository!=='ghost-raven1/neurocenter-assets'||typeof pin.commit!=='string'||!/^[a-f0-9]{40}$/.test(pin.commit)
+        ||pin.schemaVersion!==1||typeof pin.repository!=='string'||! /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/i.test(pin.repository)||['.','..'].includes(pin.repository.split('/')[1])||pin.repository.endsWith('.git')||typeof pin.commit!=='string'||!/^[a-f0-9]{40}$/.test(pin.commit)
         ||!pin.index||typeof pin.index!=='object'||Array.isArray(pin.index)||Object.keys(pin.index).some(key=>!['path','sha256'].includes(key))
         ||!safePath(pin.index.path)||!SHA(pin.index.sha256))throw fail('INVALID_PIN','Источник ассетов не закреплён корректным commit и SHA-256 описи.');
     return structuredClone(pin);

@@ -1,4 +1,6 @@
 import {AGENT_SCHEMA_SQL} from '../agents/agent-schema';
+import {BRIDGE_SOURCE_SCHEMA_SQL} from '../asset-sources/bridge-source.schema';
+import {BRIDGE_SOURCE_SCHEMA_ASSERT_SQL} from '../asset-sources/bridge-source.schema-verification';
 import {CATALOG_REQUEST_SCHEMA_SQL} from '../catalog-requests/request.schema';
 import {CATALOG_REQUEST_SCHEMA_ASSERT_SQL} from '../catalog-requests/request.schema-verification';
 import {AGENT_SCHEMA_ASSERT_SQL} from '../agents/agent-schema-verification';
@@ -15,4 +17,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:6,name:'catalog-schema-adoption',sql:CATALOG_FINALIZE_SQL+'\n'+CATALOG_SCHEMA_ASSERT_SQL},
     {version:7,name:'native-agents',sql:AGENT_SCHEMA_SQL+'\n'+AGENT_SCHEMA_ASSERT_SQL},
     {version:8,name:'catalog-requests',sql:CATALOG_REQUEST_SCHEMA_SQL+'\n'+CATALOG_REQUEST_SCHEMA_ASSERT_SQL},
+    {version:9,name:'bridge-source-settings',sql:BRIDGE_SOURCE_SCHEMA_SQL+'\n'+BRIDGE_SOURCE_SCHEMA_ASSERT_SQL},
 ];

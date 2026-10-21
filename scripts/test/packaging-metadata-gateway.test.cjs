@@ -56,3 +56,17 @@ for(const denied of ['unauthenticated','forbidden'])test('Metadata deadline does
     assert.equal(f.response.statusCode,denied==='unauthenticated'?401:403);
     assert.equal(f.calls.filter(call=>!call.url.endsWith('/internal/access/authorize')).length,0);
 });
+for(const resource of ['/api/bridge-source/check','/api/bridge-source/check/','/api/bridge-source/%63heck']){
+    test('Bridge source checks survive the default deadline: '+resource,async t=>{
+        t.mock.timers.enable({apis:['setTimeout']});
+        const f=fixture({delay:45000}),work=f.proxy.forward(f.request(resource,'POST'),f.response);
+        await tick();assert.equal(f.calls.at(-1).timeout,60000);
+        t.mock.timers.tick(30001);await tick();assert.equal(f.response.writes,0);
+        t.mock.timers.tick(14999);await work;assert.equal(f.response.statusCode,200);
+    });
+}
+test('A hanging bridge source is bounded before the 65 s browser deadline',async t=>{
+    t.mock.timers.enable({apis:['setTimeout']});
+    const f=fixture({delay:100000}),work=f.proxy.forward(f.request('/api/bridge-source/check','POST'),f.response);
+    await tick();t.mock.timers.tick(60000);await work;assert.equal(f.response.statusCode,502);
+});

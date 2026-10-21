@@ -1,5 +1,5 @@
 import type {AssetIndex,IndexEntry,ResolvedAsset} from '@neurocenter/asset-contract';
-export interface IAssetSourcePin {schemaVersion:1;repository:'ghost-raven1/neurocenter-assets';commit:string;index:{path:string;sha256:string}}
+export interface IAssetSourcePin {schemaVersion:1;repository:string;commit:string;index:{path:string;sha256:string}}
 export function validateSourcePin(value:unknown):IAssetSourcePin;
 export class AssetSourceClient {
     readonly pin:IAssetSourcePin;

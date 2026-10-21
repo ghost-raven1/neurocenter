@@ -33,6 +33,9 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route.startsWith('/api/platform/users')) { return main; }
     if (route === '/api/feature-flags/evaluated') { return read; }
     if (route === '/api/feature-flags' || route.startsWith('/api/feature-flags/')) { return main; }
+    if(route==='/api/bridge-source')return read||main&&request.method.toUpperCase()==='PUT';
+    if(route==='/api/bridge-source/check')return request.method.toUpperCase()==='POST';
+    if(route==='/api/bridge-source/import')return main&&request.method.toUpperCase()==='POST';
     if (/^\/api\/(asset-sources|asset-imports|asset-management)(?:\/|$)/.test(route)) { return main; }
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }

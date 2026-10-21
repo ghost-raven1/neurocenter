@@ -33,6 +33,7 @@ export interface IImportJob {
     replacement_origins:Record<string,NonNullable<IImportItem['originReceipts']>>;
     state: TImportState; items: IImportItem[]; message: string; cancel_requested: boolean;
     created_at: string | Date; updated_at: string | Date;
+    bridge_source_revision?:number|null;
 }
 
 export const importPlanDigest=(job:IImportJob):string=>publicationHash({source:job.source,selected:job.selected_ids,items:job.items.map(item=>({id:item.resolved.asset.id,version:item.resolved.asset.version,sha256:item.resolved.sha256,action:item.action,expected:item.expected,origins:item.originReceipts}))});
