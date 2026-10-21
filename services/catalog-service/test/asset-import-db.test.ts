@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { actor, databaseFixture, tool } from './asset-import-db.fixture';
 import type { AssetImportWorker } from '../src/asset-sources/import-worker';
-import { importView } from '../src/asset-sources/import-types';
+import { importView, type IImportJob } from '../src/asset-sources/import-types';
 describe('Durable source → native в изолированной PostgreSQL schema',()=>{
  let f:Awaited<ReturnType<typeof databaseFixture>>,workers:AssetImportWorker[]=[];
  beforeEach(async()=>{f=await databaseFixture();});afterEach(async()=>{vi.restoreAllMocks();await Promise.all(workers.map(w=>w.stop()));workers=[];await f?.dispose();});
@@ -14,6 +14,22 @@ describe('Durable source → native в изолированной PostgreSQL sch
   const first=f.worker(),second=f.worker();workers.push(first,second);await Promise.all([first.flush(),second.flush()]);expect((await f.jobs.get(job.id)).state).toBe('SUCCEEDED');await run();
   expect((await f.pool.query('SELECT * FROM ai_plugins')).rows).toHaveLength(1);expect((await f.pool.query('SELECT * FROM ai_plugin_versions')).rows).toHaveLength(1);expect(await f.jobs.versions(job.source.repository)).toHaveLength(1);
   await expect(f.jobs.create(actor,key,job.source,['other'])).rejects.toMatchObject({status:409});
+ });
+ it('lost ACK after the actual final PostgreSQL UPDATE preserves the exact durable SUCCEEDED receipt',async()=>{
+  const job=await begin(),save=f.jobs.save.bind(f.jobs);let completed:IImportJob|undefined,lost=0;
+  vi.spyOn(f.jobs,'save').mockImplementation(async(...args)=>{
+   const saved=await save(...args);
+   if(args[2]==='SUCCEEDED'&&!lost){lost++;completed=await f.jobs.get(job.id);throw new Error('Final UPDATE committed; acknowledgement lost');}
+   return saved;
+  });
+  await run();expect(lost).toBe(1);expect(completed?.state).toBe('SUCCEEDED');expect(await f.jobs.get(job.id)).toEqual(completed);
+  expect((await f.pool.query('SELECT * FROM ai_plugin_versions')).rows).toHaveLength(1);expect(await f.jobs.versions(job.source.repository)).toHaveLength(1);
+  await expect(f.jobs.retry(job.id,actor)).rejects.toMatchObject({status:409});
+ });
+ it('a stale failure writer cannot overwrite a concurrently committed SUCCEEDED job or its items',async()=>{
+  const stale=await begin();await run();const completed=await f.jobs.get(stale.id);
+  const saved=await f.jobs.save(f.pool,stale,'PARTIAL','Late stale failure',stale.items);
+  expect(saved).toEqual(completed);expect(await f.jobs.get(stale.id)).toEqual(completed);expect(completed.items[0].state).toBe('SUCCEEDED');
  });
  it('A→Bv1 и явно выбранный Bcurrentv2 сохраняют head2 и pin1',async()=>{
   const p=pair(),job=await begin(['tool-a','tool-b'],p.all);await run();const saved=await f.jobs.get(job.id);expect(saved.state,saved.message).toBe('SUCCEEDED');

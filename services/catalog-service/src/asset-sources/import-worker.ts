@@ -121,6 +121,7 @@ export class AssetImportWorker {
             if(signal.aborted){return;}
             // COMMIT с потерянным ACK может уже сохраниться: перечитываем durable state, прежде чем писать ошибку.
             const durable=await this.jobs.get(job.id,undefined,client),cancelled=durable.cancel_requested;
+            if(durable.state==='SUCCEEDED'){return;}
             const partial=durable.items.some(item=>item.state==='SUCCEEDED');
             const items=durable.items.map(item=>item.state==='RUNNING'?{...item,state:'FAILED' as const,message:failureMessage(error)}:item);
             await this.jobs.save(client,durable,cancelled?'CANCELLED':partial?'PARTIAL':error instanceof ConflictException?'NEEDS_INPUT':'FAILED',failureMessage(error),items);

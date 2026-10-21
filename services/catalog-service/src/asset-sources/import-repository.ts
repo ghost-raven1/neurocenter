@@ -81,11 +81,11 @@ export class AssetImportRepository {
         return rows[0];
     }
 
+    /** A committed success survives lost ACKs and stale failure writers without changing its receipt. */
     async save(client: Pick<PoolClient,'query'>, job: IImportJob, state: TImportState, message: string, items = job.items): Promise<IImportJob> {
-        const {rows} = await client.query<IImportJob>(`UPDATE asset_source_jobs SET state=$2,message=$3,items=$4::jsonb,updated_at=now() WHERE id=$1 RETURNING *`,
+        const {rows} = await client.query<IImportJob>(`UPDATE asset_source_jobs SET state=$2,message=$3,items=$4::jsonb,updated_at=now() WHERE id=$1 AND state<>'SUCCEEDED' RETURNING *`,
             [job.id,state,message,JSON.stringify(items)]);
-        if (!rows[0]) { throw new NotFoundException('Импорт уже недоступен.'); }
-        return rows[0];
+        return rows[0] ?? this.get(job.id,undefined,client);
     }
 
     async receipts(repository: string): Promise<ISourceReceipt[]> {
