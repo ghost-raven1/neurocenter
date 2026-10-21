@@ -1,6 +1,18 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {checkReadiness,httpReady}=require('../../services/shared/readiness.cjs');
+
+test('HTTP readiness requires a bounded JSON success receipt, not an arbitrary HTTP200',async()=>{
+    const previous=global.fetch;
+    try{
+        for(const body of ['<html>proxy error</html>','{}','{"ok":false}','{"ok":"true"}','x'.repeat(16385)]){
+            global.fetch=async()=>new Response(body,{status:200});
+            await assert.rejects(httpReady('http://dependency.test/'));
+        }
+        global.fetch=async(url,options)=>{assert.equal(url,'http://dependency.test/ready');assert.equal(options.redirect,'error');return Response.json({ok:true});};
+        await httpReady('http://dependency.test/');
+    }finally{global.fetch=previous;}
+});
 test('Readiness показывает независимые исправные зависимости',async()=>{
     assert.deepEqual(await checkReadiness({database:async()=>{},files:async()=>{}}),{ok:true,checks:{database:'ready',files:'ready'}});
 });
