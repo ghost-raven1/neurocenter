@@ -5,13 +5,17 @@ import os from 'node:os';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {createRequire} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {verifyBridgeBuild} from '../bridge-build-integrity.mjs';
+import {databaseProof,ownDatabaseName} from './agents-gateway-databases.mjs';
 
 const repo=fileURLToPath(new URL('../../',import.meta.url)),args=process.argv.slice(2);
 if(!args.includes('--execute')){
  console.log('Prepare only: no HTTP requests, files or server resources were created.');
  console.log('After activation: node scripts/test/agents-gateway-acceptance.mjs --execute');
+ console.log('Wake proof env: AGENT_ACCEPTANCE_REQUIRE_WAKE=1 observes actual Socket.io events and requires each new agent apply to start in<5s.');
+ console.log('Gate env: AGENT_ACCEPTANCE_BROWSER_GATE=<absolute .run prefix>; emits <prefix>.context.json and waits up to5min for <prefix>.release. PostgreSQL check uses AGENT_ACCEPTANCE_PG_URL (localhost /postgres), baseline defaults .run/agents-activation-20261021/backup-receipt.json.');
  console.log('Optional env: AGENT_ACCEPTANCE_URL=http://localhost:5173, AGENT_ACCEPTANCE_ARCHIVE=<0.9.15.tgz>, BRIDGE_EXPECTED_BUILD_ID=<verified SHA>, AGENT_ACCEPTANCE_REPORT=<report.json>.');
  console.log('Requires localhost Gateway, a dev login creating its own main-admin session, migrations0..7 and compiled runtime0.9.15 with pinned OpenCode1.14.48.');
  process.exit(0);
@@ -30,8 +34,8 @@ const record={runId,base,startedAt:new Date().toISOString(),cases:[],http:[],nat
 const env={PATH:process.env.PATH,LANG:'C.UTF-8',TMPDIR:temporary,HOME:home,USERPROFILE:home,
  XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_CACHE_HOME:path.join(home,'cache'),XDG_STATE_HOME:path.join(home,'state'),
  NEUROCENTER_URL:base,NEUROCENTER_BRIDGE_HOME:path.join(temporary,'private'),OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true'};
-let panelOrigin=base,session='',worker,node,entry,engine,contract,metadata,card,projectId,deviceId,deviceToken,binding,revision=0,workerLog='';
-const ownedJobs=new Set();
+let proof,initialDatabases,panelOrigin=base,session='',worker,node,entry,engine,contract,metadata,card,projectId,deviceId,deviceToken,binding,revision=0,workerLog='';
+const ownedJobs=new Set(),requireWake=process.env.AGENT_ACCEPTANCE_REQUIRE_WAKE==='1',wakeTimes=[];let socketProbe;record.wakeProof=[];
 async function request(route,{method='GET',body,channel=false,token,expectStatus}={}){
  assert.ok(!route.startsWith('/api/rag'));const headers={'content-type':'application/json','x-neurocenter-request':'1',origin:panelOrigin};
  if(!channel&&session)headers.cookie=session;if(token)headers.authorization='Bearer '+token;
@@ -69,7 +73,9 @@ async function assign(){const result=await post(`/api/projects/${projectId}/agen
 async function remove(){const result=await request(`/api/projects/${projectId}/agents/${card.id}`,{method:'DELETE',body:{requestKey:randomUUID(),expectedRevision:revision}});revision=result.revision;return result;}
 function connectBody(requestKey=randomUUID()){return {requestKey,expectedRevision:revision,deviceId,expectedBindingId:binding.bindingId,expectedInstanceId:binding.instanceId};}
 async function connect(body=connectBody()){const job=await post(`/api/projects/${projectId}/agents/connect`,body);ownedJobs.add(job.id);return job;}
-async function applied(body){const job=await connect(body);await waitJob(job.id);const current=await view(),delivery=current.deliveries.find(item=>item.deviceId===deviceId&&item.bindingId===binding.bindingId&&item.instanceId===binding.instanceId);
+async function applied(body){const enqueuedAt=Date.now(),job=await connect(body),finished=await waitJob(job.id);
+ if(requireWake){const wake=wakeTimes.find(at=>at>=enqueuedAt&&at<=enqueuedAt+5000),startedMs=Date.parse(finished.startedAt)-Date.parse(finished.createdAt);assert.ok(wake,'Actual Gateway Socket.io bridge:work event missing');assert.ok(startedMs>=0&&startedMs<5000,'Queued job waited for polling instead of an immediate wake');record.wakeProof.push({jobId:job.id,revision,observedWakeMs:wake-enqueuedAt,startedMs,limitMs:5000});}
+const current=await view(),delivery=current.deliveries.find(item=>item.deviceId===deviceId&&item.bindingId===binding.bindingId&&item.instanceId===binding.instanceId);
  assert.equal(delivery.jobId,job.id);assert.equal(delivery.revision,current.revision);assert.equal(delivery.state,'succeeded');assert.equal(delivery.result.revision,current.revision);assert.equal(delivery.result.manifestSha256,delivery.manifestSha256);assert.equal(delivery.result.bindingId,binding.bindingId);assert.equal(delivery.result.instanceId,binding.instanceId);assert.equal(delivery.result.readiness,'configured');return {job,view:current};}
 async function native(enabled,prompt){
  const list=(await execute(engine,['agent','list'],{cwd:project,env,timeout:30000,maxBuffer:2*1024*1024})).stdout;
@@ -85,6 +91,9 @@ async function archiveCard(){
 }
 let fatal;
 try{
+ await check('Read-only PostgreSQL baseline matches activation receipt before QA',async()=>{
+  proof=await databaseProof(process.env.AGENT_ACCEPTANCE_BASELINE||path.join(repo,'.run/agents-activation-20261021/backup-receipt.json'),process.env.AGENT_ACCEPTANCE_PG_URL);initialDatabases=await proof.compare();assert.deepEqual(initialDatabases.added,[]);assert.deepEqual(initialDatabases.missing,[]);record.databasesBefore=initialDatabases;
+ });
  await check('Verified compiled bridge0.9.15 and pinned native engine, isolated profiles',async()=>{
   const archiveMetadata=JSON.parse(await fs.readFile(archive+'.json','utf8'));assert.equal(archiveMetadata.version,'0.9.15');assert.equal(hash(await fs.readFile(archive)),archiveMetadata.sha256);
   await execute('tar',['-xzf',archive,'-C',content]);metadata=JSON.parse(await fs.readFile(path.join(content,'runtime.json'),'utf8'));assert.equal(metadata.version,'0.9.15');
@@ -110,7 +119,9 @@ try{
   deviceToken=randomBytes(32).toString('hex');const pair=await channel('pair/start',{name:prefix,fingerprint:hash(runId),credentialHash:hash(deviceToken)},null);
   const info=await request('/api/device-pairs/'+pair.userCode);assert.equal(info.fingerprint,hash(runId));await post('/api/device-pairs/'+pair.userCode+'/approve',{});
   const connected=await channel('pair/poll',{deviceCode:pair.deviceCode},null);assert.equal(connected.state,'connected');deviceId=connected.deviceId;record.resources.deviceId=deviceId;
-  await helper('bootstrap',{root,credentials:{token:deviceToken,deviceId,email:connected.email}});startWorker();
+  await helper('bootstrap',{root,credentials:{token:deviceToken,deviceId,email:connected.email}});
+  if(requireWake){const require=createRequire(path.join(repo,'mcp/neurocenter-asset-sync/package.json')),{io}=require('socket.io-client');socketProbe=io(base,{transports:['websocket'],auth:{token:deviceToken},reconnection:false,timeout:10000});socketProbe.on('bridge:work',()=>wakeTimes.push(Date.now()));await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Own Socket.io probe did not connect')),10000);socketProbe.once('connect',()=>{clearTimeout(timeout);resolve();});socketProbe.once('connect_error',error=>{clearTimeout(timeout);reject(error);});});}
+  startWorker();
   const job=await post('/api/device-jobs',{deviceId,projectId,kind:'bind-project',requestKey:randomUUID(),folderName:path.basename(project),bindingMode:'new'});await waitJob(job.id);
   const report=await helper('report');binding=report.bindings.find(item=>item.projectId===projectId);assert.equal(binding.valid,true);assert.match(binding.bindingId,/^[a-f0-9]{64}$/);assert.match(binding.instanceId,/^[a-f0-9-]{36}$/);assert.ok(report.capabilities.includes('project-agents-v1'));record.resources.binding={...binding};
   await fs.mkdir(path.join(project,'.opencode/agents'),{recursive:true});await fs.writeFile(path.join(project,'.opencode/agents/manual.md'),'---\ndescription: User-owned QA agent\nmode: subagent\n---\nPreserve this manual agent.\n');
@@ -140,16 +151,40 @@ try{
   await archiveCard();assert.ok((await request('/api/agents/'+card.id)).archivedAt);const current=await view();assert.equal(current.assignments[0].removed,false);assert.equal(current.assignments[0].version,card.version);assert.equal(current.assignments[0].effective.prompt,'QA retained override '+runId);
   await remove();await applied();await native(false,null);await assert.rejects(fs.stat(path.join(project,'.opencode/rag_db')),error=>error.code==='ENOENT');
  });
+ if(process.env.AGENT_ACCEPTANCE_BROWSER_GATE){
+  const gate=path.resolve(process.env.AGENT_ACCEPTANCE_BROWSER_GATE);assert.ok(gate.startsWith(path.join(repo,'.run')+path.sep));
+  const context=gate+'.context.json',release=gate+'.release';await fs.mkdir(path.dirname(context),{recursive:true});await assert.rejects(fs.stat(release),error=>error.code==='ENOENT');
+  const browser={runId,projectId,projectName:prefix,deviceId,bindingId:binding.bindingId,instanceId:binding.instanceId,base,
+   projectAgentsUrl:base+'/projects/'+projectId+'?catalogTab=agents',context,release,expiresAt:new Date(Date.now()+300000).toISOString()};
+  await fs.writeFile(context,JSON.stringify(browser,null,2)+'\n',{mode:0o600});record.browserGate=browser;console.log('BROWSER_GATE '+JSON.stringify({context,release,projectId}));
+  const deadline=Date.now()+300000;let released=false;
+  while(Date.now()<deadline){try{await fs.stat(release);released=true;break;}catch(error){if(error.code!=='ENOENT')throw error;}await pause(250);}
+  record.browserGate.released=released;assert.ok(released,'Browser gate timed out; own QA resources will still be cleaned up.');
+ }
 }catch(error){fatal=error instanceof Error?error.stack:String(error);process.exitCode=1;}
 finally{
  // Cleanup uses only resources created in this run; durable history and archived immutable QA versions intentionally remain.
  const clean=async(name,work)=>{try{await work();record.cleanup.push({name,ok:true});}catch(error){record.cleanup.push({name,ok:false,error:String(error.message||error)});process.exitCode=1;}};
- if(projectId&&card&&binding&&deviceId)await clean('Deliver removal of own QA agent files',async()=>{await view();const assignment=(await view()).assignments.find(item=>item.agentId===card.id);if(assignment&&!assignment.removed)await remove();if(!worker)startWorker();await applied();await native(false,null);});
+ if(projectId&&card&&binding&&deviceId)await clean('Deliver removal of own QA agent files',async()=>{let current=await view();for(const assignment of current.assignments.filter(item=>!item.removed)){const removed=await request(`/api/projects/${projectId}/agents/${assignment.agentId}`,{method:'DELETE',body:{requestKey:randomUUID(),expectedRevision:revision}});revision=removed.revision;}if(!worker)startWorker();await applied();await native(false,null);assert.deepEqual((await fs.readdir(path.join(project,'.opencode/agents'))).sort(),['manual.md']);});
  if(deviceId)await clean('Cancel only own queued QA jobs',async()=>{const rows=await request('/api/device-jobs');for(const job of rows.filter(item=>item.deviceId===deviceId&&item.projectId===projectId&&item.state==='queued'))await request('/api/device-jobs/'+job.id,{method:'DELETE'});});
- await stopWorker();
+ await stopWorker();socketProbe?.disconnect();
  if(deviceId)await clean('Revoke own temporary QA device',async()=>{await request('/api/devices/'+deviceId,{method:'DELETE'});await request('/api/device-channel/identity',{method:'POST',channel:true,token:deviceToken,body:{},expectStatus:401});});
  if(card)await clean('Archive only own QA catalog card',archiveCard);
  if(projectId)await clean('Retire only own QA project without leaving pending RAG data',async()=>{const own=await request('/api/projects/'+projectId);assert.equal(own.name,prefix);await request('/api/projects/'+projectId,{method:'DELETE'});await request('/api/projects/'+projectId,{expectStatus:404});});
+ if(proof&&projectId)await clean('Purge only an automatically provisioned own QA RAG database through preview/digest',async()=>{
+  const actual=await proof.names(),name=ownDatabaseName(projectId);assert.ok(!proof.baseline.includes(name));
+  record.qaRagDatabase={name,presentBeforeCleanup:actual.includes(name),registryBefore:await proof.ownRegistry(projectId)};
+  if(actual.includes(name)){
+   const retired=(await request('/api/maintenance/retired-rag-databases')).items.find(item=>item.projectId===projectId);assert.ok(retired);assert.equal(retired.projectName,prefix);assert.equal(retired.database.databaseName,name);assert.deepEqual(retired.blockers,[]);
+   const preview=await post(`/api/maintenance/retired-rag-databases/${retired.id}/preview`,{});assert.equal(preview.facts.identity.projectId,projectId);assert.equal(preview.facts.identity.databaseName,name);assert.equal(preview.facts.retirementId,retired.id);
+   const job=await post(`/api/maintenance/retired-rag-databases/${retired.id}/purge`,{requestKey:randomUUID(),previewId:preview.id,digest:preview.digest});const deadline=Date.now()+90000;let result;
+   while(Date.now()<deadline){result=await request('/api/maintenance/retired-rag-purges/'+job.id);if(['failed','succeeded'].includes(result.state))break;await pause(250);}
+   assert.equal(result?.state,'succeeded');assert.equal(result.receipt.identity.projectId,projectId);assert.equal(result.receipt.identity.databaseName,name);record.qaRagDatabase.purge={retirementId:retired.id,previewDigest:preview.digest,jobId:job.id,receipt:result.receipt};
+  }
+  record.qaRagDatabase.registryAfter=await proof.ownRegistry(projectId);if(record.qaRagDatabase.registryAfter)assert.equal(record.qaRagDatabase.registryAfter.lifecycle_state,'purged');
+ });
+ if(proof)await clean('Read-only PostgreSQL proof: original24 databases and retained metadata unchanged',async()=>{const after=await proof.compare();record.databasesAfter=after;assert.deepEqual(after.added,[]);assert.deepEqual(after.missing,[]);assert.deepEqual(after.oldState,initialDatabases.oldState);assert.deepEqual(after.originalDatabaseOids,initialDatabases.originalDatabaseOids);});
+ if(proof)await proof.close();
  if(session)await clean('Close only the separate acceptance session',async()=>{await fetch(base+'/auth/logout',{headers:{cookie:session,'x-neurocenter-request':'1',origin:panelOrigin},redirect:'manual',signal:AbortSignal.timeout(15000)});});
  record.fatal=fatal||null;record.finishedAt=new Date().toISOString();record.workerLog=workerLog;
  if(record.cleanup.every(item=>item.ok)){await fs.rm(temporary,{recursive:true,force:true});record.temporaryProfileRemoved=true;}else record.retainedRecoveryDirectory=temporary;

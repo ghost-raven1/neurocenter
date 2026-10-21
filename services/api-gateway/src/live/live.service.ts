@@ -58,6 +58,13 @@ export class LiveService implements OnModuleDestroy {
             this.io?.emit('auth:changed');
             return;
         }
+        // A connect response is the server-created job; wake its exact device without sending prompt bytes.
+        if (method === 'POST' && /^\/api\/projects\/[^/]+\/agents\/connect\/?$/.test(path)
+            && data?.kind === 'configure-project-agents' && typeof data.deviceId === 'string' && data.deviceId
+            && typeof data.id === 'string' && data.id) {
+            this.bridge(email, data.deviceId, data.id);
+            this.wake(data.deviceId);
+        }
         if (path.startsWith('/api/projects')) {
             const deleted = method === 'DELETE' && /^\/api\/projects\/[^/]+\/?$/.test(path);
             this.sections([
