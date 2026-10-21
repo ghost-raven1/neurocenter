@@ -50,4 +50,11 @@ describe('Готовые поставки MCP из репозитория', () =
         expect(JSON.stringify(source)).not.toContain('runtimeSource');
         expect(JSON.stringify(source)).not.toContain('manifestSha256');
     });
+    it('Python shows a readable command and keeps its exact generated entrypoint in requests', () => {
+        const python = {...metadata, name:'mcp-server-time', entrypoint:'__neurocenter_python__/mcp-server-time.py'};
+        const html = render(python);
+        expect(html).toContain('Команда запуска: mcp-server-time');
+        expect(html).not.toContain('__neurocenter_python__');
+        expect(repositoryBuildSource(python, 'src/stale.ts').entrypoint).toBe(python.entrypoint);
+    });
 });

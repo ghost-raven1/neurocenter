@@ -105,6 +105,7 @@ test('GitHub repository, release and local upload persist the same source plan a
   const commit='a'.repeat(40),repoBytes=runtimeFixture.artifactFixture(files.map(file=>({...file,path:`repo-${commit}/`+file.path}))).archive,archivePath=path.join(root,'repo.tar.gz');await fs.writeFile(archivePath,repoBytes);
   const snapshotSha256=createHash('sha256').update(repoBytes).digest('hex');
   const checked=await inspectGithubRepository({type:'repository',url:'https://github.com/owner/repo',commit},undefined,{downloadArchive:async()=>({archivePath,sha256:snapshotSha256})});
+  assert.equal(checked.name,'mcp-server-time');assert.equal(released.name,'mcp-server-time');assert.equal(uploaded.name,'mcp-server-time');
   assert.deepEqual(released.runtimeSource.python,uploaded.choices[0].python);assert.deepEqual(checked.runtimeSource.python,released.runtimeSource.python);
   assert.deepEqual(uploaded.choices[0].runtimeAssets['darwin-arm64'],checked.runtimeSource.assets['darwin-arm64'].runtime);
   const pinned=repository.validateRepositorySource({type:'repository',url:'https://github.com/owner/repo',commit,entrypoint:checked.entrypoint,runtimeSource:checked.runtimeSource,snapshotSha256});

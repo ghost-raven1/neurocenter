@@ -1,4 +1,5 @@
 import { Alert, Form, Select } from 'antd';
+import { entrypointLabel } from './entrypointLabel';
 
 /** Multiple commands always require an explicit choice; an empty value never selects the first item. */
 export function SourceEntrypointChoice({ candidates, value, onChange, disabled = false, label = 'Файл запуска',skill=false }: {
@@ -8,6 +9,6 @@ export function SourceEntrypointChoice({ candidates, value, onChange, disabled =
     return <Form.Item label={label} extra={skill?'Найдено несколько скиллов. Выберите один по пути к SKILL.md; соседние скиллы не попадут в его ресурсы.':'Найдено несколько команд. Выберите ту, которую должен запускать OpenCode.'}>
         {!value && <Alert type="info" showIcon message={skill?'Выберите скилл для упаковки':'Нужно выбрать команду запуска'} />}
         <Select aria-label={label} value={value || undefined} onChange={onChange} disabled={disabled} showSearch
-            options={candidates.map(candidate => ({ value: candidate, label: candidate }))} placeholder={skill?'Выберите путь к SKILL.md':'Выберите команду запуска'} />
+            options={candidates.map(candidate => ({ value: candidate, label: entrypointLabel(candidate) }))} placeholder={skill?'Выберите путь к SKILL.md':'Выберите команду запуска'} />
     </Form.Item>;
 }

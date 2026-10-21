@@ -12,6 +12,6 @@ export async function inspectUploadArchive(filename,{name,format}){
   const choices=await detectReadyPayload(directory),candidates=[...new Set(choices.map(choice=>choice.entrypoint))];
   if(choices.some(choice=>choices.filter(other=>other.entrypoint===choice.entrypoint).length>1))throw new Error('В архиве несколько runtime для одного приложения. Выберите готовую поставку с одним runtime.');
   const single=choices.length===1?choices[0]:undefined;
-  return {candidates,choices,entrypoint:single?.entrypoint??'',requiresEntrypointChoice:!single,runnableKinds:['mcp'],...(single?{adapter:single.adapter,supportedTargets:single.targets}:{})};
+  return {candidates,choices,entrypoint:single?.entrypoint??'',requiresEntrypointChoice:!single,runnableKinds:['mcp'],...(single?{adapter:single.adapter,supportedTargets:single.targets}:{}),...(single?.python?.distribution?{name:single.python.distribution.name.slice(0,128)}:{})};
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 }

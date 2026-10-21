@@ -102,6 +102,11 @@ beforeEach(()=>{
 afterEach(()=>hooks.dispose());
 
 describe('Ready upload wiring in the actual packaging Modal',()=>{
+ it('Uses inspected Python project metadata instead of the uploaded archive name',async()=>{
+  render();ui.selectSource!({target:{value:'upload'}});ui.upload=readyUpload();ui.upload.metadata!.name='mcp-server-time';ui.intent=intent;render();
+  ui.selects.get('Файл запуска')!.onChange('bin/second');render();ui.finish!();await flush();
+  expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({name:'mcp-server-time'}));
+ });
  it('Does not select the first candidate or submit automatically; explicit second entry survives in the exact request',async()=>{
   render();ui.selectSource!({target:{value:'upload'}});ui.upload=readyUpload();ui.intent=intent;render();
   expect(ui.selects.get('Файл запуска')?.value).toBeUndefined();expect(ui.buttons.get('Выберите команду запуска')?.disabled).toBe(true);
