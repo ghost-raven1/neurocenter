@@ -3,6 +3,7 @@ import type {PoolClient} from 'pg';
 
 type Db=Pick<PoolClient,'query'>;
 const checks=[
+    ['project_learning_analyses',"state IN ('queued','running')",'Анализ проектного обучения ещё не завершён.'],
     ['bridge_jobs',"state IN ('queued','running','reconciling')",'Есть незавершённое задание компьютера.'],
     ['project_rag_sync_intents',"state IN ('pending','uncertain')",'Синхронизация RAG ещё не подтверждена.'],
     ['project_reindex_plans',"state IN ('preparing','needs_input','building','ready','cancelling')",'Есть незавершённая переиндексация.'],

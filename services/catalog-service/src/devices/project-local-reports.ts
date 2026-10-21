@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 
 interface Source {projectId:string|null;bindingId?:unknown;instanceId?:unknown;package?:{plugin:{id:string;kind?:string;version:number};manifest:{sha256:string}}}
-export const inventoryReasons = ['managed-receipt','unmanaged-files','unmanaged-config','receipt-invalid','receipt-missing','file-mismatch',
+export const inventoryReasons = ['managed-receipt','managed-project-learning','unmanaged-files','unmanaged-config','receipt-invalid','receipt-missing','file-mismatch',
     'config-mismatch','config-invalid','unsafe-path','read-failed','read-limit','snapshot-changed','entry-limit','project-busy','binding-changed','unknown-layout'];
 export const variantReasons = ['ready','legacy-unverified','different-installation','different-instance','shared-dependency','no-restorable-files','invalid-backup','limit-exceeded'];
 export const uuid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
