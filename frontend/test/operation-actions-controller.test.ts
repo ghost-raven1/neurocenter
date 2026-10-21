@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IOperation } from '../src/core/api/interfaces';
+import type { IOperation,IOperationActionResult } from '../src/core/api/interfaces';
 import type { IUserInfo } from '../src/core/interfaces';
-import type { IBridgeJob } from '../src/features/McpBridge/api';
 import { createOperationActionsController } from '../src/modules/Operations/operationActionsController';
 
 const user: IUserInfo = {
@@ -16,8 +15,9 @@ const operation: IOperation = {
     actor: user.email, projectId: 'prj-example', type: 'INSTALL', state: 'FAILED',
     percent: 50, bytesDone: 0, bytesTotal: 0, startedAt: null, finishedAt: null, error: 'Сбой',
     bridgeJob: {kind:'install',retrySupported:true,minimumLevel:2},
+    actions:{executor:'bridge',digest:'a'.repeat(64),retry:{supported:true},cancel:{supported:true}},
 };
-const job = { id: 'new-job', state: 'queued', message: '' } as IBridgeJob;
+const job = { operationId: 'bridge-new-job', state: 'QUEUED', message: '' } as IOperationActionResult;
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -31,8 +31,8 @@ function setup() {
     const dialogs: Array<{ confirm: () => Promise<void>; close: () => void; destroy: ReturnType<typeof vi.fn> }> = [];
     const options = {
         getUser: () => currentUser,
-        retry: vi.fn<(id: string, key: string) => Promise<IBridgeJob>>().mockResolvedValue(job),
-        cancel: vi.fn<(id: string) => Promise<void>>().mockResolvedValue(undefined),
+        retry: vi.fn<(id: string, key: string,digest:string) => Promise<IOperationActionResult>>().mockResolvedValue(job),
+        cancel: vi.fn<(id: string,key:string,digest:string) => Promise<IOperationActionResult>>().mockResolvedValue({operationId:operation.operationId,state:'CANCELLED',message:'cancelled fixture'}),
         reload: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
         confirmCancel: vi.fn((confirm: () => Promise<void>, close: () => void) => {
             const dialog = { confirm, close, destroy: vi.fn() };
@@ -61,7 +61,7 @@ describe('Действия очереди принадлежат текущем�
         expect(options.error).toHaveBeenCalledWith('Не удалось подготовить повтор');
         expect(options.retry).not.toHaveBeenCalled();
         await controller.retry(operation);
-        expect(options.retry).toHaveBeenCalledWith(operation.resourceId, 'fresh-key');
+        expect(options.retry).toHaveBeenCalledWith(operation.operationId, 'fresh-key',operation.actions!.digest);
         expect(busy()).toEqual([]);
     });
 
@@ -84,8 +84,8 @@ describe('Действия очереди принадлежат текущем�
     });
 
     it('Не повторяет один запрос дважды и сохраняет занятость каждой параллельной операции', async () => {
-        const first = deferred<IBridgeJob>();
-        const second = deferred<IBridgeJob>();
+        const first = deferred<IOperationActionResult>();
+        const second = deferred<IOperationActionResult>();
         const { controller, options, busy } = setup();
         const other = { ...operation, operationId: 'other-operation', resourceId: 'abcdef12-1234-1234-1234-123456789abc' };
         options.retry.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
@@ -104,7 +104,7 @@ describe('Действия очереди принадлежат текущем�
 
     it.each(['смена аккаунта', 'отзыв роли', 'отзыв проекта', 'выход'])(
         'Запоздалый повтор не обновляет интерфейс после события: %s', async reason => {
-            const pending = deferred<IBridgeJob>();
+            const pending = deferred<IOperationActionResult>();
             const { controller, options, setUser } = setup();
             options.retry.mockReturnValueOnce(pending.promise);
             const request = controller.retry(operation);
@@ -126,7 +126,7 @@ describe('Действия очереди принадлежат текущем�
     );
 
     it('Не показывает ошибку старого запроса после размонтирования', async () => {
-        const pending = deferred<IBridgeJob>();
+        const pending = deferred<IOperationActionResult>();
         const { controller, options } = setup();
         options.retry.mockReturnValueOnce(pending.promise);
         const request = controller.retry(operation);
@@ -155,15 +155,15 @@ describe('Действия очереди принадлежат текущем�
     });
 
     it('Уничтожает подтверждение после выхода, пока отправленная отмена ещё ожидает ответ', async () => {
-        const pending=deferred<void>();const {controller,options,dialogs,setUser}=setup();
+        const pending=deferred<IOperationActionResult>();const {controller,options,dialogs,setUser}=setup();
         options.cancel.mockReturnValueOnce(pending.promise);controller.cancel({...operation,state:'QUEUED'});
         const request=dialogs[0].confirm();setUser(null);controller.dispose();
-        expect(dialogs[0].destroy).toHaveBeenCalledOnce();pending.resolve();await request;
+        expect(dialogs[0].destroy).toHaveBeenCalledOnce();pending.resolve({operationId:operation.operationId,state:'CANCELLED',message:'cancelled fixture'});await request;
         expect(options.success).not.toHaveBeenCalled();expect(options.reload).not.toHaveBeenCalled();
     });
 
     it('Не создаёт два подтверждения и два запроса отмены для одного задания', async () => {
-        const pending = deferred<void>();
+        const pending = deferred<IOperationActionResult>();
         const { controller, options, dialogs } = setup();
         const queued = { ...operation, state: 'QUEUED' } as IOperation;
         options.cancel.mockReturnValueOnce(pending.promise);
@@ -175,17 +175,17 @@ describe('Действия очереди принадлежат текущем�
         controller.cancel(queued);
         expect(options.cancel).toHaveBeenCalledTimes(1);
         expect(dialogs).toHaveLength(1);
-        pending.resolve();
+        pending.resolve({operationId:operation.operationId,state:'CANCELLED',message:'cancelled fixture'});
         await request;
-        expect(options.success).toHaveBeenCalledWith('Задание в очереди отменено');
+        expect(options.success).toHaveBeenCalledWith('cancelled fixture');
     });
 
     it('Завершение прежней отмены не удаляет новое подтверждение после повторного монтирования', async () => {
-        const pending=deferred<void>();const {controller,options,dialogs}=setup();
+        const pending=deferred<IOperationActionResult>();const {controller,options,dialogs}=setup();
         const queued={...operation,state:'QUEUED'} as IOperation;
         options.cancel.mockReturnValueOnce(pending.promise);controller.cancel(queued);
         const request=dialogs[0].confirm();controller.dispose();controller.activate();controller.cancel(queued);
-        pending.resolve();await request;controller.cancel(queued);
+        pending.resolve({operationId:operation.operationId,state:'CANCELLED',message:'cancelled fixture'});await request;controller.cancel(queued);
         expect(dialogs).toHaveLength(2);expect(options.success).not.toHaveBeenCalled();
         controller.dispose();expect(dialogs[1].destroy).toHaveBeenCalledOnce();
     });

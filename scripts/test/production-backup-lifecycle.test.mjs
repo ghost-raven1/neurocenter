@@ -27,10 +27,12 @@ async function fixture(action){
         composeConfiguration:async()=>({volumes:Object.fromEntries(Object.entries(names).map(([key,name])=>[key,{name}]))}),
         containers:async()=>states(),serviceImageIds:async()=>Object.fromEntries(applicationServices.map(service=>[service,image])),
         maintenanceLock:async(_client,_image,_kind,action)=>{events.push('lock');try{return await action();}finally{events.push('unlock');}},
+        databaseLifecycleLock:async()=>({applicationName:'own-backup-fence',assertHeld(){},async close(){}}),
         docker:async(args,options={})=>{
             if(args.includes('node'))return 'false';
             if(args.includes('pg_dump')){assert.ok(options.timeout>0);await writeFile(options.outputFile,'дамп базы');return '';}
             const sql=options.input;
+            if(sql?.includes('to_regclass'))return 'f';
             if(sql?.includes('server_version_num'))return '160000';
             if(sql?.includes('json_agg(rolname'))return JSON.stringify(['nc_backup','nc_catalog','nc_owner','nc_provisioner','nc_rag']);
             if(sql?.includes('json_agg(json_build_object'))return JSON.stringify(databases);
@@ -101,4 +103,12 @@ test('Readonly guard обычной копии выполняется под б�
 test('Отклонённый guard обычной копии не останавливает приложения и не оставляет partial',async()=>fixture(async f=>{
     await assert.rejects(backupProduction({...f.options,beforePause:()=>{const error=new Error('окно закрыто');error.code='CONFIG_CHANGED';throw error;}},f.deps),error=>error.code==='CONFIG_CHANGED');
     assert.deepEqual(f.events,['lock','unlock']);assert.equal(f.isRunning(),true);assert.deepEqual(await readdir(f.root),[]);
+}));
+test('Утерянный PG lifecycle fence не публикует копию и возвращает остановленные приложения',async()=>fixture(async f=>{
+    let held=true;f.deps.databaseLifecycleLock=async()=>({applicationName:'own-fence',assertHeld(){if(!held)throw Error('own fence lost');},async close(){held=false;}});
+    f.setCopy(async()=>{held=false;});await assert.rejects(backupProduction(f.options,f.deps),/own fence lost/);assert.equal(f.isRunning(),true);assert.deepEqual(await readdir(f.root),[]);
+}));
+test('PG lifecycle fence снимается до afterBackup, чтобы миграция и новый provision могли запуститься',async()=>fixture(async f=>{
+    let held=true;f.deps.databaseLifecycleLock=async()=>({applicationName:'own-fence',assertHeld(){assert.equal(held,true);},async close(){held=false;}});
+    await withQuiescedProductionBackup(f.options,{afterBackup:async()=>{assert.equal(held,false);return{ok:true};}},f.deps);
 }));

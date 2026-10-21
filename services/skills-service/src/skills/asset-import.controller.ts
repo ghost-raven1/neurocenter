@@ -51,4 +51,10 @@ export class SkillAssetImportController {
     }
     @Get('archived')
     archived(@Req() req: Request) { this.authorize(req); return this.skills.archivedAssetSkills(); }
+    @Post('legacy-inspect')
+    legacyInspect(@Req() req:Request,@Body() body:{id:string}){this.authorize(req);return this.skills.inspectLegacySkill(body?.id);}
+    @Post('legacy-retire')
+    legacyRetire(@Req() req:Request,@Body() body:{id:string;expected:import('./legacy-retirement').ILegacySkillExpected;actor:unknown;requestKey:string}){
+        this.authorize(req);return this.skills.retireLegacySkill(body?.id,body?.expected,this.actor(body?.actor),body?.requestKey);
+    }
 }

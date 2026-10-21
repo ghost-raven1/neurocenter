@@ -5,7 +5,7 @@
 
 import type { IDependencyPin } from '../../../shared/dependency-pins.cjs';
 
-export type TSnapshotStatus = 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING' | 'DELETED';
+export type TSnapshotStatus = 'UPLOADING' | 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING' | 'DELETED';
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
 export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD' | 'MODEL';
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
@@ -36,6 +36,7 @@ export interface IProjectSummary {
     fsRootPath: string;
     state: TProjectState;
     head: { snapshotId: string; snapshotDate: string; author: string; headRevision: number } | null;
+    headRevision: number;
     logicalBytes: number | null;
     retainedBytes: number | null;
     logicalSizeError?: string;
@@ -111,9 +112,9 @@ export interface IHeadUpdateResult {
 }
 
 export interface ISkillPin {
-    skillSlug: string;
-    skillId: string;
-    skillVersionId: string;
+    id: string;
+    version: number;
+    manifest: string;
 }
 
 export interface IProfileReleaseResult {
@@ -186,6 +187,10 @@ export interface IOperation {
     finishedAt: string | null;
     error: string | null;
     bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
+    actions?: {
+        executor: 'bridge'|'rag-reindex'|'model-hosting'|'tool-build'|'history'; digest: string;
+        retry: {supported:boolean;reason?:string}; cancel: {supported:boolean;reason?:string};
+    };
 }
 
 export interface IOperationDetail extends IOperation {

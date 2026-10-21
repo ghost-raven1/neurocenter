@@ -1,3 +1,4 @@
+import {snapshotContentRoute} from '../../shared/snapshot-content-route.cjs';
 import {sourceUploadContentRoute} from '../../shared/source-upload-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
@@ -29,7 +30,7 @@ async function bootstrap(): Promise<void> {
     app.use('/api/device-channel',express.json({limit:'512kb'}));
     const jsonParser=express.json({limit:'50mb'});
     app.use((req: import('express').Request,res: import('express').Response,next: import('express').NextFunction)=>{
-        if(sourceUploadContentRoute(req.method,req.path)){next();return;}
+        if(sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)){next();return;}
         jsonParser(req,res,next);
     });
     const port = process.env.PORT ? Number(process.env.PORT) : 4000;

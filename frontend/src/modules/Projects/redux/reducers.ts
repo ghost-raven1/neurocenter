@@ -5,7 +5,7 @@ import { authInit, authLogout, authSwitchRole } from '../../../features/UserBloc
 import { signOut } from '../../../features/UserBlock/redux/reducers';
 import type { IAuthMe } from '../../../core/interfaces';
 import type { IProjectListParams } from '../../../core/api/interfaces';
-import { fetchProject, fetchProjects, fetchVersions } from './actions';
+import { fetchProject, fetchProjects } from './actions';
 import type { IProjectsState } from '../interfaces';
 
 const initialState: IProjectsState = {
@@ -24,10 +24,6 @@ const initialState: IProjectsState = {
     selectedLoading: false,
     selectedRequestId: null,
     selectedError: null,
-    versions: [],
-    versionsLoading: false,
-    versionsProjectId: null,
-    versionsRequestId: null,
 };
 
 function matchesListParams(state: IProjectsState, params: IProjectListParams): boolean {
@@ -40,10 +36,6 @@ function clearSelectedProject(state: IProjectsState): void {
     state.selectedLoading = false;
     state.selectedRequestId = null;
     state.selectedError = null;
-    state.versions = [];
-    state.versionsLoading = false;
-    state.versionsProjectId = null;
-    state.versionsRequestId = null;
 }
 
 /** Ответы прежней роли теряют владельца, даже если HTTP-запрос уже нельзя отменить. */
@@ -147,32 +139,6 @@ const projectsSlice = createSlice({
                 state.selectedLoading = false;
                 state.selectedRequestId = null;
                 state.selectedError = error;
-            })
-            .addCase(fetchVersions.pending, (state, action) => {
-                if (!state.authScope) {
-                    return;
-                }
-                if (state.versionsProjectId !== action.meta.arg) {
-                    state.versions = [];
-                }
-                state.versionsProjectId = action.meta.arg;
-                state.versionsLoading = true;
-                state.versionsRequestId = action.meta.requestId;
-            })
-            .addCase(fetchVersions.fulfilled, (state, action) => {
-                if (state.versionsRequestId !== action.meta.requestId) {
-                    return;
-                }
-                state.versionsLoading = false;
-                state.versionsRequestId = null;
-                state.versions = action.payload;
-            })
-            .addCase(fetchVersions.rejected, (state, action) => {
-                if (state.versionsRequestId !== action.meta.requestId) {
-                    return;
-                }
-                state.versionsLoading = false;
-                state.versionsRequestId = null;
             })
             .addCase(authInit.rejected, (state, action) => {
                 if (state.authRequestId === action.meta.requestId) {

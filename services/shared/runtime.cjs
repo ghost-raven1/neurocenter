@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const secretNames = ['NEUROCENTER_MODEL_CREDENTIAL_KEY', 'NEUROCENTER_METRICS_TOKEN', 'NEUROCENTER_INTERNAL_TOKEN', 'SSO_CLIENT_SECRET', 'CATALOG_PG_URL', 'RAG_PG_URL', 'RAG_PROVISION_PG_URL'];
+const secretNames = ['SNAPSHOT_S3_ACCESS_KEY', 'SNAPSHOT_S3_SECRET_KEY', 'SNAPSHOT_VERIFIER_TOKEN', 'RESTORE_RUNNER_TOKEN', 'NEUROCENTER_MODEL_CREDENTIAL_KEY', 'NEUROCENTER_METRICS_TOKEN', 'NEUROCENTER_INTERNAL_TOKEN', 'SSO_CLIENT_SECRET', 'CATALOG_PG_URL', 'RAG_PG_URL', 'RAG_PROVISION_PG_URL'];
 const services = new Set(['api-gateway', 'catalog-service', 'skills-service', 'rag-sync-service', 'feature-flags-service', 'oauth2-bridge', 'bootstrap-admin']);
 
 /** Читает только известные секреты; ошибка не раскрывает ни путь, ни значение. */
@@ -41,6 +41,7 @@ function httpsUrl(value, name, originOnly = false) {
 /** Production завершается до подключения к БД при неполных или dev-настройках. */
 function validateProduction(env, service) {
     if (env.NODE_ENV !== 'production') { return; }
+    if (env.RESTORE_RUNNER_TOKEN !== undefined && !/^[a-f0-9]{64,128}$/.test(required(env,'RESTORE_RUNNER_TOKEN'))) { throw new Error('RESTORE_RUNNER_TOKEN: нужны 32 или более случайных байта в hex'); }
     if (!services.has(service)) { throw new Error('Неизвестный NEUROCENTER_SERVICE'); }
     if (env.NEUROCENTER_METRICS_TOKEN !== undefined && !/^[a-f0-9]{64,128}$/.test(required(env, 'NEUROCENTER_METRICS_TOKEN'))) {
         throw new Error('NEUROCENTER_METRICS_TOKEN: нужны 32 или более случайных байта в hex');

@@ -1,3 +1,5 @@
+import {snapshotContentRoute,snapshotDownloadRoute,snapshotPublicationRoute} from '../../../shared/snapshot-content-route.cjs';
+import {forwardSnapshotChunk} from './snapshot-stream';
 import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
 import {forwardSourceUpload} from './source-upload-stream';
 import { Injectable } from '@nestjs/common';
@@ -70,7 +72,8 @@ export class ProxyService {
             : path.startsWith('/api/skills')
               ? this.skillsUrl
               : this.catalogUrl;
-        if(auth.deviceId && !((['GET','HEAD'].includes(method)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path)) || (method==='POST'&&['/api/skills/sync','/api/rag/sync'].includes(path)))){
+        const snapshotPublication=snapshotPublicationRoute(method,path);
+        if(auth.deviceId && !((!!snapshotPublication&&!!req.headers['x-neurocenter-job-id']&&!!req.headers['x-neurocenter-job-lease'])||(['GET','HEAD'].includes(method)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path)) || (method==='POST'&&['/api/skills/sync','/api/rag/sync'].includes(path)))){
             res.status(403).json({message:'Подключение MCP не даёт прав управления пользователями, каталогом или настройками сервера.'});return;
         }
 
@@ -80,7 +83,7 @@ export class ProxyService {
                 const jobId=String(req.headers['x-neurocenter-job-id']||'');const lease=String(req.headers['x-neurocenter-job-lease']||'');
                 if(!/^[a-f0-9-]{36}$/.test(jobId)||!/^[a-f0-9-]{36}$/.test(lease)){res.status(403).json({message:'Некорректная аренда задания.'});return;}
                 const job=await this.http.post(`${this.catalogUrl}/internal/device-channel/jobs/${jobId}/authorize`,{lease},{headers:{authorization:req.headers.authorization,'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''}});
-                if(job.status<200||job.status>=300||!path.startsWith('/api/rag/')||job.data.projectId!==String(payload?.projectKey||req.query.projectKey||'')){
+                if(job.status<200||job.status>=300||!(snapshotPublication?job.data.projectId===snapshotPublication.projectId&&job.data.snapshotId===snapshotPublication.snapshotId&&job.data.snapshotProtocol==='project-snapshots-v1':path.startsWith('/api/rag/')&&job.data.projectId===String(payload?.projectKey||req.query.projectKey||''))){
                     res.status(403).json({message:'Доступ задания к проекту отозван или его аренда истекла.'});return;
                 }
                 auth.activeRole=String(job.data.role);
@@ -99,8 +102,10 @@ export class ProxyService {
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
-            const uploadRoute=sourceUploadContentRoute(method,path);
-            if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res);return;}
+            const uploadRoute=sourceUploadContentRoute(method,path)||snapshotContentRoute(method,path);
+            if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res,snapshotContentRoute(method,path)?64*1024**2:undefined);return;}
+            const snapshotDownload=snapshotDownloadRoute(method,path);
+            if(snapshotDownload){await forwardSnapshotChunk(this.http,`${this.catalogUrl}${snapshotDownload}`,this.buildHeaders(req.headers,auth),req,res);return;}
             const supplyPath=canonicalAccessRoute(path);
             if(['GET','HEAD'].includes(method)&&/^\/api\/tool-builds\/[a-fA-F0-9-]{36}\/supply$/.test(supplyPath||'')){
                 await forwardToolSupply(this.http,`${this.catalogUrl}${supplyPath}`,this.buildHeaders(req.headers,auth),req,res);return;

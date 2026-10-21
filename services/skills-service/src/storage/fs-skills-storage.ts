@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import { validateResources } from '../skills/skill-resources';
@@ -8,7 +8,7 @@ import { SKILL_VERSIONS_DIRECTORY, versionRelative, preserveVersion, syncSkillDi
 
 import type { ISkillFile, ISkillMeta, ISkillResource } from '../skills/skills.model';
 import { normalizeMeta, parseSkillFile, serializeSkillFile } from './frontmatter';
-import type { IStoredEntry, ISkillsStorage, ISkillChange } from './skills-storage.interface';
+import type { IStoredEntry, ISkillsStorage, ISkillChange,ISkillSourceReceipt } from './skills-storage.interface';
 import {SKILL_JOURNAL_DIRECTORY,readSkillText,recoverSkillJournals,recoverSkillScope,withSkillJournal,withSkillScope} from './skill-journal';
 import {reserveCapacity} from '../../../shared/capacity.cjs';
 import { SkillAuditOutbox } from './skill-audit-outbox';
@@ -125,6 +125,18 @@ export class FsSkillsStorage implements ISkillsStorage {
 
     public async readSkill(skillPath: string, version?: number): Promise<ISkillFile> {
         return withSkillScope(this.baseDir, skillScope(skillPath), () => this.readSkillCommitted(skillPath, version));
+    }
+
+    /** Exact raw file and resource bytes; a missing historical snapshot never falls back to the current head. */
+    public sourceReceipt(skillPath:string,version?:number):Promise<ISkillSourceReceipt>{
+        return withSkillScope(this.baseDir,skillScope(skillPath),async()=>{
+            this.assertDurability();
+            const current=await this.readSkillCommitted(skillPath),file=version===undefined||version===current.meta.version?await this.skillFileAbsolute(skillPath):await this.toAbsolutePath(versionRelative(skillPath,current.meta,version));
+            const raw=await fs.readFile(file),parsed=this.parse(raw.toString('utf8'),skillPath);
+            if(version!==undefined&&parsed.meta.version!==version)throw new ConflictException('Исторический файл содержит другую версию.');
+            return {version:parsed.meta.version,sha256:createHash('sha256').update(raw).digest('hex'),bytes:raw.length,resources:(parsed.resources??[]).map(resource=>{
+                const bytes=Buffer.from(resource.content,resource.encoding==='base64'?'base64':'utf8');return {path:resource.path,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};})};
+        });
     }
 
     /** Чтение ждёт commit или rollback всей коллекции, включая запрос точного установочного пакета. */

@@ -24,14 +24,14 @@ async function fixture(t, mode = 'ready') {
             require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'unexpected-command',command:${JSON.stringify(command)}})+'\\n');
             process.exitCode=92;`, {mode: 0o700});
     }
-    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
-    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    for(const directory of ['models','embedding','vision','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
@@ -61,6 +61,7 @@ async function fixture(t, mode = 'ready') {
         NO_COLOR: '1', TERM: 'dumb', NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`,
         DEV_CLI_RECORD: record, DEV_CLI_MODE: mode};
     async function run(...args) {
+        if(args.length===1&&args[0]==='status'){await fs.mkdir(path.join(checkout,'.run/project-snapshots/secrets'),{recursive:true});await fs.writeFile(path.join(checkout,'.run/project-snapshots/secrets/verifier-token'),'a'.repeat(64)+'\n',{mode:0o600});}
         const result = spawnSync(path.join(checkout, 'scripts/dev.sh'), args, {
             cwd: checkout, env, encoding: 'utf8', timeout: 10000,
         });
@@ -122,15 +123,16 @@ test('Статус показывает адреса всех сервисов �
     assert.match(result.stdout, /готов/);
     assert.equal(result.stderr, '');
     const requests = result.events.filter(event => event.kind === 'health');
-    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4200', '4300', '4400', '5173']);
+    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4100', '4200', '4300', '4400', '5173']);
     assert.deepEqual(requests.find(event => event.port === '5173'), {
         kind: 'health', port: '5173', path: '/node_modules/antd/dist/antd.less', search: '?direct',
     });
-    assert.ok(requests.filter(event => !['5173','4400'].includes(event.port)).every(event => event.path === '/health' && event.search === ''));
+    assert.ok(requests.filter(event => !['5173','4400'].includes(event.port)&&event.path!=='/internal/project-snapshots/verifier/ready').every(event => event.path === '/health' && event.search === ''));
     assert.equal(requests.find(event=>event.port==='4400').path,'/ready');
     assert.deepEqual(result.events.filter(event => event.kind === 'timeout').map(event => event.ms).sort((a, b) => a - b),
-        [1000, 1000, 1000, 1000, 1000, 1000, 10000]);
-    await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+        [1000, 1000, 1000, 1000, 1000, 1000, 1000, 10000]);
+    assert.equal(await fs.readFile(path.join(f.checkout,'.run/project-snapshots/secrets/verifier-token'),'utf8'),'a'.repeat(64)+'\n');
+    await assert.rejects(fs.access(path.join(f.checkout, '.run/processes.json')), {code: 'ENOENT'});
 });
 
 for (const [mode, description] of [
@@ -145,8 +147,8 @@ for (const [mode, description] of [
         for (const label of ['Вход и сессии', 'Каталог', 'Флаги функций', 'Скиллы', 'Базы знаний', 'API']) {
             assert.match(result.stdout, new RegExp(label + '[^\\n]*готов'));
         }
-        assert.match(result.stderr, /Готово сервисов: 6\/7/);
-        await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+        assert.match(result.stderr, /Готово сервисов: 7\/8/);
+        await assert.rejects(fs.access(path.join(f.checkout, '.run/processes.json')), {code: 'ENOENT'});
     });
 }
 
@@ -155,7 +157,7 @@ test('Недоступный сервис остаётся заметен и с�
     assert.equal(result.status, 1);
     assert.match(result.stdout, /4300/);
     assert.match(result.stdout, /недоступ/);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
 });
 
 test('Логи читаются из LOGDIR с пробелами и показывают последние события', async t => {

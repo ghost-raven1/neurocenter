@@ -14,6 +14,7 @@ import type {ModelRuntime} from '../src/models/model-runtime';
 import type {IProjectReindexPlan} from '../src/models/project-reindex.types';
 import {RagDb,type IUpsertRow} from '../../rag-sync-service/src/rag/rag-db';
 import {indexSnapshotHash,rowFingerprint,ragRequestHash} from '../../shared/rag-index-contract.cjs';
+import {operationSchema} from './operation-schema.fixture';
 
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:async()=>()=>{}}));
 const connection=process.env.RAG_CONTRACT_TEST_PG_URL,request={} as Request;
@@ -47,7 +48,8 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
         const url=new URL(connection!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw Error('Only temporary localhost DB allowed');
         admin=new Client({connectionString:connection});await admin.connect();await admin.query(`CREATE DATABASE "${name}"`);created=true;url.pathname='/'+name;
         pool=new Pool({connectionString:url.toString(),max:12});rag=new RagDb({url:url.toString()});await rag.setup();
-        await pool.query(`CREATE TABLE projects(id TEXT PRIMARY KEY);CREATE TABLE model_catalog(id TEXT PRIMARY KEY,name TEXT,descriptor JSONB,revision INTEGER,created_at TIMESTAMPTZ DEFAULT now(),updated_at TIMESTAMPTZ DEFAULT now());CREATE TABLE project_models(project_id TEXT REFERENCES projects(id),model_id TEXT REFERENCES model_catalog(id),PRIMARY KEY(project_id,model_id));CREATE TABLE bridge_jobs(id UUID PRIMARY KEY,email TEXT,project_id TEXT,request_key UUID,state TEXT,message TEXT,percent INTEGER,payload JSONB,UNIQUE(project_id,request_key));`);
+        await pool.query(`CREATE TABLE projects(id TEXT PRIMARY KEY);CREATE TABLE model_catalog(id TEXT PRIMARY KEY,name TEXT,descriptor JSONB,revision INTEGER,created_at TIMESTAMPTZ DEFAULT now(),updated_at TIMESTAMPTZ DEFAULT now());CREATE TABLE project_models(project_id TEXT REFERENCES projects(id),model_id TEXT REFERENCES model_catalog(id),PRIMARY KEY(project_id,model_id));CREATE TABLE bridge_jobs(id TEXT PRIMARY KEY,email TEXT,project_id TEXT,request_key UUID,state TEXT,message TEXT,percent INTEGER,payload JSONB,UNIQUE(project_id,request_key));`);
+        await operationSchema(pool);
         await pool.query('INSERT INTO model_catalog(id,name,descriptor,revision) VALUES($1,$2,$3,1),($4,$5,$6,1)',[modelId,'Three',descriptor(3),nextId,'Five',descriptor(5)]);
         await setupModelHistory(pool);await setupSecurityEvents(pool);repo=new ProjectEmbeddingRepository(pool);await repo.setup();
         models={pool,ready:async()=>{},actor:async()=>({email:'admin@example.test',activeRole:'Главный админ'}),resolveProject:async(_request:unknown,id:string)=>{if(deny)throw new ForbiddenException();if(!(await pool.query('SELECT id FROM projects WHERE id=$1',[id])).rowCount)throw Error('Project missing');return{id};},isAssigned:async(project:string,id:string)=>!!(await pool.query('SELECT 1 FROM project_models WHERE project_id=$1 AND model_id=$2',[project,id])).rowCount,getPinned:async(id:string,pin:string)=>readPinnedModel(pool,id,pin)} as unknown as ModelsService;

@@ -1,5 +1,4 @@
 import type {
-    IImageVersion,
     IProjectDetail,
     IProjectSummary,
 } from '../../core/api/interfaces';
@@ -31,8 +30,4 @@ export interface IProjectsState {
     selectedRequestId: string | null;
     selectedError: IProjectLoadError | null;
 
-    versions: IImageVersion[];
-    versionsLoading: boolean;
-    versionsProjectId: string | null;
-    versionsRequestId: string | null;
 }

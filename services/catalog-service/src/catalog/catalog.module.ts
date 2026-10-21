@@ -1,4 +1,15 @@
+import {OperationActionsController} from '../operations/operation-actions.controller';
+import {OperationActionsService} from '../operations/operation-actions.service';
+import {SnapshotVerifierController} from '../snapshots/snapshot-verifier.controller';
+import {LegacyRetirementController} from '../asset-sources/legacy-retirement.controller';
+import {LegacyRetirementService} from '../asset-sources/legacy-retirement.service';
+import {SnapshotService} from '../snapshots/snapshot.service';
+import {ProjectSnapshotsController} from '../snapshots/snapshot.controller';
+import {RestoreController,RestoreRunnerController} from '../restore/restore.controller';
+import {RestoreService} from '../restore/restore.service';
 import {SourceUploadController} from '../source-upload/source-upload.controller';
+import {RetiredRagController} from '../retired-rag/retired-rag.controller';
+import {RetiredRagService} from '../retired-rag/retired-rag.service';
 import {SourceUploadService} from '../source-upload/source-upload.service';
 import {HostedRagGrantService} from '../models/hosted-rag-grant.service';
 import { ModelBundleRuntime } from '../models/model-bundle-runtime';
@@ -51,5 +62,5 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * Модуль каталога: проекты — PG-backed (БД `catalog`), остальное — mock.
  */
-@Module({ controllers: [SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
+@Module({ controllers: [SnapshotVerifierController,LegacyRetirementController,ProjectSnapshotsController,RetiredRagController,RestoreController,RestoreRunnerController,OperationActionsController,SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [LegacyRetirementService,SnapshotService,RetiredRagService,RestoreService,OperationActionsService,SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,useFactory:()=>new OllamaClient()}], exports:[CatalogService] })
 export class CatalogModule {}

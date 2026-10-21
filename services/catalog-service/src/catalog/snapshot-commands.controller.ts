@@ -1,29 +1,25 @@
-import { Controller, Delete, NotImplementedException, Param, Post } from '@nestjs/common';
+import {Body,Controller,Delete,Param,Post,Req} from '@nestjs/common';
+import type {Request} from 'express';
+import {SnapshotService} from '../snapshots/snapshot.service';
+import type {SnapshotCommand,SnapshotHead,SnapshotProfileInput} from '../snapshots/snapshot-types';
 
-/** Команды снимков отделены от каталога; до реализации хранилища они возвращают явный отказ. */
+/** Real verified images, exact CAS and durable command receipts. */
 @Controller('api/projects/:id')
 export class SnapshotCommandsController {
-    /** Активация требует проверенного снимка и атомарного CAS. */
-    @Post('versions/:sid/activate')
-    public activateHead(@Param('id') _id: string, @Param('sid') _sid: string): never {
-        throw new NotImplementedException('Активация снимка пока недоступна. Текущая версия не изменена.');
+    constructor(private readonly snapshots:SnapshotService){}
+    @Post('versions/:sid/activate') activateHead(@Req() req:Request,@Param('id') id:string,@Param('sid') sid:string,@Body() body:SnapshotCommand&SnapshotHead){
+        return this.snapshots.commands.move(id,sid,this.snapshots.actor(req),body,'activate');
     }
-
-    /** Откат нельзя считать успешным без изменения сохранённого head. */
-    @Post('versions/:sid/rollback')
-    public rollbackHead(@Param('id') _id: string, @Param('sid') _sid: string): never {
-        throw new NotImplementedException('Откат снимка пока недоступен. Текущая версия не изменена.');
+    @Post('versions/:sid/rollback') rollbackHead(@Req() req:Request,@Param('id') id:string,@Param('sid') sid:string,@Body() body:SnapshotCommand&SnapshotHead){
+        return this.snapshots.commands.move(id,sid,this.snapshots.actor(req),body,'rollback');
     }
-
-    /** Удаление требует реального tombstone и процедуры очистки. */
-    @Delete('versions/:sid')
-    public deleteSnapshot(@Param('id') _id: string, @Param('sid') _sid: string): never {
-        throw new NotImplementedException('Удаление снимка пока недоступно. Данные не изменены.');
+    @Delete('versions/:sid') deleteSnapshot(@Req() req:Request,@Param('id') id:string,@Param('sid') sid:string,@Body() body:SnapshotCommand&{expectedManifest:string|null;gracePeriodHours?:number}){
+        return this.snapshots.commands.remove(id,sid,this.snapshots.actor(req),body);
     }
-
-    /** Публикация профиля требует сохранения версий и проверки связанных активов. */
-    @Post('release-profile')
-    public releaseProfile(@Param('id') _id: string): never {
-        throw new NotImplementedException('Публикация релизного профиля пока недоступна. Профиль не изменён.');
+    @Post('versions/:sid/cancel') cancelSnapshot(@Req() req:Request,@Param('id') id:string,@Param('sid') sid:string,@Body() body:SnapshotCommand){
+        return this.snapshots.commands.cancel(id,sid,this.snapshots.actor(req),body);
+    }
+    @Post('release-profile') releaseProfile(@Req() req:Request,@Param('id') id:string,@Body() body:SnapshotProfileInput){
+        return this.snapshots.commands.release(id,this.snapshots.actor(req),body);
     }
 }

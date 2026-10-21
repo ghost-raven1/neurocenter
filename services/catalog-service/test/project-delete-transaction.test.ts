@@ -19,6 +19,8 @@ function fixture() {
             operations.push(...transaction?.operations??[]);transaction?.unlock?.();return {rows:[]};
         }
         if(sql==='ROLLBACK'){transaction?.unlock?.();return {rows:[]};}
+        if(sql.includes('pg_advisory_xact_lock')||sql.includes('to_regclass'))return {rows:[]};
+        if(sql.startsWith('INSERT INTO project_retirements'))return {rows:[],rowCount:1};
         if(sql.startsWith('SELECT')&&sql.includes('FROM projects')) {
             if(transaction&&sql.includes('FOR UPDATE')) {
                 const previous=lock;lock=new Promise(resolve=>{transaction.unlock=resolve;});await previous;
@@ -61,7 +63,7 @@ describe('Транзакционное удаление проекта и жур
         const f=fixture();expect(await f.db.deleteProject(project.name,'operator@example.test')).toBe(true);
         expect(f.present()).toBe(false);expect(f.operations).toHaveLength(1);
         expect(f.operations[0]).toEqual([expect.stringMatching(/^op-/),project.id,'operator@example.test',`Удаление проекта «${project.name}»`]);
-        expect(f.calls.find(([sql])=>sql.startsWith('SELECT'))?.[0]).toContain('FOR UPDATE');
+        expect(f.calls.find(([sql])=>sql.includes('FROM projects')&&sql.includes('FOR UPDATE'))?.[0]).toContain('FOR UPDATE');
         expect(f.calls.find(([sql])=>sql.startsWith('DELETE'))?.[1]).toEqual([project.id]);
         expect(f.calls.at(-1)?.[0]).toBe('COMMIT');expect(f.release).toHaveBeenCalledOnce();
     });

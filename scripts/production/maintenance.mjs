@@ -7,6 +7,7 @@ import {composeClient,containers,docker,repositoryRoot,saveDiagnostic} from './c
 import {backupProduction} from './recovery.mjs';
 import {verifyBackup} from './recovery-manifest.mjs';
 import {uploadExternalBackup,externalBackupConfiguration} from './external-backup.mjs';
+import {reserveRestoreSource} from './restore-reservations.mjs';
 import {validateMaintenancePolicy,dueMaintenanceRun} from '../../services/shared/maintenance-policy.cjs';
 
 const quote=value=>"'"+String(value).replace(/'/g,"''")+"'";
@@ -85,7 +86,10 @@ export async function runnerLedger(directory,backupRoot){
             for(const {file,value} of verified.slice(keep)){
                 let info;try{info=await lstat(value.source);}catch(error){if(error.code==='ENOENT'){continue;}throw error;}
                 if(!info.isDirectory()||info.isSymbolicLink()){throw new Error('Комплект для очистки изменён');}
-                await verifyBackup(value.source,value.sha256);await rm(value.source,{recursive:true});await rm(file);
+                const release=await reserveRestoreSource(backupRoot,value.source,'retention-'+randomUUID());
+                if(!release)continue;
+                try{await verifyBackup(value.source,value.sha256);await rm(value.source,{recursive:true});await rm(file);}
+                finally{await release();}
             }
         }};
 }

@@ -4,7 +4,7 @@ import type {IOperation} from '../src/core/api/interfaces';
 import type {IUserInfo} from '../src/core/interfaces';
 
 const operation={resourceType:'bridge',resourceId:'12345678-1234-1234-1234-123456789abc',actor:'owner@example.test',state:'QUEUED',
-    bridgeJob:{kind:'install',retrySupported:true,minimumLevel:2}} as IOperation;
+    bridgeJob:{kind:'install',retrySupported:true,minimumLevel:2},actions:{executor:'bridge',digest:'a'.repeat(64),retry:{supported:true},cancel:{supported:true}}} as IOperation;
 describe('Управление реальной очередью MCP из журнала',()=>{
     it('Позволяет отменить только ещё не начатое личное задание',()=>{expect(operationActions(operation,operation.actor,true)).toEqual({cancel:true,retry:false,reopenKnowledge:false});expect(operationActions({...operation,state:'RUNNING'},operation.actor,true)).toEqual({cancel:false,retry:false,reopenKnowledge:false});});
     it.each(['FAILED','CANCELLED'])('Повтор доступен для состояния %s при наличии права записи',state=>{expect(operationActions({...operation,state} as IOperation,operation.actor,true).retry).toBe(true);expect(operationActions({...operation,state} as IOperation,operation.actor,false).retry).toBe(false);});

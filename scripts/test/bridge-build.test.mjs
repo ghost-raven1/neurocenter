@@ -11,6 +11,7 @@ const bridge = fileURLToPath(new URL('../../mcp/neurocenter-asset-sync/', import
 const shared = fileURLToPath(new URL('../../services/shared/runtime-artifacts.cjs', import.meta.url));
 const ragContract = fileURLToPath(new URL('../../services/shared/rag-index-contract.cjs', import.meta.url));
 const ragUiContract = fileURLToPath(new URL('../../services/shared/rag-ui-contract.cjs', import.meta.url));
+const snapshotContract = fileURLToPath(new URL('../../services/shared/project-snapshot.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function fixture(source) {
@@ -21,6 +22,7 @@ async function fixture(source) {
     await fs.copyFile(shared, path.join(workspace, 'services/shared/runtime-artifacts.cjs'));
     await fs.copyFile(ragContract, path.join(workspace, 'services/shared/rag-index-contract.cjs'));
     await fs.copyFile(ragUiContract, path.join(workspace, 'services/shared/rag-ui-contract.cjs'));
+    await fs.copyFile(snapshotContract, path.join(workspace, 'services/shared/project-snapshot.cjs'));
     await fs.copyFile(path.join(bridge, '../../services/shared/opencode-model-scan.cjs'), path.join(workspace, 'services/shared/opencode-model-scan.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
@@ -39,6 +41,7 @@ test('Чистая сборка убирает удалённый инструм
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/runtime-artifacts.cjs'), 'utf8'), await fs.readFile(shared, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/rag-index-contract.cjs'), 'utf8'), await fs.readFile(ragContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/rag-ui-contract.cjs'), 'utf8'), await fs.readFile(ragUiContract, 'utf8'));
+    assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-snapshot.cjs'), 'utf8'), await fs.readFile(snapshotContract, 'utf8'));
 });
 test('Ошибка компиляции сохраняет предыдущую рабочую сборку', async () => {
     const f = await fixture('export const value: number = "ошибка";'); assert.notEqual(f.run().status, 0);

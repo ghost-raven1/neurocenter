@@ -21,21 +21,3 @@ export const fetchOperations = createAsyncThunk(
 export const fetchOperation = createAsyncThunk('operations/fetchOperation', async (operationId: string) =>
     bffApi.getOperation(operationId),
 );
-
-/**
- * Повторить операцию.
- *
- * @param {string} operationId
- */
-export const retryOperation = createAsyncThunk('operations/retryOperation', async (operationId: string) =>
-    bffApi.retryOperation(operationId),
-);
-
-/**
- * Отменить операцию.
- *
- * @param {string} operationId
- */
-export const cancelOperation = createAsyncThunk('operations/cancelOperation', async (operationId: string) =>
-    bffApi.cancelOperation(operationId),
-);

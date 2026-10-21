@@ -8,6 +8,7 @@ export interface IStoredEntry {
     isDir: boolean;
 }
 export interface ISkillChange {path:string;next:ISkillFile|null;}
+export interface ISkillSourceReceipt {version:number;sha256:string;bytes:number;resources:Array<{path:string;sha256:string;bytes:number}>;}
 
 /**
  * Абстракция хранилища скиллов. POSIX-том в production, локальная директория в dev.
@@ -19,6 +20,7 @@ export interface ISkillsStorage {
     isEmpty(): Promise<boolean>;
     existsSkill(skillPath: string): Promise<boolean>;
     readSkill(skillPath: string, version?: number): Promise<ISkillFile>;
+    sourceReceipt?(skillPath:string,version?:number):Promise<ISkillSourceReceipt>;
     createSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext): Promise<boolean>;
     writeSkill(skillPath: string, meta: ISkillMeta, body: string, resources?: ISkillResource[], context?: ISkillMutationContext, expected?: ISkillFile): Promise<void>;
     applySkillChanges(changes:ISkillChange[], context?: ISkillMutationContext):Promise<void>;

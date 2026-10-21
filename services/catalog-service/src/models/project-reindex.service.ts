@@ -12,6 +12,7 @@ import { ProjectRagCoordinator } from './project-rag-coordinator';
 import type { IReindexRow, IProjectReindexPlan, IGenerationReceipt } from './project-reindex.types';
 import {DeviceJobs} from '../devices/device-jobs';
 import {requireFeatureEnabled} from '../features/require-feature-enabled';
+import {setupProjectReindexOperations} from '../operations/project-reindex-operations';
 
 const sha=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -35,6 +36,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
             ALTER TABLE project_reindex_plans ADD COLUMN IF NOT EXISTS connection_error TEXT;
             ALTER TABLE project_reindex_plans ADD COLUMN IF NOT EXISTS connection_request_key UUID;
             UPDATE project_reindex_plans SET connection_request_key=id WHERE connection_request_key IS NULL`);
+        await setupProjectReindexOperations(this.models.pool);
         this.timer=setInterval(()=>{this.launch();},3000);this.timer.unref();
     }
     async onModuleDestroy():Promise<void>{if(this.timer)clearInterval(this.timer);await Promise.allSettled([...this.tasks]);}

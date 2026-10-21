@@ -1,4 +1,6 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, GoneException, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, GoneException, NotFoundException, Optional, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import type {Request} from 'express';
+import {OperationActionsService} from '../operations/operation-actions.service';
 
 
 import {
@@ -10,7 +12,6 @@ import {
     IAiPluginUpdate,
     IProjectDetail,
     IProjectAsset,
-    IProjectProfile,
     IQuota,
     ISkill,
     ISkillCollection,
@@ -20,23 +21,18 @@ import {
     IPackageDetail,
     IProjectSummary,
     IAuditEvent,
-    IImageVersion,
     IProjectMember,
     IProjectMemberAdd,
-    ISnapshotManifest,
 } from './dto';
 import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
 import {
-    MANIFEST,
     PACKAGE_COLLECTIONS,
     PACKAGE_DETAILS,
     PACKAGES,
-    PROFILES,
     SKILLS,
     SKILL_COLLECTIONS,
     SKILL_DETAILS,
-    VERSIONS,
     toPage,
 } from './data';
 import { CatalogService } from './catalog.service';
@@ -58,7 +54,7 @@ interface IHttpRequest {
 
 @Controller('api')
 export class CatalogController {
-    constructor(private readonly catalog: CatalogService, private readonly access: AccessDb) {
+    constructor(private readonly catalog: CatalogService, private readonly access: AccessDb,@Optional() private readonly operationActions?:OperationActionsService) {
     }
     /**
      * Список проектов.
@@ -450,42 +446,6 @@ export class CatalogController {
     }
 
     /**
-     * Версии (snapshots) проекта.
-     *
-     * @param {string} id - id проекта
-     * @returns {IImageVersion[]}
-     */
-    @Get('projects/:id/versions')
-    public listVersions(@Param('id') id: string): IImageVersion[] {
-        return VERSIONS[id] ?? [];
-    }
-
-    /**
-     * Манифест снимка.
-     *
-     * @param {string} id - id проекта
-     * @param {string} sid - snapshotId
-     * @returns {ISnapshotManifest}
-     */
-    @Get('projects/:id/versions/:sid/manifest')
-    public getManifest(@Param('id') id: string, @Param('sid') sid: string): ISnapshotManifest {
-        void id;
-
-        return { ...MANIFEST, snapshotId: sid };
-    }
-
-    /**
-     * Профили проекта.
-     *
-     * @param {string} id - id проекта
-     * @returns {IProjectProfile[]}
-     */
-    @Get('projects/:id/profiles')
-    public listProfiles(@Param('id') id: string): IProjectProfile[] {
-        return PROFILES[id] ?? [];
-    }
-
-    /**
      * Коллекции скиллов.
      *
      * @returns {ISkillCollection[]}
@@ -565,7 +525,8 @@ export class CatalogController {
         // Фронт (OperationListParams) шлёт `projectId`; `project` — legacy.
         const project = query.projectId ?? query.project;
         const {page,size}=pagination(query);
-        return this.catalog.listOperations(page,size, project, query.state, await this.operationReadScope(req));
+        const result=await this.catalog.listOperations(page,size, project, query.state, await this.operationReadScope(req));
+        return this.operationActions?this.operationActions.decoratePage(req as Request,result):result;
     }
 
     /**
@@ -576,29 +537,8 @@ export class CatalogController {
      */
     @Get('operations/:operationId')
     public async getOperation(@Param('operationId') operationId: string, @Req() req: IHttpRequest) {
-        return this.catalog.getOperation(operationId, await this.operationReadScope(req));
-    }
-
-    /**
-     * Повтор операции (реальный, PG: → RUNNING, retries+1).
-     *
-     * @param {string} operationId - id операции
-     * @returns {Promise<unknown>}
-     */
-    @Post('operations/:operationId/retry')
-    public retryOperation(@Param('operationId') operationId: string) {
-        return this.catalog.retryOperation(operationId);
-    }
-
-    /**
-     * Отмена операции (реальный, PG: → CANCELLED).
-     *
-     * @param {string} operationId - id операции
-     * @returns {Promise<unknown>}
-     */
-    @Post('operations/:operationId/cancel')
-    public cancelOperation(@Param('operationId') operationId: string) {
-        return this.catalog.cancelOperation(operationId);
+        const result=await this.catalog.getOperation(operationId, await this.operationReadScope(req));
+        return this.operationActions?this.operationActions.decorate(req as Request,result):result;
     }
 
     /**
@@ -636,19 +576,6 @@ export class CatalogController {
     @Post('maintenance/backup')
     public backupNow(): Promise<IBackupRunResult> {
         return this.catalog.executeBackup();
-    }
-
-    /**
-     * Восстановление из checkpoint.
-     *
-     * @param {{ checkpointId: string }} body
-     * @returns {{ operationId: string }}
-     */
-    @Post('maintenance/restore')
-    public restore(@Body() body: { checkpointId: string }): Promise<{ operationId: string }> {
-        void body;
-
-        return this.catalog.restore();
     }
 
     /**

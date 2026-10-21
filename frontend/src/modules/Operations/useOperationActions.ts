@@ -3,7 +3,7 @@ import { createElement, useId, useLayoutEffect, useMemo, useRef, useState } from
 import { useSelector, useStore } from 'react-redux';
 
 import type { IOperation } from '../../core/api/interfaces';
-import { bridgeApi } from '../../features/McpBridge/api';
+import bffApi from '../../core/api/bff';
 import type { RootState } from '../../store';
 
 import { operationActionScope } from './operationActions';
@@ -26,16 +26,16 @@ export function useOperationActions({ reload, enabled = true }: IOperationAction
 
     const controller = useMemo(() => createOperationActionsController({
         getUser: () => store.getState().userBlock.user,
-        retry: bridgeApi.retry,
-        cancel: bridgeApi.cancel,
+        retry: bffApi.retryOperation,
+        cancel: bffApi.cancelOperation,
         reload: () => reloadRef.current(),
-        confirmCancel: (onOk, onCancel) => {
+        confirmCancel: (onOk, onCancel,operation) => {
             const titleId = `${cancelTitleId}-${++cancelSequence.current}`;
             return Modal.confirm({
                 title: createElement('span', { id: titleId, ref: (element: HTMLSpanElement | null): void => {
                     element?.closest('[role="dialog"]')?.setAttribute('aria-labelledby', titleId);
                 } }, 'Отменить задание в очереди?'),
-                content: 'Отмена доступна, пока мост не начал работу. Уже выполняющееся задание остановить здесь нельзя.',
+                content: operation.actions?.executor==='rag-reindex'?'Переиндексация будет остановлена. Прежнее активное поколение сохранится.':'Отмена доступна, пока мост не начал работу. Уже выполняющееся задание остановить здесь нельзя.',
                 okText: 'Отменить задание',
                 cancelText: 'Вернуться',
                 okButtonProps: { danger: true },

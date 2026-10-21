@@ -4,6 +4,7 @@ import { SKILLS_STORAGE } from '../storage/skills-storage.interface';
 import type { ISkillsStorage } from '../storage/skills-storage.interface';
 import { skillPath as validatePath, validateSkillCreate, skillDependencyPins,assertSkillDependencyReplacement } from './skill-validation';
 import { randomUUID } from 'node:crypto';
+import {inspectLegacySkill,retireLegacySkill,type ILegacySkillExpected} from './legacy-retirement';
 import { validateResources } from './skill-resources';
 import {syncProjectSkills} from './skill-sync';
 import { archiveImportedSkill, importedSkillInput, importedSkillPayloadHash, importedSkillSnapshot, publishImportedSkill, skillCreateFromFile, type ISkillImportExpected } from './asset-import';
@@ -156,6 +157,8 @@ export class SkillsService implements OnApplicationBootstrap {
     }
 
     public async archivedAssetSkills(): Promise<ISkillListSummary[]> { return (await this.walk('common')).filter(file=>!!file.meta.archivedAt); }
+    public inspectLegacySkill(id:string){return inspectLegacySkill(this.storage,id);}
+    public retireLegacySkill(id:string,expected:ILegacySkillExpected,actor:string,requestKey:string){return this.withWriteLock(id,()=>retireLegacySkill(this.storage,id,expected,actor,requestKey));}
 
     /**
      * Обновление скилла: тело и/или метаданные, с бампом версии и записью в историю.

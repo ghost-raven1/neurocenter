@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException, NotImplementedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException } from '@nestjs/common';
 
 import { CatalogDb } from './catalog-db';
 import { IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginFile, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, ILocalProjectsImportResult, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
@@ -388,13 +388,6 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
-     * Восстановление пока не реализовано: не создаём фиктивную успешную операцию.
-     */
-    async restore(): Promise<{ operationId: string }> {
-        throw new NotImplementedException('Восстановление резервной копии пока недоступно. Данные не изменены.');
-    }
-
-    /**
      * Список MCP/плагинов.
      *
      * @param page - страница.
@@ -589,25 +582,4 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         return found;
     }
 
-    /**
-     * Повтор операции (→ RUNNING, retries+1).
-     *
-     * @param operationId - id операции.
-     * @returns {Promise<IOperationDetail>}
-     */
-    async retryOperation(operationId: string): Promise<IOperationDetail> {
-        await this.getOperation(operationId);
-        throw new NotImplementedException('Повтор выполняется через очередь MCP или исходное действие. Статус журнала не изменён.');
-    }
-
-    /**
-     * Отмена операции (→ CANCELLED).
-     *
-     * @param operationId - id операции.
-     * @returns {Promise<IOperationDetail>}
-     */
-    async cancelOperation(operationId: string): Promise<IOperationDetail> {
-        await this.getOperation(operationId);
-        throw new NotImplementedException('Отмена должна остановить реальное задание. Используйте очередь MCP; статус журнала не изменён.');
-    }
 }

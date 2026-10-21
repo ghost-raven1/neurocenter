@@ -10,6 +10,7 @@
     "assets:hooks": "node scripts/assets/setup.mjs --hooks-only",
     "assets:sync": "node scripts/assets/cli.mjs",
     "assets:verify": "node scripts/assets/cli.mjs --verify-only",
+    "assets:retire-legacy": "node scripts/assets/retire-legacy.mjs",
     "update": "node scripts/assets/update.mjs",
     "compose:install": "node scripts/install-compose.mjs",
     "models:prepare": "node scripts/models/bundle-cli.mjs",

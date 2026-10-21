@@ -122,7 +122,7 @@ async function checkedGet(store,key,size,sha256){
 export async function uploadExternalBackup({source,expectedHash,backupId,config=externalBackupConfiguration(),store=createExternalS3Store(config)}){
     validateInput({backupId,expectedHash});
     const manifest=await verifyBackup(source,expectedHash);
-    if(manifest.format!=='neurocenter-recovery-v2'){throw new Error('Внешняя доставка требует полный recovery-v2 комплект');}
+    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3'].includes(manifest.format)){throw new Error('Внешняя доставка требует полный recovery-v3 комплект (или исторический v2)');}
     const raw=await readFile(path.join(source,'manifest.json'));
     if(manifestDigest(raw)!==expectedHash){throw new Error('Опись изменилась после проверки');}
     let bytes=0,files=0;
@@ -152,7 +152,7 @@ export async function uploadExternalBackup({source,expectedHash,backupId,config=
 function safeRemoteManifest(raw,expectedHash){
     if(digest(raw)!==expectedHash){throw new Error('SHA256 внешней описи не совпадает с сохранённой квитанцией');}
     const manifest=validateManifest(JSON.parse(raw));
-    if(manifest.format!=='neurocenter-recovery-v2'){throw new Error('Нужен recovery-v2 комплект');}
+    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3'].includes(manifest.format)){throw new Error('Нужен recovery-v3 комплект (или исторический v2)');}
     const directories=new Set(manifest.entries.filter(item=>item.type==='directory').map(item=>item.path));
     for(const entry of manifest.entries){
         let parent=path.posix.dirname(entry.path);
@@ -208,7 +208,7 @@ async function main(){
     const options={'--source':'source','--destination':'destination','--backup-id':'backupId','--expect-sha256':'expectedHash'};
     for(let index=0;index<args.length;index+=2){const key=options[args[index]];if(!key||!args[index+1]||args[index+1].startsWith('--')||values[key]!==undefined){throw new Error('Неизвестный или незаполненный параметр внешней копии');}values[key]=args[index+1];}
     const action=mode==='upload'?uploadExternalBackup:mode==='download'?downloadExternalBackup:null;
-    if(!action){throw new Error('Команды: upload --source <recovery-v2> | download --destination <новый каталог>; обязательны --backup-id и --expect-sha256');}
+    if(!action){throw new Error('Команды: upload --source <recovery-v3> | download --destination <новый каталог>; обязательны --backup-id и --expect-sha256');}
     console.log(JSON.stringify(await action(values)));
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

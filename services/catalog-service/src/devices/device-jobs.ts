@@ -1,3 +1,4 @@
+import {projectSnapshotPayload,assertProjectSnapshotJob,SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import {
     BadRequestException,
     ConflictException,
@@ -28,6 +29,7 @@ import { projectLocalJobPayload, assertProjectLocalJob } from './project-local-j
 import { CONFIGURATION_KINDS } from './mcp-config-reports';
 import { mcpConfigurationJobPayload, assertMcpConfigurationJob } from './mcp-config-jobs';
 import { authorizeMcpConfigurationSave } from './mcp-config-permit';
+import {reconcileSnapshotJobs} from './project-snapshot-completion';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
@@ -104,6 +106,7 @@ export class DeviceJobs {
             !input ||
             ![
                 'choose-root',
+                SNAPSHOT_JOB_KIND,
                 ...PROJECT_LOCAL_KINDS,
                 ...CONFIGURATION_KINDS,
                 'bind-project',
@@ -157,11 +160,13 @@ export class DeviceJobs {
             const bindingId=managedBinding(device.report,input.projectId); assertExpectedBinding(bindingId,input.expectedBindingId,true);
             payload={bindingId};
         }
+        const snapshot=await projectSnapshotPayload(this.store,device,input);
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
         const configuration=await mcpConfigurationJobPayload(this.store,this.installations,this.plans,device,input);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(hostedRag){payload=hostedRag;}
+        if(snapshot){payload=snapshot;}
+        else if(hostedRag){payload=hostedRag;}
         else if(ragUi){payload=ragUi;}
         else if(configuration){payload=configuration;}
         else if (projectLocal) { payload=projectLocal; }
@@ -241,6 +246,7 @@ export class DeviceJobs {
         ).rows;
     }
     private async expire() {
+        await reconcileSnapshotJobs(this.store.pool);
         await transitionDeviceJobs(this.store.pool,
             "UPDATE bridge_jobs SET state='reconciling',message='Мост потерял соединение. Ожидаем сверку сохранённого локального результата.',updated_at=now() WHERE state='running' AND lease_until<now() RETURNING *",
             [],{state:'RUNNING',message:'Ожидает сверки после потери соединения моста.'},
@@ -285,7 +291,8 @@ export class DeviceJobs {
         try {
             assertManagedBridge(device.report);
             if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
-            await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
+            if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
+        await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
             await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
@@ -338,6 +345,7 @@ export class DeviceJobs {
         }
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
         if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
+        if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
@@ -362,7 +370,7 @@ export class DeviceJobs {
             throw new ConflictException('Привязка папки изменилась после отправки задания. Повторите действие для актуальной папки.');
         }
         await registerHostedRagGrant(this.store.pool,device,job,lease,()=>assertHostedRagJob(this.embedding,this.installations,this.plans,device,job));
-        return { ok: true, projectId: job.project_id, role: job.role };
+        return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
     async authorizeConfiguration(device:Device,input:unknown){
         return authorizeMcpConfigurationSave(this.store,this.installations,this.plans,device,input,

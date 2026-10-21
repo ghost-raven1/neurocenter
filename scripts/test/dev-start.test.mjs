@@ -41,11 +41,11 @@ async function fixture(t, mode) {
     });
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs',
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs',
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
-    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    for(const directory of ['models','embedding','vision','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     await fs.mkdir(path.join(checkout,'scripts/assets'));
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
@@ -66,6 +66,8 @@ async function fixture(t, mode) {
         if(args.join(' ')==='--version')console.log('Docker version 28.0.0');
         else if(args.join(' ')==='compose version --short')console.log('2.40.3');
         else if(args.join(' ')==='compose up --help')console.log('--wait --wait-timeout');
+        else if(args[0]==='build')console.log('fixture verifier image built');
+        else if(args[0]==='image'&&args[1]==='inspect')console.log('sha256:'+'b'.repeat(64));
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
@@ -97,6 +99,14 @@ async function fixture(t, mode) {
             setInterval(()=>{},1000);
         `);
     }
+    await fs.writeFile(path.join(checkout,'scripts/snapshots/runner.mjs'),`
+        import fs from 'node:fs';
+        const calls=${JSON.stringify(calls)},service='snapshot-verifier';
+        const record=value=>fs.appendFileSync(calls,JSON.stringify(value)+'\\n');
+        record({kind:'child-start',service,pid:process.pid,entry:process.argv[1]});
+        process.on('SIGTERM',()=>{record({kind:'child-stop',service,pid:process.pid});process.exit(0);});
+        setInterval(()=>{},1000);
+    `);
     await fs.mkdir(path.join(checkout,'services/catalog-service/node_modules/pg'),{recursive:true});
     await fs.writeFile(path.join(checkout,'services/catalog-service/node_modules/pg/index.js'),`
         const fs=require('node:fs');
@@ -247,7 +257,7 @@ test('Полный запуск готовит файлы, сохраняя вы
         if (error.code === 'ENOENT') return ''; throw error;
     }), state);
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 0);
-    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 8);
     assert.ok(result.events.some(event => event.kind === 'health-start'));
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
 });
@@ -273,7 +283,7 @@ test('Ошибка Docker хостинга объясняется и допус�
     assert.match(result.stdout,/model-hosting/);
     assert.doesNotMatch(result.stdout+result.stderr,/PRIVATE/);
     assert.equal(result.events.filter(event=>event.kind==='catalog-sync').length,0);
-    assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
 });
 
 test('Отмена зависшего хостинга завершает ожидание и сохраняет прежний стек',async t=>{
@@ -312,9 +322,9 @@ for(const [mode,code] of [['native-cancel-int',130],['native-cancel-term',143]])
         assert.equal(result.code,code,result.stdout+result.stderr);
         assert.match(result.stderr,/Запуск сервисов прерван/);
         assert.doesNotMatch(result.stdout,/Готов к работе/);
-        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
         for(const child of result.events.filter(event=>event.kind==='child-spawn'))assert.equal(child.modelKeyFile,child.entry.includes('/services/catalog-service/')?path.join(f.checkout,'.run/model-credentials/secrets/model_credential_key'):null);
-        assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,7);
+        assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,8);
         await assert.rejects(fs.access(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
     });
 }
@@ -340,7 +350,7 @@ test('Dev key mismatch preserves old process state and stops before key generati
 
 test('Dev operator master key reaches only catalog, never frontend or unrelated children',async t=>{
     const f=await fixture(t,'profile-ready-external'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);
-    const children=result.events.filter(event=>event.kind==='child-spawn');assert.equal(children.length,7);
+    const children=result.events.filter(event=>event.kind==='child-spawn');assert.equal(children.length,8);
     for(const child of children){assert.equal(child.modelKeyInline,child.entry.includes('/services/catalog-service/'));assert.equal(child.modelKeyFile,null);}
     await assert.rejects(fs.stat(path.join(f.checkout,'.run/model-credentials')),{code:'ENOENT'});
     assert.doesNotMatch(result.stdout+result.stderr,/ERERERER/);
@@ -359,11 +369,11 @@ test('Занятый порт объясняется до запуска сер�
 });
 
 for(const profile of ['fast','standard','full']) {
-    test(`Профиль ${profile} действительно выбирает поставку и запускает семь сервисов`,async t=>{
+    test(`Профиль ${profile} действительно выбирает поставку и запускает семь приложений и verifier`,async t=>{
         const f=await fixture(t,'profile-ready'),result=await f.run('--profile',profile);
         assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);
         assert.match(result.stdout,new RegExp(`Профиль запуска: ${profile}`));
-        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,7);
+        assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
         assert.equal(result.events.filter(event=>event.kind==='npm').length,9);
         assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,profile==='fast'?0:1);
         assert.equal(result.events.filter(event=>event.kind==='bridge-package').length,0);

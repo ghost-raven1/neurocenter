@@ -39,4 +39,5 @@ export interface JobInput {
     expectedEmbeddingRevision?: number;
     expectedEmbeddingPin?: string;
     reindex?:true;
+    snapshotId?:string;
 }

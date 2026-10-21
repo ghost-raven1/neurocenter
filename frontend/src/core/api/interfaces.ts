@@ -3,7 +3,6 @@
  */
 
 /** Статус снимка (snapshot). */
-export type TSnapshotStatus = 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING' | 'DELETED';
 
 /** Статус операции. */
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
@@ -97,6 +96,7 @@ export interface IProjectSummary {
     fsRootPath: string;
     state: TProjectState;
     head: { snapshotId: string; snapshotDate: string; author: string; headRevision: number } | null;
+    headRevision: number;
     logicalBytes: number | null;
     logicalSizeError?: string;
     retainedBytes: number | null;
@@ -136,70 +136,11 @@ export interface IProjectListParams {
     query?: string;
 }
 
-/** Сущность версии образа (snapshot). */
-export interface IImageVersion {
-    snapshotId: string;
-    storeId: string;
-    parentId: string | null;
-    status: TSnapshotStatus;
-    author: string;
-    createdAt: string;
-    bytes: number;
-    formatVersion: string;
-    isHead: boolean;
-    pinned: boolean;
-}
-
-/** Результат согласованного обновления head/profile. */
-export interface IHeadUpdateResult {
-    headId: string;
-    headRevision: number;
-}
-
-/** Параметры CAS-обновления head. */
-export interface IHeadUpdateParams {
-    expectedHeadId: string;
-    expectedHeadRevision: number;
-}
-
 /** Пин скилла в профиле. */
 export interface ISkillPin {
-    skillSlug: string;
-    skillId: string;
-    skillVersionId: string;
-}
-
-/** Параметры релизного профиля. */
-export interface IReleaseProfileParams {
-    snapshotId: string;
-    skillPins: ISkillPin[];
-    expectedProfileId?: string;
-    expectedProfileRevision?: number;
-    moveHead?: IHeadUpdateParams;
-}
-
-/** Результат выпуска профиля. */
-export interface IProfileReleaseResult {
-    profileId: string;
-    profileRevision: number;
-    head: IHeadUpdateResult | null;
-}
-
-/** Версия профиля (релизный профиль проекта). */
-export interface IProjectProfile {
-    profileId: string;
-    snapshotId: string;
-    revision: number;
-    isActive: boolean;
-    skillPins: ISkillPin[];
-}
-
-/** Манифест снимка. */
-export interface ISnapshotManifest {
-    snapshotId: string;
-    tables: { name: string; tableVersion: number }[];
-    files: { path: string; size: number; sha256: string }[];
-    signature: string;
+    id: string;
+    version: number;
+    manifest: string;
 }
 
 /** Запись истории изменений скилла. */
@@ -313,7 +254,13 @@ export interface IOperation {
     finishedAt: string | null;
     error: string | null;
     bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
+    actions?: {
+        executor: 'bridge'|'rag-reindex'|'model-hosting'|'tool-build'|'history'; digest: string;
+        retry: {supported:boolean;reason?:string}; cancel: {supported:boolean;reason?:string};
+    };
 }
+
+export interface IOperationActionResult {operationId:string;state:TOperationState;message:string;}
 
 /** Детали операции. */
 export interface IOperationDetail extends IOperation {

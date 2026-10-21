@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {reserveRestoreSource} from '../production/restore-reservations.mjs';
 import {maintenanceTick,externalStorageBinding,createMaintenanceStore,runnerLedger} from '../production/maintenance.mjs';
 import {mkdtemp,mkdir,writeFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -68,7 +69,9 @@ test('Retention другого места не удаляет локальные
             const {sha256}=await writeManifest(source,{createdAt,postgresMajor:16,postgresImage:image,images:Object.fromEntries(applicationServices.map(service=>[service,image])),quiesced:true,databases:['catalog','rag'].map(name=>({name,owner:name==='catalog'?'nc_catalog':'nc_rag',encoding:'UTF8',collate:'C',ctype:'C',file:'databases/'+name+'.dump'}))});
             const backupId='backup-'+index;await ledger.write(slot,{source,slot,sha256,createdAt,backupId,storageBinding:index<=2?oldBinding:newBinding,receipt:{ok:true,verification:'sha256-readback',manifestSha256:sha256,createdAt,verifiedAt:createdAt,storageId:index<=2?'old':'new',backupId,independence:'operator-declared'}});
         }
-        await ledger.prune(1,newBinding);assert.deepEqual((await readdir(backupRoot)).sort(),['nc-'+'1'.repeat(16),'nc-'+'2'.repeat(16),'nc-'+'4'.repeat(16)]);
+        const release=await reserveRestoreSource(ledger.backupRoot,path.join(ledger.backupRoot,'nc-'+'3'.repeat(16)),'active-restore');assert.ok(release);
+        await ledger.prune(1,newBinding);assert.deepEqual((await readdir(backupRoot)).filter(name=>name.startsWith('nc-')).sort(),['nc-'+'1'.repeat(16),'nc-'+'2'.repeat(16),'nc-'+'3'.repeat(16),'nc-'+'4'.repeat(16)]);
+        await release();await ledger.prune(1,newBinding);assert.deepEqual((await readdir(backupRoot)).sort(),['.restore-reservations','nc-'+'1'.repeat(16),'nc-'+'2'.repeat(16),'nc-'+'4'.repeat(16)]);assert.deepEqual(await readdir(path.join(backupRoot,'.restore-reservations')),[]);
     }finally{await rm(directory,{recursive:true,force:true});}
 });
 

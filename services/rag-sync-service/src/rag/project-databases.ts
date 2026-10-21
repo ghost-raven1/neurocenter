@@ -1,16 +1,15 @@
-import { NotFoundException,ServiceUnavailableException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConflictException,NotFoundException,ServiceUnavailableException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import {createPool} from '../database/pool';
 import { RagDb } from './rag-db';
 import {reserveCapacity,recordCapacityQueue} from '../../../shared/capacity.cjs';
+import {DatabaseLifecycle} from '../retired-databases/database-lifecycle';
+import {databaseLock,LIFECYCLE_LOCK} from '../retired-databases/lifecycle-schema';
+import {projectDatabaseName} from './project-database-name';
+export {projectDatabaseName} from './project-database-name';
 
 interface IProjectRef { id:string; name:string }
 interface ICacheEntry { db:RagDb; used:number; active:number }
-
-/** Имя БД зависит от постоянного ID проекта и не содержит пользовательского SQL. */
-export function projectDatabaseName(projectId:string):string {
-    return `nc_rag_${createHash('sha256').update(projectId).digest('hex').slice(0,32)}`;
-}
 
 /** Отдельные PostgreSQL-базы проектов с ограниченным числом открытых пулов. */
 @Injectable()
@@ -24,17 +23,16 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     private readonly migrated=new Set<string>();
     private readonly waiting:Array<()=>void>=[];
     private running=0;
+    constructor(private readonly lifecycle:DatabaseLifecycle){
+        lifecycle.setCacheCloser(async id=>{const entry=this.cache.get(id);if(!entry)return;if(entry.active)throw new ConflictException('База ещё используется.');this.cache.delete(id);await entry.db.close();});
+    }
 
     /** Проверяет оба рабочих подключения, не создавая проектных БД. */
     async ready():Promise<void>{await Promise.all([this.admin.query('SELECT 1'),this.provisioner.query('SELECT 1')]);}
 
     async onModuleInit():Promise<void> {
         await this.migrationSource.setup();
-        await this.admin.query(`CREATE TABLE IF NOT EXISTS neurocenter_project_databases (
-            project_id TEXT PRIMARY KEY, database_name TEXT NOT NULL UNIQUE,
-            migration_offset BIGINT NOT NULL DEFAULT 0, migrated BOOLEAN NOT NULL DEFAULT false,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )`);
+        await this.lifecycle.setup();
     }
     async onModuleDestroy():Promise<void> {
         await Promise.all([...this.cache.values()].map(item=>item.db.close()));
@@ -59,10 +57,12 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
         else { this.running++; }
         recordCapacityQueue('rag',this.waiting.length,this.running);
         let entry:ICacheEntry|undefined;
+        let releaseLease:(()=>Promise<void>)|undefined;
         try {
             const project=(await this.projects()).find(item=>item.id===key || !key.startsWith('prj-')&&item.name===key);
             if (!project) { throw new NotFoundException('Проект не найден в каталоге.'); }
             await this.ensure(project);
+            releaseLease=await this.lifecycle.lease(project.id);
             entry=this.cache.get(project.id);
             if (!entry) {
                 const url=new URL(this.baseUrl); url.pathname=`/${projectDatabaseName(project.id)}`;
@@ -76,9 +76,11 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
             if (entry) { entry.active--; }
             try { await this.trim(); }
             finally {
-                const next=this.waiting.shift();
-                if (next) { next(); } else { this.running--; }
-                recordCapacityQueue('rag',this.waiting.length,this.running);
+                try{await releaseLease?.();}finally{
+                    const next=this.waiting.shift();
+                    if (next) { next(); } else { this.running--; }
+                    recordCapacityQueue('rag',this.waiting.length,this.running);
+                }
             }
         }
     }
@@ -97,9 +99,12 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
         const database=projectDatabaseName(project.id);
         const client=await this.admin.connect();
         let target:RagDb|undefined;
-        let locked=false;let releaseCapacity=()=>{};
+        let locked=false,global=false;let releaseCapacity=()=>{};
         try {
-            await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))',[database]); locked=true;
+            await client.query('SELECT pg_advisory_lock_shared(hashtextextended($1,0))',[LIFECYCLE_LOCK]);global=true;
+            await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))',[databaseLock(database)]); locked=true;
+            const lifecycle=(await client.query('SELECT lifecycle_state FROM neurocenter_project_databases WHERE project_id=$1',[project.id])).rows[0];
+            if(lifecycle&&lifecycle.lifecycle_state!=='active')throw new ConflictException('Этот ID проекта уже выведен из эксплуатации.');
             const existing=await client.query('SELECT 1 FROM pg_database WHERE datname=$1',[database]);
             if (!existing.rowCount) {
                 const template=await client.query('SELECT pg_database_size($1)::float8 AS bytes',[process.env.NODE_ENV==='production'?'nc_rag_template':'template1']);
@@ -141,11 +146,10 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
             releaseCapacity();
             try { if (target) { await target.close(); } }
             finally {
-                if (locked) {
-                    try { await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[database]); }
-                    catch (error) { client.release(true); throw error; }
-                }
-                client.release();
+                let broken=false;
+                try{if(locked)await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[databaseLock(database)]);
+                    if(global)await client.query('SELECT pg_advisory_unlock_shared(hashtextextended($1,0))',[LIFECYCLE_LOCK]);}
+                catch(error){broken=true;throw error;}finally{client.release(broken);}
             }
         }
     }

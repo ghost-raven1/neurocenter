@@ -1,0 +1,14 @@
+# Operator opt-in: no Docker socket or host executor is mounted into the HTTP service.
+services:
+  catalog-service:
+    environment:
+      RESTORE_RUNNER_TOKEN_FILE: /run/secrets/restore_runner_token
+    secrets: [restore_runner_token]
+    ports:
+      - target: 4100
+        published: '${RESTORE_CONTROL_PORT:-44101}'
+        host_ip: 127.0.0.1
+        protocol: tcp
+secrets:
+  restore_runner_token:
+    file: ${NEUROCENTER_CONFIG_DIR:?Укажите закрытый production config}/secrets/restore_runner_token

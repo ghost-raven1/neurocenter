@@ -24,6 +24,7 @@ import {projectTabSearch} from './projectNavigation';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { ProjectSize } from './features/ProjectSize/ProjectSize';
+import { ProjectSnapshots } from '../../features/ProjectSnapshots/ProjectSnapshots';
 import './ProjectDetail.less';
 
 
@@ -31,7 +32,7 @@ const { Paragraph } = Typography;
 
 
 /** Ключи вкладок детальной страницы проекта — используются для deep-link «?tab=<key>». */
-const PROJECT_TAB_KEYS: string[] = ['overview', 'members', 'store', 'rag', 'quotas', 'backups', 'audit'];
+const PROJECT_TAB_KEYS: string[] = ['overview', 'members', 'store', 'rag', 'snapshots', 'quotas', 'backups', 'audit'];
 
 /**
  * Экран карточки проекта с вкладками (Обзор, RAG-индекс, Версии, Скиллы, MCP/Плагины, Передачи, Квоты, Аудит).
@@ -146,6 +147,7 @@ const ProjectDetail: FC = () => {
         { key: 'members', label: 'Сотрудники', children: <MembersTab project={selected} /> },
         { key: 'store', label: 'Каталог', children: <Store presetTarget={ selected.id } embedded /> },
         { key: 'rag', label: 'База знаний', children: <RagTab projectKey={selected.id} /> },
+        { key: 'snapshots', label: 'Снимки', children: <ProjectSnapshots key={selected.id} projectId={selected.id} onChanged={retryLoad} /> },
         { key: 'backups', label: 'Резервные копии', children: <ProjectBackups key={selected.id} projectKey={selected.id} /> },
         { key: 'quotas', label: 'Квоты', children: <RagQuotaPanel key={selected.id} projectKey={selected.id} /> },
         { key: 'audit', label: 'История', children: <OperationsQueue projectId={selected.id} /> },

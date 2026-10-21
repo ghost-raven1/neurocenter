@@ -19,6 +19,7 @@ const operation: IOperation = {
     percent: 0, bytesDone: 0, bytesTotal: 0, startedAt: null, finishedAt: null,
     error: 'Синхронизация требует проверки плана в MCP. Изменения не подтверждены.',
     bridgeJob: { kind: 'sync-rag', retrySupported: true, minimumLevel: 2 },
+    actions:{executor:'bridge',digest:'a'.repeat(64),retry:{supported:true},cancel:{supported:false}},
 };
 const actions = { isBusy: () => false, retry: vi.fn(), cancel: vi.fn() };
 
@@ -30,7 +31,7 @@ describe('Выход из предварительного плана прежн
         expect(html).toContain('Открыть базу знаний');
         expect(html).toContain('Прежний мост остановил большую передачу на предварительном плане.');
         expect(html).toContain('Обновите мост и запустите синхронизацию');
-        expect(html).not.toContain('Повторить через мост');
+        expect(html).toMatch(/disabled=""[^>]*><span>Повторить через мост<\/span>/);
     });
 
     it('Открывает базу знаний для явно отклонённого задания прежнего контракта', () => {

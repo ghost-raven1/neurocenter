@@ -1,44 +1,16 @@
 import {
-    IImageVersion,
     IPage,
-    IProjectProfile,
     ISkill,
     ISkillCollection,
     ISkillDetail,
     IPackage,
     IPackageDetail,
-    ISnapshotManifest,
 } from './dto';
 
 /**
  * In-memory mock-каталог (dev). При подключении реального лancedb-storage —
  * заменить на запросы к хранилищу (каталог проектов/версий/скиллов/пакетов).
  */
-
-export const VERSIONS: Record<string, IImageVersion[]> = {
-    'prj-lancedb-core': [
-        { snapshotId: 'snap-a1', storeId: 'store-a1', parentId: 'snap-a0', status: 'VERIFIED', author: 'dev@localhost', createdAt: '2026-10-10T12:00:00Z', bytes: 5242880000, formatVersion: 'lc3', isHead: true, pinned: true },
-        { snapshotId: 'snap-a0', storeId: 'store-a0', parentId: null, status: 'DELETED', author: 'dev@localhost', createdAt: '2026-10-01T11:00:00Z', bytes: 5000000000, formatVersion: 'lc3', isHead: false, pinned: false },
-    ],
-    'prj-lancedb-analytics': [
-        { snapshotId: 'snap-b1', storeId: 'store-b1', parentId: null, status: 'VERIFYING', author: 'dev@localhost', createdAt: '2026-09-02T08:30:00Z', bytes: 1048576000, formatVersion: 'lc3', isHead: true, pinned: false },
-    ],
-};
-
-export const PROFILES: Record<string, IProjectProfile[]> = {
-    'prj-lancedb-core': [
-        { profileId: 'prof-1', snapshotId: 'snap-a1', revision: 2, isActive: true, skillPins: [{ skillSlug: 'vector-search', skillId: 'sk-1', skillVersionId: 'skv-2' }] },
-        { profileId: 'prof-1', snapshotId: 'snap-a0', revision: 1, isActive: false, skillPins: [] },
-    ],
-    'prj-lancedb-analytics': [],
-};
-
-export const MANIFEST: ISnapshotManifest = {
-    snapshotId: 'snap-a1',
-    tables: [{ name: 'events', tableVersion: 7 }, { name: 'meta', tableVersion: 2 }],
-    files: [{ path: 'data/0.lance', size: 5242880000, sha256: 'e3b0c44298fc1c14' }],
-    signature: 'sig-0001',
-};
 
 export const SKILL_COLLECTIONS: ISkillCollection[] = [
     { collectionId: 'col-common', scope: 'COMMON', projectId: null, title: 'Встроенные скиллы' },

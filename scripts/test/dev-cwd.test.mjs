@@ -16,14 +16,14 @@ async function fixture(t) {
     const caller = path.join(directory, 'каталог вызова');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(caller, 'runtime'), {recursive: true});
-    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
-    for(const directory of ['models','embedding','vision'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    for(const directory of ['models','embedding','vision','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     await fs.symlink(process.execPath, path.join(caller, 'runtime/node'));
     const record = path.join(directory, 'calls.jsonl');
     const hook = path.join(directory, 'isolated-startup.mjs');
@@ -44,6 +44,7 @@ async function fixture(t) {
         NODE_BIN: process.execPath, NO_COLOR: '1', TERM: 'dumb', DEV_CWD_RECORD: record,
         NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`};
     async function run({removed = false, renamed = false, overrides = {}, args = ['--help']} = {}) {
+        if(args[0]==='status'){await fs.mkdir(path.join(checkout,'.run/project-snapshots/secrets'),{recursive:true});await fs.writeFile(path.join(checkout,'.run/project-snapshots/secrets/verifier-token'),'a'.repeat(64)+'\n',{mode:0o600});}
         const script = path.join(checkout, 'scripts/dev.sh');
         const setup = removed ? 'cd "$1" && rmdir "$1" && exec /bin/bash "$2" "${@:3}"'
             : renamed ? 'cd "$1" && mv "$1" "$1 переименован" && exec /bin/bash "$2" "${@:3}"'
@@ -68,9 +69,9 @@ for (const action of ['--help', 'status']) {
         assert.equal(result.status, 0, result.stderr);
         assert.doesNotMatch(result.stderr, /uv_cwd|process\.cwd|REAL_NETWORK_FORBIDDEN/);
         assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
-        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
+        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
         else assert.match(result.stdout, /Использование: scripts\/dev\.sh/);
-        await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+        await assert.rejects(fs.access(path.join(f.checkout, action==='status'?'.run/processes.json':'.run')), {code: 'ENOENT'});
     });
 }
 
@@ -84,14 +85,14 @@ test('CLI восстанавливает корень проекта после 
 test('CLI сохраняет выбранный Node через относительный NODE_BIN из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: './runtime/node'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 
 test('CLI находит Node в относительном PATH из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: '', PATH: 'runtime:/usr/bin:/bin'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 7);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 

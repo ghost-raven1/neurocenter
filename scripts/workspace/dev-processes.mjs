@@ -19,12 +19,12 @@ export function devProcessIdentity(pid) {
 
 /** Точка входа сервиса внутри конкретного checkout. */
 export function devServiceEntry(root, service) {
-    return path.join(root, service.dir, service.name === 'frontend' ? 'node_modules/vite/bin/vite.js' : 'dist/main.js');
+    return path.join(root, service.dir, service.entry || (service.name === 'frontend' ? 'node_modules/vite/bin/vite.js' : 'dist/main.js'));
 }
 
 /** Поддерживаем прямой запуск, Nest CLI и npm/Vite из каталога сервиса. */
 function matchesServiceCommand(command, root, service, executable, pid) {
-    const entries = service.name === 'frontend'
+    const entries = service.entry ? [service.entry] : service.name === 'frontend'
         ? ['node_modules/vite/bin/vite.js', 'node_modules/.bin/vite']
         : ['dist/main.js', 'dist/main'];
     if (executable) {

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { UnknownAction } from '@reduxjs/toolkit';
 
 import type { IAuthMe } from '../src/core/interfaces';
-import type { IImageVersion, IProjectDetail, IProjectListParams } from '../src/core/api/interfaces';
+import type { IProjectDetail, IProjectListParams } from '../src/core/api/interfaces';
 import { authInit, authLogout, authSwitchRole } from '../src/features/UserBlock/redux/actions';
 import { signOut } from '../src/features/UserBlock/redux/reducers';
-import { fetchProject, fetchProjects, fetchVersions } from '../src/modules/Projects/redux/actions';
+import { fetchProject, fetchProjects } from '../src/modules/Projects/redux/actions';
 import projectsReducer, { clearSelected, setPage, setQuery } from '../src/modules/Projects/redux/reducers';
 import { fetchRag } from '../src/modules/Rag/redux/actions';
 import ragReducer, { clearRag } from '../src/modules/Rag/redux/reducers';
@@ -21,14 +21,10 @@ const auth: IAuthMe = {
 };
 const params: IProjectListParams = { page: 1, size: 10, query: '' };
 const project = (id: string): IProjectDetail => ({
-    id, name: `Проект ${id}`, externalResourceId: '', fsRootPath: '', state: 'ACTIVE', head: null,
+    id, name: `Проект ${id}`, externalResourceId: '', fsRootPath: '', state: 'ACTIVE', head: null, headRevision: 0,
     logicalBytes: 0, retainedBytes: 0, retention: 30, activeProfileId: null, activeProfileRevision: 0,
     activeOperations: 0, createdAt: '2026-10-18T00:00:00Z',
     quota: { currentBytesLimit: 100, currentBytesUsed: 0, retentionBytesLimit: 100, retentionBytesUsed: 0, stagingBytesLimit: 100, stagingBytesUsed: 0 },
-});
-const version = (snapshotId: string): IImageVersion => ({
-    snapshotId, storeId: 'store', parentId: null, status: 'VERIFIED', author: 'Первый',
-    createdAt: '2026-10-18T00:00:00Z', bytes: 0, formatVersion: '1', isHead: false, pinned: false,
 });
 const ragSummary = (projectKey: string) => ({ projectKey, rowCount: 1, lastSyncedAt: null, dimension: 3 });
 const signedIn = [authInit.pending('login', undefined), authInit.fulfilled(auth, 'login', undefined)];
@@ -80,35 +76,15 @@ describe('Владелец запроса проекта', () => {
         expect(state.selectedLoading).toBe(true);
     });
 
-    it('Переход в другой проект очищает прежние версии и инвалидирует их поздний ответ', () => {
-        const state = projects(
-            fetchProject.pending('initial', 'a'), fetchProject.fulfilled(project('a'), 'initial', 'a'),
-            fetchVersions.pending('versions', 'a'), fetchProject.pending('next', 'b'),
-            fetchVersions.fulfilled([version('snapshot-a')], 'versions', 'a'),
-        );
-        expect(state.versions).toEqual([]);
-        expect(state.versionsLoading).toBe(false);
-    });
-
-    it('Пересекающиеся запросы версий не подменяют выбранный проект и не выключают его загрузку', () => {
-        let state = projects(fetchVersions.pending('a', 'a'), fetchVersions.pending('b', 'b'));
-        state = projectsReducer(state, fetchVersions.rejected(new Error('Сбой'), 'a', 'a'));
-        expect(state.versionsLoading).toBe(true);
-        state = projectsReducer(state, fetchVersions.fulfilled([version('snapshot-b')], 'b', 'b'));
-        state = projectsReducer(state, fetchVersions.fulfilled([version('snapshot-a')], 'a', 'a'));
-        expect(state.versions.map(item => item.snapshotId)).toEqual(['snapshot-b']);
-    });
-
-    it('Уход со страницы отменяет владельцев карточки и версий, сохраняя список и фильтры', () => {
+    it('Уход со страницы отменяет владельцев карточки, сохраняя список и фильтры', () => {
         const currentParams = { ...params, query: 'Проект', page: 2 };
         const state = projects(
             setQuery('Проект'), setPage(2),
             fetchProjects.pending('list', currentParams), fetchProjects.fulfilled({ ...currentParams, items: [project('a')], total: 1 }, 'list', currentParams),
-            fetchProject.pending('detail', 'a'), fetchVersions.pending('versions', 'a'),
+            fetchProject.pending('detail', 'a'),
             clearSelected(), fetchProject.fulfilled(project('a'), 'detail', 'a'),
-            fetchVersions.fulfilled([version('a')], 'versions', 'a'),
         );
-        expect(state).toMatchObject({ selected: null, versions: [], page: 2, query: 'Проект' });
+        expect(state).toMatchObject({ selected: null, page: 2, query: 'Проект' });
         expect(state.list.map(item => item.id)).toEqual(['a']);
     });
 });
@@ -152,12 +128,12 @@ describe('Изоляция кэша по пользователю и права�
 
     it.each(changes)('Смена %s очищает данные и отклоняет ответы прежних запросов', (_, changed) => {
         const actions = [
-            fetchProjects.pending('list', params), fetchProject.pending('detail', 'a'), fetchVersions.pending('versions', 'a'),
+            fetchProjects.pending('list', params), fetchProject.pending('detail', 'a'),
             authInit.pending('refresh', undefined), authInit.fulfilled(changed, 'refresh', undefined),
             fetchProjects.fulfilled({ ...params, items: [project('a')], total: 1 }, 'list', params),
-            fetchProject.fulfilled(project('a'), 'detail', 'a'), fetchVersions.fulfilled([version('a')], 'versions', 'a'),
+            fetchProject.fulfilled(project('a'), 'detail', 'a'),
         ];
-        expect(projects(...actions)).toMatchObject({ list: [], selected: null, versions: [], loading: false });
+        expect(projects(...actions)).toMatchObject({ list: [], selected: null, loading: false });
         const ragState = rag(
             fetchRag.pending('knowledge', undefined), authInit.pending('refresh', undefined),
             authInit.fulfilled(changed, 'refresh', undefined), fetchRag.fulfilled([ragSummary('a')], 'knowledge', undefined),

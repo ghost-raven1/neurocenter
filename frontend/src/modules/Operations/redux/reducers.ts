@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 import type { IOperationsFilters, IOperationsState, IOperationProgressCache } from '../interfaces';
-import { cancelOperation, fetchOperation, fetchOperations, retryOperation } from './actions';
+import { fetchOperation, fetchOperations } from './actions';
 
 const initialState: IOperationsState = {
     list: [],
@@ -50,9 +50,7 @@ const operationsSlice = createSlice({
             })
             .addCase(fetchOperation.fulfilled, (state, action) => {
                 state.selected = action.payload;
-            })
-            .addCase(retryOperation.fulfilled, () => undefined)
-            .addCase(cancelOperation.fulfilled, () => undefined);
+            });
     },
 });
 

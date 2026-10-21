@@ -34,7 +34,7 @@ describe('Атомарность очереди и журнала операци
             return {rows:sql.includes("state='cancelled'")?[row]:[],rowCount:sql.includes("state='cancelled'")?1:0};
         });
         await expect(jobs.list({email:row.email,activeRole:'Разработчик'})).rejects.toThrow('Журнал временно недоступен');
-        expect(query.mock.calls.map(([sql])=>sql)).toEqual(['BEGIN',expect.stringContaining("state='reconciling'"),'COMMIT',
+        expect(query.mock.calls.map(([sql])=>sql).slice(-7)).toEqual(['BEGIN',expect.stringContaining("state='reconciling'"),'COMMIT',
             'BEGIN',expect.stringContaining("state='cancelled'"),expect.stringContaining('INSERT INTO operations'),'ROLLBACK']);
         expect(direct).not.toHaveBeenCalled();
         expect(query.mock.calls.find(([sql])=>sql.startsWith("UPDATE bridge_jobs SET state='cancelled'"))?.[0]).toContain('Задание ожидало моста больше суток');

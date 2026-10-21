@@ -19,7 +19,7 @@ const platform = process.platform === 'win32' ? 'windows' : process.platform;
 const target = `${platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
 const archive = path.resolve(process.argv[2] || path.join(root, 'bridge-dist/runtime', `neurocenter-asset-sync-${target}-${bridgeVersion}.tgz`));
 const reportFile = process.env.BRIDGE_RUNTIME_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'runtime-smoke.json');
-const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-runtime-'));
+const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-runtime-')));
 const cases = [];
 let client, fatal, metadata;
 async function check(name, action) { await action(); cases.push(name); console.log('OK ' + name); }
@@ -47,7 +47,7 @@ try {
         USERPROFILE: temporary, XDG_CONFIG_HOME: path.join(temporary, 'config'),
         NEUROCENTER_URL: 'http://127.0.0.1:1', NEUROCENTER_BRIDGE_HOME: path.join(temporary, 'private') };
     await fs.mkdir(isolatedEnv.PATH);
-    await check('Загруженная compiled-программа подтверждает исправленный RAG-профиль и полный buildId', async () => {
+    await check('Загруженная compiled-программа подтверждает RAG-профиль, полный снимок и buildId', async () => {
         const checked = await verifyBridgeBuild(path.join(content, 'dist'), bridgeVersion);
         assert.equal(checked.buildId, metadata.buildId);
         if (process.env.BRIDGE_EXPECTED_BUILD_ID) assert.equal(checked.buildId, process.env.BRIDGE_EXPECTED_BUILD_ID);
@@ -56,6 +56,7 @@ try {
         assert.equal(loaded.version, bridgeVersion); assert.equal(loaded.protocol, 2);
         assert.equal(loaded.buildId, metadata.buildId);
         assert.equal(loaded.capabilities.includes('hosted-rag-profile-values-v1'), true);
+        assert.equal(loaded.capabilities.includes('project-snapshots-v1'), true);
     });
     await check('Встроенный runtime запускается без Node и npm в PATH', async () => {
         assert.equal(execFileSync(node, ['-p', 'process.versions.node'], { env: isolatedEnv, encoding: 'utf8' }).trim(), metadata.nodeVersion);
@@ -72,6 +73,14 @@ try {
         execFileSync(node, [entry, '--init'], { env: isolatedEnv });
         assert.equal(await fs.readFile(configFile, 'utf8'), text);
     });
+    await check('Готовый runtime снимает полный LanceDB образ, сохраняя таблицы, схему, индекс и поиск', async () => {
+        const own = path.join(temporary, 'snapshot-proof');
+        await fs.mkdir(own);
+        const proof = JSON.parse(execFileSync(node, [path.join(root, 'scripts/test/bridge-snapshot-runtime.fixture.mjs'), own], {
+            cwd: content, env: {...isolatedEnv, NEUROCENTER_BRIDGE_HOME: path.join(own, 'private')}, encoding: 'utf8', timeout: 60000,
+        }));
+        assert.deepEqual(proof, {tables:3,rows:514,allColumns:true,schemaVersions:true,indexPreserved:true,semanticSearch:true,sourceUnchanged:true,privateFilesExcluded:true});
+    });
     client = new Client({ name: 'Проверка автономного пакета', version: '1.0.0' });
     await client.connect(new StdioClientTransport({ command: node, args: [entry], cwd: content, env: isolatedEnv, stderr: 'ignore' }));
     await check('Реальный stdio MCP загружается из готового пакета и сообщает протокол, сборку и LanceDB', async () => {
@@ -85,6 +94,7 @@ try {
         assert.equal(status.buildId, metadata.buildId); assert.equal(status.runtimeVersion, metadata.nodeVersion);
         assert.equal(status.ragSupported, metadata.ragSupported);
         assert.equal(status.capabilities.includes('hosted-rag-profile-values-v1'), true);
+        assert.equal(status.capabilities.includes('project-snapshots-v1'), true);
     });
     await check('В артефакте отсутствуют старые команды небезопасной записи', async () => {
         const tools = (await client.listTools()).tools.map(tool => tool.name);

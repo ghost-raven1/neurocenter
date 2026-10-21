@@ -6,7 +6,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,generateKeyPairSync} from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
 import https from 'node:https';
@@ -14,6 +14,7 @@ import {applicationServices} from '../production/compose-client.mjs';
 import {volumeKeys} from '../production/recovery-files.mjs';
 import {writeManifest,verifyBackup} from '../production/recovery-manifest.mjs';
 import {externalBackupConfiguration,signedS3Request,retryExternalOperation,createExternalS3Store,uploadExternalBackup,downloadExternalBackup,EXTERNAL_CHUNK_BYTES} from '../production/external-backup.mjs';
+import {snapshotObjectFile} from '../production/snapshot-recovery-metadata.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const env={EXTERNAL_BACKUP_S3_ENDPOINT:'https://objects.example.test',EXTERNAL_BACKUP_S3_REGION:'eu-test-1',EXTERNAL_BACKUP_S3_BUCKET:'recovery-test',
@@ -26,7 +27,7 @@ function memoryStore(){
     return {objects,puts,gets,async put(key,bytes){puts.push(key);if(!objects.has(key)){objects.set(key,Buffer.from(bytes));}},
         async get(key,limit){gets.push(key);if(!objects.has(key)){throw Object.assign(new Error('Отсутствует объект'),{status:404});}const bytes=objects.get(key);if(bytes.length>limit){throw new Error('Превышен размер ответа');}return Buffer.from(bytes);}};
 }
-async function fixture(action,{large=false}={}){
+async function fixture(action,{large=false,snapshots=false}={}){
     const root=await mkdtemp(path.join(tmpdir(),'nc-external-backup-'));const source=path.join(root,'source');await mkdir(source,{mode:0o700});
     try{
         await mkdir(path.join(source,'databases'));for(const name of ['catalog','rag']){await writeFile(path.join(source,'databases',name+'.dump'),'PGDMP fixture '+name);}
@@ -35,9 +36,11 @@ async function fixture(action,{large=false}={}){
         await writeFile(path.join(source,'files/skills/пустой.md'),'');
         await writeFile(path.join(source,'files/skills/инструкция.md'),'# Проверенные знания');
         if(large){await writeFile(path.join(source,'files/projects/large.bin'),Buffer.alloc(EXTERNAL_CHUNK_BYTES+17,37));}
+        let snapshotObjects;
+        if(snapshots){const bytes=Buffer.from('exact snapshot object bytes'),sha256=sha(bytes),file=snapshotObjectFile('project-fixture',sha256);await mkdir(path.dirname(path.join(source,file)),{recursive:true,mode:0o700});await writeFile(path.join(source,file),bytes,{mode:0o600});await mkdir(path.join(source,'operatorsecrets'),{mode:0o700});await writeFile(path.join(source,'operatorsecrets/snapshot_signing_key'),generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});snapshotObjects={schemaVersion:1,blobs:[{projectId:'project-fixture',sha256,bytes:bytes.length,storageId:'s3:'+'b'.repeat(32),versionId:'exact-version-1',file}],keyFiles:['operatorsecrets/snapshot_signing_key']};}
         const image='sha256:'+'a'.repeat(64);const {manifest,sha256}=await writeManifest(source,{createdAt:'2026-10-18T00:00:00Z',postgresMajor:16,postgresImage:image,
             images:Object.fromEntries(applicationServices.map(service=>[service,image])),quiesced:true,
-            databases:['catalog','rag'].map(name=>({name,owner:name==='catalog'?'nc_catalog':'nc_rag',encoding:'UTF8',collate:'C.UTF-8',ctype:'C.UTF-8',file:'databases/'+name+'.dump'}))});
+            databases:['catalog','rag'].map(name=>({name,owner:name==='catalog'?'nc_catalog':'nc_rag',encoding:'UTF8',collate:'C.UTF-8',ctype:'C.UTF-8',file:'databases/'+name+'.dump'})),...(snapshotObjects?{snapshotObjects}:{})});
         const store=memoryStore();const values={source,expectedHash:sha256,backupId,config,store};await action({root,source,manifest,sha256,store,values});
     }finally{await rm(root,{recursive:true,force:true});}
 }
@@ -84,7 +87,7 @@ test('HTTP redirect не выполняется, TLS-проверка остаё
     finally{requestMock.mock.restore();}
 });
 
-test('Полный recovery-v2 комплект проходит внешний readback и восстанавливается в новый каталог',async()=>fixture(async({root,manifest,sha256,store,values})=>{
+test('Полный recovery-v3 комплект проходит внешний readback и восстанавливается в новый каталог',async()=>fixture(async({root,manifest,sha256,store,values})=>{
     const receipt=await uploadExternalBackup(values);
     assert.equal(receipt.verification,'sha256-readback');assert.equal(receipt.independence,'operator-declared');assert.equal(receipt.crossHostRestoreVerified,false);
     assert.equal(receipt.files,manifest.entries.filter(entry=>entry.type==='file').length);assert.equal(store.puts.at(-1),manifestKey);
@@ -95,6 +98,11 @@ test('Полный recovery-v2 комплект проходит внешний 
     assert.equal(await readFile(path.join(destination,'files/projects/config.json'),'utf8'),'{"settings":"сохраняем параметры"}');
     assert.equal((await stat(destination)).mode&0o777,0o700);
 }));
+test('External v3 roundtrip retains exact S3 object files and private signer bytes/modes',async()=>fixture(async({root,source,manifest,values})=>{
+    await uploadExternalBackup(values);const destination=path.join(root,'download');await downloadExternalBackup({...values,destination});
+    for(const file of [manifest.snapshotObjects.blobs[0].file,...manifest.snapshotObjects.keyFiles]){assert.deepEqual(await readFile(path.join(destination,file)),await readFile(path.join(source,file)));assert.equal((await stat(path.join(destination,file))).mode&0o777,0o600);}
+    assert.equal((await stat(path.join(destination,'operatorsecrets'))).mode&0o777,0o700);
+},{snapshots:true}));
 
 test('Файл больше блока передаётся несколькими объектами и собирается без потери байтов',async()=>fixture(async({root,sha256,store,values})=>{
     await uploadExternalBackup(values);assert.equal([...store.objects.keys()].filter(key=>key.includes('/'+sha('files/projects/large.bin')+'/')).length,2);

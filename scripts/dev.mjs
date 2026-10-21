@@ -11,6 +11,8 @@ import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProces
 import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
 import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
+import {privateSnapshotFile} from './snapshots/control.mjs';
+import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -24,6 +26,8 @@ const services = [
     { name: 'gateway', label: 'API', dir: 'services/api-gateway', port: 4000 },
     { name: 'frontend', label: 'Веб-интерфейс', dir: 'frontend', port: 5173 },
 ];
+const snapshotWorker={name:'snapshot-verifier',label:'Проверка снимков',dir:'.',port:4100,entry:'scripts/snapshots/runner.mjs'};
+const managedServices=[...services,snapshotWorker];
 const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
 const defaultProfile = 'fast';
 const output = createDevOutput({defaultProfile});
@@ -79,7 +83,7 @@ function readProcesses() {
     try {
         const records = JSON.parse(readFileSync(stateFile, 'utf8'));
         if (!Array.isArray(records) || records.some(record => !record || typeof record !== 'object'
-            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !services.some(service => service.name === record.name))) {
+            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !managedServices.some(service => service.name === record.name))) {
             throw new SyntaxError('Ожидается список PID сервисов');
         }
         return records;
@@ -96,7 +100,7 @@ function readProcesses() {
 
 /** Чужие процессы и переиспользованные PID не останавливаем, перенос checkout поддерживаем. */
 function ownsProcess(record) {
-    const service = services.find(item => item.name === record.name);
+    const service = managedServices.find(item => item.name === record.name);
     return ownsDevProcess(record, root, service);
 }
 
@@ -120,7 +124,7 @@ function signalProcess(pid, signal) {
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
 async function stop(saved) {
     const known = saved ?? readProcesses();
-    const discovered = saved ? [] : discoverDevProcesses(root, services, known.map(record => record.pid));
+    const discovered = saved ? [] : discoverDevProcesses(root, managedServices, known.map(record => record.pid));
     const records = [...new Map([...known, ...discovered].map(record => [record.pid, record])).values()].filter(ownsProcess);
     for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
     const deadline = Date.now() + 5000;
@@ -149,14 +153,15 @@ async function assertServicePortsAvailable() {
 
 /** Проверяем JSON health сервисов и компиляцию Less интерфейса, а не только выдачу HTML. */
 async function health(deadline = Infinity, cancellation) {
-    return Promise.all(services.map(async service => {
-        const frontend = service.name === 'frontend';
-        const suffix = frontend ? '/node_modules/antd/dist/antd.less?direct' : service.healthPath || '/health';
+    return Promise.all(managedServices.map(async service => {
+        const frontend = service.name === 'frontend',snapshot=service.name==='snapshot-verifier';
+        const suffix = snapshot?'/internal/project-snapshots/verifier/ready':frontend ? '/node_modules/antd/dist/antd.less?direct' : service.healthPath || '/health';
         try {
             const timeout = Math.max(1, Math.min(frontend ? 10000 : 1000, deadline - Date.now()));
             const timeoutSignal = AbortSignal.timeout(timeout);
             const signal = cancellation ? AbortSignal.any([cancellation, timeoutSignal]) : timeoutSignal;
-            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal });
+            const headers=snapshot?{'x-neurocenter-snapshot-verifier':(await privateSnapshotFile(path.resolve(root,process.env.SNAPSHOT_VERIFIER_TOKEN_FILE||'.run/project-snapshots/secrets/verifier-token'),1024)).toString('utf8').trim()}:undefined;
+            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal,headers });
             const ok = response.ok && (frontend
                 ? response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/css'
                     && (await response.text()).trim().length > 0
@@ -191,6 +196,8 @@ async function start(profile) {
     next('Каталог инструментов');
     output.info('Состав каталога', 'Выбирается главным администратором на странице «Ассеты». Запуск сохраняет текущие карточки.');
     const modelCredentials=await prepareDevModelCredentials(root,process.env);
+    output.info('Снимки LanceDB','Проверка ключа и изолированного SDK-исполнителя');
+    const snapshots=await prepareDevSnapshots(root,process.env);
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();
@@ -198,6 +205,7 @@ async function start(profile) {
     mkdirSync(logDir, { recursive: true });
 
     const commonEnvironment={...process.env};
+    for(const key of Object.keys(commonEnvironment))if(key.startsWith('SNAPSHOT_'))delete commonEnvironment[key];
     delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
     const shared = {
         ...commonEnvironment,
@@ -232,13 +240,13 @@ async function start(profile) {
     process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
-        for (const service of services) {
+        for (const service of managedServices) {
             cancellation.signal.throwIfAborted();
             const logFile = path.join(logDir, `neurocenter-${service.name}.log`);
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
-                env: { ...shared, ...(service.name==='catalog'?modelCredentials:{}), PORT: String(service.port) },
+                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog}:{}), PORT: String(service.port) },
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });
@@ -364,7 +372,7 @@ async function main() {
         output.info('Логи', logDir);
     } else if (command === 'tail') {
         let found = 0;
-        for (const service of services) {
+        for (const service of managedServices) {
             const file = path.join(logDir, `neurocenter-${service.name}.log`);
             if (existsSync(file)) { found++; output.logs(service.label, readFileSync(file, 'utf8').trimEnd().split('\n').slice(-20).join('\n')); }
         }

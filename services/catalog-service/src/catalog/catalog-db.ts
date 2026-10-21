@@ -13,6 +13,7 @@ import {validateProjectSettings} from './project-validation';
 import {normalizeProjectQuota} from './project-quota';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
 import {deleteProjectWithAudit} from './project-deletion';
+import {setupProjectRetirements} from '../retired-rag/retirement-schema';
 import type { IProjectRow } from './project-row';
 import {setupInstallPlans} from '../devices/install-plan-schema';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
@@ -92,8 +93,9 @@ export class CatalogDb {
               );
                ALTER TABLE projects ADD COLUMN IF NOT EXISTS fs_root_path TEXT;`,
         );
+        await setupProjectRetirements(this.pool);
         if(process.env.NODE_ENV!=='production'){
-            await this.pool.query("INSERT INTO projects(id,name,external_resource_id,state,rag_project_key) VALUES('prj-example-project','example-project','example:example-project','ACTIVE','prj-example-project') ON CONFLICT(id) DO NOTHING");
+            await this.pool.query("INSERT INTO projects(id,name,external_resource_id,state,rag_project_key) SELECT 'prj-example-project','example-project','example:example-project','ACTIVE','prj-example-project' WHERE NOT EXISTS(SELECT 1 FROM project_retirements WHERE project_id='prj-example-project') ON CONFLICT(id) DO NOTHING");
         }
         await this.pool.query(
             `CREATE TABLE IF NOT EXISTS ai_plugins (
@@ -617,6 +619,7 @@ function toSummary(r: IProjectRow): IProjectSummary {
                 headRevision: Number(r.head_revision || 0),
             }
             : null,
+        headRevision: Number(r.head_revision || 0),
         logicalBytes: Number(r.logical_bytes || 0),
         retainedBytes: Number(r.retained_bytes || 0),
         retention: Number(r.retention || 0),

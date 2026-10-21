@@ -1,4 +1,4 @@
-import { Button, Space, Typography } from 'antd';
+import { Button, Space, Tooltip, Typography } from 'antd';
 import type { FC } from 'react';
 
 import type { IOperation } from '../../core/api/interfaces';
@@ -25,8 +25,13 @@ const OperationActionButtons: FC<IOperationActionButtonsProps> = ({ operation, u
         {onDetails && <Button size="small" onClick={onDetails}>Подробнее</Button>}
         {recovery && <Button size="small" href={recovery.href} title={recovery.reason}>Открыть базу знаний</Button>}
         {recovery && !onDetails && <Typography.Text type="secondary">{recovery.reason}</Typography.Text>}
-        {permissions.retry && <Button size="small" loading={busy} onClick={() => actions.retry(operation)}>Повторить через мост</Button>}
-        {permissions.cancel && <Button size="small" danger loading={busy} onClick={() => actions.cancel(operation)}>Отменить задание</Button>}
+        <Tooltip title={!permissions.retry?operation.actions?.retry.reason??'Действие недоступно текущему пользователю.':undefined}><span aria-label={!permissions.retry?operation.actions?.retry.reason:undefined}>
+            <Button size="small" disabled={!permissions.retry} loading={busy} onClick={() => actions.retry(operation)}>{operation.actions?.executor==='bridge'?'Повторить через мост':'Повторить'}</Button>
+        </span></Tooltip>
+        <Tooltip title={!permissions.cancel?operation.actions?.cancel.reason??'Действие недоступно текущему пользователю.':undefined}><span aria-label={!permissions.cancel?operation.actions?.cancel.reason:undefined}>
+            <Button size="small" danger disabled={!permissions.cancel} loading={busy} onClick={() => actions.cancel(operation)}>Отменить задание</Button>
+        </span></Tooltip>
+        {operation.actions&&!operation.actions.retry.supported&&!operation.actions.cancel.supported&&<Typography.Text type="secondary">{operation.actions.retry.reason}</Typography.Text>}
     </Space>;
 };
 

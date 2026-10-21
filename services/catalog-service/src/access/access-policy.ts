@@ -45,7 +45,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     }
     if (route === '/api/access/users') { return common; }
     if (route === '/api/me/decisions') { return read; }
-    if (route.startsWith('/api/operations')) { return read || main; }
+    // The real executor rechecks ownership, current role, project scope and state under CAS.
+    if (route.startsWith('/api/operations')) { return read || request.method.toUpperCase()==='POST'&&/^\/api\/operations\/[^/]+\/(retry|cancel)$/.test(route); }
     if (route === '/api/local-assets/scan') { return main; }
     if (route === '/api/local-assets/install') { return projectLevel(claims,activeRole,String(body.projectName ?? '')) >= 2; }
     if (route === '/api/ai-plugins') { return read || main; }

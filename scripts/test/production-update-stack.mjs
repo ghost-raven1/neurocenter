@@ -127,7 +127,7 @@ try{
     const before=await fingerprint(source),beforeFiles=await filesFingerprint(source),sourceEnv=await readFile(path.join(source.directory,'.env'),'utf8');
     await check('Полный согласованный комплект 0.9 проверяется перед созданием репетиции',async()=>{
         originalBackup=await backupProduction({...source,destination:path.join(copies,'source-complete'),offline:true,maxPauseMs:900000});
-        const manifest=await verifyBackup(originalBackup.destination,originalBackup.sha256);assert.equal(manifest.databases.length,3);assert.equal(manifest.format,'neurocenter-recovery-v2');
+        const manifest=await verifyBackup(originalBackup.destination,originalBackup.sha256);assert.equal(manifest.databases.length,3);assert.equal(manifest.format,'neurocenter-recovery-v3');
         assert.deepEqual(await fingerprint(source),before);await pause(source);
     });
     const manual=await createSide('manual'),manualEnv=await readFile(path.join(fixture,'manual/.env'),'utf8');await check('Репетиция начинается восстановлением копии в новый отдельный проект',async()=>{

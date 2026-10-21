@@ -17,13 +17,13 @@ async function fixture(t, mode = 'ready') {
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'scripts/assets'));
     await fs.copyFile(path.join(root, 'scripts/assets/startup.mjs'), path.join(checkout, 'scripts/assets/startup.mjs'));
-    for (const directory of ['models', 'embedding', 'vision']) {
+    for (const directory of ['models', 'embedding', 'vision', 'snapshots']) {
         await fs.cp(path.join(root, 'scripts', directory), path.join(checkout, 'scripts', directory), {recursive: true});
     }
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});

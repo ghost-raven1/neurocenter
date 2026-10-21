@@ -1,4 +1,5 @@
 import type { CatalogMigration } from '../database/migrations';
+import {SNAPSHOT_SCHEMA_SQL} from '../snapshots/snapshot-schema';
 
 /** Метаданные локального плана не содержат исходники, полный diff или абсолютные пути. */
 export const INSTALLATION_MIGRATIONS: readonly CatalogMigration[] = [{
@@ -42,4 +43,8 @@ export const INSTALLATION_MIGRATIONS: readonly CatalogMigration[] = [{
         CREATE INDEX bridge_job_requests_job ON bridge_job_requests(job_id);
         INSERT INTO bridge_job_requests(email,request_key,device_id,request_hash,job_id,created_at)
         SELECT email,request_key,device_id,request_hash,id,created_at FROM bridge_jobs;`,
+}, {
+    version:5,
+    name:'immutable-project-snapshots',
+    sql:SNAPSHOT_SCHEMA_SQL,
 }];

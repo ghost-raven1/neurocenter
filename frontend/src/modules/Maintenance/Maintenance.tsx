@@ -1,4 +1,4 @@
-import { CloudServerOutlined, DatabaseOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { CloudServerOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Col, Descriptions, Empty, List, Progress, Row, Space, Spin, Tag, Typography, message } from 'antd';
 import { FC, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -17,6 +17,8 @@ import { createMaintenanceRequestScope } from './maintenanceRequestScope';
 import { fetchBackup, fetchStorage } from './redux/actions';
 import CapacityStatus from './CapacityStatus';
 import FullBackupSettings from './FullBackupSettings';
+import WebRestore from './restore/WebRestore';
+import RetiredRagDatabases from '../../features/RetiredRagDatabases/RetiredRagDatabases';
 import { FeatureFlagsPanel } from '../../features/FeatureFlags/FeatureFlagsPanel';
 import './Maintenance.less';
 
@@ -25,6 +27,7 @@ const { Paragraph, Text, Title } = Typography;
 /** Состояние служебных БД и независимые сценарии резервного копирования. */
 const AccountMaintenance: FC = () => {
     const dispatch = useAppDispatch();
+    const restoreAccount = useSelector((state: RootState) => state.userBlock.user?.email ?? '');
     const { storage, backup, storageLoading, backupLoading, storageError, backupError, backupAccessDenied } = useSelector((state: RootState) => state.maintenance);
     const [ backingUp, setBackingUp ] = useState(false);
     const [ createError, setCreateError ] = useState<string | null>(null);
@@ -92,6 +95,8 @@ const AccountMaintenance: FC = () => {
             <Row gutter={[ 24, 24 ]}>
                 <Col span={24}><FeatureFlagsPanel /></Col>
                 <Col span={24}><FullBackupSettings /></Col>
+                <Col span={24}><WebRestore account={restoreAccount} /></Col>
+                <Col span={24}><RetiredRagDatabases /></Col>
                 <Col span={24}><CapacityStatus /></Col>
                 <Col xs={24} xl={15}>
                     <Card
@@ -139,13 +144,6 @@ const AccountMaintenance: FC = () => {
                             <Paragraph>У каждого проекта своя PostgreSQL-база и отдельные резервные копии. Создать и скачать дамп можно на вкладке «Резервные копии» в проекте.</Paragraph>
                             <Paragraph type="secondary">Локальная LanceDB и файлы на компьютере сотрудника в серверную копию не входят.</Paragraph>
                             <Button href="/projects">Открыть проекты</Button>
-                        </Card>
-                        <Card title={<Space><SafetyCertificateOutlined /><span>Восстановление</span></Space>}>
-                            <Paragraph>Восстановление из этой панели пока недоступно.</Paragraph>
-                            {backup?.restoreDrills.length ? <List
-                                size="small" dataSource={backup.restoreDrills}
-                                renderItem={drill => <List.Item><Space wrap><Text>{formatBackupTime(drill.at)}</Text><Text>{drill.result}</Text></Space></List.Item>}
-                            /> : <Text type="secondary">Подтверждённых проверок восстановления в журнале пока нет.</Text>}
                         </Card>
                     </Space>
                 </Col>

@@ -1,0 +1,27 @@
+# Optional closed full-image storage + external readonly verifier. No Docker socket in catalog.
+services:
+  catalog-service:
+    ports:
+      - '127.0.0.1:44102:4100'
+    environment:
+      SNAPSHOT_S3_ENDPOINT: ${SNAPSHOT_S3_ENDPOINT:?Configure private HTTPS S3 endpoint}
+      SNAPSHOT_S3_BUCKET: ${SNAPSHOT_S3_BUCKET:?Configure versioned snapshot bucket}
+      SNAPSHOT_S3_REGION: ${SNAPSHOT_S3_REGION:-us-east-1}
+      SNAPSHOT_S3_ACCESS_KEY_FILE: /run/secrets/snapshot_s3_access_key
+      SNAPSHOT_S3_SECRET_KEY_FILE: /run/secrets/snapshot_s3_secret_key
+      SNAPSHOT_VERIFIER_TOKEN_FILE: /run/secrets/snapshot_verifier_token
+      SNAPSHOT_SIGNING_KEY_FILE: /run/secrets/snapshot_signing_key
+    secrets:
+      - snapshot_s3_access_key
+      - snapshot_s3_secret_key
+      - snapshot_verifier_token
+      - snapshot_signing_key
+secrets:
+  snapshot_s3_access_key:
+    file: ${NEUROCENTER_CONFIG_DIR:?}/secrets/snapshot_s3_access_key
+  snapshot_s3_secret_key:
+    file: ${NEUROCENTER_CONFIG_DIR:?}/secrets/snapshot_s3_secret_key
+  snapshot_verifier_token:
+    file: ${NEUROCENTER_CONFIG_DIR:?}/secrets/snapshot_verifier_token
+  snapshot_signing_key:
+    file: ${NEUROCENTER_CONFIG_DIR:?}/secrets/snapshot_signing_key

@@ -4,9 +4,7 @@ import {
     IBackupStatus,
     IAuditEvent,
     IAuditListParams,
-    IHeadUpdateResult,
-    IImageVersion,
-    IOperation,
+    IOperationActionResult,
     IOperationPage,
     IOperationDetail,
     IOperationListParams,
@@ -16,12 +14,10 @@ import {
     IRagQuota,
     IRagBootstrapResult,
     IRagRestoreResult,
-    IProfileReleaseResult,
     IProjectDetail,
     IProjectListParams,
     IProjectMember,
     IProjectMemberAdd,
-    IProjectProfile,
     IProjectSummary,
     ISkillCreateRequest,
     ISkillFile,
@@ -37,11 +33,9 @@ import {
     IProjectAsset,
     ILocalProjectsImportResult,
     ISkillListSummary,
-    ISkillPin,
     ISkillTreeNode,
     ISkillUpdateRequest,
     ISkillsListQuery,
-    ISnapshotManifest,
     IStorageSummary,
     IQuota,
 } from './interfaces';
@@ -74,14 +68,6 @@ export interface IBffApi {
     createProject: (payload: { name: string; externalResourceId: string; retention?: number; quota?: IQuota }) => Promise<IProjectDetail>;
     importLocalProjects: (names: string[]) => Promise<ILocalProjectsImportResult>;
     updateProject: (id: string, payload: Partial<Omit<IProjectDetail, 'quota' | 'head'>>) => Promise<IProjectDetail>;
-    /* IMAGE VERSIONS */
-    listVersions: (projectId: string, status?: string) => Promise<IImageVersion[]>;
-    getManifest: (projectId: string, snapshotId: string) => Promise<ISnapshotManifest>;
-    activateHead: (projectId: string, snapshotId: string, payload: { expectedHeadId: string; expectedHeadRevision: number }) => Promise<IHeadUpdateResult>;
-    rollbackHead: (projectId: string, snapshotId: string, payload: { expectedHeadId: string; expectedHeadRevision: number }) => Promise<IHeadUpdateResult>;
-    deleteSnapshot: (projectId: string, snapshotId: string, payload?: { gracePeriodHours?: number }) => Promise<{ operationId: string }>;
-    releaseProfile: (projectId: string, payload: { snapshotId: string; skillPins: ISkillPin[]; expectedProfileId?: string; expectedProfileRevision?: number; moveHead?: { expectedHeadId: string; expectedHeadRevision: number } }) => Promise<IProfileReleaseResult>;
-    listProfiles: (projectId: string) => Promise<IProjectProfile[]>;
     /* SKILLS (файловая модель: каталог CephFS, CRUD) */
     getSkillTree: () => Promise<ISkillTreeNode[]>;
     listSkills: (params: ISkillsListQuery) => Promise<ISkillListSummary[]>;
@@ -100,8 +86,8 @@ export interface IBffApi {
     /* OPERATIONS */
     listOperations: (params: IOperationListParams) => Promise<IOperationPage>;
     getOperation: (operationId: string) => Promise<IOperationDetail>;
-    retryOperation: (operationId: string) => Promise<IOperation>;
-    cancelOperation: (operationId: string) => Promise<IOperation>;
+    retryOperation: (operationId: string,requestKey:string,expectedDigest:string) => Promise<IOperationActionResult>;
+    cancelOperation: (operationId: string,requestKey:string,expectedDigest:string) => Promise<IOperationActionResult>;
     /* AUDIT */
     listAudit: (params: IAuditListParams) => Promise<IPage<IAuditEvent>>;
     /* MAINTENANCE */
@@ -148,13 +134,6 @@ const bffApi: IBffApi = {
     updateProjectMember: async (projectId, userId, payload) => base.patch<IProjectMember>(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, payload).then(r => r.data),
     removeProjectMember: async (projectId, userId, expectedRole) => base.delete<{ ok: true; userId: string }>(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {params:{expectedRole}}).then(r => r.data),
     deleteProject: async (id) => base.delete<{ ok: true; id: string }>(`/api/projects/${id}`).then(r => r.data),
-    listVersions: async (projectId, status) => base.get<IImageVersion[]>(`/api/projects/${projectId}/versions`, { params: { status } }).then(r => r.data),
-    getManifest: async (projectId, snapshotId) => base.get<ISnapshotManifest>(`/api/projects/${projectId}/versions/${snapshotId}/manifest`).then(r => r.data),
-    activateHead: async (projectId, snapshotId, payload) => base.post<IHeadUpdateResult>(`/api/projects/${projectId}/versions/${snapshotId}/activate`, payload).then(r => r.data),
-    rollbackHead: async (projectId, snapshotId, payload) => base.post<IHeadUpdateResult>(`/api/projects/${projectId}/versions/${snapshotId}/rollback`, payload).then(r => r.data),
-    deleteSnapshot: async (projectId, snapshotId, payload) => base.delete<{ operationId: string }>(`/api/projects/${projectId}/versions/${snapshotId}`, { data: payload }).then(r => r.data),
-    releaseProfile: async (projectId, payload) => base.post<IProfileReleaseResult>(`/api/projects/${projectId}/release-profile`, payload).then(r => r.data),
-    listProfiles: async (projectId) => base.get<IProjectProfile[]>(`/api/projects/${projectId}/profiles`).then(r => r.data),
     getSkillTree: async () => base.get<ISkillTreeNode[]>('/api/skills/tree').then(r => r.data),
     listSkills: async (params) => base.get<ISkillListSummary[]>('/api/skills', { params }).then(r => r.data),
     getSkill: async (path) => base.get<ISkillFile>(`/api/skills/${path}`).then(r => r.data),
@@ -170,8 +149,8 @@ const bffApi: IBffApi = {
     bootstrapRag: async (projectKey) => base.post<IRagBootstrapResult>('/api/rag/bootstrap', { projectKey }).then(r => requireRagSuccess(r.data)),
     listOperations: async (params) => base.get<IOperationPage>('/api/operations', { params }).then(r => r.data),
     getOperation: async (operationId) => base.get<IOperationDetail>(`/api/operations/${operationId}`).then(r => r.data),
-    retryOperation: async (operationId) => base.post<IOperation>(`/api/operations/${operationId}/retry`).then(r => r.data),
-    cancelOperation: async (operationId) => base.post<IOperation>(`/api/operations/${operationId}/cancel`).then(r => r.data),
+    retryOperation: async (operationId,requestKey,expectedDigest) => base.post<IOperationActionResult>(`/api/operations/${encodeURIComponent(operationId)}/retry`,{requestKey,expectedDigest},{timeout:10000}).then(r => r.data),
+    cancelOperation: async (operationId,requestKey,expectedDigest) => base.post<IOperationActionResult>(`/api/operations/${encodeURIComponent(operationId)}/cancel`,{requestKey,expectedDigest},{timeout:10000}).then(r => r.data),
     listAudit: async (params) => base.get<IPage<IAuditEvent>>('/api/audit', { params }).then(r => r.data),
     getStorage: async () => base.get<IStorageSummary>('/api/maintenance/storage').then(r => r.data),
     getBackup: async () => base.get<IBackupStatus>('/api/maintenance/backup').then(r => r.data),

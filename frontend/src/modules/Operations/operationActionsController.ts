@@ -1,16 +1,15 @@
 import { errorMessage } from '../../common/utils/errorMessage';
-import type { IOperation } from '../../core/api/interfaces';
+import type { IOperation, IOperationActionResult } from '../../core/api/interfaces';
 import type { IUserInfo } from '../../core/interfaces';
-import type { IBridgeJob } from '../../features/McpBridge/api';
 
 import { operationActionPermissions, operationActionScope } from './operationActions';
 
 interface IControllerOptions {
     getUser: () => IUserInfo | null;
-    retry: (jobId: string, requestKey: string) => Promise<IBridgeJob>;
-    cancel: (jobId: string) => Promise<void>;
+    retry: (operationId: string, requestKey: string, expectedDigest:string) => Promise<IOperationActionResult>;
+    cancel: (operationId: string, requestKey:string, expectedDigest:string) => Promise<IOperationActionResult>;
     reload: () => Promise<void>;
-    confirmCancel: (confirm: () => Promise<void>, close: () => void) => { destroy: () => void };
+    confirmCancel: (confirm: () => Promise<void>, close: () => void,operation:IOperation) => { destroy: () => void };
     success: (text: string) => void;
     error: (text: string) => void;
     onBusyChange: (operationIds: ReadonlySet<string>) => void;
@@ -22,6 +21,7 @@ export function createOperationActionsController(options: IControllerOptions) {
     const owner = operationActionScope(options.getUser());
     const pending = new Map<string, symbol>();
     const retryKeys = new Map<string, string>();
+    const cancelKeys = new Map<string,string>();
     const confirmations = new Map<string, { token: symbol; destroy: () => void }>();
     let active = false;
     let generation = 0;
@@ -69,6 +69,7 @@ export function createOperationActionsController(options: IControllerOptions) {
             confirmations.clear();
             pending.clear();
             retryKeys.clear();
+            cancelKeys.clear();
         },
         async retry(operation: IOperation): Promise<void> {
             const isCurrent = capture();
@@ -80,15 +81,15 @@ export function createOperationActionsController(options: IControllerOptions) {
             try {
                 const key = retryKeys.get(id) ?? options.requestKey();
                 retryKeys.set(id, key);
-                const job = await options.retry(operation.resourceId, key);
+                const job = await options.retry(operation.operationId, key,operation.actions!.digest);
                 // Ответ подтверждает результат; ошибка следующего GET не должна повторять POST с тем же ключом.
                 if (pending.get(id) === request && retryKeys.get(id) === key) { retryKeys.delete(id); }
                 if (!isCurrent()) { return; }
-                if (job.state === 'failed') {
+                if (job.state === 'FAILED') {
                     options.error(job.message || 'Повторное задание завершилось с ошибкой.');
                 } else {
-                    options.success(['queued', 'running'].includes(job.state)
-                        ? 'Новое задание передано мосту' : 'Повторное задание уже завершено');
+                    options.success(['QUEUED', 'RUNNING'].includes(job.state)
+                        ? 'Запрос передан исполнителю' : 'Повторное задание уже завершено');
                 }
                 await refresh(isCurrent);
             } catch (failure) {
@@ -112,10 +113,11 @@ export function createOperationActionsController(options: IControllerOptions) {
                 if (!isCurrent() || !operationActionPermissions(operation, options.getUser()).cancel) { close(); return; }
                 const request = start(id);
                 try {
-                    // Сервер отменяет атомарно только QUEUED; уже начатая работа вернёт отказ.
-                    await options.cancel(operation.resourceId);
+                    const key=cancelKeys.get(id)??options.requestKey();cancelKeys.set(id,key);
+                    const result=await options.cancel(operation.operationId,key,operation.actions!.digest);
+                    if(cancelKeys.get(id)===key)cancelKeys.delete(id);
                     if (!isCurrent()) { return; }
-                    options.success('Задание в очереди отменено');
+                    options.success(result.message||'Запрос отмены передан исполнителю');
                     await refresh(isCurrent);
                 } catch (failure) {
                     if (isCurrent()) { options.error(errorMessage(failure, 'Не удалось отменить задание.')); }
@@ -123,7 +125,7 @@ export function createOperationActionsController(options: IControllerOptions) {
                     finish(id, request);
                     close();
                 }
-            }, close);
+            }, close,operation);
             confirmations.set(id, { ...confirmation, token });
         },
     };
