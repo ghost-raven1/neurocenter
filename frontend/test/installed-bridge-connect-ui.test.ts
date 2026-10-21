@@ -29,6 +29,7 @@ vi.mock('antd', async importOriginal => {
 });
 
 const origin = 'https://panel.example.test:8443';
+const installerOrigin='https://gateway.example.test:9443';
 const capabilities = ['durable-completions', 'managed-installations', 'install-set-v1', 'workspace-instance-v1'];
 function device(): IBridgeDevice {
     return { id: 'computer', name: 'Рабочий компьютер', role: 'Разработчик', fingerprint: '', online: true, lastSeen: null,
@@ -37,7 +38,7 @@ function device(): IBridgeDevice {
 function select(devices: IBridgeDevice[], selected = devices[0]): void {
     fixture.bridge.devices = devices; fixture.bridge.device = selected;
 }
-const setup = (windows = false, projectId?: string): string => renderToStaticMarkup(createElement(BridgeSetup, { origin, windows, onCopy: vi.fn(), projectId }));
+const setup = (windows = false, projectId?: string): string => renderToStaticMarkup(createElement(BridgeSetup, { origin,installer:{origin:installerOrigin,loading:false,error:'',reload:vi.fn()}, windows, onCopy: vi.fn(), projectId }));
 
 beforeEach(() => {
     vi.clearAllMocks(); fixture.buttons.clear();
@@ -152,7 +153,8 @@ describe('Подключение компьютера с уже установл
         const old = device(); old.report.capabilities = ['durable-completions', 'managed-installations'];
         select([old]); const html = setup();
         expect(html).toMatch(/Обновите.*мост/iu);
-        expect(html).toContain('/api/bridge/install.sh');
+        expect(html).toContain(installerOrigin+'/api/bridge/install.sh');
+        expect(html).not.toContain(origin+'/api/bridge/install.sh');
     });
 
     it('Ручной код подходит для отдельного подключения и не требует предшествующей установки', () => {
