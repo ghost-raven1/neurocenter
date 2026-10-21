@@ -1,3 +1,5 @@
+import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
+import {assertAgentConfigurationResult} from '../agents/agent-jobs';
 import {assertSnapshotCompletion} from './project-snapshot-completion';
 import {SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import { PROJECT_LOCAL_KINDS, LOCAL_PREPARATIONS, LOCAL_APPLIES, localPurpose } from './project-local-actions';
@@ -61,6 +63,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         }
         await assertSnapshotCompletion(client,job,input.result,input.state==='failed');
         assertRagJobResult(job,input.result,input.state==='failed');
+        assertAgentConfigurationResult(job,input.result,input.state==='failed');
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
         if(job.kind==='scan-opencode-models'&&(input.state==='failed'?Object.keys(input.result).length>0:!validModelScan(input.result,{projectId:job.project_id,bindingId:job.payload.bindingId,instanceId:job.payload.instanceId})))throw new ConflictException('Отчёт моделей содержит неподдерживаемые данные или относится к другой папке.');
@@ -127,8 +130,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                 }
             }
         }
-        const known = [SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
-        const matching = job.kind === SNAPSHOT_JOB_KIND ? input.result.status==='UPLOADED' : job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
+        const known = [PROJECT_AGENTS_JOB,SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
+        const matching = job.kind === PROJECT_AGENTS_JOB ? input.result.readiness==='configured' : job.kind === SNAPSHOT_JOB_KIND ? input.result.status==='UPLOADED' : job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
             ? typeof input.result.root === 'string' && input.result.root.length > 0 && input.result.root.length <= 4096
             : input.result.projectId === job.project_id && ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','inspect-installation'].includes(job.kind) || input.result.ok === true);
         // Действующая аренда подтверждает исполнителя, но не принадлежность результата исходному проекту.
@@ -185,7 +188,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             : 'План подготовлен. Проверьте изменения перед подтверждением.' : undefined;
         const hostedMessage=job.kind===HOSTED_RAG_KIND?(input.state==='failed'?'Подключение модели не подтверждено. Прежний локальный индекс сохранён; проверьте состояние на компьютере.':job.payload.reindex?'Модель подключена, локальный индекс перестроен и синхронизирован с сервером.':'Модель подключена к установленному OpenCodeRAG.'):undefined;
         const snapshotMessage=job.kind===SNAPSHOT_JOB_KIND?(input.state==='succeeded'?'Все блоки снимка приняты сервером. Проверка LanceDB выполняется отдельно.':'Передача снимка прервалась. Создайте новый снимок; локальная база не изменялась.'):undefined;
-        const message = snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
+        const agentMessage=job.kind===PROJECT_AGENTS_JOB?(input.state==='succeeded'?PROJECT_AGENTS_NOTE:'Настройка агентов не применена. Проверьте компьютер, папку и локальные изменения.'):undefined;
+        const message = agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'

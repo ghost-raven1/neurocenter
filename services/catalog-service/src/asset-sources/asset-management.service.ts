@@ -1,3 +1,5 @@
+import {AgentRepository} from '../agents/agent.repository';
+import {agentNativeHash} from '../agents/agent-validation';
 import { BadRequestException, ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -13,9 +15,9 @@ import { SkillAssetClient, type ISkillSnapshot } from './skill-adapter';
 import { authorizeImportActor } from './import-worker';
 import { securityEvent } from '../access/security-events';
 
-type Kind='mcp'|'plugin'|'skill'|'model';
-interface ITarget {kind:Kind;id:string;name:string;version:number;hash:string;archived:boolean;payloadHash?:string;archive?:ISkillSnapshot['archive']}
-interface IProjectRef {id:string;name:string;addedAt:string;addedBy:string;version?:number|null;manifest?:string|null}
+type Kind='mcp'|'plugin'|'skill'|'model'|'agent';
+interface ITarget {kind:Kind;id:string;name:string;version:number;hash:string;archived:boolean;payloadHash?:string;archive?:ISkillSnapshot['archive'];slug?:string}
+interface IProjectRef {id:string;name:string;addedAt:string;addedBy:string;version?:number|null;manifest?:string|null;revision?:number}
 interface IImpact {target:ITarget;projects:IProjectRef[];preserved:string[];removeBlockers?:Array<{id:string;name:string}>}
 interface IImpactRow {id:string;actor:string;digest:string;payload:IImpact;expires_at:string|Date}
 interface IOperation {id:string;actor:string;mode:string;state:string;message:string}
@@ -31,7 +33,7 @@ export class AssetManagementService implements OnModuleInit {
     }
     private target(raw:unknown):{kind:Kind;id:string}{
         const input=raw as Partial<ITarget>;
-        if(!input||!['mcp','plugin','skill','model'].includes(String(input.kind))||typeof input.id!=='string'||input.id.length>240
+        if(!input||!['mcp','plugin','skill','model','agent'].includes(String(input.kind))||typeof input.id!=='string'||input.id.length>240
             ||!input.id||/[\x00-\x1f\x7f]/.test(input.id)||Object.keys(input).some(key=>!['kind','id'].includes(key))){throw new BadRequestException('Выберите карточку общего каталога.');}
         if(input.kind==='skill'&&!/^common\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.id)){throw new BadRequestException('Выберите общий скилл.');}
         return input as {kind:Kind;id:string};
@@ -40,6 +42,8 @@ export class AssetManagementService implements OnModuleInit {
         let target:ITarget;
         if(input.kind==='skill'){
             const card=await this.skills.inspect(input.id);target={kind:'skill',id:card.id,name:card.name??card.id,version:card.version,hash:card.hash,archived:!!card.archivedAt,payloadHash:card.payloadHash,archive:card.archive};
+        }else if(input.kind==='agent'){
+            const card=await new AgentRepository(this.source.pool).get(input.id,client);target={...input,name:card.name,slug:card.slug,version:card.version,hash:agentNativeHash(card),archived:!!card.archivedAt};
         }else if(input.kind==='model'){
             const row=(await client.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1',[input.id])).rows[0];
             if(!row){throw new NotFoundException('Модель отсутствует в каталоге.');}
@@ -49,7 +53,9 @@ export class AssetManagementService implements OnModuleInit {
             if(!row||row.kind!==input.kind){throw new NotFoundException('Инструмент отсутствует в каталоге.');}const card=toPlugin(row);
             target={...input,name:card.name,version:card.version,hash:nativeCardHash(card),archived:!!row.archived_at};
         }
-        const refs=input.kind==='model'?await client.query<IProjectRef>(`SELECT p.id,p.name,a.added_at::text AS "addedAt",a.added_by AS "addedBy"
+        const refs=input.kind==='agent'?await client.query<IProjectRef>(`SELECT p.id,p.name,a.added_at::text AS "addedAt",a.added_by AS "addedBy",a.version,a.manifest,s.revision
+            FROM project_agents a JOIN projects p ON p.id=a.project_id JOIN project_agent_sets s ON s.project_id=a.project_id WHERE a.agent_id=$1 AND NOT a.removed ORDER BY p.id`,[input.id])
+            :input.kind==='model'?await client.query<IProjectRef>(`SELECT p.id,p.name,a.added_at::text AS "addedAt",a.added_by AS "addedBy"
             FROM project_models a JOIN projects p ON p.id=a.project_id WHERE a.model_id=$1 ORDER BY p.id`,[input.id])
             :await client.query<IProjectRef>(`SELECT p.id,p.name,a.added_at::text AS "addedAt",a.added_by AS "addedBy",a.asset_version AS version,a.asset_manifest AS manifest
             FROM project_assets a JOIN projects p ON p.id=a.project_id WHERE a.asset_id=$1 AND a.asset_kind=$2 ORDER BY p.id`,[input.id,input.kind]);
@@ -94,6 +100,8 @@ export class AssetManagementService implements OnModuleInit {
             if(before.target.kind==='mcp'||before.target.kind==='plugin'){
                 await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['publication:dependency-graph']);
                 await new PluginRepository(pool).archive(client,before.target.id,actor,{expectedHash:before.target.hash,removeProjectRefs:input.mode==='catalog-and-projects',restore});
+            }else if(before.target.kind==='agent'){
+                await new AgentRepository(pool).archive(client,before.target.id,before.target.hash,{restore,removeProjectRefs:input.mode==='catalog-and-projects'});
             }else if(before.target.kind==='model'){
                 if(restore){
                     const next=await nextModelRevision(client,before.target.id,before.target.version);
@@ -108,9 +116,10 @@ export class AssetManagementService implements OnModuleInit {
             const after=await this.snapshot(client,before.target);
             await client.query('UPDATE asset_source_receipts SET native_version=$4,native_hash=$5,updated_at=now() WHERE asset_kind=$1 AND native_id=$2 AND native_hash=$3',
                 [before.target.kind,before.target.id,before.target.hash,after.target.version,after.target.hash]);
-            await securityEvent(client,{actor,action:restore?'asset.restore':'asset.archive',resourceId:before.target.id,before:{kind:before.target.kind,hash:before.target.hash,projects:before.projects},
-                after:{mode:input.mode,archived:!restore,preserved:before.preserved}});
-            const {rows}=await client.query<IOperation>("UPDATE asset_management_operations SET state='SUCCEEDED',message='Операция завершена; история и файлы сохранены',updated_at=now() WHERE id=$1 RETURNING *",[row.id]);
+            await securityEvent(client,{actor,action:restore?'asset.restore':'asset.archive',resourceId:before.target.id,before:{kind:before.target.kind,id:before.target.id,name:before.target.name,slug:before.target.slug,version:before.target.version,hash:before.target.hash,projects:before.projects},
+                after:{kind:after.target.kind,id:after.target.id,name:after.target.name,slug:after.target.slug,version:after.target.version,mode:input.mode,archived:!restore,preserved:before.preserved}});
+            const message=before.target.kind==='agent'&&input.mode==='catalog-and-projects'?'Агент удалён из каталога и настроек проектов. Примените изменения на каждом компьютере для удаления файлов OpenCode.':'Операция завершена; история и файлы сохранены';
+            const {rows}=await client.query<IOperation>("UPDATE asset_management_operations SET state='SUCCEEDED',message=$2,updated_at=now() WHERE id=$1 RETURNING *",[row.id,message]);
             await client.query('COMMIT');return rows[0];
         }catch(error){
             await client.query('ROLLBACK').catch(()=>undefined);

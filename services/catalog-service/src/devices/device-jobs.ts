@@ -1,3 +1,5 @@
+import {PROJECT_AGENTS_JOB} from '../../../shared/project-agents.cjs';
+import {agentConfigurationJobPayload,assertAgentConfigurationJob} from '../agents/agent-jobs';
 import {projectSnapshotPayload,assertProjectSnapshotJob,SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import {
     BadRequestException,
@@ -88,7 +90,7 @@ export class DeviceJobs {
                 !hasDeviceJobPermission(claims,role,device.role,projectId,minimum)
             ) {
                 throw new ForbiddenException(
-                    minimum === 1 ? 'Проверка требует доступа к этому проекту и подключению MCP.' : 'Действие требует роли разработчика в этом проекте и в подключении MCP.',
+                    minimum === 1 ? 'Проверка требует доступа к этому проекту и подключению MCP.' : minimum>=3 ? 'Настройка требует роли администратора проекта и подходящей роли подключения моста.' : 'Действие требует роли разработчика в этом проекте и в подключении MCP.',
                 );
             }
         }
@@ -107,6 +109,7 @@ export class DeviceJobs {
             ![
                 'choose-root',
                 SNAPSHOT_JOB_KIND,
+                PROJECT_AGENTS_JOB,
                 ...PROJECT_LOCAL_KINDS,
                 ...CONFIGURATION_KINDS,
                 'bind-project',
@@ -160,12 +163,14 @@ export class DeviceJobs {
             const bindingId=managedBinding(device.report,input.projectId); assertExpectedBinding(bindingId,input.expectedBindingId,true);
             payload={bindingId};
         }
+        const agentConfiguration=await agentConfigurationJobPayload(this.store,device,input);
         const snapshot=await projectSnapshotPayload(this.store,device,input);
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
         const configuration=await mcpConfigurationJobPayload(this.store,this.installations,this.plans,device,input);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(snapshot){payload=snapshot;}
+        if(agentConfiguration){payload={...agentConfiguration};}
+        else if(snapshot){payload=snapshot;}
         else if(hostedRag){payload=hostedRag;}
         else if(ragUi){payload=ragUi;}
         else if(configuration){payload=configuration;}
@@ -294,6 +299,7 @@ export class DeviceJobs {
             if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
+            await assertAgentConfigurationJob(this.store,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
             await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
             if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
@@ -348,6 +354,7 @@ export class DeviceJobs {
         if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
+        await assertAgentConfigurationJob(this.store,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
         await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
         if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }

@@ -32,11 +32,11 @@ describe('Canonical migration CLI — actual child Node process',()=>{
   const result=await call(['check'],{CATALOG_PG_URL_FILE:'/missing/private/fixture-marker'}).then(()=>null,error=>error);expect(result.code).toBe(1);expect(result.stderr).not.toContain('fixture-marker');expect(result.stdout).toBe('');
  });
  it.skipIf(!connection)('check permits pending without writes; --ready rejects it; migrate commits before reporting ready',async()=>{
-  const db=await database(),env={CATALOG_PG_URL:db.url};const before=await call(['check'],env);expect(JSON.parse(before.stdout)).toEqual({ok:true,ready:false,existingSchema:false,applied:[],pending:[0,1,2,3,4,5,6]});
+  const db=await database(),env={CATALOG_PG_URL:db.url};const before=await call(['check'],env);expect(JSON.parse(before.stdout)).toEqual({ok:true,ready:false,existingSchema:false,applied:[],pending:[0,1,2,3,4,5,6,7]});
   expect((await db.pool.query("SELECT to_regclass('catalog_schema_migrations') AS name")).rows[0].name).toBeNull();
   expect((await call(['check','--ready'],env).then(()=>null,e=>e)).code).toBe(1);
-  const migrated=await call(['migrate'],env);expect(JSON.parse(migrated.stdout)).toEqual({ok:true,ready:true,existingSchema:true,applied:[0,1,2,3,4,5,6],pending:[]});
+  const migrated=await call(['migrate'],env);expect(JSON.parse(migrated.stdout)).toEqual({ok:true,ready:true,existingSchema:true,applied:[0,1,2,3,4,5,6,7],pending:[]});
   expect(JSON.parse((await call(['check','--ready'],env)).stdout).ready).toBe(true);
-  await db.pool.query("UPDATE catalog_schema_migrations SET checksum='corrupt' WHERE version=3");expect((await call(['migrate'],env).then(()=>null,e=>e)).code).toBe(1);expect((await db.pool.query('SELECT count(*) FROM catalog_schema_migrations')).rows[0].count).toBe('7');
+  await db.pool.query("UPDATE catalog_schema_migrations SET checksum='corrupt' WHERE version=3");expect((await call(['migrate'],env).then(()=>null,e=>e)).code).toBe(1);expect((await db.pool.query('SELECT count(*) FROM catalog_schema_migrations')).rows[0].count).toBe('8');
  });
 });

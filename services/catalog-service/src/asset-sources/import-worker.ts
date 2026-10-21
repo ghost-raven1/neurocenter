@@ -1,3 +1,4 @@
+import {AgentAssetAdapter} from './asset-agent-adapter';
 import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { selectAssets, toBridgeRelease, type BridgeAsset } from '@neurocenter/asset-contract';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +25,7 @@ export class AssetImportWorker {
     private active?:Promise<void>;private stopped=false;private abort?:AbortController;
     constructor(private readonly pool:Pool,private readonly jobs:AssetImportRepository,private readonly sources:AssetSourceSnapshots,
         private readonly blobs:AssetBlobStore,private readonly runtime:RuntimeArtifacts,
-        private readonly tools=new ToolAssetAdapter(pool),private readonly skills=new SkillAssetAdapter(),private readonly models=new ModelAssetAdapter(pool)) {}
+        private readonly tools=new ToolAssetAdapter(pool),private readonly skills=new SkillAssetAdapter(),private readonly models=new ModelAssetAdapter(pool),private readonly agents=new AgentAssetAdapter(pool)) {}
     kick():void {if(this.stopped||this.active){return;}this.active=this.drain().finally(()=>{this.active=undefined;});void this.active.catch(()=>undefined);}
     async flush():Promise<void>{this.kick();await this.active;}
     async stop():Promise<void>{this.stopped=true;this.abort?.abort(new Error('Сервер завершает работу'));await this.active?.catch(()=>undefined);}
@@ -52,6 +53,7 @@ export class AssetImportWorker {
             switch(resolved.asset.kind){
                 case 'mcp':case 'plugin':item=await this.tools.preview(resolved,key,items,receipt,version,overrideHash);break;
                 case 'skill':item=await this.skills.preview(resolved,key,items,receipt,version,overrideHash);break;
+                case 'agent':item=await this.agents.preview(resolved,key,items,receipt,version,overrideHash);break;
                 case 'model':item=await this.models.preview(resolved,key,items,receipt,version,overrideHash);break;
                 case 'bridge':{
                     const release=toBridgeRelease(resolved.asset as BridgeAsset);
@@ -103,7 +105,7 @@ export class AssetImportWorker {
                     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:'+item.resolved.asset.kind+':'+(item.expected?.id??item.native!.id)]);
                     let skillPin;if(item.resolved.asset.kind==='skill'){skillPin=await this.skills.publish(item,job.actor);}
                     const finish=async(native:NonNullable<IImportItem['native']>)=>{
-                        if(['mcp','plugin','model'].includes(native.kind)&&item.native&&(native.id!==item.native.id||native.version!==item.native.version||native.manifest!==item.native.manifest||native.hash!==item.native.hash)){
+                        if(['mcp','plugin','model','agent'].includes(native.kind)&&item.native&&(native.id!==item.native.id||native.version!==item.native.version||native.manifest!==item.native.manifest||native.hash!==item.native.hash)){
                             throw new ConflictException('Native-публикация отличается от закреплённого плана. Зависимые карточки не опубликованы.');
                         }
                         item={...item,native,state:'SUCCEEDED',message:item.resolved.asset.kind==='model'&&item.resolved.asset.delivery.type==='remote-api'?'Карточка добавлена. Подключение API настраивается отдельно.':'Добавлено и проверено'};
@@ -111,6 +113,7 @@ export class AssetImportWorker {
                         job=await this.jobs.save(client,job,'RUNNING','Сохранён этап «'+item.name+'»');
                     };
                     if(item.resolved.asset.kind==='mcp'||item.resolved.asset.kind==='plugin'){await this.tools.publish(item,job.actor,client,async card=>finish(this.tools.pin(card)));}
+                    else if(item.resolved.asset.kind==='agent'){await finish(await this.agents.publish(item,job.actor,client));}
                     else if(item.resolved.asset.kind==='model'){await finish(await this.models.publish(item,job.actor,client));}
                     else{await finish(skillPin??item.native!);}
                     await client.query('COMMIT');

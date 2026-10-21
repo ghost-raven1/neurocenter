@@ -27,7 +27,7 @@ export async function databaseFixture(options:{beforeFinalize?:(pool:Pool)=>Prom
  const pool=new Pool({connectionString:url.href,connectionTimeoutMillis:1500,max:8}),root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-asset-import-'));
  const dispose=async()=>{await pool.end();await admin.query('DROP DATABASE '+database);await admin.end();await fs.rm(root,{recursive:true,force:true});};
  try{
-  if(options.beforeFinalize){await migrateCatalog(pool,CATALOG_MIGRATIONS.slice(0,-1));await options.beforeFinalize(pool);}
+  if(options.beforeFinalize){await migrateCatalog(pool,CATALOG_MIGRATIONS.filter(migration=>migration.version<6));await options.beforeFinalize(pool);}
   await ensureCatalogSchema(pool);
   await pool.query("INSERT INTO platform_users(email,is_main_admin,enabled) VALUES('dev@localhost',true,true)");
   const plugins=new PluginRepository(pool),jobs=new AssetImportRepository(pool),blobs=new AssetBlobStore(pool,path.join(root,'blobs')),sources=new AssetSourceSnapshots(pool,undefined);

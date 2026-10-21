@@ -32,6 +32,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (/^\/api\/(asset-sources|asset-imports|asset-management)(?:\/|$)/.test(route)) { return main; }
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
+    if(route==='/api/agents'){return read||main&&request.method.toUpperCase()==='POST';}
+    if(/^\/api\/agents\/agent-[a-z0-9][a-z0-9-]{0,120}$/.test(route)){return read||main&&request.method.toUpperCase()==='PATCH';}
     if (route === '/api/models') { return read || main; }
     const model = /^\/api\/models\/[^/]+(?:\/(.*))?$/.exec(route);
     if (model) {

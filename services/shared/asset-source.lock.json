@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "repository": "ghost-raven1/neurocenter-assets",
-  "commit": "0dca89f66819f22bf77c5df37b60d8c9e1e5d8fa",
+  "commit": "2bcbdcbd77d003c078ce6357d64375de6ede1ff6",
   "index": {
     "path": "index.json",
-    "sha256": "bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf"
+    "sha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177"
   }
 }

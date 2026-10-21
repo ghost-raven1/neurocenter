@@ -9,8 +9,7 @@ require('ts-node').register({transpileOnly:true,project:fileURLToPath(new URL('.
 const { Pool } = require('pg');
 const { migrateCatalog } = require('./src/database/migrations.ts');
 const { CATALOG_MIGRATIONS } = require('./src/database/catalog-migrations.ts');
-const { CATALOG_SCHEMA_CONTRACT } = require('./src/database/schema-contract/index.ts');
-const { assertCatalogSchema } = require('./src/database/schema-verification.ts');
+const { CURRENT_CATALOG_SCHEMA_CONTRACT, assertCurrentCatalogSchema } = require('./src/database/current-schema-verification.ts');
 const database = 'nc_install_test_reliable_migrations_' + process.pid;
 const admin = new Pool({ connectionString: process.env.TEST_ADMIN_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres' });
 let pool;
@@ -24,24 +23,24 @@ try {
     await check('Обновление с первой схемы сохраняет прежний план и задаёт его назначение', async () => {
         await migrateCatalog(pool,CATALOG_MIGRATIONS.slice(0,2));
         await pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES('device','fixture@example.test','Главный админ','Fixture','fixture-fingerprint','fixture-token'); INSERT INTO bridge_jobs(id,email,role,device_id,kind,payload,request_key,request_hash) VALUES('prepare','fixture@example.test','Главный админ','device','project-connect','{}','prepare-key','prepare-hash'); INSERT INTO bridge_local_change_plans(id,device_id,project_id,email,binding_id,instance_id,preparation_job_id,digest,summary,expires_at) VALUES('old-plan','device','project','fixture@example.test','binding','instance','prepare','digest','{}',now()+interval '15 minutes')");
-        await migrateCatalog(pool,CATALOG_MIGRATIONS);
+        await migrateCatalog(pool,CATALOG_MIGRATIONS.filter(migration=>migration.version<=5));
         assert.deepEqual((await pool.query("SELECT purpose,source_id FROM bridge_local_change_plans WHERE id='old-plan'")).rows,[{purpose:'repair',source_id:null}]);
         assert.deepEqual((await pool.query('SELECT email,request_key,device_id,request_hash,job_id FROM bridge_job_requests')).rows,
             [{email:'fixture@example.test',request_key:'prepare-key',device_id:'device',request_hash:'prepare-hash',job_id:'prepare'}]);
     });
-    await check('Полная цепочка создаёт все managed-таблицы без ручного подготовительного DDL',async()=>{
-        const expected=CATALOG_SCHEMA_CONTRACT.filter(item=>item.kind==='table').map(item=>item.id).sort();
-        const actual=(await pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row=>row.tablename);
-        assert.deepEqual(actual,expected);await assertCatalogSchema(pool);
-    });
     await check('Исторические 1–5 принимают baseline без перезаписи прежних квитанций и данных',async()=>{
         await pool.query('DELETE FROM catalog_schema_migrations WHERE version IN (0,6)');
-        const before=(await pool.query('SELECT * FROM catalog_schema_migrations ORDER BY version')).rows;
+        const before=(await pool.query('SELECT * FROM catalog_schema_migrations WHERE version BETWEEN 1 AND 5 ORDER BY version')).rows;
         const devices=(await pool.query('SELECT * FROM bridge_devices ORDER BY id')).rows;
         await migrateCatalog(pool,CATALOG_MIGRATIONS);
         assert.deepEqual((await pool.query('SELECT * FROM catalog_schema_migrations WHERE version BETWEEN 1 AND 5 ORDER BY version')).rows,before);
         assert.deepEqual((await pool.query('SELECT * FROM bridge_devices ORDER BY id')).rows,devices);
-        await assertCatalogSchema(pool);
+        await assertCurrentCatalogSchema(pool);
+    });
+    await check('Полная цепочка создаёт все managed-таблицы без ручного подготовительного DDL',async()=>{
+        const expected=CURRENT_CATALOG_SCHEMA_CONTRACT.filter(item=>item.kind==='table').map(item=>item.id).sort();
+        const actual=(await pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row=>row.tablename);
+        assert.deepEqual(actual,expected);await assertCurrentCatalogSchema(pool);
     });
     await check('Два сервера применяют миграции ровно один раз', async () => {
         await Promise.all([migrateCatalog(pool, CATALOG_MIGRATIONS), migrateCatalog(pool, CATALOG_MIGRATIONS)]);
