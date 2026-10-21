@@ -41,6 +41,7 @@ interface ButtonProps { children?: ReactNode; disabled?: boolean; onClick?: () =
 interface SelectProps { 'aria-label'?: string; value?: string; onChange: (value: string) => void; }
 const ui = vi.hoisted(() => ({
     scope: 'admin-a', projectId: 'project-a', open: true,
+    start: undefined as {source:'files'} | undefined, active: false,
     inputs: new Map<string, InputProps>(), buttons: new Map<string, ButtonProps>(),
     selects: new Map<string, SelectProps>(),
     metadata: new Map<string, NpmPackageMetadata>(),
@@ -62,7 +63,7 @@ vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({ useNpmMetadata
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({ useRepositoryMetadata: (query: RepositoryQuery) => {
     ui.repositoryQuery=query; return { metadata:ui.repositoryMetadata, resolve:async()=>ui.repositoryMetadata };
 } }));
-vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: false, submitting: false, unresolved: false, submit: ui.submit, reset: ui.reset }) }));
+vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: false, submit: ui.submit, reset: ui.reset }) }));
 vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,forget:async()=>true }) }));
 vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
 vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect}:{onSelect:typeof ui.selectFiles})=>{ui.selectFiles=onSelect;return null;}}));
@@ -90,20 +91,32 @@ function deferred<T>() {
 }
 const flush = async () => { for (let turn = 0; turn < 10; turn++) await Promise.resolve(); };
 function render() {
-    hooks.begin(); ui.inputs.clear(); ui.buttons.clear(); ui.selects.clear(); ui.finish = undefined;
-    const html = renderToStaticMarkup(createElement(ToolPackagingModal, { open: ui.open, scope: ui.scope, projectId: ui.projectId, onClose: () => { ui.open = false; }, onPublished: vi.fn() }));
+    hooks.begin(); ui.inputs.clear(); ui.buttons.clear(); ui.selects.clear(); ui.finish = undefined; ui.selectFiles=undefined;
+    const html = renderToStaticMarkup(createElement(ToolPackagingModal, { open: ui.open, start: ui.start, scope: ui.scope, projectId: ui.projectId, onClose: () => { ui.open = false; }, onPublished: vi.fn() }));
     hooks.commit(); return html;
 }
 function input(label: string, value: string) { ui.inputs.get(label)!.onChange!({ target: { value } }); }
 function ready() { render(); input('npm-пакет или ссылка', metadata.package); ui.metadata.set(metadata.package, metadata); render(); }
 beforeEach(() => {
-    vi.resetAllMocks(); ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
+    vi.resetAllMocks(); ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
     ui.resolve.mockImplementation(async () => metadata);
     ui.reset.mockImplementation(() => { ui.job = undefined; });
 });
 afterEach(() => hooks.dispose());
 
 describe('Проверка источника до добавления инструмента', () => {
+    it('Прямое добавление архива открывает выбор файла и не отправляет сборку', () => {
+        ui.start={source:'files'}; render();
+        const html=render(); expect(ui.source).toBe('files'); expect(ui.selectFiles).toBeTypeOf('function');
+        expect(html).toContain('SKILL.md'); expect(ui.submit).not.toHaveBeenCalled();
+        ui.selectSource!({target:{value:'repository'}}); render(); expect(ui.source).toBe('repository');
+    });
+    it('Архивный переход дожидается восстановления и сохраняет активную сборку', () => {
+        ui.start={source:'files'}; ui.active=true; render(); render(); expect(ui.selectFiles).toBeUndefined();
+        ui.job={id:'existing',operationId:'operation',state:'RUNNING',percent:10,message:'Проверяем'}; render();
+        ui.active=false; expect(render()).toContain('Проверяем'); expect(ui.selectFiles).toBeUndefined(); expect(ui.submit).not.toHaveBeenCalled();
+        ui.job=undefined; render(); render(); expect(ui.source).toBe('files');
+    });
     it('Первая проверка показывает карточку, а отдельное подтверждение отправляет закреплённую версию и определённый тип', async () => {
         ui.resolve.mockImplementation(async (specifier: string) => { ui.metadata.set(specifier, metadata); return metadata; });
         render(); input('npm-пакет или ссылка', metadata.package); render();

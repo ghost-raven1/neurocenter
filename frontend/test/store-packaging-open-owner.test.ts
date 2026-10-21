@@ -187,6 +187,19 @@ describe('Открытие опубликованного инструмента
         expect(ui.view?.id).toBe('new-package');
     });
 
+    it('Повторное открытие той же сборки не наследует GET скрытого окна', async () => {
+        const old = deferred<IAiPlugin>(), fresh = deferred<IAiPlugin>();
+        vi.mocked(bffApi.getAiPlugin).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+        open(); click('Скрыть'); render(); click('Упаковать инструмент'); render();
+        expect(ui.buttons.get('Открыть в каталоге')!.loading).toBe(false);
+        click('Открыть в каталоге'); render();
+        expect(bffApi.getAiPlugin).toHaveBeenCalledTimes(2);
+        old.resolve(plugin('old-package')); await flush(); render();
+        expect(ui.view).toBeNull(); expect(ui.buttons.get('Открыть в каталоге')!.loading).toBe(true);
+        fresh.resolve(plugin('old-package')); await flush(); render();
+        expect(ui.view?.id).toBe('old-package'); expect(ui.open).toBe(false);
+    });
+
     it('Двойное нажатие до render отправляет один GET, текущий отказ допускает повтор', async () => {
         const response = deferred<IAiPlugin>(); vi.mocked(bffApi.getAiPlugin).mockReturnValueOnce(response.promise);
         render(); click('Упаковать инструмент'); render(); click('Открыть в каталоге'); click('Открыть в каталоге');

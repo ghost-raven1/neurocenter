@@ -14,7 +14,7 @@ import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwne
 import { notifySkillMutation } from '../Skills/skillMutationFeedback';
 import type { ISkillMutationReceipt } from '../../core/api/interfaces';
 
-interface IProps { open: boolean; onClose: () => void; onCreated: () => void; onPackage: () => void; }
+interface IProps { open: boolean; onClose: () => void; onCreated: () => void; onPackage: (source?: 'files') => void; }
 
 const mcpFieldRule = (field: TPublicationMcpField) => ({validator: (_: unknown, value: string | undefined) => {
     try { checkPublicationMcpField(field, value); return Promise.resolve(); } catch (cause) { return Promise.reject(cause); }
@@ -72,6 +72,8 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
         onCancel={()=>{if(!submitting.current && !reading){onClose();}}} closable={!busy && !reading} maskClosable={!busy && !reading} keyboard={!busy && !reading}>
         <Form name="store-create" form={form} layout="vertical" scrollToFirstError={{block:'center'}} disabled={busy || reading} initialValues={{kind:'mcp',mode:'remote'}} onValuesChange={()=>setError('')} onFinish={values=>{void submit(values);}}>
             <Form.Item name="kind" label="Что добавляем"><Radio.Group options={[{value:'mcp',label:'MCP'},{value:'plugin',label:'Плагин'},{value:'skill',label:'Скилл'}]} /></Form.Item>
+            <Alert type="info" showIcon message={kind==='skill'?'Готовый скилл можно добавить архивом. Найдём SKILL.md и сохраним его ресурсы.':'npm, GitHub или архив добавляются через упаковку'}
+                action={<Button disabled={busy || reading} onClick={()=>{if(!submitting.current && !reading){onPackage(kind==='skill'?'files':undefined);}}}>{kind==='skill'?'Добавить скилл архивом':'Упаковать инструмент'}</Button>} />
             <Form.Item name="name" label="Название" rules={[{required:true,whitespace:true,message:'Введите название'},{max:128,message:'До 128 символов'}]} extra="Можно по-русски. Название не обязано совпадать с именем папки."><Input placeholder="Например, Проверка кода" /></Form.Item>
             <Form.Item name="description" label="Описание" rules={[{required:true,whitespace:true,message:'Расскажите, для чего нужен инструмент'},{max:kind==='skill'?1024:2000,message:'Описание слишком длинное'}]}><Input.TextArea rows={2} placeholder="Что делает инструмент и когда его использовать" /></Form.Item>
             <Form.Item name="tags" label="Теги" extra="До 20 тегов через запятую"><Input placeholder="Например, код, проверка" /></Form.Item>
@@ -81,7 +83,6 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
                 <Form.Item name="resources" label="Ресурсы скилла"><SkillResources disabled={busy || dependenciesBusy} onLoadingChange={setResourcesBusy} /></Form.Item>
             </>}
             {kind==='mcp' && <>
-                <Alert type="info" showIcon message="npm, репозиторий или архив добавляются через упаковку" action={<Button disabled={busy || reading} onClick={()=>{if(!submitting.current && !reading){onPackage();}}}>Упаковать инструмент</Button>} />
                 <Form.Item name="mode" label="Как запускается MCP"><Select options={[{value:'remote',label:'Удалённый сервер по URL'},{value:'bundle',label:'Текстовый пакет Node.js'}]} /></Form.Item>
                 {mode==='remote' ? <>
                     <Form.Item name="url" label="Адрес MCP" required rules={[mcpFieldRule('url')]}><Input placeholder="https://example.org/mcp" /></Form.Item>

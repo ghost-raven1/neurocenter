@@ -112,6 +112,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     const [createOpen, setCreateOpen] = useState(false);
     const [packagingOpen, setPackagingOpen] = useState(false);
+    const [packagingStart, setPackagingStart] = useState<{source:'files'}>();
     const projectsInitialized = useRef(false);
     useEffect(() => { setSearch(query); }, [query]);
     const changeSearch = (value: string): void => {
@@ -431,8 +432,8 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         })() }
             </Modal>
 
-            <StoreCreateModal key={'create:' + accessKey} open={createOpen} onClose={() => setCreateOpen(false)} onPackage={()=>{setCreateOpen(false);setPackagingOpen(true);}} onCreated={()=>{changeSearch('');setFilter('all');setInstalledOnly(false);void loadCatalog();}} />
-            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen} scope={accessKey} projectId={targetProject?.id} onClose={() => setPackagingOpen(false)} onPublished={async (id, current, kind) => {
+            <StoreCreateModal key={'create:' + accessKey} open={createOpen} onClose={() => setCreateOpen(false)} onPackage={source=>{setCreateOpen(false);setPackagingStart(source?{source}:undefined);setPackagingOpen(true);}} onCreated={()=>{changeSearch('');setFilter('all');setInstalledOnly(false);void loadCatalog();}} />
+            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen} start={packagingStart} scope={accessKey} projectId={targetProject?.id} onClose={() => setPackagingOpen(false)} onPublished={async (id, current, kind) => {
                 const owns = captureOwner();
                 if (!owns() || !current()) return;
                 const app = kind === 'skill' ? fromSkill(await bffApi.getSkill(id)) : fromPlugin(await bffApi.getAiPlugin(id));
