@@ -1,5 +1,7 @@
 # Фронтенд — дизайн-спецификация
 
+> Историческая проектная спецификация, не инструкция запуска и не описание текущего стека. В этом проходе обновлены заменённые skills/packages/restore API; остальные макеты, версии зависимостей и ранние статусы реализации ниже сохранены как история проектирования. Актуальная реализация и проверенные ограничения: [current-implementation.md](current-implementation.md), запуск — [README](../README.md), поставка — [assets.md](assets.md), выполненная очистка и очередь — [technical-debt-2026-10-21.md](technical-debt-2026-10-21.md).
+
 Дата: 13 октября 2026. Панель администратора проекта LanceDB-хранилища.
 
 ## 1. Стек (зафиксировано)
@@ -98,14 +100,18 @@ Header: GlobalSearch + UserBlock (имя, RoleSwitcher = `changeActiveRole`, в�
 | GET | /api/projects/:id/profiles | — | `IProjectProfile[]` |
 
 ### Skills
+Маршруты обслуживает файловый `skills-service` через Gateway. Пути скиллов относительные, например `common/jest-test`; версия, метаданные и ресурсы принадлежат одной публикации.
+
 | Метод | Эндпоинт | Примечание |
 | --- | --- | --- |
-| GET | /api/skills/collections?scope=common\|project&projectId | список коллекций |
-| GET | /api/skills?collectionId&q | `ISkill[]` |
-| GET | /api/skills/:skillId | `ISkillDetail` (versions, metadata) |
-| POST | /api/skills/publish | `{ collectionId, slug, contentHashRef, metadata, expectedVersionId?, expectedVersionRevision? }` |
-| POST | /api/skills/collections/:cid/head | `{ skillId, expectedVersionId, expectedVersionRevision }` |
-| GET | /api/skills/:skillId/download | `{ downloadUrl, expiresAt }` |
+| GET | /api/skills/tree | дерево папок и скиллов |
+| GET | /api/skills | список `ISkillListSummary[]`, фильтры `ISkillsListQuery` |
+| GET | /api/skills/:path?version | `ISkillFile`: тело, метаданные и ресурсы |
+| GET | /api/skills/_package/:path?version | установочный пакет точной версии; `version` обязателен |
+| POST | /api/skills | создание по `ISkillCreateRequest` |
+| PUT | /api/skills/:path | `ISkillUpdateRequest`, включая `expectedVersion` |
+| DELETE | /api/skills/:path | удаление по действующей политике зависимостей |
+| POST | /api/skills/directory | `{ path }` |
 
 ### Operations (transfers/verifications)
 | Метод | Эндпоинт | Примечание |
@@ -125,20 +131,17 @@ Header: GlobalSearch + UserBlock (имя, RoleSwitcher = `changeActiveRole`, в�
 | --- | --- | --- |
 | GET | /api/maintenance/storage | summary (used/limit, per-bucket) |
 | GET | /api/maintenance/backup | `{ lastBackupAt, backupLag, restoreDrills[] }` |
-| POST | /api/maintenance/restore | `{ checkpointId }` → `{ operationId }` |
+| GET | /api/maintenance/restore | готовность runner, checkpoints и задания |
+| POST | /api/maintenance/restore/previews | `{ requestKey, checkpointId, checkpointSha256, targetProject }` → `RestoreJob`, HTTP202 |
+| POST | /api/maintenance/restore | `{ requestKey, previewId, digest, confirmation }` → `RestoreJob`, HTTP202 |
+| GET | /api/maintenance/restore/requests/:key | результат исходного запроса после потерянного ответа |
+| POST | /api/maintenance/restore/jobs/:id/cancel | отмена задания |
 | PATCH | /api/projects/:id/quotas | `{ currentBytesLimit, retentionBytesLimit, stagingBytesLimit }` |
-| PATCH | /api/projects/:id/retention | `{ retentionCount, gracePeriodHours }` |
+| PATCH | /api/projects/:id/retention | `{ retention }`, целое число снимков 1..100 |
 
-### Packages (extension)
-| Метод | Эндпоинт | Примечание |
-| --- | --- | --- |
-| GET | /api/packages/collections | list |
-| GET | /api/packages?collectionId | `IPackage[]` |
-| GET | /api/packages/:id | `IPackageDetail` (variants, manifest) |
-| POST | /api/packages/publish | candidate upload |
-| POST | /api/packages/collections/:cid/head | head CAS |
-| POST | /api/packages/:id/revoke | revoke current |
-| GET | /api/packages/:id/download | per platform variant |
+### Установочные пакеты инструментов
+
+`GET /api/ai-plugins/:id/package?version` возвращает проверяемый пакет конкретного инструмента. Список и история используют `/api/ai-plugins` и `/api/ai-plugins/:id/versions`. Поставка ассетов описана в [контракте репозитория](assets.md). Отдельного каталога `/api/packages` и фиктивных коллекций скиллов нет.
 
 ### Access / Decisions
 | Метод | Эндпоинт | Примечание |
