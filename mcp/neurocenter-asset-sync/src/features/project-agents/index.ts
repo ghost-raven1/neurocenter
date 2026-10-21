@@ -1,10 +1,12 @@
 import {withProjectFiles,commitChanges} from '../../bridge/installation-files.js';
 import {InstallationPlan} from '../../bridge/installation-plan.js';
 import {projectFolder,projectBindingId,projectInstanceId} from '../../bridge/workspace.js';
-import {hash} from '../../bridge/state.js';
+import {hash,hub} from '../../bridge/state.js';
 import {PROJECT_AGENTS_NOTE,normalizeProjectAgentsPayload,renderProjectAgent,validateProjectAgentsResult,type ProjectAgentsPayload,type ProjectAgentsResult} from './contract.js';
 import {AGENTS_RECEIPT,agentFile,agentsJournalKey,agentsPrivateProof,type AgentsReceipt} from './receipt.js';
 import {agentConflict,assertAgentNamespace} from './namespace.js';
+import {LEARNING_COLLECTOR_FILE,renderLearningCollector} from '../project-learning/collector-plugin.js';
+import {learningQueueRoot} from '../project-learning/observation-queue.js';
 
 type Authorize=()=>Promise<unknown>;
 type Progress=(percent:number,message:string)=>Promise<unknown>;
@@ -25,6 +27,7 @@ export async function configureProjectAgents(input:unknown,authorize:Authorize,p
         if(previous&&(previous.bindingId!==payload.bindingId||previous.instanceId!==payload.instanceId||previous.projectId!==payload.projectId
             ||previous.revision>payload.revision||previous.revision===payload.revision&&previous.manifestSha256!==payload.manifestSha256))throw stale();
         const previousFiles=new Map(previous?.agents.map(agent=>[agentFile(agent.slug),agent.sha256])??[]);
+        if(previous?.collector)previousFiles.set(previous.collector.path,previous.collector.sha256);
         const current=new Map<string,string|null>();
         for(const [file]of previousFiles)current.set(file,await plan.read(file));
         // A deleted .opencode can be reconnected without deleting the device; private history still owns the absent files.
@@ -38,6 +41,8 @@ export async function configureProjectAgents(input:unknown,authorize:Authorize,p
         const ownedSlugs=previous?.agents.map(agent=>agent.slug)??[];
         await assertAgentNamespace(plan,slugs,ownedSlugs);
         const desired=new Map(payload.agents.map(agent=>[agentFile(agent.slug),renderProjectAgent(agent)]));
+        if(payload.agents.length)desired.set(LEARNING_COLLECTOR_FILE,renderLearningCollector({projectId:payload.projectId,bindingId:payload.bindingId,instanceId:payload.instanceId,
+            directory:root,server:hub(),queueDirectory:learningQueueRoot()}));
         for(const [file]of previousFiles)if(!desired.has(file))await plan.write(file,null);
         for(const [file,body]of desired){
             const before=await plan.read(file);
@@ -46,12 +51,14 @@ export async function configureProjectAgents(input:unknown,authorize:Authorize,p
         }
         const agents=payload.agents.map(agent=>({id:agent.id,slug:agent.slug,version:agent.version,enabled:agent.enabled,sha256:hash(renderProjectAgent(agent))}));
         const receipt:AgentsReceipt={schemaVersion:1,projectId:payload.projectId,bindingId:payload.bindingId,instanceId:payload.instanceId,revision:payload.revision,manifestSha256:payload.manifestSha256,agents};
+        const collector=desired.get(LEARNING_COLLECTOR_FILE);if(collector)receipt.collector={path:LEARNING_COLLECTOR_FILE,sha256:hash(collector)};
         await plan.write(AGENTS_RECEIPT,JSON.stringify(receipt,null,2)+'\n');
         await progress(40,'Проверяем файлы и настройки агентов OpenCode.');
         const verify=async()=>{await authorize();await assertIdentity(payload,root);await assertAgentNamespace(plan,slugs,ownedSlugs);await plan.verifySnapshot();};
         await verify();
         const changes=plan.changes();
-        const result:ProjectAgentsResult={...receipt,changed:changes.length>0,readiness:'configured',checkedAt:new Date().toISOString(),note:PROJECT_AGENTS_NOTE};
+        const {collector:_collector,...agentReceipt}=receipt;
+        const result:ProjectAgentsResult={...agentReceipt,changed:changes.length>0,readiness:'configured',checkedAt:new Date().toISOString(),note:PROJECT_AGENTS_NOTE};
         validateProjectAgentsResult(result,payload);
         if(!changes.length)return {...result,...(proof?{recoveryPath:proof.recoveryPath}:{})};
         const recoveryPath=await commitChanges(root,changes,{action:'install',assetKey:agentsJournalKey(payload.projectId),manifest:payload.manifestSha256,result:result as unknown as Record<string,unknown>},{verifySnapshot:verify});

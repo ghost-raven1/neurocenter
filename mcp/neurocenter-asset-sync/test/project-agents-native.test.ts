@@ -15,7 +15,11 @@ const run=promisify(execFile);
 describe.runIf(!!binary)('Native OpenCode 1.14.48 agent acceptance',()=>{
  let fixture:Awaited<ReturnType<typeof workspaceFixture>>,env:NodeJS.ProcessEnv,bindingId:string,instanceId:string;
  const execute=async(...args:string[])=>{
-  const result=await run(binary!,args,{cwd:fixture.root,env,timeout:30000,maxBuffer:2*1024*1024});return result.stdout;
+  const directories=[path.join(env.HOME!,'config/opencode'),path.join(fixture.root,'.opencode')];
+  for(const directory of directories)await fs.chmod(directory,0o500);
+  try{const result=await run(binary!,args,{cwd:fixture.root,env,timeout:30000,maxBuffer:2*1024*1024});
+   expect(result.stdout.trim(),result.stderr).not.toBe('');return result.stdout;
+  }finally{for(const directory of directories)await fs.chmod(directory,0o700);}
  };
  beforeEach(async()=>{
   const expected=process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256;
@@ -23,7 +27,15 @@ describe.runIf(!!binary)('Native OpenCode 1.14.48 agent acceptance',()=>{
   fixture=await workspaceFixture();const home=path.join(fixture.temporary,'native-home');await fs.mkdir(home);
   env=Object.fromEntries(Object.entries(process.env).filter(([key])=>! /^(?:OPENCODE_|XDG_|HOME$)|(?:_API_KEY|_ACCESS_TOKEN|_SECRET)$/.test(key)));
   Object.assign(env,{HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_DATA_HOME:path.join(home,'data'),XDG_CACHE_HOME:path.join(home,'cache'),XDG_STATE_HOME:path.join(home,'state'),
-   OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true'});
+   OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true',OPENCODE_DISABLE_LSP_DOWNLOAD:'true',
+   NPM_CONFIG_OFFLINE:'true',NPM_CONFIG_IGNORE_SCRIPTS:'true',NPM_CONFIG_REGISTRY:'http://127.0.0.1:9'});
+  const dependencies={'@opencode-ai/plugin':'1.14.48'};
+  for(const directory of [path.join(home,'config/opencode'),path.join(fixture.root,'.opencode')]){
+   await fs.mkdir(path.join(directory,'node_modules'),{recursive:true});await fs.chmod(path.join(directory,'node_modules'),0o500);
+   await fs.writeFile(path.join(directory,'package.json'),JSON.stringify({private:true,dependencies}));
+   await fs.writeFile(path.join(directory,'package-lock.json'),JSON.stringify({lockfileVersion:3,packages:{'':{dependencies}}}));
+  }
+  await fs.writeFile(path.join(home,'config/opencode/opencode.json'),JSON.stringify({mcp:{},plugin:[],enabled_providers:[],provider:{},lsp:false,formatter:false,autoupdate:false,snapshot:false,share:'disabled',permission:{'*':'deny'}}));
   expect((await execute('--version')).trim()).toBe('1.14.48');bindingId=await projectBindingId('test-project');instanceId=await projectInstanceId('test-project');
  });
  afterEach(async()=>{vi.unstubAllEnvs();if(fixture)await fs.rm(fixture.temporary,{recursive:true,force:true});});

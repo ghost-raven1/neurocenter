@@ -4,19 +4,20 @@ import {journalDirectory,parseJournal} from '../../bridge/installation-journal.j
 import {readBoundedUtf8} from '../../bridge/read-bounded.js';
 import {JOURNAL_BYTES_LIMIT,LOCK_BYTES_LIMIT} from '../../bridge/installation-limits.js';
 import type {ProjectAgentsPayload,ProjectAgentReceipt} from './contract.js';
+import {LEARNING_COLLECTOR_FILE} from '../project-learning/collector-plugin.js';
 
 export const AGENTS_RECEIPT='.opencode/neurocenter/agents.json';
 export const agentFile=(slug:string):string=>'.opencode/agents/'+slug+'.md';
 export const agentsJournalKey=(projectId:string):string=>hash('project-agents:'+projectId).slice(0,24);
-export type AgentsReceipt=Omit<ProjectAgentsPayload,'agents'>&{agents:ProjectAgentReceipt[]};
+export type AgentsReceipt=Omit<ProjectAgentsPayload,'agents'>&{agents:ProjectAgentReceipt[];collector?:{path:string;sha256:string}};
 const damaged=()=>new Error('Квитанция агентов не подтверждена приватным журналом моста. Сохраните локальные файлы перед повторной настройкой.');
-const exact=(value:unknown,keys:string[]):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
-    &&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
+const exact=(value:unknown,keys:string[],optional:string[]=[]):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
+    &&keys.every(key=>Object.hasOwn(value,key))&&Object.keys(value).every(key=>keys.includes(key)||optional.includes(key));
 
 export function parseAgentsReceipt(raw:string):AgentsReceipt{
     let value:unknown;try{value=JSON.parse(raw);}catch{throw damaged();}
     const keys=['schemaVersion','projectId','bindingId','instanceId','revision','manifestSha256','agents'];
-    if(!exact(value,keys)||value.schemaVersion!==1||typeof value.projectId!=='string'||!value.projectId||value.projectId.length>200
+    if(!exact(value,keys,['collector'])||value.schemaVersion!==1||typeof value.projectId!=='string'||!value.projectId||value.projectId.length>200
         ||typeof value.bindingId!=='string'||!/^[a-f0-9]{64}$/.test(value.bindingId)||typeof value.instanceId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value.instanceId)
         ||!Number.isSafeInteger(value.revision)||Number(value.revision)<1||typeof value.manifestSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.manifestSha256)
         ||!Array.isArray(value.agents)||value.agents.length>32)throw damaged();
@@ -26,6 +27,7 @@ export function parseAgentsReceipt(raw:string):AgentsReceipt{
             ||!Number.isSafeInteger(item.version)||Number(item.version)<1||typeof item.enabled!=='boolean'||typeof item.sha256!=='string'||!/^[a-f0-9]{64}$/.test(item.sha256))throw damaged();
     }
     if(new Set(value.agents.map(item=>item.id)).size!==value.agents.length||new Set(value.agents.map(item=>item.slug)).size!==value.agents.length)throw damaged();
+    if(value.collector!==undefined&&(!exact(value.collector,['path','sha256'])||value.collector.path!==LEARNING_COLLECTOR_FILE||typeof value.collector.sha256!=='string'||!/^[a-f0-9]{64}$/.test(value.collector.sha256)))throw damaged();
     return value as unknown as AgentsReceipt;
 }
 

@@ -13,6 +13,8 @@ import {hash,jobContext,stateDir,writeState} from '../src/bridge/state.js';
 import {deliverCompletions,pendingCompletions} from '../src/bridge/completions.js';
 import {recoverFileJobs} from '../src/bridge/installation-files.js';
 import {journalDirectory} from '../src/bridge/installation-journal.js';
+import {LEARNING_COLLECTOR_FILE} from '../src/features/project-learning/collector-plugin.js';
+import {scanProjectInventory} from '../src/bridge/project-inventory.js';
 
 const agent:ProjectAgent={id:'agent-review',slug:'nc-review',version:1,enabled:true,description:'Code reviewer',prompt:'Review carefully.',mode:'subagent',permission:{edit:'deny',bash:'ask'}};
 const authorize=async()=>undefined,progress=async()=>undefined;
@@ -42,6 +44,19 @@ describe('Atomic project agent delivery with private ownership',()=>{
   await fs.writeFile(file('.opencode/agents/user.md'),'manual agent');await apply(5,[]);
   await expect(fs.stat(file(agentFile(agent.slug)))).rejects.toMatchObject({code:'ENOENT'});expect(await fs.readFile(file('.opencode/agents/user.md'),'utf8')).toBe('manual agent');
   expect((await apply(5,[])).changed).toBe(false);
+ });
+ it('tracks the collector by private ownership and exact hash, preserving hand edits',async()=>{
+  await apply();const receipt=JSON.parse(await fs.readFile(file(AGENTS_RECEIPT),'utf8')),body=await fs.readFile(file(LEARNING_COLLECTOR_FILE),'utf8');
+  expect(receipt.collector).toEqual({path:LEARNING_COLLECTOR_FILE,sha256:hash(body)});
+  expect((await scanProjectInventory('test-project',authorize)).entries.find(entry=>entry.path===LEARNING_COLLECTOR_FILE)).toMatchObject({state:'managed',reason:'managed-project-learning'});
+  await fs.writeFile(file(LEARNING_COLLECTOR_FILE),'// manual collector');
+  expect((await scanProjectInventory('test-project',authorize)).entries.find(entry=>entry.path===LEARNING_COLLECTOR_FILE)).toMatchObject({state:'unmanaged'});
+  await expect(apply(2)).rejects.toThrow('изменён вручную');expect(await fs.readFile(file(LEARNING_COLLECTOR_FILE),'utf8')).toBe('// manual collector');
+ });
+ it('refuses a preexisting foreign collector atomically and removes only its owned collector',async()=>{
+  await fs.mkdir(path.dirname(file(LEARNING_COLLECTOR_FILE)),{recursive:true});await fs.writeFile(file(LEARNING_COLLECTOR_FILE),'// foreign');
+  await expect(apply()).rejects.toThrow('не управляется');await expect(fs.stat(file(agentFile(agent.slug)))).rejects.toMatchObject({code:'ENOENT'});
+  await fs.rm(file(LEARNING_COLLECTOR_FILE));await apply();await apply(2,[]);await expect(fs.stat(file(LEARNING_COLLECTOR_FILE))).rejects.toMatchObject({code:'ENOENT'});
  });
  it('does not adopt an identical foreign file or a forged project receipt',async()=>{
   await fs.mkdir(file('.opencode/agents'),{recursive:true});await fs.writeFile(file(agentFile(agent.slug)),renderProjectAgent(agent));
