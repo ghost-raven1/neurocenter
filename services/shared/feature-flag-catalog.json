@@ -1,0 +1,185 @@
+[
+  {
+    "key": "model_hosting",
+    "name": "Хостинг моделей",
+    "description": "Новые запуски, проверки и обращения к моделям на сервере.",
+    "group": "models",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "tool_builds",
+    "name": "Упаковка инструментов",
+    "description": "Новые сборки из npm, GitHub, архивов и файлов.",
+    "group": "catalog",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "rag_sync",
+    "name": "Обновление базы знаний",
+    "description": "Новая передача и переиндексация данных проекта.",
+    "group": "knowledge",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "projects",
+    "name": "Управление проектами",
+    "description": "Создание и изменение проектов; существующие данные и восстановление доступны.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "computer_connections",
+    "name": "Подключение компьютеров",
+    "description": "Новые подключения компьютеров, папок и управляемые действия моста.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "tool_catalog",
+    "name": "Каталог инструментов",
+    "description": "Создание, изменение и назначение MCP, плагинов и скиллов.",
+    "group": "catalog",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "asset_sources",
+    "name": "Источники ассетов",
+    "description": "Новые источники, загрузка архивов и выборочный импорт карточек.",
+    "group": "catalog",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "tool_installation",
+    "name": "Установка инструментов",
+    "description": "Новые планы, одобрения и установки через мост. Удаление и восстановление доступны.",
+    "group": "catalog",
+    "dependsOn": [
+      "computer_connections"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "model_catalog",
+    "name": "Каталог моделей",
+    "description": "Добавление моделей, настройка удалённых API и назначение проектам.",
+    "group": "models",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "opencode_model_sync",
+    "name": "Модели из OpenCode",
+    "description": "Новый импорт конфигурации моделей и явно разрешённый перенос ключей.",
+    "group": "models",
+    "dependsOn": [
+      "model_catalog"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "agents",
+    "name": "Управление агентами",
+    "description": "Новые шаблоны, изменения промптов и подключение агентов проекта.",
+    "group": "agents",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "model_chat",
+    "name": "Чат с моделью",
+    "description": "Новые диалоги, файлы и сообщения. История и отмена остаются доступны.",
+    "group": "agents",
+    "dependsOn": [
+      "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "group_chat",
+    "name": "Групповой чат",
+    "description": "Новые участники и раунды с выбранными агентами проекта.",
+    "group": "agents",
+    "dependsOn": [
+      "model_chat",
+      "agents"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "project_learning",
+    "name": "Проектное обучение",
+    "description": "Запись опыта, построение и проверка гипотез, одобрение новых правил.",
+    "group": "agents",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "project_search",
+    "name": "Поиск по проекту",
+    "description": "Новый семантический поиск и подбор контекста проекта для ответов.",
+    "group": "knowledge",
+    "dependsOn": [
+      "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "project_snapshots",
+    "name": "Полные снимки проектов",
+    "description": "Создание и публикация новых полных снимков и профилей.",
+    "group": "operations",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "project_backups",
+    "name": "Резервные копии проектов",
+    "description": "Создание новых копий вручную и по расписанию. Скачивание и восстановление доступны.",
+    "group": "operations",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "catalog_requests",
+    "name": "Заявки по каталогу",
+    "description": "Создание, изменение и рассмотрение заявок команды.",
+    "group": "catalog",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "model_usage",
+    "name": "Отчёт об использовании моделей",
+    "description": "Показ dashboard и отчётов. Обязательный журнал фактических вызовов продолжает работать, как аудит.",
+    "group": "operations",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "local_changes",
+    "name": "Локальные изменения инструментов",
+    "description": "Новая инвентаризация и принятие изменённых файлов через мост. Восстановление доступно.",
+    "group": "operations",
+    "dependsOn": [
+      "computer_connections"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "research_tools",
+    "name": "Инструменты исследования",
+    "description": "Явный запуск инструментов исследования в чате. Чтение сохранённых результатов остаётся доступным.",
+    "group": "agents",
+    "dependsOn": [
+      "model_chat"
+    ],
+    "defaultEnabled": true
+  }
+]
