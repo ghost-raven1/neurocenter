@@ -1,5 +1,10 @@
 import type { ICatalogModel } from '../ModelCatalog/types';
-import type { IModelChatConversation, IModelChatDetail, IModelChatHistoryPage } from './types';
+import type { IModelChatContext, IModelChatConversation, IModelChatDetail, IModelChatHistoryPage } from './types';
+
+/** One participant's compressible history cannot conceal another participant's oversized new input. */
+export function modelChatContextBlocked(context?: IModelChatContext): boolean {
+    return context?.participants ? context.participants.some(item => item.context.exceeded && !item.context.canCompact) : !!context?.exceeded && !context.canCompact;
+}
 
 export function modelChatUnavailableReason(model: ICatalogModel, canUse: boolean, projectSelected: boolean, assigned: boolean): string {
     if (model.capability === 'embedding') return 'Embedding-модель предназначена для поиска, а не для диалога.';

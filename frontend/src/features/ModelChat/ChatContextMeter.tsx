@@ -1,5 +1,6 @@
 import {Progress, Spin, Typography} from 'antd';
 import type {IModelChatCompaction, IModelChatContext, IModelChatTurn, IModelChatUsage} from './types';
+import {modelChatContextBlocked} from './model';
 
 interface Props {context?: IModelChatContext; loading: boolean; error?: string; rejected?: boolean; usage?: IModelChatUsage; compaction?: IModelChatCompaction; phase?: IModelChatTurn['processingStage']; failed?: boolean;}
 const number = (value: number): string => value.toLocaleString('ru-RU');
@@ -11,9 +12,14 @@ export function ChatContextMeter({context, loading, error, rejected, usage, comp
     const percent = capacity && reserve !== null ? Math.min(100, Math.round(used / capacity * 100)) : undefined;
     const running = !failed && (phase === 'compacting' || compaction?.state === 'compacting');
     const compressionFailed = failed && phase === 'compacting';
-    const blocked = rejected || !!context?.exceeded && !context.canCompact;
-    const status = running ? 'Сжимаем раннюю переписку…' : compressionFailed ? 'Не удалось сжать контекст' : blocked ? 'Сообщение не помещается в контекст'
+    const blocked = rejected || modelChatContextBlocked(context);
+    const status = running ? 'Сжимаем раннюю переписку…' : compressionFailed ? 'Не удалось сжать контекст' : rejected ? 'Сообщение требует проверки' : blocked ? 'Сообщение не помещается в контекст'
         : context?.compactionNeeded && context.canCompact ? 'Сожмём раннюю переписку при отправке' : compaction?.state === 'ready' ? 'Контекст сжат · история сохранена' : context ? 'Контекст готов' : 'Контекст';
+    if (context?.participants) return <div className="model-chat__context" aria-label="Контекст участников">
+        <details><summary><span role="status" aria-live="polite">{running && <Spin size="small"/>}{status} · {context.participants.length}</span><span className="model-chat__context-more">Окна участников</span></summary>
+            <div className="model-chat__participant-budgets">{context.participants.map(participant => <div key={participant.agentId}><Typography.Text strong>{participant.name} · {participant.modelName}</Typography.Text><ChatContextMeter context={participant.context} loading={loading}/></div>)}</div>
+        </details>{blocked && <Typography.Text type="danger" className="model-chat__context-error">{error || context.reason || 'Уменьшите сообщение или документы для выбранных адресатов.'}</Typography.Text>}
+    </div>;
     return <div className="model-chat__context" aria-label="Контекст модели">
         <details>
             <summary><span className="model-chat__context-status" role="status" aria-live="polite">{running && <Spin size="small"/>}<Typography.Text type={blocked || compressionFailed ? 'warning' : undefined}>{status}</Typography.Text></span><span className="model-chat__context-more">Подробнее</span></summary>

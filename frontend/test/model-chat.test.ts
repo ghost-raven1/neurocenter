@@ -5,7 +5,7 @@ import {modelChatApi} from '../src/features/ModelChat/api';
 import api from '../src/core/api/base';
 import {detail, model, turn} from './model-chat-fixtures';
 
-vi.mock('../src/core/api/base', () => ({default: {get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn()}}));
+vi.mock('../src/core/api/base', () => ({default: {get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn()}}));
 beforeEach(() => vi.clearAllMocks());
 
 describe('Права, модель и сохранённый контекст', () => {
@@ -68,10 +68,18 @@ describe('Серверная история через Gateway', () => {
         await expect(modelChatApi.create(model, 'prj-one', controller.signal)).resolves.toEqual(detail());
         expect(api.post).toHaveBeenCalledWith('/api/model-chats', {modelId: model.id, projectId: 'prj-one', expectedModelPin: model.modelPin}, {signal: controller.signal});
     });
+    it('Исследование передаёт только явные source pins, metadata не создаёт диалог и не отправляет сообщение', async () => {
+        const signal = new AbortController().signal, research = {project: false, external: {assetId: 'exa', version: 2, manifest: 'a'.repeat(64)}};
+        vi.mocked(api.get).mockResolvedValue({data: {project: {available: true}, external: []}}); vi.mocked(api.post).mockResolvedValue({data: detail()});
+        await modelChatApi.researchChoices(model.id, 'prj-one', signal); expect(api.get).toHaveBeenLastCalledWith('/api/model-chats/research-tools', {params: {modelId: model.id, projectId: 'prj-one'}, signal}); expect(api.post).not.toHaveBeenCalled();
+        await modelChatApi.researchChoices(model.id, 'prj-one', signal, 'chat-1'); expect(api.get).toHaveBeenLastCalledWith('/api/model-chats/chat-1/research-tools', {params: undefined, signal});
+        await modelChatApi.send(detail(), model, 'uuid', 'Вопрос', [], signal, undefined, research); expect(api.post).toHaveBeenLastCalledWith('/api/model-chats/chat-1/turns', expect.objectContaining({research}), {signal, timeout: 920000});
+        await modelChatApi.researchStep('chat-1', 'step/id', signal); expect(api.get).toHaveBeenLastCalledWith('/api/model-chats/chat-1/research-steps/step%2Fid', {signal});
+    });
     it('Отправляет ID вложений и idempotency key; историю составляет сервер', async () => {
         vi.mocked(api.post).mockResolvedValueOnce({data: detail({turns: [turn()]})}); const signal = new AbortController().signal;
         await modelChatApi.send(detail(), model, 'uuid-request', 'Вопрос', ['attachment-1'], signal);
-        expect(api.post).toHaveBeenCalledWith('/api/model-chats/chat-1/turns', {expectedRevision: 1, requestId: 'uuid-request', prompt: 'Вопрос', attachmentIds: ['attachment-1'], expectedModelPin: model.modelPin}, {signal, timeout: 620000});
+        expect(api.post).toHaveBeenCalledWith('/api/model-chats/chat-1/turns', {expectedRevision: 1, requestId: 'uuid-request', prompt: 'Вопрос', attachmentIds: ['attachment-1'], expectedModelPin: model.modelPin}, {signal, timeout: 920000});
     });
     it('Отдельно передаёт документ и отмену с CAS-ревизией', async () => {
         vi.mocked(api.post).mockResolvedValue({data: detail()}); const signal = new AbortController().signal;

@@ -5,7 +5,8 @@ import type { ICatalogModel } from '../ModelCatalog/types';
 import { modelChatApi } from './api';
 import { chatFileBase64, chatFileError, CHAT_FILE_MAX_COUNT } from './files';
 import { mergeModelChatDetail, modelChatPromptError, prependModelChatHistory, sortedModelChats } from './model';
-import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversation } from './types';
+import { chatRecipients } from './participants';
+import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversation, IChatResearchRequest } from './types';
 
 type Activity = '' | 'loading' | 'sending' | 'uploading' | 'saving';
 interface ActiveRequest { abort: AbortController; kind: Activity; }
@@ -15,9 +16,9 @@ const unusedIds = (detail: IModelChatDetail | null): string[] => {
 };
 
 /** Persisted dialogue state is fenced by owner, selected conversation and synchronous request locks. */
-export function useModelChat(model: ICatalogModel, projectId?: string, unavailableReason = '') {
+export function useModelChat(model: ICatalogModel, projectId?: string, unavailableReason = '', selection?: {initialDetail?: IModelChatDetail; autoSelect: boolean}) {
     const { scope, captureOwner } = useAuthRequestOwner();
-    const [items, setItems] = useState<IModelChatConversation[]>([]), [detail, setDetail] = useState<IModelChatDetail | null>(null);
+    const [items, setItems] = useState<IModelChatConversation[]>(selection?.initialDetail ? [selection.initialDetail.conversation] : []), [detail, setDetail] = useState<IModelChatDetail | null>(selection?.initialDetail ?? null);
     const [activity, setActivity] = useState<Activity>('loading'), [error, setError] = useState('');
     const [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState('');
     const [optimistic, setOptimistic] = useState<IModelChatTurn | null>(null), [uploads, setUploads] = useState<IChatUpload[]>([]);
@@ -52,7 +53,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         setActivity('loading');
         void modelChatApi.list(model.id, projectId, controller.signal).then(async values => {
             if (!owns()) return; list.current = sortedModelChats(values); setItems(list.current);
-            if (values.length) { const value = await modelChatApi.read(list.current[0].id, controller.signal); if (owns()) accept(value); }
+            if (selection?.autoSelect !== false && values.length) { const value = await modelChatApi.read(list.current[0].id, controller.signal); if (owns()) accept(value); }
         }).catch(cause => { if (owns()) setError(errorMessage(cause, 'Не удалось загрузить личные диалоги.')); })
             .finally(() => { if (active.current === request) { active.current = undefined; if (mounted.current && owner()) setActivity(''); } });
         return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; historyRequest.current?.abort(); historyRequest.current = undefined; };
@@ -84,7 +85,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 accept(value);
                 if (pending.current) {
                     const saved = value.turns.find(turn => turn.requestId === pending.current!.requestId);
-                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, processingStage: saved.processingStage} : null);
+                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
                 }
                 again = !!sending || value.turns.some(turn => turn.status === 'pending');
             } catch (cause) {
@@ -109,19 +110,23 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         } catch (cause) {if (owns()) setHistoryError(errorMessage(cause, 'Не удалось загрузить ранние сообщения. Попробуйте снова.'));}
         finally {if (historyRequest.current === controller) {historyRequest.current = undefined; if (mounted.current && owner()) setHistoryLoading(false);}}
     };
-    const newChat = async (): Promise<boolean> => {
+    const newChat = async (agentIds?: string[]): Promise<boolean> => {
         if (!mounted.current || !captureOwner()()) return false;
-        abortActive(); abortHistory(); updatePending(null); updateUploads([]);
-        return run('saving', async (signal, owns) => { const value = await modelChatApi.create(model, projectId, signal); if (owns()) accept(value); });
+        abortActive(); abortHistory();
+        if (pending.current?.status === 'pending') updatePending({...pending.current, status: 'cancelled', error: 'Запрос остановлен. Сообщение можно повторить.'});
+        return run('saving', async (signal, owns) => { const value = await modelChatApi.create(model, projectId, signal, agentIds); if (owns()) {accept(value); updatePending(null); updateUploads([]);} });
     };
     const changed = !!detail && detail.conversation.modelPin !== model.modelPin;
     const blocked = changed ? 'Подключение модели изменилось. История сохранена; начните новый диалог.' : detail?.blockedReason || unavailableReason;
-    const generate = (prompt: string, attachmentIds: string[], previous?: IModelChatTurn): boolean => {
+    const generate = (prompt: string, attachmentIds: string[], previous?: IModelChatTurn, research?: IChatResearchRequest): boolean => {
         if (!mounted.current || active.current || blocked || !captureOwner()()) return false;
         const original = current.current, expectedPin = model.modelPin;
         if (!previous) { const problem = modelChatPromptError(prompt, attachmentIds, original); if (problem) { setError(problem); return false; } }
+        const recipients = previous?.targetAgentIds ? {ids: previous.targetAgentIds} : original?.conversation.mode === 'group' ? chatRecipients(prompt, original.participants ?? []) : {ids: []};
+        if (recipients.error) {setError(recipients.error); return false;}
         const requestId = previous?.id.startsWith('client:') ? previous.requestId : crypto.randomUUID();
-        const temporary: IModelChatTurn = {id: previous?.id ?? `client:${requestId}`, requestId, prompt, attachmentIds, status: 'pending', createdAt: new Date().toISOString()};
+        const consent = previous?.research ?? research;
+        const temporary: IModelChatTurn = {...(consent ? {research: consent} : {}),id: previous?.id ?? `client:${requestId}`, requestId, prompt, attachmentIds, status: 'pending', createdAt: new Date().toISOString(), ...(previous?.responses ? {responses: previous.responses} : {}), ...(original?.conversation.mode === 'group' ? {targetAgentIds: previous?.targetAgentIds ?? recipients.ids} : {})};
         updatePending(temporary);
         void run('sending', async (signal, owns) => {
             let value: IModelChatDetail | null = current.current;
@@ -130,7 +135,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 if (liveModelPin.current !== expectedPin) throw new Error('Модель изменилась. Начните новый диалог.');
                 const result = previous && !previous.id.startsWith('client:')
                     ? await modelChatApi.retry(value, model, previous.id, requestId, signal)
-                    : await modelChatApi.send(value, model, requestId, prompt, attachmentIds, signal);
+                    : await modelChatApi.send(value, model, requestId, prompt, attachmentIds, signal, original?.conversation.mode === 'group' ? temporary.targetAgentIds : undefined, consent);
                 if (owns() && liveModelPin.current === expectedPin) { accept(result); updatePending(null); }
             } catch (cause) {
                 if (!owns()) return;
@@ -146,9 +151,9 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         });
         return true;
     };
-    const send = (prompt: string): boolean => {
+    const send = (prompt: string, research?: IChatResearchRequest): boolean => {
         if (pending.current || fileRows.current.length) return false;
-        return generate(prompt, unusedIds(current.current));
+        return generate(prompt, unusedIds(current.current), undefined, research);
     };
     const retry = (): void => {
         const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1];
@@ -198,6 +203,14 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const rename = async (title: string): Promise<boolean> => run('saving', async (signal, owns) => {
         if (!current.current) return; const value = await modelChatApi.rename(current.current.conversation.id, current.current.conversation.revision, title, signal); if (owns()) accept(value);
     });
+    const configureParticipants = async (agentIds: string[]): Promise<boolean> => run('saving', async (signal, owns) => {
+        if (!current.current) return; const value = await modelChatApi.participants(current.current, agentIds, signal); if (owns()) accept(value);
+    });
+    const complete = async (): Promise<void> => {
+        const selected = current.current, tail = selected?.turns[selected.turns.length - 1];
+        if (!selected || !tail) return;
+        await run('saving', async (signal, owns) => {const value = await modelChatApi.complete(selected, tail.id, signal); if (owns()) {accept(value); updatePending(null);}});
+    };
     const remove = async (): Promise<boolean> => {
         const selected = current.current; if (!selected) return false;
         return run('saving', async (signal, owns) => {
@@ -240,6 +253,6 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const turns = optimistic ? [...(detail?.turns.filter(turn => turn.id !== optimistic.id && turn.requestId !== optimistic.requestId) ?? []), optimistic] : detail?.turns ?? [];
     const used = new Set(turns.flatMap(turn => turn.attachmentIds));
     return {items, detail, turns, uploads, attachments: detail?.attachments.filter(file => !used.has(file.id)) ?? [], activity, error, blocked, historyLoading, historyError, loadEarlier,
-        busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, stopOwn, select, refresh, newChat, rename, remove, editFailed,
+        busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, stopOwn, select, refresh, newChat, rename, remove, editFailed, configureParticipants, complete,
         addFiles, cancelUploads, removeUpload, retryUpload, removeAttachment, captureOwner};
 }

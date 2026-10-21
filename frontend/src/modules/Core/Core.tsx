@@ -20,6 +20,7 @@ import './Core.less';
 import {BridgePairing} from '../../features/McpBridge/BridgePairing';
 import {selectConnectedComputer} from '../../features/McpBridge/pairingProgress';
 import {useCallback} from 'react';
+import {ChatLauncher} from '../../features/ModelChat/ChatLauncher';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
@@ -31,6 +32,7 @@ const navigation: Record<string, { title: string; icon: ReactNode }> = {
     rag: { title: 'Базы знаний', icon: <DatabaseOutlined /> },
     maintenance: { title: 'Обслуживание', icon: <ToolOutlined /> },
     audit: { title: 'История действий', icon: <AuditOutlined /> },
+    'model-usage': { title: 'Использование моделей', icon: <DeploymentUnitOutlined /> },
     access: { title: 'Участники и доступ', icon: <SafetyOutlined /> },
 };
 
@@ -114,6 +116,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                             {live ? <SyncOutlined aria-hidden="true" /> : <DisconnectOutlined aria-hidden="true" />}<span className="app__live-label">{live?'Авто':'Нет авто'}<wbr />{live?'обновление':'обновления'}</span>
                         </span>
                         <OperationsButton triggerRef={operationsTrigger} open={operationsVisible} onClick={() => setOpsOpen(true)} />
+                        <ChatLauncher/>
                         <UserInfo />
                     </Space>
                 </Layout.Header>

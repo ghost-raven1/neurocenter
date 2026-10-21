@@ -2,7 +2,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {useChatContext} from '../src/features/ModelChat/useChatContext';
 import {modelChatApi} from '../src/features/ModelChat/api';
 import type {IModelChatContext, IModelChatDetail} from '../src/features/ModelChat/types';
-import {detail} from './model-chat-fixtures';
+import {detail, participant} from './model-chat-fixtures';
 
 const hooks = vi.hoisted(() => {
     let cursor = 0;
@@ -34,7 +34,7 @@ afterEach(() => {hooks.dispose(); vi.useRealTimers();});
 describe('Предварительный контекст', () => {
     it('Debounce не создаёт запрос на каждое нажатие; в запрос попадают ID документов', async () => {
         render(); await vi.advanceTimersByTimeAsync(200); prompt = 'Новый вопрос'; ids = ['file-1']; render(); await vi.advanceTimersByTimeAsync(349); expect(modelChatApi.context).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(1); expect(modelChatApi.context).toHaveBeenCalledExactlyOnceWith('chat-1', prompt, ids, expect.any(AbortSignal)); expect(render().context?.method).toBe('estimate');
+        await vi.advanceTimersByTimeAsync(1); expect(modelChatApi.context).toHaveBeenCalledExactlyOnceWith('chat-1', prompt, ids, expect.any(AbortSignal), undefined); expect(render().context?.method).toBe('estimate');
     });
     it('Новый черновик сразу убирает прежнюю оценку и игнорирует её поздний ответ', async () => {
         const pending = deferred<IModelChatContext>(); vi.mocked(modelChatApi.context).mockReturnValueOnce(pending.promise);
@@ -53,5 +53,10 @@ describe('Предварительный контекст', () => {
         render(); await vi.advanceTimersByTimeAsync(350); expect(render().context).toBeDefined();
         saved = {...saved, compaction: {state: 'ready', coveredTurns: 20, updatedAt: '2026-10-21T02:00:00Z'}}; expect(render().context).toBeUndefined();
         await vi.advanceTimersByTimeAsync(350); expect(modelChatApi.context).toHaveBeenCalledTimes(2); expect(render().context?.method).toBe('estimate');
+    });
+    it('Группа передаёт явного @адресата; неизвестный адрес не запускает preview для всех', async () => {
+        saved = detail({conversation: {...detail().conversation, mode: 'group'}, participants: [participant()]}); prompt = '@nc-developer вопрос';
+        render(); await vi.advanceTimersByTimeAsync(350); expect(modelChatApi.context).toHaveBeenCalledExactlyOnceWith('chat-1', prompt, [], expect.any(AbortSignal), ['agent-dev']);
+        prompt = '@unknown вопрос'; expect(render()).toMatchObject({rejected: false, error: '', context: undefined, loading: false}); await vi.advanceTimersByTimeAsync(350); expect(modelChatApi.context).toHaveBeenCalledOnce();
     });
 });
