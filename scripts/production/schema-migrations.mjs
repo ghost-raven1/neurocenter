@@ -39,6 +39,7 @@ export async function runSchemaCommands(client,mode,{remainingMs,beforeEach}={})
             service,'dist/database/migrate.cli.js',mode],remainingMs?{timeout:remainingMs()}:undefined);
         let receipt;try{receipt=JSON.parse(output);}catch{throw new Error('Не подтверждена готовность схемы '+service);}
         if(receipt?.ok!==true||typeof receipt.ready!=='boolean'||!Array.isArray(receipt.applied)||!Array.isArray(receipt.pending)
+            ||receipt.ready!==(receipt.pending.length===0)
             ||(service!=='feature-flags-service'&&typeof receipt.existingSchema!=='boolean')
             ||(receipt.ready&&(receipt.pending.length>0||receipt.applied.length===0||service!=='feature-flags-service'&&!receipt.existingSchema))
             ||(mode==='migrate'&&(!receipt.ready||receipt.pending.length!==0)))throw new Error('Не подтверждена готовность схемы '+service);

@@ -50,6 +50,14 @@ test('Check разрешает известные pending-миграции и н
     }
 });
 
+test('Check отклоняет ready=false без pending до следующих команд',async()=>{
+    let calls=0;
+    await assert.rejects(runSchemaCommands({run:async()=>{
+        calls++;return JSON.stringify({ok:true,ready:false,existingSchema:false,applied:[],pending:[]});
+    }},'check'),/готовность схемы/);
+    assert.equal(calls,1);
+});
+
 test('Migrate применяет каталог, флаги и RAG последовательно в оставшийся бюджет паузы',async()=>{
     let budget=9000;const calls=[];
     await runSchemaCommands({run:async(args,options)=>{
