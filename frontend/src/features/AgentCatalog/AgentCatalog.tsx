@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Col, Empty, Input, Modal, Row, Space, Spin, Tooltip, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory } from 'react-router-dom';
@@ -12,10 +13,15 @@ import { useAgentActions } from './useAgentActions';
 import { useAgentCatalog } from './useAgentCatalog';
 import type { IAgentCatalogProps, IProjectAgent, ICatalogAgent } from './types';
 import './AgentCatalog.less';
+import {openModelChat} from '../ModelChat/chatNavigation';
+import {projectRoleLevel} from '../UserBlock/roles';
+import {useSelector} from 'react-redux';
+import type {RootState} from '../../store';
 
 /** Common templates, immutable project pins and actual bridge delivery share one visible flow. */
 export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const { projectId, projectName, embedded, canManage, isMain, bridge } = props;
+    const user=useSelector((state:RootState)=>state.userBlock.user);
     const { scope } = useAuthRequestOwner(), history = useHistory();
     const { catalog, loading, error, refresh } = useAgentCatalog(projectId);
     const actions = useAgentActions({ ...props, catalog, refresh });
@@ -56,17 +62,22 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     return <section className="agent-catalog">
         <div className="agent-catalog__heading"><div><Typography.Title level={4}>{projectName ? `Агенты для «${projectName}»` : 'Агенты команды'}</Typography.Title>
             <Typography.Text type="secondary">{projectId ? 'Настройте промпты проекта и примените их к выбранной папке OpenCode.' : 'Готовые роли и собственные промпты для OpenCode.'}</Typography.Text></div>
-            {isMain && <Space wrap><Button onClick={() => history.push('/assets')}>Из ассетов</Button><Button type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</Button></Space>}
         </div>
-        <Space wrap className="agent-catalog__filters"><Input.Search aria-label="Поиск агентов" placeholder="Название, роль или имя OpenCode…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
+        <div className="agent-catalog__toolbar"><Input.Search aria-label="Поиск агентов" placeholder="Название, роль или имя OpenCode…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
+            <div className="agent-catalog__filters">
             {projectId && <Checkbox checked={projectOnly} onChange={event => setProjectOnly(event.target.checked)}>Только в проекте</Checkbox>}
-            {isMain && <Checkbox checked={showArchive} onChange={event => setShowArchive(event.target.checked)}>Показывать архив</Checkbox>}<Button loading={loading} disabled={actions.busy} onClick={() => { void refresh(); }}>Обновить</Button></Space>
+            {isMain && <Checkbox checked={showArchive} onChange={event => setShowArchive(event.target.checked)}>Показывать архив</Checkbox>}</div>
+            <Space wrap className="agent-catalog__toolbar-actions"><Button loading={loading} disabled={actions.busy} onClick={() => { void refresh(); }}>Обновить</Button>
+                {projectId&&projectRoleLevel(user,projectId)>=2&&<Button onClick={()=>openModelChat({projectId,group:true})}>Чат с агентами</Button>}
+                {isMain&&<><Button onClick={() => history.push('/assets')}>Из ассетов</Button><FeatureButton features={['agents']} type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</FeatureButton></>}
+            </Space>
+        </div>
         {error && <Alert showIcon type={catalog ? 'warning' : 'error'} className="agent-catalog__notice" message={catalog ? 'Не удалось обновить агентов — показаны предыдущие данные' : 'Агенты не загружены'} description={error} action={<Button onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {actions.error && <Alert showIcon type="error" className="agent-catalog__notice" message={actions.error} action={actions.unconfirmed && <Space wrap><Button disabled={actions.busy} onClick={() => { void actions.repeat(); }}>Повторить запрос</Button><Button disabled={actions.busy} onClick={() => { void actions.recheck(); }}>Перечитать состояние</Button></Space>} />}
         {actions.notice && <Alert showIcon type="info" className="agent-catalog__notice" message={actions.notice} />}
         {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} compact showReadinessNotice={false} />
             <div className="agent-catalog__apply"><div><Typography.Text strong>Настройки OpenCode</Typography.Text><Typography.Paragraph type="secondary">{connection.reason || 'Применяем только управляемые файлы агентов. Изменения появятся при следующем запуске OpenCode.'}</Typography.Paragraph></div>
-                {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><Button type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</Button></span></Tooltip>}
+                {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
             </div></div>}
         {!!cleanup.length && <Alert className="agent-catalog__notice" type="warning" showIcon message={`Ожидают удаления из OpenCode: ${cleanup.map(item => item.card.name).join(', ')}`}
             description="Удаление сохранено в проекте. Нажмите «Применить настройки» для выбранного компьютера. В других связанных папках также потребуется применение." />}

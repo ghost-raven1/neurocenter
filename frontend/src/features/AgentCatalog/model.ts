@@ -93,7 +93,7 @@ export function agentConnection(props: Pick<IAgentCatalogProps, 'bridge' | 'proj
     const common = bridgeOperationBlocker(bridge.device);
     if (common) return { reason: common };
     if (roleLevel(bridge.device!.role) < 3) return { reason: 'Подключите мост с ролью администратора для настройки агентов.' };
-    if (!bridge.device!.report.capabilities?.includes('project-agents-v1')) return { reason: 'Обновите мост для подключения агентов OpenCode.' };
+    if (!bridge.device!.report.capabilities?.includes('project-agents-v2')) return { reason: 'Обновите мост для подключения агентов OpenCode.' };
     const target = selectedAgentTarget(props);
     if (!target) return { reason: 'Свяжите папку проекта с OpenCode на выбранном компьютере.' };
     if (!bridge.jobsReady) return { reason: bridge.errors.jobs || 'Дождитесь загрузки заданий компьютера.' };
@@ -102,7 +102,7 @@ export function agentConnection(props: Pick<IAgentCatalogProps, 'bridge' | 'proj
 
 export interface IAgentStatus { key: 'pending' | 'error' | 'enabled' | 'disabled' | 'removed' | 'unapplied'; label: string; detail: string; busy: boolean }
 function receiptMatches(catalog: IAgentCatalog, result: Record<string, unknown>): boolean {
-    if (!Array.isArray(result.agents)) return false;
+    if (result.schemaVersion!==2||!digest(result.compiledManifestSha256)||!Array.isArray(result.agents)) return false;
     const agents = result.agents;
     const expected = catalog.assignments.filter(item => !item.removed);
     return agents.length === expected.length && expected.every(item => agents.some(value => record(value)

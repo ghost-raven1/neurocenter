@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Form, Modal, Space, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -28,7 +29,9 @@ export function ProjectAgentEditor({ projectId, assignment, revision, onClose, o
         if (!dirty) { onClose(); return; }
         confirmation.current = Modal.confirm({ title: 'Закрыть без сохранения?', content: 'Изменённый промпт проекта останется несохранённым.', okText: 'Закрыть', cancelText: 'Продолжить редактирование', onOk: onClose });
     };
+    const availability = useFeatureAvailability('agents');
     const submit = async (values: IAgentEditorValues): Promise<void> => {
+        if (!availability.enabled) return;
         const owns = captureOwner(); if (!owns() || lock.current) return;
         lock.current = true; setBusy(true); setError('');
         try {
@@ -61,9 +64,9 @@ export function ProjectAgentEditor({ projectId, assignment, revision, onClose, o
             {error && <Alert showIcon type="error" message={error} className="agent-catalog__notice" />}
             {conflict && <Alert type="warning" showIcon className="agent-catalog__notice" message={conflict.assignment ? 'Настройки проекта изменились. Ваш текст сохранён в форме.' : 'Агент уже удалён из проекта. Сохраните свой текст перед закрытием.'}
                 description={conflict.assignment && <><Collapse ghost><Collapse.Panel header={`Актуальный промпт проекта · шаблон v${conflict.assignment.version}`} key="current"><pre className="agent-editor__comparison">{conflict.assignment.effective.prompt}</pre></Collapse.Panel></Collapse>
-                    <Button danger disabled={busy} onClick={() => { reference.current = { assignment: conflict.assignment!, revision: conflict.revision }; setConflict(undefined); form.submit(); }}>Применить мой вариант к актуальным настройкам</Button></>} />}
+                    <FeatureButton features={['agents']} danger disabled={busy} onClick={() => { reference.current = { assignment: conflict.assignment!, revision: conflict.revision }; setConflict(undefined); form.submit(); }}>Применить мой вариант к актуальным настройкам</FeatureButton></>} />}
             <AgentDefinitionFields form={form} disabled={busy} />
-            <div className="agent-editor__actions"><Button disabled={busy} onClick={reset}>Вернуть закреплённый шаблон</Button><Space wrap><Button disabled={busy} onClick={close}>Отмена</Button><Button type="primary" htmlType="submit" loading={busy}>Сохранить и применить</Button></Space></div>
+            <div className="agent-editor__actions"><Button disabled={busy} onClick={reset}>Вернуть закреплённый шаблон</Button><Space wrap><Button disabled={busy} onClick={close}>Отмена</Button><FeatureButton features={['agents']} type="primary" htmlType="submit" loading={busy}>Сохранить и применить</FeatureButton></Space></div>
         </Form>
     </Modal>;
 }

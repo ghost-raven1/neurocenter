@@ -13,6 +13,7 @@ vi.mock('react',async original=>({...await original<typeof import('react')>(),us
     useRef:(initial:unknown)=>{const index=ui.cursor++;return ui.states[index]??={current:initial};},
 }));
 vi.mock('react-router-dom',()=>({useHistory:()=>({push:()=>undefined})}));
+vi.mock('react-redux',()=>({useSelector:()=>({activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({scope:'admin',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/AgentCatalog/useAgentCatalog',()=>({useAgentCatalog:()=>({catalog:ui.catalog,loading:false,error:'',refresh:ui.refresh})}));
 vi.mock('../src/features/AgentCatalog/useAgentActions',()=>({useAgentActions:()=>({busy:false,error:'',notice:'',unconfirmed:false})}));

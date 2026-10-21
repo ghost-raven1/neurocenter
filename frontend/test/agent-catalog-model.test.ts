@@ -71,6 +71,7 @@ describe('Подтверждение OpenCode относится к exact target
     it('Desired enabled=true до ACK не становится установленным', () => {
         const desired=assignment({enabled:true}); expect(projectAgentStatus(catalog({assignments:[desired]}),desired,target).key).toBe('unapplied');
     });
+    it('Старая v1 квитанция остаётся историей и требует повторного применения',()=>{expect(projectAgentStatus(catalog({deliveries:[delivery({result:{...delivery().result!,schemaVersion:1}})]}),assignment(),target).key).toBe('unapplied');});
     it('Только валидная configured квитанция подтверждает отключённую настройку', () => {
         expect(projectAgentStatus(catalog({deliveries:[delivery()]}),assignment(),target)).toMatchObject({key:'disabled',label:'Отключён в настройках'});
         const desired=assignment({enabled:true}); const result={...delivery().result!,agents:[{id:agent().id,slug:agent().slug,version:1,enabled:true,sha256:'d'.repeat(64)}]};

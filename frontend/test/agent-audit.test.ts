@@ -22,8 +22,9 @@ describe('Агенты в общем журнале',()=>{
     it('Без прежнего hash не заявляет, что промпт точно изменился',()=>{
         const value=event({details:{before:{version:1},after:{version:2,promptSha256:'b'}}});expect(agentAuditChanges(value).some(change=>change.label==='Промпт')).toBe(false);
     });
-    it('Показывает проект, даже когда его ID не менялся',()=>{
-        expect(agentAuditProject(event({action:'project.agent.update',details:{before:{projectId:'project-one'},after:{projectId:'project-one'}}}))).toBe('project-one');
+    it('Показывает историческое имя проекта и не выдаёт ID за его название',()=>{
+        expect(agentAuditProject(event({action:'project.agent.update',details:{before:{projectId:'project-one'},after:{projectId:'project-one',projectName:'Проект при изменении'}}}))).toBe('Проект при изменении');
+        expect(agentAuditProject(event({action:'project.agent.update',details:{before:{projectId:'project-one'},after:{projectId:'project-one'}}}))).toBe('Название проекта не сохранено');
     });
     it('Archive kind=agent входит в тот же журнал и не захватывает другие assets',()=>{
         const value=event({action:'asset.archive',resourceType:'asset',details:{before:{kind:'agent',name:'Ревьюер',archived:false},after:{kind:'agent',name:'Ревьюер',archived:true}}});
