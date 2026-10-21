@@ -21,7 +21,7 @@ const archive = path.resolve(process.argv[2] || path.join(root, 'bridge-dist/run
 const reportFile = process.env.BRIDGE_RUNTIME_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'runtime-smoke.json');
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-runtime-')));
 const cases = [];
-let client, fatal, metadata, agentProof;
+let client, fatal, metadata, agentProof, learningProof;
 async function check(name, action) { await action(); cases.push(name); console.log('OK ' + name); }
 try {
     metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
@@ -58,6 +58,7 @@ try {
         assert.equal(loaded.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(loaded.capabilities.includes('project-snapshots-v1'), true);
         assert.equal(loaded.capabilities.includes('project-agents-v1'), true);
+        assert.equal(loaded.capabilities.includes('project-learning-v1'), true);
     });
     await check('Встроенный runtime запускается без Node и npm в PATH', async () => {
         assert.equal(execFileSync(node, ['-p', 'process.versions.node'], { env: isolatedEnv, encoding: 'utf8' }).trim(), metadata.nodeVersion);
@@ -92,6 +93,13 @@ try {
         assert.ok(proof.requests>=12);
         agentProof=proof;
     });
+    await check('Compiled collector runs inside pinned OpenCode, emits metadata only, rejects stale bindings and removes cleanly', async () => {
+        const proof=JSON.parse(execFileSync(node,[path.join(root,'scripts/test/bridge-learning-runtime.fixture.mjs'),path.join(temporary,'learning-proof')],{
+            cwd:content,env:isolatedEnv,encoding:'utf8',timeout:90000,
+        }));
+        assert.deepEqual(proof,{nativePluginDiscovered:true,metadataOnly:true,repeatedIdleNoDuplicate:true,staleBindingDropped:true,managedCollectorRemoved:true,engineVersion:metadata.probeEngine.version});
+        learningProof=proof;
+    });
     client = new Client({ name: 'Проверка автономного пакета', version: '1.0.0' });
     await client.connect(new StdioClientTransport({ command: node, args: [entry], cwd: content, env: isolatedEnv, stderr: 'ignore' }));
     await check('Реальный stdio MCP загружается из готового пакета и сообщает протокол, сборку и LanceDB', async () => {
@@ -107,9 +115,12 @@ try {
         assert.equal(status.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(status.capabilities.includes('project-snapshots-v1'), true);
         assert.equal(status.capabilities.includes('project-agents-v1'), true);
+        assert.equal(status.capabilities.includes('project-learning-v1'), true);
     });
     await check('В артефакте отсутствуют старые команды небезопасной записи', async () => {
         const tools = (await client.listTools()).tools.map(tool => tool.name);
+        for(const name of ['project_learning_context','project_learning_record','project_learning_propose_hypothesis'])assert.ok(tools.includes(name));
+        assert.equal((await client.callTool({name:'project_learning_context',arguments:{}})).isError,true);
         for (const name of ['install_asset', 'install_plugin_bundle']) {
             assert.equal(tools.includes(name), false);
             assert.equal((await client.callTool({ name, arguments: { targetPath: temporary } })).isError, true);
@@ -121,7 +132,7 @@ finally {
     if (client) await client.close();
     await fs.rm(temporary, { recursive: true, force: true });
     await fs.mkdir(path.dirname(reportFile), { recursive: true });
-    await fs.writeFile(reportFile, JSON.stringify({ checkedAt: new Date().toISOString(), archive, metadata, cases, agents:agentProof??null,
+    await fs.writeFile(reportFile, JSON.stringify({ checkedAt: new Date().toISOString(), archive, metadata, cases, agents:agentProof??null, learning:learningProof??null,
         executor:{platform:process.platform,arch:process.arch,nodeVersion:process.versions.node,emulated:process.env.BRIDGE_RUNTIME_EMULATED==='true'},fatal: fatal || null,
         temporaryProfileRemoved: true, realProfileChanged: false }, null, 2) + '\n');
 }

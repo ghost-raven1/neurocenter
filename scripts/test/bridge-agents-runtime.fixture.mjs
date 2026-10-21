@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import http from 'node:http';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -8,7 +9,9 @@ import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
 // This fixture runs with the extracted runtime's own Node, compiled files and native OpenCode only.
-const content=process.cwd(),directory=path.resolve(process.argv[2]);await fs.mkdir(directory,{recursive:true});
+const content=process.cwd(),directory=path.resolve(process.argv[2]);
+assert.ok(directory.startsWith((await fs.realpath(os.tmpdir()))+path.sep),'Native runtime fixture must use an OS temporary directory.');
+await fs.mkdir(directory,{recursive:true});
 const project=path.join(directory,'проекты','мой проект');await fs.mkdir(project,{recursive:true});
 const load=relative=>import(pathToFileURL(path.join(content,'dist',relative)).href);
 const contract=await load('features/project-agents/contract.js'),protocol=await load('bridge/protocol.js');
@@ -18,8 +21,22 @@ assert.equal(createHash('sha256').update(await fs.readFile(engine)).digest('hex'
 const nativeHome=path.join(directory,'native-home');await fs.mkdir(nativeHome);
 const nativeEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^(?:OPENCODE_|XDG_|HOME$)|(?:_API_KEY|_ACCESS_TOKEN|_SECRET)$/.test(key)));
 Object.assign(nativeEnv,{HOME:nativeHome,XDG_CONFIG_HOME:path.join(nativeHome,'config'),XDG_DATA_HOME:path.join(nativeHome,'data'),XDG_CACHE_HOME:path.join(nativeHome,'cache'),XDG_STATE_HOME:path.join(nativeHome,'state'),
- OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true'});
-const execute=promisify(execFile),native=async(...args)=>(await execute(engine,args,{cwd:project,env:nativeEnv,timeout:30000,maxBuffer:2*1024*1024})).stdout;
+ OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true',OPENCODE_DISABLE_LSP_DOWNLOAD:'true',OPENCODE_DISABLE_EXTERNAL_SKILLS:'true',NPM_CONFIG_OFFLINE:'true',NPM_CONFIG_IGNORE_SCRIPTS:'true',NPM_CONFIG_REGISTRY:'http://127.0.0.1:9'});
+const execute=promisify(execFile),native=async(...args)=>{
+ const config=path.join(nativeHome,'config/opencode'),projectConfig=path.join(project,'.opencode');
+ const dependencies={'@opencode-ai/plugin':'1.14.48'};
+ for(const dir of [config,projectConfig]){
+  await fs.mkdir(dir,{recursive:true});await fs.chmod(dir,0o700);
+  await fs.mkdir(path.join(dir,'node_modules'),{recursive:true});
+  await fs.writeFile(path.join(dir,'package.json'),JSON.stringify({private:true,dependencies}));
+  await fs.writeFile(path.join(dir,'package-lock.json'),JSON.stringify({lockfileVersion:3,packages:{'':{dependencies}}}));
+  await fs.chmod(path.join(dir,'node_modules'),0o500);
+ }
+ await fs.writeFile(path.join(config,'opencode.json'),JSON.stringify({mcp:{},plugin:[],enabled_providers:[],provider:{},lsp:false,formatter:false,autoupdate:false,snapshot:false,share:'disabled',permission:{'*':'deny'}}));
+ for(const dir of [config,projectConfig])await fs.chmod(dir,0o500);
+ try{return(await execute(engine,args,{cwd:project,env:nativeEnv,timeout:30000,maxBuffer:2*1024*1024})).stdout;}
+ finally{for(const dir of [config,projectConfig])await fs.chmod(dir,0o700);}
+};
 assert.equal((await native('--version')).trim(),metadata.probeEngine.version);
 let child,stderr='',finish,fail,queue=[],current,requests=0,ackAttempts=0,nativeChecks=0;const seen=new Map();
 const completed=new Promise((resolve,reject)=>{finish=resolve;fail=reject;});

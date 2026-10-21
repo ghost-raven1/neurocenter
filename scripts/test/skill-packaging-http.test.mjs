@@ -171,7 +171,11 @@ test('Skill packaging survives the native catalog, export, project, bridge and a
   local=(await f.request('main','/api/asset-sources')).localAssets.find(value=>value.id===asset.id);assert.equal(local.imported.archived,false);
   assert.ok((await f.pool.query('SELECT count(*)::int n FROM asset_source_versions')).rows[0].n>=1);
  });
- await t.test('A GitHub file link packages the pinned skill and resources through Gateway into the native catalog',async()=>{
+ await t.test('A GitHub file link packages the pinned skill and resources through Gateway into the native catalog',async githubCase=>{
+  const capacity=require('../shared/capacity.cjs'),disk=await fs.statfs(f.temporary,{bigint:true});
+  // Keep the real reservation policy; this tiny fixture does not require a 5 GiB host disk.
+  githubCase.mock.method(capacity,'reserveCapacity',capacity.createCapacityGuard({required:()=>false,
+   statfs:async()=>({...disk,bavail:8n*1024n**3n/disk.bsize})}));
   const commit='b'.repeat(40),prefix='skills/qa-github-skill',api='https://api.github.com/repos/example/qa-skills';
   const instruction=files[0].content.replaceAll('qa-packaging-skill','qa-github-skill');
   f.state.github.set(api,{name:'qa-skills',private:false,default_branch:'main'});
@@ -199,5 +203,19 @@ test('Skill packaging survives the native catalog, export, project, bridge and a
   const jobs=(await f.pool.query('SELECT count(*)::int n FROM tool_build_jobs')).rows[0].n;
   await f.request('main','/api/tool-builds/repository?'+new URLSearchParams({url:link.replace('SKILL.md','missing/SKILL.md')}),{status:400});
   assert.equal((await f.pool.query('SELECT count(*)::int n FROM tool_build_jobs')).rows[0].n,jobs);
+ });
+ await t.test('Low disk space rejects GitHub packaging before downloading or publishing a version',async lowDiskCase=>{
+  const capacity=require('../shared/capacity.cjs'),disk=await fs.statfs(f.temporary,{bigint:true});
+  lowDiskCase.mock.method(capacity,'reserveCapacity',capacity.createCapacityGuard({required:()=>false,
+   statfs:async()=>({...disk,bavail:1024n**3n/disk.bsize})}));
+  const before=(await f.pool.query('SELECT count(*)::int n FROM asset_source_versions')).rows[0].n;
+  const downloads=()=>f.state.externalCalls.filter(url=>url.startsWith('https://codeload.github.com/')).length;
+  const originalDownloads=downloads();
+  const accepted=await f.request('main','/api/tool-builds',{method:'POST',body:{...payload(),source:{type:'repository',
+   url:'https://github.com/example/qa-skills',ref:'b'.repeat(40),subdirectory:'skills/qa-github-skill',entrypoint:'SKILL.md'}},status:201});
+  const failed=await completed(f,accepted.id);assert.equal(failed.state,'FAILED');
+  assert.match(failed.error||failed.message,/Недостаточно свободного места/);
+  assert.equal(downloads(),originalDownloads);
+  assert.equal((await f.pool.query('SELECT count(*)::int n FROM asset_source_versions')).rows[0].n,before);
  });
 });
