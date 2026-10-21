@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {nodeRuntime, npmCli} from './node-runtime.mjs';
 import {checkPlan} from './check-plan.mjs';
+import {readVitestReport} from './check-report.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const runtime = nodeRuntime();
@@ -24,20 +25,28 @@ for (const [index, step] of steps.entries()) {
     try { result = spawnSync(command, args, {cwd: path.resolve(root, step.directory), env: runtime.env,
         stdio: ['ignore', log, log], timeout: 10 * 60 * 1000, killSignal: 'SIGKILL', windowsHide: true}); }
     finally { fs.closeSync(log); }
-    const ok = result.status === 0;
+    const ok = result.status === 0 && !result.error && !result.signal;
     const entry = {name: step.name, ok, exitCode: result.status, signal: result.signal, durationMs: Date.now() - started,
         ...(result.error ? {errorCode: result.error.code} : {}), log: path.relative(root, filename)};
-    if (step.vitest && fs.existsSync(jsonFile)) {
-        const tests = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
-        entry.tests = {passed: tests.numPassedTests, failed: tests.numFailedTests, skipped: tests.numPendingTests};
+    if (step.vitest) {
         entry.results = path.relative(root, jsonFile);
+        try {
+            const validation = readVitestReport(jsonFile);
+            entry.tests = validation.tests;
+            entry.ok = entry.ok && validation.ok;
+            if (validation.reportError) entry.reportError = validation.reportError;
+        } catch (error) {
+            entry.ok = false;
+            entry.reportError = error.message;
+        }
     }
     report.steps.push(entry);
     report.finishedAt = new Date().toISOString();
-    report.success = ok && report.steps.length === steps.length;
+    report.success = entry.ok && report.steps.length === steps.length;
     fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
-    if (!ok) {
+    if (!entry.ok) {
         console.error(`Проверка не прошла: ${step.name}. Лог: ${path.relative(root, filename)}`);
+        if (entry.reportError) console.error(entry.reportError);
         process.exitCode = 1;
         break;
     }
