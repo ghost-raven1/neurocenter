@@ -17,7 +17,11 @@ import { ChatAttachmentStorage } from '../src/model-chat/chat-attachment-storage
 import { ChatObjectStorage, chatS3Configuration } from '../src/model-chat/chat-object-storage';
 import { COMPACTION_INSTRUCTION } from '../src/model-chat/chat-compaction';
 
-vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn(async () => undefined) }));
+vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn(async () => undefined), requireFeaturesEnabled: vi.fn(async () => undefined) }));
+vi.mock('../src/model-chat/chat-project-context', () => ({ ModelChatProjectContext: class {
+    async overview() { return { status: 'metadata', sources: [] }; }
+    async prepare() { return { messages: [], evidence: { status: 'metadata', sources: [] }, assertCurrent: async () => undefined, fit: (messages: unknown[]) => ({ messages, evidence: { status: 'metadata', sources: [] } }) }; }
+} }));
 
 const connection = process.env.MODEL_CHAT_FILES_TEST_PG_URL;
 const storageConfig = process.env.MODEL_CHAT_FILES_TEST_S3_CONFIG;
@@ -78,7 +82,7 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         const created = await service.create(request(), { modelId: model.id, projectId: 'Chat project', expectedModelPin: projectEmbeddingPin(model) });
         expect(created.conversation.projectId).toBe('prj-chat-test'); expect(created.turns).toEqual([]);
         expect((await checkCatalogSchema(db, true)).ready).toBe(true);
-        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(15);
+        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(19);
     });
     it('keeps chats private even from another administrator and isolates project scopes', async () => {
         const a = await create(); const b = request('other-admin@localhost');

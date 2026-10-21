@@ -15,6 +15,7 @@ export interface IChatContext {
     exceeded: boolean;
     canCompact: boolean;
     compactionNeeded: boolean;
+    participants?: Array<{ agentId: string; name: string; modelId: string; modelName: string; context: IChatContext }>;
     reason?: string;
 }
 export interface IChatUsage {

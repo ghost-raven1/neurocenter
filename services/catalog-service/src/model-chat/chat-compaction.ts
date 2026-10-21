@@ -49,9 +49,9 @@ export function needsCompaction(messages: ChatMessage[], settings: IChatContextS
     return context.contextWindowTokens !== null && context.estimatedInputTokens > Math.max(0, context.contextWindowTokens - (context.reservedOutputTokens ?? 0)) * 0.8;
 }
 export function canCompact(sources: ChatSource[], pendingTurnId?: string): boolean { return sources.some(source => source.completed && source.turnId !== pendingTurnId); }
-export function compactionBatch(checkpoint: ChatCheckpoint | null, sources: ChatSource[], settings: IChatContextSettings, pendingTurnId: string): ChatBatch {
+export function compactionBatch(checkpoint: ChatCheckpoint | null, sources: ChatSource[], settings: IChatContextSettings, pendingTurnId: string, overhead: ChatMessage[] = []): ChatBatch {
     const capacity = settings.contextWindowTokens && Number.isSafeInteger(settings.contextWindowTokens) ? settings.contextWindowTokens : null;
-    const pendingTokens = chatContext(projection(null, sources.filter(source => source.turnId === pendingTurnId)), settings).estimatedInputTokens;
+    const pendingTokens = chatContext([...overhead, ...projection(null, sources.filter(source => source.turnId === pendingTurnId))], settings).estimatedInputTokens;
     const spare = capacity === null ? 1024 : Math.floor((capacity - (settings.reservedOutputTokens ?? 0) - pendingTokens) / 2);
     const maxOutputTokens = capacity === null ? 1024 : Math.max(32, Math.min(1024, Math.floor(capacity * 0.15), spare));
     const reserved = { ...settings, reservedOutputTokens: maxOutputTokens };
