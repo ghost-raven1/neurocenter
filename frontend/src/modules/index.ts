@@ -3,6 +3,7 @@ import type { IModule } from '../core/interfaces';
 import Access from './Access';
 import Assets from './Assets';
 import Audit from './Audit';
+import ModelUsage from './ModelUsage';
 import Maintenance from './Maintenance';
 import Projects from './Projects';
 import Rag from './Rag';
@@ -22,6 +23,7 @@ export const contentModules: IModule[] = [
     Rag,
     Maintenance,
     Audit,
+    ModelUsage,
     Access,
 ];
 

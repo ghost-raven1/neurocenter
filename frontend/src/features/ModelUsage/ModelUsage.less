@@ -1,0 +1,8 @@
+.model-usage { display: flex; flex-direction: column; gap: 20px; }
+.model-usage__filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.model-usage__filters .ant-select { min-width: 180px; flex: 1 1 180px; max-width: 340px; }
+.model-usage__metrics, .model-usage__breakdowns { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 16px; }
+.model-usage__call { display: flex; align-items: flex-start; gap: 16px; }
+.model-usage__call-main, .model-usage__call-counts { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.model-usage__call-counts { align-items: flex-end; text-align: right; flex-shrink: 0; }
+@media(max-width: 600px) { .model-usage__call { flex-direction: column; gap: 8px; } .model-usage__call-counts { align-items: flex-start; text-align: left; } .model-usage__filters .ant-select { max-width: none; } }
