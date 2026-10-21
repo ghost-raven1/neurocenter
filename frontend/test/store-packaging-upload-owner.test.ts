@@ -28,6 +28,57 @@ beforeEach(()=>{
 });
 afterEach(()=>{hooks.dispose();vi.unstubAllGlobals();});
 describe('Upload owner, persistence and raw stream lifecycle',()=>{
+ it('A selected file waits for pending control recovery instead of silently disappearing',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValue(pending.promise);
+  const view=render(),selecting=view.select(file());await tick();expect(api.create).not.toHaveBeenCalled();
+  pending.resolve(undefined);await selecting;
+  expect(api.create).toHaveBeenCalledOnce();expect(api.content).toHaveBeenCalledOnce();expect(render().upload?.state).toBe('READY');
+ });
+ it('Recovery preserves an existing READY intent and rejects replacement bytes without a new UUID',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>(),old={requestKey:crypto.randomUUID(),name:'old.zip',bytes:3,sha256:'a'.repeat(64)};
+  state.stored.set('actor-a',old);disk.read.mockReturnValue(pending.promise);api.lookup.mockResolvedValue(ready(old));
+  const selecting=render().select(file());pending.resolve(old);await selecting;
+  expect(render().upload?.id).toBe(old.requestKey);expect(render().error).toContain('Другой файл не отправится');
+  expect(state.stored.get('actor-a')).toEqual(old);expect(api.create).not.toHaveBeenCalled();expect(api.content).not.toHaveBeenCalled();
+ });
+ it('Owner A → B → A while waiting for control recovery cannot upload a stale selected file',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValueOnce(pending.promise);
+  const selecting=render().select(file());state.scope='actor-b';state.epoch++;render();await tick();state.scope='actor-a';state.epoch++;render();await tick();
+  pending.resolve(undefined);await selecting;expect(disk.save).not.toHaveBeenCalled();expect(api.create).not.toHaveBeenCalled();expect(render().upload).toBeUndefined();
+ });
+ it('Cancel during control recovery invalidates the waiting file and permits a fresh selection',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValue(pending.promise);
+  const view=render(),selecting=view.select(file());await view.cancel();pending.resolve(undefined);await selecting;
+  expect(api.create).not.toHaveBeenCalled();expect(disk.save).not.toHaveBeenCalled();
+  await render().select(new File(['fresh source'],'fresh.zip'));
+  expect(api.create).toHaveBeenCalledOnce();expect(api.create.mock.calls[0][0].name).toBe('fresh.zip');expect(render().upload?.state).toBe('READY');
+ });
+ it('A late cancel from the previous owner cannot replace the recovered state of a new scope',async()=>{
+  const reading=deferred<SourceUploadIntent|undefined>(),clearing=deferred<boolean>();disk.read.mockReturnValueOnce(reading.promise);disk.clear.mockReturnValueOnce(clearing.promise);
+  const view=render(),selecting=view.select(file()),cancelling=view.cancel();await tick();expect(disk.clear).toHaveBeenCalledOnce();state.scope='actor-b:project-b';state.epoch++;render();await tick();
+  clearing.resolve(true);await cancelling;await render().select(new File(['new owner source'],'new.zip'));reading.resolve(undefined);await selecting;
+  expect(api.create).toHaveBeenCalledOnce();expect(api.create.mock.calls[0][0].name).toBe('new.zip');expect(state.stored.has('actor-a')).toBe(false);expect(render().upload?.state).toBe('READY');
+ });
+ it('A project scope change during recovery drops the old file even when the actor is unchanged',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValueOnce(pending.promise);
+  const selecting=render().select(file());state.scope='actor-a:project-b';render();await tick();pending.resolve(undefined);await selecting;
+  expect(disk.save).not.toHaveBeenCalled();expect(api.create).not.toHaveBeenCalled();expect(render().upload).toBeUndefined();
+ });
+ it('Unmount during recovery cannot upload a waiting file',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValue(pending.promise);
+  const selecting=render().select(file());hooks.dispose();pending.resolve(undefined);await selecting;
+  expect(disk.save).not.toHaveBeenCalled();expect(api.create).not.toHaveBeenCalled();
+ });
+ it('A control recovery storage failure blocks a waiting selection before creating an intent',async()=>{
+  disk.read.mockRejectedValue(new Error('Storage unavailable'));await render().select(file());
+  expect(render().blocked).toBe(true);expect(render().error).toContain('Storage unavailable');expect(disk.save).not.toHaveBeenCalled();expect(api.create).not.toHaveBeenCalled();
+ });
+ it('Two file selections awaiting recovery cannot allocate two intents or replace the first file',async()=>{
+  const pending=deferred<SourceUploadIntent|undefined>();disk.read.mockReturnValue(pending.promise);
+  const view=render(),first=view.select(file()),second=view.select(new File(['another file'],'another.zip'));
+  pending.resolve(undefined);await Promise.all([first,second]);
+  expect(api.create).toHaveBeenCalledOnce();expect(api.create.mock.calls[0][0].name).toBe('program.zip');expect(api.content).toHaveBeenCalledOnce();
+ });
  it('Hash/read failure and over-limit file happen before an intent or server call',async()=>{
   render();await tick();let view=render();await view.select({name:'large.zip',size:268435457,arrayBuffer:vi.fn()} as unknown as File);expect(disk.save).not.toHaveBeenCalled();expect(api.create).not.toHaveBeenCalled();
   await expect(hashSourceUpload({name:'limit.zip',size:268435456,arrayBuffer:async()=>{throw new Error('reader unavailable');}})).rejects.toThrow('ещё не создана');expect(api.create).not.toHaveBeenCalled();

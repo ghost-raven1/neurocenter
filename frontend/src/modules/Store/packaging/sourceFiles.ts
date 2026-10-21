@@ -3,19 +3,22 @@ import {skillSourceEntrypoints} from '../../../../../services/shared/skill-sourc
 
 export interface PackagingInputFile { name: string; size: number; webkitRelativePath?: string; arrayBuffer: () => Promise<ArrayBuffer> }
 export interface PackagingFilesResult { files: PackagingFile[]; skipped: number; rootName?: string }
-const ignored = (parts: string[],skill:boolean): boolean => parts.some(raw => {
+const pythonNoise = (parts:string[]):boolean => parts.some(part=>['.venv','venv','__pycache__','.pytest_cache','.mypy_cache','.ruff_cache'].includes(part.toLowerCase())||/\.py[co]$/i.test(part));
+const pythonText = (name:string):boolean => /(?:\.py|\.toml|(?:^|\/)requirements(?:[._-][^/]*)?\.(?:txt|in))$/i.test(name);
+const ignored = (parts: string[],skill:boolean,python=false): boolean => python&&pythonNoise(parts)||parts.some(raw => {
     const part = raw.toLowerCase();
     return ['.git', 'node_modules', '.npmrc', '.yarnrc', '.yarnrc.yml', '__macosx', '.ds_store',...(skill?[]:['dist','build'])].includes(part)
         || part.startsWith('._') || /^\.env(?:\.|$)/.test(part) || /^(?:id_rsa|id_ed25519)(?:\.|$)/.test(part) || /\.(?:pem|key)$/.test(part);
 });
 
-/** Исходники остаются UTF-8; бинарные ресурсы скиллов сохраняют точные байты через штатный base64. */
+/** Code stays UTF-8; Python data and skill resources retain exact binary bytes for packaging. */
 export async function readPackagingFiles(input: readonly PackagingInputFile[]): Promise<PackagingFilesResult> {
     const selected = input.map(file => ({ file, relative: file.webkitRelativePath || file.name }));
     const rootName = selected.length && selected.every(({ file, relative }) => !!file.webkitRelativePath && relative.split('/')[0] === selected[0].relative.split('/')[0])
         ? selected[0].relative.split('/')[0] : undefined;
-    const instructionRoots=selected.map(({relative})=>relative.split('/').slice(rootName?1:0).join('/')).filter(relative=>/(?:^|\/)SKILL\.md$/.test(relative)).map(relative=>relative.slice(0,-'SKILL.md'.length));
+    const instructionRoots=selected.map(({relative})=>relative.split('/').slice(rootName?1:0).join('/')).filter(relative=>/(?:^|\/)SKILL\.md$/.test(relative)&&!ignored(relative.split('/'),true,true)).map(relative=>relative.slice(0,-'SKILL.md'.length));
     const skill=instructionRoots.length>0;
+    const python=!skill&&selected.some(({relative})=>{const parts=relative.split('/').slice(rootName?1:0);return parts[parts.length-1]?.endsWith('.py')&&!ignored(parts,false)&&!pythonNoise(parts);});
     const files: PackagingFile[] = [];
     const seen = new Set<string>();
     let skipped = 0, bytes = 0;
@@ -23,7 +26,7 @@ export async function readPackagingFiles(input: readonly PackagingInputFile[]): 
         if (!relative || relative.startsWith('/') || /[\\:\x00-\x1f\x7f]/.test(relative)
             || relative.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('В исходниках найден непереносимый путь.');
         const parts = relative.split('/').slice(rootName ? 1 : 0);
-        if (ignored(parts,skill)) { skipped++; continue; }
+        if (ignored(parts,skill,python)) { skipped++; continue; }
         const name = parts.join('/');
         if (!name || new TextEncoder().encode(name).length > 240 || /[<>"|?*]/.test(name) || parts.some(part => /[. ]$/.test(part) || /^(?:con|prn|aux|nul|com\d|lpt\d)(?:\.|$)/i.test(part))) throw new Error('В исходниках найден непереносимый путь.');
         const key = name.normalize('NFC').toLowerCase();
@@ -33,7 +36,7 @@ export async function readPackagingFiles(input: readonly PackagingInputFile[]): 
         let content:string,encoding:'base64'|undefined;
         try {content=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(buffer);if(content.includes('\0'))throw new Error('binary');}
         catch {
-            if(!instructionRoots.some(root=>name.startsWith(root)&&/^(scripts|references|assets)\//.test(name.slice(root.length))))throw new Error('Нужны текстовые исходники UTF-8: '+name);
+            if(!(python&&!pythonText(name))&&!instructionRoots.some(root=>name.startsWith(root)&&/^(scripts|references|assets)\//.test(name.slice(root.length))))throw new Error('Нужны текстовые исходники UTF-8: '+name);
             const chunks:string[]=[];for(let index=0;index<buffer.length;index+=8192)chunks.push(String.fromCharCode(...buffer.subarray(index,index+8192)));
             content=btoa(chunks.join(''));encoding='base64';
         }

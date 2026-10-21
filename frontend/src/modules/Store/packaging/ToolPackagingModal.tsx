@@ -20,6 +20,7 @@ import { ReleaseAssetChoice } from './ReleaseAssetChoice';
 import { SourceArchiveUploader } from './SourceArchiveUploader';
 import { useSourceUpload } from './useSourceUpload';
 import { uploadedBuildSource } from './uploadTypes';
+import {createPythonSourceUpload,isPythonSourceUpload} from './pythonSourceUpload';
 import { packagingFilesMetadata, packagingReferenceSource, type PackagingSourceMode } from './packagingDraft';
 import {skillPackagingSource} from './skillPackagingSource';
 import type { PackagingFilesResult } from './sourceFiles';
@@ -80,6 +81,8 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const metadata = source === 'npm' ? npm.metadata : source === 'repository' ? repository.metadata : undefined;
     const selectedUploadEntry = upload.upload?.metadata?.candidates.includes(uploadEntry?.id === upload.upload.id ? uploadEntry.value : '') ? uploadEntry!.value : upload.upload?.metadata?.entrypoint || '';
     const sourceKey = source === 'npm' ? `npm:${specifier.trim()}` : source === 'repository' ? `repository:${JSON.stringify([repositoryUrl.trim(), repositoryRef.trim(), subdirectory.trim(), repositoryEntrypoint.trim(), release])}` : source === 'upload' ? `upload:${upload.upload?.id ?? ''}:${selectedUploadEntry}` : 'files';
+    const readSourceKey=useRef(sourceKey);
+    readSourceKey.current=sourceKey;
     const metadataIdentity = source === 'npm' && npm.metadata ? `npm:${npm.metadata.package}` : source === 'repository' && repository.metadata ? `repository:${repository.metadata.url}:${repository.metadata.subdirectory ?? ''}` : undefined;
     const revision = (value: NonNullable<typeof repository.metadata>): string => JSON.stringify([value.url, value.commit, value.subdirectory, value.release]);
     const repositoryRevision = repository.metadata ? revision(repository.metadata) : '';
@@ -97,7 +100,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const suggestedDescription = metadata?.description || (source === 'files' ? fileMetadata?.description : '') || '';
     const fileError=source==='files'&&effectiveKind!=='skill'&&uploaded?.files.some(file=>file.encoding)?'Бинарные ресурсы поддерживаются в скиллах. Выберите тип «Скилл» или текстовые исходники инструмента.':'';
     const skillError=source==='files'&&effectiveKind==='skill'?(candidates.length>1&&!entrypoint?'':skillMetadata?.error||(!skillMetadata?'Добавьте SKILL.md и ресурсы скилла.':'')):fileError;
-    const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
+    const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry&&!upload.error&&!upload.blocked : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
         && (!metadata.runnableKinds || metadata.runnableKinds.includes(effectiveKind)) && (source === 'npm' ? !!selectedNpmEntry : !repository.metadata?.requiresReleaseChoice && !!selectedRepositoryEntry);
     const hasSource = source === 'npm' ? !!specifier.trim() : source === 'repository' ? !!repositoryUrl.trim() : source === 'upload' ? !!upload.upload : !!uploaded?.files.length;
     const sourceBlocked = (!!metadata || source === 'upload' && upload.upload?.state === 'READY') && !sourceReady;
@@ -105,6 +108,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const progressStep = build.job || build.active ? 2 : sourceReady ? 1 : 0;
 
     useEffect(() => { alive.current = true; return () => { alive.current = false; readRequest.current++; archiveRequest.current?.abort(); }; }, []);
+    useEffect(()=>{readRequest.current++;archiveRequest.current?.abort();setReading(false);},[view,source]);
     useEffect(() => {
         // A handoff selects the archive picker after recovery, without replacing an existing request.
         if (!open || !start || appliedStart.current===start || build.active || build.draft || build.job || build.unresolved || build.recoveryBlocked || upload.intent) return;
@@ -145,9 +149,11 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     }, [sourceKey, open, build.unresolved, build.active]);
 
     const readFiles = async (input: readonly File[], fromArchive = false): Promise<void> => {
-        if (!input?.length || busy) return;
+        if (!input?.length || busy || build.unresolved || build.recoveryBlocked) return;
         const selected = Array.from(input);
         const request = ++readRequest.current;
+        const owns=captureOwner(),closed=closeRevision.current;
+        const current=()=>alive.current&&request===readRequest.current&&owns()&&currentView.current===view&&closeRevision.current===closed&&readSourceKey.current===sourceKey;
         archiveRequest.current?.abort();
         const controller = new AbortController();
         archiveRequest.current = controller;
@@ -158,9 +164,18 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         try {
             if (fromArchive && selected.length !== 1) throw new Error('Добавьте один архив за раз.');
             const next = fromArchive ? await readPackagingArchive(selected[0], controller.signal) : await readPackagingFiles(selected);
-            if (alive.current && request === readRequest.current) { setUploaded(next); setArchiveName(fromArchive ? selected[0].name : ''); }
-        } catch (cause) { if (alive.current && request === readRequest.current) setError(errorMessage(cause, 'Не удалось прочитать исходники.')); }
-        finally { if (alive.current && request === readRequest.current) setReading(false); }
+            if(!current())return;
+            if(isPythonSourceUpload(next)){
+                if(upload.blocked)throw new Error('Сначала восстановите состояние сохранённой загрузки.');
+                const file=createPythonSourceUpload(next);
+                if(!current())return;
+                setReading(false);setSource('upload');setUploadEntry(undefined);
+                await upload.select(file);
+                return;
+            }
+            setUploaded(next); setArchiveName(fromArchive ? selected[0].name : '');
+        } catch (cause) { if (current()) setError(errorMessage(cause, 'Не удалось прочитать исходники.')); }
+        finally { if (current()) setReading(false); }
     };
     const submit = async (): Promise<void> => {
         if (busy) return;
@@ -285,10 +300,10 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
                     else setRepositoryEntry({ revision: repositoryRevision, value });
                 }} />}
                 {repository.error && <Alert type="error" role="alert" showIcon message={repository.error} description="Проверьте ссылку. Для инструмента в подпапке или другой ветке откройте «Ветка и подпапка», затем повторите проверку." />}
-            </> : source === 'upload' ? <><SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /><Paragraph type="secondary">Архив скилла или JS / TypeScript плагина добавьте во вкладке «Архив и файлы». Исходники Python MCP можно загрузить здесь, включая архив с вложенной папкой.</Paragraph></> : <>
-                <Form.Item label="Исходники или скилл"><SourceFilesPicker disabled={busy} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
+            </> : source === 'upload' ? <><SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /><Paragraph type="secondary">Архив скилла или JS / TypeScript плагина добавьте во вкладке «Архив и файлы». Исходники Python MCP можно загрузить здесь, включая архив с вложенной папкой. Если передача Python-исходников прервалась, повторно выберите исходный архив, папку или файлы во вкладке «Архив и файлы» — продолжим ту же загрузку.</Paragraph></> : <>
+                <Form.Item label="Исходники или скилл"><SourceFilesPicker disabled={busy || build.unresolved || build.recoveryBlocked} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
                 <Paragraph type="secondary">Папки внутри архива сохраняются. Найдём SKILL.md, а scripts, references и assets рядом с ним станут ресурсами скилла, включая PNG и PDF. Если найдём несколько скиллов, покажем их пути для выбора.</Paragraph>
-                <Paragraph type="secondary" className="tool-packaging__language-note">Python MCP добавляются из GitHub или во вкладке «Архив MCP». Для готовых программ других языков используйте GitHub Release или «Архив MCP».</Paragraph>
+                <Paragraph type="secondary" className="tool-packaging__language-note">Python MCP определим в архиве, папке или выбранных файлах и автоматически добавим интерпретатор с зависимостями. Для готовых программ других языков используйте GitHub Release или «Архив MCP».</Paragraph>
                 {uploaded && <SourceEntrypointChoice skill={effectiveKind==='skill'} label={effectiveKind==='skill'?'Скилл в исходниках':'Файл запуска'} candidates={candidates} value={entrypoint} onChange={value => { manualEntrypoint.current = true; setEntrypoint(value); }} />}
                 {skillError&&<Alert type="error" role="alert" showIcon message={skillError}/>}
                 {uploaded && !candidates.length&&!skillError && <Alert type="warning" showIcon message="В исходниках нет SKILL.md или файла запуска JS / TypeScript" description="Выберите папку одного скилла или исходники инструмента. Для Python MCP или готовой программы используйте GitHub или «Архив MCP»." />}

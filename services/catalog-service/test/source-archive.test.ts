@@ -47,6 +47,51 @@ function paxPath(value: string): string {
 }
 
 describe('Предварительное чтение архивов исходников', () => {
+    it.each(['zip','tgz'])('Preserves Python binary data and filters secrets in %s source archives',async extension=>{
+        const binary=Buffer.from([0,255,128,80]),files=[{path:'bundle/python/server.py',content:'print("ready")'},
+            {path:'bundle/python/pyproject.toml',content:'[project]\nname="example"\nversion="1.0"'},
+            {path:'bundle/python/data/table.bin',content:binary},{path:'bundle/python/.env',content:'private'},
+            {path:'bundle/python/key.pem',content:'private'}];
+        const read=await readSourceArchive(request('python.'+extension,extension==='zip'?zip(files):zlib.gzipSync(tar(files))));
+        expect(read.rootName).toBe('bundle');expect(read.skipped).toBe(2);
+        expect(read.files).toEqual([{path:'python/server.py',content:'print("ready")'},
+            {path:'python/pyproject.toml',content:'[project]\nname="example"\nversion="1.0"'},
+            {path:'python/data/table.bin',content:binary.toString('base64'),encoding:'base64'}]);
+    });
+    it.each(['server.py','pyproject.toml','requirements.txt','requirements-dev.txt'])('Rejects non-UTF8 Python code or metadata %s',async name=>{
+        await expect(readSourceArchive(request('python.zip',zip([{path:'python/main.py',content:'print("ready")'},
+            {path:'python/'+name,content:Buffer.from([0,255])}])))).rejects.toThrow('UTF-8');
+    });
+    it('An excluded Python file cannot enable binary resources, and Python still has the100-file cap',async()=>{
+        await expect(readSourceArchive(request('ignored.zip',zip([{path:'tool/.git/helper.py',content:'pass'},
+            {path:'tool/data.bin',content:Buffer.from([0,255])}])))).rejects.toThrow('UTF-8');
+        await expect(readSourceArchive(request('many.zip',zip([{path:'python/server.py',content:'pass'},
+            ...Array.from({length:100},(_,index)=>({path:'python/data/'+index+'.bin',content:Buffer.from([0])}))])))).rejects.toThrow('100 файлов');
+    });
+    it.each(['.git','node_modules/dependency','.venv/lib/dependency'])('An ignored SKILL.md in %s cannot hide Python sources or keep environment files',async ignored=>{
+        const binary=Buffer.from([0,255]),files=[{path:'tool/server.py',content:'print("ready")'},
+            {path:'tool/'+ignored+'/SKILL.md',content:'# Dependency instruction'},{path:'tool/.venv/lib/site.py',content:'pass'},{path:'tool/data.bin',content:binary}];
+        for(const [name,bytes] of [['python.zip',zip(files)],['python.tgz',zlib.gzipSync(tar(files))]] as const){
+            await expect(readSourceArchive(request(name,bytes))).resolves.toMatchObject({skipped:2,
+                files:[{path:'server.py',content:'print("ready")'},{path:'data.bin',content:binary.toString('base64'),encoding:'base64'}]});
+        }
+    });
+    it('Skips Python environments and caches after archive path and unpacked-size checks',async()=>{
+        const noise=['.venv/lib/site.py','venv/bin/python','__pycache__/module.pyc','.pytest_cache/value','.mypy_cache/value','.ruff_cache/value','module.pyo'];
+        const files=[{path:'python/server.py',content:'print("ready")'},...noise.map(path=>({path:'python/'+path,content:Buffer.from([0,255])}))];
+        await expect(readSourceArchive(request('python.zip',zip(files)))).resolves.toMatchObject({files:[{path:'server.py',content:'print("ready")'}],skipped:noise.length});
+        await expect(readSourceArchive(request('python.zip',zip([{path:'python/server.py',content:'pass'},{path:'python/.venv/large.bin',content:Buffer.alloc(1024**2+1)}])))).rejects.toThrow('1 МиБ');
+        await expect(readSourceArchive(request('environment.zip',zip([{path:'tool/.venv/library.py',content:'pass'},{path:'tool/data.bin',content:Buffer.from([0,255])}])))).rejects.toThrow('UTF-8');
+    });
+    it('Python binary-resource support still rejects links, case aliases and corrupt CRC before preview',async()=>{
+        const python={path:'python/server.py',content:'pass'};
+        for(const bytes of [zip([python,{path:'python/data/link',content:'../outside',mode:0o120777}]),
+            zip([python,{path:'python/data/A.bin',content:'a'},{path:'python/data/a.bin',content:'b'}]),
+            zip([python,{path:'python/data/invalid.bin',content:Buffer.from([0,255]),crc:0}]),
+            tar([python,{path:'python/data/link',type:'SymbolicLink',link:'../../outside'}])]){
+            await expect(readSourceArchive(request(bytes.subarray(0,2).toString()==='PK'?'python.zip':'python.tar',bytes))).rejects.toThrow(BadRequestException);
+        }
+    });
     it.each(['zip','tgz'])('Сохраняет вложенный скилл, build/dist resources и бинарные bytes из %s',async extension=>{
         const binary=Buffer.from([137,80,78,71,0,255,128]),instruction='---\nname: nested-skill\ndescription: Вложенный скилл\n---\n\n[Правила](references/rules.md)';
         const files=[{path:'package/README.md',content:'README соседней папки'},

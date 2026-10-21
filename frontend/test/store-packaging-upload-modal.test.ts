@@ -28,7 +28,7 @@ const ui=vi.hoisted(()=>({
  formDisabled:false,finish:undefined as (()=>void)|undefined,close:undefined as (()=>void)|undefined,
  job:undefined as ToolBuild|undefined,draft:undefined as StoredBuildDraft|undefined,unresolved:false,recoveryBlocked:false,
  npmMetadata:undefined as NpmPackageMetadata|undefined,
- upload:undefined as SourceUpload|undefined,intent:undefined as SourceUploadIntent|undefined,uploadBusy:false,phase:'idle' as ReturnType<typeof useSourceUpload>['phase'],
+ upload:undefined as SourceUpload|undefined,intent:undefined as SourceUploadIntent|undefined,uploadBusy:false,uploadError:'',phase:'idle' as ReturnType<typeof useSourceUpload>['phase'],
  submit:vi.fn(),retrySaved:vi.fn(),reset:vi.fn(),forget:vi.fn(),restore:vi.fn(),select:vi.fn(),cancel:vi.fn(),recheck:vi.fn(),resolve:vi.fn(),
 }));
 const uploadIO=vi.hoisted(()=>({read:vi.fn(),save:vi.fn(),clear:vi.fn(),create:vi.fn(),content:vi.fn(),lookup:vi.fn(),get:vi.fn(),cancel:vi.fn(),stored:new Map<string,SourceUploadIntent>()}));
@@ -44,7 +44,7 @@ vi.mock('../src/modules/Store/packaging/useToolBuild',()=>({useToolBuild:()=>({
  submit:ui.submit,retrySaved:ui.retrySaved,reset:ui.reset,recheck:vi.fn(),retryRecovery:vi.fn(),
 })}));
 vi.mock('../src/modules/Store/packaging/useSourceUpload',()=>({useSourceUpload:()=>({
- scope:ui.scope,upload:ui.upload,intent:ui.intent,busy:ui.uploadBusy,phase:ui.phase,percent:0,error:'',
+ scope:ui.scope,upload:ui.upload,intent:ui.intent,busy:ui.uploadBusy,phase:ui.phase,percent:0,error:ui.uploadError,
  select:ui.select,cancel:ui.cancel,recheck:ui.recheck,forget:ui.forget,restore:ui.restore,retryRecovery:vi.fn(),
 })}));
 vi.mock('../src/modules/Store/packaging/useNpmMetadata',()=>({useNpmMetadata:()=>({metadata:ui.npmMetadata,resolve:ui.resolve})}));
@@ -90,7 +90,7 @@ function ready(){
 }
 beforeEach(()=>{
  hooks.dispose();vi.resetAllMocks();ui.scope='actor-a:main-admin';ui.projectId='project-a';ui.open=true;ui.epoch=0;ui.owners.clear();
- ui.job=undefined;ui.draft=undefined;ui.unresolved=false;ui.recoveryBlocked=false;ui.npmMetadata=undefined;ui.upload=undefined;ui.intent=undefined;ui.uploadBusy=false;ui.phase='idle';
+ ui.job=undefined;ui.draft=undefined;ui.unresolved=false;ui.recoveryBlocked=false;ui.npmMetadata=undefined;ui.upload=undefined;ui.intent=undefined;ui.uploadBusy=false;ui.uploadError='';ui.phase='idle';
  ui.reset.mockImplementation(async()=>{ui.job=undefined;ui.draft=undefined;return true;});
  ui.forget.mockImplementation(async()=>{ui.upload=undefined;ui.intent=undefined;return true;});
  ui.restore.mockResolvedValue(undefined);ui.resolve.mockResolvedValue(undefined);
@@ -102,6 +102,10 @@ beforeEach(()=>{
 afterEach(()=>hooks.dispose());
 
 describe('Ready upload wiring in the actual packaging Modal',()=>{
+ it('Does not submit a recovered old READY upload when a replacement Python selection failed',async()=>{
+  ready();ui.uploadError='Сначала отмените сохранённую загрузку.';const html=render();
+  expect(html).toContain(ui.uploadError);expect(ui.buttons.get('Выберите команду запуска')?.disabled).toBe(true);ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+ });
  it('Uses inspected Python project metadata instead of the uploaded archive name',async()=>{
   render();ui.selectSource!({target:{value:'upload'}});ui.upload=readyUpload();ui.upload.metadata!.name='mcp-server-time';ui.intent=intent;render();
   ui.selects.get('Файл запуска')!.onChange('bin/second');render();ui.finish!();await flush();

@@ -45,6 +45,12 @@ export function useSourceUpload(scope:string,captureOwner:()=>()=>boolean){
   return {abort,current:()=>mounted.current&&sequence.current===request&&renderScope.current===scope&&owns()};
  };
  const select=async(file:File)=>{
+  if(busy.current||view.blocked)return;
+  if(loaded.current!==scope){
+   // A picker handoff waits for control recovery without aborting it or crossing owner/cancellation epochs.
+   const request=sequence.current,owns=captureOwner();await recovery.current;
+   if(!mounted.current||renderScope.current!==scope||sequence.current!==request||!owns())return;
+  }
   if(busy.current||loaded.current!==scope||view.blocked)return;
   const operation=begin();if(!operation.current())return;busy.current=true;publish({phase:'hashing',error:'',percent:0});
   try{
@@ -78,7 +84,7 @@ export function useSourceUpload(scope:string,captureOwner:()=>()=>boolean){
    for(const result of completed)if(result.status==='fulfilled')intent=result.value;
    if(!intent&&completed.some(result=>result.status==='rejected'))throw new Error('Не удалось проверить сохранение загрузки. Повторите отмену.');
    if(intent){saved.current=intent;publish({intent});await sourceUploadApi.cancel(intent.requestKey,operation.abort.signal);if(!operation.current())return;}
-   if(!await clearUploadIntent(scope,intent?.requestKey)){if(operation.current())publish({blocked:true});throw new Error('В другом окне уже выбрана другая загрузка. Повторите восстановление.');}if(operation.current()){saved.current=undefined;currentUpload.current=undefined;publish({intent:undefined,upload:undefined,phase:'idle',percent:0});}}
+   if(!await clearUploadIntent(scope,intent?.requestKey)){if(operation.current())publish({blocked:true});throw new Error('В другом окне уже выбрана другая загрузка. Повторите восстановление.');}if(operation.current()){saved.current=undefined;currentUpload.current=undefined;loaded.current=scope;publish({intent:undefined,upload:undefined,phase:'idle',percent:0});}}
   catch(cause){if(operation.current())publish({phase:'idle',error:errorMessage(cause,'Результат отмены неизвестен. Повторите отмену того же запроса.')});}
   finally{if(operation.current())busy.current=false;}
  };

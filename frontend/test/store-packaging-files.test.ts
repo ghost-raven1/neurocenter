@@ -28,6 +28,38 @@ describe('Исходники автономного инструмента', () 
         await expect(readPackagingFiles([file('plugin/index.js', 'text\0binary')])).rejects.toThrow('UTF-8');
         await expect(readPackagingFiles([file('plugin/index.js', '', { arrayBuffer: async () => new Uint8Array([0xff, 0xfe, 0xff]).buffer })])).rejects.toThrow('UTF-8');
     });
+    it('Preserves Python data bytes while filtering secrets from the selected folder', async () => {
+        const binary=new Uint8Array([0,255,128,80]);
+        const result=await readPackagingFiles([file('python/server.py','print("ready")'),file('python/pyproject.toml','[project]\nname="example"\nversion="1.0"'),
+            file('python/data/table.bin','',{size:binary.length,arrayBuffer:async()=>binary.buffer}),file('python/.env','private'),file('python/key.pem','private')]);
+        expect(result.files.map(item=>item.path)).toEqual(['server.py','pyproject.toml','data/table.bin']);
+        expect(result.skipped).toBe(2);
+        expect(result.files[2]).toEqual({path:'data/table.bin',content:btoa(String.fromCharCode(...binary)),encoding:'base64'});
+    });
+    it.each(['server.py','pyproject.toml','requirements.txt','requirements-dev.txt'])('Keeps Python code and metadata %s strict UTF-8', async name => {
+        const binary=new Uint8Array([0,255]);
+        await expect(readPackagingFiles([file('python/main.py','print("ready")'),file('python/'+name,'',{size:binary.length,arrayBuffer:async()=>binary.buffer})])).rejects.toThrow('UTF-8');
+    });
+    it('An ignored Python file cannot authorize binary source resources', async () => {
+        const binary=new Uint8Array([0,255]);
+        await expect(readPackagingFiles([file('tool/.git/helper.py','pass'),file('tool/data.bin','',{size:binary.length,arrayBuffer:async()=>binary.buffer})])).rejects.toThrow('UTF-8');
+    });
+    it.each(['.git','node_modules/dependency','.venv/lib/dependency'])('An ignored SKILL.md in %s cannot hide Python sources or keep environment files',async ignored=>{
+        const binary=new Uint8Array([0,255]);
+        const result=await readPackagingFiles([file('tool/server.py','print("ready")'),file('tool/'+ignored+'/SKILL.md','# Dependency instruction'),
+            file('tool/.venv/lib/site.py','pass'),file('tool/data.bin','',{size:binary.length,arrayBuffer:async()=>binary.buffer})]);
+        expect(result.files).toEqual([{path:'server.py',content:'print("ready")'},{path:'data.bin',content:btoa(String.fromCharCode(...binary)),encoding:'base64'}]);
+        expect(result.skipped).toBe(2);
+    });
+    it('Skips Python environments and caches before reading or applying selected-file quotas',async()=>{
+        let reads=0;
+        const noise=['.venv/lib/site.py','venv/bin/python','__pycache__/module.pyc','.pytest_cache/value','.mypy_cache/value','.ruff_cache/value','module.pyo'];
+        const result=await readPackagingFiles([file('python/server.py','print("ready")'),...noise.map(path=>file('python/'+path,'',{size:2*1024**2,arrayBuffer:async()=>{reads++;throw Error('must not read Python environment');}}))]);
+        expect(result.files).toEqual([{path:'server.py',content:'print("ready")'}]);expect(result.skipped).toBe(noise.length);expect(reads).toBe(0);
+    });
+    it('A Python environment alone does not identify the selected folder as a Python project',async()=>{
+        await expect(readPackagingFiles([file('tool/.venv/library.py','pass'),file('tool/data.bin','',{size:2,arrayBuffer:async()=>new Uint8Array([0,255]).buffer})])).rejects.toThrow('UTF-8');
+    });
     it('Проверяет лимиты до чтения тяжёлого файла', async () => {
         let reads = 0;
         await expect(readPackagingFiles([file('plugin/index.js', '', { size: 1024 * 1024 + 1, arrayBuffer: async () => { reads++; return new ArrayBuffer(0); } })])).rejects.toThrow('до 1 МБ');

@@ -19,7 +19,9 @@ const crc32 = (zlib as typeof zlib & {crc32(bytes: Buffer, previous?: number): n
 const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024, MAX_TAR_BYTES = 10 * 1024 * 1024, MAX_FILE_BYTES = 1024 * 1024;
 function fail(message: string): never {throw new BadRequestException(message);}
 const macMetadata = (part: string): boolean => ['__macosx', '.ds_store'].includes(part.toLowerCase()) || part.startsWith('._');
-const ignored = (parts: string[],skill=false): boolean => parts.some(raw => {
+const pythonNoise = (parts:string[]):boolean => parts.some(part=>['.venv','venv','__pycache__','.pytest_cache','.mypy_cache','.ruff_cache'].includes(part.toLowerCase())||/\.py[co]$/i.test(part));
+const pythonText = (name:string):boolean => /(?:\.py|\.toml|(?:^|\/)requirements(?:[._-][^/]*)?\.(?:txt|in))$/i.test(name);
+const ignored = (parts: string[],skill=false,python=false): boolean => python&&pythonNoise(parts)||parts.some(raw => {
     const part = raw.toLowerCase();
     return ['.git', 'node_modules', '.npmrc', '.yarnrc', '.yarnrc.yml',...skill?[]:['dist','build']].includes(part)
         || macMetadata(part) || /^\.env(?:\.|$)/.test(part) || /^(?:id_rsa|id_ed25519)(?:\.|$)/.test(part) || /\.(?:pem|key)$/.test(part);
@@ -62,24 +64,28 @@ class ArchiveContents {
         const wrapper = commonRoot(files.filter(entry => !entry.path.split('/').some(macMetadata)));
         // Имя внешней папки build/dist не делает весь проект результатом сборки.
         const rootName = wrapper && (!ignored([wrapper]) || ['build', 'dist', 'node_modules'].includes(wrapper.toLowerCase())) ? wrapper : commonRoot(relevant);
-        const skill=files.some(entry=>/(?:^|\/)SKILL\.md$/.test(entry.path));
+        const relativeParts=(entry:ArchiveEntry):string[]=>entry.path.split('/').slice(rootName&&entry.path.startsWith(rootName+'/')?1:0);
+        const skill=files.some(entry=>{const parts=relativeParts(entry);return parts[parts.length-1]==='SKILL.md'&&!ignored(parts,true,true);});
+        const python=!skill&&files.some(entry=>{const parts=relativeParts(entry);return parts[parts.length-1]?.endsWith('.py')&&!ignored(parts)&&!pythonNoise(parts);});
         const accepted: SourceFile[] = [];
         let skipped = 0;
         for (const entry of files) {
-            const parts = entry.path.split('/').slice(rootName && entry.path.startsWith(rootName + '/') ? 1 : 0);
-            if (ignored(parts,skill)) {skipped++; continue;}
+            const parts = relativeParts(entry);
+            if (ignored(parts,skill,python)) {skipped++; continue;}
             let content: string;
             let encoding:'base64'|undefined;
             try {content = new TextDecoder('utf-8', {fatal: true,ignoreBOM:true}).decode(entry.content!);if(content.includes('\0'))throw new Error();}
             catch {
-                if(!skill||!/(?:^|\/)(?:scripts|references|assets)\//.test(parts.join('/')))fail('В архиве нужны текстовые исходники UTF-8: '+parts.join('/'));
+                if(!(python&&!pythonText(parts.join('/')))&&(!skill||!/(?:^|\/)(?:scripts|references|assets)\//.test(parts.join('/'))))fail('В архиве нужны текстовые исходники UTF-8: '+parts.join('/'));
                 content=entry.content!.toString('base64');encoding='base64';
             }
             accepted.push({path: parts.join('/'), content,...(encoding?{encoding}:{})});
         }
         if (!accepted.length) {fail('В архиве нет подходящих текстовых исходников.');}
-        if(skill&&accepted.length>100)fail('Допустимо до 100 файлов исходников.');
-        return {files:skill?accepted.map(file=>({...file,path:filePath(file.path)})):packageFiles(accepted).map(({path, content}) => ({path, content: content!})), skipped, ...(rootName ? {rootName} : {})};
+        if((skill||python)&&accepted.length>100)fail('Допустимо до 100 файлов исходников.');
+        // Archive limits already cover original binary sizes; text files keep the existing publication validation.
+        if(python)packageFiles(accepted.filter(file=>!file.encoding));
+        return {files:skill||python?accepted.map(file=>({...file,path:filePath(file.path)})):packageFiles(accepted).map(({path, content}) => ({path, content: content!})), skipped, ...(rootName ? {rootName} : {})};
     }
 }
 

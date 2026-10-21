@@ -5,6 +5,7 @@ import { ToolPackagingModal } from '../src/modules/Store/packaging/ToolPackaging
 import { packagingFilesMetadata, packagingReferenceSource } from '../src/modules/Store/packaging/packagingDraft';
 import {readPackagingArchive} from '../src/modules/Store/packaging/sourceArchive';
 import type { NpmPackageMetadata, PackagingKind, RepositoryMetadata, RepositoryQuery, ToolBuild } from '../src/modules/Store/packaging/types';
+import type {SourceUpload,SourceUploadIntent} from '../src/modules/Store/packaging/uploadTypes';
 
 const hooks = vi.hoisted(() => {
     let cursor = 0;
@@ -41,7 +42,7 @@ interface ButtonProps { children?: ReactNode; disabled?: boolean; onClick?: () =
 interface SelectProps { 'aria-label'?: string; value?: string; onChange: (value: string) => void; }
 const ui = vi.hoisted(() => ({
     scope: 'admin-a', projectId: 'project-a', open: true,
-    start: undefined as {source:'files'} | undefined, active: false,
+    start: undefined as {source:'files'} | undefined, active: false, unresolved:false,recoveryBlocked:false,pickerDisabled:false,
     inputs: new Map<string, InputProps>(), buttons: new Map<string, ButtonProps>(),
     selects: new Map<string, SelectProps>(),
     metadata: new Map<string, NpmPackageMetadata>(),
@@ -53,6 +54,7 @@ const ui = vi.hoisted(() => ({
     kind: '' as PackagingKind, selectKind: undefined as ((event: {target:{value:PackagingKind}})=>void)|undefined,
     kinds: [] as Array<{value:string;disabled?:boolean}>, selectFiles: undefined as ((files:File[],archive?:boolean)=>void)|undefined,
     owners: new Map<string, () => () => boolean>(),
+    uploadSelect:vi.fn(),upload:undefined as SourceUpload|undefined,uploadIntent:undefined as SourceUploadIntent|undefined,uploadError:'',
 }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), useState: hooks.useState, useRef: hooks.useRef, useMemo: hooks.useMemo, useEffect: hooks.useEffect }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => {
@@ -63,10 +65,10 @@ vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({ useNpmMetadata
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({ useRepositoryMetadata: (query: RepositoryQuery) => {
     ui.repositoryQuery=query; return { metadata:ui.repositoryMetadata, resolve:async()=>ui.repositoryMetadata };
 } }));
-vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: false, submit: ui.submit, reset: ui.reset }) }));
-vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,forget:async()=>true }) }));
+vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: ui.unresolved,recoveryBlocked:ui.recoveryBlocked, submit: ui.submit, reset: ui.reset }) }));
+vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,error:ui.uploadError,select:ui.uploadSelect,upload:ui.upload,intent:ui.uploadIntent,forget:async()=>true }) }));
 vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
-vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect}:{onSelect:typeof ui.selectFiles})=>{ui.selectFiles=onSelect;return null;}}));
+vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect,disabled}:{onSelect:typeof ui.selectFiles;disabled:boolean})=>{ui.selectFiles=onSelect;ui.pickerDisabled=disabled;return null;}}));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     const input = (props: InputProps) => { ui.inputs.set(props['aria-label'] ?? '', props); return null; };
@@ -101,6 +103,8 @@ beforeEach(() => {
     vi.resetAllMocks(); ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
     ui.resolve.mockImplementation(async () => metadata);
     ui.reset.mockImplementation(() => { ui.job = undefined; });
+    ui.upload=undefined;ui.uploadIntent=undefined;ui.uploadError='';ui.uploadSelect.mockResolvedValue(undefined);
+    ui.unresolved=false;ui.recoveryBlocked=false;ui.pickerDisabled=false;
 });
 afterEach(() => hooks.dispose());
 
@@ -234,6 +238,64 @@ describe('Автоматические данные источника', () => {
 
 const skillText='---\nname: careful-reviewer\ndescription: Проверяет изменения и важные риски\n---\n\nПрочитай [правила](references/rules.md) и проверь код.';
 function selectedFile(name:string,content:string):File {const bytes=new TextEncoder().encode(content);return {name,size:bytes.length,arrayBuffer:async()=>bytes.buffer} as File;}
+describe('Python from the ordinary archive and files picker',()=>{
+    const choose=()=>{render();ui.selectSource!({target:{value:'files'}});render();};
+    it('Hands a single Python source to the checked runtime upload instead of reporting no entrypoint',async()=>{
+        choose();ui.selectFiles!([selectedFile('server.py','print("MCP")')]);await flush();
+        expect(ui.uploadSelect).toHaveBeenCalledOnce();const html=render();
+        expect(ui.source).toBe('upload');expect(html).not.toContain('В исходниках нет SKILL.md');expect(ui.submit).not.toHaveBeenCalled();
+        const file=ui.uploadSelect.mock.calls[0][0] as File;expect(file.name).toBe('python-source.zip');expect(file.size).toBeGreaterThan(0);
+    });
+    it('Hands parsed Python archives over and submits only the durable checked handle after an explicit click',async()=>{
+        choose();vi.mocked(readPackagingArchive).mockResolvedValue({files:[{path:'server.py',content:'print("MCP")'}],skipped:0,rootName:'python-tool'});
+        ui.selectFiles!([selectedFile('source.tar','source archive')],true);await flush();expect(ui.uploadSelect).toHaveBeenCalledOnce();
+        ui.upload={id:'22222222-2222-4222-8222-222222222222',requestKey:'11111111-1111-4111-8111-111111111111',name:'python-source.zip',bytes:100,sha256:'a'.repeat(64),expiresAt:'2027-01-01',state:'READY',metadata:{name:'python-tool',adapter:'python',candidates:['server.py'],choices:[{entrypoint:'server.py',adapter:'python',targets:['darwin-arm64']}],entrypoint:'server.py',runnableKinds:['mcp'],requiresEntrypointChoice:false}};
+        render();expect(ui.submit).not.toHaveBeenCalled();ui.finish!();await flush();
+        expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'mcp',name:'python-tool',source:{type:'upload',uploadId:ui.upload.id,sha256:ui.upload.sha256,bytes:100,entrypoint:'server.py'}}));
+    });
+    it.each(['close','project','owner','source'] as const)('Never starts a late Python upload after %s changes',async change=>{
+        choose();const pending=deferred<ArrayBuffer>();
+        ui.selectFiles!([{...selectedFile('server.py','print(1)'),arrayBuffer:()=>pending.promise} as File]);
+        if(change==='close')ui.close!();if(change==='project')ui.projectId='project-b';if(change==='owner')ui.scope='admin-b';if(change==='source')ui.selectSource!({target:{value:'npm'}});
+        render();pending.resolve(new TextEncoder().encode('print(1)').buffer);await flush();render();expect(ui.uploadSelect).not.toHaveBeenCalled();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Recreates identical sanitized bytes from the original Python archive to resume an existing intent',async()=>{
+        choose();vi.mocked(readPackagingArchive).mockResolvedValue({files:[{path:'server.py',content:'print(1)'}],skipped:0,rootName:'tool'});
+        const original=selectedFile('tool.tar','source archive');ui.selectFiles!([original],true);await flush();
+        const first=ui.uploadSelect.mock.calls[0][0] as File;
+        ui.uploadIntent={requestKey:'11111111-1111-4111-8111-111111111111',name:first.name,bytes:first.size,sha256:'a'.repeat(64)};
+        render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([original],true);await flush();render();
+        expect(ui.uploadSelect).toHaveBeenCalledTimes(2);expect(ui.source).toBe('upload');
+        expect(new Uint8Array(await (ui.uploadSelect.mock.calls[1][0] as File).arrayBuffer())).toEqual(new Uint8Array(await first.arrayBuffer()));
+        expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Hands an existing intent to the upload identity check before any new Python submission',async()=>{
+        ui.uploadIntent={requestKey:'11111111-1111-4111-8111-111111111111',name:'old.zip',bytes:100,sha256:'a'.repeat(64)};choose();
+        ui.uploadSelect.mockImplementation(async()=>{ui.uploadError='Другой файл не отправится под её UUID.';});
+        ui.selectFiles!([selectedFile('server.py','print(1)')]);await flush();render();expect(ui.uploadSelect).toHaveBeenCalledOnce();expect(ui.source).toBe('upload');expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Rejecting a new Python archive cannot submit a different recovered READY upload',async()=>{
+        ui.uploadIntent={requestKey:'11111111-1111-4111-8111-111111111111',name:'old.zip',bytes:100,sha256:'a'.repeat(64)};
+        ui.upload={id:'22222222-2222-4222-8222-222222222222',...ui.uploadIntent,expiresAt:'2027-01-01',state:'READY',metadata:{adapter:'python',candidates:['old.py'],choices:[{entrypoint:'old.py',adapter:'python',targets:['darwin-arm64']}],entrypoint:'old.py',runnableKinds:['mcp'],requiresEntrypointChoice:false}};
+        choose();ui.uploadSelect.mockImplementation(async()=>{ui.uploadError='Другой файл не отправится под её UUID.';});ui.selectFiles!([selectedFile('server.py','print(1)')]);await flush();
+        render();expect(ui.source).toBe('upload');expect(ui.buttons.get('Выберите команду запуска')?.disabled).toBe(true);
+        ui.finish!();await flush();expect(ui.uploadSelect).toHaveBeenCalledOnce();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it.each(['unresolved','recoveryBlocked'] as const)('Blocks Python selection and drop while build is %s',async state=>{
+        choose();ui[state]=true;render();expect(ui.pickerDisabled).toBe(true);
+        ui.selectFiles!([selectedFile('server.py','print(1)')]);await flush();expect(ui.uploadSelect).not.toHaveBeenCalled();
+        expect(ui.submit).not.toHaveBeenCalled();expect(ui.source).toBe('files');
+    });
+    it('Does not turn invalid archive errors into a different upload',async()=>{
+        choose();vi.mocked(readPackagingArchive).mockRejectedValue(Error('Ссылки в архиве запрещены'));
+        ui.selectFiles!([selectedFile('bad.zip','bad')],true);await flush();expect(render()).toContain('Ссылки в архиве запрещены');expect(ui.uploadSelect).not.toHaveBeenCalled();
+    });
+    it('Keeps a skill containing Python scripts and a JS tool containing Python helpers in their original flow',async()=>{
+        choose();ui.selectFiles!([selectedFile('SKILL.md',skillText),selectedFile('scripts/check.py','print(1)')]);await flush();render();render();
+        expect(ui.source).toBe('files');expect(ui.kind).toBe('skill');expect(ui.uploadSelect).not.toHaveBeenCalled();
+        ui.selectFiles!([selectedFile('index.js','console.log(1)'),selectedFile('test.py','print(1)')]);await flush();render();render();expect(ui.source).toBe('files');expect(ui.uploadSelect).not.toHaveBeenCalled();
+    });
+});
 async function chooseSkill(content=skillText){render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('SKILL.md',content),selectedFile('references/rules.md','Проверь ошибки и граничные случаи.')]);await flush();render();return render();}
 
 describe('Упаковка скилла через тот же поток',()=>{
