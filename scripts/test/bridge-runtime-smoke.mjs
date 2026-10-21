@@ -21,7 +21,7 @@ const archive = path.resolve(process.argv[2] || path.join(root, 'bridge-dist/run
 const reportFile = process.env.BRIDGE_RUNTIME_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'runtime-smoke.json');
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-runtime-')));
 const cases = [];
-let client, fatal, metadata;
+let client, fatal, metadata, agentProof;
 async function check(name, action) { await action(); cases.push(name); console.log('OK ' + name); }
 try {
     metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
@@ -57,6 +57,7 @@ try {
         assert.equal(loaded.buildId, metadata.buildId);
         assert.equal(loaded.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(loaded.capabilities.includes('project-snapshots-v1'), true);
+        assert.equal(loaded.capabilities.includes('project-agents-v1'), true);
     });
     await check('Встроенный runtime запускается без Node и npm в PATH', async () => {
         assert.equal(execFileSync(node, ['-p', 'process.versions.node'], { env: isolatedEnv, encoding: 'utf8' }).trim(), metadata.nodeVersion);
@@ -81,6 +82,16 @@ try {
         }));
         assert.deepEqual(proof, {tables:3,rows:514,allColumns:true,schemaVersions:true,indexPreserved:true,semanticSearch:true,sourceUnchanged:true,privateFilesExcluded:true});
     });
+    await check('Compiled worker получает агенты через HTTP, переживает lost ACK и подтверждает native enable/disable/removal', async () => {
+        const own=path.join(temporary,'agents-proof');
+        const proof=JSON.parse(execFileSync(node,[path.join(root,'scripts/test/bridge-agents-runtime.fixture.mjs'),own],{
+            cwd:content,env:{...isolatedEnv,NEUROCENTER_BRIDGE_HOME:path.join(own,'private')},encoding:'utf8',timeout:150000,
+        }));
+        assert.deepEqual({...proof,requests:undefined},{capability:true,jobKind:true,httpJobs:6,lostAckPreserved:true,staleInstanceRejected:true,manualAgentPreserved:true,nativeChecks:4,
+            engineVersion:metadata.probeEngine.version,engineSha256:metadata.probeEngine.sha256,buildId:metadata.buildId,requests:undefined});
+        assert.ok(proof.requests>=12);
+        agentProof=proof;
+    });
     client = new Client({ name: 'Проверка автономного пакета', version: '1.0.0' });
     await client.connect(new StdioClientTransport({ command: node, args: [entry], cwd: content, env: isolatedEnv, stderr: 'ignore' }));
     await check('Реальный stdio MCP загружается из готового пакета и сообщает протокол, сборку и LanceDB', async () => {
@@ -95,6 +106,7 @@ try {
         assert.equal(status.ragSupported, metadata.ragSupported);
         assert.equal(status.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(status.capabilities.includes('project-snapshots-v1'), true);
+        assert.equal(status.capabilities.includes('project-agents-v1'), true);
     });
     await check('В артефакте отсутствуют старые команды небезопасной записи', async () => {
         const tools = (await client.listTools()).tools.map(tool => tool.name);
@@ -109,6 +121,7 @@ finally {
     if (client) await client.close();
     await fs.rm(temporary, { recursive: true, force: true });
     await fs.mkdir(path.dirname(reportFile), { recursive: true });
-    await fs.writeFile(reportFile, JSON.stringify({ checkedAt: new Date().toISOString(), archive, metadata, cases, fatal: fatal || null,
+    await fs.writeFile(reportFile, JSON.stringify({ checkedAt: new Date().toISOString(), archive, metadata, cases, agents:agentProof??null,
+        executor:{platform:process.platform,arch:process.arch,nodeVersion:process.versions.node,emulated:process.env.BRIDGE_RUNTIME_EMULATED==='true'},fatal: fatal || null,
         temporaryProfileRemoved: true, realProfileChanged: false }, null, 2) + '\n');
 }

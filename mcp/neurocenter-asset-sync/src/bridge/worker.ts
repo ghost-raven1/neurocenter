@@ -1,5 +1,7 @@
 import {reindexHostedRag} from '../features/rag-hosted/reindex.js';
 import {publishProjectSnapshot} from '../features/project-snapshot/publish.js';
+import {configureProjectAgents,projectAgentsFailureMessage} from '../features/project-agents/index.js';
+import {PROJECT_AGENTS_JOB,type ProjectAgentsPayload} from '../features/project-agents/contract.js';
 import {finalizeRagReindex,releaseRagReindex,recoverRagRestore} from '../features/rag-index/restore-recovery.js';
 import {probeInstalledRagMcp} from '../features/rag-ui/mcp-startup.js';
 import {localRagUi} from '../features/rag-ui/contract.js';
@@ -59,7 +61,7 @@ interface Job {
     kind: string;
     project_id?: string;
     lease: string;
-    payload: ProjectLocalPayload & ConfigurationPayload & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
+    payload: ProjectLocalPayload & ConfigurationPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;snapshotId?:string;snapshotProtocol?:string;
         changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
@@ -158,7 +160,7 @@ export async function runWorker(): Promise<void> {
                     const result = await api(`jobs/${current.id}/authorize`, {
                         lease: current.lease,
                     });
-                    if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model','publish-project-snapshot'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
+                    if ([PROJECT_AGENTS_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model','publish-project-snapshot'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
                         throw new Error('Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.');
                     }
                     return result;
@@ -174,7 +176,10 @@ export async function runWorker(): Promise<void> {
                 try {
                     await authorize();
                     let result: unknown;
-                    if(current.kind==='publish-project-snapshot'){
+                    if(current.kind===PROJECT_AGENTS_JOB){
+                        if(current.payload.projectId!==current.project_id)throw new Error('Задание настройки агентов не соответствует проекту.');
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>configureProjectAgents(current.payload,authorize,update));
+                    }else if(current.kind==='publish-project-snapshot'){
                         if(current.payload.snapshotProtocol!=='project-snapshots-v1'||!current.payload.snapshotId||!current.project_id||!current.payload.bindingId)throw new Error('Задание полного снимка не поддерживается. Обновите мост и создайте новую публикацию.');
                         result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>publishProjectSnapshot({projectId:current.project_id!,bindingId:current.payload.bindingId!,snapshotId:current.payload.snapshotId!,snapshotProtocol:'project-snapshots-v1'},authorize,update));
                     }else if(CONFIGURATION_KINDS.includes(current.kind)){
@@ -284,7 +289,7 @@ export async function runWorker(): Promise<void> {
                         lease: current.lease,
                         state: 'succeeded',
                         message:
-                            CONFIGURATION_KINDS.includes(current.kind)?'Действие настройки MCP завершено. Значения остались на компьютере.':PROJECT_LOCAL_KINDS.includes(current.kind) ? 'Локальное действие завершено.' : current.kind === 'install'
+                            current.kind===PROJECT_AGENTS_JOB?'Агенты настроены; OpenCode перечитает их при следующем запуске.':CONFIGURATION_KINDS.includes(current.kind)?'Действие настройки MCP завершено. Значения остались на компьютере.':PROJECT_LOCAL_KINDS.includes(current.kind) ? 'Локальное действие завершено.' : current.kind === 'install'
                                 ? current.payload.installSet ? 'Набор инструментов установлен; запуск в OpenCode ещё не проверен.' : hasRequirements ? 'Файлы установлены; проверьте настройку внешних подключений.' : 'Файлы установлены'
                                 : current.kind === 'inspect-installation' ? 'Проверка файлов завершена; запуск инструмента не проверялся.'
                                 : current.kind === 'prepare-local-change' ? 'Сравнение подготовлено. Проверьте изменения перед восстановлением.'
@@ -334,7 +339,7 @@ export async function runWorker(): Promise<void> {
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
                         } : workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
-                            state: 'failed', result, message: current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
+                            state: 'failed', result, message: current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });
                     }
                     await deliverCompletions();

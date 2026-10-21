@@ -18,6 +18,7 @@ try {
     await fs.copyFile(path.join(root, '../../services/shared/rag-ui-contract.cjs'), path.join(stage, 'dist/shared/rag-ui-contract.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/opencode-model-scan.cjs'), path.join(stage, 'dist/shared/opencode-model-scan.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-snapshot.cjs'), path.join(stage, 'dist/shared/project-snapshot.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/project-agents.cjs'), path.join(stage, 'dist/shared/project-agents.cjs'));
     const digest = createHash('sha256');
     const files = (await fs.readdir(path.join(stage, 'dist'), { recursive: true })).sort();
     for (const file of files) {

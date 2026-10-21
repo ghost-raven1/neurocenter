@@ -10,6 +10,7 @@ import { FILE_BYTES_LIMIT, JOURNAL_BYTES_LIMIT, LOCK_BYTES_LIMIT, installationRe
 import { encodeJournal, journalDirectory, parseJournal, validateChanges, type FileChange, type ChangeIdentity, type Journal } from './installation-journal.js';
 import { assertInstallationSpace, recoveryDirectory, withRecoveryBudget } from './installation-space.js';
 import { indexLocalRecovery, recoveryIndexRecord } from './local-recovery-index.js';
+import { PROJECT_AGENTS_NOTE } from '../features/project-agents/contract.js';
 export type { FileChange, ChangeIdentity } from './installation-journal.js';
 
 export const CONFIG_PATHS = [
@@ -107,13 +108,14 @@ async function archive(journal: Journal): Promise<string> {
     }
     if (journal.job && journal.result) {
         const succeeded = journal.state === 'committed';
+        const agents = journal.result.readiness==='configured'&&journal.result.note===PROJECT_AGENTS_NOTE;
         await saveCompletion({
             ...journal.job,
             state: succeeded ? 'succeeded' : 'failed',
-            message: succeeded
+            message: succeeded&&agents?PROJECT_AGENTS_NOTE:succeeded
                 ? journal.action === 'install' ? 'Файлы установлены; запуск инструмента ещё не проверен.' : 'Файлы и подключение удалены; OpenCode нужно перезапустить.'
                 : 'Прерванная операция восстановлена: незавершённые изменения отменены.',
-            result: { ...journal.result, recoveryPath: destination, ...(!succeeded ? { rolledBack: true } : {}) },
+            result: !succeeded&&agents?{}:{ ...journal.result, recoveryPath: destination, ...(!succeeded ? { rolledBack: true } : {}) },
         });
     }
     try { await fs.link(pending, destination); }
