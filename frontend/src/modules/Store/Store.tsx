@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Col, Empty, Input, message, Modal, Radio, Row, Select, Space, Spin, Typography } from 'antd';
 import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -16,6 +17,7 @@ import AppCard, { type IStoreApp, type TStoreKind } from './AppCard';
 import { fromPlugin, fromSkill, pluralProjects, skillProject, canEditTool, projectSkillReferenceBlocker, isToolInProject, projectAssetForTool } from './storeHelpers';
 import StoreCreateModal from './StoreCreateModal';
 import StoreDetailsModal from './StoreDetailsModal';
+import { StoreArchiveAction } from './StoreArchiveAction';
 import StoreEditModal from './StoreEditModal';
 import {useBridge} from '../../features/McpBridge/useBridge';
 import {BridgeConnection} from '../../features/McpBridge/BridgeConnection';
@@ -198,6 +200,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     useSectionUpdates(['catalog'],()=>{void loadCatalog();void loadProject();});
 
     const openEdit = (app: IStoreApp): void => setEditApp(app);
+    const archived = (): void => {
+        setViewApp(null); setEditApp(null); setPicker(null);
+        void loadCatalog(); void loadProject();
+    };
 
     const isInProject = useCallback((app: IStoreApp): boolean =>
         isToolInProject(app, targetProject?.id, assets, catalog), [ assets, targetProject, catalog ]);
@@ -280,24 +286,25 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         const installLabel=pendingAction&&!['install','uninstall'].includes(pendingAction.kind)?'Дождитесь локального действия':pending?(job?.state==='reconciling'?'Сверяем результат':job?.kind==='uninstall'?'Удаление через мост…':job?.state==='queued'?'В очереди моста':'Устанавливается…'):installation?(installation.version===app.version?'Установить повторно':`Обновить до версии ${app.version}`):'Установить через мост';
         return <Space direction="vertical" style={{width:'100%'}}>
             {app.pinError&&<Text type="warning">{app.pinError}</Text>}
-            {selected&&canManage&&targetProject&&commonCatalog.some(item=>item.id===app.id&&item.kind===app.kind&&(app.pinError||item.version!==app.version))&&<Button size="small" block onClick={()=>{
+            {selected&&canManage&&targetProject&&commonCatalog.some(item=>item.id===app.id&&item.kind===app.kind&&(app.pinError||item.version!==app.version))&&<FeatureButton features={['tool_catalog']} size="small" block onClick={()=>{
                 const current=captureOwner();
                 const head=commonCatalog.find(item=>item.id===app.id&&item.kind===app.kind)!,ref=assets.find(item=>item.assetId===app.id&&item.assetKind===app.kind)!;
                 Modal.confirm({title:`Закрепить версию ${head.version} в проекте «${target}»?`,content:'Новая установка потребует одобрения этой версии. Файлы на компьютерах остаются на своих версиях.',okText:'Закрепить версию',cancelText:'Отмена',onOk:async()=>{if(!current())return;await bffApi.pinProjectAsset(targetProject.id,{assetId:ref.assetId,assetKind:ref.assetKind,version:head.version,expectedVersion:ref.version??null,expectedManifest:ref.manifest??null});if(current())await loadProject();}});
-            }}>{app.pinError?'Подтвердить версию проекта':'Закрепить новую версию'}</Button>}
-            {target && canInstall && (selected || canManage && !referenceBlocker) && <Button size="small" block type="primary" disabled={!!app.pinError||!projectCatalogUsable||!!installing||projectLoading||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</Button>}
-            {target && canManage && !referenceBlocker && <Button size="small" block loading={installing===app.id} disabled={!!installing||!!localBusy||projectLoading||!projectCatalogUsable}
-                onClick={()=>{void doInstall(app,selected?'uninstall':'install');}}>{selected?'Убрать из каталога проекта':'Добавить в каталог проекта'}</Button>}
+            }}>{app.pinError?'Подтвердить версию проекта':'Закрепить новую версию'}</FeatureButton>}
+            {target && canInstall && (selected || canManage && !referenceBlocker) && <FeatureButton features={['tool_installation']} size="small" block type="primary" disabled={!!app.pinError||!projectCatalogUsable||!!installing||projectLoading||!!bridgeInstallError||!binding||!bridge.device||!bridge.jobsReady||!bridge.installationsReady||!!localBusy||pending} loading={localBusy===app.id||job?.state==='running'} title={bridgeInstallError||(!binding?'Свяжите папку проекта на странице «Проекты»':undefined)} onClick={()=>{void localInstall(app);}}>{installLabel}</FeatureButton>}
+            {target && canManage && !referenceBlocker && <FeatureButton features={selected ? [] : ['tool_catalog']} size="small" block loading={installing===app.id} disabled={!!installing||!!localBusy||projectLoading||!projectCatalogUsable}
+                onClick={()=>{void doInstall(app,selected?'uninstall':'install');}}>{selected?'Убрать из каталога проекта':'Добавить в каталог проекта'}</FeatureButton>}
             {target && canManage && referenceBlocker && skillProject(app) !== targetProject?.id && <Text type="secondary">{referenceBlocker}</Text>}
             {target && selected && canManage && <Button size="small" block disabled={!!localBusy || projectLoading || !projectCatalogUsable}
                 onClick={() => { void localPlans.inspect(app); }}>Разрешение версии</Button>}
             {job&&(job.state!=='succeeded'||!installation)&&<Text type={job.state==='failed'?'danger':'secondary'} role="status">{job.message}</Text>}
             {job?.state==='queued'&&<Button size="small" onClick={()=>{void bridgeApi.cancel(job.id).then(()=>bridge.reload()).catch(cause=>message.error(errorMessage(cause,'Не удалось отменить задание.')));}}>Отменить {job.kind==='uninstall'?'удаление':'установку'}</Button>}
             {!target && level>=3 && <>
-                <Button size="small" block type="primary" disabled={!projectsReady||!!referenceBlocker} title={referenceBlocker ?? undefined} onClick={()=>setPicker({app})}>Добавить в проекты</Button>
+                <FeatureButton features={['tool_catalog']} size="small" block type="primary" disabled={!projectsReady||!!referenceBlocker} title={referenceBlocker ?? undefined} onClick={()=>setPicker({app})}>Добавить в проекты</FeatureButton>
                 {referenceBlocker && <Text type="secondary">{referenceBlocker}</Text>}
             </>}
-            {canEditTool(user, app) && <Button size="small" block onClick={()=>openEdit(app)}>Редактировать</Button>}
+            {canEditTool(user, app) && <FeatureButton features={['tool_catalog']} size="small" block onClick={()=>openEdit(app)}>Редактировать</FeatureButton>}
+            <StoreArchiveAction app={app} common={commonCatalog} isMain={isMain} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} />
             {!canManage && !isMain && <Text type="secondary">Доступно в каталоге проекта</Text>}
         </Space>;
     };
@@ -443,6 +450,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             }} />}
 
             <StoreDetailsModal viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}
+                archiveAction={viewApp ? <StoreArchiveAction app={viewApp} common={commonCatalog} isMain={isMain} block={false} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} /> : undefined}
                 projectName={target ?? undefined}
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}

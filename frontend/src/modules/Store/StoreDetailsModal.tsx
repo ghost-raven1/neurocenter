@@ -31,6 +31,8 @@ interface IProps {
     onClose: () => void;
     /** Передаётся только при наличии права редактирования выбранного инструмента. */
     onEdit?: () => void;
+    /** Common catalog action is passed only when the current main admin can manage its head. */
+    archiveAction?: React.ReactNode;
     projectName?: string;
     /** Store передаёт действие только для доступного пользователю проекта и компьютера. */
     onInstall?: (version:number) => void;
@@ -47,7 +49,7 @@ interface IDetailState { key: string; value: TStoreDetail | null; error: string 
 interface IHistoryState { key: string; value: IAiPluginVersion[] | null; error: string | null; }
 
 /** Полная инструкция, метаданные и действительная история выбранного инструмента. */
-const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
+const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, archiveAction, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
     const columns = Grid.useBreakpoint().sm ? 2 : 1;
     const identity = viewApp ? `${viewApp.kind}:${viewApp.id}:${viewApp.version}:${viewApp.projectManifest??''}` : '';
     const [state, setState] = useState<IDetailState>({ key: '', value: null, error: null });
@@ -201,7 +203,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, projectName, 
         onCancel={onClose}
         destroyOnClose
         footer={<div className="store-details__footer">
-            <div className="store-details__secondary-actions">{onEdit && <Button icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</Button>}</div>
+            <div className="store-details__secondary-actions">{onEdit && <Button icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</Button>}{archiveAction}</div>
             <div className="store-details__primary-actions">
                 {onAddToProject && <Button type="primary" loading={addingToProject} disabled={!detail || !!loadError || addingToProject} onClick={onAddToProject}>Добавить в проект</Button>}
                 {onChooseProjectFolder && <Button type="primary" onClick={onChooseProjectFolder}>Выбрать папку проекта</Button>}

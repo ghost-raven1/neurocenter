@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -20,7 +21,7 @@ const hooks=vi.hoisted(()=>{
         useEffect:(effect:()=>void|(()=>void),deps:unknown[])=>{const index=cursor++,previous=slots[index];if(previous&&same(previous.deps,deps))return;const slot=slots[index]={deps};effects.push(()=>{previous?.cleanup?.();slot.cleanup=effect()||undefined;});},
     };
 });
-const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',search:undefined as undefined|{onChange:(event:{target:{value:string}})=>void},archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
+const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',searches:new Map<string,{onChange:(event:{target:{value:string}})=>void}>(),archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
 const archiveUi=vi.hoisted(()=>({modal:undefined as ArchiveModalProps|undefined,buttons:[]as Array<{label:string;disabled?:boolean;onClick:()=>void}>,checkboxes:[]as Array<{'aria-label':string;disabled?:boolean;checked?:boolean;onChange:(event:{target:{checked:boolean}})=>void}>,blocked:false,start:vi.fn(),emptyDescription:''}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.owner;let captureOwner=ui.owners.get(scope);if(!captureOwner){captureOwner=()=>()=>scope===ui.owner;ui.owners.set(scope,captureOwner);}return{scope,captureOwner};}}));
@@ -37,14 +38,14 @@ vi.mock('../src/features/AgentCatalog/AgentEditModal',()=>({AgentEditModal:(prop
 vi.mock('antd',()=>{
     const content=({children}:{children?:ReactNode})=>children;const input=()=>null;
     return{Card:({children,title}:{children?:ReactNode;title?:ReactNode})=>createElement('div',null,title,children),Space:content,Tag:content,Typography:{Title:content,Text:content,Paragraph:content},Checkbox:(props:typeof archiveUi.checkboxes[number])=>{archiveUi.checkboxes.push(props);return null;},
-        Input:Object.assign(input,{Search:(props:NonNullable<typeof ui.search>)=>{ui.search=props;return null;}}),List:()=>null,Spin:()=>null,Empty:({description}:{description:string})=>{archiveUi.emptyDescription=description;return null;},Modal:()=>null,
+        Input:Object.assign(input,{Search:(props:{'aria-label':string;onChange:(event:{target:{value:string}})=>void})=>{ui.searches.set(props['aria-label'],props);return null;}}),List:()=>null,Spin:()=>null,Empty:({description}:{description:string})=>{archiveUi.emptyDescription=description;return null;},Modal:()=>null,
         Alert:({message,description}:{message:ReactNode;description?:ReactNode})=>createElement('div',null,message,description),Button:({children,disabled,loading,onClick}:{children?:ReactNode;disabled?:boolean;loading?:boolean;onClick:()=>void})=>{if(children==='Редактировать')ui.buttons.push({disabled,onClick});if(typeof children==='string')archiveUi.buttons.push({label:children,disabled,onClick});if(typeof children==='string'&&(children.startsWith('Обновить ')||children==='Перечитать поставку'))ui.refreshButtons.set(children,{loading,onClick});if(children==='Проверить конфликт заново'||children==='Повторить после исправления')ui.retryButton=onClick;return children;}};
 });
 const source={source:{verified:true,commit:'a'.repeat(40)},assets:['a','b'].map(id=>({id:'source-'+id,kind:'agent',name:'Агент '+id,version:'1',license:'MIT',dependencies:[],imported:{id:'agent-'+id,originVersion:'1',version:1,updateAvailable:false}}))};
 function render(){hooks.begin();ui.buttons=[];ui.archives=[];archiveUi.buttons=[];archiveUi.checkboxes=[];const html=renderToStaticMarkup(createElement(AssetSources));hooks.commit();return html;}
 async function settle(){for(let n=0;n<15;n++)await Promise.resolve();return render();}
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:Error)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
-beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
+beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.searches.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
 afterEach(()=>hooks.dispose());
 
 it('Двойной клик и открытие второй карточки во время GET не создают конкурирующий редактор',async()=>{
@@ -74,11 +75,16 @@ it('Локальная упаковка остаётся доступна при
     expect(ui.buttons[0].disabled).toBeFalsy();ui.buttons[0].onClick();await settle();expect(agentCatalogApi.get).toHaveBeenCalledExactlyOnceWith('agent-local');expect(ui.editor?.agent.id).toBe('agent-local');
     expect(ui.archives[0]).toMatchObject({kind:'agent',id:'agent-local'});expect(ui.archives[0].disabled).toBeFalsy();
 });
-it('Поиск охватывает внешний источник и локальные упаковки одним запросом',async()=>{
+it('Локальный поиск и поиск репозитория независимы; пустой результат не прячет поиск',async()=>{
     const local={...source.assets[0],id:'local-agent',name:'Особый помощник'};
     vi.mocked(baseApi.get).mockResolvedValue({data:{...source,localAssets:[local]}});render();await settle();
-    ui.search!.onChange({target:{value:'Особый'}});const html=render();expect(html).toContain('Особый помощник');expect(html).not.toContain('Агент a');expect(html).not.toContain('Агент b');
-    ui.search!.onChange({target:{value:'Агент b'}});expect(render()).toContain('Агент b');expect(render()).not.toContain('Особый помощник');
+    ui.searches.get('Поиск локальных упаковок')!.onChange({target:{value:'несуществующий'}});let html=render();expect(html).toContain('Локальных упаковок по этому запросу нет.');expect(html).toContain('Агент a');expect(html).toContain('Агент b');
+    ui.searches.get('Поиск ассетов в репозитории')!.onChange({target:{value:'Агент b'}});html=render();expect(html).toContain('Агент b');expect(html).not.toContain('Агент a');
+    ui.searches.get('Поиск локальных упаковок')!.onChange({target:{value:'Особый'}});html=render();expect(html).toContain('Особый помощник');expect(html).toContain('Агент b');expect(html).not.toContain('Агент a');
+});
+it.each(['SUCCEEDED','RUNNING','FAILED'])('Результат импорта %s остаётся доступным без длинного отчёта по умолчанию после успеха',async state=>{
+    ui.job={id:'job',planDigest:'a'.repeat(64),state,message:'Фактический результат',items:[{id:'one',kind:'agent',name:'Первый',version:'1',current:true,action:'create',state:'DONE'}]};
+    render();const html=await settle();expect(html).toContain('Фактический результат');expect(html).toContain('Результаты · 1');expect(html.includes('<details open')).toBe(state!=='SUCCEEDED');
 });
 it('Архивная локальная упаковка предлагает восстановление; недоступная блокирует изменение',async()=>{
     const local=source.assets.map((asset,index)=>({...asset,id:'local-'+index,imported:{...asset.imported,...(index?{unavailable:true}:{archived:true})}}));

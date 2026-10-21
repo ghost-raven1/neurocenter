@@ -30,3 +30,11 @@ it('Переименование native-карточки сохраняет ра
     const renamed=asset({name:'Имя исходного ассета',imported:{...asset().imported!,name:'Новое имя в каталоге'}}),html=render([renamed]);
     expect(html).toContain('Новое имя в каталоге');expect(new URL(assetCatalogLink(renamed),'https://panel.fixture').searchParams.get('q')).toBe('Новое имя в каталоге');
 });
+it('Полный build hash остаётся только в закрытых сведениях, NOASSERTION не показывается как лицензия',()=>{
+    const version='build-'+'a'.repeat(64),html=render([asset({version,license:'NOASSERTION'})]);
+    expect(html).toContain('<details class="asset-sources__local-metadata">');expect(html).not.toContain('<details open');expect(html).not.toContain('NOASSERTION');expect(html).toContain('Не указана автором');
+    const details=html.slice(html.indexOf('<details'),html.indexOf('</details>'));expect(details).toContain(version);expect(html.slice(0,html.indexOf('<details'))).not.toContain(version);
+});
+it('Читаемая версия и известная лицензия остаются в основном содержимом карточки',()=>{
+    const html=render([asset({version:'1.2.3',license:'MIT'})]);expect(html).toContain('Версия 1.2.3');expect(html).toContain('MIT');expect(html).not.toContain('<details');
+});

@@ -1,3 +1,4 @@
+import { FeatureButton, FeatureAvailabilityNotice, useFeatureAvailability } from '../../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Form, Input, Modal, Radio, Space, Typography } from 'antd';
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
@@ -148,12 +149,14 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         if (source === 'repository' && release && open && !build.unresolved && !build.active) void repository.resolve().catch(() => {});
     }, [sourceKey, open, build.unresolved, build.active]);
 
+    const availability = useFeatureAvailability('tool_builds');
+    const available = useRef(availability.enabled); available.current = availability.enabled;
     const readFiles = async (input: readonly File[], fromArchive = false): Promise<void> => {
-        if (!input?.length || busy || build.unresolved || build.recoveryBlocked) return;
+        if (!available.current || !input?.length || busy || build.unresolved || build.recoveryBlocked) return;
         const selected = Array.from(input);
         const request = ++readRequest.current;
         const owns=captureOwner(),closed=closeRevision.current;
-        const current=()=>alive.current&&request===readRequest.current&&owns()&&currentView.current===view&&closeRevision.current===closed&&readSourceKey.current===sourceKey;
+        const current=()=>available.current&&alive.current&&request===readRequest.current&&owns()&&currentView.current===view&&closeRevision.current===closed&&readSourceKey.current===sourceKey;
         archiveRequest.current?.abort();
         const controller = new AbortController();
         archiveRequest.current = controller;
@@ -178,6 +181,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         finally { if (current()) setReading(false); }
     };
     const submit = async (): Promise<void> => {
+        if (!availability.enabled && !build.unresolved) return;
         if (busy) return;
         if (build.unresolved) { await build.retrySaved(); return; }
         const request = ++preparation.current;
@@ -257,10 +261,11 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         {showingProgress ? <>
             {build.job?.state === 'SUCCEEDED' && <Button type="primary" loading={opening} onClick={() => { void openPublished(); }}>Открыть в каталоге</Button>}
             {build.job && !build.active && <Button disabled={build.submitting || resetting} loading={build.submitting || resetting} onClick={() => { void reset(); }}>{build.job.state === 'FAILED' ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
-        </> : <Button type="primary" onClick={() => { void submit(); }} loading={preparing || build.submitting} disabled={busy || build.recoveryBlocked || (build.unresolved ? !build.draft : !hasSource || sourceBlocked || (source === 'files' || source === 'upload') && !sourceReady)}>{build.unresolved ? 'Повторить сохранённый запрос' : sourceAction}</Button>}
+        </> : <FeatureButton features={['tool_builds']} type="primary" onClick={() => { void submit(); }} loading={preparing || build.submitting} disabled={busy || build.recoveryBlocked || (build.unresolved ? !build.draft : !hasSource || sourceBlocked || (source === 'files' || source === 'upload') && !sourceReady)}>{build.unresolved ? 'Повторить сохранённый запрос' : sourceAction}</FeatureButton>}
     </Space>;
 
     return <Modal open={open} title="Упаковать инструмент" width={680} footer={actions} onCancel={close} className="tool-packaging" style={{ top: 32 }}>
+        <FeatureAvailabilityNotice features={['tool_builds']}/>
         <ol className="tool-packaging__steps" aria-label="Этапы упаковки">{['Источник', 'Проверка', 'Добавление'].map((label, index) => <li key={label} aria-current={progressStep === index ? 'step' : undefined} className={progressStep >= index ? 'is-current' : ''}><span aria-hidden="true">{index + 1}</span>{label}</li>)}</ol>
         {build.unresolved && <Alert className="tool-packaging__error" type="warning" showIcon message="Результат первого запроса ещё неизвестен"
             description={<>
@@ -300,8 +305,8 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
                     else setRepositoryEntry({ revision: repositoryRevision, value });
                 }} />}
                 {repository.error && <Alert type="error" role="alert" showIcon message={repository.error} description="Проверьте ссылку. Для инструмента в подпапке или другой ветке откройте «Ветка и подпапка», затем повторите проверку." />}
-            </> : source === 'upload' ? <><SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /><Paragraph type="secondary">Архив скилла или JS / TypeScript плагина добавьте во вкладке «Архив и файлы». Исходники Python MCP можно загрузить здесь, включая архив с вложенной папкой. Если передача Python-исходников прервалась, повторно выберите исходный архив, папку или файлы во вкладке «Архив и файлы» — продолжим ту же загрузку.</Paragraph></> : <>
-                <Form.Item label="Исходники или скилл"><SourceFilesPicker disabled={busy || build.unresolved || build.recoveryBlocked} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
+            </> : source === 'upload' ? <><SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={!availability.enabled || build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /><Paragraph type="secondary">Архив скилла или JS / TypeScript плагина добавьте во вкладке «Архив и файлы». Исходники Python MCP можно загрузить здесь, включая архив с вложенной папкой. Если передача Python-исходников прервалась, повторно выберите исходный архив, папку или файлы во вкладке «Архив и файлы» — продолжим ту же загрузку.</Paragraph></> : <>
+                <Form.Item label="Исходники или скилл"><SourceFilesPicker disabled={!availability.enabled || busy || build.unresolved || build.recoveryBlocked} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
                 <Paragraph type="secondary">Папки внутри архива сохраняются. Найдём SKILL.md, а scripts, references и assets рядом с ним станут ресурсами скилла, включая PNG и PDF. Если найдём несколько скиллов, покажем их пути для выбора.</Paragraph>
                 <Paragraph type="secondary" className="tool-packaging__language-note">Python MCP определим в архиве, папке или выбранных файлах и автоматически добавим интерпретатор с зависимостями. Для готовых программ других языков используйте GitHub Release или «Архив MCP».</Paragraph>
                 {uploaded && <SourceEntrypointChoice skill={effectiveKind==='skill'} label={effectiveKind==='skill'?'Скилл в исходниках':'Файл запуска'} candidates={candidates} value={entrypoint} onChange={value => { manualEntrypoint.current = true; setEntrypoint(value); }} />}

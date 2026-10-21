@@ -3,21 +3,24 @@ import {useEffect,useState} from 'react';
 import {ASSET_ARCHIVE_ACCEPT,assetArchiveError} from './archiveUpload';
 import {FileDropZone} from '../../common/components/FileDropZone/FileDropZone';
 import type {useAssetArchiveUpload} from './useAssetArchiveUpload';
+import {FeatureAvailabilityNotice,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 
 /** Verification imports source descriptions and files; catalogue cards are still selected explicitly. */
 export function AssetArchiveModal({open,onClose,upload,blocked}:{open:boolean;onClose:()=>void;upload:ReturnType<typeof useAssetArchiveUpload>;blocked:boolean}) {
     const [file,setFile]=useState<File>(),[error,setError]=useState('');
+    const availability=useFeatureAvailability('asset_sources');
     useEffect(()=>{if(!open){setFile(undefined);setError('');}},[open]);
     const close=():void=>{upload.cancel();onClose();};
     return <Modal open={open} title="Импортировать архив" onCancel={close} destroyOnClose maskClosable={!upload.busy}
         okText="Загрузить и проверить" cancelText={upload.busy?'Отменить загрузку':'Закрыть'} confirmLoading={upload.busy}
-        okButtonProps={{disabled:!file||!!error||blocked||upload.busy}} onOk={()=>{if(file&&!error&&!blocked&&!upload.busy)void upload.upload(file);}}>
+        okButtonProps={{disabled:!file||!!error||blocked||upload.busy||!availability.enabled}} onOk={()=>{if(file&&!error&&!blocked&&!upload.busy&&availability.enabled)void upload.upload(file);}}>
+        <FeatureAvailabilityNotice features={['asset_sources']}/>
         <Space direction="vertical" className="asset-sources__content">
             <Typography.Paragraph>Выберите ZIP, TAR, TAR.GZ или TGZ до 8 ГиБ. Карточки появятся после проверки архива; затем выберите, что добавить в общий каталог.</Typography.Paragraph>
             <Typography.Paragraph type="secondary">Обычный Download ZIP с GitHub содержит описания: скиллы и агенты с файлами внутри описания могут быть готовы сразу. Для MCP, плагинов и локальных моделей нужна подготовленная поставка с бинарными файлами. Из архива сетевой дозагрузки нет.</Typography.Paragraph>
             <FileDropZone label="Архив ассетов" title="Перетащите архив сюда" buttonText="Выбрать архив" hint="Один ZIP, TAR, TAR.GZ или TGZ · до 8 ГиБ"
-                accept={ASSET_ARCHIVE_ACCEPT} disabled={blocked} busy={upload.busy} onReject={setError} onFiles={files=>{
-                    if(upload.busy||blocked)return;
+                accept={ASSET_ARCHIVE_ACCEPT} disabled={blocked||!availability.enabled} busy={upload.busy} onReject={setError} onFiles={files=>{
+                    if(upload.busy||blocked||!availability.enabled)return;
                     const candidate=files[0];if(!candidate)return;
                     const invalid=assetArchiveError(candidate);setError(invalid);if(!invalid)setFile(candidate);
                 }}/>

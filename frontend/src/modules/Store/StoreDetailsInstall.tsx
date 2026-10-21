@@ -1,5 +1,6 @@
+import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
 import { DownloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Progress } from 'antd';
+import { Alert, Progress } from 'antd';
 import type { FC } from 'react';
 import { installStatusView, type IStoreInstallStatus } from './storeDetails';
 
@@ -19,7 +20,7 @@ const StoreDetailsInstallStatus: FC<IStatusProps> = ({ status, busy }) => {
 export const StoreDetailsInstallButton: FC<IStatusProps & { onInstall?: () => void; disabled?: boolean }> = ({ status, busy, onInstall, disabled }) => {
     if (!onInstall) { return null; }
     const view = installStatusView(status, busy);
-    return <Button type="primary" className="store-details__install-button" icon={<DownloadOutlined />} loading={view.busy} disabled={disabled || view.disabled} onClick={onInstall}>{view.buttonLabel}</Button>;
+    return <FeatureButton features={['tool_installation']} type="primary" className="store-details__install-button" icon={<DownloadOutlined />} loading={view.busy} disabled={disabled || view.disabled} onClick={onInstall}>{view.buttonLabel}</FeatureButton>;
 };
 
 export default StoreDetailsInstallStatus;

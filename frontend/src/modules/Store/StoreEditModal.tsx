@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Form, Input, Modal, Space, Spin, Tabs, Tag, Typography, message } from 'antd';
 import { FC, useEffect, useRef, useState } from 'react';
 
@@ -92,7 +93,9 @@ const StoreEditModal: FC<IProps> = ({ editApp, onClose, onSaved }) => {
         return () => { cancelled = true; };
     }, [openedKey, reloadCount, form, captureOwner]);
 
+    const availability = useFeatureAvailability('tool_catalog');
     const save = async (values: IStoreEditValues): Promise<void> => {
+        if (!availability.enabled) return;
         if (!loaded || submittingRef.current || resourcesBusy || dependenciesBusy || !dirty) { return; }
         const isOwnerCurrent = captureOwner();
         if (!isOwnerCurrent()) { return; }
@@ -161,7 +164,7 @@ const StoreEditModal: FC<IProps> = ({ editApp, onClose, onSaved }) => {
             closable={!busy && !reading} keyboard={!busy && !reading} onCancel={() => { if (!submittingRef.current && !reading) { onClose(); } }}
             footer={<div className="store-edit-modal__footer">
                 <Typography.Text type="secondary">{busy ? 'Сохраняем изменения…' : dirty ? 'Есть несохранённые изменения' : 'Изменения появятся после сохранения'}</Typography.Text>
-                <Space><Button disabled={busy || reading} onClick={() => { if (!submittingRef.current && !reading) { onClose(); } }}>Отмена</Button><Button type="primary" form={formId} htmlType="submit" loading={busy} disabled={!loaded || loading || !dirty || reading}>Сохранить изменения</Button></Space>
+                <Space><Button disabled={busy || reading} onClick={() => { if (!submittingRef.current && !reading) { onClose(); } }}>Отмена</Button><FeatureButton features={['tool_catalog']} type="primary" form={formId} htmlType="submit" loading={busy} disabled={!loaded || loading || !dirty || reading}>Сохранить изменения</FeatureButton></Space>
             </div>}
         >
             {editApp && <>

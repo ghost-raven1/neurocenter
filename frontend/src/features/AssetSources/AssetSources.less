@@ -1,8 +1,16 @@
-.asset-sources { padding: 24px; }
+.asset-sources { padding: 24px; .page-heading { margin-bottom: 20px; } h3.ant-typography { margin: 0 0 10px; font-size: 20px; } }
 .asset-sources__content { width: 100%; }
 .asset-sources__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
-.asset-sources__card { min-width: 0; overflow-wrap: anywhere; }
+.asset-sources__card { min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; .ant-card-body { flex: 1; display: flex; flex-direction: column; } }
 .asset-sources__card .ant-card-head-title { white-space: normal; }
+.asset-sources__card-content { display: flex; flex-direction: column; gap: 10px; flex: 1; > .ant-typography { margin-bottom: 0; } }
+.asset-sources__card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: auto; padding-top: 6px; .ant-btn { width: 100%; } > .ant-btn:first-child { grid-column: 1 / -1; } }
+.asset-sources__card_local .asset-sources__card-actions { display: flex; flex-wrap: wrap; .ant-btn { width: auto; } }
+.asset-sources__local-metadata { font-size: 12px; color: #617387; summary { cursor: pointer; width: fit-content; } summary:focus-visible { outline: 2px solid @brand-focus; outline-offset: 3px; } dl { margin: 8px 0 0; display: grid; gap: 8px; } dt { font-weight: 600; } dd { margin: 0; overflow-wrap: anywhere; } }
+.asset-sources__section-toolbar { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; > .ant-input-search { width: 100%; max-width: 360px; flex: 1 1 220px; } > .ant-btn { flex-shrink: 0; } }
+.asset-sources__repository { margin-top: 4px; }
+.asset-sources__receipt { .ant-card-head-title { white-space: normal; } summary { cursor: pointer; font-size: 12px; color: @brand-primary; } summary:focus-visible { outline: 2px solid @brand-focus; outline-offset: 3px; } }
+.asset-sources__receipt-items { max-height: 240px; overflow-y: auto; margin-top: 8px; }
 @media (max-width: 640px) { .asset-sources { padding: 12px; } }
 
 .asset-sources .ant-space-item { min-width: 0; max-width: 100%; }

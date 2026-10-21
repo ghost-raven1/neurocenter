@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Form, Input, Modal, Radio, Select, Space, Typography, message } from 'antd';
 import { FC, useRef, useState } from 'react';
 import bffApi from '../../core/api/bff';
@@ -43,7 +44,9 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
         if (entrypoint && !next.some(file => file.path === entrypoint)) { form.setFieldsValue({entrypoint: undefined}); }
     };
 
+    const availability = useFeatureAvailability('tool_catalog');
     const submit = async (values: IPublicationDraft): Promise<void> => {
+        if (!availability.enabled) return;
         if (submitting.current || reading) { return; }
         const isCurrent = captureOwner();
         if (!isCurrent()) { return; }
@@ -73,7 +76,7 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
         <Form name="store-create" form={form} layout="vertical" scrollToFirstError={{block:'center'}} disabled={busy || reading} initialValues={{kind:'mcp',mode:'remote'}} onValuesChange={()=>setError('')} onFinish={values=>{void submit(values);}}>
             <Form.Item name="kind" label="Что добавляем"><Radio.Group options={[{value:'mcp',label:'MCP'},{value:'plugin',label:'Плагин'},{value:'skill',label:'Скилл'}]} /></Form.Item>
             <Alert type="info" showIcon message={kind==='skill'?'Готовый скилл можно добавить архивом. Найдём SKILL.md и сохраним его ресурсы.':'npm, GitHub или архив добавляются через упаковку'}
-                action={<Button disabled={busy || reading} onClick={()=>{if(!submitting.current && !reading){onPackage(kind==='skill'?'files':undefined);}}}>{kind==='skill'?'Добавить скилл архивом':'Упаковать инструмент'}</Button>} />
+                action={<FeatureButton features={['tool_builds']} disabled={busy || reading} onClick={()=>{if(!submitting.current && !reading){onPackage(kind==='skill'?'files':undefined);}}}>{kind==='skill'?'Добавить скилл архивом':'Упаковать инструмент'}</FeatureButton>} />
             <Form.Item name="name" label="Название" rules={[{required:true,whitespace:true,message:'Введите название'},{max:128,message:'До 128 символов'}]} extra="Можно по-русски. Название не обязано совпадать с именем папки."><Input placeholder="Например, Проверка кода" /></Form.Item>
             <Form.Item name="description" label="Описание" rules={[{required:true,whitespace:true,message:'Расскажите, для чего нужен инструмент'},{max:kind==='skill'?1024:2000,message:'Описание слишком длинное'}]}><Input.TextArea rows={2} placeholder="Что делает инструмент и когда его использовать" /></Form.Item>
             <Form.Item name="tags" label="Теги" extra="До 20 тегов через запятую"><Input placeholder="Например, код, проверка" /></Form.Item>
@@ -104,7 +107,7 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
             }}]}><DependencyPinsEditor disabled={busy || resourcesBusy} onLoadingChange={setDependenciesBusy} /></Form.Item>
             {error && <Alert role="alert" type="error" showIcon message={error} style={{marginTop:16}} />}
             <Typography.Paragraph type="secondary" style={{marginTop:16}}>Заполненная форма остаётся в этой вкладке при закрытии и ошибке. Новую версию существующего инструмента создавайте через «Редактировать».</Typography.Paragraph>
-            <Space wrap style={{display:'flex',justifyContent:'flex-end'}}><Button disabled={busy || reading} onClick={onClose}>Закрыть</Button><Button type="primary" htmlType="submit" loading={busy} disabled={reading}>Добавить в магазин</Button></Space>
+            <Space wrap style={{display:'flex',justifyContent:'flex-end'}}><Button disabled={busy || reading} onClick={onClose}>Закрыть</Button><FeatureButton features={['tool_catalog']} type="primary" htmlType="submit" loading={busy} disabled={reading}>Добавить в магазин</FeatureButton></Space>
         </Form>
     </Modal>;
 };

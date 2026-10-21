@@ -7,7 +7,7 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 
 export type TManagedAssetKind='mcp'|'plugin'|'skill'|'model'|'agent';
 interface IImpact {impactId:string;digest:string;target:{kind:TManagedAssetKind;id:string;name:string;version:number;archived:boolean};projects:Array<{id:string;name:string}>;preserved:string[];removeBlockers?:Array<{id:string;name:string}>}
-interface IProps {kind:TManagedAssetKind;id:string;onArchived?:()=>void;children?:ReactNode;disabled?:boolean;restore?:boolean;buttonProps?:Pick<ButtonProps,'type'|'icon'|'size'|'aria-label'>}
+interface IProps {kind:TManagedAssetKind;id:string;onArchived?:()=>void;children?:ReactNode;disabled?:boolean;restore?:boolean;buttonProps?:Pick<ButtonProps,'type'|'icon'|'size'|'block'|'aria-label'>}
 const errorText=(error:unknown):string=>(error as {response?:{data?:{message?:string}}})?.response?.data?.message||'Сервер не подтвердил действие. Повторите тот же запрос.';
 /** Удаление всегда показывает конкретные project refs и отправляет digest того же impact. */
 export function ArchiveAssetButton({kind,id,onArchived,children='Удалить',disabled,buttonProps,restore=false}:IProps):JSX.Element {

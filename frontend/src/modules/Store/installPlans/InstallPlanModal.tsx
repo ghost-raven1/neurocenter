@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Descriptions, List, Modal, Space, Tag, Typography } from 'antd';
 import type { IInstallPlan } from '../../../features/McpBridge/api';
 import type { IInstallPlanPackage, IInstallPlanRequirements } from '../../../features/McpBridge/installPlanTypes';
@@ -90,10 +91,10 @@ export function InstallPlanDetails({ plan }: { plan: IInstallPlan }) {
 export function InstallPlanActions({ plan, canApprove, busy, installOnApprove, installDisabled, onCancel, onApprove, onRevoke, onInstall }: Omit<IProps, 'name' | 'projectName'>) {
     const isSet = Boolean(plan?.packages?.length);
     return <Space wrap><Button onClick={onCancel}>{busy ? 'Закрыть' : 'Отмена'}</Button>
-        {plan?.status === 'approved' && installOnApprove && <Button type="primary" loading={busy} disabled={installDisabled} onClick={onInstall}>{isSet ? 'Установить одобренный комплект' : 'Установить одобренную версию'}</Button>}
+        {plan?.status === 'approved' && installOnApprove && <FeatureButton features={['tool_installation']} type="primary" loading={busy} disabled={installDisabled} onClick={onInstall}>{isSet ? 'Установить одобренный комплект' : 'Установить одобренную версию'}</FeatureButton>}
         {canApprove && (plan?.status === 'approved'
             ? <Button danger loading={busy} onClick={onRevoke}>Отозвать разрешение</Button>
-            : <Button type="primary" loading={busy} disabled={installOnApprove && installDisabled} onClick={onApprove}>{isSet ? installOnApprove ? 'Одобрить и установить комплект' : 'Одобрить комплект' : installOnApprove ? 'Одобрить и установить' : 'Одобрить версию'}</Button>)}</Space>;
+            : <FeatureButton features={['tool_installation']} type="primary" loading={busy} disabled={installOnApprove && installDisabled} onClick={onApprove}>{isSet ? installOnApprove ? 'Одобрить и установить комплект' : 'Одобрить комплект' : installOnApprove ? 'Одобрить и установить' : 'Одобрить версию'}</FeatureButton>)}</Space>;
 }
 
 function approvalNotice(plan: IInstallPlan, canApprove: boolean): string {
