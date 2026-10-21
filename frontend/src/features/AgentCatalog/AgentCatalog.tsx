@@ -20,12 +20,13 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const { catalog, loading, error, refresh } = useAgentCatalog(projectId);
     const actions = useAgentActions({ ...props, catalog, refresh });
     const [query, setQuery] = useState(''), [projectOnly, setProjectOnly] = useState(!!embedded);
+    const [showArchive, setShowArchive] = useState(false);
     const [editing, setEditing] = useState<ICatalogAgent | 'new'>(), [viewId, setViewId] = useState<string>();
     const [projectEditing, setProjectEditing] = useState<{assignment: IProjectAgent; revision: number}>();
     const confirmation = useRef<{destroy(): void}>();
-    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setQuery(''); setProjectOnly(!!embedded); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
+    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
     const assignments = useMemo(() => new Map(catalog?.assignments.map(item => [item.agentId, item]) ?? []), [catalog]);
-    const shown = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly) : [], [catalog, query, projectId, projectOnly]);
+    const shown = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly, isMain && showArchive) : [], [catalog, query, projectId, projectOnly, isMain, showArchive]);
     const connection = agentConnection(props);
     const target = selectedAgentTarget(props);
     const unavailable = loading || !!error || !catalog || actions.unconfirmed;
@@ -58,7 +59,8 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
             {isMain && <Space wrap><Button onClick={() => history.push('/assets')}>Из ассетов</Button><Button type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</Button></Space>}
         </div>
         <Space wrap className="agent-catalog__filters"><Input.Search aria-label="Поиск агентов" placeholder="Название, роль или имя OpenCode…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
-            {projectId && <Checkbox checked={projectOnly} onChange={event => setProjectOnly(event.target.checked)}>Только в проекте</Checkbox>}<Button loading={loading} disabled={actions.busy} onClick={() => { void refresh(); }}>Обновить</Button></Space>
+            {projectId && <Checkbox checked={projectOnly} onChange={event => setProjectOnly(event.target.checked)}>Только в проекте</Checkbox>}
+            {isMain && <Checkbox checked={showArchive} onChange={event => setShowArchive(event.target.checked)}>Показывать архив</Checkbox>}<Button loading={loading} disabled={actions.busy} onClick={() => { void refresh(); }}>Обновить</Button></Space>
         {error && <Alert showIcon type={catalog ? 'warning' : 'error'} className="agent-catalog__notice" message={catalog ? 'Не удалось обновить агентов — показаны предыдущие данные' : 'Агенты не загружены'} description={error} action={<Button onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {actions.error && <Alert showIcon type="error" className="agent-catalog__notice" message={actions.error} action={actions.unconfirmed && <Space wrap><Button disabled={actions.busy} onClick={() => { void actions.repeat(); }}>Повторить запрос</Button><Button disabled={actions.busy} onClick={() => { void actions.recheck(); }}>Перечитать состояние</Button></Space>} />}
         {actions.notice && <Alert showIcon type="info" className="agent-catalog__notice" message={actions.notice} />}

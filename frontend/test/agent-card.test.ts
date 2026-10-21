@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentCard } from '../src/features/AgentCatalog/AgentCard';
 import { projectAgentStatus } from '../src/features/AgentCatalog/model';
 import { agent, assignment, catalog, target } from './agent-fixtures';
-vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetButton:({kind}:{kind:string})=>createElement('button',{'data-kind':kind},'Управление каталогом')}));
+vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetButton:({kind,restore}:{kind:string;restore?:boolean})=>createElement('button',{'data-kind':kind,'data-restore':restore},'Управление каталогом')}));
 const callbacks={onView:()=>undefined,onEdit:()=>undefined,onArchived:()=>undefined,onAssign:()=>undefined,onConfigure:()=>undefined,onToggle:()=>undefined,onRemove:()=>undefined,onUpdate:()=>undefined};
 const render=(changes:Partial<Parameters<typeof AgentCard>[0]>={})=>renderToStaticMarkup(createElement(AgentCard,{agent:agent(),projectSelected:true,isMain:false,canManage:false,busy:false,unavailable:false,...callbacks,...changes}));
 describe('Карточка агента показывает права и сохраняет проектный pin',()=>{
@@ -26,5 +26,9 @@ describe('Карточка агента показывает права и со�
     it('Archived карточка сохраняет проектные действия, но не предлагает новое назначение',()=>{
         const archived=agent({archivedAt:'2026-10-21'});expect(render({canManage:true,agent:archived,assignment:assignment()})).toContain('>Настроить<');
         const html=render({canManage:true,agent:archived});expect(html).toContain('Убран из общего каталога');expect(html).toMatch(/disabled=""[^>]*>.*?Добавить в проект/s);
+    });
+    it('Главному админу архивная карточка предлагает штатное восстановление',()=>{
+        expect(render({isMain:true,agent:agent({archivedAt:'2026-10-21'})})).toContain('data-restore="true"');
+        expect(render({isMain:true,agent:agent()})).toContain('data-restore="false"');
     });
 });

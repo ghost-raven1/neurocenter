@@ -54,14 +54,16 @@ export function requireAgentCatalog(value: unknown): IAgentCatalog {
     return value as unknown as IAgentCatalog;
 }
 
-export function visibleAgents(catalog: IAgentCatalog, query: string, projectOnly: boolean): ICatalogAgent[] {
+/** Archived templates stay available through active project pins or the administrator's archive filter. */
+export function visibleAgents(catalog: IAgentCatalog, query: string, projectOnly: boolean, showArchive = false): ICatalogAgent[] {
     const assigned = new Map(catalog.assignments.map(item => [item.agentId, item]));
     const cards = new Map(catalog.items.map(item => [item.id, item]));
     for (const item of catalog.assignments) if (!cards.has(item.agentId)) cards.set(item.agentId, item.card);
     const needle = query.trim().toLocaleLowerCase('ru');
     return [...cards.values()].filter(item => {
-        const pinned = assigned.get(item.id), active = pinned && !pinned.removed;
-        return (!projectOnly || active) && (!needle || `${item.name} ${item.slug} ${item.description} ${active ? `${pinned.card.name} ${pinned.card.slug} ${pinned.effective.description}` : ''}`.toLocaleLowerCase('ru').includes(needle));
+        const pinned = assigned.get(item.id), active = !!pinned && !pinned.removed;
+        return (showArchive || !item.archivedAt || active) && (!projectOnly || active)
+            && (!needle || `${item.name} ${item.slug} ${item.description} ${active ? `${pinned.card.name} ${pinned.card.slug} ${pinned.effective.description}` : ''}`.toLocaleLowerCase('ru').includes(needle));
     });
 }
 

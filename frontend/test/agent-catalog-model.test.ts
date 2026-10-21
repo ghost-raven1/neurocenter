@@ -43,6 +43,21 @@ describe('Агенты: immutable pins и безопасное чтение ка
     it('Поиск находит закреплённое имя после переименования общей карточки',()=>{
         expect(visibleAgents(catalog({items:[agent({name:'Новое имя'})],assignments:[assignment({card:agent({name:'Прежнее имя'})})]}),'Прежнее',true)).toHaveLength(1);
     });
+    it('Архив исчезает из обычного списка и возвращается по явному фильтру и после restore',()=>{
+        const archived=agent({id:'agent-archived',name:'Архивный ревьюер',archivedAt:'2026-10-21'}),data=catalog({items:[agent(),archived],assignments:[]});
+        expect(visibleAgents(data,'',false).map(value=>value.id)).toEqual([agent().id]);
+        expect(visibleAgents(data,'Архивный',false)).toEqual([]);expect(visibleAgents(data,'Архивный',false,true)).toEqual([archived]);
+        expect(visibleAgents({...data,items:[agent(),{...archived,archivedAt:null}]},'Архивный',false)).toHaveLength(1);
+    });
+    it('Архивный активный pin остаётся видимым, даже если агент отключён в проекте',()=>{
+        const archived=agent({archivedAt:'2026-10-21'}),data=catalog({items:[archived],assignments:[assignment({enabled:false})]});
+        expect(visibleAgents(data,'',false)).toEqual([archived]);expect(visibleAgents(data,'',true)).toEqual([archived]);
+    });
+    it('Removed tombstone не удерживает архивную карточку и не обходит projectOnly',()=>{
+        const archived=agent({archivedAt:'2026-10-21'}),removed=assignment({removed:true}),data=catalog({items:[archived],assignments:[removed]});
+        expect(visibleAgents(data,'',false)).toEqual([]);expect(visibleAgents(data,'',false,true)).toEqual([archived]);expect(visibleAgents(data,'',true,true)).toEqual([]);
+        expect(data.assignments).toEqual([removed]);expect(projectAgentStatus(data,removed,target).label).toBe('Ожидает удаления из OpenCode');
+    });
     it('Умеет снять model/параметр и сбросить override к точному шаблону', () => {
         const base = {...agent().definition,model:'provider/old',temperature:0.7};
         expect(agentOverrides(base,{...agent().definition})).toEqual({model:null,temperature:null});
