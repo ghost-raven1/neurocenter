@@ -4,6 +4,10 @@ import {BRIDGE_SOURCE_SCHEMA_ASSERT_SQL} from '../asset-sources/bridge-source.sc
 import {CATALOG_REQUEST_SCHEMA_SQL} from '../catalog-requests/request.schema';
 import {CATALOG_REQUEST_SCHEMA_ASSERT_SQL} from '../catalog-requests/request.schema-verification';
 import {AGENT_SCHEMA_ASSERT_SQL} from '../agents/agent-schema-verification';
+import {LEARNING_SCHEMA_SQL} from '../learning/learning-schema';
+import {LEARNING_SCHEMA_ASSERT_SQL} from '../learning/learning-schema-verification';
+import {LEARNING_ANALYSIS_SCHEMA_SQL} from '../learning/learning-analysis-schema';
+import {LEARNING_ANALYSIS_SCHEMA_ASSERT_SQL} from '../learning/learning-analysis-schema-verification';
 import {INSTALLATION_MIGRATIONS} from '../devices/installation-migrations';
 import type {CatalogMigration} from './migrations';
 import {CATALOG_BASELINE_SQL} from './baseline-schema';
@@ -18,4 +22,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:7,name:'native-agents',sql:AGENT_SCHEMA_SQL+'\n'+AGENT_SCHEMA_ASSERT_SQL},
     {version:8,name:'catalog-requests',sql:CATALOG_REQUEST_SCHEMA_SQL+'\n'+CATALOG_REQUEST_SCHEMA_ASSERT_SQL},
     {version:9,name:'bridge-source-settings',sql:BRIDGE_SOURCE_SCHEMA_SQL+'\n'+BRIDGE_SOURCE_SCHEMA_ASSERT_SQL},
+    {version:10,name:'project-learning-and-hypotheses',sql:LEARNING_SCHEMA_SQL+'\n'+LEARNING_ANALYSIS_SCHEMA_SQL+'\n'+LEARNING_SCHEMA_ASSERT_SQL+'\n'+LEARNING_ANALYSIS_SCHEMA_ASSERT_SQL},
 ];

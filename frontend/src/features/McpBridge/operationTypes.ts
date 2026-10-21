@@ -18,7 +18,7 @@ export interface ILocalChangePlan {
     runtimeRepairRequired?: true;
 }
 export type TInventoryCapability = 'project-inventory-v1' | 'adopt-installation-v1' | 'local-recovery-v1';
-export const inventoryReasons = ['managed-receipt','unmanaged-files','unmanaged-config','receipt-invalid','receipt-missing','file-mismatch',
+export const inventoryReasons = ['managed-receipt','managed-project-learning','unmanaged-files','unmanaged-config','receipt-invalid','receipt-missing','file-mismatch',
     'config-mismatch','config-invalid','unsafe-path','read-failed','read-limit','snapshot-changed','entry-limit','project-busy','binding-changed','unknown-layout'] as const;
 export interface IProjectInventoryEntry {
     candidateId: string; kind: 'skill' | 'mcp' | 'plugin' | 'unknown'; path: string;

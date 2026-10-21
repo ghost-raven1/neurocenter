@@ -8,7 +8,7 @@ import { recoveryDirectory, withRecoveryBudget } from './installation-space.js';
 import { inventoryRelative } from './project-inventory-reader.js';
 import type { PrivateInventoryScan } from './project-inventory.model.js';
 
-export const INVENTORY_REASONS = ['managed-receipt', 'unmanaged-files', 'unmanaged-config', 'receipt-invalid', 'receipt-missing', 'file-mismatch',
+export const INVENTORY_REASONS = ['managed-receipt', 'managed-project-learning', 'unmanaged-files', 'unmanaged-config', 'receipt-invalid', 'receipt-missing', 'file-mismatch',
     'config-mismatch', 'config-invalid', 'unsafe-path', 'read-failed', 'read-limit', 'snapshot-changed', 'entry-limit', 'project-busy', 'binding-changed', 'unknown-layout'] as const;
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const SHA = /^[a-f0-9]{64}$/;

@@ -10,6 +10,8 @@ import { InventoryReader, InventoryReadError, inventoryRelative } from './projec
 import { parseProjectConfig } from './project-inventory-config.js';
 import { inventoryDigest, saveInventoryScan } from './project-inventory-storage.js';
 import type { InventoryEntry, InventoryKind, PrivateInventoryScan, ProjectInventory } from './project-inventory.model.js';
+import {agentsPrivateProof,AGENTS_RECEIPT} from '../features/project-agents/receipt.js';
+import {LEARNING_COLLECTOR_FILE} from '../features/project-learning/collector-plugin.js';
 export type { ProjectInventory, InventoryEntry } from './project-inventory.model.js';
 
 const SHA = /^[a-f0-9]{64}$/;
@@ -95,6 +97,13 @@ export async function scanProjectInventory(projectId: string, authorize: () => P
         for (const key of new Set(ledgerRefs.map(item => item.key))) {
             if (!receipts.some(item => item.key === key)) { add('unknown', receiptDirectory + '/' + key + '.json', 'damaged', 'receipt-missing'); }
         }
+        let managedCollectorHash:string|undefined;
+        try{
+            const proof=await agentsPrivateProof(root,projectId);
+            if(proof?.receipt.collector&&proof.receipt.bindingId===bindingId&&proof.receipt.instanceId===instanceId
+                &&(await reader.read(AGENTS_RECEIPT))?.toString('utf8')===proof.raw)managedCollectorHash=proof.receipt.collector.sha256;
+        }catch{ /* An unconfirmed collector remains visible as an unmanaged plugin. */ }
+        let collectorSeen=false;
         for (const relative of ['.opencode/plugins', '.opencode/plugin']) {
             try {
                 for (const name of await reader.list(relative) ?? []) {
@@ -102,12 +111,16 @@ export async function scanProjectInventory(projectId: string, authorize: () => P
                     const child = relative + '/' + name;
                     try {
                         const stat = await fs.lstat(await safeTarget(root, child));
-                        if (stat.isDirectory()) { await reader.tree(child); } else { await reader.read(child); }
-                        add('plugin', child, 'unmanaged', 'unknown-layout');
+                        let bytes:Buffer|null=null;
+                        if (stat.isDirectory()) { await reader.tree(child); } else { bytes=await reader.read(child); }
+                        const managed=child===LEARNING_COLLECTOR_FILE&&!!managedCollectorHash&&!!bytes&&hash(bytes)===managedCollectorHash;
+                        if(child===LEARNING_COLLECTOR_FILE)collectorSeen=true;
+                        add('plugin', child, managed?'managed':'unmanaged', managed?'managed-project-learning':'unknown-layout');
                     } catch (error) { problem('plugin', child, error); }
                 }
             } catch (error) { problem('plugin', relative, error); }
         }
+        if(managedCollectorHash&&!collectorSeen){await reader.read(LEARNING_COLLECTOR_FILE);add('plugin',LEARNING_COLLECTOR_FILE,'damaged','file-mismatch');}
         for (const [relative, config] of configs) {
             const mcp = config.mcp as Record<string, unknown> | undefined;
             for (const key of Object.keys(mcp ?? {})) {

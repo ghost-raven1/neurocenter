@@ -112,7 +112,7 @@ export const variantReasonLabels: Record<typeof localVariantReasons[number],stri
     'invalid-backup':'Копия повреждена или недоступна', 'limit-exceeded':'Превышен допустимый объём проверки',
 };
 export const inventoryReasonLabels: Record<typeof inventoryReasons[number],string> = {
-    'managed-receipt':'Квитанция и файлы подтверждены', 'unmanaged-files':'Файлы пока не приняты под управление',
+    'managed-receipt':'Квитанция и файлы подтверждены', 'managed-project-learning':'Сборщик опыта проекта', 'unmanaged-files':'Файлы пока не приняты под управление',
     'unmanaged-config':'Подключение пока не принято под управление', 'receipt-invalid':'Квитанция или реестр повреждены',
     'receipt-missing':'Не найдена подтверждённая квитанция', 'file-mismatch':'Файлы отличаются от сохранённого пакета',
     'config-mismatch':'Подключение отличается от сохранённого', 'config-invalid':'Не удалось однозначно прочитать конфигурацию',

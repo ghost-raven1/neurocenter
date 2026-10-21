@@ -19,7 +19,8 @@ COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.c
     services/shared/rag-ui-contract.cjs services/shared/rag-ui-contract.d.cts \
     services/shared/opencode-model-scan.cjs services/shared/opencode-model-scan.d.cts \
     services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts \
-    services/shared/project-agents.cjs services/shared/project-agents.d.cts /app/services/shared/
+    services/shared/project-agents.cjs services/shared/project-agents.d.cts \
+    services/shared/project-learning.cjs services/shared/project-learning.d.cts /app/services/shared/
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 

@@ -20,7 +20,7 @@ import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-const STRIP_HEADERS = new Set(['x-neurocenter-internal', 'host', 'content-length', 'accept-encoding', 'connection', 'transfer-encoding']);
+const STRIP_HEADERS = new Set(['x-neurocenter-internal','x-neurocenter-device-id', 'host', 'content-length', 'accept-encoding', 'connection', 'transfer-encoding']);
 
 /**
  * Прокси-логика gateway: auth-guard, затем маршрутизация подпотоков
@@ -73,6 +73,12 @@ export class ProxyService {
               ? this.skillsUrl
               : this.catalogUrl;
         const snapshotPublication=snapshotPublicationRoute(method,path);
+        const canonicalPath=canonicalAccessRoute(path);
+        const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
+        if(learningRoute)res.setHeader('Cache-Control','no-store');
+        if(auth.deviceId&&(canonicalPath===undefined||learningRoute)){
+            res.status(403).json({message:'Проектное обучение доступно мосту только через проверенную привязку папки.'});return;
+        }
         if(auth.deviceId && !((!!snapshotPublication&&!!req.headers['x-neurocenter-job-id']&&!!req.headers['x-neurocenter-job-lease'])||(['GET','HEAD'].includes(method)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path)) || (method==='POST'&&['/api/skills/sync','/api/rag/sync'].includes(path)))){
             res.status(403).json({message:'Подключение MCP не даёт прав управления пользователями, каталогом или настройками сервера.'});return;
         }
@@ -158,7 +164,7 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
         if(publicPair){
             const now=Date.now();for(const [key,value] of this.pairLimits){if(value.until<now){this.pairLimits.delete(key);}}
             const address=String(req.socket.remoteAddress);
@@ -182,6 +188,7 @@ export class ProxyService {
                 headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',...(!publicPair||suffix==='pair/start'?{authorization:req.headers.authorization}:{})}});
             res.status(response.status).json(response.data===''?null:response.data);
             if(response.status>=200&&response.status<300&&auth&&!suffix.startsWith('embedding')){this.live.bridge(auth.email,auth.deviceId,/^jobs\//.test(suffix)?suffix.split('/')[1]:undefined);}
+            if(response.status>=200&&response.status<300&&/^learning\/(record|propose|observe)$/.test(suffix))this.live.sections(['projects','audit']);
             if(response.status>=200&&response.status<300&&/\/(progress|complete)$/.test(suffix)&&['succeeded','failed'].includes(String((req.body as {state?:unknown})?.state))){this.live.sections(['knowledge','projects','operations','audit']);}
         }catch{res.status(502).json({message:'Сервис подключений недоступен.'});}
     }
@@ -232,6 +239,7 @@ export class ProxyService {
         result['x-bridge-roles'] = encodeURIComponent(auth.activeRole);
         result['x-bridge-actor'] = encodeURIComponent(JSON.stringify({email:auth.email,activeRole:auth.activeRole}));
         result['x-neurocenter-internal'] = process.env.NEUROCENTER_INTERNAL_TOKEN || '';
+        if(auth.deviceId)result['x-neurocenter-device-id']=auth.deviceId;
         result['x-bridge-policies'] = encodeURIComponent(JSON.stringify(auth.policies));
 
         return result;

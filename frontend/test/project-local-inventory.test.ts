@@ -4,7 +4,7 @@ import {describe,expect,it,vi} from 'vitest';
 import type {IBridgeDevice,IBridgeInstallation,IBridgeJob,IInstallPlan} from '../src/features/McpBridge/api';
 import type {ILocalChangePlan,ILocalVariants,IProjectInventory} from '../src/features/McpBridge/operationTypes';
 import type {useBridge} from '../src/features/McpBridge/useBridge';
-import {adoptionCandidateBlocker,approvedAdoptionTarget,inventoryExpired,inventoryMutationBlocker,inventoryScope,localVariantsBlocker,matchingAdoptionPlan,matchingInventory,matchingVariants,projectInventoryBlocker} from '../src/features/McpBridge/inventoryHelpers';
+import {adoptionCandidateBlocker,approvedAdoptionTarget,inventoryExpired,inventoryMutationBlocker,inventoryReasonLabels,inventoryScope,localVariantsBlocker,matchingAdoptionPlan,matchingInventory,matchingVariants,projectInventoryBlocker} from '../src/features/McpBridge/inventoryHelpers';
 import {latestInstallationReport,localActionBlocker,matchingChangePlan} from '../src/features/McpBridge/operationHelpers';
 import {ProjectInventory} from '../src/features/McpBridge/ProjectInventory';
 import {LocalInstallations} from '../src/features/McpBridge/LocalInstallations';
@@ -33,6 +33,12 @@ function bridge(target=device):ReturnType<typeof useBridge>{return {device:targe
     installations:[row],jobs:[],loading:false,error:'',errors:{devices:'',jobs:'',installations:''},choose:vi.fn(),reload:vi.fn(async()=>{})};}
 
 describe('Поиск только в выбранном экземпляре проекта',()=>{
+    it('Управляемый сборщик опыта распознаётся и не предлагается к повторному принятию',()=>{
+        const entry={...inventory.entries[0],kind:'plugin' as const,path:'.opencode/plugins/neurocenter-learning.js',state:'managed' as const,reason:'managed-project-learning' as const};
+        const result={...inventory,entries:[entry]};
+        expect(matchingInventory(result,'project',device)).toBe(result);expect(inventoryReasonLabels[entry.reason]).toBe('Сборщик опыта проекта');
+        expect(adoptionCandidateBlocker(result,entry,Date.parse(checkedAt))).not.toBe('');
+    });
     it('Наблюдатель может сканировать и видеть варианты, но не принимать и не восстанавливать',()=>{
         expect(projectInventoryBlocker(device,'project',[],true,true,'project-inventory-v1')).toBe('');
         expect(localVariantsBlocker(row,[row],device,[],true,true)).toBe('');

@@ -55,6 +55,7 @@ import { recoverRagRestores } from '../features/rag-index/restore-recovery.js';
 import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
 import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 import { connectHostedRag, startHostedRagConnections, stopHostedRagConnections, type HostedSelection } from '../features/rag-hosted/index.js';
+import {synchronizeLearningObservations} from '../features/project-learning/observation-sync.js';
 
 interface Job {
     id: string;
@@ -110,6 +111,7 @@ export async function runWorker(): Promise<void> {
         reconnection: true,
     });
     let heartbeatPending: Promise<void> | undefined;
+    let observationsPending:Promise<void>|undefined;
     const heartbeat = (): Promise<void> => {
         if (stopped) { return Promise.resolve(); }
         if (heartbeatPending) { return heartbeatPending; }
@@ -139,6 +141,7 @@ export async function runWorker(): Promise<void> {
             await startHostedRagConnections();
             await deliverCompletions();
             await heartbeat();
+            if(!observationsPending)observationsPending=synchronizeLearningObservations().catch(()=>undefined).finally(()=>{observationsPending=undefined;});
             while (!stopped) {
                 const claimant = credentials!;
                 const deviceId = claimant.deviceId;
