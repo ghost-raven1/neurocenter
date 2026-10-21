@@ -33,7 +33,7 @@ describe.skipIf(!connection)('Поколения RAG: отдельная вре�
         const oldPool=new Pool({connectionString:url.toString()});try{await setupRagQuota(oldPool,ragQuotaPolicy());}finally{await oldPool.end();}
         db=new RagDb({url:url.toString()});other=new RagDb({url:url.toString()});await db.setup();await other.setup();
     },30000);
-    afterAll(async()=>{await Promise.all([db?.close(),other?.close()]);await sql?.end();if(created)await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);await admin?.end();});
+    afterAll(async()=>{await Promise.all([db?.close(),other?.close()]);await sql?.end();if(created)await admin.query(`DROP DATABASE "${name}"`);await admin?.end();});
     async function source(key:string,count=2){
         const rows=Array.from({length:count},(_value,index)=>makeRow(key+'-'+index));
         if(rows.length)await db.applyDelta(key,generation(key),rows,[],seal(rows));

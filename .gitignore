@@ -21,6 +21,7 @@ node_modules/
 dist/
 build/
 coverage/
+!/scripts/coverage/
 **/.*-dist/
 *.tsbuildinfo
 /services/api-gateway/src/docs/openapi.json

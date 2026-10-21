@@ -36,7 +36,7 @@ describe.skipIf(!connection)('Профили и seal RAG в отдельной �
     },30000);
     afterAll(async()=>{
         await Promise.all([db?.close(),second?.close()]);
-        if(created){await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);}
+        if(created){await admin.query(`DROP DATABASE "${name}"`);}
         await admin?.end();
     });
 

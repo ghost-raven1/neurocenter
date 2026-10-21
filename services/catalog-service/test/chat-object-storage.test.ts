@@ -90,7 +90,7 @@ describe.skipIf(!configFile || !pgUrl).sequential('Chat files — real isolated 
         const url = new URL(pgUrl!); if (url.hostname !== '127.0.0.1' || url.port === '5432' || !url.port) throw new Error('Use an owned disposable PostgreSQL port.');
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 });
         const input = JSON.parse(fs.readFileSync(configFile!, 'utf8')) as NodeJS.ProcessEnv, supplied = chatS3Configuration(input)!;
-        const endpoint = new URL(supplied.endpoint); if (endpoint.hostname !== '127.0.0.1' || endpoint.port !== '59607') throw new Error('Use the isolated S3 QA endpoint on port 59607.');
+        const endpoint = new URL(supplied.endpoint); if (endpoint.hostname !== '127.0.0.1' || endpoint.protocol !== 'http:' || !endpoint.port || endpoint.port === '19010') throw new Error('Use an explicit owned local S3 QA endpoint; the main19010 endpoint is forbidden.');
         const suffix = randomUUID().replaceAll('-', '').slice(0, 16);
         config = { ...supplied, projectBucket: 'nc-chat-project-' + suffix, personalBucket: 'nc-chat-personal-' + suffix };
         objects = new ChatObjectStorage(config, { allowInsecureLocal: true });
