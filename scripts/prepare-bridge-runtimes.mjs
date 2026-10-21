@@ -42,7 +42,7 @@ async function dockerBuild(target, archiveName, candidate) {
             await fs.mkdir(path.join(workspace, directory), {recursive: true});
         }
         for (const name of ['package-bridge-runtime.mjs', 'bridge-build-integrity.mjs', 'bridge-runtime-probe.mjs',
-            'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs']) {
+            'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', name), path.join(workspace, 'scripts', name));
         }
         for (const name of ['dist', 'package.json', 'package-lock.json']) {

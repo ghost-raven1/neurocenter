@@ -3,3 +3,8 @@ dist
 *.tsbuildinfo
 .env*
 *.log
+
+# Registry settings and credentials never enter the image build context.
+**/.npmrc
+**/.yarnrc
+**/.yarnrc.yml

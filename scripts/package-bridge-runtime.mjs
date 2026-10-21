@@ -8,6 +8,7 @@ import { packageProbeEngine } from './bridge-runtime-probe.mjs';
 import { packageWindowsJobHelper } from './bridge-windows-job.mjs';
 import { verifyBridgeBuild } from './bridge-build-integrity.mjs';
 import {npmCli} from './workspace/node-runtime.mjs';
+import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 
 // Собирать на целевой ОС и архитектуре: нативные модули не переносятся между платформами.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -33,8 +34,10 @@ try {
     const copiedBuild = await verifyBridgeBuild(path.join(content, 'dist'), manifest.version);
     if (copiedManifest.version !== manifest.version || copiedBuild.buildId !== build.buildId) throw new Error('Сборка изменилась во время упаковки. Повторите упаковку неизменяемого кандидата.');
     const npm=npmCli();
-    execFileSync(process.execPath, [npm, 'ci', '--omit=dev', '--include=optional', '--no-audit', '--no-fund'], {
-        cwd: content, stdio: 'inherit', env: { ...process.env, PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH },
+    await withNpmBuildEnvironment(process.env, async ({env, args}) => {
+        execFileSync(process.execPath, [npm, 'ci', '--omit=dev', '--include=optional', '--no-audit', '--no-fund', ...args], {
+            cwd: content, stdio: 'inherit', env: {...env, PATH: path.dirname(process.execPath) + path.delimiter + env.PATH},
+        });
     });
     await fs.rm(path.join(content, 'node_modules/.bin'), { recursive: true, force: true });
     const node = path.join(content, 'bin', process.platform === 'win32' ? 'node.exe' : 'node');

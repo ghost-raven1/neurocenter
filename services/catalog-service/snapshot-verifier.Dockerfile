@@ -1,7 +1,13 @@
 FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
+
+# Ignore user/global npm settings; the lockfile and official registry define this build.
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_USERCONFIG=/dev/null \
+    NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
+    NPM_CONFIG_STRICT_SSL=true
 WORKDIR /verifier
 COPY services/catalog-service/package.json services/catalog-service/package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --omit=dev --no-audit --no-fund
 COPY scripts/snapshots/verify-image.cjs ./scripts/snapshots/verify-image.cjs
 COPY services/shared/project-snapshot.cjs ./services/shared/project-snapshot.cjs
 ENV RAYON_NUM_THREADS=2

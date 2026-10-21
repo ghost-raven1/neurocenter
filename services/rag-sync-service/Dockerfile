@@ -3,15 +3,21 @@
 ARG NODE_IMAGE=node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 FROM ${NODE_IMAGE}
 
+# Ignore user/global npm settings; the lockfile and official registry define this build.
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_USERCONFIG=/dev/null \
+    NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
+    NPM_CONFIG_STRICT_SSL=true
+
 WORKDIR /app
 
 # --- MCP-мост neurocenter-asset-sync: нужен rag-sync-service для in-container restore_rag_db ---
 # В репо только исходники; node_modules/dist не копируются (.dockerignore) и собираются в образе.
-COPY mcp/neurocenter-asset-sync/package.json mcp/neurocenter-asset-sync/package-lock.json mcp/neurocenter-asset-sync/.npmrc mcp/neurocenter-asset-sync/
+COPY mcp/neurocenter-asset-sync/package.json mcp/neurocenter-asset-sync/package-lock.json mcp/neurocenter-asset-sync/
 WORKDIR /app/mcp/neurocenter-asset-sync
 # Lock содержит Linux GNU-биндинги обеих архитектур. Проверяем загрузку сразу,
 # без повторного npm install, который пересчитывал версии вне lock-файла.
-RUN npm ci --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
+RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
 COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts \
@@ -27,7 +33,7 @@ RUN npm prune --omit=dev --no-audit --no-fund
 # --- rag-sync-service (NestJS) ---
 WORKDIR /app
 COPY services/rag-sync-service/package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
 COPY services/rag-sync-service/ .
 COPY services/shared/ /shared/
 RUN npm run build

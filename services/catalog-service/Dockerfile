@@ -1,6 +1,12 @@
 ARG NODE_IMAGE=node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 FROM ${NODE_IMAGE}
 
+# Ignore user/global npm settings; the lockfile and official registry define this build.
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_USERCONFIG=/dev/null \
+    NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
+    NPM_CONFIG_STRICT_SSL=true
+
 # Официальный клиент PG16 создаёт полноценные дампы сервера pgvector:pg16.
 # https://www.postgresql.org/download/linux/debian/
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -12,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 WORKDIR /app
 COPY services/catalog-service/package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
 COPY services/catalog-service/ .
 COPY services/shared/ /shared/
 # Shared declarations resolve the same pinned contracts as the owning service.

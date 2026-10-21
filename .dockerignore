@@ -21,3 +21,8 @@ deploy/production/local/
 # Фронтенд не нужен этому сервису
 frontend/
 playwright-mcp/
+
+# Registry settings and credentials never enter the image build context.
+**/.npmrc
+**/.yarnrc
+**/.yarnrc.yml

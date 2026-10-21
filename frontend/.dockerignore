@@ -2,3 +2,8 @@ node_modules
 dist
 .env*
 *.tsbuildinfo
+
+# Registry settings and credentials never enter the image build context.
+**/.npmrc
+**/.yarnrc
+**/.yarnrc.yml

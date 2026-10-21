@@ -15,7 +15,7 @@ const distSource = 'console.log("isolated bridge runtime");\n';
 const buildId = hash('index.js\0' + distSource);
 const archiveName = target => `neurocenter-asset-sync-${target}-${version}.tgz`;
 const contextScripts = ['package-bridge-runtime.mjs', 'bridge-build-integrity.mjs', 'bridge-runtime-probe.mjs',
-    'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs'];
+    'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs'];
 
 /** Отдельный checkout и фальшивые сборщики: настоящий Docker, npm и сеть не используются. */
 async function fixture(t) {
