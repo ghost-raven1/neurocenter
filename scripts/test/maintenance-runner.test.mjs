@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {reserveRestoreSource} from '../production/restore-reservations.mjs';
-import {maintenanceTick,externalStorageBinding,createMaintenanceStore,runnerLedger} from '../production/maintenance.mjs';
+import {maintenanceTick,maintenanceFeatureAdmission,externalStorageBinding,createMaintenanceStore,runnerLedger} from '../production/maintenance.mjs';
 import {mkdtemp,mkdir,writeFile,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -12,8 +12,27 @@ import {defaultPolicy} from '../../services/shared/maintenance-policy.cjs';
 function fixture(){
     let ledger=null;const calls=[];const receipt={ok:true,createdAt:'2026-10-18T02:00:00Z',independence:'operator-declared',verification:'sha256-readback',backupId:'backup-one',manifestSha256:'a'.repeat(64),storageId:'independent-one',verifiedAt:'2026-10-18T02:05:00Z'};
     const options={resolveStorage:async()=>({endpoint:'https://s3.example.test',bucket:'independent',region:'region-1',storageId:'independent-one'}),load:async()=>({revision:2,policy:{...structuredClone(defaultPolicy),enabled:true}}),claim:async()=>{calls.push('claim');return true;},finish:async()=>calls.push('finish'),fail:async(id,code)=>calls.push(code),readLedger:async()=>ledger,writeLedger:async(slot,value)=>{ledger=value;},backup:async input=>{await input.beforePause();calls.push(['backup',input.maxPauseMs]);return {destination:'/private/backup',sha256:'a'.repeat(64),createdAt:'2026-10-18T02:00:00Z'};},verify:async()=>calls.push('verify'),upload:async input=>{calls.push('upload');return {...receipt,backupId:input.backupId,storageId:input.config.storageId};},prune:async count=>calls.push(['prune',count]),now:()=>new Date('2026-10-18T02:00:00Z')};
+    options.requireBackupEnabled=async()=>{};
     return {options,calls,setLedger:value=>{ledger=value;},getLedger:()=>ledger};
 }
+test('Выключенный флаг и недоступный сервис не занимают слот и не останавливают приложение',async()=>{
+    for(const code of ['feature-disabled','feature-flags-unavailable']){
+        const f=fixture();f.options.requireBackupEnabled=async()=>{throw Object.assign(new Error('blocked'),{code});};
+        await assert.rejects(maintenanceTick(f.options),{code});assert.deepEqual(f.calls,[]);assert.equal(f.getLedger(),null);
+    }
+});
+test('Выключение после claim проверяется перед паузой; уже начатая копия безопасно завершается',async()=>{
+    const f=fixture();let reads=0;f.options.requireBackupEnabled=async()=>{if(++reads===2)throw Object.assign(new Error('blocked'),{code:'feature-disabled'});};
+    await assert.rejects(maintenanceTick(f.options),{code:'feature-disabled'});assert.deepEqual(f.calls,['claim','FEATURE_DISABLED']);
+    const g=fixture();let checks=0;g.options.requireBackupEnabled=async()=>{if(++checks>2)throw Error('paused service');};
+    assert.equal((await maintenanceTick(g.options)).ok,true);assert.equal(checks,2);assert.ok(g.calls.includes('finish'));
+});
+test('Контейнерный допуск не выводит секреты и закрывается отказом при неизвестном ответе',async()=>{
+    const calls=[];const run=async(args,options)=>{calls.push({args,options});return 'enabled';};
+    await maintenanceFeatureAdmission('owned-flags',run)();assert.equal(calls[0].args[1],'owned-flags');assert.equal(calls[0].options.timeout,10000);
+    for(const result of ['feature-disabled','feature-flags-unavailable','unknown'])await assert.rejects(maintenanceFeatureAdmission('owned',async()=>result)(),{code:result==='feature-disabled'?result:'feature-flags-unavailable'});
+    await assert.rejects(maintenanceFeatureAdmission('owned',async()=>{throw Error('private credential');})(),{code:'feature-flags-unavailable'});
+});
 test('Полный запуск учитывает максимальную паузу и очищает только после внешней проверки',async()=>{const f=fixture();const result=await maintenanceTick(f.options);assert.equal(result.ok,true);assert.deepEqual(f.calls,['claim',['backup',1800000],'upload','finish',['prune',5]]);assert.ok(f.getLedger().receipt);});
 test('Выключенное расписание и время вне окна не берут слот',async()=>{const f=fixture();f.options.now=()=>new Date('2026-10-18T00:00:00Z');assert.equal((await maintenanceTick(f.options)).reason,'OUTSIDE_WINDOW');assert.deepEqual(f.calls,[]);f.options.load=async()=>({policy:defaultPolicy,revision:0});assert.equal((await maintenanceTick(f.options)).reason,'DISABLED');});
 test('Занятый или выполненный слот не создаёт повторной копии',async()=>{const f=fixture();f.options.claim=async()=>false;assert.equal((await maintenanceTick(f.options)).skipped,true);assert.deepEqual(f.calls,[]);});

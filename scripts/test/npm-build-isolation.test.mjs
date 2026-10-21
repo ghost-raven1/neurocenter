@@ -69,7 +69,7 @@ test('Real Docker contexts reject host npmrc/scoped registry contamination', {sk
     t.after(()=>fs.rm(folder,{recursive:true,force:true}));
     for(const [index,{dockerfile,ignore}]of [
         {dockerfile:'services/api-gateway/Dockerfile',ignore:'.dockerignore'},
-        {dockerfile:'frontend/Dockerfile',ignore:'frontend/.dockerignore'},
+        {dockerfile:'frontend/Dockerfile',ignore:'.dockerignore'},
     ].entries()){
         const directory=path.join(folder,String(index));await fs.mkdir(path.join(directory,'nested'),{recursive:true});
         await fs.copyFile(path.join(root,ignore),path.join(directory,'.dockerignore'));

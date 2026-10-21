@@ -19,8 +19,7 @@ offline-assets/
 deploy/production/local/
 **/secrets/
 
-# Фронтенд не нужен этому сервису
-frontend/
+# Frontend builds share the canonical feature registry; dependency/build/env exclusions above still apply.
 playwright-mcp/
 
 # Registry settings and credentials never enter the image build context.

@@ -16,14 +16,15 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
     NPM_CONFIG_STRICT_SSL=true
-WORKDIR /app
-COPY package*.json ./
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
 RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
-COPY . .
+COPY frontend/ .
+COPY services/shared/feature-flag-catalog.json services/shared/feature-flags.d.cts /app/services/shared/
 RUN npm run build
 
 FROM nginx:1.30.6-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY nginx.production.conf.template /etc/neurocenter/nginx.production.conf.template
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.production.conf.template /etc/neurocenter/nginx.production.conf.template
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 8080

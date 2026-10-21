@@ -25,7 +25,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
     ports:

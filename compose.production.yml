@@ -133,6 +133,7 @@ services:
       NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE: /run/secrets/model_credential_key
       RAG_SERVICE_URL: http://rag-sync-service:4300
       SKILLS_SERVICE_URL: http://skills-service:4200
+      API_GATEWAY_URL: http://api-gateway:4000
       PROJECTS_ROOT: /data/projects
       RUNTIME_ARTIFACT_DIR: /app/runtime-artifacts
       ASSET_SOURCE_MODE: ${ASSET_SOURCE_MODE:-online}
@@ -193,6 +194,7 @@ services:
       PORT: 4200
       SKILLS_STORAGE_PATH: /app/data/skills
       CATALOG_SERVICE_URL: http://catalog-service:4100
+      FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
     secrets: [metrics_token, internal_token]
     volumes: [skills:/app/data/skills, capacity:/capacity:ro]
     depends_on:
@@ -221,6 +223,7 @@ services:
       RAG_PROVISION_PG_URL_FILE: /run/secrets/rag_provision_url
       CATALOG_SERVICE_URL: http://catalog-service:4100
       RAG_SERVICE_URL: http://rag-sync-service:4300
+      FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
       PROJECTS_ROOT: /data/projects
       ASSET_SYNC_NODE_BIN: /usr/local/bin/node
       ASSET_SYNC_MCP_BIN: /app/mcp/neurocenter-asset-sync/dist/index.js
@@ -273,6 +276,7 @@ services:
       <<: *runtime
       PORT: 4000
       API_PUBLIC_URL: ${API_PUBLIC_URL:-}
+      NEUROCENTER_TLS_PROXY_ADDRESSES: ${NEUROCENTER_TLS_PROXY_ADDRESSES:-}
       AUTH_GUARD_ENABLED: 'true'
       BRIDGE_DIST: /app/bridge-dist
       CATALOG_SERVICE_URL: http://catalog-service:4100
@@ -297,7 +301,7 @@ services:
   frontend:
     <<: *service
     image: neurocenter/frontend:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ./frontend, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: frontend/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
     mem_limit: 128m
     cpus: 1
     environment:

@@ -5,7 +5,7 @@ import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
 import type { Pool } from 'pg';
-import { FEATURE_FLAGS } from '../../shared/feature-flags.cjs';
+import { FEATURE_FLAGS, defaultFeatureFlags, evaluateFeatureFlags } from '../../shared/feature-flags.cjs';
 import { FeatureAccess } from '../src/access/feature-access';
 import { FlagsController } from '../src/flags/flags.controller';
 import { FlagsRepository } from '../src/flags/flags.repository';
@@ -35,7 +35,7 @@ const pool = { query, connect: async () => {
     }, release() {} };
 } } as unknown as Pool;
 const repository = new FlagsRepository(pool);
-const flags = { list: async () => ({ items: await repository.list() }), evaluated: async () => ({ flags: await repository.evaluated() }),
+const flags = { list: async () => ({ items: await repository.list() }), evaluated: async () => evaluateFeatureFlags(await repository.evaluated()),
     patch: repository.patch.bind(repository), ready: async () => { await query('SELECT 1'); } };
 const nativeFetch = globalThis.fetch;
 const previousToken = process.env.NEUROCENTER_INTERNAL_TOKEN;
@@ -68,13 +68,13 @@ describe('HTTP-контракт сервиса переключателей', ()
             'x-bridge-actor': encodeURIComponent(JSON.stringify({ email: 'admin@example.invalid', activeRole: role })) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 
-    it('Главный администратор читает три флага и сохраняет изменение с аудитом', async () => {
-        const list = await call('/api/feature-flags'); expect(list.status).toBe(200); expect((await list.json()).items).toHaveLength(3);
+    it('Главный администратор читает все флаги и сохраняет изменение с аудитом', async () => {
+        const list = await call('/api/feature-flags'); expect(list.status).toBe(200); expect((await list.json()).items).toHaveLength(FEATURE_FLAGS.length);
         const changed = await call('/api/feature-flags/model_hosting', 'PATCH', { enabled: false, expectedRevision: 1 });
         expect(changed.status).toBe(200); expect(await changed.json()).toMatchObject({ key: 'model_hosting', enabled: false, revision: 2, updatedBy: 'admin@example.invalid' });
         expect(events).toHaveLength(1);
         const evaluated = await call('/internal/feature-flags/evaluated');
-        expect(await evaluated.json()).toEqual({ flags: { model_hosting: false, tool_builds: true, rag_sync: true } });
+        expect(await evaluated.json()).toEqual(evaluateFeatureFlags({ ...defaultFeatureFlags(), model_hosting: false }));
     });
 
     it('Старая вкладка получает 409, повтор того же состояния не создаёт аудит', async () => {
@@ -86,7 +86,7 @@ describe('HTTP-контракт сервиса переключателей', ()
 
     it('Назначенная роль участника получает только вычисленные значения', async () => {
         activeRoles = ['Разработчик'];
-        expect((await call('/api/feature-flags/evaluated', 'GET', undefined, 'Разработчик')).status).toBe(200);
+        const evaluated=await call('/api/feature-flags/evaluated', 'GET', undefined, 'Разработчик');expect(evaluated.status).toBe(200);const publicState=await evaluated.json();expect(Object.keys(publicState).sort()).toEqual(['blockedBy','configured','flags']);expect(Object.keys(publicState.flags)).toHaveLength(FEATURE_FLAGS.length);expect(JSON.stringify(publicState)).not.toContain('admin@example.invalid');
         expect((await call('/api/feature-flags', 'GET', undefined, 'Разработчик')).status).toBe(403);
         expect((await call('/api/feature-flags/model_hosting', 'PATCH', { enabled: false, expectedRevision: 1 }, 'Разработчик')).status).toBe(403);
         expect((await call('/api/feature-flags')).status).toBe(403);

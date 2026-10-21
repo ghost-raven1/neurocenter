@@ -2,6 +2,7 @@ import { HttpException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Servi
 import { Pool } from 'pg';
 import { FlagsRepository } from './flags.repository';
 import type { IEvaluatedFeatureFlags, IFeatureFlag, IFeatureFlagList } from '../../../shared/feature-flags.cjs';
+import {evaluateFeatureFlags} from '../../../shared/feature-flags.cjs';
 
 /** Настройки и аудит находятся в каталожной БД и входят в её существующую резервную копию. */
 @Injectable()
@@ -23,7 +24,7 @@ export class FlagsService implements OnModuleInit, OnModuleDestroy {
     async onModuleDestroy(): Promise<void> { await this.pool.end(); }
     async ready(): Promise<void> { await this.pool.query('SELECT 1'); }
     list(): Promise<IFeatureFlagList> { return this.safe(async () => ({ items: await this.repository.list() })); }
-    evaluated(): Promise<IEvaluatedFeatureFlags> { return this.safe(async () => ({ flags: await this.repository.evaluated() })); }
+    evaluated(): Promise<IEvaluatedFeatureFlags> { return this.safe(async () => evaluateFeatureFlags(await this.repository.evaluated())); }
     patch(key: unknown, raw: unknown, authorize: () => Promise<string>): Promise<IFeatureFlag> { return this.safe(() => this.repository.patch(key, raw, authorize)); }
 
     private async safe<T>(action: () => Promise<T>): Promise<T> {

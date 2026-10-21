@@ -34,7 +34,7 @@ describe('Хранилище переключателей и аудит', () => 
         const statements = query.mock.calls.map(([sql]) => sql);
         expect(statements[0]).toBe('BEGIN');
         expect(statements[1]).toContain('neurocenter:catalog:migrations');
-        expect(statements.filter(sql => sql.startsWith('INSERT INTO feature_flags'))).toEqual(Array(3).fill('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING'));
+        expect(statements.filter(sql => sql.startsWith('INSERT INTO feature_flags'))).toEqual(Array(FEATURE_FLAGS.length).fill('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING'));
         expect(statements.at(-1)).toBe('COMMIT');
         expect(statements.some(sql => /CREATE|ALTER|DROP/.test(sql))).toBe(false);
     });
@@ -42,7 +42,7 @@ describe('Хранилище переключателей и аудит', () => 
     it('Все зарегистрированные функции включены по умолчанию, переопределение действует отдельно', async () => {
         expect(await repository.evaluated()).toEqual(defaultFeatureFlags());
         query.mockResolvedValue({ rows: rows().map(row => row.flag_key === 'rag_sync' ? { ...row, overrides: { enabled: false } } : row) });
-        expect(await repository.evaluated()).toEqual({ model_hosting: true, tool_builds: true, rag_sync: false });
+        expect(await repository.evaluated()).toEqual({ ...defaultFeatureFlags(), rag_sync: false });
         expect((await repository.list())[0]).toMatchObject({ revision: 1, updatedAt: '2026-10-19T00:00:00.000Z', updatedBy: 'system:defaults' });
     });
 

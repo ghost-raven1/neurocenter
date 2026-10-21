@@ -9,8 +9,8 @@ const production = () => ({ NODE_ENV: 'production', PANEL_URL: 'https://panel.ex
     CATALOG_PG_URL: 'postgresql://nc_catalog:fixture@postgres:5432/catalog', CATALOG_SERVICE_URL: 'http://catalog-service:4100' });
 
 describe('Общие контракты сервиса переключателей', () => {
-    it('Реестр неизменяемый, содержит только три заранее согласованные функции', () => {
-        expect(FEATURE_FLAG_KEYS).toEqual(['model_hosting', 'tool_builds', 'rag_sync']);
+    it('Реестр неизменяемый, содержит согласованные функции продукта', () => {
+        expect(FEATURE_FLAG_KEYS).toHaveLength(21); expect(new Set(FEATURE_FLAG_KEYS).size).toBe(21);
         expect(Object.isFrozen(FEATURE_FLAGS)).toBe(true); expect(FEATURE_FLAGS.every(Object.isFrozen)).toBe(true);
         expect(isFeatureFlagKey('rag_sync')).toBe(true); expect(isFeatureFlagKey('custom')).toBe(false);
         const flags = defaultFeatureFlags(); flags.rag_sync = false;

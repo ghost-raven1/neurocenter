@@ -9,10 +9,11 @@ import {verifyBackup} from './recovery-manifest.mjs';
 import {uploadExternalBackup,externalBackupConfiguration} from './external-backup.mjs';
 import {reserveRestoreSource} from './restore-reservations.mjs';
 import {validateMaintenancePolicy,dueMaintenanceRun} from '../../services/shared/maintenance-policy.cjs';
+import {requireFeaturesEnabled} from '../../services/shared/feature-client.cjs';
 
 const quote=value=>"'"+String(value).replace(/'/g,"''")+"'";
 const hash=value=>createHash('sha256').update(value).digest('hex');
-const safeError=(phase,error)=>error?.code==='MAINTENANCE_PAUSE_EXCEEDED'?'PAUSE_EXCEEDED':error?.code==='CONFIG_CHANGED'?'CONFIG_CHANGED':phase==='backup'?'BACKUP_FAILED':'EXTERNAL_FAILED';
+const safeError=(phase,error)=>error?.code==='feature-disabled'?'FEATURE_DISABLED':error?.code==='feature-flags-unavailable'?'FEATURE_FLAGS_UNAVAILABLE':error?.code==='MAINTENANCE_PAUSE_EXCEEDED'?'PAUSE_EXCEEDED':error?.code==='CONFIG_CHANGED'?'CONFIG_CHANGED':phase==='backup'?'BACKUP_FAILED':'EXTERNAL_FAILED';
 
 /** Публичная идентичность места хранения не содержит ключей и меняется вместе с endpoint/bucket. */
 export function externalStorageBinding(config){
@@ -27,9 +28,10 @@ function validReceipt(receipt,ledger,storageId){
 }
 
 /** Один слот нельзя выполнить одновременно или повторить после подтверждённого успеха. */
-export async function maintenanceTick({load,claim,finish,fail,readLedger,writeLedger,backup,verify,upload,resolveStorage=externalBackupConfiguration,prune=async()=>{},now=()=>new Date()}){
+export async function maintenanceTick({load,claim,finish,fail,readLedger,writeLedger,backup,verify,upload,resolveStorage=externalBackupConfiguration,prune=async()=>{},now=()=>new Date(),requireBackupEnabled=()=>requireFeaturesEnabled(['project_backups'])}){
     const settings=await load();const policy=validateMaintenancePolicy(settings.policy);const due=dueMaintenanceRun(policy,now());
     if(!due){return {ok:true,skipped:true,reason:policy.enabled?'OUTSIDE_WINDOW':'DISABLED'};}
+    await requireBackupEnabled();
     const runId=randomUUID();if(!await claim({runId,slot:due.slot,revision:settings.revision})){return {ok:true,skipped:true,reason:'ALREADY_CLAIMED_OR_RETRY_DELAY'};}
     let phase='external';
     try{
@@ -43,6 +45,8 @@ export async function maintenanceTick({load,claim,finish,fail,readLedger,writeLe
             const beforePause=async()=>{
                 const latest=await load();const current=dueMaintenanceRun(validateMaintenancePolicy(latest.policy),now());
                 if(latest.revision!==settings.revision||!current||current.slot!==due.slot){const error=new Error('Политика или допустимое окно изменились до остановки');error.code='CONFIG_CHANGED';throw error;}
+                // This is the last admission boundary: the backup safely resumes stopped services even if flags go offline during the pause.
+                await requireBackupEnabled();
             };
             const result=await backup({maxPauseMs:policy.maxPauseMinutes*60000,slot:due.slot,beforePause});
             ledger={source:result.destination,sha256:result.sha256,backupId:'nc-'+hash(due.slot).slice(0,24)+'-'+runId,createdAt:result.createdAt,slot:due.slot,storageBinding};
@@ -60,6 +64,17 @@ export async function maintenanceTick({load,claim,finish,fail,readLedger,writeLe
         let retentionWarning=false;try{await prune(policy.localCopies,storageBinding);}catch{retentionWarning=true;}
         return {ok:true,runId,backupId:receipt.backupId,verifiedAt:receipt.verifiedAt,retentionWarning};
     }catch(error){await fail(runId,safeError(phase,error)).catch(()=>undefined);throw error;}
+}
+
+/** The operator reads flags inside the owned service; no secret or internal port is exposed to the host. */
+export function maintenanceFeatureAdmission(containerId,run=docker){
+    return async()=>{
+        const script="require('/shared/runtime.cjs');require('/shared/feature-client.cjs').requireFeaturesEnabled(['project_backups']).then(()=>process.stdout.write('enabled')).catch(error=>process.stdout.write(error.code==='feature-disabled'?'feature-disabled':'feature-flags-unavailable'))";
+        let result;try{result=await run(['exec',containerId,'node','-e',script],{timeout:10000});}catch{result='feature-flags-unavailable';}
+        if(result==='enabled')return;
+        const error=new Error(result==='feature-disabled'?'Резервное копирование отключено главным администратором.':'Сервис флагов недоступен: новая резервная копия не начата.');
+        error.code=result==='feature-disabled'?result:'feature-flags-unavailable';throw error;
+    };
 }
 
 async function privateDirectory(directory){await mkdir(directory,{recursive:true,mode:0o700});const info=await lstat(directory);if(!info.isDirectory()||info.isSymbolicLink()||info.mode&0o077){throw new Error('Нужен обычный закрытый каталог runner с правами 700');}return realpath(directory);}
@@ -132,11 +147,13 @@ export function createMaintenanceStore(query){
 export async function runMaintenance({directory,projectName='neurocenter-production',backupRoot}){
     if(!backupRoot){throw new Error('Укажите --backup-root на отдельном диске вне production-томов');}
     const client=composeClient({directory,projectName});
-    const postgres=(await containers(client)).find(item=>item.Config.Labels['com.docker.compose.service']==='postgres');if(!postgres?.State.Running){throw new Error('PostgreSQL не запущен');}
+    const owned=await containers(client),postgres=owned.find(item=>item.Config.Labels['com.docker.compose.service']==='postgres');if(!postgres?.State.Running){throw new Error('PostgreSQL не запущен');}
+    const flags=owned.find(item=>item.Config.Labels['com.docker.compose.service']==='feature-flags-service');if(!flags?.State.Running)throw new Error('Сервис флагов недоступен: новая резервная копия не начата.');
     const query=text=>docker(['exec','-i',postgres.Id,'psql','-X','-qAt','-U','nc_owner','-d','catalog','-v','ON_ERROR_STOP=1'],{input:text});
     const ledger=await runnerLedger(directory,backupRoot);
     return maintenanceTick({
         ...createMaintenanceStore(query),
+        requireBackupEnabled:maintenanceFeatureAdmission(flags.Id),
         readLedger:ledger.read,writeLedger:ledger.write,prune:ledger.prune,
         backup:async({maxPauseMs,beforePause})=>{return backupProduction({directory,projectName,destination:path.join(ledger.backupRoot,'nc-'+randomUUID()),offline:true,maxPauseMs,beforePause,progress:message=>console.error(message)});},
         verify:verifyBackup,upload:uploadExternalBackup,
