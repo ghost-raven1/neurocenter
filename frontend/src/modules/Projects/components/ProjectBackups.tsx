@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../../features/FeatureFlags/FeatureAvailability';
 import { Alert, Button, Space, Table, message } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import base from '../../../core/api/base';
@@ -37,7 +38,7 @@ export default function ProjectBackups({projectKey}:{projectKey:string}):JSX.Ele
     };
     return <Space direction="vertical" size={20} style={{width:'100%'}}>
         <Alert showIcon type="info" message="Отдельные копии PostgreSQL-базы знаний проекта" description="После подтверждения новой копии сохраняются пять последних дампов. Размер ограничен общим хранилищем; при отказе предыдущие копии остаются доступны. Локальная LanceDB и файлы проекта сюда не входят." />
-        <Space wrap><Button type="primary" loading={creating} disabled={unavailable} onClick={()=>void create()}>Создать резервную копию</Button><Button onClick={load} loading={loading}>Обновить</Button></Space>
+        <Space wrap><FeatureButton features={['project_backups']} type="primary" loading={creating} disabled={unavailable} onClick={()=>void create()}>Создать резервную копию</FeatureButton><Button onClick={load} loading={loading}>Обновить</Button></Space>
         {createError&&<Alert showIcon type="error" message="Копия не подтверждена" description={createError} />}
         {!!warnings.length&&<Alert showIcon type="warning" message="Копия создана с предупреждением" description={warnings.join(' ')} />}
         {loadError&&<Alert showIcon type="warning" message={items.length?'Показаны последние полученные копии':'Список копий недоступен'} description={loadError} action={<Button onClick={load}>Повторить</Button>} />}

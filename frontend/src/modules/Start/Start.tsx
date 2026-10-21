@@ -78,13 +78,13 @@ const Start = () => {
                     </>}
                     {step === 1 && <>
                         <BridgeSetup origin={window.location.origin} installer={installer} windows={windows} projectId={selectedProject?.id} canManageSource={canManageBridgeSource} onCopy={text=>{void copy(text);}}/>
-                        <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
+                        <Space wrap className="start__step-nav"><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
                     {step === 2 && <StartProjectStep projects={projects} ready={ready} loading={loading} error={error} requestedProject={requestedProject} selectedProject={selectedProject} refresh={refresh} onSelect={selectProject} onBack={()=>go(1)}/>}
                 </div>
             </Card>
             <section className="start__hero">
-                <div><Text className="start__eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</Text><Title level={2}>От идеи — к работе.<br />Всё для команды в одном месте.</Title><Paragraph>Скиллы, MCP и плагины дополняют вашего ИИ-помощника. Базы знаний помогают ему понимать ваш проект.</Paragraph><Button type="primary" size="large" onClick={() => history.push('/store')}>Открыть каталог <ArrowRightOutlined /></Button></div>
+                <div><Text className="start__eyebrow">ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО</Text><Title level={2}>От идеи — к работе. Всё для команды в одном месте.</Title><Paragraph>Скиллы, MCP и плагины дополняют вашего ИИ-помощника. Базы знаний помогают ему понимать ваш проект.</Paragraph><Button type="primary" onClick={() => history.push('/store')}>Открыть каталог <ArrowRightOutlined /></Button></div>
                 <div className="start__overview"><FolderOpenOutlined /><strong>{ready ? projects.length : loading ? '…' : '—'}</strong><Text>проектов в рабочем пространстве</Text><span>Выберите проект и соберите свой набор инструментов.</span></div>
             </section>
             <OpenCodeExtensions project={project} />

@@ -8,13 +8,12 @@ const quote = (value: string, windows: boolean): string => value.replace(/'/g, w
 
 /** Подключает имеющийся автономный мост к текущей площадке без скачивания и регистрации заново. */
 export function installedBridgeCommand(origin: string, windows: boolean, reconnect = false): string {
-    const quoted = quote(siteOrigin(origin), windows);
-    const option = reconnect ? '--reconnect-open' : '--connect-open';
+    siteOrigin(origin);
+    const option = reconnect ? ' --reconnect' : '';
     if (windows) {
-        return `$env:NEUROCENTER_URL='${quoted}'; & "$env:USERPROFILE/.opencode/neurocenter-asset-sync/bin/node.exe" "$env:USERPROFILE/.opencode/neurocenter-asset-sync/dist/index.js" ${option}`;
+        return `& "$env:USERPROFILE/.local/bin/neurocenter-bridge.cmd" connect --open${option}`;
     }
-    const directory = '${INSTALL_DIR:-$HOME/.opencode/neurocenter-asset-sync}';
-    return `NEUROCENTER_URL='${quoted}' "${directory}/bin/node" "${directory}/dist/index.js" ${option}`;
+    return `"\${HOME}/.local/bin/neurocenter-bridge" connect --open${option}`;
 }
 
 /** Команда установки использует выбранную ОС и публичный адрес API Gateway. */

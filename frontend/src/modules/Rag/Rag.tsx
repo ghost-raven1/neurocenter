@@ -15,6 +15,7 @@ import { RootState } from '../../store';
 import { fetchRag } from './redux/actions';
 import { clearRag } from './redux/reducers';
 import {useSectionUpdates} from '../../core/socket/useSectionUpdates';
+import {RagSyncStatus} from './RagSyncStatus';
 
 const { Text } = Typography;
 
@@ -91,8 +92,9 @@ const Rag: FC = () => {
         {
             title: 'Статус',
             key: 'status',
+            width: 80,
             render: (_: unknown, record: IRagProjectSummary) =>
-                (record.rowCount > 0 ? 'Знания синхронизированы' : 'Знания ещё не синхронизированы'),
+                <RagSyncStatus hasFragments={record.rowCount>0}/>,
         },
         {
             title: 'Действие',

@@ -2,6 +2,7 @@
     min-width: 0;
     &__heading, &__toolbar, &__tab-heading, &__row, &__row-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
     &__heading { margin-bottom: 18px; h4 { margin: 0 0 6px; } .ant-typography { margin-bottom: 0; } }
+    &__heading-actions { flex-shrink: 0; align-self: flex-start; padding: 4px; border: 1px solid #d9e4ef; border-radius: 8px; background: #f6f9fc; }
     &__summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px 18px; margin-bottom: 20px; border: 1px solid #d9e4ef; border-radius: 12px; background: #f4f8fc; color: #536b83; strong { color: #1c3853; font-size: 20px; margin-right: 5px; } .ant-tag { margin-left: auto; } }
     &__notice { margin-bottom: 16px; overflow-wrap: anywhere; .ant-alert-action { align-self: center; } }
     &__toolbar { margin-bottom: 18px; align-items: center; .ant-input-search { width: min(320px, 100%); } }

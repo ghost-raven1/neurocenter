@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {useLearningAnalysis} from '../src/features/ProjectLearning/useLearningAnalysis';
 import {projectLearningApi} from '../src/features/ProjectLearning/api';

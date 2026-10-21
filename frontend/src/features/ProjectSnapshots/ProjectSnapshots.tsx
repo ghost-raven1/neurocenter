@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {useEffect,useRef} from 'react';
 import {useSelector} from 'react-redux';
 import {Alert,Button,Checkbox,Empty,InputNumber,Modal,Select,Skeleton,Space,Tag,Typography} from 'antd';
@@ -59,10 +60,10 @@ export function ProjectSnapshots({projectId,onChanged}:{projectId:string;onChang
             <Select aria-label="Компьютер для снимка" placeholder="Выберите компьютер" value={bridge.device?.id} disabled={!bridge.devicesReady||intent.busy||!!intent.intent} style={{width:'100%',maxWidth:440}} onChange={bridge.choose} options={bridge.devices.map(device=>({value:device.id,label:`${device.name} · ${device.online?'На связи':'Не в сети'}`}))}/>
             {target.folderName&&<Typography.Text type="secondary">Папка: {target.folderName}</Typography.Text>}
             {createReason&&<Typography.Text type="secondary">{createReason}</Typography.Text>}
-            <Button type="primary" loading={intent.busy&&intent.intent?.kind==='create'} disabled={blocked||!!createReason||!head} onClick={()=>{
+            <FeatureButton features={['project_snapshots','computer_connections']} type="primary" loading={intent.busy&&intent.intent?.kind==='create'} disabled={blocked||!!createReason||!head} onClick={()=>{
                 if(!bridge.device||!target.bindingId||!head||createReason)return;
                 void intent.submit({projectId,kind:'create',input:{requestKey:crypto.randomUUID(),deviceId:bridge.device.id,expectedBindingId:target.bindingId,...head}});
-            }}>Создать снимок</Button>
+            }}>Создать снимок</FeatureButton>
         </Space></div>
         {snapshots.loading&&!data?<Skeleton active paragraph={{rows:4}}/>:data&&<>
             {data.snapshots.length===0?<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Снимков пока нет"/>:<div className="project-snapshots__list">{data.snapshots.map(snapshot=><SnapshotCard key={snapshot.snapshotId} snapshot={snapshot} projectId={projectId} canWrite={canWrite} blocked={blocked||!head} hasHead={!!project?.head} onAction={confirm}/>)}</div>}

@@ -38,6 +38,7 @@ vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     return {
         Alert: () => null, Card: content, Col: content, Row: content, Space: content, Popconfirm: content,
+        Tooltip: ({children,title,trigger}:{children:ReactNode;title:string;trigger:string[]}) => createElement('span', {'data-tooltip':title,'data-trigger':trigger.join(',')}, children),
         Spin: () => null, Result: () => null, Grid: { useBreakpoint: () => ({ sm: true }) },
         Descriptions: Object.assign(content, { Item: content }), Typography: { Paragraph: content, Text: content },
         Input: { Search: () => null }, Modal: { confirm: vi.fn() }, message: {},

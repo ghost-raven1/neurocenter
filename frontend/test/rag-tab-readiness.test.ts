@@ -6,6 +6,7 @@ import {ragSummaryState} from '../src/modules/Projects/components/ragSummaryStat
 import {currentKnowledgeJobs} from '../src/features/McpBridge/knowledgeSyncState';
 import type {IRagSummary} from '../src/core/api/interfaces';
 import type {IBridgeJob} from '../src/features/McpBridge/api';
+import {useSectionUpdates} from '../src/core/socket/useSectionUpdates';
 
 vi.mock('react-redux',()=>({useSelector:(select:(state:unknown)=>unknown)=>select({userBlock:{user:{activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]}}})}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:vi.fn()}));
@@ -18,6 +19,11 @@ const summary:IRagSummary={projectKey:'project',rowCount:3,dimension:4,lastSynce
     fingerprintVersion:1,indexProfile:{provider:'ollama',model:'fixture',dimension:4},complete:true,indexState:'ready',snapshotHash:'a'.repeat(64)};
 
 describe('Подготовка знаний не зависит от доступности серверной сводки',()=>{
+    it('Контекст проекта не дублирует технический ID; изменения модели/прав и reconnect перечитывают сводку',()=>{
+        const html=renderToStaticMarkup(createElement(RagTab,{projectKey:'prj-a713c673-95c6-47f7-85a8-b5bb101280ea'}));
+        expect(html).not.toContain('<b>Проект:</b>');expect(html).toContain('<summary>Обновление сведений</summary>');expect(html).not.toContain('<details open');
+        expect(useSectionUpdates).toHaveBeenCalledWith(['knowledge','catalog','projects','access'],expect.any(Function));
+    });
     it('До загрузки сводки доступны установка плагина и подключение моста',()=>{
         const html=renderToStaticMarkup(createElement(RagTab,{projectKey:'project'}));
         expect(html).toContain('Установить OpenCodeRAG');expect(html).toContain('data-knowledge-sync="project"');

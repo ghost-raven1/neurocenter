@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
 import {Alert,Button,Collapse,Radio,Select,Space,Typography} from 'antd';
 import {useHistory} from 'react-router-dom';
 import {useEffect,useState} from 'react';
@@ -52,11 +53,17 @@ export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projec
             reconnect={needsReconnect||(bridge.devicesReady&&bridge.devices.length===0)} onCopy={onCopy}/>:installation}
         <Collapse ghost><Collapse.Panel key="manual" header="Есть код подключения? Ввести вручную"><PairingCode/></Collapse.Panel></Collapse>
     </Space>;
-    return <Space direction="vertical" size={16} style={{width:'100%'}}>
+    const options=<Collapse ghost className="start__computer-options" activeKey={installerPanels??(connectionRequested||needsUpdate||needsReconnect||!device?.online?['another']:[])} onChange={keys=>setInstallerPanels(Array.isArray(keys)?keys:[keys])}>
+        {bridge.devices.length>0&&<Collapse.Panel key="another" header={needsUpdate&&!needsReconnect?'Обновить или подключить мост':'Подключить другой компьютер или обновить мост'}>{connection}</Collapse.Panel>}
+        <Collapse.Panel key="versions" forceRender header="Источник и версии моста">
+            <BridgeSourcePanel installer={installer} device={device} verified={bridge.devicesReady&&!bridge.errors.devices} windows={windows} canManage={canManageSource}
+                onInstall={()=>{setAction('install');setInstallerPanels(['another']);}}/>
+        </Collapse.Panel>
+    </Collapse>;
+    return <div className="start__computer">
         <Typography.Title level={3} style={{margin:0}}>Подключение компьютера</Typography.Title>
-        <BridgeSourcePanel installer={installer} device={device} verified={bridge.devicesReady&&!bridge.errors.devices} windows={windows} canManage={canManageSource}
-            onInstall={()=>{setAction('install');setInstallerPanels(['another']);}}/>
         {bridge.devices.length>0?<>
+            <div className="start__computer-summary">
             <BridgeConnection bridge={bridge} compact showReadinessNotice={false}/>
             {!healthy&&<Alert type="warning" showIcon
                 message={!bridge.devicesReady?'Не удалось обновить статус':!device?'Выберите компьютер':needsReconnect?'Подтвердите подключение заново':awaitingFirstReport?'Ожидаем первого выхода на связь':needsUpdate?'Обновите мост':device.online?`${device.name} — на связи`:'Компьютер подключён, но сейчас не отвечает'}
@@ -64,18 +71,18 @@ export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projec
                     ?roleLevel(device.role)<2?'Для изменения проектов выберите на сайте назначенную вам роль разработчика или администратора и подтвердите подключение. Переустановка моста для этого не нужна.':'Продлите подключение установленного моста и подтвердите доступ в браузере. Файлы и история сохранятся.'
                     :awaitingFirstReport?'Доступ подтверждён. Запустите установленный мост командой подключения и нажмите «Проверить подключение». Его версия появится после первого ответа.'
                     :needsUpdate?'Для новых возможностей обновите программу командой ниже. Установщик сохранит файлы и историю.':'Запустите установленный мост командой подключения. Повторная установка обычно не нужна.'}/>}
-            {healthy&&<Typography.Text type="secondary">Мост работает в фоне. Перейдите к папке проекта.</Typography.Text>}
-            <Space wrap>
-                <Button type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</Button>
+            <div className="start__computer-next">
+            {healthy&&<Typography.Text type="secondary">Компьютер готов. Свяжите папку с проектом.</Typography.Text>}
+            <Space wrap className="start__computer-actions">
+                <FeatureButton features={['computer_connections']} type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</FeatureButton>
                 <Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button>
             </Space>
-            <Collapse ghost activeKey={installerPanels??(connectionRequested||needsUpdate||needsReconnect||!device?.online?['another']:[])} onChange={keys=>setInstallerPanels(Array.isArray(keys)?keys:[keys])}>
-                <Collapse.Panel key="another" header={needsUpdate&&!needsReconnect?'Обновление моста':'Подключение и обновление моста'}>{connection}</Collapse.Panel>
-            </Collapse>
+            </div></div>
         </>:<>
             {bridge.loading?<Typography.Text role="status">Проверяем подключения в вашем профиле…</Typography.Text>:null}
             {bridge.errors.devices&&<Alert type="warning" showIcon message={bridge.errors.devices} action={<Button onClick={()=>{void bridge.reload();}}>Повторить</Button>}/>}
             {bridge.devicesReady&&<>{connection}<Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button></>}
         </>}
-    </Space>;
+        {options}
+    </div>;
 };

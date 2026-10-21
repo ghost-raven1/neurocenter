@@ -1,4 +1,5 @@
-import { Alert, Button, Empty, List, Space, Tag, Typography } from 'antd';
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
+import { Alert, Empty, List, Space, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import type { useBridge } from './useBridge';
 import type { IProjectInventory, IProjectInventoryEntry } from './operationTypes';
@@ -36,7 +37,7 @@ export function ProjectInventory({bridge,projectId,canInspect,canManage,catalog}
     };
     return <Space direction="vertical" size={12} className="local-operation">
         <Typography.Paragraph>Поиск читает только выбранную папку проекта: скиллы, MCP и плагины OpenCode. Код не запускается, файлы не перемещаются. Другие папки и личный глобальный профиль не сканируются.</Typography.Paragraph>
-        <Button disabled={!!blocker || locked} loading={locked} onClick={() => { void scan(); }}>Найти инструменты в папке проекта</Button>
+        <FeatureButton features={['local_changes']} disabled={!!blocker || locked} loading={locked} onClick={() => { void scan(); }}>Найти инструменты в папке проекта</FeatureButton>
         {blocker && <Alert type="info" showIcon message={blocker} />}
         {result && !current && <Alert type="warning" showIcon message="Папка, подключение или файлы проекта изменились после поиска. Выполните поиск заново." />}
         {result && current && <>
@@ -50,8 +51,8 @@ export function ProjectInventory({bridge,projectId,canInspect,canManage,catalog}
                         <Space wrap><Tag>{kinds[entry.kind]}</Tag><Tag>{states[entry.state]}</Tag></Space>
                         <Typography.Text type="secondary">{inventoryReasonLabels[entry.reason]}</Typography.Text>
                     </div>
-                    {canManage && entry.state === 'unmanaged' && entry.kind !== 'unknown' && <Button size="small" disabled={!!adoptBlocker || !!adoptionCandidateBlocker(result.value,entry) || locked}
-                        title={adoptBlocker || adoptionCandidateBlocker(result.value,entry) || undefined} onClick={() => setSelected({entry,report:result})}>Принять под управление</Button>}
+                    {canManage && entry.state === 'unmanaged' && entry.kind !== 'unknown' && <FeatureButton features={['local_changes']} size="small" disabled={!!adoptBlocker || !!adoptionCandidateBlocker(result.value,entry) || locked}
+                        title={adoptBlocker || adoptionCandidateBlocker(result.value,entry) || undefined} onClick={() => setSelected({entry,report:result})}>Принять под управление</FeatureButton>}
                 </div></List.Item>} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="В папке проекта инструменты не найдены" />}
         </>}
         {operation.job && <Alert role="status" showIcon type={operation.job.state === 'failed' ? 'error' : 'info'} message={operation.job.message} />}

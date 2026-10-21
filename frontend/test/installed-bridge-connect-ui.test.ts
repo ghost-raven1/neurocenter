@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,14 +53,14 @@ beforeEach(() => {
 describe('Подключение компьютера с уже установленным мостом', () => {
     it('Подключение из списка сразу раскрывает команды, даже если выбранный компьютер уже на связи', () => {
         select([device()]);
-        expect(setup()).not.toContain('--connect-open');
+        expect(setup()).not.toContain('connect --open');
         expect(fixture.connectAnother).toBeDefined();
         fixture.connectAnother?.();
         expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?step=1&addComputer=1');
         fixture.search = new URL(fixture.push.mock.calls[0][0], origin).search;
         expect(new URLSearchParams(fixture.search).has('connect')).toBe(false);
         const html = setup();
-        expect(html).toContain('--connect-open');
+        expect(html).toContain('connect --open');
         expect(html).toContain('Копировать команду подключения');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
     });
@@ -86,7 +87,7 @@ describe('Подключение компьютера с уже установл
         const html = setup();
         expect(html).toContain('Мост уже установлен');
         expect(html).toContain('Установить мост');
-        expect(html).toContain('--reconnect-open');
+        expect(html).toContain('--reconnect');
         expect(html).toContain('Копировать команду подключения');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
     });
@@ -94,7 +95,7 @@ describe('Подключение компьютера с уже установл
     it('Копирование передаёт точную команду для текущей площадки и явного переподключения', () => {
         const onCopy = vi.fn();
         const html = renderToStaticMarkup(createElement(InstalledBridgeConnect, { origin, windows: false, reconnect: true, onCopy }));
-        expect(html).toContain('--reconnect-open');
+        expect(html).toContain('--reconnect');
         expect(html).toMatch(/подтверд[а-яё]*.*(?:браузер|компьютер)|(?:браузер|компьютер).*подтверд/iu);
         fixture.buttons.get('Копировать команду подключения')?.onClick?.();
         expect(onCopy).toHaveBeenCalledExactlyOnceWith(installedBridgeCommand(origin, false, true));
@@ -103,16 +104,16 @@ describe('Подключение компьютера с уже установл
     it('Подключённый актуальный мост сразу разрешает переход к папкам', () => {
         select([device()]); const html = setup();
         expect(html).toContain('Рабочий компьютер · мост на связи');
-        expect(html).toContain('Мост работает в фоне. Перейдите к папке проекта.');
+        expect(html).toContain('Компьютер готов. Свяжите папку с проектом.');
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(false);
-        expect(html).toContain('Подключение и обновление моста');
+        expect(html).toContain('Подключить другой компьютер или обновить мост');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
     });
 
     it('Истёкшее подключение предлагает подтверждение существующего моста без обновления файлов', () => {
         select([{ ...device(), requiresReconnect: true }]); const html = setup();
         expect(html).toMatch(/продлить|ист[её]к/iu);
-        expect(html).toContain('--reconnect-open');
+        expect(html).toContain('--reconnect');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(true);
     });
@@ -120,7 +121,7 @@ describe('Подключение компьютера с уже установл
     it('Роль наблюдателя объясняет права и предлагает новое подтверждение без переустановки', () => {
         select([{ ...device(), role: 'Наблюдатель' }]); const html = setup();
         expect(html).toMatch(/роль|права/iu);
-        expect(html).toContain('--reconnect-open');
+        expect(html).toContain('--reconnect');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(true);
     });
@@ -128,7 +129,7 @@ describe('Подключение компьютера с уже установл
     it('Недоступный компьютер запускается из существующей установки, а переход к папкам ждёт связи', () => {
         select([{ ...device(), online: false }]); const html = setup();
         expect(html).toMatch(/не отвечает|не в сети|Включите компьютер/iu);
-        expect(html).toContain('--connect-open');
+        expect(html).toContain('connect --open');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
         expect(fixture.buttons.get('Выбрать папку проектов')?.disabled).toBe(true);
     });
@@ -147,7 +148,7 @@ describe('Подключение компьютера с уже установл
         const html = setup();
         expect(html).toContain('Не удалось загрузить компьютеры');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
-        expect(html).not.toContain('--connect-open');
+        expect(html).not.toContain('connect --open');
     });
 
     it('Устаревшие возможности требуют обновления и показывают действующий установщик', () => {
@@ -169,7 +170,7 @@ describe('Подключение компьютера с уже установл
         const windows = device(); windows.online = false; windows.report.platform = 'win32';
         select([windows]); const html = setup(false);
         expect(html).toContain('aria-label="Система компьютера"');
-        expect(html).toContain('node.exe');
+        expect(html).toContain('neurocenter-bridge.cmd');
         expect(html).not.toContain('/bin/node&quot;');
     });
 
@@ -177,14 +178,14 @@ describe('Подключение компьютера с уже установл
         const mac = device(); mac.online = false; mac.report.platform = 'darwin';
         select([mac]); const html = setup(true);
         expect(html).toContain('aria-label="Система компьютера"');
-        expect(html).toContain('/bin/node');
-        expect(html).not.toContain('node.exe');
+        expect(html).toContain('neurocenter-bridge&quot; connect');
+        expect(html).not.toContain('neurocenter-bridge.cmd');
     });
 
     it('Без подключённых компьютеров Windows браузера выбирает PowerShell', () => {
         const html = setup(true);
-        expect(html).toContain('node.exe');
-        expect(html).toContain('--reconnect-open');
+        expect(html).toContain('neurocenter-bridge.cmd');
+        expect(html).toContain('--reconnect');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
     });
 });

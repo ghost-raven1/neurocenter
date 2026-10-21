@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Alert, Button, Collapse, Drawer, Empty, List, Space, Tag, Typography} from 'antd';
 import {useEffect, useRef, useState} from 'react';
 import {formatDate} from '../../common/utils/format';
@@ -30,8 +31,8 @@ export function LearningHypothesisDetails(props: Props): JSX.Element {
     };
     const canPrepare = hypothesis.status === 'supported' && hypothesis.checks.some(check => check.method === 'human_review' && check.result === 'passed');
     return <Drawer open title={hypothesis.title} width={720} className="learning-details" onClose={props.onClose} footer={<Space wrap>
-        {props.canReview && <Button disabled={props.blocked} onClick={props.onCheck}>Записать проверку</Button>}
-        {props.canRecord && <Button type="primary" disabled={props.blocked || !canPrepare} onClick={props.onCandidate}>Подготовить знание</Button>}
+        {props.canReview && <FeatureButton features={['project_learning']} disabled={props.blocked} onClick={props.onCheck}>Записать проверку</FeatureButton>}
+        {props.canRecord && <FeatureButton features={['project_learning']} type="primary" disabled={props.blocked || !canPrepare} onClick={props.onCandidate}>Подготовить знание</FeatureButton>}
     </Space>}>
         {props.error && <Alert type="warning" showIcon message={props.error} className="project-learning__notice" action={<Button onClick={props.onRetry}>Повторить</Button>} />}
         <Space wrap><Tag>{hypothesis.subject === 'agent' ? 'Работа агентов' : 'Проект и данные'}</Tag><Tag color={hypothesis.status === 'supported' ? 'green' : hypothesis.status === 'refuted' ? 'red' : 'default'}>{hypothesisStatus[hypothesis.status]}</Tag></Space>

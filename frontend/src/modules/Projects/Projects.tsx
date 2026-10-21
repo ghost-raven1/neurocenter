@@ -1,3 +1,4 @@
+import { useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
 import CreateProjectModal from './components/CreateProjectModal';
 import { PageHeading } from '../../common/components/PageHeading';
 import { Alert, Button, Card, Input, message, Popconfirm, Space, Table } from 'antd';
@@ -36,6 +37,7 @@ import { projectBindingSearch, projectBindingTarget } from './projectNavigation'
  * @returns JSX-элемент списка проектов
  */
 const Projects: FC = () => {
+    const creation = useFeatureAvailability('projects');
     const dispatch = useAppDispatch();
     const history = useHistory();
     const location = useLocation();
@@ -109,15 +111,16 @@ const Projects: FC = () => {
             title: 'Имя',
             dataIndex: 'name',
             key: 'name',
+            width: 160,
             render: (name: string, record: IProjectSummary) => (
                 <a href={baseRoutes.projectDetail.replace(':projectId',record.id)} onClick={event=>{event.stopPropagation();if(!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey&&event.button===0){event.preventDefault();openProject(record);}}}>{name}</a>
             ),
         },
-        { title: 'Папка на выбранном компьютере', key: 'localFolder', render: (_:unknown,record:IProjectSummary)=><Space direction="vertical" size={4}><span>{localBindings[record.id]?.folderName ?? 'Пока не связана'}</span>{projectRoleLevel(user,record.id)>=2&&<Button size="small" onClick={event=>{event.stopPropagation();openBinding(record.id);}}>{localBindings[record.id]?'Изменить привязку':'Связать папку'}</Button>}</Space> },
-        { title: 'Состояние', dataIndex: 'state', key: 'state', render: (value: TProjectState) => <StatusTag status={value} /> },
-        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', render: (value: unknown, record) => <ProjectSize kind="logical" bytes={value} error={record.logicalSizeError} loading={loading} onRetry={retrySizes} /> },
-        { title: 'Копия знаний', dataIndex: 'retainedBytes', key: 'retained', render: (value: unknown, record) => <ProjectSize kind="retained" bytes={value} error={record.retainedSizeError} loading={loading} onRetry={retrySizes} /> },
-        { title: 'В работе', dataIndex: 'activeOperations', key: 'ops' },
+        { title: 'Папка на выбранном компьютере', key: 'localFolder', width: 220, render: (_:unknown,record:IProjectSummary)=><div className={`project-folder${localBindings[record.id]?'':' project-folder_unbound'}`}><span>{localBindings[record.id]?.folderName ?? 'Не связана'}</span>{projectRoleLevel(user,record.id)>=2&&<Button type="link" size="small" aria-label={`${localBindings[record.id]?'Изменить привязку':'Связать папку'} проекта ${record.name}`} onClick={event=>{event.stopPropagation();openBinding(record.id);}}>{localBindings[record.id]?'Изменить':'Связать'}</Button>}</div> },
+        { title: 'Состояние', dataIndex: 'state', key: 'state', width: 120, render: (value: TProjectState) => <StatusTag status={value} /> },
+        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', width: 150, render: (value: unknown, record) => <ProjectSize kind="logical" bytes={value} error={record.logicalSizeError} loading={loading} onRetry={retrySizes} /> },
+        { title: 'Копия знаний', dataIndex: 'retainedBytes', key: 'retained', width: 150, render: (value: unknown, record) => <ProjectSize kind="retained" bytes={value} error={record.retainedSizeError} loading={loading} onRetry={retrySizes} /> },
+        { title: 'В работе', dataIndex: 'activeOperations', key: 'ops', width: 85 },
         {
             title: 'Действия',
             key: 'actions',
@@ -149,9 +152,9 @@ const Projects: FC = () => {
             extra={
                 <Space>
                     <Permission permissionKey={projectCreateKey} politic={projectsPolitics}>
-                        <AsyncButton type="primary" onClick={() => setIsCreateOpen(true)}>
+                        <span title={creation.reason || undefined} aria-label={creation.reason || undefined} tabIndex={creation.enabled ? undefined : 0}><AsyncButton type="primary" disabled={!creation.enabled} onClick={() => { if(creation.enabled) setIsCreateOpen(true); }}>
                             Создать проект
-                        </AsyncButton>
+                        </AsyncButton></span>
                     </Permission>
                 </Space>
             }
@@ -175,7 +178,7 @@ const Projects: FC = () => {
                 loading={loading}
                 dataSource={list.filter((p) => !removedIds.includes(p.id))}
                 columns={columns}
-                scroll={{ x: 720 }}
+                scroll={{ x: 985 }}
                 locale={{ emptyText: listError ? 'Список проектов недоступен. Повторите загрузку.' : query ? 'Проектов с таким названием нет. Попробуйте другой запрос.' : 'Создайте серверный проект или попросите администратора добавить вас. Затем свяжите его с локальной папкой.' }}
                 onRow={record => ({ onClick: () => openProject(record), style: { cursor: 'pointer' } })}
                 pagination={{

@@ -5,6 +5,7 @@ import { useAppDispatch } from '../../../core/hooks';
 import { createProject } from '../redux/actions';
 import { useAuthRequestOwner } from '../../../features/UserBlock/useAuthRequestOwner';
 import { submitProjectCreation } from '../projectCreation';
+import { FeatureAvailabilityNotice, useFeatureAvailability } from '../../../features/FeatureFlags/FeatureAvailability';
 
 interface ICreateFormValues { name: string; externalResourceId?: string; }
 interface IProps { open: boolean; onClose: () => void; onCreated: (id: string) => void; }
@@ -12,13 +13,14 @@ interface IProps { open: boolean; onClose: () => void; onCreated: (id: string) =
 /** Создание проекта: обязательное имя и дополнительные настройки по запросу. */
 const CreateProjectModal: FC<IProps> = ({open, onClose, onCreated}) => {
     const { captureOwner } = useAuthRequestOwner();
+    const availability = useFeatureAvailability('projects');
     const dispatch = useAppDispatch();
     const [form] = Form.useForm<ICreateFormValues>();
     const [saving, setSaving] = useState(false);
     const lock=useRef(false);
     const submit = async (values: ICreateFormValues): Promise<void> => {
         const isCurrent = captureOwner();
-        if (!isCurrent()) { return; }
+        if (!isCurrent() || !availability.enabled) { return; }
         if(lock.current){return;}lock.current=true;
         setSaving(true);
         try {
@@ -33,7 +35,8 @@ const CreateProjectModal: FC<IProps> = ({open, onClose, onCreated}) => {
             });
         } finally { if(isCurrent()){lock.current=false;setSaving(false);} }
     };
-    return <Modal title="Новый проект" open={open} onCancel={()=>{if(!lock.current){onClose();}}} onOk={() => form.submit()} confirmLoading={saving} okText="Создать проект" cancelText="Отмена" destroyOnClose closable={!saving} keyboard={!saving} maskClosable={!saving} cancelButtonProps={{disabled:saving}}>
+    return <Modal title="Новый проект" open={open} onCancel={()=>{if(!lock.current){onClose();}}} onOk={() => { if (availability.enabled) form.submit(); }} okButtonProps={{disabled:!availability.enabled}} confirmLoading={saving} okText="Создать проект" cancelText="Отмена" destroyOnClose closable={!saving} keyboard={!saving} maskClosable={!saving} cancelButtonProps={{disabled:saving}}>
+        <FeatureAvailabilityNotice features={['projects']}/>
         <Form form={form} layout="vertical" onFinish={values => { void submit(values); }} preserve={false}>
             <Form.Item name="name" label="Название проекта" extra="Название команды или продукта, в том числе по-русски. Локальная папка связывается отдельно." rules={[{required:true,whitespace:true,message:'Введите название проекта'},{max:128,message:'До 128 символов'},{pattern:/^[^/\\\x00-\x1f]+$/,message:'Без слешей и управляющих символов'}]}><Input placeholder="Например, team-portal" autoFocus /></Form.Item>
             <Collapse ghost><Collapse.Panel key="settings" header="Дополнительные настройки">

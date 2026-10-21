@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Button,Card,Space,Tag,Typography} from 'antd';
 import {formatBytes,formatDate} from '../../common/utils/format';
 import {projectSnapshotsApi} from './api';
@@ -23,7 +24,7 @@ export function SnapshotCard({snapshot,projectId,blocked,canWrite,hasHead,onActi
                 {verified&&<Button href={projectSnapshotsApi.manifestUrl(projectId,snapshot.snapshotId)} download={`snapshot-${snapshot.snapshotId}.json`}>Опись и подпись</Button>}
                 {canWrite&&verified&&!snapshot.isHead&&<Button disabled={blocked} onClick={()=>onAction('activate',snapshot)}>Сделать текущим</Button>}
                 {canWrite&&verified&&hasHead&&!snapshot.isHead&&<Button disabled={blocked} onClick={()=>onAction('rollback',snapshot)}>Откатить к снимку</Button>}
-                {canWrite&&verified&&<Button disabled={blocked} onClick={()=>onAction('release',snapshot)}>Выпустить профиль</Button>}
+                {canWrite&&verified&&<FeatureButton features={['project_snapshots']} disabled={blocked} onClick={()=>onAction('release',snapshot)}>Выпустить профиль</FeatureButton>}
                 {canWrite&&snapshotPending(snapshot)&&<Button disabled={blocked} onClick={()=>onAction('cancel',snapshot)}>Отменить публикацию</Button>}
                 {canWrite&&removable&&<Button danger disabled={blocked} onClick={()=>onAction('delete',snapshot)}>Удалить</Button>}
             </Space>

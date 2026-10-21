@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import {Alert, Button, Form, Modal, Space, Typography} from 'antd';
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {useUnsavedLearning} from './useUnsavedLearning';
@@ -7,10 +8,12 @@ interface Props<T extends object> {
     title: string; submitText: string; currentRevision: number; initialValues: T;
     state: LearningEditorState; children: ReactNode; description?: ReactNode;
     onClose: () => void; onSubmit: (value: T, revision: number) => Promise<boolean>;
+    recovery?: boolean;
 }
 
 /** A CAS conflict preserves the draft and requires an explicit choice before using the new revision. */
 export function LearningEditorModal<T extends object>(props: Props<T>): JSX.Element {
+    const availability = useFeatureAvailability(...(props.recovery ? [] : ['project_learning' as const]));
     const [form] = Form.useForm<T>();
     const [revision, setRevision] = useState(props.currentRevision), [dirty, setDirty] = useState(false);
     const confirmation = useRef<{destroy(): void}>();
@@ -23,6 +26,7 @@ export function LearningEditorModal<T extends object>(props: Props<T>): JSX.Elem
         confirmation.current = Modal.confirm({title: 'Закрыть без сохранения?', content: 'Несохранённый текст останется только в этой форме.', okText: 'Закрыть', cancelText: 'Продолжить редактирование', onOk: props.onClose});
     };
     const submit = async (value: T): Promise<void> => {
+        if (!availability.enabled) return;
         if (props.state.busy || props.state.unconfirmed || props.state.conflict && revision !== props.currentRevision) return;
         if (await props.onSubmit(value, revision)) props.onClose();
     };
@@ -36,7 +40,7 @@ export function LearningEditorModal<T extends object>(props: Props<T>): JSX.Elem
         <Form form={form} layout="vertical" initialValues={props.initialValues} disabled={props.state.busy || props.state.unconfirmed} onValuesChange={() => setDirty(true)} onFinish={value => {void submit(value);}}>
             {props.children}
             <div className="learning-editor__actions"><Button disabled={props.state.busy} onClick={close}>{props.state.unconfirmed ? 'Закрыть и проверить результат' : 'Отмена'}</Button><Space wrap>
-                <Button type="primary" htmlType="submit" loading={props.state.busy} disabled={props.state.unconfirmed || props.state.conflict && revision !== props.currentRevision}>{props.submitText}</Button>
+                <FeatureButton features={props.recovery ? [] : ['project_learning']} type="primary" htmlType="submit" loading={props.state.busy} disabled={props.state.unconfirmed || props.state.conflict && revision !== props.currentRevision}>{props.submitText}</FeatureButton>
             </Space></div>
         </Form>
     </Modal>;

@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Alert,Button,Descriptions,Empty,Space,Spin,Tag,Timeline,Typography} from 'antd';
 import {isAxiosError} from 'axios';
 import {useCallback,useEffect,useRef,useState} from 'react';
@@ -36,7 +37,7 @@ export function RequestDetails({id,projects,onClose,onChanged}:IProps):JSX.Eleme
     const denied=():void=>{setRequest(null);setEditing(null);setEditingOpen(false);void refresh();};
     const saved=():void=>{setEditing(null);setEditingOpen(false);void refresh();onChanged();};
     return <AccessibleDrawer open title={request?'Заявка: '+request.title:'Заявка'} width="min(720px, 100vw)" onClose={()=>{if(!busy)onClose();}} closable={!busy} maskClosable={!busy} keyboard={!busy}>
-        <Space className="catalog-requests__detail-tools" wrap><Button loading={loading} disabled={busy} onClick={()=>{void refresh();}}>Обновить заявку</Button>{(request?.permissions.canEdit||editing)&&<Button disabled={loading||!!error||busy} onClick={()=>{if(!editing&&request)setEditing(request);setEditingOpen(true);}}>{editing&&!editingOpen?'Открыть черновик изменений':'Редактировать заявку'}</Button>}</Space>
+        <Space className="catalog-requests__detail-tools" wrap><Button loading={loading} disabled={busy} onClick={()=>{void refresh();}}>Обновить заявку</Button>{(request?.permissions.canEdit||editing)&&<FeatureButton features={['catalog_requests']} disabled={loading||!!error||busy} onClick={()=>{if(!editing&&request)setEditing(request);setEditingOpen(true);}}>{editing&&!editingOpen?'Открыть черновик изменений':'Редактировать заявку'}</FeatureButton>}</Space>
         {error&&<Alert role="alert" showIcon type="error" message={request?'Не удалось обновить заявку — показаны предыдущие данные':'Заявка недоступна'} description={error}/>}
         {loading&&!request?<Spin tip="Загружаем заявку…"/>:request?<>
             <Space wrap><Tag color={requestStates[request.status].color}>{requestStates[request.status].label}</Tag><Tag>{requestAssetLabel(request.assetType)}</Tag><Typography.Text>{requestKindLabel(request.kind)}</Typography.Text></Space>

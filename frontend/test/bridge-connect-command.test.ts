@@ -8,22 +8,21 @@ import { bridgeInstallerCommand, installedBridgeCommand } from '../src/features/
 describe('Подключение установленного моста без повторной установки', () => {
     it.each([false, true])('Формирует команду для текущей площадки и reconnect=%s', reconnect => {
         const command = installedBridgeCommand('https://panel.example.test:8443/projects?tab=local', false, reconnect);
-        expect(command).toContain('https://panel.example.test:8443');
-        expect(command).toContain('NEUROCENTER_URL');
-        expect(command).toContain('bin/node');
-        expect(command).toContain('dist/index.js');
-        expect(command).toContain(reconnect ? '--reconnect-open' : '--connect-open');
+        expect(command).toContain('neurocenter-bridge');
+        expect(command).toContain('connect --open');
+        expect(command).not.toMatch(/NEUROCENTER_URL|INSTALL_DIR|bin\/node|dist\/index/);
+        expect(command.includes('--reconnect')).toBe(reconnect);
         expect(command).not.toMatch(/curl|wget|install\.(?:sh|ps1)|--init|npm\s|npx\s/);
         expect(command).not.toContain('projects?tab=local');
     });
 
     it('Windows использует установленный автономный Node и браузерное подтверждение', () => {
         const command = installedBridgeCommand('http://127.0.0.1:5173', true, true);
-        expect(command).toContain('$env:NEUROCENTER_URL');
+        expect(command).not.toContain('NEUROCENTER_URL');
         expect(command).toContain('$env:USERPROFILE');
-        expect(command).toContain('node.exe');
-        expect(command).toMatch(/dist[/\\]index\.js/);
-        expect(command).toContain('--reconnect-open');
+        expect(command).toContain('neurocenter-bridge.cmd');
+        expect(command).toContain('connect --open --reconnect');
+        expect(command).not.toContain('dist/index.js');
         expect(command).not.toMatch(/Invoke-WebRequest|\birm\b|\biex\b|--init|install\.ps1/);
     });
 
@@ -35,10 +34,8 @@ describe('Подключение установленного моста без 
         const temporary = await mkdtemp(path.join(os.tmpdir(), 'neurocenter-existing-bridge-'));
         try {
             const install = path.join(temporary, "мост с 'кавычкой' и пробелами");
-            await mkdir(path.join(install, 'bin'), { recursive: true });
-            await mkdir(path.join(install, 'dist'));
-            await writeFile(path.join(install, 'bin/node'), '#!/bin/sh\nprintf \'%s\\n\' "$NEUROCENTER_URL" "$@"\n', { mode: 0o755 });
-            await writeFile(path.join(install, 'dist/index.js'), '// Собственный тестовый файл, не код пользователя.\n');
+            await mkdir(path.join(install,'.local/bin'),{recursive:true});
+            await writeFile(path.join(install,'.local/bin/neurocenter-bridge'),'#!/bin/sh\nprintf \'%s\\n\' "$@"\n',{mode:0o755});
             for (const [address, reconnect] of [
                 ['https://owner:secret@panel.example.test:8443/path?x=$(false)#fragment', false],
                 ['https://owner:secret@panel.example.test:8443/path?x=$(false)#fragment', true],
@@ -46,13 +43,12 @@ describe('Подключение установленного моста без 
             ] as const) {
                 const command = installedBridgeCommand(address, false, reconnect);
                 const result = spawnSync('/bin/bash', ['-c', command], {
-                    env: { ...process.env, INSTALL_DIR: install, NEUROCENTER_URL: 'https://other.example.test' },
+                    env: { ...process.env, HOME: install, PATH: '/usr/bin:/bin' },
                     encoding: 'utf8', timeout: 5000,
                 });
                 expect(result.status, result.stderr).toBe(0);
                 expect(result.stdout.trim().split('\n')).toEqual([
-                    new URL(address).origin, path.join(install, 'dist/index.js'),
-                    reconnect ? '--reconnect-open' : '--connect-open',
+                    'connect','--open',...(reconnect?['--reconnect']:[]),
                 ]);
                 expect(command).not.toContain('secret');
                 if (address.includes('@')) { expect(command).not.toContain('$(false)'); }

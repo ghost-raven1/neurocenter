@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import {createElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,afterEach,describe,expect,it,vi} from 'vitest';

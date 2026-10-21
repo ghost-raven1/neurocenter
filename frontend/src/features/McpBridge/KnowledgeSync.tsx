@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Space, Typography } from 'antd';
 import { useEffect, useRef, useState, type FC } from 'react';
 import { Link } from 'react-router-dom';
@@ -146,7 +147,7 @@ export const KnowledgeSync: FC<{
                 >
                     Скачать в проект через мост
                 </Button>
-                <Button
+                <FeatureButton features={['rag_sync','computer_connections']}
                     disabled={!!bridgeError || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
                     title={bridgeError || undefined}
                     onClick={() => {
@@ -154,7 +155,7 @@ export const KnowledgeSync: FC<{
                     }}
                 >
                     Синхронизировать с сервером
-                </Button>
+                </FeatureButton>
             </Space>
             {restoreError && <Typography.Text type="secondary">{restoreError}</Typography.Text>}
             {bridge.device && bridge.devicesReady && !binding && (

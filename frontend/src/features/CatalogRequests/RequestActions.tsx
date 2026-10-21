@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import {Alert,Button,Form,Input,Modal,Popconfirm,Space} from 'antd';
 import {isAxiosError} from 'axios';
 import {useId,useRef,useState} from 'react';
@@ -21,7 +22,9 @@ export function RequestActions({request,disabled,onSaved,onRefresh,onBusyChange,
     const formId=useId();
     const [dialog,setDialog]=useState<{action:IRequestAction;revision:number}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[unconfirmed,setUnconfirmed]=useState(false),[conflict,setConflict]=useState(false);
     const lock=useRef(false),keys=useRef(createRequestKeys()),pending=useRef<IIntent>(),lastAction=useRef<IRequestAction>();
+    const availability = useFeatureAvailability('catalog_requests');
     const execute=async(input:IRequestMutation,revision=request.revision):Promise<void>=>{
+        if (!availability.enabled && input.action !== 'cancel' && !pending.current) return;
         const owns=captureOwner();if(!owns()||lock.current||disabled)return;
         const intent=pending.current??{input,revision,key:keys.current.forIntent(request.id,{input,revision})};
         pending.current=intent;lock.current=true;setBusy(true);onBusyChange?.(true);setError('');setConflict(false);
@@ -50,11 +53,11 @@ export function RequestActions({request,disabled,onSaved,onRefresh,onBusyChange,
     const failure=<>{error&&<Alert role="alert" type="error" showIcon message={error}/>} {conflict&&<Alert type="warning" showIcon message="Заявка уже изменилась" description="Комментарий сохранён. Проверьте актуальную заявку, затем повторно выберите действие." action={<Button disabled={busy} onClick={()=>{setDialog(null);void onRefresh();}}>Проверить актуальную заявку</Button>}/>}</>;
     return <div className="catalog-requests__actions">
         <Space wrap>
-            {request.permissions.canResubmit&&<Button type="primary" disabled={frozen} onClick={()=>{void execute({action:'resubmit'});}}>Отправить на рассмотрение</Button>}
-            {request.permissions.canReview&&request.status==='submitted'&&<Button type="primary" disabled={frozen} onClick={()=>{void execute({action:'start'});}}>Взять в работу</Button>}
-            {request.permissions.canReview&&request.status==='in_progress'&&<Button type="primary" disabled={frozen} onClick={()=>open('complete')}>Завершить</Button>}
-            {request.permissions.canReview&&request.status!=='needs_info'&&<Button disabled={frozen} onClick={()=>open('needs_info')}>Запросить уточнение</Button>}
-            {request.permissions.canReview&&<Button danger disabled={frozen} onClick={()=>open('reject')}>Отклонить</Button>}
+            {request.permissions.canResubmit&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>{void execute({action:'resubmit'});}}>Отправить на рассмотрение</FeatureButton>}
+            {request.permissions.canReview&&request.status==='submitted'&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>{void execute({action:'start'});}}>Взять в работу</FeatureButton>}
+            {request.permissions.canReview&&request.status==='in_progress'&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>open('complete')}>Завершить</FeatureButton>}
+            {request.permissions.canReview&&request.status!=='needs_info'&&<FeatureButton features={['catalog_requests']} disabled={frozen} onClick={()=>open('needs_info')}>Запросить уточнение</FeatureButton>}
+            {request.permissions.canReview&&<FeatureButton features={['catalog_requests']} danger disabled={frozen} onClick={()=>open('reject')}>Отклонить</FeatureButton>}
             {request.permissions.canCancel&&<Popconfirm title="Отменить эту заявку? История сохранится." onConfirm={()=>execute({action:'cancel'})} disabled={frozen} okText="Отменить заявку" cancelText="Оставить"><Button disabled={frozen}>Отменить заявку</Button></Popconfirm>}
         </Space>
         {!dialog&&failure}
@@ -65,7 +68,7 @@ export function RequestActions({request,disabled,onSaved,onRefresh,onBusyChange,
                 {dialog?.action==='complete'&&request.kind!=='issue'&&<Form.Item name="targetId" label="Карточка результата" rules={[{required:true,message:'Выберите проверенную карточку результата'}]}><RequestTargetPicker assetType={request.assetType} projectId={request.projectId} initial={request.target} disabled={frozen}/></Form.Item>}
                 {failure}
                 {unconfirmed&&<Alert type="warning" showIcon message="Повторите прежнее действие для проверки результата. Поля до подтверждения заблокированы."/>}
-                <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={()=>setDialog(null)}>Закрыть</Button><Button type="primary" disabled={busy||!!disabled} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void execute(pending.current.input,pending.current.revision);}else form.submit();}}>{unconfirmed?'Повторить действие':dialog?labels[dialog.action]:'Сохранить'}</Button></Space>
+                <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={()=>setDialog(null)}>Закрыть</Button><FeatureButton features={unconfirmed ? [] : ['catalog_requests']} type="primary" disabled={busy||!!disabled} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void execute(pending.current.input,pending.current.revision);}else form.submit();}}>{unconfirmed?'Повторить действие':dialog?labels[dialog.action]:'Сохранить'}</FeatureButton></Space>
             </Form>
         </Modal>
     </div>;

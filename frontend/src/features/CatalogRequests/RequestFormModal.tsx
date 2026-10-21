@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import {Alert,Button,Form,Input,Modal,Select,Space,Typography} from 'antd';
 import {isAxiosError} from 'axios';
 import {useEffect,useId,useRef,useState} from 'react';
@@ -50,7 +51,9 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
         }catch(cause){setStorageError(true);setError(errorMessage(cause,'Не удалось проверить предыдущую отправку.'));}
     };
     useEffect(()=>{if(open)restore();},[open,scope,storageRetry]);
+    const availability = useFeatureAvailability('catalog_requests');
     const submit=async(values:IValues):Promise<void>=>{
+        if (!availability.enabled && !pending.current) return;
         const owns=captureOwner();if(!owns()||lock.current||storageError||conflicted)return;
         if(!request&&!pending.current){try{if(readPendingCreation(scope)){restore();return;}}catch(cause){setStorageError(true);setError(errorMessage(cause,'Не удалось проверить предыдущую отправку.'));return;}}
         try{
@@ -96,7 +99,7 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
             {storageError&&<Alert type="warning" showIcon message="Новая отправка приостановлена" description="Предыдущая заявка могла быть принята. Сначала проверьте сохранённый запрос и список своих заявок." action={<Button disabled={busy} onClick={()=>setStorageRetry(value=>value+1)}>Повторить проверку отправки</Button>}/>}
             {unconfirmed&&<Alert type="warning" showIcon message="Подтверждение не получено" description="Повторите отправку: используется тот же запрос, поэтому вторая заявка не создаётся. До подтверждения его поля заблокированы."/>}
             {request&&<Typography.Paragraph type="secondary">Сохранение уточнения не отправляет заявку повторно. После проверки нажмите «Отправить на рассмотрение» в её карточке.</Typography.Paragraph>}
-            <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={onClose}>Закрыть</Button><Button type="primary" disabled={busy||storageError||conflicted} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void submit(form.getFieldsValue(true));}else form.submit();}}>{unconfirmed?'Проверить / повторить предыдущую отправку':request?'Сохранить изменения':'Отправить заявку'}</Button></Space>
+            <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={onClose}>Закрыть</Button><FeatureButton features={unconfirmed ? [] : ['catalog_requests']} type="primary" disabled={busy||storageError||conflicted} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void submit(form.getFieldsValue(true));}else form.submit();}}>{unconfirmed?'Проверить / повторить предыдущую отправку':request?'Сохранить изменения':'Отправить заявку'}</FeatureButton></Space>
         </Form>
     </Modal>;
 }

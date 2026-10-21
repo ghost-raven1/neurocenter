@@ -16,7 +16,7 @@ const descriptions: Record<Action, string> = {
 
 export function LearningCandidateActionModal(props: Props): JSX.Element {
     return <LearningEditorModal<Values> title={labels[props.action]} submitText={labels[props.action]} currentRevision={props.revision} state={props.state} onClose={props.onClose}
-        initialValues={{reason: '', confirmed: false}} description={descriptions[props.action]}
+        initialValues={{reason: '', confirmed: false}} description={descriptions[props.action]} recovery={props.action === 'revoke'}
         onSubmit={({reason}, revision) => props.onSubmit({kind: props.action, candidateId: props.candidate.id, value: {reason}}, revision)}>
         <Typography.Paragraph><Typography.Text strong>{props.candidate.title}</Typography.Text> <Tag>v{props.candidate.version}</Tag><Typography.Text code>{props.candidate.key}</Typography.Text></Typography.Paragraph>
         <div className="project-learning__text project-learning__preview">{props.candidate.content}</div>

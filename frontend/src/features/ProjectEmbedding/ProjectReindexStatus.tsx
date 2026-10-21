@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Alert,Button,Progress,Space,Typography} from 'antd';
 import type {useProjectReindex} from './useProjectReindex';
 
@@ -17,9 +18,9 @@ export function ProjectReindexStatus({state,canManage}:IProps):JSX.Element|null{
                 {confirm&&<Typography.Text>Будут заново вычислены векторы для {plan.data.rowCount} фрагментов. Оценка дополнительного места: {(plan.data.requiredBytes/1024**2).toFixed(1)} МиБ. Прежнее поколение сохранится.</Typography.Text>}
                 {state.pending&&<Progress percent={plan.state==='applied'&&plan.local?plan.local.percent??0:plan.progress} size="small" status="active"/>}
                 {canManage&&<Space wrap>
-                    {confirm&&<Button type="primary" loading={state.busy} onClick={()=>{void state.start();}}>Перестроить и подключить</Button>}
-                    {localFailed&&<Button loading={state.busy} onClick={()=>{void state.retryLocal();}}>Повторить подключение компьютера</Button>}
-                    {plan.state==='failed'&&<Button loading={state.busy} onClick={()=>{void state.retry();}}>Повторить</Button>}
+                    {confirm&&<FeatureButton features={['rag_sync','model_hosting']} type="primary" loading={state.busy} onClick={()=>{void state.start();}}>Перестроить и подключить</FeatureButton>}
+                    {localFailed&&<FeatureButton features={['rag_sync','model_hosting']} loading={state.busy} onClick={()=>{void state.retryLocal();}}>Повторить подключение компьютера</FeatureButton>}
+                    {plan.state==='failed'&&<FeatureButton features={['rag_sync','model_hosting']} loading={state.busy} onClick={()=>{void state.retry();}}>Повторить</FeatureButton>}
                     {!['applied','cancelled','cancelling'].includes(plan.state)&&<Button disabled={state.busy} onClick={()=>{void state.cancel();}}>Отменить</Button>}
                 </Space>}
             </Space>}/>}

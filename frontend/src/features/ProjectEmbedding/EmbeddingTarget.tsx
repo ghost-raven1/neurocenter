@@ -24,9 +24,9 @@ export function useEmbeddingTarget(projectId:string|undefined){
     const value:IReindexConnectionTarget|undefined=mode==='computer'&&!reason&&item&&device&&binding?{deviceId:device.id,assetId:item.assetId,assetKind:item.assetKind as 'mcp'|'plugin',version:item.version,expectedManifest:item.manifest,expectedBindingId:binding.bindingId!,expectedInstanceId:binding.instanceId!}:undefined;
     return {bridge,device,binding,item,choices,installation,reason,value,mode,setMode,blocked:mode==='computer'&&!value};
 }
-export function EmbeddingTargetFields({target,disabled=false}:{target:ReturnType<typeof useEmbeddingTarget>;disabled?:boolean}){
+export function EmbeddingTargetFields({target,disabled=false,showTitle=true}:{target:ReturnType<typeof useEmbeddingTarget>;disabled?:boolean;showTitle?:boolean}){
     return <Space direction="vertical" size={8} style={{width:'100%'}}>
-        <Typography.Text strong>Куда подключить модель</Typography.Text>
+        {showTitle&&<Typography.Text strong>Куда подключить модель</Typography.Text>}
         <Select aria-label="Область подключения модели" value={target.mode} disabled={disabled} onChange={target.setMode} options={[{value:'computer',label:'Сервер и OpenCodeRAG на компьютере'},{value:'server',label:'Только серверная база знаний'}]}/>
         {target.mode==='computer'&&<Select aria-label="Компьютер для новой модели" value={target.device?.id} placeholder="Выберите компьютер" disabled={disabled} onChange={target.bridge.choose} options={target.bridge.devices.map(value=>({value:value.id,label:value.name}))}/>}
         {target.mode==='computer'&&target.choices.length>1&&<Select aria-label="Установка для новой модели" value={target.item&&embeddingInstallationKey(target.item)} placeholder="Выберите установку OpenCodeRAG" disabled={disabled} onChange={target.installation.choose} options={target.choices.map(value=>({value:embeddingInstallationKey(value),label:`${value.name} · ${value.assetKind==='mcp'?'MCP':'плагин'} · ${value.version}`}))}/>}

@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Modal, Space, Typography } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bridgeApi, type IBridgeInstallation, type IInstallPlan } from './api';
@@ -66,12 +67,12 @@ export function AdoptInstallationModal({bridge,canManage,inventory,inventoryJobI
             <Typography.Text code className="local-operation__hash">{entry.path}</Typography.Text>
             <Alert type="info" showIcon message="Выберите точный одобренный инструмент" description="Мост проверит существующие файлы и подключения. Принимаются только совпадающие канонические пути; содержимое и конфигурация не переносятся и не заменяются." />
             {!plan && <ApprovedProjectTarget projectId={inventory.projectId} kind={entry.kind} catalog={catalog} disabled={locked || !!reason} onChange={choose} />}
-            {!plan && <Button type="primary" disabled={!approved || !!reason || locked} loading={locked} onClick={() => { void prepare(); }}>Проверить возможность принятия</Button>}
+            {!plan && <FeatureButton features={['local_changes']} type="primary" disabled={!approved || !!reason || locked} loading={locked} onClick={() => { void prepare(); }}>Проверить возможность принятия</FeatureButton>}
             {plan && <><LocalChangePreview plan={plan} />
                 <Typography.Paragraph>Изменяются только проверенные метаданные управления. Файлы инструмента и действующие подключения OpenCode сохранятся. Запуск не выполняется.</Typography.Paragraph>
                 {!applied && <><Checkbox checked={confirmed} disabled={locked || expired || !valid || !!reason} onChange={event => setConfirmed(event.target.checked)}>Подтверждаю принятие этого точного инструмента под управление</Checkbox>
                     <Space wrap><Button disabled={locked} onClick={() => { setPlan(undefined); setConfirmed(false); }}>Изменить выбор</Button>
-                        <Button type="primary" disabled={!confirmed || !valid || expired || locked || !!reason} onClick={() => { void apply(); }}>Принять под управление</Button></Space></>}
+                        <FeatureButton features={['local_changes']} type="primary" disabled={!confirmed || !valid || expired || locked || !!reason} onClick={() => { void apply(); }}>Принять под управление</FeatureButton></Space></>}
             </>}
             {applied && <Alert type="success" showIcon message="Инструмент принят под управление" description="Повторите сверку файлов. Диагностика запуска выполняется отдельно, с новым согласием." />}
             {expired && <Alert type="warning" message="Подготовка устарела. Выберите инструмент и выполните проверку заново." />}

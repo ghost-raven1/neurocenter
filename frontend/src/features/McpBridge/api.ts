@@ -125,7 +125,9 @@ export type IBridgeJobInput = IBridgeJobInputBase & (
         assetId: string; assetKind: 'mcp'; version: number; expectedManifest: string; expectedBindingId: string;
         configurationPreparationJobId?: string; expectedConfigurationSchemaDigest?: string}
     | {kind: 'open-local-recovery-folder'; projectId: string; expectedBindingId: string}
-    | {kind: 'scan-project-inventory' | 'scan-opencode-models'; projectId: string; expectedBindingId: string}
+    | {kind: 'scan-project-inventory'; projectId: string; expectedBindingId: string}
+    | {kind: 'scan-opencode-models'; scope:'global'; projectId?:never; expectedBindingId?:never}
+    | {kind: 'scan-opencode-models'; scope:'project'; projectId:string; expectedBindingId:string}
     | {kind: 'prepare-adopt-installation'; projectId: string; assetId: string; assetKind: string; version: number;
         expectedBindingId: string; expectedManifest: string; planId: string; planRevision: number;
         inventoryJobId: string; scanId: string; candidateId: string; expectedInventoryDigest: string}

@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Button, Collapse, Empty, Radio, Space, Tag, Typography} from 'antd';
 import {useState} from 'react';
 import {formatDate} from '../../common/utils/format';
@@ -19,11 +20,11 @@ export function LearningCandidateList(props: Props): JSX.Element {
                 {item.reason && <Typography.Paragraph className="project-learning__text">Решение: {item.reason}</Typography.Paragraph>}
             </Collapse.Panel></Collapse>
             {props.canApprove && <Space wrap className="learning-candidate__actions">
-                {item.status === 'proposed' && <><Button type="primary" disabled={props.blocked} onClick={() => props.onAction(item.id, 'approve')}>Проверить и одобрить</Button><Button disabled={props.blocked} onClick={() => props.onAction(item.id, 'reject')}>Отклонить</Button></>}
+                {item.status === 'proposed' && <><FeatureButton features={['project_learning']} type="primary" disabled={props.blocked} onClick={() => props.onAction(item.id, 'approve')}>Проверить и одобрить</FeatureButton><FeatureButton features={['project_learning']} disabled={props.blocked} onClick={() => props.onAction(item.id, 'reject')}>Отклонить</FeatureButton></>}
                 {activeLearning(item) && <Button danger disabled={props.blocked} onClick={() => props.onAction(item.id, 'revoke')}>Отозвать</Button>}
-                {item.status === 'approved' && !item.active && <Button disabled={props.blocked} onClick={() => props.onAction(item.id, 'activate')}>Вернуть эту версию</Button>}
+                {item.status === 'approved' && !item.active && <FeatureButton features={['project_learning']} disabled={props.blocked} onClick={() => props.onAction(item.id, 'activate')}>Вернуть эту версию</FeatureButton>}
             </Space>}
-            {props.canRecord && <Button className="learning-candidate__version" disabled={props.blocked} onClick={() => props.onVersion?.(item)}>Подготовить новую версию</Button>}
+            {props.canRecord && <FeatureButton features={['project_learning']} className="learning-candidate__version" disabled={props.blocked} onClick={() => props.onVersion?.(item)}>Подготовить новую версию</FeatureButton>}
         </article>)}</div>}
     </>;
 }

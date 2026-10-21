@@ -1,3 +1,4 @@
+import { FeatureButton } from '../../../features/FeatureFlags/FeatureAvailability';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Typography } from 'antd';
 import { useEffect, type FC } from 'react';
@@ -30,14 +31,14 @@ export const LocalProjectsFolder: FC<IProps> = ({ project, canManage = false, on
         onBindings(Object.fromEntries((device?.report.bindings || []).filter(item => item.valid !== false).map(item => [item.projectId,{folderName:item.folderName}])));
     }, [device?.id,JSON.stringify(device?.report.bindings)]);
     return <>
-        <Card className="local-projects-folder" title="Папка проектов на моём компьютере" style={{marginBottom:20}}>
-            <BridgeConnection bridge={bridge} />
-            <Typography.Paragraph style={{marginTop:12}}>У каждого участника своя общая папка. Свяжите её подкаталоги с серверными проектами — названия могут отличаться.</Typography.Paragraph>
-            <Button icon={<FolderOpenOutlined />} disabled={!!blocker || operation.busy || !!pending} title={blocker || undefined}
+        <Card className="local-projects-folder" title="Компьютер и папка проектов" style={{marginBottom:20}} extra={<FeatureButton features={['computer_connections']} size="small" icon={<FolderOpenOutlined />} disabled={!!blocker || operation.busy || !!pending} title={blocker || undefined}
                 loading={operation.busy} onClick={() => {
                     if (bridge.device && !blocker && !pending) { void operation.submit({kind:'choose-root',deviceId:bridge.device.id}); }
-                }}>{device?.report.root ? 'Выбрать другую папку' : 'Выбрать папку через мост'}</Button>
-            {latest && <Alert style={{marginTop:12}} role="status" showIcon type={latest.state === 'failed' ? 'error' : latest.state === 'succeeded' ? 'success' : 'info'}
+                }}>{device?.report.root ? 'Изменить папку' : 'Выбрать папку'}</FeatureButton>}>
+            <BridgeConnection bridge={bridge} compact />
+            {device?.report.root&&<Typography.Paragraph className="local-projects-folder__path" title={device.report.root}><FolderOpenOutlined/> {device.report.root}</Typography.Paragraph>}
+            <details className="local-projects-folder__help"><summary>Как связать проекты с папками</summary><Typography.Paragraph type="secondary">У каждого участника своя папка проектов. Нажмите «Связать» в строке проекта и выберите её подкаталог. Названия папки и серверного проекта могут отличаться.</Typography.Paragraph></details>
+            {latest && latest.state!=='succeeded' && <Alert style={{marginTop:12}} role="status" showIcon type={latest.state === 'failed' ? 'error' : 'info'}
                 message={isPending(latest) ? latest.message : 'Последний выбор папки'}
                 description={!isPending(latest) ? <><time dateTime={latest.updatedAt}>{formatDate(latest.updatedAt)}</time><div>{latest.message}</div></>
                     : latest.state === 'running' && latest.kind === 'choose-root' ? 'Завершите выбор папки в системном окне на выбранном компьютере.' : undefined}

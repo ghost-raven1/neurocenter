@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,7 +41,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
     });
     it('Выбор общей папки остаётся доступен',()=>{
         const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
-        expect(buttonAttributes(html,'Выбрать другую папку')).not.toContain('disabled');
+        expect(buttonAttributes(html,'Изменить папку')).not.toContain('disabled');
         expect(html).toContain('Обновите мост');
     });
     it('Синхронизации базы знаний требуют отдельного контракта проверки индекса',()=>{
@@ -77,7 +78,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
         fixture.bridge.device.role='Наблюдатель';
         const folders=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
         const sync=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'project',canWrite:true}));
-        expect(buttonAttributes(folders,'Выбрать другую папку')).toContain('disabled');
+        expect(buttonAttributes(folders,'Изменить папку')).toContain('disabled');
         expect(buttonAttributes(sync,'Скачать в проект через мост')).toContain('disabled');
     });
     it('Отсутствие прав проекта сохраняет запрет синхронизации независимо от версии MCP',()=>{

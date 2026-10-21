@@ -1,6 +1,10 @@
 .local-projects-folder {
+    .ant-card-body {padding:16px;}
     .ant-card-head-wrapper {flex-wrap:wrap;gap:8px;padding:12px 0;}
     .ant-card-head-title {white-space:normal;padding:0;}
     .ant-card-extra {padding:0;}
+    &__path {margin:10px 0 0!important;color:#617387;font-size:12px;overflow-wrap:anywhere;}
+    &__help {margin-top:10px;font-size:12px;color:#617387;summary {cursor:pointer;width:fit-content;} summary:focus-visible {outline:2px solid @brand-focus;outline-offset:3px;} .ant-typography {margin:8px 0 0;max-width:680px;}}
     @media (max-width:600px) {.ant-card-extra {margin-left:0;width:100%;} .ant-card-extra .ant-btn {width:100%;}}
 }
+.project-folder {display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;span {min-width:0;overflow-wrap:anywhere;} .ant-btn-link {height:auto;padding:0;font-size:12px;} &_unbound {color:#617387;font-size:12px;}}

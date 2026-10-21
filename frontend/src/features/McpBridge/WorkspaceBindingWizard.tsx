@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Alert,Button,Collapse,Modal,Select,Space,Typography} from 'antd';
 import type {useBridge} from './useBridge';
 import type {TWorkspaceBindingMode} from './operationTypes';
@@ -42,10 +43,10 @@ export function WorkspaceBindingWizard({bridge,project,canManage=false,onClose}:
             {(state.retryPrepare||state.retryCommit)&&<Alert type="warning" showIcon message="Ответ на отправленный запрос ещё не подтверждён"
                 description="Повтор использует исходный ключ и получает результат прежнего запроса, не создавая второе действие."/>}
             <Space wrap>
-                {state.retryCommit?<Button type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>Проверить отправленную привязку</Button>
-                    :ready?<Button type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>{labels[state.mode]}</Button>
-                        :<Button type="primary" disabled={!!state.blocker||!!state.sourceError||!state.folderName||state.locked||!!state.otherPending}
-                            loading={state.locked} onClick={()=>{void state.prepare();}}>{checkLabel}</Button>}
+                {state.retryCommit?<FeatureButton features={state.retryPrepare || state.retryCommit ? [] : ['computer_connections']} type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>Проверить отправленную привязку</FeatureButton>
+                    :ready?<FeatureButton features={state.retryPrepare || state.retryCommit ? [] : ['computer_connections']} type="primary" disabled={!!state.blocker||!!state.otherPending||state.locked} loading={state.busy} onClick={()=>{void state.commit();}}>{labels[state.mode]}</FeatureButton>
+                        :<FeatureButton features={state.retryPrepare || state.retryCommit ? [] : ['computer_connections']} type="primary" disabled={!!state.blocker||!!state.sourceError||!state.folderName||state.locked||!!state.otherPending}
+                            loading={state.locked} onClick={()=>{void state.prepare();}}>{checkLabel}</FeatureButton>}
                 <Button disabled={state.busy} onClick={onClose}>Закрыть</Button>
             </Space>
             {state.stale&&<Alert type="warning" showIcon message={state.retryCommit

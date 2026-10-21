@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Progress, Select, Space, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { useBridge } from '../McpBridge/useBridge';
@@ -78,10 +79,10 @@ export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent,
     },[success,disabled,currentTarget,preferenceKey,onPreferRagUi,captureOwner]);
     return <Space direction="vertical" size={12}>
         {!success && <Checkbox checked={confirmed} disabled={blocked || retrying} onChange={event => setConfirmed(event.target.checked)}>{consent}</Checkbox>}
-        <Button type="primary" loading={operation.busy || isPending(job)} disabled={blocked || !confirmed || success}
+        <FeatureButton features={retrying ? [] : ['rag_sync','computer_connections','model_hosting']} type="primary" loading={operation.busy || isPending(job)} disabled={blocked || !confirmed || success}
             onClick={() => { if (captureOwner()() && !blocked && confirmed && !success) void operation.submit(input); }}>
             {retrying ? 'Проверить отправленное подключение' : 'Подключить модель к OpenCodeRAG'}
-        </Button>
+        </FeatureButton>
         {job && !success && <Alert role="status" showIcon type={job.state === 'failed' ? 'error' : 'info'} message={job.message}
             description={job.state === 'succeeded' ? 'Подключение не подтверждено для текущей модели. Обновите сведения и повторите проверку.' : undefined} />}
         {isPending(job) && <Progress percent={job?.percent} status="active" />}

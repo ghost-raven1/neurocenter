@@ -52,9 +52,10 @@ describe('Обновление уже подключённого моста', ()
         const html = setup();
         const button = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2].includes('Обновить мост'));
         expect(button).toBeUndefined();
-        expect(html).toContain('Подключение и обновление моста');
+        expect(html).toContain('Подключить другой компьютер или обновить мост');
+        expect(html).toContain('Источник и версии моста');
         expect(html).not.toContain('Подключить установленный мост');
-        expect(html).not.toContain('Подключить другой компьютер');
+        expect([...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].some(match=>match[1].includes('Подключить другой компьютер'))).toBe(false);
     });
     it('При обновлении объясняет сохранение подключения и повторную проверку версии', () => {
         fixture.bridge.device.report.capabilities = ['durable-completions', 'managed-installations'];

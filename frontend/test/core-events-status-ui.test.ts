@@ -29,6 +29,7 @@ vi.mock('../src/common/components/LazySection', () => ({ lazySection: () => () =
 vi.mock('../src/common/components/AccessibleDrawer', () => ({ default: ({ open, title, children }: { open: boolean; title: ReactNode; children?: ReactNode }) =>
     open ? createElement('section', { 'data-drawer': true }, title, children) : null }));
 vi.mock('../src/modules/Operations/OperationsButton', () => ({ default: () => null }));
+vi.mock('../src/features/ModelChat/ChatLauncher', () => ({ChatLauncher:()=>null}));
 vi.mock('../src/features/McpBridge/BridgePairing', () => ({ BridgePairing: () => null }));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => createElement('div', null, children);

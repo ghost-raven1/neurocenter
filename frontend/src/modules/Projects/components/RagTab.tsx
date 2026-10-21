@@ -39,14 +39,15 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
     const preferred=launcher.scope===scope?launcher.preferred:undefined;
 
     const load = useCallback(() => {
-        const request=++generation.current;
+        const request=++generation.current,owns=captureOwner();
+        const current=():boolean=>request===generation.current&&owns();
         setLoading(true);
         bffApi.getRagSummary(projectKey)
-            .then(value=>{if(request===generation.current){setSummary(value);setError('');}})
-            .catch(failure=>{if(request===generation.current){if(projectReadUnavailable(failure)){setSummary(null);}setError(errorMessage(failure,'Не удалось загрузить базу знаний.'));}})
-            .finally(() => {if(request===generation.current){setLoading(false);}});
-    }, [ projectKey ]);
-    useSectionUpdates(['knowledge'],load);
+            .then(value=>{if(current()){setSummary(value);setError('');}})
+            .catch(failure=>{if(current()){if(projectReadUnavailable(failure)){setSummary(null);}setError(errorMessage(failure,'Не удалось загрузить базу знаний.'));}})
+            .finally(() => {if(current()){setLoading(false);}});
+    }, [ projectKey,captureOwner ]);
+    useSectionUpdates(['knowledge','catalog','projects','access'],load);
 
     useEffect(() => {
         setSummary(null);setError('');load();return()=>{generation.current++;};
@@ -57,24 +58,18 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
 
     return (
         <div className="project-rag">
-            <Row className="project-rag__header" justify="space-between" align="middle" gutter={[ 8, 8 ]}>
-                <Col>
-                    <Text><b>Проект:</b> {projectKey}</Text>
-                </Col>
-                <Col>
-                    <Button type="link" size="small" onClick={load} loading={loading} style={{ padding: 0 }}>Обновить</Button>
-                </Col>
-            </Row>
+            <details className="project-rag__refresh"><summary>Обновление сведений</summary><Button type="link" size="small" onClick={load} loading={loading}>Обновить вручную</Button></details>
 
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
             <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} onPreferRagUi={preferRagUi} />
             <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
-                <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Выберите сервер и компьютер: Нейроцентр перестроит локальный индекс и синхронизирует его с сервером одним действием.</Paragraph>
+                <ol className="project-rag__steps"><li>Установите OpenCodeRAG в папку проекта.</li><li>Выберите и подключите модель проекта.</li><li>Дождитесь проверки индекса и синхронизации.</li></ol>
                 {canWrite ? <Space wrap>
                     <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
                     <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
                 </Space> : <Text type="secondary">Попросите разработчика или администратора проекта подготовить локальный индекс.</Text>}
-                <Paragraph type="secondary" className="project-rag__help">Прежний локальный индекс работает до проверки нового. Компьютер не в сети — действие дождётся моста в очереди. После завершения перезапустите OpenCode, чтобы открытая сессия использовала новое подключение. Установка файлов и диагностика запуска сами по себе не подтверждают готовность индекса.</Paragraph>
+                <details className="project-rag__help-details"><summary>Как проходит подготовка</summary><Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Выберите сервер и компьютер: Нейроцентр перестроит локальный индекс и синхронизирует его с сервером одним действием.</Paragraph>
+                    <Paragraph type="secondary">Прежний локальный индекс работает до проверки нового. Компьютер не в сети — действие дождётся моста в очереди. После завершения перезапустите OpenCode, чтобы открытая сессия использовала новое подключение. Установка файлов и диагностика запуска сами по себе не подтверждают готовность индекса.</Paragraph></details>
             </Card>
             <Spin spinning={loading}>
                 {summary ? (
@@ -126,7 +121,7 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
             </Spin>
             <Card size="small" title="Локальная база знаний через мост" className="project-rag__sync">
                 <KnowledgeSync projectId={projectKey} canWrite={canWrite} serverReady={serverState?.verified} connection preferred={preferred}/>
-                <Paragraph type="secondary" className="project-rag__help">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией. Перед восстановлением закройте OpenCode.</Paragraph>
+                <details className="project-rag__help-details"><summary>О синхронизации и восстановлении</summary><Paragraph type="secondary">Отправьте локальный индекс, чтобы знания о проекте были доступны команде. Скачивание заменяет локальный индекс серверной копией. Перед восстановлением закройте OpenCode.</Paragraph></details>
             </Card>
         </div>
     );

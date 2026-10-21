@@ -6,12 +6,14 @@ import type {RootState} from '../../store';
 import {errorMessage} from '../../common/utils/errorMessage';
 import {bridgeApi,type IBridgePair} from './api';
 import {waitForComputer} from './pairingProgress';
+import {FeatureAvailabilityNotice,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 
 type Phase='checking'|'review'|'approving'|'waiting'|'connected'|'error';
 
 /** Явное подтверждение, ожидание живого моста и переход к выбору папки в одном окне. */
 export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>{
     const location=useLocation();const history=useHistory();
+    const availability=useFeatureAvailability('computer_connections');
     const role=useSelector((state:RootState)=>state.userBlock.user?.activeRole);
     const code=new URLSearchParams(location.search).get('connect')||'';
     const [info,setInfo]=useState<IBridgePair>();const [phase,setPhase]=useState<Phase>('checking');
@@ -37,7 +39,7 @@ export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>
         history.replace(location.pathname+(params.size?'?'+params.toString():''));
     };
     const approve=async():Promise<void>=>{
-        if(phase!=='review'||!info||approving.current){return;}
+        if(phase!=='review'||!info||approving.current||!availability.enabled){return;}
         approving.current=true;
         setPhase('approving');setError('');
         try{await bridgeApi.approve(code);setPhase('waiting');}
@@ -53,8 +55,9 @@ export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>
     return <Modal open={!!code} title={phase==='connected'?'Компьютер подключён':'Подключение компьютера'}
         onCancel={close} onOk={next} cancelText={phase==='waiting'?'Закрыть':'Отмена'}
         okText={phase==='connected'?'Выбрать папку проектов':phase==='error'?'Вернуться к подключению':phase==='waiting'?(error?'Проверить снова':'Ждём ответ компьютера…'):'Подключить компьютер'}
-        okButtonProps={{disabled:busy||(phase==='waiting'&&!error),loading:phase==='approving'}}
+        okButtonProps={{disabled:busy||(phase==='waiting'&&!error)||phase==='review'&&!availability.enabled,loading:phase==='approving'}}
         closable={phase!=='approving'} maskClosable={phase!=='approving'} keyboard={phase!=='approving'}>
+        {phase==='review'&&<FeatureAvailabilityNotice features={['computer_connections']}/>}
         {phase==='checking'?<Space role="status"><Spin size="small"/>Проверяем ссылку подключения…</Space>:null}
         {info&&<>
             <Typography.Paragraph><Typography.Text strong>{info.name}</Typography.Text></Typography.Paragraph>

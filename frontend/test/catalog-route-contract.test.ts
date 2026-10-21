@@ -26,4 +26,8 @@ describe('Active catalog route contract',()=>{
     it('Catalog access still requires the server-provided route permission',()=>{
         const result=render('/store',['mcp-bundles']);expect(result.context.url).toBe('/not-allowed');expect(result.html).not.toContain('Каталог');
     });
+    it('Usage dashboard is registered and requires its current server permission',()=>{
+        expect(render('/model-usage',['model-usage']).html).toContain('Использование моделей');
+        expect(render('/model-usage',['store']).context.url).toBe('/not-allowed');
+    });
 });
