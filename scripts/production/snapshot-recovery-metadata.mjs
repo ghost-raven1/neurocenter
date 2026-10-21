@@ -18,26 +18,6 @@ export function snapshotBlobs(raw){
  const rows=raw.map(snapshotBlob).sort((a,b)=>Buffer.compare(Buffer.from(a.projectId),Buffer.from(b.projectId))||a.sha256.localeCompare(b.sha256)),seen=new Set();
  for(const row of rows){const key=row.projectId+'\0'+row.sha256;if(seen.has(key))throw new Error('Повтор блока полного снимка.');seen.add(key);}return rows;
 }
-/** pg_restore --data-only выводится как текст и разбирается; SQL из дампа здесь не выполняется. */
-export function snapshotRowsFromCopy(raw){
- if(typeof raw!=='string'||Buffer.byteLength(raw)>16*1024*1024)throw new Error('Опись блоков в дампе слишком велика.');
- const lines=raw.split(/\r?\n/);let columns=null,finished=false;const rows=[];
- const decode=value=>{
-  if(value==='\\N')return null;let output='';for(let index=0;index<value.length;index++){
-   if(value[index]!=='\\'){output+=value[index];continue;}const next=value[++index];if(next===undefined)throw new Error('Некорректный COPY escape.');
-   if(/[0-7]/.test(next)){const match=value.slice(index).match(/^[0-7]{1,3}/)[0];output+=String.fromCharCode(parseInt(match,8));index+=match.length-1;continue;}
-   output+=({'\\':'\\',t:'\t',n:'\n',r:'\r',b:'\b',f:'\f',v:'\v'}[next]??next);
-  }return output;
- };
- for(const line of lines){
-  const header=/^COPY public\.project_snapshot_blobs \(([^)]+)\) FROM stdin;$/.exec(line);
-  if(header){if(columns||finished)throw new Error('Повтор COPY блоков снимков.');columns=header[1].split(', ');if(columns.length>100||columns.some(name=>!/^[_a-z][_a-z0-9]*$/.test(name))||['project_id','sha256','bytes','storage_id','version_id'].some(name=>!columns.includes(name))||new Set(columns).size!==columns.length)throw new Error('Неизвестная схема блоков полного снимка.');continue;}
-  if(columns&&!finished){if(line==='\\.'){finished=true;continue;}const values=line.split('\t').map(decode);if(values.length!==columns.length)throw new Error('Неверное число COPY полей.');const row=Object.fromEntries(columns.map((name,index)=>[name,values[index]]));
-   if(typeof row.bytes!=='string'||!/^\d{1,9}$/.test(row.bytes))throw new Error('Некорректный COPY размер блока.');rows.push({projectId:row.project_id,sha256:row.sha256,bytes:Number(row.bytes),storageId:row.storage_id,versionId:row.version_id});if(rows.length>100000)throw new Error('Слишком много блоков снимков.');
-  }else if(/^INSERT INTO (?:public\.)?project_snapshot_blobs\b/.test(line))throw new Error('Дамп блоков требует штатный COPY формат.');
- }
- if(columns&&!finished||!columns&&/Data for Name: project_snapshot_blobs;/.test(raw))throw new Error('Дамп блоков снимков усечён или имеет неизвестный формат.');return snapshotBlobs(rows);
-}
 export async function readSnapshotBlobs(sql){
  const writes=(await sql('catalog',"SELECT to_regclass('public.project_snapshot_blob_writes') IS NOT NULL;")).trim();if(writes!=='f'&&(writes!=='t'||(await sql('catalog','SELECT count(*) FROM project_snapshot_blob_writes;')).trim()!=='0'))throw new Error('Есть незавершённая запись блока снимка. Дождитесь штатной очистки и повторите полную копию.');
  const exists=(await sql('catalog',"SELECT to_regclass('public.project_snapshot_blobs') IS NOT NULL;")).trim();if(exists==='f'){const refs=(await sql('catalog',"SELECT to_regclass('public.project_snapshot_blob_refs') IS NOT NULL;")).trim();if(refs!=='f'&&(refs!=='t'||(await sql('catalog',"SELECT count(*) FROM project_snapshot_blob_refs r JOIN project_snapshots s ON s.id=r.snapshot_id WHERE s.status IN ('VERIFYING','VERIFIED');")).trim()!=='0'))throw new Error('Ссылки полного снимка не имеют exact LIVE blob metadata и bytes.');return [];}

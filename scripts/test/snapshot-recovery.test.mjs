@@ -6,7 +6,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm,chmod,symlink,realpath} from 'node:f
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {generateKeyPairSync,createHash,sign} from 'node:crypto';
-import {snapshotBlob,snapshotBlobs,snapshotObjectFile,snapshotRowsFromCopy,assertSnapshotReferences,readSnapshotBlobs} from '../production/snapshot-recovery-metadata.mjs';
+import {snapshotBlob,snapshotBlobs,snapshotObjectFile,assertSnapshotReferences,readSnapshotBlobs} from '../production/snapshot-recovery-metadata.mjs';
 import {readSnapshotCopy} from '../production/snapshot-recovery-dump.mjs';
 import {snapshotRecoveryConfiguration,snapshotRecoveryFingerprint} from '../production/snapshot-recovery-config.mjs';
 import {exportSnapshotKeys,snapshotKeyMaterial,verifyBundleSnapshotKeys} from '../production/snapshot-recovery-keys.mjs';
@@ -44,13 +44,32 @@ test('V3 rejects absent/corrupt/extra object bytes, unsafe paths, unknown privat
  const keys={...value,snapshotObjects:{...value.snapshotObjects,keyFiles:['operatorsecrets/snapshot_signing_key']},entries:[...value.entries,{path:'operatorsecrets',type:'directory',mode:448},{path:'operatorsecrets/snapshot_signing_key',type:'file',mode:420,size:100,sha256:sha}]};assert.throws(()=>validateManifest(keys),/закрытую/);
  keys.entries.at(-1).mode=384;validateManifest(keys);keys.entries.push({path:'operatorsecrets/access_key',type:'file',mode:384,size:10,sha256:sha});assert.throws(()=>validateManifest(keys),/посторонних/);
 });
-test('COPY parser decodes PostgreSQL escaping and ignores future lifecycle columns while retaining exact identity',async()=>temporary(async root=>{
- const project="quote'\tline\nback\\slash",copy='COPY public.project_snapshot_blobs (project_id, sha256, bytes, storage_id, version_id, future_gc_state) FROM stdin;\n'+["quote'\\tline\\nback\\\\slash",sha,'3','s3:'+'b'.repeat(32),'version-1','retained'].join('\t')+'\n\\.\n';
- assert.equal(snapshotRowsFromCopy(copy)[0].projectId,project);const file=path.join(root,'copy');await writeFile(file,copy);assert.deepEqual(await readSnapshotCopy(file,'project_snapshot_blobs'),snapshotRowsFromCopy(copy));
- await writeFile(file,copy.replace('\\.\n',''));await assert.rejects(readSnapshotCopy(file,'project_snapshot_blobs'),/усечён/);
- assert.throws(()=>snapshotRowsFromCopy(copy.replace('version-1','\\N')),/точную/);
- assert.throws(()=>snapshotRowsFromCopy(copy.replace('\t3\t','\t\\N\t')),/размер/);
- await writeFile(file,copy.replace('\t3\t','\t\\N\t'));await assert.rejects(readSnapshotCopy(file,'project_snapshot_blobs'),/размер/);
+const copyHeader='COPY public.project_snapshot_blobs (project_id, sha256, bytes, storage_id, version_id, future_gc_state) FROM stdin;\n';
+const copyRow=['prj-1',sha,'3','s3:'+'b'.repeat(32),'version-1','retained'];
+const copyBytes=fields=>copyHeader+fields.join('\t')+'\n\\.\n';
+test('Streaming COPY parser decodes PostgreSQL escaping and ignores future lifecycle columns while retaining exact identity',async()=>temporary(async root=>{
+ const project="quote'\tline\nback\\slash",file=path.join(root,'copy');
+ await writeFile(file,copyBytes(["quote'\\tline\\nback\\\\slash",...copyRow.slice(1)]));
+ assert.deepEqual(await readSnapshotCopy(file,'project_snapshot_blobs'),[{...row(),projectId:project}]);
+ await writeFile(file,copyBytes(['\\141\\142\\143_日本語',...copyRow.slice(1)]));
+ assert.deepEqual(await readSnapshotCopy(file,'project_snapshot_blobs'),[{...row(),projectId:'abc_日本語'}]);
+}));
+for(const [name,fields,error] of [
+ ['null pinned S3 version',[...copyRow.slice(0,4),'\\N','retained'],/точную immutable version/],
+ ['null bytes',[...copyRow.slice(0,2),'\\N',...copyRow.slice(3)],/COPY размер/],
+ ['fractional bytes',[...copyRow.slice(0,2),'3.5',...copyRow.slice(3)],/COPY размер/],
+ ['null project',['\\N',...copyRow.slice(1)],/опись блоков/],
+ ['NUL escaped in a project',['prj-\\000',...copyRow.slice(1)],/опись блоков/],
+ ['unfinished escape',['prj-\\',...copyRow.slice(1)],/COPY escape/],
+])test('Streaming COPY parser refuses '+name,async()=>temporary(async root=>{
+ const file=path.join(root,'copy');await writeFile(file,copyBytes(fields));await assert.rejects(readSnapshotCopy(file,'project_snapshot_blobs'),error);
+}));
+for(const [name,copy,error] of [
+ ['missing terminator',copyBytes(copyRow).replace('\\.\n',''),/усечён/],
+ ['malformed terminator',copyBytes(copyRow).replace('\\.\n','\\. trailing\n'),/число COPY полей/],
+ ['repeated COPY section',copyBytes(copyRow)+copyBytes(copyRow),/Повтор COPY/],
+])test('Streaming COPY parser refuses '+name,async()=>temporary(async root=>{
+ const file=path.join(root,'copy');await writeFile(file,copy);await assert.rejects(readSnapshotCopy(file,'project_snapshot_blobs'),error);
 }));
 test('Private S3 config rejects symlinks, public credentials, source URL paths and fingerprints credential rotation',async()=>temporary(async root=>{
  await writeFile(path.join(root,'access'),'access',{mode:384});await writeFile(path.join(root,'secret'),'secret',{mode:384});const endpoint={endpoint:'https://objects.example.test',bucket:'snapshots-source',region:'us-east-1',accessKeyFile:'access',secretKeyFile:'secret'},file=path.join(root,'snapshot-recovery.json');await writeFile(file,JSON.stringify({source:endpoint}),{mode:384});
