@@ -20,5 +20,6 @@
     "tools:build": "node scripts/catalog-plugins/run.mjs build",
     "tools:publish": "node scripts/catalog-plugins/run.mjs publish",
     "tools:check": "node scripts/catalog-plugins/run.mjs check"
-  }
+  },
+  "version": "0.10.0"
 }
