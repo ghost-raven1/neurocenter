@@ -25,6 +25,30 @@ describe('Предпросмотр инструкции расширения', (
         },
     );
 
+    it('Примеры LSP разбираются как JSON и используют совместимые формы false/объект', () => {
+        const content = readFileSync(new URL('../src/modules/Start/docs/OPENCODE-LSP.md', import.meta.url), 'utf8');
+        const examples = [...content.matchAll(/```json\s*\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]) as Record<string, unknown>);
+        expect(examples.length).toBeGreaterThanOrEqual(3);
+        expect(examples.some(example => example.lsp === false)).toBe(true);
+        expect(examples.some(example => typeof example.lsp === 'object' && example.lsp !== null && Object.keys(example.lsp).length === 0)).toBe(true);
+        for (const { lsp } of examples) {
+            if (lsp === false) continue;
+            expect(lsp).toBeTypeOf('object');
+            expect(lsp).not.toBeNull();
+            expect(Array.isArray(lsp)).toBe(false);
+            for (const entry of Object.values(lsp as Record<string, Record<string, unknown>>)) {
+                if (entry.disabled === true) continue;
+                expect(Array.isArray(entry.command)).toBe(true);
+                expect((entry.command as unknown[]).length).toBeGreaterThan(0);
+                expect((entry.command as unknown[]).every(value => typeof value === 'string' && value.length > 0)).toBe(true);
+                if (entry.extensions !== undefined) {
+                    expect(Array.isArray(entry.extensions)).toBe(true);
+                    expect((entry.extensions as unknown[]).every(value => typeof value === 'string' && value.startsWith('.'))).toBe(true);
+                }
+            }
+        }
+    });
+
     it('Не исполняет HTML, не загружает внешние изображения и блокирует опасную ссылку', () => {
         const html = render('<script>alert("xss")</script>\n\n<img src="https://example.test/pixel" onerror="alert(1)">\n\n![Схема](https://example.test/image.png)\n\n[Опасная ссылка](javascript:alert%281%29)');
         expect(html).not.toContain('<script');
