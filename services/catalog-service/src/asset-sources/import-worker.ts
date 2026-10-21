@@ -96,7 +96,7 @@ export class AssetImportWorker {
                 await this.check(job,client,signal);
                 item={...item,state:'RUNNING',message:'Проверяем файлы поставки'};job.items[index]=item;
                 job=await this.jobs.save(client,job,'RUNNING','Обрабатываем «'+item.name+'»');
-                const blobs=await this.blobs.importAsset(item.resolved.asset,item.requestKey,signal);
+                const blobs=await this.blobs.importAsset(item.resolved.asset,item.requestKey,signal,job.cache_only===true);
                 if(item.resolved.asset.kind==='mcp'||item.resolved.asset.kind==='plugin'){
                     for(const entry of item.resolved.asset.delivery.artifacts){await this.check(job,client,signal);await this.runtime.importArchive(await this.blobs.checkedPath(entry.descriptor.sha256,entry.descriptor.compressedBytes),entry.descriptor);}
                 }

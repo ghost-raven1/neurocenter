@@ -47,7 +47,7 @@ export class AssetBlobStore {
     }
 
     /** Незавершённые файлы собственного задания удаляются перед повтором; проверенные SHA-файлы сохраняются. */
-    async importAsset(asset: AssetDescriptor, requestKey: string, signal: AbortSignal): Promise<IAssetBlob[]> {
+    async importAsset(asset: AssetDescriptor, requestKey: string, signal: AbortSignal,cacheOnly=false): Promise<IAssetBlob[]> {
         if (!/^[a-f0-9-]{36}$/.test(requestKey)) { throw new ConflictException('Некорректное задание поставки.'); }
         const all = downloadArtifacts(asset), unique = new Map<string,typeof all[number]>();
         for (const artifact of all) {
@@ -63,7 +63,7 @@ export class AssetBlobStore {
             try{const handle=await this.checked(artifact.sha256,artifact.bytes);await handle.close();}
             catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(artifact);}
         }
-        if(this.offline&&missing.length)throw new ConflictException('Файлы выбранного ассета отсутствуют в локальной поставке. Подготовьте этот ассет через assets:sync и перенесите проверенный кэш.');
+        if((this.offline||cacheOnly)&&missing.length)throw new ConflictException('Файлы выбранного ассета отсутствуют в локальной поставке. Перенесите архив с файлами этого ассета. Сетевое скачивание для этого импорта отключено.');
         const stage = path.join(this.directory,'.stage-'+requestKey);
         try {
             const previous = await fs.lstat(stage);
@@ -100,6 +100,18 @@ export class AssetBlobStore {
 
     async checkedPath(sha:string,bytes:number):Promise<string> {
         const handle=await this.checked(sha,bytes);await handle.close();return this.filename(sha);
+    }
+
+    /** Fast list preflight only; import and serving always repeat full SHA verification. */
+    async hasLocalCandidate(sha:string,bytes:number):Promise<boolean>{
+        let handle:fs.FileHandle|undefined;
+        try{
+            if(!Number.isSafeInteger(bytes)||bytes<1)return false;
+            const root=await fs.lstat(this.directory);if(!root.isDirectory()||root.isSymbolicLink())return false;
+            const filename=this.filename(sha);handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+            const info=await handle.stat(),named=await fs.lstat(filename),after=await fs.lstat(this.directory);
+            return info.isFile()&&info.nlink===1&&info.size===bytes&&!named.isSymbolicLink()&&named.dev===info.dev&&named.ino===info.ino&&root.dev===after.dev&&root.ino===after.ino&&!after.isSymbolicLink();
+        }catch{return false;}finally{await handle?.close();}
     }
 
     /** Локальная сборка проходит ту же SHA-проверку до записи native card; исходный путь не становится URL. */

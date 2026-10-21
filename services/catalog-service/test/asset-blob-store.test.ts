@@ -40,4 +40,13 @@ describe('Серверный SHA supply cache: реальные tempfiles и iso
   const blobs=await store.importAsset(asset(),randomUUID(),signal());expect(blobs[0].sha256).toBe(sha);expect(request).not.toHaveBeenCalled();
   expect((await f.pool.query('SELECT * FROM asset_source_blobs')).rows).toHaveLength(1);
  });
+ it('Availability проверяет sparse multi-GiB файл через stat без чтения/хэширования; настоящий import отвергает повреждённые байты',async()=>{
+  await fs.mkdir(directory);const filename=path.join(directory,sha+'.blob'),file=await fs.open(filename,'wx');
+  await file.truncate(4*1024**3);const prototype=Object.getPrototypeOf(file);await file.close();
+  const streaming=vi.spyOn(prototype,'createReadStream').mockImplementation(()=>{throw Error('Availability must not read bytes');});
+  const store=new AssetBlobStore(f.pool,directory);expect(await store.hasLocalCandidate(sha,4*1024**3)).toBe(true);expect(streaming).not.toHaveBeenCalled();
+  expect(await store.hasLocalCandidate(sha,7)).toBe(false);streaming.mockRestore();
+  await fs.writeFile(filename,Buffer.alloc(bytes.length));expect(await store.hasLocalCandidate(sha,bytes.length)).toBe(true);
+  await expect(store.importAsset(asset(),randomUUID(),signal(),true)).rejects.toMatchObject({status:409});
+ });
 });

@@ -7,6 +7,8 @@ import { baseApi } from '../src/core/api';
 import { agent } from './agent-fixtures';
 import type { ICatalogAgent } from '../src/features/AgentCatalog/types';
 import type { IAssetImport } from '../src/features/AssetSources/types';
+import type {AssetArchiveModal} from '../src/features/AssetSources/AssetArchiveModal';
+type ArchiveModalProps=Parameters<typeof AssetArchiveModal>[0];
 
 const hooks=vi.hoisted(()=>{
     let cursor=0;const slots:Array<{value?:unknown;deps?:unknown[];cleanup?:()=>void}>=[],effects:Array<()=>void>=[];
@@ -19,11 +21,13 @@ const hooks=vi.hoisted(()=>{
     };
 });
 const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',search:undefined as undefined|{onChange:(event:{target:{value:string}})=>void},archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
+const archiveUi=vi.hoisted(()=>({modal:undefined as ArchiveModalProps|undefined,buttons:[]as Array<{label:string;disabled?:boolean;onClick:()=>void}>,checkboxes:[]as Array<{'aria-label':string;disabled?:boolean;checked?:boolean;onChange:(event:{target:{checked:boolean}})=>void}>,blocked:false,start:vi.fn(),emptyDescription:''}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.owner;let captureOwner=ui.owners.get(scope);if(!captureOwner){captureOwner=()=>()=>scope===ui.owner;ui.owners.set(scope,captureOwner);}return{scope,captureOwner};}}));
-vi.mock('../src/core/api',()=>({baseApi:{get:vi.fn(),post:vi.fn()},bffApi:{getSkill:vi.fn(),getAiPlugin:vi.fn()}}));
+vi.mock('../src/core/api',()=>({baseApi:{get:vi.fn(),post:vi.fn(),put:vi.fn()},bffApi:{getSkill:vi.fn(),getAiPlugin:vi.fn()}}));
 vi.mock('../src/features/AgentCatalog/api',()=>({agentCatalogApi:{get:vi.fn()}}));
-vi.mock('../src/features/AssetSources/useAssetImports',()=>({useAssetImports:()=>({blocked:false,busy:false,job:ui.job,retry:ui.retry})}));
+vi.mock('../src/features/AssetSources/useAssetImports',()=>({useAssetImports:()=>({blocked:archiveUi.blocked,busy:false,job:ui.job,retry:ui.retry,start:archiveUi.start})}));
+vi.mock('../src/features/AssetSources/AssetArchiveModal',()=>({AssetArchiveModal:(props:ArchiveModalProps)=>{archiveUi.modal=props;return null;}}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:(_sections:string[],refresh:()=>void)=>{ui.live=refresh;}}));
 vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetButton:(props:typeof ui.archives[number])=>{ui.archives.push(props);return null;}}));
 vi.mock('../src/modules/Store/StoreEditModal',()=>({default:()=>null}));
@@ -32,15 +36,15 @@ vi.mock('../src/modules/Store/storeHelpers',()=>({fromPlugin:vi.fn(),fromSkill:v
 vi.mock('../src/features/AgentCatalog/AgentEditModal',()=>({AgentEditModal:(props:NonNullable<typeof ui.editor>)=>{if(ui.editorId!==props.agent.id){ui.editorId=props.agent.id;ui.draft='';}ui.editor=props;return createElement('div',null,props.agent.name,ui.draft);}}));
 vi.mock('antd',()=>{
     const content=({children}:{children?:ReactNode})=>children;const input=()=>null;
-    return{Card:({children,title}:{children?:ReactNode;title?:ReactNode})=>createElement('div',null,title,children),Space:content,Tag:content,Typography:{Title:content,Text:content,Paragraph:content},Checkbox:content,
-        Input:Object.assign(input,{Search:(props:NonNullable<typeof ui.search>)=>{ui.search=props;return null;}}),List:()=>null,Spin:()=>null,Empty:()=>null,Modal:()=>null,
-        Alert:({message,description}:{message:ReactNode;description?:ReactNode})=>createElement('div',null,message,description),Button:({children,disabled,loading,onClick}:{children?:ReactNode;disabled?:boolean;loading?:boolean;onClick:()=>void})=>{if(children==='Редактировать')ui.buttons.push({disabled,onClick});if(typeof children==='string'&&(children.startsWith('Обновить ')||children==='Перечитать поставку'))ui.refreshButtons.set(children,{loading,onClick});if(children==='Проверить конфликт заново'||children==='Повторить после исправления')ui.retryButton=onClick;return children;}};
+    return{Card:({children,title}:{children?:ReactNode;title?:ReactNode})=>createElement('div',null,title,children),Space:content,Tag:content,Typography:{Title:content,Text:content,Paragraph:content},Checkbox:(props:typeof archiveUi.checkboxes[number])=>{archiveUi.checkboxes.push(props);return null;},
+        Input:Object.assign(input,{Search:(props:NonNullable<typeof ui.search>)=>{ui.search=props;return null;}}),List:()=>null,Spin:()=>null,Empty:({description}:{description:string})=>{archiveUi.emptyDescription=description;return null;},Modal:()=>null,
+        Alert:({message,description}:{message:ReactNode;description?:ReactNode})=>createElement('div',null,message,description),Button:({children,disabled,loading,onClick}:{children?:ReactNode;disabled?:boolean;loading?:boolean;onClick:()=>void})=>{if(children==='Редактировать')ui.buttons.push({disabled,onClick});if(typeof children==='string')archiveUi.buttons.push({label:children,disabled,onClick});if(typeof children==='string'&&(children.startsWith('Обновить ')||children==='Перечитать поставку'))ui.refreshButtons.set(children,{loading,onClick});if(children==='Проверить конфликт заново'||children==='Повторить после исправления')ui.retryButton=onClick;return children;}};
 });
 const source={source:{verified:true,commit:'a'.repeat(40)},assets:['a','b'].map(id=>({id:'source-'+id,kind:'agent',name:'Агент '+id,version:'1',license:'MIT',dependencies:[],imported:{id:'agent-'+id,originVersion:'1',version:1,updateAvailable:false}}))};
-function render(){hooks.begin();ui.buttons=[];ui.archives=[];const html=renderToStaticMarkup(createElement(AssetSources));hooks.commit();return html;}
+function render(){hooks.begin();ui.buttons=[];ui.archives=[];archiveUi.buttons=[];archiveUi.checkboxes=[];const html=renderToStaticMarkup(createElement(AssetSources));hooks.commit();return html;}
 async function settle(){for(let n=0;n<15;n++)await Promise.resolve();return render();}
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:Error)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
-beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
+beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
 afterEach(()=>hooks.dispose());
 
 it('Двойной клик и открытие второй карточки во время GET не создают конкурирующий редактор',async()=>{
@@ -91,9 +95,9 @@ it('Автономный источник показывает закреплё�
     render();const html=await settle();expect(html).toContain('Автономная поставка');expect(html).toContain('Локальная поставка · aaaaaaaa');expect(html).toContain('GitHub не запрашивается');expect(html).toContain('Сохранённая ошибка источника');expect(html).not.toContain('Обновить источник');expect(baseApi.post).not.toHaveBeenCalled();
     ui.refreshButtons.get('Перечитать поставку')!.onClick();await settle();expect(baseApi.post).toHaveBeenCalledExactlyOnceWith('/api/asset-sources/refresh');expect(render()).toContain('Агент a');
 });
-it('Непроверенная автономная поставка предлагает локальное перечитывание без обещания скачивания',async()=>{
-    vi.mocked(baseApi.get).mockResolvedValue({data:{source:{mode:'offline',verified:false},assets:[]}});render();const html=await settle();
-    expect(html).toContain('Нажмите «Перечитать поставку»');expect(html).not.toContain('скачиваются только небольшие описи');expect(baseApi.post).not.toHaveBeenCalled();
+it.each(['online','offline'])('Пустой непроверенный источник предлагает архив и подходящий режим обновления: %s',async mode=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:{source:{mode,verified:false},assets:[]}});render();const html=await settle(),action=mode==='offline'?'перечитайте локальную поставку':'обновите источник';
+    expect(html).toContain('Загрузите архив или '+action+'.');expect(archiveUi.emptyDescription).toBe('Загрузите архив или '+action+', чтобы выбрать ассеты.');expect(html).not.toContain('скачиваются только небольшие описи');expect(baseApi.post).not.toHaveBeenCalled();
 });
 it.each(['create','conflict'])('NEEDS_INPUT предлагает повтор исправленной поставки, а проверку конфликта только для action=conflict: %s',async action=>{
     ui.job={id:'missing-offline-blob',planDigest:'a'.repeat(64),state:'NEEDS_INPUT',message:'Файлы выбранного ассета отсутствуют в локальной поставке.',items:[{id:'bridge',kind:'bridge',name:'Мост',version:'0.9.17',current:true,action,state:'FAILED'}]};
@@ -107,4 +111,51 @@ it.each(['response','error']as const)('Live refresh защищён от позд
     next.resolve({data:{...source,assets:[{...source.assets[0],name:'Новый проверенный результат'}]}});await settle();
     if(mode==='response')old.resolve({data:{...source,assets:[{...source.assets[0],name:'Старый ответ'}]}});else old.reject(new Error('Старая ошибка'));
     const html=await settle();expect(html).toContain('Новый проверенный результат');expect(html).not.toContain('Старый ответ');expect(html).not.toContain('Старая ошибка');expect(ui.refreshButtons.get('Обновить список')?.loading).toBe(false);
+});
+
+const uploaded={...source,source:{...source.source,mode:'online',archiveSha256:'c'.repeat(64)},assets:source.assets.map((asset,index)=>({...asset,imported:undefined,name:index?'Неполный MCP':'Готовый агент',supply:index?{ready:false,missingFiles:2,missingBytes:1048576}:{ready:true,missingFiles:0,missingBytes:0}}))};
+it('Автономное перечитывание архива объясняет проверку выбранной описи без переключения источника',async()=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,source:{...uploaded.source,mode:'offline'}}});render();const html=await settle();expect(html).toContain('перепроверяет выбранную локальную опись без обращения к GitHub');expect(html).not.toContain('переключает список');expect(html).toContain('Из архива / без сетевой дозагрузки');
+});
+it('Проверенный архив показывает готовые карточки; неполный граф заблокирован, выбор не дублируется',async()=>{
+    vi.mocked(baseApi.put).mockResolvedValue({data:uploaded});render();await settle();expect(render()).toContain('Импортировать архив');
+    expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(true);const html=render();expect(html).toContain('Из архива / без сетевой дозагрузки');expect(html).toContain('Не хватает файлов: 2');expect(html).toContain('Проверить источник в GitHub');
+    expect(archiveUi.checkboxes.map(box=>!!box.disabled)).toEqual([false,true]);expect(archiveUi.buttons.filter(button=>button.label==='Добавить').map(button=>!!button.disabled)).toEqual([false,true]);
+    archiveUi.buttons.find(button=>button.label==='Добавить'&&button.disabled)!.onClick();expect(archiveUi.start).not.toHaveBeenCalled();
+    archiveUi.checkboxes[0].onChange({target:{checked:true}});archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Добавить выбранные (1)');
+    // The bulk button has React children, so the ready card also exercises the guarded canonical action.
+    archiveUi.buttons.find(button=>button.label==='Добавить'&&!button.disabled)!.onClick();expect(archiveUi.start).toHaveBeenCalledExactlyOnceWith(['source-a'],'a'.repeat(40));expect(baseApi.post).not.toHaveBeenCalled();
+});
+it.each(['response','error']as const)('Запоздавший initial GET после загрузки архива не заменяет опись и ошибку: %s',async outcome=>{
+    const initial=deferred<{data:typeof source}>();vi.mocked(baseApi.get).mockReturnValueOnce(initial.promise);vi.mocked(baseApi.put).mockResolvedValue({data:uploaded});render();
+    await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'));if(outcome==='response')initial.resolve({data:source});else initial.reject(new Error('Старая ошибка списка'));
+    const html=await settle();expect(html).toContain('Готовый агент');expect(html).not.toContain('Агент a');expect(html).not.toContain('Старая ошибка списка');expect(html).toContain('Из архива / без сетевой дозагрузки');
+});
+it('Во время передачи live GET и импорт карточки не конкурируют с архивом; отказ сохраняет старый список',async()=>{
+    render();await settle();const pending=deferred<{data:typeof uploaded}>();vi.mocked(baseApi.put).mockReturnValue(pending.promise);const uploading=archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'));render();
+    const reads=vi.mocked(baseApi.get).mock.calls.length;ui.live();await settle();expect(baseApi.get).toHaveBeenCalledTimes(reads);expect(archiveUi.checkboxes.every(box=>box.disabled)).toBe(true);expect(ui.buttons.every(button=>button.disabled)).toBe(true);
+    archiveUi.buttons.find(button=>button.label==='Проверить и добавить')!.onClick();expect(archiveUi.start).not.toHaveBeenCalled();pending.reject(new Error('Некорректный ZIP'));await uploading;
+    expect(render()).toContain('Агент a');expect(archiveUi.modal!.upload.error).toBe('Некорректный ZIP');expect(archiveUi.modal!.upload.busy).toBe(false);
+});
+it('Активный импорт, запрос редактора и несохранённый редактор блокируют новый архив',async()=>{
+    render();await settle();archiveUi.blocked=true;render();expect(archiveUi.buttons.find(button=>button.label==='Импортировать архив')!.disabled).toBe(true);expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);
+    archiveUi.blocked=false;render();const editor=deferred<ICatalogAgent>();vi.mocked(agentCatalogApi.get).mockReturnValue(editor.promise);ui.buttons[0].onClick();render();expect(archiveUi.modal!.blocked).toBe(true);
+    editor.resolve(agent({id:'agent-a'}));await settle();expect(archiveUi.modal!.blocked).toBe(true);expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();
+});
+it('Проверка GitHub блокирует архив до завершения POST даже при live обновлении',async()=>{
+    render();await settle();const pending=deferred<{data:typeof source}>();vi.mocked(baseApi.post).mockReturnValue(pending.promise);ui.refreshButtons.get('Обновить источник')!.onClick();render();
+    ui.live();await settle();expect(archiveUi.modal!.blocked).toBe(true);expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();pending.resolve({data:source});await settle();expect(archiveUi.modal!.blocked).toBe(false);
+});
+it('Старый обработчик проверки источника после смены роли не запускает POST',async()=>{
+    render();await settle();const previous=ui.refreshButtons.get('Обновить источник')!;ui.owner='admin-b';render();await settle();previous.onClick();await settle();expect(baseApi.post).not.toHaveBeenCalled();
+});
+it('Перечитывание снимает прежний выбор карточки, если её файлы теперь недоступны',async()=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();await settle();archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Добавить выбранные (1)');
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets:uploaded.assets.map(asset=>({...asset,supply:{ready:false,missingFiles:1,missingBytes:64}}))}});ui.refreshButtons.get('Обновить список')!.onClick();const html=await settle();expect(html).not.toContain('Добавить выбранные (1)');expect(archiveUi.checkboxes.every(box=>!box.checked&&box.disabled)).toBe(true);expect(html).toContain('64 Б');
+});
+it('Запрос редактора блокирует upload синхронно, до следующего render',async()=>{
+    render();await settle();const pending=deferred<ICatalogAgent>();vi.mocked(agentCatalogApi.get).mockReturnValue(pending.promise);ui.buttons[0].onClick();expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();pending.resolve(agent({id:'agent-a'}));await settle();
+});
+it('Нажатие добавить карточку блокирует upload до ответа POST и нового render',async()=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();await settle();const pending=deferred<void>();archiveUi.start.mockReturnValueOnce(pending.promise);archiveUi.buttons.find(button=>button.label==='Добавить'&&!button.disabled)!.onClick();expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();pending.resolve();await settle();
 });

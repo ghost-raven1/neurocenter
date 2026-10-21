@@ -133,8 +133,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 200);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 245);
+    assert.equal(Object.keys(actual.paths).length, 201);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 246);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
@@ -276,6 +276,8 @@ test('Redirects, manual OAuth JSON, binary streams and HEAD reflect the actual H
     assert.equal(actual.paths['/auth/switch-role'].post.responses['201'], undefined);
     const upload = actual.paths['/api/tool-builds/uploads/{id}/content'].put;
     assert.equal(upload.requestBody.content['application/octet-stream'].schema.format, 'binary');
+    const assetArchive=actual.paths['/api/asset-sources/archive'].put;
+    assert.equal(assetArchive.requestBody.content['application/octet-stream'].schema.format,'binary');
     const supply = actual.paths['/api/tool-builds/{id}/supply'];
     assert.equal(supply.get.responses['200'].content['application/gzip'].schema.format, 'binary');
     assert.deepEqual(supply.head.responses['204'], {description:'No response body.'});

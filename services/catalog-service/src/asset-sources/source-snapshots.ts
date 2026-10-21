@@ -1,10 +1,10 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { assetDigest, assertIndexEvolution, validateIndex, selectAssets, type AssetIndex, type ResolvedAsset } from '@neurocenter/asset-contract';
-import type { Pool } from 'pg';
+import type { Pool,PoolClient } from 'pg';
 import { AssetSourceClient, validateSourcePin, type IAssetSourcePin, type AssetSourceTransport } from './source-client';
 import {assetSourceTransport} from './source-cache';
 
-export interface ISourceSnapshot {pin:IAssetSourcePin;index:AssetIndex;assets:ResolvedAsset[];checked_at:string|Date}
+export interface ISourceSnapshot {pin:IAssetSourcePin;index:AssetIndex;assets:ResolvedAsset[];checked_at:string|Date;archive_sha256?:string|null}
 /** Metadata refresh не скачивает binaries и не меняет каталог; каждый intent сохраняет выбранный commit. */
 export class AssetSourceSnapshots {
     constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch,private readonly transport:AssetSourceTransport=assetSourceTransport()) {}
@@ -16,9 +16,14 @@ export class AssetSourceSnapshots {
         return {snapshot,last};
     }
     async get(commit:string,repository='ghost-raven1/neurocenter-assets'):Promise<ISourceSnapshot> {
-        const saved=(await this.pool.query<ISourceSnapshot>(`SELECT pin,index,assets,checked_at FROM asset_source_snapshots WHERE commit=$1 AND pin->>'repository'=$2
-            UNION ALL SELECT pin,index,assets,checked_at FROM bridge_source_checks WHERE commit=$1 AND repository=$2 LIMIT 1`,[commit,repository])).rows[0];
+        const saved=(await this.pool.query<ISourceSnapshot>(`SELECT pin,index,assets,checked_at,archive_sha256 FROM asset_source_snapshots WHERE commit=$1 AND pin->>'repository'=$2
+            UNION ALL SELECT pin,index,assets,checked_at,NULL::text AS archive_sha256 FROM bridge_source_checks WHERE commit=$1 AND repository=$2 LIMIT 1`,[commit,repository])).rows[0];
         if(!saved){throw new ConflictException('Выбранная проверенная версия источника уже недоступна. Обновите список.');}return saved;
+    }
+    /** Archive bytes may reuse only an application pin or a previously verified snapshot. */
+    async trustedPins():Promise<IAssetSourcePin[]>{
+        const saved=(await this.pool.query<{pin:IAssetSourcePin}>('SELECT pin FROM asset_source_snapshots ORDER BY checked_at DESC,commit')).rows.map(row=>validateSourcePin(row.pin));
+        return [...saved,...(this.initialPin?[validateSourcePin(this.initialPin)]:[])];
     }
     private async remote(url:string,maximum:number):Promise<Uint8Array> {
         let response:Response;
@@ -38,8 +43,9 @@ export class AssetSourceSnapshots {
     async refresh():Promise<ISourceSnapshot> {
         try{
             if(this.transport.offline){
-                if(!this.initialPin)throw new ConflictException('Локальная поставка не закреплена в конфигурации приложения.');
-                const saved=await this.load(validateSourcePin(this.initialPin));
+                const latest=await this.latest(),pin=latest?.archive_sha256?latest.pin:this.initialPin;
+                if(!pin)throw new ConflictException('Локальная поставка не закреплена в конфигурации приложения.');
+                const saved=await this.load(validateSourcePin(pin));
                 await this.pool.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");return saved;
             }
             if(!await this.latest()&&this.initialPin){return await this.load(validateSourcePin(this.initialPin));}
@@ -65,6 +71,14 @@ export class AssetSourceSnapshots {
         for(const entry of checked.assets){const record=await source.descriptor(entry);bytes+=Buffer.byteLength(JSON.stringify(record.asset));if(bytes>32*1024*1024){throw new ConflictException('Metadata источника превышает 32 МиБ.');}records.push(record);}
         selectAssets(records,checked.assets.filter(item=>item.current).map(item=>item.id));
         if(new Set(checked.assets.filter(item=>item.kind==='bridge').map(item=>item.id)).size>1){throw new ConflictException('Источник содержит несколько несовместимых bridge identities.');}
+        return this.save(pin,checked,records,this.transport.offline?undefined:null);
+    }
+    /** Publish metadata only after full archive validation; history and actor fences share the commit. */
+    async acceptArchive(pin:IAssetSourcePin,index:AssetIndex,records:ResolvedAsset[],sha:string,publish:(client:PoolClient)=>Promise<void>):Promise<ISourceSnapshot>{
+        if(!/^[a-f0-9]{64}$/.test(sha))throw new ConflictException('Некорректный SHA архива источника.');
+        return this.save(pin,index,records,sha,publish);
+    }
+    private async save(pin:IAssetSourcePin,checked:AssetIndex,records:ResolvedAsset[],archiveSha?:string|null,publish?:(client:PoolClient)=>Promise<void>):Promise<ISourceSnapshot>{
         const client=await this.pool.connect();
         try{
             await client.query('BEGIN');await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:asset-source-refresh',0))");
@@ -72,8 +86,10 @@ export class AssetSourceSnapshots {
             const previous=await client.query<{index:AssetIndex;pin:IAssetSourcePin}>('SELECT index,pin FROM asset_source_snapshots');
             if(previous.rows.some(row=>row.pin.commit===pin.commit&&row.pin.index.sha256!==pin.index.sha256)){throw new ConflictException('Байты описи ранее проверенного commit изменились.');}
             try{for(const row of previous.rows){assertIndexEvolution(row.index,checked);}}catch{throw new ConflictException('Источник переписал или удалил уже опубликованную версию ассета. Обновление отклонено.');}
-            const {rows}=await client.query<ISourceSnapshot>(`INSERT INTO asset_source_snapshots(commit,pin,index,assets) VALUES($1,$2::jsonb,$3::jsonb,$4::jsonb)
-                ON CONFLICT(commit) DO UPDATE SET checked_at=now() RETURNING *`,[pin.commit,JSON.stringify(pin),JSON.stringify(checked),JSON.stringify(records)]);
+            await publish?.(client);
+            const {rows}=await client.query<ISourceSnapshot>(`INSERT INTO asset_source_snapshots(commit,pin,index,assets,archive_sha256) VALUES($1,$2::jsonb,$3::jsonb,$4::jsonb,$5)
+                ON CONFLICT(commit) DO UPDATE SET checked_at=now(),archive_sha256=CASE WHEN $6::boolean THEN EXCLUDED.archive_sha256 ELSE asset_source_snapshots.archive_sha256 END RETURNING *`,[pin.commit,JSON.stringify(pin),JSON.stringify(checked),JSON.stringify(records),archiveSha??null,archiveSha!==undefined]);
+            if(archiveSha)await client.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");
             await client.query('COMMIT');return rows[0];
         }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
     }

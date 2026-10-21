@@ -1,6 +1,6 @@
 export type TSourceAssetKind='mcp'|'plugin'|'skill'|'model'|'bridge'|'agent';
-export interface ISourceAsset {id:string;kind:TSourceAssetKind;name:string;description?:string;version:string;sha256:string;license:string;dependencies:Array<{id:string;version:string}>;imported?:{id:string;name?:string;version:number;originVersion:string;updateAvailable:boolean;archived?:boolean;unavailable?:boolean}}
-export interface ISourceList {source:{repository:string;mode?:'online'|'offline';commit?:string;checkedAt?:string;verified:boolean;error?:string;lastAttemptAt?:string};assets:ISourceAsset[];localAssets?:ISourceAsset[]}
+export interface ISourceAsset {id:string;kind:TSourceAssetKind;name:string;description?:string;version:string;sha256:string;license:string;dependencies:Array<{id:string;version:string}>;supply?:{ready:boolean;missingFiles:number;missingBytes:number};imported?:{id:string;name?:string;version:number;originVersion:string;updateAvailable:boolean;archived?:boolean;unavailable?:boolean}}
+export interface ISourceList {source:{repository:string;mode?:'online'|'offline';archiveSha256?:string;commit?:string;checkedAt?:string;verified:boolean;error?:string;lastAttemptAt?:string};assets:ISourceAsset[];localAssets?:ISourceAsset[]}
 export interface IImportIntent {requestKey:string;commit:string;ids:string[];jobId?:string}
 export interface IAssetImport {id:string;planDigest:string;state:string;message:string;items:Array<{id:string;kind:TSourceAssetKind;name:string;version:string;current:boolean;action:string;state:string;reason?:string;message?:string;replacement?:{id:string;version:number;hash:string}}> }
 export const activeImport=(state:string):boolean=>['QUEUED','RUNNING'].includes(state);

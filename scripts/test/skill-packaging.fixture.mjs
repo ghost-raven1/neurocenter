@@ -11,6 +11,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=fileURLToPath(new URL('../../',import.meta.url)),requireCatalog=createRequire(path.join(root,'services/catalog-service/package.json'));
 const requireSkills=createRequire(path.join(root,'services/skills-service/package.json'));
 const requireGateway=createRequire(path.join(root,'services/api-gateway/package.json'));
+const {assetSourceArchiveRoute}=requireCatalog('../shared/asset-source-archive-route.cjs');
 const listen=async server=>{server.listen(0,'127.0.0.1');await once(server,'listening');return 'http://127.0.0.1:'+server.address().port;};
 const closeServer=server=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);});
 const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
@@ -87,7 +88,8 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
   });
   const upstreamUrl=await listen(upstream);for(const name of ['AUTH_SERVICE_URL','RAG_SERVICE_URL','FEATURE_FLAGS_SERVICE_URL','MODEL_RUNTIME_URL'])process.env[name]=upstreamUrl;
   const {NestFactory}=requireCatalog('@nestjs/core'),express=requireCatalog('express');requireCatalog('reflect-metadata');
-  const middleware=app=>{app.use(express.json({limit:'35mb'}));app.use((req,res,next)=>{
+  const jsonParser=express.json({limit:'35mb'}),gatewayJsonParser=express.json({limit:'50mb'});
+  const middleware=app=>{app.use((req,res,next)=>assetSourceArchiveRoute(req.method,req.originalUrl)?next():jsonParser(req,res,next));app.use((req,res,next)=>{
    if(req.path.startsWith('/api/')&&req.headers['x-neurocenter-internal']!==process.env.NEUROCENTER_INTERNAL_TOKEN)return json(res,403,{message:'Actual Gateway forwarding required.'});next();});};
   skills=await requireSkills('@nestjs/core').NestFactory.create(requireSkills('./dist/app.module.js').AppModule,{logger:false,bodyParser:false,abortOnError:false});middleware(skills);await skills.listen(0,'127.0.0.1');
   const skillsUrl='http://127.0.0.1:'+skills.getHttpServer().address().port;process.env.SKILLS_SERVICE_URL=skillsUrl;
@@ -105,7 +107,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
   const live=new LiveService(),liveApi={mutation:live.mutation.bind(live),sections:live.sections.bind(live)};
   const config={get:key=>process.env[key]},auth=new AuthGuardService(config),proxy=new ProxyService(config,auth,liveApi);
   class GatewayFixtureModule{}Module({controllers:[BridgeController,ProxyController,LiveController],providers:[{provide:ProxyService,useValue:proxy},{provide:LiveService,useValue:liveApi},{provide:BridgeSupplyService,useValue:new BridgeSupplyService(config)}]})(GatewayFixtureModule);
-  gateway=await GatewayFactory.create(GatewayFixtureModule,{logger:false,bodyParser:false,abortOnError:false});gateway.use(browserSecurity);gateway.use(express.json({limit:'50mb'}));
+  gateway=await GatewayFactory.create(GatewayFixtureModule,{logger:false,bodyParser:false,abortOnError:false});gateway.use(browserSecurity);gateway.use((req,res,next)=>assetSourceArchiveRoute(req.method,req.originalUrl)?next():gatewayJsonParser(req,res,next));
   gateway.use((req,_res,next)=>{state.requests.push({method:req.method,path:req.path});next();});
   const {Server}=requireGateway('socket.io');io=new Server(gateway.getHttpServer(),{cors:{origin:(_origin,done)=>done(null,true),credentials:true}});
   live.attach(io);

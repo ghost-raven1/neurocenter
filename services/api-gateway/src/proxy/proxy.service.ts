@@ -2,6 +2,7 @@ import {snapshotContentRoute,snapshotDownloadRoute,snapshotPublicationRoute} fro
 import {forwardSnapshotChunk} from './snapshot-stream';
 import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
 import {forwardSourceUpload} from './source-upload-stream';
+import {assetSourceArchiveRoute,ASSET_SOURCE_ARCHIVE_MAX_BYTES} from '../../../shared/asset-source-archive-route.cjs';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
@@ -108,8 +109,9 @@ export class ProxyService {
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
-            const uploadRoute=sourceUploadContentRoute(method,path)||snapshotContentRoute(method,path);
-            if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res,snapshotContentRoute(method,path)?64*1024**2:undefined);return;}
+            const archiveRoute=assetSourceArchiveRoute(method,path);
+            const uploadRoute=sourceUploadContentRoute(method,path)||snapshotContentRoute(method,path)||archiveRoute;
+            if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res,archiveRoute?ASSET_SOURCE_ARCHIVE_MAX_BYTES:snapshotContentRoute(method,path)?64*1024**2:undefined,archiveRoute?64*1024**2:undefined);return;}
             const snapshotDownload=snapshotDownloadRoute(method,path);
             if(snapshotDownload){await forwardSnapshotChunk(this.http,`${this.catalogUrl}${snapshotDownload}`,this.buildHeaders(req.headers,auth),req,res);return;}
             const supplyPath=canonicalAccessRoute(path);

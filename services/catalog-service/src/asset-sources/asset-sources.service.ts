@@ -17,6 +17,9 @@ import {assetCardState,sourceAssetView} from './asset-source-view';
 import {bridgeSupplyIdentity} from './bridge-source-head';
 import {validBridgeVersion} from './bridge-source-version';
 import {assetSourceMode} from './source-cache';
+import path from 'node:path';
+import {AssetSourceArchiveUploads} from './source-archive-upload';
+import {sourceSupplyViews} from './source-supply-view';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -25,6 +28,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     readonly pool=createPool({connectionString:process.env.CATALOG_PG_URL||'postgresql://rag:rag@localhost:5432/catalog',max:5},'asset-sources');
     readonly blobs=new AssetBlobStore(this.pool);readonly jobs=new AssetImportRepository(this.pool);
     readonly sources=new AssetSourceSnapshots(this.pool,require('../../../shared/asset-source.lock.json'));
+    readonly archives=new AssetSourceArchiveUploads(this.pool,this.sources,path.dirname(this.blobs.directory));
     private worker:AssetImportWorker;private timer?:ReturnType<typeof setInterval>;
     constructor(private readonly catalog:CatalogService,private readonly access:AccessDb,private readonly runtime:RuntimeArtifacts) {}
     prepareLocal(...args:Parameters<LocalAssetIngest['prepare']>){return new LocalAssetIngest(this.pool,this.blobs).prepare(...args);}
@@ -57,19 +61,21 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
             [receipt.repository+':'+receipt.external_id,await assetCardState(this.pool,receipt)] as const)));
         const view=(asset:Parameters<typeof sourceAssetView>[0],sha256:string,receipt?:ISourceReceipt)=>
             sourceAssetView(asset,sha256,receipt,receipt?states.get(receipt.repository+':'+receipt.external_id):undefined);
+        const supply=snapshot?.archive_sha256||assetSourceMode()==='offline'?await sourceSupplyViews(snapshot?.assets??[],this.blobs):undefined;
         return {source:{mode:assetSourceMode(),repository:'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
-            verified:!!snapshot,lastAttemptAt:last?.attempted_at,error:last?.message||undefined},
-            assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>view(asset,sha256,receipts.find(row=>row.external_id===asset.id))),
+            verified:!!snapshot,lastAttemptAt:last?.attempted_at,error:last?.message||undefined,archiveSha256:snapshot?.archive_sha256??undefined},
+            assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>({...view(asset,sha256,receipts.find(row=>row.external_id===asset.id)),...(supply?{supply:supply.get(asset.id)}:{})})),
             localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};
     }
     async refresh(){await this.sources.refresh();return this.view();}
+    async uploadArchive(req:Request,signal:AbortSignal){const actor=await this.actor(req);await this.archives.receive(actor,req,req.headers['content-length'],signal);return this.view();}
     kickImports():void{this.worker.kick();}
     async start(actor:string,body:unknown){
         const input=body as {requestKey?:unknown;ids?:unknown;commit?:unknown};
         if(!input||!uuid(input.requestKey)||!Array.isArray(input.ids)||!input.ids.length||input.ids.length>50||input.ids.some(id=>typeof id!=='string')||new Set(input.ids).size!==input.ids.length
             ||typeof input.commit!=='string'||!/^[a-f0-9]{40}$/.test(input.commit)||Object.keys(input).some(key=>!['requestKey','ids','commit'].includes(key))){throw new BadRequestException('Передайте сохранённый ключ, commit и от 1 до 50 выбранных ассетов.');}
         const snapshot=await this.sources.get(input.commit);try{selectAssets(snapshot.assets,input.ids);}catch{throw new ConflictException('Выбранный граф не соответствует точной описи источника.');}
-        const job=await this.jobs.create(actor,input.requestKey,snapshot.pin,input.ids);this.worker.kick();return importView(job);
+        const job=await this.jobs.create(actor,input.requestKey,snapshot.pin,input.ids,undefined,!!snapshot.archive_sha256||assetSourceMode()==='offline');this.worker.kick();return importView(job);
     }
     async job(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}return importView(await this.jobs.get(id,actor));}
     async request(key:string,actor:string){if(!uuid(key)){throw new BadRequestException('Некорректный запрос импорта.');}return importView(await this.jobs.byRequest(actor,key));}

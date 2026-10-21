@@ -3,15 +3,16 @@ import type {AxiosInstance} from 'axios';
 import type {Request,Response} from 'express';
 import {Transform} from 'node:stream';
 import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
+import {assetSourceArchiveRoute} from '../../../shared/asset-source-archive-route.cjs';
 
 const defaultMaximum=256*1024**2;
 /** Raw upload refusals can precede body consumption, so each request owns its HTTP connection. */
 export function sourceUploadConnection(req:Request,res:Response,next:()=>void):void{
- if(sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path))res.setHeader('Connection','close');
+ if(sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path))res.setHeader('Connection','close');
  next();
 }
 /** Bounded raw stream preserves backpressure and aborts the catalog transfer when the browser disconnects. */
-export async function forwardSourceUpload(http:AxiosInstance,url:string,headers:Record<string,string>,req:Request,res:Response,maximum=defaultMaximum):Promise<void>{
+export async function forwardSourceUpload(http:AxiosInstance,url:string,headers:Record<string,string>,req:Request,res:Response,maximum=defaultMaximum,responseMaximum=1024*1024):Promise<void>{
  if(String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase()!=='application/octet-stream'){res.setHeader('Connection','close');res.status(415).json({message:'Передайте файл потоком application/octet-stream.'});return;}
  const limitLabel=String(maximum/1024**2)+' МиБ';
  const declared=req.headers['content-length'];
@@ -25,7 +26,7 @@ export async function forwardSourceUpload(http:AxiosInstance,url:string,headers:
   if(req.aborted||res.destroyed){controller.abort();return;}
   req.pipe(stream);
   const response=await http.request({method:'PUT',url,data:stream,headers:{...headers,'content-type':'application/octet-stream',...(declared?{'content-length':declared}:{})},
-   timeout:10*60*1000,maxBodyLength:maximum,maxContentLength:1024*1024,maxRedirects:0,responseType:'json',validateStatus:()=>true,signal:controller.signal});
+   timeout:10*60*1000,maxBodyLength:maximum,maxContentLength:responseMaximum,maxRedirects:0,responseType:'json',validateStatus:()=>true,signal:controller.signal});
   req.unpipe(stream);stream.destroy();
   if(res.destroyed||req.aborted)return;
   // Early catalog refusals close the input connection after the small response is flushed.

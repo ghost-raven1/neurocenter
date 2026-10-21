@@ -2,7 +2,7 @@ import {decorators,values} from './typescript.mjs';
 
 const stringSchema={type:'string'};
 const freeForm=()=>({'x-neurocenter-untyped':true,description:'JSON body shape is not declared by this controller; server validation still applies.'});
-const BINARY_UPLOAD=/^\/api\/(?:tool-builds\/uploads\/[^/]+\/content|projects\/[^/]+\/snapshot-uploads\/[^/]+\/blobs\/[^/]+)$/;
+const BINARY_UPLOAD=/^\/api\/(?:tool-builds\/uploads\/[^/]+\/content|projects\/[^/]+\/snapshot-uploads\/[^/]+\/blobs\/[^/]+|asset-sources\/archive)$/;
 const BINARY_DOWNLOAD=/\/(?:backups\/[^/]+\/download|versions\/[^/]+\/blobs\/[^/]+|tool-builds\/[^/]+\/supply|jobs\/[^/]+\/runtime\/[^/]+)$/;
 const SNAPSHOT_PUBLICATION=/^\/api\/projects\/[^/]+\/snapshot-uploads\/[^/]+\/(?:manifest|complete|status|blobs\/[^/]+)$/;
 

@@ -17,7 +17,7 @@ const id='7428c85e-c645-4f05-b610-6f0029867f93',route='/api/tool-builds/uploads/
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve('http://127.0.0.1:'+server.address().port)));
 const close=server=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);});
 const reply=(response,status,body)=>{response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(body));};
-async function fixture({allowed=true,flag=true,early=false}={}){
+async function fixture({allowed=true,flag=true,early=false,responseData}={}){
  const calls=[],received=[];let aborted=false;
  const upstream=createServer((req,res)=>{
   if(req.url==='/internal/access/authorize'){req.resume();reply(res,200,{allowed:true,claims:{projects:[],pluginIds:[],skillPaths:[]}});return;}
@@ -25,7 +25,7 @@ async function fixture({allowed=true,flag=true,early=false}={}){
   calls.push({url:req.url,headers:req.headers});
   if(early){reply(res,409,{message:'Upload was cancelled'});return;}
   req.on('aborted',()=>{aborted=true;});let bytes=0;
-  req.on('data',chunk=>{bytes+=chunk.length;});req.on('end',()=>{received.push(bytes);reply(res,200,{id,state:'READY',bytes});});
+  req.on('data',chunk=>{bytes+=chunk.length;});req.on('end',()=>{received.push(bytes);reply(res,200,responseData??{id,state:'READY',bytes});});
  });
  const base=await listen(upstream),service=new ProxyService({get:key=>['CATALOG_SERVICE_URL','FEATURE_FLAGS_SERVICE_URL'].includes(key)?base:undefined},{authenticate:async()=>allowed?{userId:'fixture',email:'fixture@example.test',activeRole:'Главный админ',policies:[]}:null},{mutation(){}});
  const server=createServer((req,res)=>{
@@ -86,4 +86,30 @@ test('Chunked actual-byte overflow is bounded at 256 MiB and aborts the upstream
   });assert.equal(response.status,413);assert.match(response.body.message,/256/);assert.deepEqual(f.received,[]);
   for(let n=0;n<100&&!f.aborted();n++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.aborted(),true);
  }finally{await f.dispose();}
+});
+test('Asset repository archive streams exact bytes through the authenticated Gateway without the tool build flag',async()=>{
+ const f=await fixture({flag:false});try{
+  const body=Buffer.from('archive data plane'),response=await send(f.url,{url:'/api/asset-sources/archive',body});
+  assert.equal(response.status,200);assert.deepEqual(f.received,[body.length]);assert.equal(f.calls[0].url,'/api/asset-sources/archive');
+  assert.equal(f.calls[0].headers['content-type'],'application/octet-stream');assert.equal(response.headers.connection,'close');assert.equal(response.headers['cache-control'],'no-store');
+ }finally{await f.dispose();}
+});
+test('Asset archive rejects media/size and unauthenticated input before forwarding its data plane',async()=>{
+ const f=await fixture();try{
+  const route='/api/asset-sources/archive';
+  assert.equal((await send(f.url,{url:route,headers:{'content-type':'application/json'}})).status,415);
+  assert.equal((await send(f.url,{url:route,headers:{'content-length':8*1024**3+1},body:Buffer.from('x')})).status,413);assert.equal(f.calls.length,0);
+ }finally{await f.dispose();}
+ const denied=await fixture({allowed:false});try{const response=await send(denied.url,{url:'/api/asset-sources/archive'});assert.equal(response.status,401);assert.equal(response.headers.connection,'close');assert.equal(denied.calls.length,0);}finally{await denied.dispose();}
+});
+test('Archive upload response can carry a full metadata list exceeding the ordinary small upload receipt',async()=>{
+ const description='x'.repeat(1024*1024+128),f=await fixture({responseData:{source:{archiveSha256:'a'.repeat(64)},assets:[{description}]}});
+ try{const response=await send(f.url,{url:'/api/asset-sources/archive',body:Buffer.from('archive')});assert.equal(response.status,200);assert.equal(response.body.assets[0].description,description);}finally{await f.dispose();}
+});
+test('Only the canonical asset archive PUT receives raw transport',()=>{
+ const {assetSourceArchiveRoute,ASSET_SOURCE_ARCHIVE_MAX_BYTES}=require('../../services/shared/asset-source-archive-route.cjs');
+ assert.equal(ASSET_SOURCE_ARCHIVE_MAX_BYTES,8*1024**3);
+ assert.equal(assetSourceArchiveRoute('PUT','/api/%61sset-sources/archive/'),'/api/asset-sources/archive');
+ for(const method of ['GET','POST','DELETE'])assert.equal(assetSourceArchiveRoute(method,'/api/asset-sources/archive'),undefined);
+ for(const route of ['/api/asset-sources/archive-extra','/api/asset-sources/archive/child','/api/asset-sources/../archive','/api/asset-sources/%2e%2e/archive','/api/%ZZ/asset-sources/archive'])assert.equal(assetSourceArchiveRoute('PUT',route),undefined);
 });

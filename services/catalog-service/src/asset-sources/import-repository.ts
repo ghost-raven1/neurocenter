@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { publicationHash } from '../publication/publication-validation';
 import type { IAssetSourcePin } from './source-client';
+import {assetSourceMode} from './source-cache';
 import { importPlanDigest } from './import-types';
 import type { IImportItem, IImportJob, ISourceReceipt, TImportState } from './import-types';
 import { securityEvent } from '../access/security-events';
@@ -12,17 +13,19 @@ import {assertBridgeHead} from './bridge-source-head';
 export class AssetImportRepository {
     constructor(readonly pool: Pool) {}
 
-    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number): Promise<IImportJob> {
-        const fingerprint = publicationHash({source,ids:[...ids].sort(),...(bridgeSourceRevision!==undefined?{bridgeSourceRevision}:{})});
+    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number,cacheOnly=false): Promise<IImportJob> {
+        const fingerprint=(offline:boolean)=>publicationHash({source,ids:[...ids].sort(),...(bridgeSourceRevision!==undefined?{bridgeSourceRevision}:{}),...(offline?{cacheOnly:true}:{})});
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-request:'+actor+':'+requestKey]);
             const previous = await client.query<IImportJob>('SELECT * FROM asset_source_jobs WHERE actor=$1 AND request_key=$2',[actor,requestKey]);
             if (previous.rows[0]) {
-                if (previous.rows[0].request_hash !== fingerprint) { throw new ConflictException('Этот запрос уже относится к другому выбору ассетов или источнику.'); }
+                if (previous.rows[0].request_hash !== fingerprint(previous.rows[0].cache_only===true)) { throw new ConflictException('Этот запрос уже относится к другому выбору ассетов или источнику.'); }
                 await client.query('COMMIT'); return previous.rows[0];
             }
+            const snapshot=(await client.query<{archive_sha256:string|null}>("SELECT archive_sha256 FROM asset_source_snapshots WHERE commit=$1 AND pin->>'repository'=$2 FOR SHARE",[source.commit,source.repository])).rows[0];
+            cacheOnly=cacheOnly||!!snapshot?.archive_sha256||assetSourceMode()==='offline';
             if(bridgeSourceRevision!==undefined){
                 const settings=(await client.query<{revision:number;url:string;check_commit:string;error:string|null}>('SELECT revision,url,check_commit,error FROM bridge_source_settings WHERE singleton FOR UPDATE')).rows[0];
                 if(!settings||settings.revision!==bridgeSourceRevision||settings.check_commit!==source.commit||settings.error||settings.url!=='https://github.com/'+source.repository)throw new ConflictException('Источник моста изменился до сохранения импорта. Обновите проверку.');
@@ -30,9 +33,9 @@ export class AssetImportRepository {
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-queue']);
             const pending = await client.query<{count:number}>("SELECT count(*)::int AS count FROM asset_source_jobs WHERE state IN ('QUEUED','RUNNING')");
             if ((pending.rows[0]?.count??0) >= 10) { throw new ConflictException('В очереди уже 10 импортов. Дождитесь завершения текущих операций.'); }
-            const {rows} = await client.query<IImportJob>(`INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message,bridge_source_revision)
-                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости',$7) RETURNING *`,
-            [randomUUID(),actor,requestKey,fingerprint,JSON.stringify(source),JSON.stringify(ids),bridgeSourceRevision??null]);
+            const {rows} = await client.query<IImportJob>(`INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message,bridge_source_revision,cache_only)
+                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости',$7,$8) RETURNING *`,
+            [randomUUID(),actor,requestKey,fingerprint(cacheOnly),JSON.stringify(source),JSON.stringify(ids),bridgeSourceRevision??null,cacheOnly]);
             await securityEvent(client,{actor,action:'asset.import.request',resourceId:rows[0].id,before:null,
                 after:{repository:source.repository,commit:source.commit,ids}});
             await client.query('COMMIT'); return rows[0];
