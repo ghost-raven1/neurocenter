@@ -97,7 +97,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const candidates = useMemo(() => packagingEntrypoints(uploaded?.files ?? [], effectiveKind), [uploaded, effectiveKind]);
     const fileMetadata=effectiveKind==='skill'?skillMetadata:filesMetadata;
     const suggestedName = source === 'npm' ? defaultPackagingTitle(npm.metadata?.package ?? specifier.trim()) : source === 'repository' ? defaultPackagingTitle(repository.metadata?.name || repositoryName(repositoryUrl)) : defaultPackagingTitle(source === 'upload' ? upload.upload?.metadata?.name || (upload.upload?.name || upload.intent?.name || '').replace(/\.(?:zip|tar|tar\.gz|tgz|exe)$/i,'') : fileMetadata?.name || uploaded?.rootName || archiveName.replace(/\.(?:zip|tar|tar\.gz|tgz)$/i, '')) || 'Мой инструмент';
-    const suggestedDescription = metadata?.description || (source === 'files' ? fileMetadata?.description : '') || '';
+    const suggestedDescription = metadata?.description || (source === 'files' ? fileMetadata?.description : source === 'upload' ? upload.upload?.metadata?.description : '') || '';
     const fileError=source==='files'&&effectiveKind!=='skill'&&uploaded?.files.some(file=>file.encoding)?'Бинарные ресурсы поддерживаются в скиллах. Выберите тип «Скилл» или текстовые исходники инструмента.':'';
     const skillError=source==='files'&&effectiveKind==='skill'?(candidates.length>1&&!entrypoint?'':skillMetadata?.error||(!skillMetadata?'Добавьте SKILL.md и ресурсы скилла.':'')):fileError;
     const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry&&!upload.error&&!upload.blocked : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
@@ -198,7 +198,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
             if (resolved?.runnableKinds?.length === 0 || repositoryMetadata?.requiresReleaseChoice) return;
             if (npmMetadata && !npmSelected) throw new Error('Выберите команду запуска npm-пакета.');
             const title = packagingTitle(name, npmMetadata?.package || repositoryMetadata?.name || suggestedName);
-            const summary = description.trim() || resolved?.description?.trim() || (source === 'files' ? fileMetadata?.description : '') || `Инструмент ${title} для OpenCode.`;
+            const summary = description.trim() || resolved?.description?.trim() || (source === 'files' ? fileMetadata?.description : source === 'upload' ? upload.upload?.metadata?.description?.trim() : '') || `Инструмент ${title} для OpenCode.`;
             if (summary.length > 2000) throw new Error('Описание — до 2000 символов.');
             if(skillError)throw new Error(skillError);
             if (source === 'files' && (!uploaded?.files.length || !entrypoint)) throw new Error(effectiveKind==='skill'?'Выберите папку скилла с SKILL.md.':'Выберите исходники и файл запуска.');

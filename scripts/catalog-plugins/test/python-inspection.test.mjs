@@ -97,7 +97,7 @@ test('Runtime plans reject traversal, expressions, unknown data and runtimes wit
 });
 test('GitHub repository, release and local upload persist the same source plan and exact runtime pins',async()=>{
  await fixture({},async root=>{
-  const files=[{path:'pyproject.toml',content:project},{path:'src/mcp_server_time/__init__.py',content:'def main(): pass\n'}];
+  const files=[{path:'pyproject.toml',content:project.replace('version="1.0.0"','version="1.0.0"\ndescription="Time zone conversion for team projects"')},{path:'src/mcp_server_time/__init__.py',content:'def main(): pass\n'}];
   const bytes=runtimeFixture.artifactFixture(files).archive,filename=path.join(root,'time.tar.gz');await fs.writeFile(filename,bytes);
   const sha256=createHash('sha256').update(bytes).digest('hex'),url='https://github.com/owner/repo/releases/download/v1/time.tar.gz';
   const released=await inspectGithubReleaseAsset({name:'time.tar.gz',url,format:'tar.gz',bytes:bytes.length},undefined,{downloadAsset:async()=>({filename,sha256,compressedBytes:bytes.length})});
@@ -106,6 +106,7 @@ test('GitHub repository, release and local upload persist the same source plan a
   const snapshotSha256=createHash('sha256').update(repoBytes).digest('hex');
   const checked=await inspectGithubRepository({type:'repository',url:'https://github.com/owner/repo',commit},undefined,{downloadArchive:async()=>({archivePath,sha256:snapshotSha256})});
   assert.equal(checked.name,'mcp-server-time');assert.equal(released.name,'mcp-server-time');assert.equal(uploaded.name,'mcp-server-time');
+  assert.equal(checked.description,'Time zone conversion for team projects');assert.equal(released.description,checked.description);assert.equal(uploaded.description,checked.description);
   assert.deepEqual(released.runtimeSource.python,uploaded.choices[0].python);assert.deepEqual(checked.runtimeSource.python,released.runtimeSource.python);
   assert.deepEqual(uploaded.choices[0].runtimeAssets['darwin-arm64'],checked.runtimeSource.assets['darwin-arm64'].runtime);
   const pinned=repository.validateRepositorySource({type:'repository',url:'https://github.com/owner/repo',commit,entrypoint:checked.entrypoint,runtimeSource:checked.runtimeSource,snapshotSha256});

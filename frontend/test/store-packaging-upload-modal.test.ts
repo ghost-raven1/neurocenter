@@ -111,6 +111,15 @@ describe('Ready upload wiring in the actual packaging Modal',()=>{
   ui.selects.get('Файл запуска')!.onChange('bin/second');render();ui.finish!();await flush();
   expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({name:'mcp-server-time'}));
  });
+ it('Shows the inspected archive description in the preview and retains it in the published card',async()=>{
+  ready();changeInput('Название в каталоге','');changeInput('Описание инструмента','');ui.upload!.metadata!.name='mcp-server-time';ui.upload!.metadata!.description='Time and timezone conversion tools for MCP clients.';
+  const html=render();expect(html).toContain(ui.upload!.metadata!.description);ui.finish!();await flush();
+  expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({name:'mcp-server-time',description:'Time and timezone conversion tools for MCP clients.'}));
+ });
+ it('Keeps an administrator description instead of replacing it with archive metadata',async()=>{
+  ready();ui.upload!.metadata!.description='Upstream description';render();ui.inputs.get('Описание инструмента')!.onChange!({target:{value:'Описание команды'}});render();
+  ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({description:'Описание команды'}));
+ });
  it('Does not select the first candidate or submit automatically; explicit second entry survives in the exact request',async()=>{
   render();ui.selectSource!({target:{value:'upload'}});ui.upload=readyUpload();ui.intent=intent;render();
   expect(ui.selects.get('Файл запуска')?.value).toBeUndefined();expect(ui.buttons.get('Выберите команду запуска')?.disabled).toBe(true);

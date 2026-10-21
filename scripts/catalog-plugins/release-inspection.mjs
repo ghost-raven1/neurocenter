@@ -8,6 +8,7 @@ import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { downloadRuntimeCandidate } from './runtime-source.mjs';
 import { extractRelease } from './source-adapters.mjs';
 import {inspectPythonSource,pythonEntrypointFiles} from './python-inspection.mjs';
+import {payloadDescription} from './payload-description.mjs';
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 
 /** Actual executable headers establish OS/CPU; filename hints cannot override their platform. */
@@ -169,7 +170,8 @@ export async function inspectGithubReleaseAsset(asset, selected, { cacheDirector
         if (selected && !matching.length) throw new Error('Выбранный исполняемый файл отсутствует в проверенной поставке.');
         if(selected&&matching.length>1&&new Set(matching.map(choice=>choice.entrypoint)).size===1)throw new Error('Для приложения найдено несколько runtime. Выберите архив с одним встроенным runtime.');
         if (chosen && choices.filter(choice => choice.entrypoint === chosen.entrypoint).length > 1) throw new Error('Для приложения найдено несколько runtime. Выберите архив с одним встроенным runtime.');
-        const common = { sha256: downloaded.sha256, entrypoint: chosen?.entrypoint ?? '', candidates: names, executableChoices: choices, warnings: [],...(chosen?.python?.distribution?{name:chosen.python.distribution.name.slice(0,128)}:{}) };
+        const description=await payloadDescription(directory,chosen?[chosen]:choices);
+        const common = { sha256: downloaded.sha256, entrypoint: chosen?.entrypoint ?? '', candidates: names, executableChoices: choices, warnings: [],...(chosen?.python?.distribution?{name:chosen.python.distribution.name.slice(0,128)}:{}),...(description?{description}:{}) };
         if (!chosen) return common;
         const app = { url: asset.url, sha256: downloaded.sha256, format: asset.format, entrypoint: chosen.entrypoint };
         const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.python?{runtime:chosen.runtimeAssets[target]}:chosen.runtimeEntrypoint ? { runtime: { ...app, entrypoint: chosen.runtimeEntrypoint } } : {}) }]));
@@ -192,7 +194,8 @@ export async function inspectGithubRepository(source, selected, { cacheDirectory
         if (selected && !matching.length) throw new Error('Выбранный исполняемый файл отсутствует в закреплённом репозитории.');
         if(selected&&matching.length>1&&new Set(matching.map(choice=>choice.entrypoint)).size===1)throw new Error('Для приложения найдено несколько встроенных runtime. Выберите поставку с одним runtime.');
         if (chosen && choices.filter(choice => choice.entrypoint === chosen.entrypoint).length > 1) throw new Error('Для приложения найдено несколько встроенных runtime. Выберите поставку с одним runtime.');
-        const common = { snapshotSha256: archive.sha256, entrypoint: chosen?.entrypoint ?? '', candidates, requiresEntrypointChoice: !chosen, recommendedKind: 'mcp', runnableKinds: ['mcp'], warnings: [],...(chosen?.python?.distribution?{name:chosen.python.distribution.name.slice(0,128)}:{}) };
+        const description=await payloadDescription(directory,chosen?[chosen]:choices);
+        const common = { snapshotSha256: archive.sha256, entrypoint: chosen?.entrypoint ?? '', candidates, requiresEntrypointChoice: !chosen, recommendedKind: 'mcp', runnableKinds: ['mcp'], warnings: [],...(chosen?.python?.distribution?{name:chosen.python.distribution.name.slice(0,128)}:{}),...(description?{description}:{}) };
         if (!chosen) return common;
         const app = { directory: '.', entrypoint: chosen.entrypoint };
         const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.python?{runtime:chosen.runtimeAssets[target]}:chosen.runtimeEntrypoint ? { runtime: { directory: '.', entrypoint: chosen.runtimeEntrypoint } } : {}) }]));

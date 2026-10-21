@@ -25,6 +25,7 @@ test('Prepared snapshots retain actual adapters, producers, shared helpers and l
     assert.equal(records.find(file=>file.path===adapter).content,await fs.readFile(path.join(repository,adapter),'utf8'));
     assert.ok(records.some(file=>file.path==='services/shared/rag-index-contract.cjs'));assert.ok(records.some(file=>file.path==='scripts/catalog-plugins/locks/opencode-rag-plugin.json'));
     assert.ok(records.some(file=>file.path==='services/shared/skill-source.mjs'),'The retained manifest must resolve its skill preflight without the original checkout.');
+    assert.equal(records.find(file=>file.path==='scripts/catalog-plugins/payload-description.mjs')?.content,await fs.readFile(path.join(repository,'scripts/catalog-plugins/payload-description.mjs'),'utf8'),'Release/upload preflight retains its public description helper.');
     assert.ok(!text.includes(root));assert.ok(!text.includes(repository));assert.ok(!text.includes('private fixture must never be retained'));assert.ok(!records.some(file=>/node_modules|\/test\/|\/examples\/|\.env$/.test(file.path)));
 });
 test('Prepared source allowlist retains the local import closure of producer and shared modules',async()=>{

@@ -8,7 +8,7 @@ export const uploadId=(value:unknown):value is string=>typeof value==='string'&&
 export interface UploadIntent {requestKey:string;name:string;bytes:number;sha256:string}
 export interface UploadBuildSource {type:'upload';uploadId:string;sha256:string;bytes:number;entrypoint:string}
 export interface UploadChoice {entrypoint:string;adapter:RuntimeAdapter;targets:RuntimeTarget[];runtimeEntrypoint?:string;python?:PythonSourcePlan;runtimeAssets?:Partial<Record<RuntimeTarget,RemoteRuntimeAsset>>}
-export interface UploadMetadata {candidates:string[];choices:UploadChoice[];entrypoint:string;name?:string;supportedTargets?:RuntimeTarget[];adapter?:RuntimeAdapter;requiresEntrypointChoice:boolean;runnableKinds:['mcp']}
+export interface UploadMetadata {candidates:string[];choices:UploadChoice[];entrypoint:string;name?:string;description?:string;supportedTargets?:RuntimeTarget[];adapter?:RuntimeAdapter;requiresEntrypointChoice:boolean;runnableKinds:['mcp']}
 export interface UploadRow {id:string;actor:string;request_key:string;request_hash:string;name:string;bytes:string;sha256:string;format:'zip'|'tar.gz'|'file';state:'WAITING'|'UPLOADING'|'READY'|'CANCELLED';auth_epoch:string;lease_token:string|null;metadata:UploadMetadata|null;created_at:Date;expires_at:Date;updated_at:Date}
 export interface PinnedUploadSource extends UploadBuildSource {format:UploadRow['format'];runtimeSource:RuntimeSource}
 export const uploadView=(row:UploadRow)=>({id:row.id,requestKey:row.request_key,name:row.name,bytes:Number(row.bytes),sha256:row.sha256,state:row.state,expiresAt:row.expires_at,...(row.metadata?{metadata:row.metadata}:{})});

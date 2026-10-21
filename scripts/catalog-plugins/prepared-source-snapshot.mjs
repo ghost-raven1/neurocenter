@@ -9,7 +9,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'package.json','package-lock.json',
     'scripts/catalog-plugins/archive-source.mjs','scripts/catalog-plugins/build.mjs','scripts/catalog-plugins/generic.mjs',
-    'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/prepare.mjs',
+    'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/payload-description.mjs','scripts/catalog-plugins/prepare.mjs',
     'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/recipe-schema.mjs',
     'scripts/catalog-plugins/release-inspection.mjs','scripts/catalog-plugins/repository-source.mjs',
     'scripts/catalog-plugins/python-runtime.mjs','scripts/catalog-plugins/python-dependencies.mjs','scripts/catalog-plugins/python-trusted-archive.mjs','scripts/catalog-plugins/python-inspection.mjs',
