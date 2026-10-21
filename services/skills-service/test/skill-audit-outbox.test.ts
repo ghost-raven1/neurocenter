@@ -111,11 +111,18 @@ describe('Устойчивый аудит файловых скиллов', () =
         if(deleted){await expect(fs.stat(path.join(root,'project-audit/helper.md'))).rejects.toMatchObject({code:'ENOENT'});}
     });
     it('Сбой второй части повторяет стабильные UUID и не теряет первую уже подтверждённую часть', async () => {
-        const attempts:ISkillAuditEvent[][]=[];let fail=true;const store=storage(async events=>{attempts.push(events);if(fail&&attempts.length===2){throw new Error('Ошибка SQL');}});
-        const service=new SkillsService(store);const result=await service.syncSkills('many',Array.from({length:201},(_,i)=>({slug:'item-'+i,name:'Скилл '+i,body:'Текст'})),actor);
-        expect(result.audit).toEqual({state:'pending'});expect(attempts.map(items=>items.length)).toEqual([200,1]);fail=false;await store.flushSkillAudit();
-        expect(attempts.map(items=>items.length)).toEqual([200,1,200,1]);expect(attempts[2]).toEqual(attempts[0]);expect(attempts[3]).toEqual(attempts[1]);expect(await files()).toEqual([]);
-    });
+        const attempts:ISkillAuditEvent[][]=[];let fail=true;let release!:()=>void;let entered!:()=>void;
+        const hold=new Promise<void>(resolve=>{release=resolve;});const started=new Promise<void>(resolve=>{entered=resolve;});
+        const store=storage(async events=>{attempts.push(events);if(fail&&attempts.length===2){entered();await hold;throw new Error('Ошибка SQL');}});
+        try{
+            const service=new SkillsService(store);const result=await service.syncSkills('many',Array.from({length:201},(_,i)=>({slug:'item-'+i,name:'Скилл '+i,body:'Текст'})),actor);
+            expect(result.audit).toEqual({state:'pending'});await started;
+            const failed=store.flushSkillAudit();release();await expect(failed).rejects.toThrow('Ошибка SQL');
+            expect(attempts.map(items=>items.length)).toEqual([200,1]);expect(await store.pendingAudit()).toBe(true);
+            fail=false;await store.flushSkillAudit();
+            expect(attempts.map(items=>items.length)).toEqual([200,1,200,1]);expect(attempts[2]).toEqual(attempts[0]);expect(attempts[3]).toEqual(attempts[1]);expect(await files()).toEqual([]);
+        }finally{release();}
+    },30000);
     it('Повреждённая сводка журнала блокирует старт и не скрывается успешной readiness', async () => {
         const {journal,filename}=await fixture('committed');journal.events![0].after!.sha256='f'.repeat(64);await fs.writeFile(filename,JSON.stringify(journal));
         const deliver=vi.fn(async()=>undefined);const store=storage(deliver);await expect(store.init()).rejects.toThrow('не соответствуют');

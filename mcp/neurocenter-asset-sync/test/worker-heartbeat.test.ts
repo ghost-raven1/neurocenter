@@ -14,6 +14,7 @@ vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof 
 vi.mock('../src/bridge/job-runtime-artifacts.js', () => ({ prepareJobRuntimeArtifacts: vi.fn() }));
 vi.mock('../src/bridge/installer.js', async original => ({ ...await original<typeof import('../src/bridge/installer.js')>(), install: vi.fn() }));
 
+const originalReadState = state.readState;
 function deferred() {
     let resolve!: () => void;
     const promise = new Promise<void>(done => { resolve = done; });
@@ -21,60 +22,78 @@ function deferred() {
 }
 
 describe('Heartbeat сохраняется во время длительной установки', () => {
-    let fixture: Awaited<ReturnType<typeof workspaceFixture>>;
+    let fixture: Awaited<ReturnType<typeof workspaceFixture>> | undefined;
     let previousSignals: Map<NodeJS.Signals, Set<(...args: unknown[]) => void>>;
     let gate: ReturnType<typeof deferred>;
     let entered: ReturnType<typeof deferred>;
+    let releases: Array<() => void>;
+    let setup: Promise<void> | undefined;
     let worker: Promise<void> | undefined;
     let lastSeen: number;
     let heartbeat: () => Promise<unknown>;
     let revoked: boolean;
     let credentials: state.Credentials;
     const jobId = '11111111-1111-1111-1111-111111111111';
-    beforeEach(async () => {
-        fixture = await workspaceFixture(); vi.clearAllMocks();
+    const paused = () => { const pending = deferred(); releases.push(pending.resolve); return pending; };
+    beforeEach(context => {
+        fixture = undefined; worker = undefined; setup = undefined; releases = []; vi.clearAllMocks();
         previousSignals = new Map(['SIGTERM', 'SIGINT'].map(signal => [signal as NodeJS.Signals, new Set(process.listeners(signal))]));
-        credentials = { token: 'fixture-token', deviceId: '33333333-3333-3333-3333-333333333333', email: 'fixture@example.test' };
-        socket.disconnect.mockReturnValue(socket); socket.connect.mockReturnValue(socket);
-        await state.writeState('credentials', credentials);
-        const readState = state.readState;
-        vi.spyOn(state, 'readState').mockImplementation(async name => name === 'credentials' ? credentials as never : readState(name));
-        vi.spyOn(workspace, 'workspaceReport').mockResolvedValue(await workspace.workspaceReport());
-        vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-        vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
-        gate = deferred(); entered = deferred(); lastSeen = 0; revoked = false;
-        heartbeat = async () => { lastSeen = Date.now(); return {}; };
-        vi.mocked(prepareJobRuntimeArtifacts).mockImplementation(async () => { entered.resolve(); await gate.promise; });
-        vi.mocked(install).mockImplementation(async (_project, _pkg, authorize) => { await authorize?.(); return {} as never; });
-        const bindingId = await workspace.projectBindingId('test-project');
-        let claimed = false;
-        vi.mocked(state.api).mockImplementation(async route => {
-            if (route === 'heartbeat') return await heartbeat() as never;
-            if (route.endsWith('/authorize') && revoked) throw new Error('Права отозваны');
-            if (route === 'jobs/claim') {
-                if (claimed) return null as never;
-                claimed = true;
-                return { id: jobId, lease: '22222222-2222-2222-2222-222222222222', kind: 'install', project_id: 'test-project',
-                    payload: { package: packageFixture(), bindingId } } as never;
-            }
-            return {} as never;
-        });
-        vi.useFakeTimers();
-        worker = runWorker(); await entered.promise;
+        gate = paused(); entered = paused();
+        setup = (async () => {
+            fixture = await workspaceFixture(); context.signal.throwIfAborted();
+            credentials = { token: 'fixture-token', deviceId: '33333333-3333-3333-3333-333333333333', email: 'fixture@example.test' };
+            socket.disconnect.mockReturnValue(socket); socket.connect.mockReturnValue(socket);
+            await state.writeState('credentials', credentials); context.signal.throwIfAborted();
+            vi.spyOn(state, 'readState').mockImplementation(async name => name === 'credentials' ? credentials as never : originalReadState(name));
+            const report = await workspace.workspaceReport(); context.signal.throwIfAborted();
+            vi.spyOn(workspace, 'workspaceReport').mockResolvedValue(report);
+            vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+            vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+            lastSeen = 0; revoked = false;
+            heartbeat = async () => { lastSeen = Date.now(); return {}; };
+            vi.mocked(prepareJobRuntimeArtifacts).mockImplementation(async () => { entered.resolve(); await gate.promise; });
+            vi.mocked(install).mockImplementation(async (_project, _pkg, authorize) => { await authorize?.(); return {} as never; });
+            const bindingId = await workspace.projectBindingId('test-project'); context.signal.throwIfAborted();
+            let claimed = false;
+            vi.mocked(state.api).mockImplementation(async route => {
+                if (route === 'heartbeat') return await heartbeat() as never;
+                if (route.endsWith('/authorize') && revoked) throw new Error('Права отозваны');
+                if (route === 'jobs/claim') {
+                    if (claimed) return null as never;
+                    claimed = true;
+                    return { id: jobId, lease: '22222222-2222-2222-2222-222222222222', kind: 'install', project_id: 'test-project',
+                        payload: { package: packageFixture(), bindingId } } as never;
+                }
+                return {} as never;
+            });
+            vi.useFakeTimers();
+            worker = runWorker(); await entered.promise; context.signal.throwIfAborted();
+        })();
+        return setup;
     });
     const calls = (route: string) => vi.mocked(state.api).mock.calls.filter(([value]) => value === route).length;
     async function stop(): Promise<void> {
-        if (vi.mocked(process.exit).mock.calls.length) { return; }
+        if (!vi.isMockFunction(process.exit) || process.exit.mock.calls.length) { return; }
         const listener = process.listeners('SIGTERM').find(value => !previousSignals.get('SIGTERM')!.has(value));
-        listener?.();
+        if (!listener) { return; }
+        listener();
         await vi.waitFor(() => expect(process.exit).toHaveBeenCalled());
     }
     afterEach(async () => {
-        gate.resolve(); await worker;
-        await stop();
-        vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs();
-        for (const [signal, previous] of previousSignals) for (const listener of process.listeners(signal)) if (!previous.has(listener)) process.off(signal, listener);
-        await fs.rm(fixture.temporary, { recursive: true, force: true });
+        try {
+            for (const release of releases) { release(); }
+            await setup?.catch(() => undefined);
+            for (const release of releases) { release(); }
+            await worker;
+        } finally {
+            try { await stop(); }
+            finally {
+                if (vi.isFakeTimers()) { vi.clearAllTimers(); vi.useRealTimers(); }
+                vi.restoreAllMocks(); vi.unstubAllEnvs();
+                for (const [signal, previous] of previousSignals) for (const listener of process.listeners(signal)) if (!previous.has(listener)) process.off(signal, listener);
+                if (fixture) { await fs.rm(fixture.temporary, { recursive: true, force: true }); }
+            }
+        }
     });
 
     it('После 90 секунд heartbeat и renew свежие, а claim и установка остаются последовательными', async () => {
@@ -97,7 +116,7 @@ describe('Heartbeat сохраняется во время длительной 
     });
 
     it('Медленный heartbeat не запускается параллельно повторным timer или завершению job', async () => {
-        const pending = deferred();
+        const pending = paused();
         heartbeat = async () => { await pending.promise; lastSeen = Date.now(); return {}; };
         await vi.advanceTimersByTimeAsync(60_000);
         expect(calls('heartbeat')).toBe(2);
@@ -147,7 +166,7 @@ describe('Heartbeat сохраняется во время длительной 
 
     it('Stop во время подготовки отчёта не отправляет отложенный heartbeat', async () => {
         const report = await workspace.workspaceReport();
-        const pending = deferred();
+        const pending = paused();
         vi.mocked(workspace.workspaceReport).mockImplementation(async () => { await pending.promise; return report; });
         await vi.advanceTimersByTimeAsync(15_000);
         expect(calls('heartbeat')).toBe(1);
