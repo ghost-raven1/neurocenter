@@ -47,7 +47,8 @@ describe('Ограниченный запрос модели', () => {
     });
     it('Ограничивает сообщения, картинки и параметры генерации', () => {
         const message = { role: 'user', content: 'Текст' };
-        for (const input of [{ messages: Array(41).fill(message) }, { messages: [{ ...message, role: 'tool' }] },
+        expect(modelInferenceBody('chat', { messages: Array(1001).fill(message) }).messages).toHaveLength(1001);
+        for (const input of [{ messages: [{ ...message, role: 'tool' }] },
             { messages: [{ ...message, content: 'x'.repeat(128 * 1024 + 1) }] }, { messages: [{ ...message, images: Array(5).fill(png) }] },
             { messages: [message], options: { num_predict: 32769 } }, { messages: [message], options: { temperature: -1 } },
             { messages: [message], options: { top_p: 1.01 } }, { messages: [message], options: { num_ctx: 2097153 } }]) {

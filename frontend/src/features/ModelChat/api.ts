@@ -1,6 +1,6 @@
 import api from '../../core/api/base';
 import type { ICatalogModel } from '../ModelCatalog/types';
-import type { IModelChatAttachmentPreview, IModelChatContext, IModelChatConversation, IModelChatDetail } from './types';
+import type { IModelChatAttachmentPreview, IModelChatContext, IModelChatConversation, IModelChatDetail, IModelChatHistoryPage } from './types';
 
 const route = '/api/model-chats';
 const chatRoute = (id: string): string => `${route}/${encodeURIComponent(id)}`;
@@ -15,6 +15,7 @@ export const modelChatApi = {
     create: (model: ICatalogModel, projectId: string | undefined, signal: AbortSignal) => api.post<IModelChatDetail>(route,
         {modelId: model.id, ...(projectId ? {projectId} : {}), expectedModelPin: pin(model)}, {signal}).then(value => value.data),
     read: (id: string, signal: AbortSignal) => api.get<IModelChatDetail>(chatRoute(id), {signal}).then(value => value.data),
+    history: (id: string, before: string, signal: AbortSignal) => api.get<IModelChatHistoryPage>(`${chatRoute(id)}/history`, {params: {before, limit: 50}, signal}).then(value => value.data),
     rename: (id: string, revision: number, title: string, signal: AbortSignal) => api.patch<IModelChatDetail>(chatRoute(id), {expectedRevision: revision, title}, {signal}).then(value => value.data),
     remove: (id: string, revision: number, signal: AbortSignal) => api.delete<void>(chatRoute(id), {data: {expectedRevision: revision}, signal}),
     send: (detail: IModelChatDetail, model: ICatalogModel, requestId: string, prompt: string, attachmentIds: string[], signal: AbortSignal) => api.post<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns`,

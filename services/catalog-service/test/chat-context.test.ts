@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { chatContext, chatUsage } from '../src/model-chat/chat-context';
+import { chatContext, chatUsage, managedChatContextWindow } from '../src/model-chat/chat-context';
 
 const message = (content: string) => ({ role: 'user', content });
 
 describe('Saved chat context budgets', () => {
+    it('Uses only explicit bounded local context allocations', () => {
+        expect(managedChatContextWindow({})).toBeNull(); expect(managedChatContextWindow({ MODEL_CHAT_CONTEXT_WINDOW_TOKENS: '4096' })).toBe(4096);
+        for (const value of ['0', '127', '-1', '2097153', '4096.5', 'wat', ' 4096']) expect(() => managedChatContextWindow({ MODEL_CHAT_CONTEXT_WINDOW_TOKENS: value })).toThrow('MODEL_CHAT_CONTEXT_WINDOW_TOKENS');
+    });
     it('Keeps unknown model capacity unknown and labels the token heuristic', () => {
         expect(chatContext([])).toEqual({ contextWindowTokens: null, reservedOutputTokens: null, estimatedInputTokens: 0, method: 'estimate',
-            messageCount: 0, maxMessages: 40, maxMessageBytes: 131072, maxRequestBytes: 8388608,
-            requestBytes: Buffer.byteLength(JSON.stringify({ messages: [], stream: false })), exceeded: false });
+            messageCount: 0, maxMessageBytes: 131072, maxRequestBytes: 8388608,
+            requestBytes: Buffer.byteLength(JSON.stringify({ messages: [], stream: false })), exceeded: false, canCompact: false, compactionNeeded: false });
         const multilingual = 'Код const цена = "日本語 😀";';
         const result = chatContext([message(multilingual)]);
         expect(result.contextWindowTokens).toBeNull();
@@ -24,9 +28,8 @@ describe('Saved chat context budgets', () => {
     it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('Does not invent a capacity from invalid metadata %s', value => {
         expect(chatContext([message('x')], { contextWindowTokens: value, reservedOutputTokens: value })).toMatchObject({ contextWindowTokens: null, reservedOutputTokens: null, exceeded: false });
     });
-    it('Respects the 40-message boundary and byte boundaries for Cyrillic text', () => {
-        expect(chatContext(Array.from({ length: 40 }, () => message('x'))).exceeded).toBe(false);
-        expect(chatContext(Array.from({ length: 41 }, () => message('x')))).toMatchObject({ exceeded: true, messageCount: 41, reason: expect.stringContaining('40 сообщений') });
+    it('Allows long dialogues without a message-count stop and respects UTF-8 boundaries', () => {
+        expect(chatContext(Array.from({ length: 1001 }, () => message('x')))).toMatchObject({ exceeded: false, messageCount: 1001 });
         expect(chatContext([message('я'.repeat(65536))]).exceeded).toBe(false);
         expect(chatContext([message('я'.repeat(65537))])).toMatchObject({ exceeded: true, reason: expect.stringContaining('128 КиБ') });
     });

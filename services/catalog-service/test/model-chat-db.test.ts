@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { Request } from 'express';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -12,8 +13,14 @@ import type { ModelsService } from '../src/models/models.service';
 import type { ModelRuntime } from '../src/models/model-runtime';
 import type { IModel } from '../src/models/model.types';
 import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
+import { ChatAttachmentStorage } from '../src/model-chat/chat-attachment-storage';
+import { ChatObjectStorage, chatS3Configuration } from '../src/model-chat/chat-object-storage';
+import { COMPACTION_INSTRUCTION } from '../src/model-chat/chat-compaction';
+
+vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn(async () => undefined) }));
 
 const connection = process.env.MODEL_CHAT_FILES_TEST_PG_URL;
+const storageConfig = process.env.MODEL_CHAT_FILES_TEST_S3_CONFIG;
 const card = (): IModel => ({ id: 'model-chat-test', name: 'Chat', description: '', capability: 'chat', runtime: 'ollama', model: 'test:1', manifestSha256: 'a'.repeat(64), dimension: null, source: 'custom', revision: 1, createdAt: '2026-10-21', updatedAt: '2026-10-21' });
 const request = (email = 'owner@localhost'): Request => ({ headers: { 'x-test-email': email } } as unknown as Request);
 const signal = (): AbortSignal => new AbortController().signal;
@@ -35,8 +42,9 @@ describe('Chat input boundaries', () => {
     });
 });
 
-describe.skipIf(!connection)('Personal model chats — disposable PostgreSQL', () => {
+describe.skipIf(!connection || !storageConfig)('Personal model chats — disposable PostgreSQL and S3', () => {
     let admin: Pool, db: Pool, service: ModelChatService, database: string, oldUrl: string | undefined;
+    let objects: ChatObjectStorage;
     let model = card(), allowed = true;
     const models = {
         ready: vi.fn(async () => undefined),
@@ -56,17 +64,21 @@ describe.skipIf(!connection)('Personal model chats — disposable PostgreSQL', (
         await db.query("INSERT INTO projects(id,name) VALUES('prj-chat-test','Chat project')");
         await db.query("INSERT INTO model_catalog(id,name,descriptor) VALUES('model-chat-test','Chat model','{}')");
         service = new ModelChatService(models as unknown as ModelsService, runtime as unknown as ModelRuntime);
+        const settings = chatS3Configuration(JSON.parse(readFileSync(storageConfig!, 'utf8')))!;
+        const suffix = randomUUID().replaceAll('-', ''); settings.projectBucket = 'nc-chat-db-project-' + suffix; settings.personalBucket = 'nc-chat-db-personal-' + suffix;
+        objects = new ChatObjectStorage(settings, { allowInsecureLocal: true });
+        service.storage = new ChatAttachmentStorage(service.pool, { objectStorage: objects }); await service.onModuleInit();
     });
     afterEach(async () => {
-        await db?.query('DELETE FROM model_chat_conversations'); model = card(); allowed = true; vi.clearAllMocks();
+        await db?.query('DELETE FROM model_chat_conversations'); await service?.storage.collect(1000); model = card(); allowed = true; vi.clearAllMocks();
         runtime.infer.mockImplementation(async () => ({ model: model.model, done_reason: 'stop', message: { role: 'assistant', content: 'Ответ' }, prompt_eval_count: 9, eval_count: 4, usage_reported: true }));
     });
-    afterAll(async () => { await service?.onApplicationShutdown(); await db?.end(); if (admin) { await admin.query('DROP DATABASE ' + database); await admin.end(); } if (oldUrl === undefined) delete process.env.CATALOG_PG_URL; else process.env.CATALOG_PG_URL = oldUrl; });
+    afterAll(async () => { await service?.onApplicationShutdown(); await db?.end(); if (admin) { await admin.query('DROP DATABASE ' + database); await admin.end(); } if (objects) for (const bucket of [objects.config.projectBucket, objects.config.personalBucket]) await objects.client.removeBucket(bucket); if (oldUrl === undefined) delete process.env.CATALOG_PG_URL; else process.env.CATALOG_PG_URL = oldUrl; });
     it('creates only migration-owned tables and canonicalizes project names', async () => {
         const created = await service.create(request(), { modelId: model.id, projectId: 'Chat project', expectedModelPin: projectEmbeddingPin(model) });
         expect(created.conversation.projectId).toBe('prj-chat-test'); expect(created.turns).toEqual([]);
         expect((await checkCatalogSchema(db, true)).ready).toBe(true);
-        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(13);
+        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(15);
     });
     it('keeps chats private even from another administrator and isolates project scopes', async () => {
         const a = await create(); const b = request('other-admin@localhost');
@@ -130,6 +142,28 @@ describe.skipIf(!connection)('Personal model chats — disposable PostgreSQL', (
         const progress = await service.read(request(), created.conversation.id), stopped = await service.cancel(request(), created.conversation.id, progress.turns[0].id, { expectedRevision: progress.conversation.revision });
         release(); await pending; expect(stopped.turns[0].status).toBe('cancelled'); expect((await service.read(request(), created.conversation.id)).turns[0].answer).toBeUndefined();
     });
+    it('a delayed cancel acknowledgement never aborts a newer retry of the same turn', async () => {
+        let oldStarted!: () => void, newStarted!: () => void, cancelCommitted!: () => void, releaseOld!: () => void, releaseNew!: () => void, releaseCancel!: () => void;
+        const oldBegan = new Promise<void>(resolve => { oldStarted = resolve; }), newBegan = new Promise<void>(resolve => { newStarted = resolve; });
+        const committed = new Promise<void>(resolve => { cancelCommitted = resolve; }), oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
+        const newGate = new Promise<void>(resolve => { releaseNew = resolve; }), cancelGate = new Promise<void>(resolve => { releaseCancel = resolve; });
+        let newSignal!: AbortSignal;
+        runtime.infer.mockImplementationOnce(async () => { oldStarted(); await oldGate; return { message: { role: 'assistant', content: 'old' }, done_reason: 'stop' } as never; });
+        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort: AbortSignal) => { newSignal = abort; newStarted(); await newGate; return { message: { role: 'assistant', content: 'new' }, done_reason: 'stop' } as never; });
+        const detail = await create(), oldRequestId = randomUUID(), oldPending = send(detail, 'retry me', [], oldRequestId);
+        await oldBegan; const progress = await service.read(request(), detail.conversation.id), original = service.repository.owned.bind(service.repository);
+        const interceptor = vi.spyOn(service.repository, 'owned').mockImplementation(async (...args) => {
+            const result = await original(...args); if (result === oldRequestId) { cancelCommitted(); await cancelGate; } return result;
+        });
+        try {
+            const cancelling = service.cancel(request(), detail.conversation.id, progress.turns[0].id, { expectedRevision: progress.conversation.revision });
+            await committed; const cancelled = await service.read(request(), detail.conversation.id);
+            const retried = service.retry(request(), detail.conversation.id, progress.turns[0].id, { expectedRevision: cancelled.conversation.revision, expectedModelPin: cancelled.conversation.modelPin, requestId: randomUUID() }, signal());
+            await newBegan; releaseCancel(); await cancelling; expect(newSignal.aborted).toBe(false);
+            releaseNew(); expect((await retried).turns[0].answer?.content).toBe('new'); releaseOld(); await oldPending;
+            expect((await service.read(request(), detail.conversation.id)).turns[0].answer?.content).toBe('new');
+        } finally { interceptor.mockRestore(); releaseCancel(); releaseOld(); releaseNew(); }
+    });
     it('blocks changed model semantics and withholds late results after access revocation', async () => {
         const created = await create(); model = { ...model, manifestSha256: 'b'.repeat(64) };
         expect((await service.read(request(), created.conversation.id)).blockedReason).toContain('изменились');
@@ -158,6 +192,53 @@ describe.skipIf(!connection)('Personal model chats — disposable PostgreSQL', (
         await expect(service.removeAttachment(request(), detail.conversation.id, attachmentId, { expectedRevision: detail.conversation.revision })).rejects.toBeInstanceOf(ConflictException);
         const other = await create(), draft = await service.upload(request(), other.conversation.id, { ...upload, requestId: randomUUID() });
         await service.removeAttachment(request(), other.conversation.id, draft.attachments[0].id, { expectedRevision: draft.conversation.revision });
-        expect((await db.query('SELECT content,text,text_bytes FROM model_chat_attachments WHERE id=$1', [draft.attachments[0].id])).rows[0]).toEqual({ content: null, text: '', text_bytes: 0 });
+        expect((await db.query('SELECT object_id,storage_state,text,text_bytes FROM model_chat_attachments WHERE id=$1', [draft.attachments[0].id])).rows[0]).toEqual({ object_id: null, storage_state: 'DELETED', text: '', text_bytes: 0 });
+    });
+    it('caps serialized answers before committing while retaining previous successful turns', async () => {
+        const first = await send(await create());
+        runtime.infer.mockResolvedValueOnce({ message: { role: 'assistant', content: 'answer' + '\n'.repeat(4 * 1024 ** 2) }, done_reason: 'stop' } as never);
+        const failed = await send(first, 'Next'); expect(failed.turns[0].answer?.content).toBe('Ответ');
+        expect(failed.turns[1]).toMatchObject({ status: 'failed' }); expect(failed.turns[1].answer).toBeUndefined();
+    });
+    it('keeps more than 1000 turns and does not summarize a 5 MiB dialogue with unknown model capacity', async () => {
+        let detail = await create(); expect(detail.context.contextWindowTokens).toBeNull();
+        const answer = { content: 'old answer', finishReason: 'stop', usage: { inputTokens: null, outputTokens: null, totalTokens: null, reported: false } };
+        await db.query(`WITH ids AS (SELECT gen_random_uuid() AS id,gen_random_uuid() AS request,n FROM generate_series(1,1005) n)
+            INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,input_text,attachment_ids,status,answer)
+            SELECT id,$1,request,ARRAY[request],$2,'old '||n,'old '||n,'{}','done',$3::jsonb FROM ids`, [detail.conversation.id, 'a'.repeat(64), JSON.stringify(answer)]);
+        for (let index = 0; index < 5; index++) await db.query(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,input_text,attachment_ids,status,answer)
+            VALUES($1,$2,$3,ARRAY[$3::uuid],$4,'large','large','{}','done',$5::jsonb)`, [randomUUID(), detail.conversation.id, randomUUID(), 'a'.repeat(64), JSON.stringify({ ...answer, content: 'z'.repeat(1024 ** 2) })]);
+        detail = await service.read(request(), detail.conversation.id);
+        expect(detail.context).toMatchObject({ compactionNeeded: false, exceeded: false }); expect(detail.history.hasMore).toBe(true);
+        const sent = await send(detail, 'Продолжай'); expect(sent.turns.at(-1)?.status).toBe('done'); expect(runtime.infer).toHaveBeenCalledOnce();
+        const messages = (runtime.infer.mock.calls[0][2] as { messages: Array<{ role: string; content: string }> }).messages;
+        expect(messages.filter(message => message.role === 'user')).toHaveLength(1011); expect(messages.some(message => message.content === 'old 1005')).toBe(true);
+        expect(messages.filter(message => message.role === 'assistant').map(message => message.content).join('')).toContain('z'.repeat(5 * 1024 ** 2));
+        expect((await db.query('SELECT count(*) AS n FROM model_chat_compactions WHERE conversation_id=$1', [detail.conversation.id])).rows[0].n).toBe('0');
+        expect((await db.query('SELECT count(*) AS n FROM model_chat_turns WHERE conversation_id=$1', [detail.conversation.id])).rows[0].n).toBe('1011');
+    });
+    it('uses explicit local num_ctx for summary and answer and freezes receipts plus successful originals', async () => {
+        const oldWindow = process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS; let managed: ModelChatService;
+        try { process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS = '4096'; managed = new ModelChatService(models as unknown as ModelsService, runtime as unknown as ModelRuntime); }
+        finally { if (oldWindow === undefined) delete process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS; else process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS = oldWindow; }
+        try {
+            let detail = await create();
+            for (let index = 0; index < 8; index++) await db.query(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,input_text,attachment_ids,status,answer)
+                VALUES($1,$2,$3,ARRAY[$3::uuid],$4,$5,$5,'{}','done',$6::jsonb)`, [randomUUID(), detail.conversation.id, randomUUID(), 'a'.repeat(64), 'question ' + 'x'.repeat(1000), JSON.stringify({ content: 'y'.repeat(1000), finishReason: 'stop', usage: { reported: false, inputTokens: null, outputTokens: null, totalTokens: null } })]);
+            const originals = (await db.query("SELECT id,input_text,answer FROM model_chat_turns WHERE conversation_id=$1 ORDER BY position", [detail.conversation.id])).rows;
+            detail = await managed!.read(request(), detail.conversation.id);
+            runtime.infer.mockImplementation(async (_m, _e, input) => ({ message: { role: 'assistant', content: (input as { messages: Array<{ content: string }> }).messages[0].content === COMPACTION_INSTRUCTION ? 'Резюме исходной беседы.' : 'Итог.' }, done_reason: 'stop' } as never));
+            detail = await managed!.send(request(), detail.conversation.id, { expectedRevision: detail.conversation.revision, expectedModelPin: detail.conversation.modelPin, requestId: randomUUID(), prompt: 'Продолжай', attachmentIds: [] }, signal());
+            expect(detail.turns.at(-1)?.status).toBe('done'); expect(detail.compaction.coveredTurns).toBeGreaterThan(0);
+            expect(runtime.infer.mock.calls.every(call => (call[2] as { options: { num_ctx: number } }).options.num_ctx === 4096)).toBe(true);
+            expect((await db.query("SELECT id,input_text,answer FROM model_chat_turns WHERE conversation_id=$1 AND id=ANY($2::uuid[]) ORDER BY position", [detail.conversation.id, originals.map(turn => turn.id)])).rows).toEqual(originals);
+            const saved = (await db.query('SELECT id FROM model_chat_compactions WHERE conversation_id=$1 LIMIT 1', [detail.conversation.id])).rows[0]; expect(saved).toBeTruthy();
+            await expect(db.query("UPDATE model_chat_turns SET input_text='rewritten' WHERE id=$1", [originals[0].id])).rejects.toThrow('immutable');
+            await expect(db.query('DELETE FROM model_chat_turns WHERE id=$1', [originals[0].id])).rejects.toThrow('immutable');
+            await expect(db.query("UPDATE model_chat_compactions SET summary='rewritten' WHERE id=$1", [saved.id])).rejects.toThrow('immutable');
+            await expect(db.query('DELETE FROM model_chat_compactions WHERE id=$1', [saved.id])).rejects.toThrow('immutable');
+            await managed!.remove(request(), detail.conversation.id, { expectedRevision: detail.conversation.revision });
+            expect((await db.query('SELECT count(*) AS n FROM model_chat_compactions WHERE conversation_id=$1', [detail.conversation.id])).rows[0].n).toBe('0');
+        } finally { await managed!.onApplicationShutdown(); }
     });
 });

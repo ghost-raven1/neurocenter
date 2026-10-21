@@ -134,6 +134,7 @@ export class ProxyService {
             }
             const upstreamRequest={
                 method,
+                ...(/^\/api\/model-chats(?:\/|$)/.test(supplyPath || '')?{maxContentLength:64*1024*1024}:{}),
                 ...(method==='POST'&&supplyPath==='/api/bridge-source/check'?{timeout:60000}:{}),
                 // Source inspection chains external reads; leave time to return before the client's 90 s deadline.
                 ...(method === 'GET' && /^\/api\/tool-builds\/(?:repository|npm)$/.test(supplyPath || '') ? {timeout: 85000} : {}),

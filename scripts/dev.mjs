@@ -13,6 +13,7 @@ import {prepareStartupAssets} from './assets/startup.mjs';
 import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
 import {privateSnapshotFile} from './snapshots/control.mjs';
 import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
+import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -198,6 +199,9 @@ async function start(profile) {
     const modelCredentials=await prepareDevModelCredentials(root,process.env);
     output.info('Снимки LanceDB','Проверка ключа и изолированного SDK-исполнителя');
     const snapshots=await prepareDevSnapshots(root,process.env);
+    output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
+    const chatStorage=await prepareDevChatStorage(root,process.env);
+    const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();
@@ -206,10 +210,11 @@ async function start(profile) {
 
     const commonEnvironment={...process.env};
     for(const key of Object.keys(commonEnvironment))if(key.startsWith('SNAPSHOT_'))delete commonEnvironment[key];
+    for(const key of Object.keys(commonEnvironment))if(key.startsWith('CHAT_S3_'))delete commonEnvironment[key];
     delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
     const shared = {
         ...commonEnvironment,
-        ...modelRuntimeEnvironment(root,process.env),
+        ...runtimeEnvironment,
         DEV_POSTGRES_CONTAINER: postgres.stdout.trim(),
         BACKUP_DIR: path.resolve(root, process.env.BACKUP_DIR || 'data/backups'),
         RUNTIME_ARTIFACT_DIR:path.resolve(root,process.env.RUNTIME_ARTIFACT_DIR||'data/runtime-artifacts'),
@@ -246,7 +251,7 @@ async function start(profile) {
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
-                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog}:{}), PORT: String(service.port) },
+                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}), PORT: String(service.port) },
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });

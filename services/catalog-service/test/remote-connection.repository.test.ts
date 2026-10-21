@@ -72,7 +72,7 @@ describe.skipIf(!connection)('Private model connection history — disposable Po
     it('Rejects unsupported options, invalid timeout, auth changes without a new key and failed authorization atomically', async () => {
         const { pool, repository, model } = await fixture();
         await pool.query("UPDATE model_catalog SET descriptor=jsonb_set(descriptor,'{runtime}','\"remote-openai\"') WHERE id=$1", [model.id]);
-        await expect(repository.save(model.id, input(model, 0, { options: { contextWindow: 4096 } }), 'fixture', authorize)).rejects.toThrow('Ollama');
+        expect(() => input(model, 0, { options: { contextWindow: 127 } })).toThrow('contextWindow');
         await expect(repository.save(model.id, { ...input(model, 0), timeoutMs: 500 }, 'fixture', authorize)).rejects.toThrow('Таймаут');
         await expect(repository.save(model.id, input(model, 0), 'fixture', async () => { throw Error('revoked'); })).rejects.toThrow('revoked');
         expect(await repository.head(model.id)).toBeNull();
@@ -82,5 +82,12 @@ describe.skipIf(!connection)('Private model connection history — disposable Po
         expect((await repository.head(model.id))?.revision).toBe('1');
         await expect(pool.query("UPDATE model_remote_connections SET options='[]'")).rejects.toThrow();
         await expect(pool.query('UPDATE model_remote_connections SET timeout_ms=999')).rejects.toThrow();
+    });
+    it('Stores a declared OpenAI context budget without pretending it changes the provider window', async () => {
+        const {pool,repository,model}=await fixture();
+        await pool.query("UPDATE model_catalog SET descriptor=jsonb_set(descriptor,'{runtime}','\"remote-openai\"') WHERE id=$1",[model.id]);
+        const saved=await repository.save(model.id,input(model,0,{options:{contextWindow:32768}}),'fixture',authorize);
+        expect(saved.options).toEqual({contextWindow:32768});
+        expect(repository.connection((await repository.head(model.id))!).options).toEqual({contextWindow:32768});
     });
 });

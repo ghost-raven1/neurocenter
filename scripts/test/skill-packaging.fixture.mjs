@@ -17,7 +17,7 @@ const closeServer=server=>new Promise(resolve=>{server.closeAllConnections();ser
 const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
 
 /** Full native services with a disposable PostgreSQL database and private temporary skill/project roots. */
-export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,browser=false}={}){
+export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,browser=false,configureCatalog}={}){
  const adminUrl=new URL(configuredAdminUrl);assert.equal(adminUrl.hostname,'127.0.0.1');assert.ok(adminUrl.port&&adminUrl.port!=='5432','Use a caller-identified disposable PostgreSQL instance.');
  assert.equal(adminUrl.pathname,'/postgres');
  const environment={...process.env},originalFetch=globalThis.fetch;
@@ -26,7 +26,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
  const actors={main:{email:'main@packaging.example.test',role:'Главный админ'},developer:{email:'developer@packaging.example.test',role:'Разработчик'}};
  const {Pool}=requireCatalog('pg'),admin=new Pool({connectionString:adminUrl.href,max:1});
  const url=new URL(adminUrl);url.pathname='/'+database;const pool=new Pool({connectionString:url.href,max:4});
- const state={authAvailable:true,skillsAvailable:true,loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()},responseBytes=new WeakMap();
+ const state={authAvailable:true,skillsAvailable:true,modelHostingEnabled:true,loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()},responseBytes=new WeakMap();
  let catalog,skills,gateway,upstream,vite,io,access,created=false;
  const cookie=key=>{assert.ok(actors[key]);return cookieName+'='+key;};
  const selected=req=>String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(cookieName+'='))?.slice(cookieName.length+1);
@@ -82,7 +82,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
      return json(res,200,{user:{id:actor.email,email:actor.email,principalName:actor.email,displayName:'QA '+key,activeRole:actor.role,userRoles:claims.userRoles,projectRoles:claims.projects,
       routePermissions:['start','store','projects','rag','maintenance','audit','access','assets']},policies:{}});
     }
-    if(route.pathname.includes('feature-flags')&&route.pathname.endsWith('evaluated'))return json(res,200,{flags:{tool_builds:true,model_hosting:true,rag_sync:true}});
+    if(route.pathname.includes('feature-flags')&&route.pathname.endsWith('evaluated'))return json(res,200,{flags:{tool_builds:true,model_hosting:state.modelHostingEnabled,rag_sync:true}});
     if(['/ready','/health','/internal/events'].includes(route.pathname))return json(res,200,{ok:true});
     return json(res,404,{message:'Unsupported QA dependency.'});
    }catch(error){return json(res,500,{message:'QA upstream: '+error.message});}
@@ -94,7 +94,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
    if(req.path.startsWith('/api/')&&req.headers['x-neurocenter-internal']!==process.env.NEUROCENTER_INTERNAL_TOKEN)return json(res,403,{message:'Actual Gateway forwarding required.'});next();});};
   skills=await requireSkills('@nestjs/core').NestFactory.create(requireSkills('./dist/app.module.js').AppModule,{logger:false,bodyParser:false,abortOnError:false});middleware(skills);await skills.listen(0,'127.0.0.1');
   const skillsUrl='http://127.0.0.1:'+skills.getHttpServer().address().port;process.env.SKILLS_SERVICE_URL=skillsUrl;
-  catalog=await NestFactory.create(requireCatalog('./dist/app.module.js').AppModule,{logger:false,bodyParser:false,abortOnError:false});middleware(catalog);await catalog.listen(0,'127.0.0.1');
+  catalog=await NestFactory.create(requireCatalog('./dist/app.module.js').AppModule,{logger:false,bodyParser:false,abortOnError:false});middleware(catalog);if(configureCatalog)await configureCatalog(catalog);await catalog.listen(0,'127.0.0.1');
   const catalogUrl='http://127.0.0.1:'+catalog.getHttpServer().address().port;process.env.CATALOG_SERVICE_URL=catalogUrl;
   access=catalog.get(requireCatalog('./dist/access/access-db.js').AccessDb);
   for(const [key,actor]of Object.entries(actors))await pool.query('INSERT INTO platform_users(email,display_name,is_main_admin) VALUES($1,$2,$3) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,is_main_admin=EXCLUDED.is_main_admin,enabled=true',[actor.email,'QA '+key,key==='main']);

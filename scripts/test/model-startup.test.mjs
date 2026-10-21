@@ -12,7 +12,13 @@ async function fixture(action){
 }
 test('Dev runtime использует проектный контейнер, порт и единое хранилище',()=>{
     const root='/tmp/Проект модели',config=configuration({EMBEDDING_PORT:'11439'},root);
-    assert.deepEqual(modelRuntimeEnvironment(root,{EMBEDDING_PORT:'11439'}),{MODEL_RUNTIME_URL:config.baseUrl,MODEL_STORAGE_PATH:config.data});
+    assert.deepEqual(modelRuntimeEnvironment(root,{EMBEDDING_PORT:'11439'}),{MODEL_RUNTIME_URL:config.baseUrl,MODEL_STORAGE_PATH:config.data,MODEL_CHAT_CONTEXT_WINDOW_TOKENS:'4096'});
+});
+test('Managed chat context is explicit, while an unrelated external runtime remains unknown',()=>{
+    const root='/tmp/project';
+    assert.equal(modelRuntimeEnvironment(root,{MODEL_CHAT_CONTEXT_WINDOW_TOKENS:'8192'}).MODEL_CHAT_CONTEXT_WINDOW_TOKENS,'8192');
+    assert.equal(modelRuntimeEnvironment(root,{MODEL_RUNTIME_URL:'https://ollama.example.test'}).MODEL_CHAT_CONTEXT_WINDOW_TOKENS,undefined);
+    for(const value of ['NaN','127','2097153','4096.5'])assert.throws(()=>modelRuntimeEnvironment(root,{MODEL_CHAT_CONTEXT_WINDOW_TOKENS:value}),/MODEL_CHAT_CONTEXT_WINDOW_TOKENS/);
 });
 test('Startup запускает только Docker runtime, не скачивает и не активирует модели',async()=>fixture(async({root,output,messages})=>{
     const calls=[];

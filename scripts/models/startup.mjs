@@ -32,8 +32,10 @@ const waiting = (output,label) => elapsed => output.info(label,`Прошло ${M
 /** Native dev запускает общий контейнер; выбранные версии моделей подготавливает каталог. */
 export function modelRuntimeEnvironment(root,environment=process.env) {
     const config=configuration(environment,root);
-    return {MODEL_RUNTIME_URL:environment.MODEL_RUNTIME_URL||config.baseUrl,
-        MODEL_STORAGE_PATH:config.data};
+    const target=environment.MODEL_RUNTIME_URL||config.baseUrl;
+    const context=environment.MODEL_CHAT_CONTEXT_WINDOW_TOKENS || (target.replace(/\/+$/,'')===config.baseUrl.replace(/\/+$/,'')?'4096':undefined);
+    if(context!==undefined&&(!/^\d+$/.test(context)||Number(context)<128||Number(context)>2097152))throw new Error('MODEL_CHAT_CONTEXT_WINDOW_TOKENS: нужно целое число от 128 до 2097152.');
+    return {MODEL_RUNTIME_URL:target,MODEL_STORAGE_PATH:config.data,...(context?{MODEL_CHAT_CONTEXT_WINDOW_TOKENS:context}:{})};
 }
 
 /** Запускает runtime; модели добавляются только явным импортом и установкой через каталог. */

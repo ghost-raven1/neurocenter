@@ -7,7 +7,7 @@ export function remoteModelOptions(values: TRemoteModelOptionValues | undefined,
     if (model.capability === 'embedding') return {};
     const options: IRemoteModelOptions = {};
     const keys: Array<keyof IRemoteModelOptions> = ['temperature', 'topP', 'maxOutputTokens'];
-    if (model.runtime === 'remote-ollama') keys.push('contextWindow');
+    if (model.runtime === 'remote-ollama' || model.runtime === 'remote-openai') keys.push('contextWindow');
     for (const key of keys) if (values?.[key] != null) options[key] = values[key];
     return options;
 }

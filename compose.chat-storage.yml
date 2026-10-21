@@ -1,0 +1,16 @@
+# Production Ceph RGW/S3 connection. Provision two private buckets and mount only Catalog credentials.
+services:
+  catalog-service:
+    environment:
+      CHAT_S3_ENDPOINT: ${CHAT_S3_ENDPOINT:?Configure Ceph RGW HTTPS endpoint}
+      CHAT_S3_REGION: ${CHAT_S3_REGION:-us-east-1}
+      CHAT_S3_PROJECT_BUCKET: ${CHAT_S3_PROJECT_BUCKET:?Configure private project attachment bucket}
+      CHAT_S3_PERSONAL_BUCKET: ${CHAT_S3_PERSONAL_BUCKET:?Configure private personal attachment bucket}
+      CHAT_S3_ACCESS_KEY_FILE: /run/secrets/chat_s3_access_key
+      CHAT_S3_SECRET_KEY_FILE: /run/secrets/chat_s3_secret_key
+    secrets: [chat_s3_access_key, chat_s3_secret_key]
+secrets:
+  chat_s3_access_key:
+    file: ${CHAT_S3_ACCESS_KEY_PATH:?Configure private local access key file}
+  chat_s3_secret_key:
+    file: ${CHAT_S3_SECRET_KEY_PATH:?Configure private local secret key file}

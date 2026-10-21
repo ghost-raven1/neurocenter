@@ -39,7 +39,8 @@ export function ModelChatModal({model, projectId, projectName, unavailableReason
         confirmation.current = Modal.confirm({title: 'Удалить диалог и его документы?', content: 'Вся переписка и вложения этого диалога будут удалены.', okText: 'Удалить', okButtonProps: {danger: true}, cancelText: 'Отмена',
             onOk: async () => {confirmation.current = undefined; if (owns()) {const ok = await chat.remove(); if (ok && owns()) {setDraft(''); setPreview(undefined);}}}, onCancel: () => {confirmation.current = undefined;}});
     };
-    const lastAnswer = [...chat.turns].reverse().find(turn => turn.answer)?.answer;
+    const lastAnswer = [...chat.turns].reverse().find(turn => turn.answer)?.answer, lastTurn = chat.turns[chat.turns.length - 1];
+    const contextBlocked = context.rejected || !!context.context?.exceeded && !context.context.canCompact;
     return <Modal open centered width={1280} className="model-chat" title={<div className="model-chat__title">Чат · {model.name}<Typography.Text type="secondary">{projectName ? `Проект «${projectName}»` : 'Общий каталог'} · личные диалоги</Typography.Text></div>}
         onCancel={close} footer={null} destroyOnClose>
         <div className={'model-chat__layout' + (listOpen ? ' model-chat__layout_list-open' : '')}>
@@ -56,11 +57,11 @@ export function ModelChatModal({model, projectId, projectName, unavailableReason
                 {(chat.error || fileError) && <Alert type="error" showIcon message={fileError || chat.error} className="model-chat__notice"/>}
                 {chat.activity === 'loading' && !chat.detail ? <div className="model-chat__loading" role="status"><Spin tip="Загружаем личные диалоги…"/></div>
                     : <ChatMessages key={chat.detail?.conversation.id || 'new'} turns={chat.turns} attachments={chat.detail?.attachments ?? []} modelName={model.name} blocked={!!chat.blocked} busy={!!chat.activity}
-                        onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview}/>}
-                <ChatContextMeter context={context.context} loading={context.loading} error={context.error} usage={lastAnswer?.usage}/>
+                        onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview} hasEarlier={chat.detail?.history?.hasMore ?? false} historyLoading={chat.historyLoading} historyError={chat.historyError} onLoadEarlier={() => {void chat.loadEarlier();}}/>}
+                <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'}/>
                 <ChatAttachments files={chat.attachments} uploads={chat.uploads} disabled={!!chat.activity || unresolved} onPreview={setPreview} onRemove={id => {void chat.removeAttachment(id);}}
                     onRetryUpload={chat.retryUpload} onRemoveUpload={chat.removeUpload}/>
-                <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !context.rejected && !context.context?.exceeded && (!!draft.trim() || !!chat.attachments.length)}
+                <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !contextBlocked && (!!draft.trim() || !!chat.attachments.length)}
                     sending={chat.busy} uploading={chat.activity === 'uploading'} onDraft={setDraft} onSend={send} onStop={() => {void chat.stop();}} onCancelUpload={chat.cancelUploads}
                     onFiles={files => {setFileError(''); chat.addFiles(files);}} onReject={setFileError}/>
             </main>

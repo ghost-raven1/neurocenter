@@ -10,6 +10,7 @@ export class ModelChatController {
     @Get() list(@Req() req: Request, @Query('modelId') modelId: string, @Query('projectId') projectId?: string) { return this.chats.list(req, modelId, projectId); }
     @Post() create(@Req() req: Request, @Body() body: ChatCreateInput) { return this.chats.create(req, body); }
     @Get(':id') read(@Req() req: Request, @Param('id') id: string) { return this.chats.read(req, id); }
+    @Get(':id/history') history(@Req() req: Request, @Param('id') id: string, @Query('before') before?: string, @Query('limit') limit?: string) { return this.chats.history(req, id, before, limit); }
     @Patch(':id') rename(@Req() req: Request, @Param('id') id: string, @Body() body: ChatRenameInput) { return this.chats.rename(req, id, body); }
     @Delete(':id') remove(@Req() req: Request, @Param('id') id: string, @Body() body: ChatRevisionInput) { return this.chats.remove(req, id, body); }
     @Post(':id/attachments') upload(@Req() req: Request, @Param('id') id: string, @Body() body: ChatUploadInput) { return this.connected(req, signal => this.chats.upload(req, id, body, signal)); }

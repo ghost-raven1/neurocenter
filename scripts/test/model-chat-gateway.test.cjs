@@ -33,7 +33,7 @@ for(const suffix of ['attachments','turns','turns/12345678-1234-4234-8234-123456
  assert.equal(requiredFeatureFlag('POST',savedRoute,{}),suffix==='attachments'?undefined:'model_hosting');
  const f=fixture();f.req.path=savedRoute;f.transport(config=>new Promise((_resolve,reject)=>config.signal.addEventListener('abort',()=>reject(Error('cancel')),{once:true})));
  const pending=forwardModelInference(f.http,{},f.req,f.res);f.res.destroyed=true;f.res.emit('close');assert.equal(await pending,undefined);
- assert.equal(f.calls[0].signal.aborted,true);assert.equal(f.calls[0].maxContentLength,16*1024*1024);assert.equal(f.res.writes,0);
+ assert.equal(f.calls[0].signal.aborted,true);assert.equal(f.calls[0].maxContentLength,64*1024*1024);assert.equal(f.res.writes,0);
 });
 test('Saved chat inspection and cancellation remain available when inference is disabled',()=>{
  for(const suffix of ['','/context-preview','/turns/12345678-1234-4234-8234-123456789abc/cancel']){

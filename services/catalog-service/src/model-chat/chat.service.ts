@@ -6,21 +6,26 @@ import { ModelRuntime } from '../models/model-runtime';
 import type { IModel } from '../models/model.types';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { modelInferenceBody } from '../models/inference.controller';
+import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { extractChatDocument } from './chat-document-extractor';
-import { chatContext, chatUsage, type IChatContextSettings } from './chat-context';
+import { chatContext, chatUsage, managedChatContextWindow, type IChatContextSettings } from './chat-context';
+import { canCompact, chatSources, compactionBatch, COMPACTION_CALL_LIMIT, needsCompaction, projection } from './chat-compaction';
+import { ChatAttachmentStorage } from './chat-attachment-storage';
 import { ChatRepository, type ChatDb, type ChatRows } from './chat.repository';
-import { attachmentView, conversationView, turnView, type AttachmentRow, type ChatDetail, type ChatMessage, type TurnRow } from './chat.types';
+import { attachmentView, conversationView, turnView, type AttachmentRow, type ChatDetail, type ChatMessage, type TurnRow, type ConversationRow } from './chat.types';
 import { CHAT_TEXT_BYTES, chatAttachmentIds, chatBody, chatChanged, chatHash, chatPin, chatPrompt, chatRevision, chatTitle, chatUpload, chatUuid } from './chat-validation';
 
 /** Personal history and document text stay behind current model/project permissions. */
 @Injectable()
 export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
+    private readonly localContextWindow = managedChatContextWindow();
     readonly pool = createPool({ connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 5 }, 'model-chat');
     readonly repository = new ChatRepository(this.pool);
-    private readonly active = new Map<string, { conversationId: string; abort: AbortController }>();
+    storage = new ChatAttachmentStorage(this.pool);
+    private readonly active = new Map<string, { conversationId: string; requestId: string; abort: AbortController }>();
     constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime) {}
-    async onModuleInit(): Promise<void> { await this.models.ready(); }
-    async onApplicationShutdown(): Promise<void> { for (const value of this.active.values()) value.abort.abort(); await this.pool.end(); }
+    async onModuleInit(): Promise<void> { await this.models.ready(); await this.storage.initialize(); }
+    async onApplicationShutdown(): Promise<void> { for (const value of this.active.values()) value.abort.abort(); await this.storage.close(); await this.pool.end(); }
 
     private async scope(req: Request, id: string) {
         if (req.headers['x-neurocenter-device-id']) throw new ForbiddenException('Личные диалоги доступны пользователю в интерфейсе.');
@@ -63,6 +68,16 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         const scope = await this.scope(req, id);
         return this.repository.owned(scope.owner, scope.row.id, scope.authorize, async (db, row) => this.detail(await this.repository.rows(db, row), await scope.authorize(), db));
     }
+    async history(req: Request, id: string, before?: string, rawLimit?: string) {
+        if (before !== undefined) chatUuid(before);
+        const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new BadRequestException('Размер страницы истории: от 1 до 50 сообщений.');
+        const scope = await this.scope(req, id);
+        return this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
+            const page = await this.repository.rows(db, row, before, limit, false);
+            return { turns: page.turns.map(turnView), attachments: page.attachments.map(attachmentView), history: page.history };
+        });
+    }
     async rename(req: Request, id: string, raw: unknown): Promise<ChatDetail> {
         const body = chatBody(raw, ['expectedRevision', 'title']), revision = chatRevision(body.expectedRevision), title = chatTitle(body.title), scope = await this.scope(req, id);
         await this.repository.owned(scope.owner, scope.row.id, scope.authorize, async (db, row) => {
@@ -82,11 +97,15 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         signal?.throwIfAborted();
         const extracted = await extractChatDocument(input.name, input.bytes, signal);
         if (!extracted.text.trim() || extracted.text.includes('\0') || Buffer.byteLength(extracted.text) > CHAT_TEXT_BYTES) throw new BadRequestException('Документ не содержит доступного текста или превышает 100 КиБ извлечённого текста. Разделите его на части.');
-        await this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
-            signal?.throwIfAborted(); const repeated = await this.repository.priorAttachment(db, id, input.requestId);
-            if (repeated) { this.sameUpload(repeated, input.hash); return; }
-            await this.repository.addAttachment(db, row, { ...input, ...extracted }); signal?.throwIfAborted();
-        }); return this.read(req, id);
+        const object = await this.storage.stage({ ownerEmail: scope.owner, projectId: scope.row.project_id, conversationId: id, bytes: input.bytes, mediaType: extracted.mediaType }, signal);
+        try {
+            await this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
+                signal?.throwIfAborted(); const repeated = await this.repository.priorAttachment(db, id, input.requestId);
+                if (repeated) { this.sameUpload(repeated, input.hash); return; }
+                await this.repository.addAttachment(db, row, { ...input, ...extracted, objectId: object.id }); await this.storage.activate(db, object); signal?.throwIfAborted();
+            });
+        } finally { await this.storage.abandon(object).catch(() => undefined); }
+        return this.read(req, id);
     }
     private sameUpload(row: AttachmentRow, hash: string): void {
         if (row.request_hash !== hash || row.deleted_at) throw new ConflictException('Этот запрос загрузки уже использован. Выберите файл повторно.');
@@ -101,15 +120,13 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             this.repository.revision(row, revision); await this.repository.attachment(db, id, attachmentId);
             const linked = await db.query('SELECT 1 FROM model_chat_turns WHERE conversation_id=$1 AND removed_at IS NULL AND $2::uuid=ANY(attachment_ids)', [id, attachmentId]);
             if (linked.rowCount) throw new ConflictException('Файл используется сообщением. Его содержимое сохраняется вместе с историей диалога.');
-            await db.query("UPDATE model_chat_attachments SET content=NULL,text='',text_bytes=0,deleted_at=now() WHERE id=$1 AND conversation_id=$2", [attachmentId, id]); await this.repository.bump(db, row);
+            await db.query("UPDATE model_chat_attachments SET object_id=NULL,storage_state='DELETED',text='',text_bytes=0,deleted_at=now() WHERE id=$1 AND conversation_id=$2", [attachmentId, id]); await this.repository.bump(db, row);
         }); return this.read(req, id);
     }
     async preview(req: Request, id: string, raw: unknown) {
         const body = chatBody(raw, ['prompt', 'attachmentIds']), prompt = chatPrompt(body.prompt ?? '', true), ids = chatAttachmentIds(body.attachmentIds ?? []), scope = await this.scope(req, id);
         return this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
-            const rows = await this.repository.rows(db, row), messages = this.messages(rows.turns);
-            if (prompt || ids.length) messages.push({ role: 'user', content: await this.inputText(db, id, prompt, ids) });
-            return chatContext(messages, await this.settings(db, await scope.authorize()));
+            return (await this.state(db, row, await scope.authorize(), prompt || ids.length ? await this.inputText(db, id, prompt, ids) : undefined)).context;
         });
     }
     async send(req: Request, id: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
@@ -121,14 +138,15 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             const repeated = await this.repository.priorTurn(db, id, requestId);
             if (repeated) { if (repeated.request_hash !== hash || repeated.removed_at) throw new ConflictException('Идентификатор запроса уже использован другим сообщением.'); return null; }
             signal.throwIfAborted(); this.repository.revision(row, revision);
-            const rows = await this.repository.rows(db, row); this.requireResolved(rows.turns);
-            const text = await this.inputText(db, id, prompt, ids), messages = [...this.messages(rows.turns), { role: 'user' as const, content: text }];
-            this.requireContext(messages, await this.settings(db, await scope.authorize(true)));
+            const tail = await this.repository.tail(db, id); this.requireResolved(tail ? [tail] : []);
+            const text = await this.inputText(db, id, prompt, ids), state = await this.state(db, row, await scope.authorize(true), text);
+            if (state.context.exceeded) throw new BadRequestException(state.context.reason || 'Сообщение не помещается в доступный контекст.');
             const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text });
-            return { turn, messages };
+            await this.repository.stage(db, row, turn, state.context.compactionNeeded ? 'compacting' : 'responding');
+            return { turn };
         });
         if (!prepared) return this.read(req, id);
-        return this.execute(req, scope, prepared.turn, prepared.messages, signal);
+        return this.execute(req, scope, prepared.turn, signal);
     }
     async retry(req: Request, id: string, turnId: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
         chatUuid(turnId);
@@ -138,34 +156,37 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             const repeated = await this.repository.priorTurn(db, id, requestId);
             if (repeated) { if (repeated.id !== turnId || repeated.removed_at) throw new ConflictException('Этот запрос повторения уже использован.'); return null; }
             signal.throwIfAborted(); this.repository.revision(row, revision);
-            const rows = await this.repository.rows(db, row), tail = rows.turns.at(-1);
+            const tail = await this.repository.tail(db, id);
             if (!tail || tail.id !== turnId || !['failed', 'cancelled'].includes(tail.status)) throw new ConflictException('Повторить можно последнее прерванное сообщение.');
             if (tail.request_ids.length >= 100) throw new ConflictException('Достигнут предел повторов. Начните новый диалог.');
-            const messages = this.messages(rows.turns); this.requireContext(messages, await this.settings(db, await scope.authorize(true)));
+            const state = await this.state(db, row, await scope.authorize(true));
+            if (state.context.exceeded) throw new BadRequestException(state.context.reason || 'Сообщение не помещается в доступный контекст.');
             const turn = (await db.query<TurnRow>("UPDATE model_chat_turns SET request_id=$3,request_ids=array_append(request_ids,$3::uuid),status='pending',error=NULL,lease_until=now()+interval '20 minutes' WHERE conversation_id=$1 AND id=$2 RETURNING *", [id, turnId, requestId])).rows[0];
-            await this.repository.bump(db, row); return { turn, messages };
+            await this.repository.stage(db, row, turn, state.context.compactionNeeded ? 'compacting' : 'responding');
+            await this.repository.bump(db, row); return { turn };
         });
-        if (!prepared) return this.read(req, id); return this.execute(req, scope, prepared.turn, prepared.messages, signal);
+        if (!prepared) return this.read(req, id); return this.execute(req, scope, prepared.turn, signal);
     }
     async cancel(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
         chatUuid(turnId); const body = chatBody(raw, ['expectedRevision']), revision = chatRevision(body.expectedRevision), scope = await this.scope(req, id);
-        await this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
+        const cancelledRequest = await this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
             this.repository.revision(row, revision);
-            const changed = await db.query("UPDATE model_chat_turns SET status='cancelled',error='Запрос остановлен.',lease_until=NULL WHERE conversation_id=$1 AND id=$2 AND status='pending' AND removed_at IS NULL", [id, turnId]);
+            const changed = await db.query<{ request_id: string }>("UPDATE model_chat_turns SET status='cancelled',error='Запрос остановлен.',lease_until=NULL WHERE conversation_id=$1 AND id=$2 AND status='pending' AND removed_at IS NULL RETURNING request_id", [id, turnId]);
             if (!changed.rowCount) throw new ConflictException('Запрос уже завершён. Обновите диалог.'); await this.repository.bump(db, row);
-        }); this.active.get(turnId)?.abort.abort(); return this.read(req, id);
+            return changed.rows[0].request_id;
+        }); const active = this.active.get(turnId); if (active?.requestId === cancelledRequest) active.abort.abort(); return this.read(req, id);
     }
     async removeTurn(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
         chatUuid(turnId); const body = chatBody(raw, ['expectedRevision']), revision = chatRevision(body.expectedRevision), scope = await this.scope(req, id);
         await this.repository.owned(scope.owner, id, scope.authorize, async (db, row) => {
-            this.repository.revision(row, revision); const rows = await this.repository.rows(db, row), tail = rows.turns.at(-1);
+            this.repository.revision(row, revision); const tail = await this.repository.tail(db, id);
             if (!tail || tail.id !== turnId || !['failed', 'cancelled'].includes(tail.status)) throw new ConflictException('Изменить можно последнее прерванное сообщение.');
             await db.query("UPDATE model_chat_turns SET removed_at=now(),prompt='',input_text='',attachment_ids='{}' WHERE conversation_id=$1 AND id=$2", [id, turnId]); await this.repository.bump(db, row);
         }); return this.read(req, id);
     }
-    private async execute(req: Request, scope: Awaited<ReturnType<ModelChatService['scope']>>, turn: TurnRow, messages: ChatMessage[], signal: AbortSignal): Promise<ChatDetail> {
+    private async execute(req: Request, scope: Awaited<ReturnType<ModelChatService['scope']>>, turn: TurnRow, signal: AbortSignal): Promise<ChatDetail> {
         const abort = new AbortController(), combined = AbortSignal.any([signal, abort.signal, AbortSignal.timeout(15 * 60 * 1000)]);
-        this.active.set(turn.id, { conversationId: scope.row.id, abort });
+        this.active.set(turn.id, { conversationId: scope.row.id, requestId: turn.request_id, abort });
         try {
             combined.throwIfAborted();
             const active = await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async db => {
@@ -173,37 +194,95 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
                 return !!current && current.status === 'pending' && current.request_id === turn.request_id && !current.removed_at;
             });
             if (!active) return this.read(req, scope.row.id);
-            const model = await scope.authorize(true); combined.throwIfAborted();
-            const result = await this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false }), combined);
-            combined.throwIfAborted(); await scope.authorize(true);
+            const model = await scope.authorize(true), messages = await this.compact(scope, turn, combined); combined.throwIfAborted();
+            await requireFeatureEnabled('model_hosting'); await scope.authorize(true); combined.throwIfAborted();
+            const result = await this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
+                ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { options: { num_ctx: this.localContextWindow } } : {}), stream: false }), combined);
+            combined.throwIfAborted(); await scope.authorize(true); await requireFeatureEnabled('model_hosting');
             const message = result.message as Record<string, unknown> | undefined;
-            if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim() || Buffer.byteLength(message.content) > 8 * 1024 ** 2
+            if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim() || Buffer.byteLength(JSON.stringify(message.content)) > 8 * 1024 ** 2
                 || !['stop', 'length'].includes(String(result.done_reason))) throw new Error('invalid-chat-response');
             await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async (db, row) => {
                 combined.throwIfAborted(); await this.repository.finish(db, row, turn, { content: message.content as string, finishReason: result.done_reason as 'stop' | 'length', usage: chatUsage(result) });
             });
         } catch (error) {
-            await this.repository.fail(scope.row.id, turn.id, turn.request_id, combined.aborted ? 'cancelled' : 'failed', combined.aborted ? 'Запрос остановлен. Можно повторить его.' : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
+            await this.repository.fail(scope.row.id, turn.id, turn.request_id, combined.aborted ? 'cancelled' : 'failed', combined.aborted ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
             if (error instanceof ForbiddenException || error instanceof ConflictException) throw error;
         } finally { if (this.active.get(turn.id)?.abort === abort) this.active.delete(turn.id); }
         return this.read(req, scope.row.id);
     }
     private requireResolved(turns: TurnRow[]): void { if (turns.some(turn => turn.status !== 'done')) throw new ConflictException('Повторите, измените или остановите последнее сообщение.'); }
-    private messages(turns: TurnRow[]): ChatMessage[] { return turns.flatMap(turn => [{ role: 'user' as const, content: turn.input_text }, ...(turn.status === 'done' && turn.answer ? [{ role: 'assistant' as const, content: turn.answer.content }] : [])]); }
+    /** Summarization and answer share the pending request lease; each paid batch has an immutable receipt. */
+    private async compact(scope: Awaited<ReturnType<ModelChatService['scope']>>, turn: TurnRow, signal: AbortSignal): Promise<ChatMessage[]> {
+        for (let calls = 0; calls <= COMPACTION_CALL_LIMIT; calls++) {
+            signal.throwIfAborted();
+            const state = await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async (db, row) => {
+                const current = await this.repository.priorTurn(db, row.id, turn.request_id);
+                if (!current || current.status !== 'pending' || current.request_id !== turn.request_id || current.removed_at) throw new ConflictException('Запрос уже остановлен или завершён.');
+                const state = await this.state(db, row, await scope.authorize(true));
+                await this.repository.stage(db, row, turn, state.context.compactionNeeded ? 'compacting' : 'responding');
+                return state;
+            });
+            if (state.context.exceeded) throw new BadRequestException(state.context.reason || 'Сообщение не помещается в окно модели. История сохранена.');
+            if (!state.context.compactionNeeded) return state.messages;
+            if (calls === COMPACTION_CALL_LIMIT) throw new BadRequestException('Сохранён прогресс сжатия. Для большого диалога достигнут лимит восьми обработок за запрос; нажмите «Повторить», чтобы продолжить. Исходная история сохранена.');
+            const batch = compactionBatch(state.checkpoint, state.sources, state.settings, turn.id);
+            await requireFeatureEnabled('model_hosting'); const model = await scope.authorize(true); signal.throwIfAborted();
+            const result = await this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages: batch.messages, options: { num_predict: batch.maxOutputTokens,
+                ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) }, stream: false }), signal);
+            signal.throwIfAborted(); await scope.authorize(true); await requireFeatureEnabled('model_hosting');
+            const message = result.message as Record<string, unknown> | undefined;
+            if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim() || result.done_reason !== 'stop'
+                || Buffer.byteLength(message.content) > Math.min(65536, batch.maxOutputTokens * 2)) throw new BadRequestException('Модель не смогла подготовить полное краткое резюме. История сохранена; можно повторить сжатие.');
+            await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async (db, row) => {
+                signal.throwIfAborted(); const current = await this.repository.priorTurn(db, row.id, turn.request_id);
+                if (!current || current.status !== 'pending' || current.request_id !== turn.request_id || current.removed_at) throw new ConflictException('Запрос уже остановлен или завершён.');
+                const currentState = await this.state(db, row, await scope.authorize(true));
+                if (currentState.checkpoint?.id !== state.checkpoint?.id || compactionBatch(currentState.checkpoint, currentState.sources, currentState.settings, turn.id).digest !== batch.digest) throw chatChanged();
+                await this.repository.saveCheckpoint(db, row, turn, state.checkpoint, batch, message.content as string, chatUsage(result));
+            });
+        }
+        throw new Error('unreachable-compaction-budget');
+    }
+    private async state(db: ChatDb, row: ConversationRow, model: IModel, draft?: string) {
+        const checkpoint = await this.repository.checkpoint(db, row.id), loaded = await this.repository.sources(db, row.id, checkpoint), settings = await this.settings(db, model), turns = loaded.turns;
+        const sources = chatSources(turns, checkpoint), tail = turns.at(-1);
+        // A separately fetched tail must never let a checkpoint jump over an omitted middle prefix.
+        if (loaded.overflow && tail) for (const source of sources) if (source.turnId === tail.id) source.completed = false;
+        let pendingTurnId = tail && tail.status !== 'done' ? tail.id : undefined;
+        if (draft !== undefined) {
+            pendingTurnId = 'draft';
+            sources.push({ turnId: pendingTurnId, position: Number(tail?.position ?? 0) + 1, role: 'user', text: draft, offset: 0, end: draft.length, total: draft.length, completed: false });
+        }
+        const messages = projection(checkpoint, sources), raw = chatContext(messages, settings), pending = sources.filter(source => source.turnId === pendingTurnId);
+        raw.estimatedInputTokens += Math.ceil(loaded.omittedBytes / 2) + loaded.omittedMessages * 6;
+        raw.messageCount += loaded.omittedMessages; raw.requestBytes += loaded.omittedRequestBytes;
+        const single = chatContext(projection(null, pending), settings), eligible = canCompact(sources, pendingTurnId);
+        const optionsBytes = model.runtime === 'ollama' && this.localContextWindow !== null ? Buffer.byteLength(JSON.stringify({ num_ctx: this.localContextWindow })) + 11 : 0;
+        const needed = loaded.overflow || needsCompaction(messages, settings) || raw.requestBytes + optionsBytes > raw.maxRequestBytes, compactable = !single.exceeded && (eligible || !!checkpoint && raw.exceeded);
+        const context = { ...raw, canCompact: compactable, compactionNeeded: needed && compactable };
+        if (single.exceeded) { context.exceeded = true; context.reason = single.reason; context.canCompact = false; context.compactionNeeded = false; }
+        else if (needed && compactable) { context.exceeded = false; delete context.reason; }
+        else if (loaded.overflow) { context.exceeded = true; context.reason = 'Не удалось подготовить безопасный контекст. Исходная история сохранена.'; }
+        // A large new message alone may use >80% safely; there is no old material to squeeze further.
+        return { checkpoint, sources, messages, settings, context };
+    }
     private async inputText(db: ChatDb, id: string, prompt: string, ids: string[]): Promise<string> {
         const files: string[] = [];
         for (const aid of ids) { const file = await this.repository.attachment(db, id, aid); files.push(`\n\n[Вложение: ${file.name}; содержимое документа]\n${file.text}\n[Конец вложения]`); }
         const text = prompt + files.join('');
         if (Buffer.byteLength(text) > 128 * 1024) throw new BadRequestException('Сообщение вместе с текстом файлов превышает 128 КиБ. Прикрепите меньше файлов или разделите документ.'); return text;
     }
-    private requireContext(messages: ChatMessage[], settings: IChatContextSettings): void { const context = chatContext(messages, settings); if (context.exceeded) throw new BadRequestException(context.reason || 'Диалог превышает доступный контекст модели.'); }
     private async settings(db: ChatDb, model: IModel): Promise<IChatContextSettings> {
-        if (model.runtime === 'ollama') return {};
+        if (model.runtime === 'ollama') return { contextWindowTokens: this.localContextWindow };
         const row = (await db.query<{ options: { contextWindow?: number; maxOutputTokens?: number } }>('SELECT options FROM model_remote_connections WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1', [model.id, model.verificationSha256 ?? null])).rows[0];
         return { contextWindowTokens: row?.options.contextWindow ?? null, reservedOutputTokens: row?.options.maxOutputTokens ?? null };
     }
     private async detail(rows: ChatRows, model: IModel, db: ChatDb): Promise<ChatDetail> {
+        const state = await this.state(db, rows.conversation, model), pending = rows.turns.find(turn => turn.status === 'pending');
         return { conversation: conversationView(rows.conversation), turns: rows.turns.map(turnView), attachments: rows.attachments.map(attachmentView),
-            context: chatContext(this.messages(rows.turns), await this.settings(db, model)), blockedReason: projectEmbeddingPin(model) === rows.conversation.model_pin ? null : 'Модель или её параметры изменились. Начните новый диалог.' };
+            history: rows.history, context: state.context, compaction: { state: pending?.processing_stage === 'compacting' ? 'compacting' : state.checkpoint ? 'ready' : 'none',
+                coveredTurns: await this.repository.covered(db, rows.conversation.id, state.checkpoint), ...(state.checkpoint ? { updatedAt: new Date(state.checkpoint.created_at).toISOString() } : {}) },
+            blockedReason: projectEmbeddingPin(model) === rows.conversation.model_pin ? null : 'Модель или её параметры изменились. Начните новый диалог.' };
     }
 }

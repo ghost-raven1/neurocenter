@@ -40,6 +40,16 @@ test('Неизвестный сервис и слабый внутренний �
     assert.throws(()=>validateProduction(auth(),'unknown'));
     assert.throws(()=>validateProduction({...auth(),NEUROCENTER_INTERNAL_TOKEN:'short'},'oauth2-bridge'));
 });
+test('Ceph credentials support file secrets without ambiguous plaintext sources',()=>{
+    const directory=fs.mkdtempSync(path.join(os.tmpdir(),'nc-chat-secret-')),file=path.join(directory,'key');
+    try{
+        fs.writeFileSync(file,'private-qa-ceph-key\n',{mode:0o600});
+        for(const key of ['CHAT_S3_ACCESS_KEY','CHAT_S3_SECRET_KEY']){
+            const env={[key+'_FILE']:file};loadSecrets(env);assert.equal(env[key],'private-qa-ceph-key');
+            assert.throws(()=>loadSecrets(env),error=>error.message.includes('только')&&!error.message.includes('private-qa-ceph-key'));
+        }
+    }finally{fs.rmSync(directory,{recursive:true,force:true});}
+});
 test('Bootstrap требует только своё подключение и не получает SSO-секрет',()=>{
     assert.doesNotThrow(()=>validateProduction({NODE_ENV:'production',CATALOG_PG_URL:'postgresql://runtime:test@postgres/catalog'},'bootstrap-admin'));
 });

@@ -7,7 +7,7 @@ import type {IModelChatContext, IModelChatDetail} from './types';
 /** A draft estimate is invalidated immediately; stale budgets never label a newer message. */
 export function useChatContext(detail: IModelChatDetail | null, prompt: string, attachmentIds: string[]) {
     const {captureOwner} = useAuthRequestOwner();
-    const key = JSON.stringify([detail?.conversation.id, detail?.conversation.revision, prompt, attachmentIds]);
+    const key = JSON.stringify([detail?.conversation.id, detail?.conversation.revision, detail?.compaction?.coveredTurns, detail?.compaction?.updatedAt, prompt, attachmentIds]);
     const [state, setState] = useState<{key: string; context?: IModelChatContext; error?: string; rejected?: boolean}>({key: ''});
     useEffect(() => {
         if (!detail) return;

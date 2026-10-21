@@ -49,6 +49,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
         // The executor additionally checks personal ownership and the current model/project assignment.
         if (route === root) return ['GET', 'HEAD', 'POST'].includes(method);
         if (new RegExp(`^${root}/${id}$`).test(route)) return ['GET', 'HEAD', 'PATCH', 'DELETE'].includes(method);
+        if (new RegExp(`^${root}/${id}/history$`).test(route)) return ['GET', 'HEAD'].includes(method);
         if (new RegExp(`^${root}/${id}/attachments/${id}$`).test(route)) return ['GET', 'HEAD', 'DELETE'].includes(method);
         if (new RegExp(`^${root}/${id}/turns/${id}$`).test(route)) return method === 'DELETE';
         return method === 'POST' && new RegExp(`^${root}/${id}/(?:attachments|context-preview|turns(?:/${id}/(?:retry|cancel))?)$`).test(route);

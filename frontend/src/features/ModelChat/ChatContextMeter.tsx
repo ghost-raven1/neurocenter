@@ -1,22 +1,33 @@
-import {Progress, Tooltip, Typography} from 'antd';
-import type {IModelChatContext, IModelChatUsage} from './types';
+import {Progress, Spin, Typography} from 'antd';
+import type {IModelChatCompaction, IModelChatContext, IModelChatTurn, IModelChatUsage} from './types';
 
-interface Props {context?: IModelChatContext; loading: boolean; error?: string; usage?: IModelChatUsage;}
+interface Props {context?: IModelChatContext; loading: boolean; error?: string; rejected?: boolean; usage?: IModelChatUsage; compaction?: IModelChatCompaction; phase?: IModelChatTurn['processingStage']; failed?: boolean;}
 const number = (value: number): string => value.toLocaleString('ru-RU');
 
-/** Token estimates and transport bounds are separate, and unknown capacity has no invented percentage. */
-export function ChatContextMeter({context, loading, error, usage}: Props): JSX.Element {
+/** Ordinary chat keeps one status line; estimates and transport diagnostics are explicitly expandable. */
+export function ChatContextMeter({context, loading, error, rejected, usage, compaction, phase, failed}: Props): JSX.Element {
     const capacity = context?.contextWindowTokens, reserve = context?.reservedOutputTokens;
     const used = context ? context.estimatedInputTokens + (reserve ?? 0) : 0;
     const percent = capacity && reserve !== null ? Math.min(100, Math.round(used / capacity * 100)) : undefined;
-    return <div className="model-chat__context" aria-label="Контекст модели" aria-live="polite">
-        <div className="model-chat__context-line"><Typography.Text strong>Контекст</Typography.Text>
-            <Typography.Text type="secondary">{loading ? 'Оцениваем…' : context ? `≈ ${number(context.estimatedInputTokens)} токенов` : 'Оценка недоступна'}{capacity ? ` / ${number(capacity)}` : ' · окно модели неизвестно'}</Typography.Text></div>
-        {percent !== undefined && <Progress percent={percent} showInfo={false} size="small" status={context?.exceeded ? 'exception' : 'normal'}/>}
-        <Typography.Text type="secondary" className="model-chat__context-description">{reserve != null ? `Резерв ответа: ${number(reserve)} токенов. ` : 'Лимит ответа не указан. '}Подсчёт приблизительный; история и документы не обрезаются автоматически.</Typography.Text>
-        {context && <Tooltip title="Это ограничения передачи данных, а не размер контекстного окна модели."><Typography.Text type="secondary" className="model-chat__context-description">Передача: {context.messageCount} / {context.maxMessages} сообщений · {Math.ceil(context.requestBytes / 1024)} / {Math.floor(context.maxRequestBytes / 1024)} КиБ</Typography.Text></Tooltip>}
-        {usage?.reported && <Typography.Text type="secondary" className="model-chat__context-description">Последний запрос по данным API: вход {usage.inputTokens == null ? 'не указан' : number(usage.inputTokens)}, ответ {usage.outputTokens == null ? 'не указан' : number(usage.outputTokens)} токенов.</Typography.Text>}
-        {context?.exceeded && <Typography.Text type="danger">{context.reason || 'Контекст превышает допустимый предел. Уберите вложение или начните новый диалог.'}</Typography.Text>}
-        {error && <Typography.Text type="warning">{error}</Typography.Text>}
+    const running = !failed && (phase === 'compacting' || compaction?.state === 'compacting');
+    const compressionFailed = failed && phase === 'compacting';
+    const blocked = rejected || !!context?.exceeded && !context.canCompact;
+    const status = running ? 'Сжимаем раннюю переписку…' : compressionFailed ? 'Не удалось сжать контекст' : blocked ? 'Сообщение не помещается в контекст'
+        : context?.compactionNeeded && context.canCompact ? 'Сожмём раннюю переписку при отправке' : compaction?.state === 'ready' ? 'Контекст сжат · история сохранена' : context ? 'Контекст готов' : 'Контекст';
+    return <div className="model-chat__context" aria-label="Контекст модели">
+        <details>
+            <summary><span className="model-chat__context-status" role="status" aria-live="polite">{running && <Spin size="small"/>}<Typography.Text type={blocked || compressionFailed ? 'warning' : undefined}>{status}</Typography.Text></span><span className="model-chat__context-more">Подробнее</span></summary>
+            <div className="model-chat__context-details">
+                <Typography.Text type="secondary">{loading ? 'Обновляем оценку…' : context ? `Оценка входа: ≈ ${number(context.estimatedInputTokens)} токенов.` : 'Оценка пока недоступна.'} {capacity ? `Окно модели: ${number(capacity)} токенов.` : context ? 'Провайдер не сообщил размер окна модели.' : 'Размер окна пока не указан.'}</Typography.Text>
+                {percent !== undefined && <Progress percent={percent} showInfo={false} size="small" status={blocked ? 'exception' : 'normal'}/>}
+                <Typography.Text type="secondary">{reserve != null ? `Резерв ответа: ${number(reserve)} токенов. ` : 'Резерв ответа не указан. '}Подсчёт приблизительный.</Typography.Text>
+                {compaction && <Typography.Text type="secondary">{compaction.coveredTurns ? `Ранних обменов в сводке: ${number(compaction.coveredTurns)}. ` : ''}При необходимости ранняя переписка сжимается; полная история и документы сохраняются в диалоге.</Typography.Text>}
+                {compressionFailed && <Typography.Text type="warning">Сжатие не завершилось. История сохранена; повторите запрос под последним сообщением.</Typography.Text>}
+                {usage?.reported && <Typography.Text type="secondary">Последний запрос по данным API: вход {usage.inputTokens == null ? 'не указан' : number(usage.inputTokens)}, ответ {usage.outputTokens == null ? 'не указан' : number(usage.outputTokens)} токенов.</Typography.Text>}
+                {context && <Typography.Text type="secondary">Технические сведения: в запросе {context.messageCount} сообщений; {Math.ceil(context.requestBytes / 1024)} / {Math.floor(context.maxRequestBytes / 1024)} КиБ. Это ограничения передачи, а не размер окна модели.</Typography.Text>}
+                {error && !rejected && <Typography.Text type="warning">{error}</Typography.Text>}
+            </div>
+        </details>
+        {blocked && <Typography.Text type="danger" className="model-chat__context-error">{error || context?.reason || 'Уменьшите последнее сообщение или вложения: сжатие ранней переписки не решит это ограничение.'}</Typography.Text>}
     </div>;
 }

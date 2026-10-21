@@ -19,9 +19,10 @@ export function RemoteModelParameters({ model }: IProps): JSX.Element {
             <Form.Item name={['options', 'maxOutputTokens']} label="Максимум токенов ответа" rules={[{ type: 'integer', min: 1, max: 32768, message: 'Целое число от 1 до 32768' }]}>
                 <InputNumber min={1} max={32768} precision={0} style={{ width: '100%' }} placeholder="По умолчанию у провайдера" />
             </Form.Item>
-            {model.runtime === 'remote-ollama' && <Form.Item name={['options', 'contextWindow']} label="Размер контекста, токенов" preserve={false}
+            {(model.runtime === 'remote-ollama' || model.runtime === 'remote-openai') && <Form.Item name={['options', 'contextWindow']} label="Размер контекста, токенов" preserve={false}
+                extra={model.runtime === 'remote-openai' ? 'Размер окна из документации провайдера; не увеличивает фактический лимит API. Если поле пустое, размер окна неизвестен.' : undefined}
                 rules={[{ type: 'integer', min: 128, max: 2097152, message: 'Целое число от 128 до 2097152' }]}>
-                <InputNumber min={128} max={2097152} precision={0} style={{ width: '100%' }} placeholder="По умолчанию у провайдера" />
+                <InputNumber min={128} max={2097152} precision={0} style={{ width: '100%' }} placeholder={model.runtime === 'remote-openai' ? 'Не указан' : 'По умолчанию у провайдера'} />
             </Form.Item>}
         </>}
         <Form.Item name="timeoutMs" label="Ожидание ответа, мс" extra="От 1 000 до 300 000 мс. По умолчанию — 90 000 мс."

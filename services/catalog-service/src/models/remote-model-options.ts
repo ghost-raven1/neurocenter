@@ -26,10 +26,10 @@ export function remoteModelOptions(value: unknown): IRemoteModelOptions {
     return result;
 }
 
-/** Unsupported settings are rejected explicitly instead of disappearing at the provider boundary. */
+/** OpenAI contextWindow declares the server budget; Ollama also receives num_ctx. */
 export function assertRemoteModelOptions(model: Pick<IModel, 'runtime' | 'capability'>, options: IRemoteModelOptions): void {
     if (model.capability === 'embedding' && Object.keys(options).length) throw new BadRequestException('Embedding-модель не принимает параметры генерации текста.');
-    if (options.contextWindow !== undefined && model.runtime !== 'remote-ollama') throw new BadRequestException('Размер контекста можно задавать только для удалённой Ollama.');
+    if (options.contextWindow !== undefined && !['remote-ollama', 'remote-openai'].includes(model.runtime)) throw new BadRequestException('Размер контекста подключения задаётся для удалённой модели.');
 }
 
 /** Timeout changes transport behavior, so it is kept outside the semantic model pin. */

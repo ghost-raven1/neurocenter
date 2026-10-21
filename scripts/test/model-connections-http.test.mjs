@@ -77,7 +77,7 @@ test('Model connection parameters and write-only credentials work through Gatewa
  });
  await t.test('Invalid and incompatible options fail before provider calls or database changes',async()=>{
   const before=requests.length,revision=(await connection(chat)).revision;
-  for(const options of [{temperature:-1},{topP:1.1},{maxOutputTokens:0},{maxOutputTokens:32769},{contextWindow:4096},{apiKey:'no'},{temperature:'0.2'}])
+  for(const options of [{temperature:-1},{topP:1.1},{maxOutputTokens:0},{maxOutputTokens:32769},{contextWindow:127},{apiKey:'no'},{temperature:'0.2'}])
    await save(chat,await connection(chat),{options},400);
   for(const timeoutMs of [0,999,300001,1.5,'1000'])await save(chat,await connection(chat),{timeoutMs},400);
   assert.equal(requests.length,before);assert.equal((await connection(chat)).revision,revision);
@@ -95,6 +95,14 @@ test('Model connection parameters and write-only credentials work through Gatewa
   model=await verify(await read(model));await infer(model);
   assert.deepEqual(requests.at(-1).body.options,{temperature:0.2,top_p:0.7,num_predict:256,num_ctx:8192});
   assert.equal(requests.at(-1).authorization,undefined);
+ });
+ await t.test('OpenAI declared context is used by chat planning without inventing an API parameter',async()=>{
+  let model=await create('Declared context');
+  await save(model,await connection(model),{options:{contextWindow:32768,maxOutputTokens:512}});
+  model=await verify(await read(model));await infer(model);
+  assert.equal('contextWindow' in requests.at(-1).body,false);assert.equal('num_ctx' in requests.at(-1).body,false);
+  const detail=await f.request('main','/api/model-chats',{method:'POST',status:201,body:{modelId:model.id,expectedModelPin:model.modelPin}});
+  assert.equal(detail.context.contextWindowTokens,32768);assert.equal(detail.context.reservedOutputTokens,512);
  });
  await t.test('Embedding only accepts compatible parameters and retains measured dimensions',async()=>{
   let model=await create('Gateway embedding','remote-openai','embedding');

@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {useChatContext} from '../src/features/ModelChat/useChatContext';
 import {modelChatApi} from '../src/features/ModelChat/api';
-import type {IModelChatContext} from '../src/features/ModelChat/types';
+import type {IModelChatContext, IModelChatDetail} from '../src/features/ModelChat/types';
 import {detail} from './model-chat-fixtures';
 
 const hooks = vi.hoisted(() => {
@@ -25,10 +25,10 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => {
     const captureOwner = () => {const value = owner.current; return () => value === owner.current;};
     return {useAuthRequestOwner: () => ({captureOwner})};
 });
-let prompt = 'Вопрос', ids: string[] = [];
-const render = () => {hooks.begin(); const value = useChatContext(detail(), prompt, ids); hooks.commit(); return value;};
+let prompt = 'Вопрос', ids: string[] = [], saved: IModelChatDetail;
+const render = () => {hooks.begin(); const value = useChatContext(saved, prompt, ids); hooks.commit(); return value;};
 function deferred<T>() {let resolve!: (value: T) => void; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
-beforeEach(() => {hooks.dispose(); vi.useFakeTimers(); vi.clearAllMocks(); owner.current = 'alice'; prompt = 'Вопрос'; ids = []; vi.mocked(modelChatApi.context).mockResolvedValue(detail().context);});
+beforeEach(() => {hooks.dispose(); vi.useFakeTimers(); vi.clearAllMocks(); owner.current = 'alice'; prompt = 'Вопрос'; ids = []; saved = detail(); vi.mocked(modelChatApi.context).mockResolvedValue(detail().context);});
 afterEach(() => {hooks.dispose(); vi.useRealTimers();});
 
 describe('Предварительный контекст', () => {
@@ -48,5 +48,10 @@ describe('Предварительный контекст', () => {
     });
     it('Смена владельца не принимает оценку прежнего личного диалога', async () => {
         const pending = deferred<IModelChatContext>(); vi.mocked(modelChatApi.context).mockReturnValueOnce(pending.promise); render(); await vi.advanceTimersByTimeAsync(350); owner.current = 'bob'; pending.resolve(detail().context); await Promise.resolve(); expect(render().context).toBeUndefined();
+    });
+    it('Новая сводка инвалидирует старую оценку без запуска сжатия на клиенте', async () => {
+        render(); await vi.advanceTimersByTimeAsync(350); expect(render().context).toBeDefined();
+        saved = {...saved, compaction: {state: 'ready', coveredTurns: 20, updatedAt: '2026-10-21T02:00:00Z'}}; expect(render().context).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(350); expect(modelChatApi.context).toHaveBeenCalledTimes(2); expect(render().context?.method).toBe('estimate');
     });
 });

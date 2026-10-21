@@ -127,15 +127,16 @@ test('Saved personal model chats and documents through real Gateway/Catalog',{
   await send(detail,turnBody(detail,'',[]),400);
   assert.equal(requestCount(),before);
  });
- await t.test('Documents alone can be sent, and the 40-message context boundary never truncates history',async()=>{
+ await t.test('Documents alone can be sent and short conversations can pass forty messages without compaction',async()=>{
   let detail=await create();detail=await upload(detail,'document-only.txt',Buffer.from('The attachment is the entire question.'));
   detail=await send(detail,turnBody(detail,'',[detail.attachments[0].id]));
   assert.equal(detail.turns[0].prompt,'');assert.match(f.provider.requests.at(-1).body.messages[0].content,/The attachment is the entire question/);
   for(let i=1;i<20;i++)detail=await send(detail,turnBody(detail,'Question '+i));
   assert.equal(detail.turns.length,20);assert.equal(detail.context.messageCount,40);assert.equal(f.provider.requests.at(-1).body.messages.length,39);
   const before=requestCount(),preview=await f.request('developer',chatRoute(detail)+'/context-preview',{method:'POST',status:201,body:{prompt:'One beyond',attachmentIds:[]}});
-  assert.equal(preview.messageCount,41);assert.equal(preview.exceeded,true);assert.match(preview.reason,/40 сообщений/);
-  await send(detail,turnBody(detail,'One beyond'),400);assert.equal(requestCount(),before);assert.equal((await read(detail)).turns.length,20);
+  assert.equal(preview.messageCount,41);assert.equal(preview.exceeded,false);assert.equal(preview.compactionNeeded,false);
+  detail=await send(detail,turnBody(detail,'One beyond'));assert.equal(requestCount(),before+1);assert.equal(detail.turns.length,21);
+  assert.equal(f.provider.requests.at(-1).body.messages.length,41);
  });
  await t.test('Configured Ollama context/output reserve are visible and enforced without an extra model probe',async()=>{
   let card=f.cards[1];const connection=await f.request('main','/api/models/'+card.id+'/connection');
@@ -150,11 +151,13 @@ test('Saved personal model chats and documents through real Gateway/Catalog',{
   assert.equal(preview.exceeded,true);assert.match(preview.reason,/Оценка/);assert.equal(preview.method,'estimate');
   await send(detail,turnBody(detail,prompt,[],randomUUID(),card),400);assert.equal(requestCount(),before);
  });
- await t.test('An oversized returned answer remains readable but cannot silently enter the next context',async()=>{
+ await t.test('A large saved answer remains complete when projected across transport messages',async()=>{
   let detail=await create();const original=f.provider.reply;f.provider.reply='x'.repeat(128*1024+1);
   try{
-   detail=await send(detail,turnBody(detail,'Long answer'));assert.equal(detail.turns[0].answer.content.length,128*1024+1);assert.equal(detail.context.exceeded,true);
-   const before=requestCount();await send(detail,turnBody(detail,'Next turn'),400);assert.equal(requestCount(),before);
+   detail=await send(detail,turnBody(detail,'Long answer'));assert.equal(detail.turns[0].answer.content.length,128*1024+1);assert.equal(detail.context.exceeded,false);
+   f.provider.reply=original;detail=await send(detail,turnBody(detail,'Next turn'));
+   assert.equal(detail.turns.at(-1).status,'done');assert.equal(detail.turns[0].answer.content.length,128*1024+1);
+   assert.equal(f.provider.requests.at(-1).body.messages.filter(message=>message.role==='assistant').map(message=>message.content).join(''),'x'.repeat(128*1024+1));
   }finally{f.provider.reply=original;}
  });
  await t.test('Failed turns survive reload, retry once by ID, and cancelled tails can be edited without resurrecting requests',async()=>{

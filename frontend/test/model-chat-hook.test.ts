@@ -23,7 +23,7 @@ const hooks = vi.hoisted(() => {
 const owner = vi.hoisted(() => ({current: 'alice'}));
 vi.mock('react', () => ({useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => {const selected = owner.current; return {scope: selected, captureOwner: () => () => selected === owner.current};}}));
-vi.mock('../src/features/ModelChat/api', () => ({modelChatApi: {list: vi.fn(), create: vi.fn(), read: vi.fn(), rename: vi.fn(), remove: vi.fn(), send: vi.fn(), retry: vi.fn(), cancel: vi.fn(), deleteFailed: vi.fn(), upload: vi.fn(), removeAttachment: vi.fn()}}));
+vi.mock('../src/features/ModelChat/api', () => ({modelChatApi: {list: vi.fn(), create: vi.fn(), read: vi.fn(), history: vi.fn(), rename: vi.fn(), remove: vi.fn(), send: vi.fn(), retry: vi.fn(), cancel: vi.fn(), deleteFailed: vi.fn(), upload: vi.fn(), removeAttachment: vi.fn()}}));
 vi.mock('../src/features/ModelChat/files', async original => ({...await original<typeof import('../src/features/ModelChat/files')>(), chatFileBase64: vi.fn()}));
 let selected = model, blocked = '';
 const render = (commit = true) => {hooks.begin(); const result = useModelChat(selected, 'prj-one', blocked); if (commit) hooks.commit(); return result;};
@@ -33,6 +33,7 @@ const ready = async () => {render(); await flush(); return render();};
 beforeEach(() => {
     hooks.dispose(); vi.clearAllMocks(); selected = model; blocked = ''; owner.current = 'alice';
     vi.mocked(modelChatApi.list).mockResolvedValue([]); vi.mocked(modelChatApi.create).mockResolvedValue(detail()); vi.mocked(modelChatApi.read).mockResolvedValue(detail());
+    vi.mocked(modelChatApi.history).mockResolvedValue({turns: [], attachments: [], history: {hasMore: false, nextCursor: null}});
     vi.mocked(modelChatApi.send).mockImplementation(async (_saved, _model, requestId, prompt, attachmentIds) => detail({turns: [turn({requestId, prompt, attachmentIds})]}));
     vi.mocked(modelChatApi.retry).mockResolvedValue(detail({turns: [turn()]})); vi.mocked(modelChatApi.cancel).mockResolvedValue(detail({turns: [turn({status: 'cancelled', answer: undefined})]}));
     vi.mocked(modelChatApi.deleteFailed).mockResolvedValue(detail()); vi.mocked(modelChatApi.rename).mockResolvedValue(detail()); vi.mocked(modelChatApi.remove).mockResolvedValue({} as never);
@@ -40,7 +41,7 @@ beforeEach(() => {
     vi.mocked(modelChatApi.upload).mockResolvedValue(detail({attachments: [{id: 'file-1', name: 'doc.txt', bytes: 4, textBytes: 4, mediaType: 'text/plain', createdAt: ''}]}));
     vi.mocked(modelChatApi.removeAttachment).mockResolvedValue(detail());
 });
-afterEach(() => hooks.dispose());
+afterEach(() => {hooks.dispose(); vi.useRealTimers();});
 
 describe('Сохранённая история и безопасная отправка', () => {
     it('Открывает последний личный диалог и сохраняет его историю', async () => {
@@ -78,6 +79,45 @@ describe('Сохранённая история и безопасная отпр
         const chat = await ready(); expect(chat.send(' \n ')).toBe(false); expect(modelChatApi.send).not.toHaveBeenCalled();
         await chat.newChat(); selected = {...model, modelPin: 'd'.repeat(64)}; expect(render().blocked).toContain('начните новый'); expect(render().send('Новый')).toBe(false);
         vi.mocked(modelChatApi.create).mockResolvedValue(detail({conversation: {...detail().conversation, modelPin: selected.modelPin!}})); await render().newChat(); expect(render().blocked).toBe('');
+    });
+});
+
+describe('Ранняя история и фазы автосжатия', () => {
+    it('Подгружает страницу один раз и сохраняет её после обновления хвоста', async () => {
+        const tail = detail({turns: [turn({id: 'tail'})], history: {hasMore: true, nextCursor: 'tail'}});
+        vi.mocked(modelChatApi.list).mockResolvedValue([tail.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(tail);
+        vi.mocked(modelChatApi.history).mockResolvedValue({turns: [turn({id: 'old'})], attachments: [], history: {hasMore: false, nextCursor: null}});
+        const chat = await ready(); const request = chat.loadEarlier(); void chat.loadEarlier(); await request;
+        expect(modelChatApi.history).toHaveBeenCalledOnce(); expect(render().turns.map(value => value.id)).toEqual(['old', 'tail']);
+        await render().refresh(); expect(render().turns.map(value => value.id)).toEqual(['old', 'tail']); expect(render().detail?.history.hasMore).toBe(false);
+    });
+    it('Сбой страницы оставляет историю и курсор; переход отменяет старую загрузку', async () => {
+        const tail = detail({turns: [turn({id: 'tail'})], history: {hasMore: true, nextCursor: 'tail'}});
+        vi.mocked(modelChatApi.list).mockResolvedValue([tail.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(tail);
+        vi.mocked(modelChatApi.history).mockRejectedValueOnce(new Error('Сеть')); await (await ready()).loadEarlier();
+        expect(render().historyError).toBe('Сеть'); expect(render().turns).toHaveLength(1); expect(render().detail?.history.nextCursor).toBe('tail');
+        const pending = deferred<Awaited<ReturnType<typeof modelChatApi.history>>>(); vi.mocked(modelChatApi.history).mockReturnValueOnce(pending.promise); void render().loadEarlier();
+        const signal = vi.mocked(modelChatApi.history).mock.calls[1][2]; vi.mocked(modelChatApi.read).mockResolvedValue(detail({conversation: {...detail().conversation, id: 'other'}})); await render().select('other');
+        expect(signal.aborted).toBe(true); pending.resolve({turns: [turn({id: 'old'})], attachments: [], history: {hasMore: false, nextCursor: null}}); await flush(); expect(render().detail?.conversation.id).toBe('other'); expect(render().turns).toEqual([]);
+    });
+    it('Чтение старой страницы доступно во время генерации и не отменяет её HTTP', async () => {
+        const tail = detail({turns: [turn({id: 'tail'})], history: {hasMore: true, nextCursor: 'tail'}});
+        vi.mocked(modelChatApi.list).mockResolvedValue([tail.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(tail);
+        const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);
+        const chat = await ready(); chat.send('Новый вопрос'); await flush(); const signal = vi.mocked(modelChatApi.send).mock.calls[0][5];
+        vi.mocked(modelChatApi.history).mockResolvedValue({turns: [turn({id: 'old'})], attachments: [], history: {hasMore: false, nextCursor: null}}); await render().loadEarlier();
+        expect(signal.aborted).toBe(false); expect(render().turns.map(value => value.id).slice(0, 2)).toEqual(['old', 'tail']); expect(render().busy).toBe(true);
+        pending.resolve(detail({turns: [turn({id: 'tail'}), turn({id: 'done'})]})); await flush(); expect(render().turns.map(value => value.id)).toEqual(['old', 'tail', 'done']);
+    });
+    it('Показывает фактическую фазу сжатия из GET, не создавая второго inference', async () => {
+        const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);
+        const chat = await ready(); vi.useFakeTimers(); chat.send('Продолжай'); await flush(); render();
+        const requestId = vi.mocked(modelChatApi.send).mock.calls[0][2];
+        vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [turn({requestId, status: 'pending', answer: undefined, processingStage: 'compacting'})], compaction: {state: 'compacting', coveredTurns: 0}}));
+        await vi.advanceTimersByTimeAsync(1000); expect(render().turns[0].processingStage).toBe('compacting');
+        vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [turn({requestId, status: 'pending', answer: undefined, processingStage: 'responding'})], compaction: {state: 'ready', coveredTurns: 20}}));
+        await vi.advanceTimersByTimeAsync(2000); expect(render().turns[0].processingStage).toBe('responding'); expect(modelChatApi.send).toHaveBeenCalledOnce();
+        pending.resolve(detail({turns: [turn({requestId})]})); await flush(); expect(render().turns[0].status).toBe('done');
     });
 });
 

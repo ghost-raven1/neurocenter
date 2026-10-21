@@ -16,9 +16,9 @@ export async function forwardModelInference(http:Pick<AxiosInstance,'request'>,c
     req.on('aborted',requestAborted);res.on('close',responseClosed);
     try {
         if(!connected())return;
-        // Saved history includes earlier messages around the same bounded inference answer.
+        // A historical 8 MiB text answer may expand sixfold when escaped as JSON.
         const savedChat=/^\/api\/model-chats\//.test(req.path||'');
-        const response=await http.request({...config,timeout:610000,maxContentLength:(savedChat?16:8)*1024*1024,signal:abort.signal});
+        const response=await http.request({...config,timeout:610000,maxContentLength:(savedChat?64:8)*1024*1024,signal:abort.signal});
         return connected()?response:undefined;
     } catch(error) {
         if(!abort.signal.aborted&&connected())throw error;

@@ -19,7 +19,7 @@ export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, o
             || Buffer.byteLength(JSON.stringify(texts)) > 1024 * 1024) { return invalid(); }
         return { input: texts, truncate: false };
     }
-    if (!Array.isArray(input.messages) || !input.messages.length || input.messages.length > 40) { return invalid(); }
+    if (!Array.isArray(input.messages) || !input.messages.length) { return invalid(); }
     let imagesCount = 0;
     const messages = input.messages.map(message => {
         if (!object(message) || !['user', 'assistant', 'system'].includes(String(message.role))) { return invalid(); }

@@ -133,8 +133,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 210);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 259);
+    assert.equal(Object.keys(actual.paths).length, 211);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 260);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
@@ -145,7 +145,7 @@ test('Actual document covers the independently audited public surface without pr
 test('Personal chat contracts expose bounded document inputs and CAS only to browser sessions',()=>{
     const base='/api/model-chats',chat=base+'/{id}';
     const expected={'':['get','post'],'/{id}':['delete','get','patch'],'/{id}/attachments':['post'],'/{id}/attachments/{attachmentId}':['delete','get'],
-        '/{id}/context-preview':['post'],'/{id}/turns':['post'],'/{id}/turns/{turnId}':['delete'],'/{id}/turns/{turnId}/retry':['post'],'/{id}/turns/{turnId}/cancel':['post']};
+        '/{id}/history':['get'],'/{id}/context-preview':['post'],'/{id}/turns':['post'],'/{id}/turns/{turnId}':['delete'],'/{id}/turns/{turnId}/retry':['post'],'/{id}/turns/{turnId}/cancel':['post']};
     for(const [suffix,methods] of Object.entries(expected)){
         assert.deepEqual(Object.keys(actual.paths[base+suffix]).sort(),methods);
         for(const operation of Object.values(actual.paths[base+suffix]))assert.deepEqual(operation.security,[{sessionCookie:[]}]);

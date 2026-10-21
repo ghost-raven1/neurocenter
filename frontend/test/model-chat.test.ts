@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
-import {modelChatPromptError, modelChatUnavailableReason, modelChatUrl, sortedModelChats} from '../src/features/ModelChat/model';
+import {mergeModelChatDetail, modelChatPromptError, modelChatUnavailableReason, modelChatUrl, prependModelChatHistory, sortedModelChats} from '../src/features/ModelChat/model';
 import {chatFileError, chatFileSize} from '../src/features/ModelChat/files';
 import {modelChatApi} from '../src/features/ModelChat/api';
 import api from '../src/core/api/base';
@@ -28,6 +28,21 @@ describe('Права, модель и сохранённый контекст', 
     it('Обновляет запись диалога без дубликата и сортирует по изменению', () => {
         const first = detail().conversation, second = {...first, id: 'chat-2', updatedAt: '2026-10-22'};
         expect(sortedModelChats([first, second], {...first, title: 'Новое название', updatedAt: '2026-10-23'}).map(value => [value.id, value.title])).toEqual([['chat-1', 'Новое название'], ['chat-2', first.title]]);
+    });
+    it('Длинная сохранённая переписка не блокируется числом сообщений', () => {
+        const saved = detail({turns: Array.from({length: 60}, (_, index) => turn({id: `turn-${index}`}))});
+        expect(modelChatPromptError('Продолжай', [], saved)).toBe('');
+    });
+    it('Новый хвост сохраняет открытые ранние страницы и не возвращает удалённые черновики', () => {
+        const file = {id: 'old-file', name: 'old.txt', bytes: 1, textBytes: 1, mediaType: 'text/plain', createdAt: ''};
+        const previous = detail({turns: [turn({id: 'old', attachmentIds: [file.id]}), turn({id: 'tail'})], attachments: [file, {...file, id: 'removed-draft'}], history: {hasMore: false, nextCursor: null}});
+        const merged = mergeModelChatDetail(previous, detail({turns: [turn({id: 'tail'}), turn({id: 'new'})], history: {hasMore: true, nextCursor: 'tail'}}));
+        expect(merged.turns.map(value => value.id)).toEqual(['old', 'tail', 'new']); expect(merged.history.hasMore).toBe(false); expect(merged.attachments.map(value => value.id)).toEqual(['old-file']);
+    });
+    it('Переключение диалога не переносит старые страницы, prepend удаляет пересечение ID', () => {
+        const saved = detail({turns: [turn({id: 'tail'})]});
+        expect(mergeModelChatDetail(saved, detail({conversation: {...saved.conversation, id: 'other'}})).turns).toEqual([]);
+        expect(prependModelChatHistory(saved, {turns: [turn({id: 'old'}), turn({id: 'tail'})], attachments: [], history: {hasMore: false, nextCursor: null}}).turns.map(value => value.id)).toEqual(['old', 'tail']);
     });
 });
 
@@ -64,6 +79,13 @@ describe('Серверная история через Gateway', () => {
         expect(api.post).toHaveBeenLastCalledWith('/api/model-chats/chat%2Fone/attachments', {name: 'report.txt', contentBase64: 'dGVzdA==', requestId: 'uuid-file'}, {signal, timeout: 120000});
         await modelChatApi.cancel(detail(), 'turn/1', signal);
         expect(api.post).toHaveBeenLastCalledWith('/api/model-chats/chat-1/turns/turn%2F1/cancel', {expectedRevision: 1}, {signal});
+    });
+    it('Ранние сообщения запрашиваются отдельной страницей, без повторного inference', async () => {
+        const page = {turns: [turn()], attachments: [], history: {hasMore: false, nextCursor: null}};
+        vi.mocked(api.get).mockResolvedValueOnce({data: page}); const signal = new AbortController().signal;
+        await expect(modelChatApi.history('chat/one', 'before-turn', signal)).resolves.toEqual(page);
+        expect(api.get).toHaveBeenCalledWith('/api/model-chats/chat%2Fone/history', {params: {before: 'before-turn', limit: 50}, signal});
+        expect(api.post).not.toHaveBeenCalled();
     });
     it('Не обращается к API без точного pin', () => {
         expect(() => modelChatApi.create({...model, modelPin: undefined}, undefined, new AbortController().signal)).toThrow('Обновите каталог');

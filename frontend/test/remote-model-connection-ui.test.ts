@@ -103,8 +103,15 @@ describe('API-ключ и параметры подключения', () => {
     it.each(['embedding', 'chat', 'vision'] as const)('Поля параметров соответствуют назначению %s и протоколу', async capability => {
         selected = { ...model, capability }; await open();
         expect(ui.fields.has('timeoutMs')).toBe(true); expect(ui.fields.has('options.temperature')).toBe(capability !== 'embedding');
-        expect(ui.fields.has('options.contextWindow')).toBe(false);
+        expect(ui.fields.has('options.contextWindow')).toBe(capability !== 'embedding');
+        if (capability !== 'embedding') expect(ui.fields.get('options.contextWindow')?.extra).toContain('не увеличивает фактический лимит API');
         selected = { ...selected, runtime: 'remote-ollama' }; render(); expect(ui.fields.has('options.contextWindow')).toBe(capability !== 'embedding');
+    });
+    it.each([4096, null])('Сохраняет заявленное окно OpenAI либо оставляет неизвестным после очистки: %s', async contextWindow => {
+        await open({ ...stored, options: { contextWindow: 8192 } });
+        expect(ui.values.options).toEqual({ contextWindow: 8192 });
+        submit({ options: { contextWindow } }); await flush();
+        expect(modelCatalogApi.configure).toHaveBeenCalledExactlyOnceWith(model.id, expect.objectContaining({ options: contextWindow == null ? {} : { contextWindow } }));
     });
     it('После сохранения и ошибки перечитывания повторяется проверка, а не сохранение со старой ревизией', async () => {
         await open(); vi.mocked(modelCatalogApi.get).mockRejectedValueOnce(new Error('Сеть недоступна'));

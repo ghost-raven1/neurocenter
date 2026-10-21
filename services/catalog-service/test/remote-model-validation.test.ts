@@ -43,9 +43,9 @@ describe('Контракт удалённой модели без адреса �
         { maxOutputTokens: 0 }, { maxOutputTokens: 1.5 }, { maxOutputTokens: 32769 }, { contextWindow: 127 }, { contextWindow: 2097153 }])('Отклоняет неразрешённые generation options: %j', value => {
         expect(() => remoteModelOptions(value)).toThrow();
     });
-    it('Не обещает embedding sampling или OpenAI contextWindow', () => {
+    it('Отклоняет embedding sampling, но принимает объявленный бюджет OpenAI и Ollama', () => {
         expect(() => assertRemoteModelOptions(model, { temperature: 0 })).toThrow('Embedding');
-        expect(() => assertRemoteModelOptions({ runtime: 'remote-openai', capability: 'chat' }, { contextWindow: 4096 })).toThrow('Ollama');
+        expect(() => assertRemoteModelOptions({ runtime: 'remote-openai', capability: 'chat' }, { contextWindow: 4096 })).not.toThrow();
         expect(() => assertRemoteModelOptions({ runtime: 'remote-ollama', capability: 'vision' }, { contextWindow: 4096 })).not.toThrow();
     });
 });

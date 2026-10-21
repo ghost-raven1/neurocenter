@@ -123,14 +123,24 @@ describe('Настоящий HTTP-транспорт удалённой моде
             { ...connection, baseUrl: connection.baseUrl.replace('/v1', '') }, 'chat', { messages: [{ role: 'user', content: 'Привет' }] });
         expect(result).toMatchObject({ ...counts, usage_reported: reported });
     });
-    it('Маппит Ollama defaults и contextWindow, отказывая OpenAI вместо тихого игнорирования', async () => {
+    it('Маппит контекст в Ollama num_ctx, а объявленное окно OpenAI оставляет серверным бюджетом', async () => {
         handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, done: true, done_reason: 'stop', message: { content: 'OK' } })); };
         const messages = [{ role: 'user', content: 'Привет' }], configured = { ...connection, options: { temperature: 0.2, topP: 0.8, maxOutputTokens: 4096, contextWindow: 65536 } };
         await new RemoteModelClient().infer({ ...model, capability: 'chat', runtime: 'remote-ollama', dimension: null }, configured, 'chat', { messages, options: { num_predict: 99 } });
         expect(received[0].body).toEqual({ model: model.model, messages, stream: false, think: false, options: { temperature: 0.2, top_p: 0.8, num_predict: 99, num_ctx: 65536 } });
-        await expect(new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, configured, 'chat', { messages })).rejects.toThrow('Ollama');
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model,
+            choices: [{ index: 0, finish_reason: 'stop', message: { content: 'OK' } }] })); };
+        await new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, configured, 'chat', { messages });
+        expect(received[1].body).toEqual({ model: model.model, messages, stream: false, temperature: 0.2, top_p: 0.8, max_tokens: 4096 });
         await expect(new RemoteModelClient().infer(model, { ...connection, options: { temperature: 0.5 } }, 'embed', { input: ['Текст'] })).rejects.toThrow('Embedding');
-        expect(received).toHaveLength(1);
+        expect(received).toHaveLength(2);
+    });
+    it('Передаёт длинный диалог без искусственного ограничения числа сообщений', async () => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model,
+            choices: [{ index: 0, finish_reason: 'stop', message: { content: 'OK' } }] })); };
+        const messages = Array.from({ length: 1001 }, () => ({ role: 'user', content: 'Текст' }));
+        await new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, connection, 'chat', { messages });
+        expect(received[0].body.messages).toHaveLength(1001);
     });
     it('Применяет сохранённый timeout ко всему ответу, включая тело', async () => {
         handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{'); };

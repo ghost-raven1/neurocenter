@@ -70,7 +70,7 @@ export class RemoteModelClient {
     }
 
     private chatBody(model: IModel, body: Json, openai: boolean, defaults?: IRemoteModelOptions): Json {
-        if (!Array.isArray(body.messages) || !body.messages.length || body.messages.length > 40) { throw new RemoteModelError('response', 'Передайте сообщения для модели.'); }
+        if (!Array.isArray(body.messages) || !body.messages.length) { throw new RemoteModelError('response', 'Передайте сообщения для модели.'); }
         const supplied = object(body.options) ? body.options : {};
         const options = remoteModelOptions({ ...defaults,
             ...(supplied.temperature === undefined ? {} : { temperature: supplied.temperature }),

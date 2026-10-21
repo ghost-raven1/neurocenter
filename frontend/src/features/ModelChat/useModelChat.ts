@@ -4,7 +4,7 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import type { ICatalogModel } from '../ModelCatalog/types';
 import { modelChatApi } from './api';
 import { chatFileBase64, chatFileError, CHAT_FILE_MAX_COUNT } from './files';
-import { modelChatPromptError, sortedModelChats } from './model';
+import { mergeModelChatDetail, modelChatPromptError, prependModelChatHistory, sortedModelChats } from './model';
 import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversation } from './types';
 
 type Activity = '' | 'loading' | 'sending' | 'uploading' | 'saving';
@@ -19,14 +19,18 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const { scope, captureOwner } = useAuthRequestOwner();
     const [items, setItems] = useState<IModelChatConversation[]>([]), [detail, setDetail] = useState<IModelChatDetail | null>(null);
     const [activity, setActivity] = useState<Activity>('loading'), [error, setError] = useState('');
+    const [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState('');
     const [optimistic, setOptimistic] = useState<IModelChatTurn | null>(null), [uploads, setUploads] = useState<IChatUpload[]>([]);
     const current = useRef(detail), list = useRef(items), pending = useRef(optimistic), fileRows = useRef(uploads);
     const mounted = useRef(false), active = useRef<ActiveRequest>(), liveModelPin = useRef(model.modelPin); liveModelPin.current = model.modelPin;
+    const historyRequest = useRef<AbortController>();
     const updatePending = (value: IModelChatTurn | null): void => { pending.current = value; setOptimistic(value); };
     const updateUploads = (value: IChatUpload[]): void => { fileRows.current = value; setUploads(value); };
     const accept = (value: IModelChatDetail): void => {
-        current.current = value; setDetail(value); list.current = sortedModelChats(list.current, value.conversation); setItems(list.current);
+        const merged = mergeModelChatDetail(current.current, value);
+        current.current = merged; setDetail(merged); list.current = sortedModelChats(list.current, merged.conversation); setItems(list.current);
     };
+    const abortHistory = (): void => {historyRequest.current?.abort(); historyRequest.current = undefined; setHistoryLoading(false); setHistoryError('');};
     const abortActive = (): void => { const request = active.current; active.current = undefined; request?.abort.abort(); if (mounted.current) setActivity(''); };
     const run = async (kind: Activity, action: (signal: AbortSignal, owns: () => boolean) => Promise<void>): Promise<boolean> => {
         const owner = captureOwner(); if (!mounted.current || active.current || !owner()) return false;
@@ -51,11 +55,11 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             if (values.length) { const value = await modelChatApi.read(list.current[0].id, controller.signal); if (owns()) accept(value); }
         }).catch(cause => { if (owns()) setError(errorMessage(cause, 'Не удалось загрузить личные диалоги.')); })
             .finally(() => { if (active.current === request) { active.current = undefined; if (mounted.current && owner()) setActivity(''); } });
-        return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; };
+        return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; historyRequest.current?.abort(); historyRequest.current = undefined; };
     }, [scope, model.id, projectId]);
     const select = async (id: string): Promise<boolean> => {
         if (!mounted.current || !captureOwner()()) return false;
-        abortActive(); updatePending(null); updateUploads([]);
+        abortActive(); abortHistory(); updatePending(null); updateUploads([]);
         return run('loading', async (signal, owns) => { const value = await modelChatApi.read(id, signal); if (owns()) accept(value); });
     };
     const refresh = async (): Promise<void> => {
@@ -65,13 +69,49 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             if (current.current) { const value = await modelChatApi.read(current.current.conversation.id, signal); if (owns()) { accept(value); if (pending.current && value.turns.some(turn => turn.requestId === pending.current!.requestId)) updatePending(null); } }
         });
     };
+    const serverPending = detail?.turns.some(turn => turn.status === 'pending') ?? false;
     useEffect(() => {
-        if (activity || !detail?.turns.some(turn => turn.status === 'pending')) return;
-        const timer = setTimeout(() => { void refresh(); }, 2000); return () => clearTimeout(timer);
-    }, [activity, detail]);
+        if (!detail || activity !== 'sending' && (activity !== '' || !serverPending)) return;
+        const id = detail.conversation.id, owner = captureOwner(), controller = new AbortController();
+        const sending = activity === 'sending' ? active.current : undefined;
+        let timer: ReturnType<typeof setTimeout>;
+        const owns = (): boolean => mounted.current && owner() && !controller.signal.aborted && current.current?.conversation.id === id
+            && (!sending || active.current === sending);
+        const poll = async (): Promise<void> => {
+            let again = true;
+            try {
+                const value = await modelChatApi.read(id, controller.signal); if (!owns()) return;
+                accept(value);
+                if (pending.current) {
+                    const saved = value.turns.find(turn => turn.requestId === pending.current!.requestId);
+                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, processingStage: saved.processingStage} : null);
+                }
+                again = !!sending || value.turns.some(turn => turn.status === 'pending');
+            } catch (cause) {
+                if (owns()) {
+                    const status = typeof cause === 'object' && cause !== null && 'response' in cause ? (cause as {response?: {status?: number}}).response?.status : undefined;
+                    if (status === 401 || status === 403 || status === 404) {setError(errorMessage(cause, 'Диалог больше недоступен.')); again = false;}
+                }
+            } finally {if (again && owns()) timer = setTimeout(() => {void poll();}, 2000);}
+        };
+        timer = setTimeout(() => {void poll();}, 1000);
+        return () => {clearTimeout(timer); controller.abort();};
+    }, [activity, detail?.conversation.id, optimistic?.requestId, serverPending]);
+    const loadEarlier = async (): Promise<void> => {
+        const selected = current.current, owner = captureOwner(), cursor = selected?.history?.nextCursor;
+        if (!mounted.current || !owner() || !selected?.history?.hasMore || !cursor || historyRequest.current) return;
+        const controller = new AbortController(); historyRequest.current = controller; setHistoryLoading(true); setHistoryError('');
+        const owns = (): boolean => mounted.current && owner() && historyRequest.current === controller && !controller.signal.aborted
+            && current.current?.conversation.id === selected.conversation.id && current.current.history.nextCursor === cursor;
+        try {
+            const value = await modelChatApi.history(selected.conversation.id, cursor, controller.signal);
+            if (owns() && current.current) accept(prependModelChatHistory(current.current, value));
+        } catch (cause) {if (owns()) setHistoryError(errorMessage(cause, 'Не удалось загрузить ранние сообщения. Попробуйте снова.'));}
+        finally {if (historyRequest.current === controller) {historyRequest.current = undefined; if (mounted.current && owner()) setHistoryLoading(false);}}
+    };
     const newChat = async (): Promise<boolean> => {
         if (!mounted.current || !captureOwner()()) return false;
-        abortActive(); updatePending(null); updateUploads([]);
+        abortActive(); abortHistory(); updatePending(null); updateUploads([]);
         return run('saving', async (signal, owns) => { const value = await modelChatApi.create(model, projectId, signal); if (owns()) accept(value); });
     };
     const changed = !!detail && detail.conversation.modelPin !== model.modelPin;
@@ -163,7 +203,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         return run('saving', async (signal, owns) => {
             await modelChatApi.remove(selected.conversation.id, selected.conversation.revision, signal); if (!owns()) return;
             list.current = list.current.filter(value => value.id !== selected.conversation.id); setItems(list.current);
-            current.current = null; setDetail(null); updatePending(null); updateUploads([]);
+            abortHistory(); current.current = null; setDetail(null); updatePending(null); updateUploads([]);
         });
     };
     const uploadBatch = async (rows: IChatUpload[]): Promise<void> => {
@@ -197,9 +237,9 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const removeUpload = (id: string): void => { if (!active.current && captureOwner()()) updateUploads(fileRows.current.filter(row => row.id !== id)); };
     const retryUpload = (id: string): void => { const row = fileRows.current.find(value => value.id === id); if (row && !active.current && !chatFileError(row.file) && !blocked && captureOwner()()) void uploadBatch([row]); };
     const removeAttachment = async (id: string): Promise<void> => { await run('saving', async (signal, owns) => { if (!current.current) return; const value = await modelChatApi.removeAttachment(current.current, id, signal); if (owns()) accept(value); }); };
-    const used = new Set(detail?.turns.flatMap(turn => turn.attachmentIds) ?? []);
     const turns = optimistic ? [...(detail?.turns.filter(turn => turn.id !== optimistic.id && turn.requestId !== optimistic.requestId) ?? []), optimistic] : detail?.turns ?? [];
-    return {items, detail, turns, uploads, attachments: detail?.attachments.filter(file => !used.has(file.id)) ?? [], activity, error, blocked,
+    const used = new Set(turns.flatMap(turn => turn.attachmentIds));
+    return {items, detail, turns, uploads, attachments: detail?.attachments.filter(file => !used.has(file.id)) ?? [], activity, error, blocked, historyLoading, historyError, loadEarlier,
         busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, stopOwn, select, refresh, newChat, rename, remove, editFailed,
         addFiles, cancelUploads, removeUpload, retryUpload, removeAttachment, captureOwner};
 }

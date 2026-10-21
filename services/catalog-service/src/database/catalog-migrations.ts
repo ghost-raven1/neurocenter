@@ -19,6 +19,10 @@ import {REMOTE_OPTIONS_SCHEMA_SQL} from '../models/remote-options.schema';
 import {REMOTE_OPTIONS_SCHEMA_ASSERT_SQL} from '../models/remote-options.schema-verification';
 import {CHAT_SCHEMA_SQL} from '../model-chat/chat.schema';
 import {CHAT_SCHEMA_ASSERT_SQL} from '../model-chat/chat.schema-verification';
+import {CHAT_COMPACTION_SCHEMA_SQL} from '../model-chat/chat-compaction.schema';
+import {CHAT_COMPACTION_SCHEMA_ASSERT_SQL} from '../model-chat/chat-compaction.schema-verification';
+import {CHAT_STORAGE_SCHEMA_SQL} from '../model-chat/chat-storage.schema';
+import {CHAT_STORAGE_SCHEMA_ASSERT_SQL} from '../model-chat/chat-storage.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
@@ -32,4 +36,6 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:11,name:'asset-source-archive-import',sql:SOURCE_ARCHIVE_SCHEMA_SQL+'\n'+SOURCE_ARCHIVE_SCHEMA_ASSERT_SQL},
     {version:12,name:'remote-model-connection-options',sql:REMOTE_OPTIONS_SCHEMA_SQL+'\n'+REMOTE_OPTIONS_SCHEMA_ASSERT_SQL},
     {version:13,name:'personal-model-chat-and-documents',sql:CHAT_SCHEMA_SQL+'\n'+CHAT_SCHEMA_ASSERT_SQL},
+    {version:14,name:'persistent-model-chat-context',sql:CHAT_COMPACTION_SCHEMA_SQL+'\n'+CHAT_COMPACTION_SCHEMA_ASSERT_SQL},
+    {version:15,name:'model-chat-ceph-attachments',sql:CHAT_STORAGE_SCHEMA_SQL+'\n'+CHAT_STORAGE_SCHEMA_ASSERT_SQL},
 ];
