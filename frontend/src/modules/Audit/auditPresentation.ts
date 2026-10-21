@@ -2,6 +2,8 @@ import type { IAuditEvent } from '../../core/api/interfaces';
 import { auditResourceLabel } from './auditHelpers';
 import { agentAuditSummary, agentAuditTitle, isAgentAudit } from './agentAudit';
 import {requestAuditSummary,requestAuditTitle} from '../../features/CatalogRequests/auditPresentation';
+import {auditImportTitle} from './assetImportAudit';
+import {operationAuditTitle} from './operationAudit';
 
 interface IPublicationSnapshot {
     name?: string;
@@ -33,8 +35,10 @@ function snapshot(value: unknown): IPublicationSnapshot {
 
 /** Использует название из события, в том числе после удаления карточки. */
 export function auditResourceTitle(event: IAuditEvent): string {
+    const imported=auditImportTitle(event);if(imported)return imported;
     const request=requestAuditTitle(event);if(request)return request;
     const agent = agentAuditTitle(event); if (agent) return agent;
+    const operation=operationAuditTitle(event);if(operation)return operation;
     if (publicationActions.has(event.action)) {
         return snapshot(event.details?.after).name || snapshot(event.details?.before).name || event.resourceId || 'Название не сохранено';
     }
@@ -43,6 +47,13 @@ export function auditResourceTitle(event: IAuditEvent): string {
 
 /** Различает MCP и плагин по сохранённому типу публикации. */
 export function auditResourceKind(event: IAuditEvent): string {
+    if(event.action==='asset.import.request')return 'Импорт ассетов';
+    if(event.resourceType==='bridge'&&event.source==='operation'){
+        const kind=snapshot(event.details?.after).kind;
+        if(kind==='mcp')return 'MCP-сервер · через мост';
+        if(kind==='plugin')return 'Плагин OpenCode · через мост';
+        if(kind==='skill')return 'Скилл · через мост';
+    }
     if (isAgentAudit(event)) return 'Агент OpenCode';
     if (publicationActions.has(event.action)) {
         const kind = snapshot(event.details?.after).kind || snapshot(event.details?.before).kind;
@@ -75,6 +86,7 @@ export function publicationAuditChanges(event: IAuditEvent): IAuditChange[] {
 
 /** Краткая сводка подтверждённых изменений для строки журнала. */
 export function auditEventSummary(event: IAuditEvent): string | undefined {
+    if(event.action==='asset.import.request')return 'Запрос принят в обработку. Итог добавления — в разделе «Ассеты».';
     const request=requestAuditSummary(event);if(request)return request;
     if (isAgentAudit(event)) return agentAuditSummary(event);
     if (!publicationActions.has(event.action)) { return undefined; }

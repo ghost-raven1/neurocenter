@@ -1,5 +1,6 @@
 import type { IAuditEvent } from '../../core/api/interfaces';
 import {requestAuditAction} from '../../features/CatalogRequests/auditPresentation';
+import {auditImportSnapshot} from './assetImportAudit';
 
 const ACTION_LABELS: Record<string, string> = {
     install: 'Установка', delete: 'Удаление', release: 'Выпуск', sync: 'Синхронизация',
@@ -29,6 +30,8 @@ export function describeAuditAction(action: string): { label: string; color: str
         'project.agent.remove': {label:'Агент убран из проекта',color:'red'}, 'project.agents.connect': {label:'Настройки отправлены мосту',color:'purple'},
     };
     if (agentLabels[normalized]) return agentLabels[normalized];
+    if (normalized === 'asset.import.request') return {label:'Запрос импорта ассетов',color:'blue'};
+    if (normalized === 'asset.import.replace') return {label:'Подтверждение замены ассетов',color:'orange'};
     if (normalized === 'skill.dependencies.preserve') { return { label: 'История зависимостей', color: 'orange' }; }
     if (normalized === 'skill.directory.create') { return { label: 'Создание папки', color: 'blue' }; }
     if (normalized === 'project.settings.update') { return { label: 'Настройки проекта', color: 'cyan' }; }
@@ -81,7 +84,7 @@ export function filterAuditPage(events: IAuditEvent[], search: string, outcome: 
         });
         return [ event.action, describeAuditAction(event.action).label, event.resourceType,
             auditResourceLabel(event.resourceType), event.resourceId, event.actor, auditActorLabel(event.actor),
-            event.correlationId, event.id, ...names ]
+            event.correlationId, event.id, ...names, ...(auditImportSnapshot(event)?.items.flatMap(item=>[item.name,item.assetId])??[]) ]
             .join(' ').toLocaleLowerCase('ru-RU').includes(query);
     });
 }

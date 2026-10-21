@@ -15,13 +15,13 @@ export function agentAuditTitle(event: IAuditEvent): string | undefined {
 export function agentAuditProject(event: IAuditEvent): string | undefined {
     if (!isAgentAudit(event)) return;
     const before = object(event.details?.before), after = object(event.details?.after);
-    return text(after.projectName) || text(before.projectName) || text(after.projectId) || text(before.projectId);
+    return text(after.projectName) || text(before.projectName) || (text(after.projectId)||text(before.projectId)?'Название проекта не сохранено':undefined);
 }
 export function agentAuditChanges(event: IAuditEvent): IAuditChange[] {
     if (!isAgentAudit(event)) return [];
     const before = object(event.details?.before), after = object(event.details?.after);
     const changes: IAuditChange[] = [];
-    for (const [key, label] of [['name', 'Название'], ['slug', 'Имя OpenCode'], ['projectName', 'Проект'], ['projectId', 'ID проекта']] as const) {
+    for (const [key, label] of [['name', 'Название'], ['slug', 'Имя OpenCode'], ['projectName', 'Проект']] as const) {
         const old = text(before[key]), current = text(after[key]);
         if (old !== current && (old || current)) changes.push({ label, before: old || 'Не сохранено', after: current || 'Не сохранено' });
     }

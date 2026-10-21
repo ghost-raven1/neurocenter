@@ -10,6 +10,7 @@ import { auditActorLabel, describeAuditAction, featureFlagAuditChanges, formatAu
 import { auditEventSummary, auditResourceKind, auditResourceTitle, publicationAuditChanges } from './auditPresentation';
 import { agentAuditChanges, agentAuditProject } from './agentAudit';
 import {requestAuditChanges} from '../../features/CatalogRequests/auditPresentation';
+import {auditImportSnapshot} from './assetImportAudit';
 
 const { Paragraph, Text } = Typography;
 const LEVEL_LABELS: Record<string, string> = { INFO: 'Информация', WARN: 'Внимание', ERROR: 'Ошибка', DEBUG: 'Отладка' };
@@ -26,6 +27,11 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
     const publicationChanges = [...publicationAuditChanges(event), ...agentAuditChanges(event), ...requestAuditChanges(event)];
     const summary = auditEventSummary(event);
     const agentProject = agentAuditProject(event);
+    const imported = auditImportSnapshot(event);
+    const operationSnapshot=event.source==='operation'&&event.details?.after&&typeof event.details.after==='object'&&!Array.isArray(event.details.after)?event.details.after as Record<string,unknown>:undefined;
+    const operationVersion=operationSnapshot&&Number.isSafeInteger(operationSnapshot.version)?Number(operationSnapshot.version):undefined;
+    const projectSnapshot=[event.details?.after,event.details?.before].find(value=>value&&typeof value==='object'&&!Array.isArray(value)&&typeof (value as Record<string,unknown>).projectId==='string') as Record<string,unknown>|undefined;
+    const projectId=detail?.projectId||projectSnapshot?.projectId;
     useSectionUpdates(['audit', 'operations'], retry, Boolean(event.correlationId));
 
     useEffect(() => {
@@ -48,9 +54,16 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
         <Typography.Title level={4}>{auditResourceTitle(event)}</Typography.Title>
         <Text type="secondary">{auditResourceKind(event)}</Text>
         {summary && <Paragraph className="audit-page__event-summary">{summary}</Paragraph>}
+        {imported && <div className="audit-page__import">
+            <Typography.Title level={5}>Что выбрано для добавления</Typography.Title>
+            {imported.items.length ? <List size="small" dataSource={imported.items} renderItem={item=><List.Item><Space direction="vertical" size={2}><Text strong>{item.name}</Text><Text type="secondary">{({mcp:'MCP-сервер',plugin:'Плагин',skill:'Скилл',model:'Модель',bridge:'Мост',agent:'Агент'} as Record<string,string>)[item.kind]||item.kind} · {item.version}</Text></Space></List.Item>}/>
+                : <Paragraph type="secondary">Названия в исторической заявке не сохранились. Выбрано позиций: {imported.ids.length || 'не указано'}.</Paragraph>}
+            {imported.repository && <Paragraph type="secondary">Источник: {imported.repository}{imported.commit ? ` · ${imported.commit.slice(0,8)}` : ''}</Paragraph>}
+        </div>}
         <Descriptions column={1} size="small" className="audit-page__detail-meta">
             <Descriptions.Item label="Время">{formatAuditTime(event.at)}</Descriptions.Item>
             <Descriptions.Item label="Исполнитель">{auditActorLabel(event.actor)}</Descriptions.Item>
+            {operationVersion!==undefined&&<Descriptions.Item label="Версия инструмента">{operationVersion}</Descriptions.Item>}
             {agentProject && <Descriptions.Item label="Проект">{agentProject}</Descriptions.Item>}
         </Descriptions>
         {(!event.actor || event.actor === 'admin') && <Paragraph type="secondary">В исходной записи не сохранена почта пользователя: указан технический исполнитель {event.actor || 'без имени'}.</Paragraph>}
@@ -71,7 +84,7 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
             <Descriptions column={1} size="small">
                 <Descriptions.Item label="Начало">{formatAuditTime(detail.startedAt)}</Descriptions.Item>
                 <Descriptions.Item label="Завершение">{detail.finishedAt ? formatAuditTime(detail.finishedAt) : 'Не завершена'}</Descriptions.Item>
-                {detail.projectId && <Descriptions.Item label="Проект"><Button type="link" size="small" href={`/projects/${encodeURIComponent(detail.projectId)}`}>{detail.projectId}</Button></Descriptions.Item>}
+                {detail.projectId && event.action!=='project.delete' && <Descriptions.Item label="Проект"><Button type="link" size="small" href={`/projects/${encodeURIComponent(detail.projectId)}`}>Открыть проект</Button></Descriptions.Item>}
                 <Descriptions.Item label="Повторных запусков">{detail.retries}</Descriptions.Item>
             </Descriptions>
             {detail.error && <Alert type="error" showIcon message="Ошибка операции" description={detail.error} />}
@@ -91,6 +104,7 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
                 <Descriptions.Item label="ID ресурса"><Text copyable>{event.resourceId || 'не указан'}</Text></Descriptions.Item>
                 <Descriptions.Item label="Код действия"><Text code>{event.action || 'не указан'}</Text></Descriptions.Item>
                 <Descriptions.Item label="ID события"><Text copyable>{event.id}</Text></Descriptions.Item>
+                {typeof projectId==='string'&&<Descriptions.Item label="ID проекта"><Text copyable>{projectId}</Text></Descriptions.Item>}
                 {event.correlationId && <Descriptions.Item label="ID операции"><Text copyable>{event.correlationId}</Text></Descriptions.Item>}
                 {event.decisionId && <Descriptions.Item label="Решение доступа"><Text code>{event.decisionId}</Text></Descriptions.Item>}
             </Descriptions>
