@@ -18,8 +18,8 @@ vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:v
 
 describe.skipIf(!connection)('Agent service lifecycle — fresh actor and committed PostgreSQL state',()=>{
     let fixture:Awaited<ReturnType<typeof database>>,pool:Pool,service:AgentsService,models:ModelsService;
-    const ready=vi.fn(async()=>undefined),jobs={create:vi.fn(async()=>({id:randomUUID(),state:'queued'}))};
-    const request=(actor=main)=>({headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN,'x-bridge-actor':encodeURIComponent(JSON.stringify(actor))}} as Request);
+    const ready=vi.fn<()=>Promise<void>>(async()=>undefined),jobs={create:vi.fn(async()=>({id:randomUUID(),state:'queued'}))};
+    const request=(actor=main)=>({headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN,'x-bridge-actor':encodeURIComponent(JSON.stringify(actor))}} as unknown as Request);
     const create=()=>service.cards.create(main,{requestKey:randomUUID(),slug:'nc-review',name:'Ревью',definition});
     const assign=async()=>{const card=await create();await service.projects.assign(admin,'prj-agents',{requestKey:randomUUID(),expectedRevision:0,agentId:card.id,version:1,manifest:card.manifest});return card;};
     const revision=()=>service.projects.currentRevision('prj-agents');

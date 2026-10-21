@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -10,7 +11,7 @@ function fixture(){
     const service=new ProxyService({get:key=>({CATALOG_SERVICE_URL:'http://catalog.fixture',RAG_SERVICE_URL:'http://rag.fixture'}[key])},
         {authenticate:async()=>({userId:'fixture',email:'fixture@example.test',activeRole:'Разработчик',policies:[]})},{mutation:()=>{}});
     service.http={post:async()=>({status:200,data:{allowed:true,claims:{projects:[],pluginIds:[],skillPaths:[]}}}),
-        get:async()=>({status:200,data:{flags:{model_hosting:true,tool_builds:true,rag_sync:true}}}),
+        get:async()=>({status:200,data:evaluateFeatureFlags(defaultFeatureFlags())}),
         request:async options=>{calls.push(options);return {status:200,data:{ok:true},headers:{}};}};
     const response={statusCode:0,status(value){this.statusCode=value;return this;},json(value){this.body=value;return this;},send(value){this.body=value;return this;},setHeader(){}};
     return {service,calls,response};

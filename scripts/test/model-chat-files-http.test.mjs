@@ -86,14 +86,15 @@ test('Saved personal model chats and documents through real Gateway/Catalog',{
   assert.equal(preview.messageCount,1);assert.ok(preview.estimatedInputTokens>0);assert.equal(preview.method,'estimate');assert.equal(requestCount(),before);
   const inputRevision=detail.conversation.revision;detail=await send(detail,body);
   assert.equal(detail.turns.length,1);assert.equal(detail.turns[0].status,'done');assert.deepEqual(detail.turns[0].answer.usage,{inputTokens:4,outputTokens:7,totalTokens:11,reported:true});
-  const call=f.provider.requests.at(-1);assert.equal(call.body.messages.length,1);assert.equal(call.body.messages[0].role,'user');
-  assert.match(call.body.messages[0].content,/Разбери документ/);assert.ok(call.body.messages[0].content.includes(injection));assert.ok(call.hasAuthorization);
+  const call=f.provider.requests.at(-1);assert.equal(call.body.messages.length,2);assert.deepEqual(call.body.messages.map(message=>message.role),['user','user']);
+  const [metadata,input]=call.body.messages;assert.match(metadata.content,/^Контекст выбранного проекта\./);assert.equal(JSON.parse(metadata.content.split('\n').slice(1).join('\n')).project.id,f.projectId);assert.equal(metadata.content.includes(injection),false);
+  assert.match(input.content,/Разбери документ/);assert.ok(input.content.includes(injection));assert.equal(call.body.messages.filter(message=>message.content.includes(injection)).length,1);assert.ok(call.hasAuthorization);
   assert.equal(JSON.stringify(detail).includes('qa-chat-provider-key'),false);assert.equal(JSON.stringify(detail).includes(f.endpoint),false);
-  assert.equal(preview.requestBytes,Buffer.byteLength(JSON.stringify({messages:call.body.messages,stream:false})));
+  assert.equal(preview.requestBytes,Buffer.byteLength(JSON.stringify({messages:[input],stream:false})));assert.ok(Buffer.byteLength(JSON.stringify({messages:call.body.messages,stream:false}))>preview.requestBytes,'Project metadata is a separately fitted, ephemeral overhead.');
   const duplicate=await send(detail,{...body,expectedRevision:inputRevision});assert.equal(duplicate.turns.length,1);assert.equal(requestCount(),before+1);
   await send(detail,{...body,prompt:'Different content'},409);
   detail=await send(detail,turnBody(detail,'Продолжай'));
-  const next=f.provider.requests.at(-1).body.messages;assert.equal(next.length,3);assert.equal(next[1].role,'assistant');assert.equal(next[2].content,'Продолжай');
+  const allNext=f.provider.requests.at(-1).body.messages;assert.equal(allNext.length,4);assert.match(allNext[0].content,/^Контекст выбранного проекта\./);const next=allNext.slice(1);assert.equal(next.length,3);assert.equal(next[1].role,'assistant');assert.equal(next[2].content,'Продолжай');
   assert.equal(next[0].content.split(injection).length,2,'The attachment appears once in its original turn.');
   await removeAttachment(detail,aid,409);
   await f.request('main',chatRoute(detail)+'/attachments/'+aid,{status:404});
@@ -130,13 +131,13 @@ test('Saved personal model chats and documents through real Gateway/Catalog',{
  await t.test('Documents alone can be sent and short conversations can pass forty messages without compaction',async()=>{
   let detail=await create();detail=await upload(detail,'document-only.txt',Buffer.from('The attachment is the entire question.'));
   detail=await send(detail,turnBody(detail,'',[detail.attachments[0].id]));
-  assert.equal(detail.turns[0].prompt,'');assert.match(f.provider.requests.at(-1).body.messages[0].content,/The attachment is the entire question/);
+  assert.equal(detail.turns[0].prompt,'');const first=f.provider.requests.at(-1).body.messages;assert.equal(first.length,2);assert.match(first[0].content,/^Контекст выбранного проекта\./);assert.equal(first[1].role,'user');assert.match(first[1].content,/The attachment is the entire question/);
   for(let i=1;i<20;i++)detail=await send(detail,turnBody(detail,'Question '+i));
-  assert.equal(detail.turns.length,20);assert.equal(detail.context.messageCount,40);assert.equal(f.provider.requests.at(-1).body.messages.length,39);
+  assert.equal(detail.turns.length,20);assert.equal(detail.context.messageCount,40);assert.equal(f.provider.requests.at(-1).body.messages.length,40);assert.equal(f.provider.requests.at(-1).body.messages.slice(1).length,39);
   const before=requestCount(),preview=await f.request('developer',chatRoute(detail)+'/context-preview',{method:'POST',status:201,body:{prompt:'One beyond',attachmentIds:[]}});
   assert.equal(preview.messageCount,41);assert.equal(preview.exceeded,false);assert.equal(preview.compactionNeeded,false);
   detail=await send(detail,turnBody(detail,'One beyond'));assert.equal(requestCount(),before+1);assert.equal(detail.turns.length,21);
-  assert.equal(f.provider.requests.at(-1).body.messages.length,41);
+  assert.equal(f.provider.requests.at(-1).body.messages.length,42);assert.equal(f.provider.requests.at(-1).body.messages.slice(1).length,41);
  });
  await t.test('Configured Ollama context/output reserve are visible and enforced without an extra model probe',async()=>{
   let card=f.cards[1];const connection=await f.request('main','/api/models/'+card.id+'/connection');

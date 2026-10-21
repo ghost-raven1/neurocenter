@@ -12,7 +12,7 @@ import type {DeviceArtifacts} from '../src/devices/device-artifacts';
 import type {DeviceInstallations} from '../src/devices/device-installations';
 import type {InstallPlans} from '../src/devices/install-plans';
 import type {ProjectEmbeddingService} from '../src/models/project-embedding.service';
-import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE,renderProjectAgent,type ProjectAgentsPayload} from '../../shared/project-agents.cjs';
+import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE,type ProjectAgentsPayload} from '../../shared/project-agents.cjs';
 import {connection,database,reset,main,admin,developer,definition} from './agent-postgres.fixture';
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 const bindingId='a'.repeat(64),instanceId='11111111-1111-4111-8111-111111111111';
@@ -27,7 +27,7 @@ describe.skipIf(!connection)('Agent delivery — actual durable queue and Postgr
   await reset(pool);vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true}));
   device={id:'device-agents',email:admin.email,role:admin.activeRole,name:'Fixture',fingerprint:'fixture',last_seen:null,report:report(),revoked:false};
   await pool.query('INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report) VALUES($1,$2,$3,$4,$5,$6,$7)',[device.id,device.email,device.role,device.name,device.fingerprint,'fixture-token',device.report]);
-  const store={pool,access,owned:async(actor:{email:string},id:string)=>{if(actor.email!==device.email||id!==device.id)throw Error('not owned');return device;}} as DeviceStore;
+  const store={pool,access,owned:async(actor:{email:string},id:string)=>{if(actor.email!==device.email||id!==device.id)throw Error('not owned');return device;}} as unknown as DeviceStore;
   jobs=new DeviceJobs(store,{} as DeviceArtifacts,{} as DeviceInstallations,{} as InstallPlans,{} as ProjectEmbeddingService);
   const claim=jobs.claim.bind(jobs);vi.spyOn(jobs,'claim').mockImplementation(async target=>{const job=await claim(target);if(job&&!(job.payload.modelRequirements as unknown[])?.length){job.payload.compilation=await jobs.compileAgents(target,{jobId:job.id,lease:job.lease,payloadManifest:job.payload.manifestSha256,mappings:[]});}return job;});
  });

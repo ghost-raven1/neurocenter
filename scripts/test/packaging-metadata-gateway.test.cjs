@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -13,7 +14,7 @@ function fixture({delay=0,allowed=true,authenticated=true}={}){
         calls.push(config);
         const response=data=>({status:200,statusText:'OK',data,headers:{'content-type':'application/json'},config});
         if(config.url.endsWith('/internal/access/authorize'))return response({allowed,claims:{projects:[],pluginIds:[],skillPaths:[]}});
-        if(config.url.endsWith('/internal/feature-flags/evaluated'))return response({flags:{tool_builds:true,model_hosting:true,rag_sync:true}});
+        if(config.url.endsWith('/internal/feature-flags/evaluated'))return response(evaluateFeatureFlags(defaultFeatureFlags()));
         return new Promise((resolve,reject)=>{
             const deadline=setTimeout(()=>{clearTimeout(reply);reject(Object.assign(new Error('fixture timeout'),{code:'ECONNABORTED'}));},config.timeout);
             const reply=setTimeout(()=>{clearTimeout(deadline);resolve(response({entrypoint:'SKILL.md',recommendedKind:'skill'}));},delay);

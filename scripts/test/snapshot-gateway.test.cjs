@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createServer,request}=require('node:http');
@@ -19,12 +20,12 @@ const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolv
 const close=server=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);});
 const reply=(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
 const waitFor=async check=>{for(let n=0;n<150&&!check();n++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(check(),true);};
-async function fixture({identity='device',allowed=true,job={},jobStatus=200,mode='normal'}={}){
+async function fixture({identity='device',allowed=true,job={},jobStatus=200,mode='normal',featureOverrides={}}={}){
  const calls=[],uploads=[],decisions=[],leases=[];let uploadAborted=false,downloadAborted=false;
  const upstream=createServer((req,res)=>{
-  if(req.url.startsWith('/internal/device-channel/jobs/')){let data='';req.on('data',value=>data+=value);req.on('end',()=>{leases.push({headers:req.headers,input:JSON.parse(data)});reply(res,jobStatus,{projectId,snapshotId,snapshotProtocol:'project-snapshots-v1',role:'Разработчик',...job});});return;}
+  if(req.url.startsWith('/internal/device-channel/jobs/')){let data='';req.on('data',value=>data+=value);req.on('end',()=>{leases.push({url:req.url,headers:req.headers,input:JSON.parse(data)});reply(res,jobStatus,{projectId,snapshotId,snapshotProtocol:'project-snapshots-v1',role:'Разработчик',...job});});return;}
   if(req.url==='/internal/access/authorize'){let data='';req.on('data',value=>data+=value);req.on('end',()=>{decisions.push(JSON.parse(data));reply(res,200,{allowed,claims:{projects:[],pluginIds:[],skillPaths:[]}});});return;}
-  if(req.url==='/internal/feature-flags/evaluated'){reply(res,200,{flags:{rag_sync:true}});return;}
+  if(req.url==='/internal/feature-flags/evaluated'){reply(res,200,evaluateFeatureFlags({...defaultFeatureFlags(),...featureOverrides}));return;}
   calls.push({url:req.url,method:req.method,headers:req.headers});
   if(req.method==='PUT'){
    if(mode==='early'){reply(res,409,{message:'Publication closed'});return;}
@@ -117,5 +118,14 @@ test('A corrupt or truncated GET cannot deliver a complete accepted block',async
 });
 test('Download client disconnect aborts the upstream read stream',async()=>{
  const f=await fixture({identity:'browser',mode:'slow'});try{await new Promise((resolve,reject)=>{const req=request(f.url+download,{method:'GET'},res=>{res.once('data',()=>{res.destroy();req.destroy();resolve();});res.on('error',()=>{});});req.on('error',()=>{});req.end();setTimeout(()=>reject(Error('No streamed bytes')),2000).unref();});await waitFor(f.downloadAborted);
+ }finally{await f.dispose();}
+});
+
+
+test('Disabled snapshots preserve only status/completion receipts with fresh exact lease authorization',async()=>{
+ const f=await fixture({featureOverrides:{project_snapshots:false}}),root=`/api/projects/${projectId}/snapshot-uploads/${snapshotId}`;
+ try{
+  for(const [method,suffix]of [['GET','status'],['POST','complete']]){const result=await send(f.url,{method,route:root+'/'+suffix});assert.equal(result.status,200,suffix);assert.equal(f.leases.at(-1).url,`/internal/device-channel/jobs/${jobId}/authorize?phase=snapshot-receipt`);assert.deepEqual(f.leases.at(-1).input,{lease});}
+  const before=f.calls.length;const denied=await send(f.url);assert.equal(denied.status,403);assert.equal(f.calls.length,before);assert.equal(f.leases.at(-1).url,`/internal/device-channel/jobs/${jobId}/authorize`);
  }finally{await f.dispose();}
 });

@@ -12,6 +12,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url)),requireCatalog=creat
 const requireSkills=createRequire(path.join(root,'services/skills-service/package.json'));
 const requireGateway=createRequire(path.join(root,'services/api-gateway/package.json'));
 const {assetSourceArchiveRoute}=requireCatalog('../shared/asset-source-archive-route.cjs');
+const {defaultFeatureFlags,evaluateFeatureFlags}=requireCatalog('../shared/feature-flags.cjs');
 const listen=async server=>{server.listen(0,'127.0.0.1');await once(server,'listening');return 'http://127.0.0.1:'+server.address().port;};
 const closeServer=server=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);});
 const json=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));};
@@ -26,7 +27,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
  const actors={main:{email:'main@packaging.example.test',role:'Главный админ'},developer:{email:'developer@packaging.example.test',role:'Разработчик'}};
  const {Pool}=requireCatalog('pg'),admin=new Pool({connectionString:adminUrl.href,max:1});
  const url=new URL(adminUrl);url.pathname='/'+database;const pool=new Pool({connectionString:url.href,max:4});
- const state={authAvailable:true,skillsAvailable:true,modelHostingEnabled:true,loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()},responseBytes=new WeakMap();
+ const state={authAvailable:true,skillsAvailable:true,modelHostingEnabled:true,featureOverrides:{},loseSkillPublishAck:0,externalCalls:[],requests:[],github:new Map()},responseBytes=new WeakMap();
  let catalog,skills,gateway,upstream,vite,io,access,created=false;
  const cookie=key=>{assert.ok(actors[key]);return cookieName+'='+key;};
  const selected=req=>String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(cookieName+'='))?.slice(cookieName.length+1);
@@ -80,9 +81,9 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
      if(!state.authAvailable)return json(res,503,{message:'Synthetic authentication outage.'});
      const key=selected(req);if(!actors[key])return json(res,401,{message:'QA login required.'});const actor=actors[key],claims=await access.claims(actor.email);
      return json(res,200,{user:{id:actor.email,email:actor.email,principalName:actor.email,displayName:'QA '+key,activeRole:actor.role,userRoles:claims.userRoles,projectRoles:claims.projects,
-      routePermissions:['start','store','projects','rag','maintenance','audit','access','assets']},policies:{}});
+      routePermissions:['start','store','projects','rag','maintenance','audit','access','assets','model-usage']},policies:{}});
     }
-    if(route.pathname.includes('feature-flags')&&route.pathname.endsWith('evaluated'))return json(res,200,{flags:{tool_builds:true,model_hosting:state.modelHostingEnabled,rag_sync:true}});
+    if(route.pathname.includes('feature-flags')&&route.pathname.endsWith('evaluated'))return json(res,200,evaluateFeatureFlags({...defaultFeatureFlags(),model_hosting:state.modelHostingEnabled,...state.featureOverrides}));
     if(['/ready','/health','/internal/events'].includes(route.pathname))return json(res,200,{ok:true});
     return json(res,404,{message:'Unsupported QA dependency.'});
    }catch(error){return json(res,500,{message:'QA upstream: '+error.message});}
@@ -120,7 +121,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
    const probe=http.createServer();await listen(probe);const port=probe.address().port;await closeServer(probe);
    vite=await createServer({root:path.join(root,'frontend'),configFile:path.join(root,'frontend/vite.config.ts'),envFile:false,mode:'development',cacheDir:path.join(temporary,'vite-cache'),
     define:{'process.env.NODE_ENV':JSON.stringify('development')},optimizeDeps:{esbuildOptions:{define:{'process.env.NODE_ENV':JSON.stringify('development')}}},
-    server:{host:'127.0.0.1',port,strictPort:true,proxy:{'/api':{target:gatewayUrl,changeOrigin:true},'/auth':{target:upstreamUrl,changeOrigin:true},'/__qa':{target:upstreamUrl,changeOrigin:true},'/socket.io':{target:gatewayUrl,ws:true}}}});
+    server:{host:'127.0.0.1',port,strictPort:true,hmr:false,proxy:{'/api':{target:gatewayUrl,changeOrigin:true},'/auth':{target:upstreamUrl,changeOrigin:true},'/__qa':{target:upstreamUrl,changeOrigin:true},'/socket.io':{target:gatewayUrl,ws:true}}}});
    await vite.listen();base='http://127.0.0.1:'+vite.httpServer.address().port;process.env.PANEL_URL=base;
   }
   return {base,gatewayUrl,catalogUrl,skillsUrl,pool,database,temporary,projectId,state,catalog,skills,actors,close,cookie,

@@ -45,10 +45,15 @@ test('Model chat through real Gateway/Catalog preserves context, rights, default
   assert.equal(result.model,card.model);assert.equal(result.choices[0].message.content,f.provider.reply);
   assert.deepEqual(f.provider.requests.at(-1).body.options,{temperature:0.4,top_p:0.8,num_predict:128});
  });
+ await t.test('Short conversations beyond forty messages reach the actual provider once without altering their content',async()=>{
+  const history=Array.from({length:41},(_,index)=>({role:index%2?'assistant':'user',content:'Short message '+index})),before=f.provider.requests.length;
+  const result=await send('main',history);assert.equal(result.choices[0].message.content,f.provider.reply);assert.equal(f.provider.requests.length,before+1);assert.deepEqual(f.provider.requests.at(-1).body.messages,history);
+ });
  await t.test('Malformed conversations and embedding models are rejected before inference',async()=>{
   const before=f.provider.requests.length;
-  await send('main',[],400);await send('main',Array(41).fill(messages[0]),400);
+  await send('main',[],400);
   await send('main',[{role:'user',content:'x'.repeat(128*1024+1)}],400);
+  await send('main',Array.from({length:65},()=>({role:'user',content:'x'.repeat(128*1024)})),400);
   await send('main',messages,400,'/api/models/'+f.cards[2].id+'/ollama/v1/chat/completions?projectId='+f.projectId);
   assert.equal(f.provider.requests.length,before);
  });

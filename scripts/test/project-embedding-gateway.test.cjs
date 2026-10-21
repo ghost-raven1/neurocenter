@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -11,7 +12,7 @@ function fixture(auth=true){
     const proxy=new ProxyService({get:key=>key==='CATALOG_SERVICE_URL'?'http://catalog.fixture':undefined},
         authGuard,
         {bridge:(...args)=>events.push(args)});
-    proxy.http={post:async(...args)=>{calls.push(args);return {status:201,data:{ok:true}};}};
+    proxy.http={get:async()=>({status:200,data:evaluateFeatureFlags(defaultFeatureFlags())}),post:async(...args)=>{calls.push(args);return {status:201,data:{ok:true}};}};
     const response=Object.assign(new EventEmitter(),{code:0,body:null,writes:0,destroyed:false,writableEnded:false,status(code){this.code=code;return this;},json(value){this.body=value;this.writes++;this.writableEnded=true;return this;}});
     return {proxy,calls,events,response,authGuard};
 }

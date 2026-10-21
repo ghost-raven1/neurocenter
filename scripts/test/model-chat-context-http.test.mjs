@@ -88,12 +88,12 @@ test('Automatic compaction and paged original history through real Gateway/Catal
   assert.equal(f.provider.requests.length,start+1);
  });
 
- await t.test('Disabling inference while compaction runs blocks checkpoint and final inference but keeps reads available',async()=>{
+ await t.test('Disabling inference preserves the paid checkpoint and blocks every subsequent inference while reads remain available',async()=>{
   let detail=await seed(await create());const start=f.provider.requests.length;
   f.provider.respond=call=>summary(call)?{mode:'hold'}:undefined;const pending=send(detail,body(detail),403);
   await waitFor(()=>f.provider.held.size>0);f.state.modelHostingEnabled=false;
   const call=f.provider.requests.at(-1);for(const res of [...f.provider.held]){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({model:call.body.model,message:{role:'assistant',content:'Сводка.'},done:true,done_reason:'stop'}));}
-  try{await pending;detail=await read(detail);assert.equal(detail.turns.at(-1).status,'failed');assert.equal(await checkpointCount(detail),0);assert.equal(f.provider.requests.length,start+1);}
+  try{await pending;detail=await read(detail);assert.equal(detail.turns.at(-1).status,'failed');assert.equal(await checkpointCount(detail),1);assert.equal(f.provider.requests.length,start+1);assert.equal(detail.turns.at(-1).answer,undefined);assert.ok(f.provider.requests.slice(start).every(summary),'No final or second compaction request can start after off.');}
   finally{f.state.modelHostingEnabled=true;}
  });
 

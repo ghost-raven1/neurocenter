@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createServer,request}=require('node:http');
@@ -12,7 +13,7 @@ const {ProxyService}=require('../../services/api-gateway/src/proxy/proxy.service
 const {sourceUploadConnection}=require('../../services/api-gateway/src/proxy/source-upload-stream.ts');
 const {browserSecurity}=require('../../services/api-gateway/src/security/browser-security.ts');
 const {sourceUploadContentRoute}=require('../../services/shared/source-upload-route.cjs');
-const {requiredFeatureFlag}=require('../../services/api-gateway/src/features/feature-flag-gate.ts');
+const {requiredFeatureFlags}=require('../../services/api-gateway/src/features/feature-flag-gate.ts');
 const id='7428c85e-c645-4f05-b610-6f0029867f93',route='/api/tool-builds/uploads/'+id+'/content';
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve('http://127.0.0.1:'+server.address().port)));
 const close=server=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);});
@@ -21,7 +22,7 @@ async function fixture({allowed=true,flag=true,early=false,responseData}={}){
  const calls=[],received=[];let aborted=false;
  const upstream=createServer((req,res)=>{
   if(req.url==='/internal/access/authorize'){req.resume();reply(res,200,{allowed:true,claims:{projects:[],pluginIds:[],skillPaths:[]}});return;}
-  if(req.url==='/internal/feature-flags/evaluated'){reply(res,200,{flags:{tool_builds:flag,model_hosting:true,rag_sync:true}});return;}
+  if(req.url==='/internal/feature-flags/evaluated'){reply(res,200,evaluateFeatureFlags({...defaultFeatureFlags(),tool_builds:flag}));return;}
   calls.push({url:req.url,headers:req.headers});
   if(early){reply(res,409,{message:'Upload was cancelled'});return;}
   req.on('aborted',()=>{aborted=true;});let bytes=0;
@@ -44,7 +45,7 @@ test('Raw stream uses Gateway RBAC, forwards identity and streams exact bytes wi
 });
 test('Canonical encoded upload route gets the same flag and raw forwarding; cleanup/status are not disabled',async()=>{
  const encoded=route.replace('uploads','%75ploads')+'/';assert.equal(sourceUploadContentRoute('PUT',encoded),route);
- assert.equal(requiredFeatureFlag('PUT',encoded), 'tool_builds');assert.equal(requiredFeatureFlag('POST','/api/tool-builds/uploads'),'tool_builds');assert.equal(requiredFeatureFlag('DELETE','/api/tool-builds/uploads/'+id),undefined);assert.equal(requiredFeatureFlag('GET','/api/tool-builds/uploads/'+id),undefined);
+ assert.deepEqual(requiredFeatureFlags('PUT',encoded), ['tool_builds']);assert.deepEqual(requiredFeatureFlags('POST','/api/tool-builds/uploads'),['tool_builds']);assert.deepEqual(requiredFeatureFlags('DELETE','/api/tool-builds/uploads/'+id),[]);assert.deepEqual(requiredFeatureFlags('GET','/api/tool-builds/uploads/'+id),[]);
  const f=await fixture();try{assert.equal((await send(f.url,{url:encoded})).status,200);assert.equal(f.calls[0].url,route);}finally{await f.dispose();}
 });
 test('Access denial and feature disable happen before upload bytes reach catalog',async()=>{

@@ -118,14 +118,14 @@ test('Model connection parameters and write-only credentials work through Gatewa
  });
  await t.test('OpenCode import carries bounded hints without copying keys or overwriting an existing connection',async()=>{
   const deviceId=randomUUID(),jobId=randomUUID(),candidateId=randomUUID(),instanceId=randomUUID(),bindingId='a'.repeat(64);
-  const scan={schemaVersion:1,projectId:f.projectId,bindingId,instanceId,scanId:jobId,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+900000).toISOString(),warnings:[],
+  const scan={schemaVersion:2,scope:'project',projectId:f.projectId,bindingId,instanceId,scanId:jobId,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+900000).toISOString(),warnings:[],
    candidates:[{candidateId,provider:'qa',name:'OpenCode tuned model',model:'upstream-api-id',modelVersion:'1',capability:'chat',runtime:'remote-openai',baseUrl:endpoint+'/v1',
     hasKey:true,credentialSource:'environment',blocker:null,options:{temperature:0.3,topP:0.9,maxOutputTokens:256},timeoutMs:60000}],digest:''};
   scan.digest=modelScanDigest(scan);
   await f.pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report,revoked,expires_at) VALUES($1,$2,'Главный админ','QA model scan',$3,$4,$5,false,now()+interval '1 hour')",
    [deviceId,f.actors.main.email,'b'.repeat(64),'c'.repeat(64),JSON.stringify({bindings:[{projectId:f.projectId,bindingId,instanceId,folderName:'qa'}]})]);
   await f.pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,kind,state,project_id,payload,result,request_key,request_hash) VALUES($1,$2,$3,'Главный админ','scan-opencode-models','succeeded',$4,$5,$6,$1,$7)",
-   [jobId,deviceId,f.actors.main.email,f.projectId,JSON.stringify({bindingId,instanceId}),JSON.stringify(scan),'d'.repeat(64)]);
+   [jobId,deviceId,f.actors.main.email,f.projectId,JSON.stringify({scope:'project',bindingId,instanceId}),JSON.stringify(scan),'d'.repeat(64)]);
   const importBody={deviceId,jobId,candidateId};
   const imported=await f.request('main','/api/models/import-opencode',{method:'POST',status:201,body:importBody});
   assert.deepEqual(imported.options,scan.candidates[0].options);assert.equal(imported.timeoutMs,60000);assert.equal(imported.hasKeyOnComputer,true);

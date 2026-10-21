@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -6,7 +7,7 @@ const {createServer}=require('node:http');
 const {setImmediate:tick}=require('node:timers/promises');
 const {ProxyService}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','proxy/proxy.service.js'));
 const {modelInferenceRoute,forwardModelInference}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','proxy/model-inference-forward.js'));
-const {requiredFeatureFlag}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','features/feature-flag-gate.js'));
+const {requiredFeatureFlags}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','features/feature-flag-gate.js'));
 const route='/api/models/model-fixture/ollama/v1/chat/completions';
 const reply={model:'fixture-model',choices:[{index:0,message:{role:'assistant',content:'OK'},finish_reason:'stop'}]};
 const identity={email:'chat@example.test',activeRole:'Главный админ'};
@@ -30,14 +31,14 @@ const savedRoot='/api/model-chats/12345678-1234-4234-8234-123456789abc';
 for(const suffix of ['attachments','turns','turns/12345678-1234-4234-8234-123456789abc/retry'])test('Saved chat processing propagates client cancellation: '+suffix,async()=>{
  const savedRoute=savedRoot+'/'+suffix;
  assert.equal(modelInferenceRoute('POST',savedRoute),true);assert.equal(modelInferenceRoute('GET',savedRoute),false);
- assert.equal(requiredFeatureFlag('POST',savedRoute,{}),suffix==='attachments'?undefined:'model_hosting');
+ assert.deepEqual(requiredFeatureFlags('POST',savedRoute,{}),['model_chat']);
  const f=fixture();f.req.path=savedRoute;f.transport(config=>new Promise((_resolve,reject)=>config.signal.addEventListener('abort',()=>reject(Error('cancel')),{once:true})));
  const pending=forwardModelInference(f.http,{},f.req,f.res);f.res.destroyed=true;f.res.emit('close');assert.equal(await pending,undefined);
  assert.equal(f.calls[0].signal.aborted,true);assert.equal(f.calls[0].maxContentLength,64*1024*1024);assert.equal(f.res.writes,0);
 });
 test('Saved chat inspection and cancellation remain available when inference is disabled',()=>{
  for(const suffix of ['','/context-preview','/turns/12345678-1234-4234-8234-123456789abc/cancel']){
-  assert.equal(modelInferenceRoute('POST',savedRoot+suffix),false);assert.equal(requiredFeatureFlag('POST',savedRoot+suffix,{}),undefined);
+  assert.equal(modelInferenceRoute('POST',savedRoot+suffix),false);assert.deepEqual(requiredFeatureFlags('POST',savedRoot+suffix,{}),[]);
  }
 });
 test('A completed inference keeps its configured deadline and cleans listeners',async()=>{
@@ -82,7 +83,7 @@ for(const stage of ['authentication','authorization','feature-flag'])test('Disco
  const proxy=new ProxyService({get:()=>undefined},{authenticate:async()=>{if(stage==='authentication')await wait;return identity;}},{mutation(){}});
  proxy.http={
   post:async()=>{if(stage==='authorization')await wait;return {status:200,data:{allowed:true,claims}};},
-  get:async()=>{if(stage==='feature-flag')await wait;return {status:200,data:{flags:{tool_builds:true,model_hosting:true,rag_sync:true}}};},
+  get:async()=>{if(stage==='feature-flag')await wait;return {status:200,data:evaluateFeatureFlags(defaultFeatureFlags())};},
   request:async config=>{f.calls.push(config);return response();},
  };
  const pending=proxy.forward(f.req,f.res);await tick();f.res.destroyed=true;f.res.emit('close');release();await pending;
@@ -101,7 +102,7 @@ test('Actual Gateway HTTP disconnect closes the Catalog request before an explic
  const catalog=createServer(async(req,res)=>{
   for await(const _chunk of req){}
   if(req.url==='/internal/access/authorize')return json(res,200,{allowed:true,claims});
-  if(req.url==='/internal/feature-flags/evaluated')return json(res,200,{flags:{tool_builds:true,model_hosting:true,rag_sync:true}});
+  if(req.url==='/internal/feature-flags/evaluated')return json(res,200,evaluateFeatureFlags(defaultFeatureFlags()));
   assert.equal(req.url,route);arrivals++;
   if(arrivals===1){res.on('close',()=>{if(!res.writableEnded)catalogCancelled();});catalogStarted();finish=()=>json(res,201,reply);return;}
   json(res,201,reply);

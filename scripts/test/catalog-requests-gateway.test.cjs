@@ -1,3 +1,4 @@
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createServer}=require('node:http');
@@ -19,6 +20,7 @@ test('Built Swagger artifact includes usable request filters and submission/revi
 async function fixture({identity='human',allowed=true,status=201}={}){
  const calls=[],mutations=[];
  const upstream=createServer((req,res)=>{
+  if(req.url==='/internal/feature-flags/evaluated'){res.setHeader('content-type','application/json');res.end(JSON.stringify(evaluateFeatureFlags(defaultFeatureFlags())));return;}
   let text='';req.on('data',chunk=>text+=chunk);req.on('end',()=>{
    const body=text?JSON.parse(text):undefined;
    calls.push({url:req.url,method:req.method,headers:req.headers,body});
@@ -29,7 +31,7 @@ async function fixture({identity='human',allowed=true,status=201}={}){
  });
  upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
  const auth=identity==='none'?null:{userId:'fixture-user',email:'fixture@example.test',principalName:'fixture@example.test',activeRole:'Наблюдатель',userRoles:['Наблюдатель'],policies:{},...(identity==='device'?{deviceId:'fixture-device'}:{})};
- const proxy=new ProxyService({get:key=>key==='CATALOG_SERVICE_URL'?'http://127.0.0.1:'+upstream.address().port:undefined},
+ const proxy=new ProxyService({get:key=>['CATALOG_SERVICE_URL','FEATURE_FLAGS_SERVICE_URL'].includes(key)?'http://127.0.0.1:'+upstream.address().port:undefined},
   {authenticate:async()=>auth},{mutation:(...input)=>mutations.push(input)});
  const server=createServer((req,res)=>{
   req.path=new URL(req.url,'http://fixture').pathname;req.query={};req.body={kind:'add',assetType:'skill',title:'Fixture'};
