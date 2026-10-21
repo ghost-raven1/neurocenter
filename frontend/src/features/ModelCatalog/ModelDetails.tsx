@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Descriptions, Modal, Space, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { modelCatalogApi } from './api';
@@ -10,8 +11,8 @@ interface IProps { model: ICatalogModel; canManage: boolean; busy: boolean; erro
 export function ModelDetails({ model, canManage, busy, error, onClose, onEdit, onRemove, onConfigure }: IProps): JSX.Element {
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
     return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Space wrap>
-        {canManage && !model.archivedAt && <Button disabled={busy} onClick={onEdit}>Изменить модель</Button>}
-        {canManage && !model.archivedAt && model.runtime !== 'ollama' && <Button disabled={busy} onClick={onConfigure}>Подключение API</Button>}
+        {canManage && !model.archivedAt && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>}
+        {canManage && !model.archivedAt && model.runtime !== 'ollama' && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onConfigure}>Подключение API</FeatureButton>}
         {canManage && !model.archivedAt && <ArchiveAssetButton kind="model" id={model.id} disabled={busy} onArchived={onRemove}>Удалить модель</ArchiveAssetButton>}
         <Button disabled={busy} onClick={onClose}>Закрыть</Button>
     </Space>}>

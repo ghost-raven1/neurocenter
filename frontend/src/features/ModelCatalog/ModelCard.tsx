@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { CloudOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { Button, Tag, Tooltip, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
@@ -23,7 +24,7 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             <div className="model-card__title"><Button type="link" aria-label={`Подробнее о модели: ${model.name}`} onClick={onView}>{model.name}</Button>
                 <span>{modelCapabilityLabels[model.capability]}<span aria-hidden="true"> · </span>{remote ? 'Удалённый API' : 'На сервере'}</span></div>
             {canHost && <div className="model-card__management">
-                {onEdit && <Tooltip title="Изменить модель"><Button type="text" icon={<EditOutlined />} disabled={busy || disabled || !!model.archivedAt}
+                {onEdit && <Tooltip title="Изменить модель"><FeatureButton features={['model_catalog']} type="text" icon={<EditOutlined />} disabled={busy || disabled || !!model.archivedAt}
                     aria-label={`Изменить модель ${model.name}`} onClick={onEdit} /></Tooltip>}
                 {onRemove && !model.archivedAt && <Tooltip title="Убрать из каталога"><span><ArchiveAssetButton kind="model" id={model.id} disabled={busy || disabled} onArchived={onRemove}
                     buttonProps={{ type: 'text', icon: <DeleteOutlined />, 'aria-label': `Убрать из каталога модель ${model.name}` }} children={null} /></span></Tooltip>}
@@ -40,14 +41,14 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             {model.capability !== 'embedding' && onChat && <Tooltip title={chatUnavailableReason}><span aria-label={chatUnavailableReason} tabIndex={chatUnavailableReason ? 0 : undefined}>
                 <Button aria-label={`Чат с моделью ${model.name}`} disabled={busy || disabled || !!chatUnavailableReason} onClick={onChat}>Чат</Button>
             </span></Tooltip>}
-            {remote && canHost && !model.archivedAt && onConfigure && <Button disabled={busy || disabled}
-                aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</Button>}
+            {remote && canHost && !model.archivedAt && onConfigure && <FeatureButton features={['model_catalog']} disabled={busy || disabled}
+                aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</FeatureButton>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>
-                <Button type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</Button>
+                <FeatureButton features={['model_catalog','rag_sync','model_hosting']} type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</FeatureButton>
             </span></Tooltip>}
-            {projectSelected && canAssign ? <Tooltip title={assignmentUnavailableReason}><span aria-label={assignmentUnavailableReason} tabIndex={assignmentUnavailableReason?0:undefined}><Button type={assigned ? 'default' : 'primary'} loading={busy} disabled={busy || disabled || !!assignmentUnavailableReason || !!model.archivedAt && !assigned} onClick={onAssign}>
+            {projectSelected && canAssign ? <Tooltip title={assignmentUnavailableReason}><span aria-label={assignmentUnavailableReason} tabIndex={assignmentUnavailableReason?0:undefined}><FeatureButton features={assigned ? [] : ['model_catalog']} type={assigned ? 'default' : 'primary'} loading={busy} disabled={busy || disabled || !!assignmentUnavailableReason || !!model.archivedAt && !assigned} onClick={onAssign}>
                 {assigned ? 'Убрать из проекта' : 'Добавить в проект'}
-            </Button></span></Tooltip> : <Typography.Text type="secondary">{projectSelected ? assigned ? 'Доступна участникам проекта' : 'Добавляет администратор проекта' : 'Выберите проект для добавления модели'}</Typography.Text>}
+            </FeatureButton></span></Tooltip> : <Typography.Text type="secondary">{projectSelected ? assigned ? 'Доступна участникам проекта' : 'Добавляет администратор проекта' : 'Выберите проект для добавления модели'}</Typography.Text>}
             {assigned && <Tag color="blue">В проекте</Tag>}
         </div>
     </article>;

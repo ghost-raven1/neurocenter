@@ -1,3 +1,4 @@
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {useEmbeddingTarget,EmbeddingTargetFields} from '../ProjectEmbedding/EmbeddingTarget';
 import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -105,7 +106,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         <div className="model-catalog__heading">
             <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
                 <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере и подключённые API.'}</Typography.Text></div>
-            {isMain && <Space wrap><Tooltip title={projectId ? 'Прочитать модели на выбранном компьютере' : 'Выберите проект, чтобы прочитать его конфигурацию OpenCode'}><span><Button disabled={!projectId} onClick={() => setImporting(true)}>Из OpenCode</Button></span></Tooltip><Button type="primary" onClick={() => setEditing('new')}>Добавить модель</Button></Space>}
+            {isMain && <Space wrap><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip><FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></Space>}
         </div>
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
@@ -141,7 +142,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {chatting && canChat && (!projectId || assigned.has(chatting.id)) && <ModelChatModal key={JSON.stringify([scope, projectId, chatting.id])} model={chatting} projectId={projectId} projectName={projectName}
             unavailableReason={loading ? 'Дождитесь обновления каталога перед следующим запросом.' : loadError ? 'Обновите каталог перед следующим запросом.'
                 : modelChatUnavailableReason(chatting, canChat, !!projectId, assigned.has(chatting.id))} onClose={() => setChatId(null)} />}
-        {isMain && importing && projectId && <OpenCodeImportModal key={`${scope}:${projectId}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
+        {isMain && importing && <OpenCodeImportModal key={`${scope}:${projectId||'common'}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
             const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}
     </div>;

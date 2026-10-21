@@ -15,7 +15,7 @@
     &__form-actions { display: flex; justify-content: flex-end; width: 100%; }
 }
 .model-opencode {
-    &__source { display: flex; margin-bottom: 18px; .ant-select { min-width: 220px; max-width: 100%; } }
+    &__source { display: flex; width: 100%; margin-bottom: 18px; > .ant-space-item { min-width: 0; width: 100%; } .ant-select { width: 100%; min-width: 0; max-width: 100%; } }
     &__candidate { gap: 14px; align-items: flex-start; > div { min-width: 0; overflow-wrap: anywhere; } > .ant-btn { flex-shrink: 0; } .ant-tag { margin-top: 8px; } }
 }
 

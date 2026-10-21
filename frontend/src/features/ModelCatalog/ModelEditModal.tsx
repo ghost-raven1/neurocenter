@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
 import { useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -21,7 +22,9 @@ export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element
     const [error, setError] = useState('');
     const lock = useRef(false);
     const creating = useRef<{ input: string; key: string }>();
+    const availability = useFeatureAvailability('model_catalog');
     const submit = async (values: IModelCreate): Promise<void> => {
+        if (!availability.enabled) return;
         const owns = captureOwner();
         if (!owns() || lock.current) return;
         lock.current = true; setBusy(true); setError('');
@@ -75,7 +78,7 @@ export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element
                     <InputNumber min={1} max={16384} precision={0} style={{ width: '100%' }} placeholder="Например, 2560" />
                 </Form.Item>}
             </>}
-            <Space className="model-catalog__form-actions"><Button disabled={busy} onClick={onClose}>Отмена</Button><Button type="primary" htmlType="submit" loading={busy}>{!model && remote ? 'Далее: подключение API' : 'Сохранить'}</Button></Space>
+            <Space className="model-catalog__form-actions"><Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={['model_catalog']} type="primary" htmlType="submit" loading={busy}>{!model && remote ? 'Далее: подключение API' : 'Сохранить'}</FeatureButton></Space>
         </Form>
     </Modal>;
 }

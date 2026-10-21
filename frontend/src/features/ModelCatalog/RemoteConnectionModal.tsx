@@ -1,3 +1,4 @@
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Spin, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -39,7 +40,9 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
         finally { if (owns() && mounted.current) setLoading(false); }
     };
     useEffect(() => { mounted.current = true; void read(); return () => { mounted.current = false; }; }, [model.id]);
+    const availability = useFeatureAvailability('model_hosting', ...(!pendingCheck ? ['model_catalog' as const] : []));
     const submit = async (values: Values): Promise<void> => {
+        if (!availability.enabled) return;
         const owns = captureOwner(); if (!view || !owns() || lock.current) return;
         if (!pendingCheck && values.credential === 'stored' && (!view.canStoreKey || !hasStoredKey && !values.apiKey?.trim())) {
             setError(view.canStoreKey ? 'Введите API-ключ.' : 'Хранилище ключей не настроено. Выберите ключ из окружения сервера или API без ключа.');
@@ -107,7 +110,7 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
             <RemoteModelParameters model={model} />
             <Space wrap className="model-catalog__form-actions">
                 {view.revision > 0 && view.baseUrl && <Popconfirm title="Отозвать все версии этого подключения?" onConfirm={() => { void revoke(); }} okText="Отозвать" cancelText="Отмена"><Button danger disabled={busy}>Удалить подключение</Button></Popconfirm>}
-                <Button disabled={busy} onClick={onClose}>Отмена</Button><Button type="primary" htmlType="submit" loading={busy} disabled={credential === 'stored' && !view.canStoreKey}>{pendingCheck ? 'Запустить проверку' : 'Сохранить и подключить'}</Button>
+                <Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={pendingCheck ? ['model_hosting'] : ['model_catalog','model_hosting']} type="primary" htmlType="submit" loading={busy} disabled={credential === 'stored' && !view.canStoreKey}>{pendingCheck ? 'Запустить проверку' : 'Сохранить и подключить'}</FeatureButton>
             </Space>
         </Form>}
     </Modal>;
