@@ -1,11 +1,13 @@
 import {BadRequestException} from '@nestjs/common';
-import type {RuntimeAdapter,RuntimeSource,RuntimeTarget} from '../../../shared/tool-runtime-source.cjs';
+import type {RemoteRuntimeAsset,RuntimeAdapter,RuntimeSource,RuntimeTarget} from '../../../shared/tool-runtime-source.cjs';
+import type {PythonSourcePlan} from '../../../shared/python-source-plan.cjs';
+import {validateRuntimeSource} from '../../../shared/tool-runtime-source.cjs';
 import {portablePath} from '../../../shared/runtime-artifacts.cjs';
 export const uploadLimit=256*1024**2;
 export const uploadId=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 export interface UploadIntent {requestKey:string;name:string;bytes:number;sha256:string}
 export interface UploadBuildSource {type:'upload';uploadId:string;sha256:string;bytes:number;entrypoint:string}
-export interface UploadChoice {entrypoint:string;adapter:RuntimeAdapter;targets:RuntimeTarget[];runtimeEntrypoint?:string}
+export interface UploadChoice {entrypoint:string;adapter:RuntimeAdapter;targets:RuntimeTarget[];runtimeEntrypoint?:string;python?:PythonSourcePlan;runtimeAssets?:Partial<Record<RuntimeTarget,RemoteRuntimeAsset>>}
 export interface UploadMetadata {candidates:string[];choices:UploadChoice[];entrypoint:string;supportedTargets?:RuntimeTarget[];adapter?:RuntimeAdapter;requiresEntrypointChoice:boolean;runnableKinds:['mcp']}
 export interface UploadRow {id:string;actor:string;request_key:string;request_hash:string;name:string;bytes:string;sha256:string;format:'zip'|'tar.gz'|'file';state:'WAITING'|'UPLOADING'|'READY'|'CANCELLED';auth_epoch:string;lease_token:string|null;metadata:UploadMetadata|null;created_at:Date;expires_at:Date;updated_at:Date}
 export interface PinnedUploadSource extends UploadBuildSource {format:UploadRow['format'];runtimeSource:RuntimeSource}
@@ -24,5 +26,5 @@ export function validateUploadBuildSource(value:Record<string,unknown>):UploadBu
 }
 export function uploadRuntime(choice:UploadChoice):RuntimeSource{
  const app={directory:'.',entrypoint:choice.entrypoint};
- return {type:'runtime',adapter:choice.adapter,assets:Object.fromEntries(choice.targets.map(target=>[target,{app,...(choice.runtimeEntrypoint?{runtime:{directory:'.',entrypoint:choice.runtimeEntrypoint}}:{})}]))};
+ return validateRuntimeSource({type:'runtime',adapter:choice.adapter,assets:Object.fromEntries(choice.targets.map(target=>[target,{app,...(choice.python?{runtime:choice.runtimeAssets?.[target]}:choice.runtimeEntrypoint?{runtime:{directory:'.',entrypoint:choice.runtimeEntrypoint}}:{})}])),...(choice.python?{python:choice.python}:{})});
 }

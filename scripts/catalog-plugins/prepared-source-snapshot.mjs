@@ -12,6 +12,7 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/prepare.mjs',
     'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/recipe-schema.mjs',
     'scripts/catalog-plugins/release-inspection.mjs','scripts/catalog-plugins/repository-source.mjs',
+    'scripts/catalog-plugins/python-runtime.mjs','scripts/catalog-plugins/python-dependencies.mjs','scripts/catalog-plugins/python-trusted-archive.mjs','scripts/catalog-plugins/python-inspection.mjs',
     'scripts/catalog-plugins/retain-supply.mjs','scripts/catalog-plugins/supply-layout.mjs',
     'scripts/catalog-plugins/run.mjs','scripts/catalog-plugins/runtime-source.mjs','scripts/catalog-plugins/source-adapters.mjs',
     'scripts/catalog-plugins/source-envelope.mjs','scripts/catalog-plugins/source-resource-validation.mjs','scripts/catalog-plugins/upload-inspection.mjs',
@@ -35,6 +36,7 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'services/catalog-service/src/devices/mcp-config-schema.ts','services/catalog-service/src/publication/publication-runtime.ts',
     'services/catalog-service/src/publication/publication-validation.ts',
     'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/skill-source.mjs',
+    'services/shared/python-runtime-pins.cjs','services/shared/python-runtime-pins.d.cts','services/shared/python-source-plan.cjs','services/shared/python-source-plan.d.cts',
 ].sort());
 const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
 

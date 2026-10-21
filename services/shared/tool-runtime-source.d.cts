@@ -2,7 +2,8 @@ export type RuntimeTarget = 'darwin-arm64' | 'darwin-x64' | 'linux-arm64-glibc' 
 export type RuntimeAdapter = 'python' | 'java' | 'dotnet' | 'go' | 'rust' | 'native';
 export interface RemoteRuntimeAsset { url: string; sha256: string; format: 'tar.gz' | 'zip' | 'file'; entrypoint: string; executables?: string[]; }
 export interface LocalRuntimeAsset { directory: string; entrypoint: string; executables?: string[]; }
-export interface RuntimeSource { type: 'runtime'; adapter: RuntimeAdapter; assets: Partial<Record<RuntimeTarget, { app: RemoteRuntimeAsset | LocalRuntimeAsset; runtime?: RemoteRuntimeAsset | LocalRuntimeAsset }>>; }
+import type {PythonSourcePlan} from './python-source-plan.cjs';
+export interface RuntimeSource { type: 'runtime'; adapter: RuntimeAdapter; assets: Partial<Record<RuntimeTarget, { app: RemoteRuntimeAsset | LocalRuntimeAsset; runtime?: RemoteRuntimeAsset | LocalRuntimeAsset }>>; python?:PythonSourcePlan; }
 export function validateRuntimeSource(value: unknown): RuntimeSource;
 export function runtimeSourceTargets(value: unknown): RuntimeTarget[];
 export function runtimeAdapterLabel(adapter: RuntimeAdapter): string;

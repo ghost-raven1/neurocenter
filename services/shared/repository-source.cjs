@@ -52,7 +52,7 @@ function parseRepositoryUrl(value,options={}){
    subdirectory=subdirectory??treeDirectory;
   }else{
    const file=treeDirectory;
-   if(!file||!isSourceEntrypoint(file)&&!/(?:^|\/)SKILL\.md$/.test(file)&&file.split('/').at(-1)!==manifestName)throw new Error('Ссылка blob должна указывать на SKILL.md, исполняемый JS/TS-файл или neurocenter.tool.json.');
+   if(!file||!isSourceEntrypoint(file)&&!file.endsWith('.py')&&!/(?:^|\/)SKILL\.md$/.test(file)&&file.split('/').at(-1)!==manifestName)throw new Error('Ссылка blob должна указывать на SKILL.md, исполняемый JS/TS/Python-файл или neurocenter.tool.json.');
    if(/(?:^|\/)(?:\.git|node_modules|\.npmrc|\.yarnrc(?:\.yml)?|\.env(?:\..*)?|id_rsa|id_ed25519)(?:\/|$)/i.test(file))throw new Error('Файл в ссылке blob содержит секретный или служебный путь.');
    if(subdirectory&&!file.startsWith(subdirectory+'/'))throw new Error('Папка subdirectory не содержит файл в ссылке blob.');
    if(file.split('/').at(-1)===manifestName){
@@ -82,7 +82,7 @@ function validateRepositorySource(value,{pinned=true}={}){
   if(release){
    if(!release.id||!release.assetId||!release.sha256||!release.asset||!entrypoint||value.manifestSha256!==undefined||!value.runtimeSource)throw new Error('Релиз требует закреплённые id, SHA-256 и сгенерированную поставку.');
    const runtimeSource=validateRuntimeSource(value.runtimeSource);
-   for(const bundle of Object.values(runtimeSource.assets))for(const asset of [bundle.app,bundle.runtime].filter(Boolean)){
+   for(const bundle of Object.values(runtimeSource.assets))for(const asset of [bundle.app,...(!runtimeSource.python&&bundle.runtime?[bundle.runtime]:[])]){
     const expected=`${parsed.url}/releases/download/${encodeURIComponent(release.tag)}/${encodeURIComponent(release.asset)}`;
     if(asset.url!==expected||asset.sha256!==release.sha256)throw new Error('Поставка не совпадает с закреплённым файлом релиза.');
    }
@@ -91,7 +91,9 @@ function validateRepositorySource(value,{pinned=true}={}){
   if(value.snapshotSha256!==undefined){
    if(!/^[a-f0-9]{64}$/.test(value.snapshotSha256)||value.manifestSha256!==undefined||!value.runtimeSource)throw new Error('Сгенерированная поставка требует SHA-256 снимка и runtime.');
    const runtimeSource=validateRuntimeSource(value.runtimeSource);
-   for(const bundle of Object.values(runtimeSource.assets))for(const asset of [bundle.app,bundle.runtime].filter(Boolean))if(asset.directory!=='.')throw new Error('Сгенерированная поставка должна использовать только закреплённую папку репозитория.');
+   for(const bundle of Object.values(runtimeSource.assets)){
+    if(bundle.app.directory!=='.'||!runtimeSource.python&&bundle.runtime&&bundle.runtime.directory!=='.'||runtimeSource.python&&(!bundle.runtime?.url||bundle.runtime.directory!==undefined))throw new Error('Сгенерированная поставка должна использовать закреплённую папку репозитория и готовый либо закреплённый Python runtime.');
+   }
    return {type:'repository',url:parsed.url,commit:value.commit.toLowerCase(),...(parsed.subdirectory?{subdirectory:parsed.subdirectory}:{}),entrypoint,runtimeSource,snapshotSha256:value.snapshotSha256};
   }
   const manifest=entrypoint===manifestName;

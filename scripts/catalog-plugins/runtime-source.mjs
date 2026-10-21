@@ -8,6 +8,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import runtimeSource from '../../services/shared/tool-runtime-source.cjs';
+import {preparePythonRuntimeSource} from './python-runtime.mjs';
 
 const within = (parent, child) => { const relative = path.relative(parent, child); return !relative || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative); };
 const inflight = new Map();
@@ -86,7 +87,7 @@ export async function downloadRuntimeAsset(asset, cacheDirectory, transport) {
     try { return await task; } finally { inflight.delete(filename); }
 }
 
-async function localFiles(asset, recipeDirectory, output) {
+async function localFiles(asset, recipeDirectory, output, syntheticEntry = false) {
     const directory = path.resolve(recipeDirectory, asset.directory);
     if (!within(recipeDirectory, directory)) { throw new Error('App выходит за папку рецепта.'); }
     if (output && (within(directory, output) || within(output, directory))) { throw new Error('Папки app и output не должны пересекаться.'); }
@@ -110,17 +111,17 @@ async function localFiles(asset, recipeDirectory, output) {
         }
     }
     await read();
-    if (!files.some(file => file.relative === asset.entrypoint && file.size)) { throw new Error('Точка входа app отсутствует или пуста.'); }
+    if (!syntheticEntry && !files.some(file => file.relative === asset.entrypoint && file.size)) { throw new Error('Точка входа app отсутствует или пуста.'); }
     return files;
 }
 
 /** Dry-run проверяет локальное готовое приложение без сети и запуска программ. */
 export async function inspectRuntimeSource(input, { recipeDirectory, output }) {
     const source = runtimeSource.validateRuntimeSource(input);
-    for (const { app } of Object.values(source.assets)) { if (app.directory !== undefined) { await localFiles(app, recipeDirectory, output); } }
+    for (const { app } of Object.values(source.assets)) { if (app.directory !== undefined) { await localFiles(app, recipeDirectory, output, !!source.python); } }
 }
 
-function launcher(adapter, appEntry, runtimeEntry) {
+function launcher(adapter, appEntry, runtimeEntry, isolatedPython = false) {
     return `import {spawn} from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -133,7 +134,7 @@ for(const key of Object.keys(env))if(/^(?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JA
 if(adapter==='python'){delete env.PYTHONHOME;delete env.PYTHONPATH;env.PYTHONDONTWRITEBYTECODE='1';env.PYTHONNOUSERSITE='1';}
 if(adapter==='java'){const bin=path.dirname(command);env.JAVA_HOME=path.basename(bin)==='bin'?path.dirname(bin):bin;}
 if(adapter==='dotnet'){env.DOTNET_ROOT=path.dirname(command);env.DOTNET_CLI_HOME=temporary;env.DOTNET_BUNDLE_EXTRACT_BASE_DIR=temporary;env.DOTNET_MULTILEVEL_LOOKUP='0';env.DOTNET_SKIP_FIRST_TIME_EXPERIENCE='1';env.DOTNET_NOLOGO='1';}
-const args=adapter==='java'?['-Dfile.encoding=UTF-8','-Dstdout.encoding=UTF-8','-Dstderr.encoding=UTF-8','-Djava.io.tmpdir='+temporary,'-jar',app,...process.argv.slice(2)]:adapter==='python'?['-B','-E','-s',app,...process.argv.slice(2)]:[app,...process.argv.slice(2)];
+const args=adapter==='java'?['-Dfile.encoding=UTF-8','-Dstdout.encoding=UTF-8','-Dstderr.encoding=UTF-8','-Djava.io.tmpdir='+temporary,'-jar',app,...process.argv.slice(2)]:adapter==='python'?[...(${JSON.stringify(isolatedPython)}?['-I','-S','-B']:['-B','-E','-s']),app,...process.argv.slice(2)]:[app,...process.argv.slice(2)];
 const child=spawn(command,args,{cwd:process.cwd(),env,shell:false,detached:false,stdio:'inherit'});
 const signals=['SIGINT','SIGTERM','SIGHUP'];let finished=false,killTimer;
 const handlers=new Map(signals.map(signal=>[signal,()=>{if(finished)return;child.kill(signal);killTimer??=setTimeout(()=>child.kill('SIGKILL'),2000);killTimer.unref();}]))
@@ -144,11 +145,11 @@ child.once('exit',(code,signal)=>{void finish(code,signal);});
 `;
 }
 
-async function prepareAsset(asset, prefix, context, { extractRelease, downloadAsset }) {
+async function prepareAsset(asset, prefix, context, { extractRelease, downloadAsset }, syntheticEntry = false) {
     const destination = path.join(context.directory, prefix);
     await fs.mkdir(destination);
     if (asset.directory !== undefined) {
-        for (const file of await localFiles(asset, context.recipeDirectory)) {
+        for (const file of await localFiles(asset, context.recipeDirectory, undefined, syntheticEntry)) {
             const output = path.join(destination, file.relative); await fs.mkdir(path.dirname(output), { recursive: true });
             await fs.copyFile(file.filename, output, constants.COPYFILE_EXCL);
             const after = await fs.lstat(file.filename);
@@ -172,6 +173,14 @@ export async function prepareRuntimeSource(recipe, context, helpers) {
     if (recipe.kind !== 'mcp') { throw new Error('Автономные runtime поддерживают только MCP.'); }
     const source = runtimeSource.validateRuntimeSource(recipe.source), bundle = source.assets[context.target];
     if (!bundle) { throw new Error('Для платформы отсутствует автономная поставка.'); }
+    if (source.python) {
+        const prepared = await preparePythonRuntimeSource(source, context, {
+            prepareApp: asset => prepareAsset(asset, 'app', context, helpers, true),
+            downloadAsset: helpers.downloadAsset ?? ((asset, settings) => downloadRuntimeAsset(asset, settings.cacheDirectory)),
+        });
+        await fs.writeFile(path.join(context.directory, 'entrypoint.mjs'), launcher('python', prepared.appEntry, prepared.runtimeEntry, true), { flag: 'wx' });
+        return { entrypoint: 'entrypoint.mjs', executables: prepared.executables, upstream: prepared.upstream, locks: prepared.locks };
+    }
     const app = await prepareAsset(bundle.app, 'app', context, helpers);
     const appEntry = 'app/' + bundle.app.entrypoint;
     let entrypoint = appEntry;

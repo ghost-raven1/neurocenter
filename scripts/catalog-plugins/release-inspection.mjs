@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { downloadRuntimeCandidate } from './runtime-source.mjs';
 import { extractRelease } from './source-adapters.mjs';
+import {inspectPythonSource,pythonEntrypointFiles} from './python-inspection.mjs';
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 
 /** Actual executable headers establish OS/CPU; filename hints cannot override their platform. */
@@ -96,7 +97,7 @@ async function payloadFiles(directory, prefix = '', result = []) {
     }
     return result;
 }
-/** Ready Python/JVM/.NET bundles require a bundled runtime; source-only projects do not invent a compiler. */
+/** Ready bundles keep their runtime; static Python sources receive an explicitly pinned runtime plan. */
 export async function detectReadyPayload(directory) {
     const files = await payloadFiles(directory), binaries = [], scripts = [], jars = [], dotnet = [], dotnetHosts = new Map();
     for (const file of files) {
@@ -139,6 +140,7 @@ export async function detectReadyPayload(directory) {
         if (runtimes.has(binary.path) || /(?:^|\/)(?:java|python[\d.]*|dotnet)(?:\.exe)?$/i.test(binary.path)) continue;
         candidates.push({ entrypoint: binary.path, adapter: binary.adapter, targets: binary.targets });
     }
+    if (!candidates.length) candidates.push(...await inspectPythonSource(directory,files));
     if (!candidates.length) {
         const languages = [scripts.length && 'Python', jars.length && 'Java', dotnet.length && '.NET'].filter(Boolean);
         throw new Error(languages.length ? `В поставке ${languages.join(', ')} нет встроенного runtime. Выберите автономную поставку.` : 'В архиве не найден готовый исполняемый файл поддерживаемой платформы. Исходники JS/TS добавляются по ссылке репозитория; для других языков нужен готовый релиз.');
@@ -162,14 +164,16 @@ export async function inspectGithubReleaseAsset(asset, selected, { cacheDirector
         else await extractRelease(downloaded.filename, asset, directory);
         const choices = await detectReadyPayload(directory);
         const names = [...new Set(choices.map(choice => choice.entrypoint))];
-        const chosen = selected ? choices.find(choice => choice.entrypoint === selected) : choices.length === 1 ? choices[0] : undefined;
-        if (selected && !chosen) throw new Error('Выбранный исполняемый файл отсутствует в проверенной поставке.');
+        const matching=selected?choices.filter(choice=>choice.entrypoint===selected||choice.python&&pythonEntrypointFiles(choice.python).includes(selected)):choices;
+        const chosen = matching.length===1 ? matching[0] : undefined;
+        if (selected && !matching.length) throw new Error('Выбранный исполняемый файл отсутствует в проверенной поставке.');
+        if(selected&&matching.length>1&&new Set(matching.map(choice=>choice.entrypoint)).size===1)throw new Error('Для приложения найдено несколько runtime. Выберите архив с одним встроенным runtime.');
         if (chosen && choices.filter(choice => choice.entrypoint === chosen.entrypoint).length > 1) throw new Error('Для приложения найдено несколько runtime. Выберите архив с одним встроенным runtime.');
         const common = { sha256: downloaded.sha256, entrypoint: chosen?.entrypoint ?? '', candidates: names, executableChoices: choices, warnings: [] };
         if (!chosen) return common;
         const app = { url: asset.url, sha256: downloaded.sha256, format: asset.format, entrypoint: chosen.entrypoint };
-        const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.runtimeEntrypoint ? { runtime: { ...app, entrypoint: chosen.runtimeEntrypoint } } : {}) }]));
-        return { ...common, runtimeSource: { type: 'runtime', adapter: chosen.adapter, assets } };
+        const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.python?{runtime:chosen.runtimeAssets[target]}:chosen.runtimeEntrypoint ? { runtime: { ...app, entrypoint: chosen.runtimeEntrypoint } } : {}) }]));
+        return { ...common, runtimeSource: { type: 'runtime', adapter: chosen.adapter, assets,...(chosen.python?{python:chosen.python}:{}) } };
     } finally { await fs.rm(directory, { recursive: true, force: true }); }
 }
 
@@ -183,13 +187,15 @@ export async function inspectGithubRepository(source, selected, { cacheDirectory
         await extractRelease(archive.archivePath, { format: 'tar.gz' }, temporary);
         const directory = path.join(temporary, root, source.subdirectory ?? ''), choices = await detectReadyPayload(directory);
         const candidates = [...new Set(choices.map(choice => choice.entrypoint))];
-        const chosen = selected ? choices.find(choice => choice.entrypoint === selected) : choices.length === 1 ? choices[0] : undefined;
-        if (selected && !chosen) throw new Error('Выбранный исполняемый файл отсутствует в закреплённом репозитории.');
+        const matching=selected?choices.filter(choice=>choice.entrypoint===selected||choice.python&&pythonEntrypointFiles(choice.python).includes(selected)):choices;
+        const chosen = matching.length===1 ? matching[0] : undefined;
+        if (selected && !matching.length) throw new Error('Выбранный исполняемый файл отсутствует в закреплённом репозитории.');
+        if(selected&&matching.length>1&&new Set(matching.map(choice=>choice.entrypoint)).size===1)throw new Error('Для приложения найдено несколько встроенных runtime. Выберите поставку с одним runtime.');
         if (chosen && choices.filter(choice => choice.entrypoint === chosen.entrypoint).length > 1) throw new Error('Для приложения найдено несколько встроенных runtime. Выберите поставку с одним runtime.');
         const common = { snapshotSha256: archive.sha256, entrypoint: chosen?.entrypoint ?? '', candidates, requiresEntrypointChoice: !chosen, recommendedKind: 'mcp', runnableKinds: ['mcp'], warnings: [] };
         if (!chosen) return common;
         const app = { directory: '.', entrypoint: chosen.entrypoint };
-        const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.runtimeEntrypoint ? { runtime: { directory: '.', entrypoint: chosen.runtimeEntrypoint } } : {}) }]));
-        return { ...common, adapter: chosen.adapter, supportedTargets: chosen.targets, runtimeSource: { type: 'runtime', adapter: chosen.adapter, assets } };
+        const assets = Object.fromEntries(chosen.targets.map(target => [target, { app, ...(chosen.python?{runtime:chosen.runtimeAssets[target]}:chosen.runtimeEntrypoint ? { runtime: { directory: '.', entrypoint: chosen.runtimeEntrypoint } } : {}) }]));
+        return { ...common, adapter: chosen.adapter, supportedTargets: chosen.targets, runtimeSource: { type: 'runtime', adapter: chosen.adapter, assets,...(chosen.python?{python:chosen.python}:{}) } };
     } finally { await fs.rm(temporary, { recursive: true, force: true }); }
 }

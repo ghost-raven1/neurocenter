@@ -1,6 +1,7 @@
 'use strict';
 const {isIP,BlockList}=require('node:net');
 const {portablePath,TARGETS}=require('./runtime-artifacts.cjs');
+const {validatePythonPlan}=require('./python-source-plan.cjs');
 const adapters=Object.freeze({python:'Python',java:'Java',dotnet:'.NET',go:'Go',rust:'Rust',native:'Нативная программа'});
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
@@ -32,16 +33,19 @@ function asset(value,{local=false}={}){
 }
 /** Декларация готового приложения и runtime не содержит команд установки или компиляции. */
 function validateRuntimeSource(value){
- if(!exact(value,['type','adapter','assets'])||value.type!=='runtime'||!Object.hasOwn(adapters,value.adapter)||!exact(value.assets,TARGETS)||!Object.keys(value.assets).length)throw new Error('runtime требует известный adapter и платформенные assets.');
+ if(!exact(value,['type','adapter','assets','python'])||value.type!=='runtime'||!Object.hasOwn(adapters,value.adapter)||!exact(value.assets,TARGETS)||!Object.keys(value.assets).length)throw new Error('runtime требует известный adapter и платформенные assets.');
+ if(value.python!==undefined&&value.adapter!=='python')throw new Error('План Python разрешён только для adapter python.');
+ const python=value.python===undefined?undefined:validatePythonPlan(value.python);
  const managed=['python','java','dotnet'].includes(value.adapter),assets={};
  for(const [target,bundle] of Object.entries(value.assets)){
   if(!exact(bundle,['app','runtime'])||managed&&!bundle.runtime||!managed&&bundle.runtime!==undefined)throw new Error('Python, Java и .NET требуют runtime; Go, Rust и native содержат готовую программу без runtime.');
   const app=asset(bundle.app,{local:true}),runtime=bundle.runtime?asset(bundle.runtime,{local:true}):undefined;
+  if(python&&!runtime?.url)throw new Error('Автоматическая поставка Python требует закреплённый удалённый runtime.');
   const extension={python:/\.py$/i,java:/\.jar$/i,dotnet:/\.dll$/i}[value.adapter];
   if(extension&&!extension.test(app.entrypoint))throw new Error('Точка входа приложения не соответствует adapter '+value.adapter+'.');
   assets[target]={app,...(runtime?{runtime}:{})};
  }
- return {type:'runtime',adapter:value.adapter,assets};
+ return {type:'runtime',adapter:value.adapter,assets,...(python?{python}:{})};
 }
 const runtimeSourceTargets=source=>Object.keys(validateRuntimeSource(source).assets);
 function runtimeAdapterLabel(adapter){if(!Object.hasOwn(adapters,adapter))throw new Error('Неизвестный runtime adapter.');return adapters[adapter];}

@@ -34,6 +34,19 @@ describe('Builder progress and failure protocol',()=>{
         const f=await fixture(JSON.stringify({type:'build-error',code:'FOREIGN',message:'PRIVATE'})+'\n',1,'PRIVATE stderr');
         await expect(f.run()).rejects.toThrow('Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.');
     });
+    it.each([
+        ['PYTHON_DEPENDENCIES_UNAVAILABLE', 'готовые wheel-пакеты из PyPI'],
+        ['PYTHON_RUNTIME_UNAVAILABLE', 'Не удалось подготовить встроенный Python'],
+        ['PYTHON_SOURCE_INVALID', 'Не удалось проверить исходники Python'],
+    ])('Reports %s through a fixed message, keeping child output private',async(code,expected)=>{
+        const f=await fixture(JSON.stringify({type:'build-error',code,message:'PRIVATE token /server/path'})+'\n',1,'PRIVATE stderr');
+        try {await f.run();throw Error('Expected Python failure');}
+        catch(error){expect((error as Error).message).toContain(expected);expect((error as Error).message).not.toMatch(/PRIVATE|server\/path/);}
+    });
+    it.each(['constructor','toString','__proto__'])('Does not treat inherited key %s as a trusted error',async code=>{
+        const f=await fixture(JSON.stringify({type:'build-error',code})+'\n',1);
+        await expect(f.run()).rejects.toThrow('Сборка не выполнена.');
+    });
     it('Normal progress and successful completion still return the asset path',async()=>{
         const event={type:'build-progress',target:'darwin-arm64',completed:1,total:1};
         const f=await fixture(JSON.stringify(event)+'\n',0),progress=vi.fn().mockResolvedValue(undefined);

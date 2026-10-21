@@ -26,8 +26,11 @@ export async function prepareArchiveSource(recipe,context,{extractRelease}){
   const expected=source.runtimeSource.assets[context.target];if(!expected)throw new Error('Готовый архив не поддерживает выбранную платформу.');
   if(source.format==='file'){await fs.mkdir(path.dirname(path.join(directory,expected.app.entrypoint)),{recursive:true});await fs.copyFile(filename,path.join(directory,expected.app.entrypoint));}
   else await extractRelease(filename,{format:source.format},directory);
-  const choices=await detectReadyPayload(directory),choice=choices.find(item=>item.entrypoint===expected.app.entrypoint&&item.adapter===source.runtimeSource.adapter&&item.targets.includes(context.target)&&item.runtimeEntrypoint===expected.runtime?.entrypoint);
-  if(!choice)throw new Error('Готовое приложение не совпадает с подтверждённым рецептом запуска.');
+  // Auto Python consumes its durable plan after the raw source hash check; new pin catalogs cannot alter a retry.
+  if(!source.runtimeSource.python){
+   const choices=await detectReadyPayload(directory),choice=choices.find(item=>item.entrypoint===expected.app.entrypoint&&item.adapter===source.runtimeSource.adapter&&item.targets.includes(context.target)&&item.runtimeEntrypoint===expected.runtime?.entrypoint);
+   if(!choice)throw new Error('Готовое приложение не совпадает с подтверждённым рецептом запуска.');
+  }
   const result=await prepareRuntimeSource({...recipe,source:source.runtimeSource},{...context,recipeDirectory:directory},{extractRelease});
   return {...result,upstream:{...result.upstream,sourceArchive:{sha256:source.sha256,bytes:source.bytes}}};
  }finally{await fs.rm(directory,{recursive:true,force:true});}

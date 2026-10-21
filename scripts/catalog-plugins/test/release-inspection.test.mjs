@@ -42,11 +42,11 @@ test('Two native commands require explicit choice and preserve actual platform o
         await assert.rejects(inspection(root, files, 'missing'), /отсутствует/);
     } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
-test('Python source requires a real bundled runtime; ordinary libraries and source shell scripts are rejected', async () => {
+test('Python source receives a pinned runtime while an existing bundled runtime remains unchanged', async () => {
     const root = await temp();
     try {
         await write(root, 'main.py', "if __name__ == '__main__':\n    print('ready')\n");
-        await assert.rejects(detectReadyPayload(root), /нет встроенного runtime/);
+        const automatic=await detectReadyPayload(root);assert.equal(automatic[0].python.entry.type,'script');assert.ok(automatic[0].runtimeAssets['darwin-arm64'].sha256);
         await write(root, 'python/bin/python3', mach());
         await write(root, 'python/bin/runtime-helper', mach());
         const choices = await detectReadyPayload(root);

@@ -5,17 +5,17 @@ import type {useSourceUpload} from './useSourceUpload';
 import {SourceEntrypointChoice} from './SourceEntrypointChoice';
 import {packagingPlatformLabels} from './platformLabels';
 
-/** Ready binary archives use a separate raw stream, while the card still receives the same asset envelope. */
+/** MCP archives use a durable upload before runtime inspection and packaging. */
 export function SourceArchiveUploader({upload,entrypoint,onEntrypointChange,disabled=false}:{upload:ReturnType<typeof useSourceUpload>;entrypoint:string;onEntrypointChange:(value:string)=>void;disabled?:boolean}){
  const input=useRef<HTMLInputElement>(null),ready=upload.upload?.state==='READY';
  const selected=entrypoint||upload.upload?.metadata?.entrypoint||'',targets=upload.upload?.metadata?.choices.find(choice=>choice.entrypoint===selected)?.targets??[];
  return <div className="tool-packaging__files">
   <Space direction="vertical" size="small" style={{width:'100%'}}>
-   <Typography.Text strong><FileZipOutlined/> Готовая поставка MCP</Typography.Text>
-   <Typography.Text type="secondary">Готовый MCP-сервер: ZIP, TAR.GZ или исполняемый файл до 256 МБ. Определим способ запуска, встроенный runtime и платформу.</Typography.Text>
-   <input ref={input} type="file" hidden disabled={disabled||upload.busy||upload.blocked} aria-label="Готовый архив инструмента" onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file&&!disabled&&!upload.busy&&!upload.blocked){onEntrypointChange('');void upload.select(file);}}}/>
+   <Typography.Text strong><FileZipOutlined/> Архив MCP</Typography.Text>
+   <Typography.Text type="secondary">ZIP, TAR.GZ или исполняемый файл до 256 МБ. Для исходников Python добавим интерпретатор и зависимости автоматически. Для готовой программы проверим встроенный runtime и платформу.</Typography.Text>
+   <input ref={input} type="file" hidden disabled={disabled||upload.busy||upload.blocked} aria-label="Архив MCP" onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file&&!disabled&&!upload.busy&&!upload.blocked){onEntrypointChange('');void upload.select(file);}}}/>
    <Space wrap>
-    <Button icon={<UploadOutlined/>} disabled={disabled||upload.busy||upload.blocked} onClick={()=>input.current?.click()}>{upload.intent?'Выбрать тот же файл':'Выбрать готовый архив'}</Button>
+    <Button icon={<UploadOutlined/>} disabled={disabled||upload.busy||upload.blocked} onClick={()=>input.current?.click()}>{upload.intent?'Выбрать тот же файл':'Выбрать архив MCP'}</Button>
     {ready&&<Button disabled={disabled||upload.busy} onClick={()=>{void upload.forget().then(cleared=>{if(cleared)onEntrypointChange('');});}}>Выбрать другую поставку</Button>}
     {(upload.intent||upload.busy)&&<Button disabled={disabled||upload.phase==='cancelling'} onClick={()=>{void upload.cancel();}}>Отменить загрузку</Button>}
     {upload.blocked&&<Button disabled={disabled} onClick={upload.retryRecovery}>Повторить восстановление</Button>}

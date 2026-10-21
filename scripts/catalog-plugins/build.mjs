@@ -230,6 +230,13 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
                     await fs.writeFile(path.join(destination, filename), bytes, { flag: 'wx' });
                     locks.push({ target, file: filename, sha256: hash(bytes) });
                 } catch (error) { if (error.code !== 'ENOENT') { throw error; } }
+                for (const relative of prepared.locks ?? []) {
+                    if (!runtime.portablePath(relative) || path.posix.basename(relative) !== relative) throw new Error('Некорректное имя lock-файла producer.');
+                    const bytes = await fs.readFile(path.join(directory, relative));
+                    const filename = `lock-${target}-${relative}`;
+                    await fs.writeFile(path.join(destination, filename), bytes, { flag: 'wx' });
+                    locks.push({ target, file: filename, sha256: hash(bytes) });
+                }
                 sources.push({ target, ...(prepared.upstream ? { upstream: prepared.upstream } : {}), entrypoint, ...(pluginFacade ? { pluginFacade } : {}) });
                 await onProgress?.({ type: 'build-progress', target, completed: descriptors.length, total: recipe.targets.length });
             } finally { await fs.rm(directory, { recursive: true, force: true }); }
@@ -266,7 +273,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         console.log(JSON.stringify(result, null, progress ? undefined : 2));
     })
         .catch(error => {
-            if(progressOutput&&error?.code==='SOURCE_RESOURCE_UNSUPPORTED')process.stdout.write(JSON.stringify({type:'build-error',code:'SOURCE_RESOURCE_UNSUPPORTED'})+'\n');
+            if(progressOutput&&['SOURCE_RESOURCE_UNSUPPORTED','PYTHON_DEPENDENCIES_UNAVAILABLE','PYTHON_RUNTIME_UNAVAILABLE','PYTHON_SOURCE_INVALID'].includes(error?.code))process.stdout.write(JSON.stringify({type:'build-error',code:error.code})+'\n');
             console.error(error instanceof Error ? error.message : 'Сборка не выполнена.'); process.exitCode = 1;
         });
 }

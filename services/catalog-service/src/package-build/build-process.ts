@@ -8,10 +8,22 @@ import type { BuildConfiguration } from './package-build.model';
 export const builderScript = (): string => path.resolve(process.env.TOOL_BUILD_SCRIPT || path.join(__dirname, '../../../../scripts/catalog-plugins/build.mjs'));
 export const stagingLimit = 4 * 1024 ** 3;
 interface BuildProgress {type: 'build-progress'; target: string; completed: number; total: number}
+const buildFailures: Record<string, string> = {
+    SOURCE_RESOURCE_UNSUPPORTED: 'Исходники читают соседний runtime-ресурс, который не переносится при сборке JS/TS. Выберите готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом с ресурсами.',
+    PYTHON_DEPENDENCIES_UNAVAILABLE: 'Не удалось подготовить зависимости Python для выбранной платформы. Проверьте requirements.txt или pyproject.toml: для зависимостей нужны совместимые готовые wheel-пакеты из PyPI и доступ к PyPI.',
+    PYTHON_RUNTIME_UNAVAILABLE: 'Не удалось подготовить встроенный Python. Проверьте доступ к источнику runtime и повторите сборку. Поставка с непроверенным или отсутствующим интерпретатором не опубликована.',
+    PYTHON_SOURCE_INVALID: 'Не удалось проверить исходники Python. Проверьте файл запуска и статические зависимости в pyproject.toml или requirements.txt, затем заново выберите источник.',
+};
 
 /** Лимит включает npm-cache, промежуточные файлы и готовые архивы одного задания. */
-async function stagingBytes(root: string): Promise<number> {
+export async function stagingBytes(root: string): Promise<number> {
+    root = await fs.realpath(root);
     let bytes = 0, count = 0;
+    const producer = path.join(root, 'output', '.source-cache', 'python-producer');
+    const insideProducer = (filename: string): boolean => {
+        const relative = path.relative(producer, filename);
+        return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
+    };
     const walk = async (directory: string): Promise<void> => {
         let entries;
         try { entries = await fs.readdir(directory, {withFileTypes: true}); }
@@ -20,9 +32,18 @@ async function stagingBytes(root: string): Promise<number> {
             const filename = path.join(directory, entry.name);
             let info;
             try { info = await fs.lstat(filename); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { continue; } throw error; }
-            if (info.isSymbolicLink() || !info.isDirectory() && !info.isFile()) { throw new Error('Сборка создала ссылку или специальный файл.'); }
+            if (info.isSymbolicLink()) {
+                // UV's private wheel cache uses links. It stays inside this job, is counted, and is never packed.
+                if (!insideProducer(filename)) { throw new Error('Сборка создала ссылку или специальный файл.'); }
+                let target: string;
+                try { target = path.resolve(path.dirname(filename), await fs.readlink(filename)); }
+                catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { continue; } throw error; }
+                if (!insideProducer(target)) { throw new Error('Кэш Python выходит за приватную папку сборщика.'); }
+                try { if (!insideProducer(await fs.realpath(filename))) { throw new Error('Кэш Python выходит за приватную папку сборщика.'); } }
+                catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
+            } else if (!info.isDirectory() && !info.isFile()) { throw new Error('Сборка создала ссылку или специальный файл.'); }
             if (++count > 100_000) { throw new Error('Сборка превысила лимит числа файлов.'); }
-            bytes += info.isFile() ? info.size : 0;
+            bytes += info.isFile() || info.isSymbolicLink() ? info.size : 0;
             if (bytes > stagingLimit) { throw new Error('Сборка превысила лимит staging 4 ГиБ.'); }
             if (info.isDirectory()) { await walk(filename); }
         }
@@ -95,7 +116,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
                 let event: BuildProgress | {type:'build-error';code?:unknown};
                 try {event = JSON.parse(line) as typeof event;} catch {continue;}
                 if(event?.type==='build-error'){
-                    if(event.code==='SOURCE_RESOURCE_UNSUPPORTED')reason||='Исходники читают соседний runtime-ресурс, который не переносится при сборке JS/TS. Выберите готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом с ресурсами.';
+                    if(typeof event.code==='string'&&Object.prototype.hasOwnProperty.call(buildFailures,event.code))reason||=buildFailures[event.code];
                     continue;
                 }
                 if (!event || event.type !== 'build-progress' || !config.targets.includes(event.target) || event.total !== config.targets.length
