@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { allowRequest } from '../src/access/access-policy';
 import { IAccessClaims, normalizeEmail, projectLevel } from '../src/access/access.model';
+import {AccessDb} from '../src/access/access-db';
 const claims:IAccessClaims={email:'member@example.test',userRoles:['Админ проекта','Разработчик','Наблюдатель'],projects:[{projectId:'prj-a',projectName:'Мой проект',role:'Админ проекта'},{projectId:'prj-b',projectName:'Другой рабочий',role:'Разработчик'},{projectId:'prj-read',projectName:'Чтение',role:'Наблюдатель'}],pluginIds:['approved'],skillPaths:['common/approved']};
 const request=(method:string,path:string,body?:Record<string,unknown>,query?:Record<string,unknown>)=>({method,path,body,query});
 describe('Единая ролевая модель каталога',()=>{
@@ -90,5 +91,17 @@ describe('Единая ролевая модель каталога',()=>{
     it('Почта нормализуется, произвольный логин не принимается',()=>{
         expect(normalizeEmail(' User@Example.test ')).toBe('user@example.test');
         expect(()=>normalizeEmail('username')).toThrow();
+    });
+});
+
+describe('Источник системных прав пользователя',()=>{
+    it.each([false,true])('Главный админ зависит только от platform_users.is_main_admin=%s',async isMainAdmin=>{
+        const access=Object.create(AccessDb.prototype) as AccessDb;
+        Object.defineProperty(access,'pool',{value:{query:async(sql:string)=>({rows:sql.includes('FROM platform_users')
+            ?[{is_main_admin:isMainAdmin,enabled:true}]:sql.includes('FROM project_members')
+            ?[{projectId:'prj-malformed',projectName:'Legacy assignment',role:'Главный админ'}]:[]})}});
+        const current=await access.claims('member@example.test');
+        expect(current.userRoles.includes('Главный админ')).toBe(isMainAdmin);
+        expect(allowRequest(current,'Главный админ',request('POST','/api/ai-plugins'))).toBe(isMainAdmin);
     });
 });

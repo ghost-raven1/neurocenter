@@ -3,8 +3,10 @@ import {assertCatalogSchema} from './schema-verification';
 import {assertAgentSchema} from '../agents/agent-schema-verification';
 import {CATALOG_SCHEMA_CONTRACT} from './schema-contract';
 import {AGENT_SCHEMA_CONTRACT} from '../agents/agent-schema-contract';
-export const CURRENT_CATALOG_SCHEMA_CONTRACT=[...CATALOG_SCHEMA_CONTRACT,...AGENT_SCHEMA_CONTRACT];
+import {CATALOG_REQUEST_SCHEMA_CONTRACT} from '../catalog-requests/request.schema-contract';
+import {assertCatalogRequestSchema} from '../catalog-requests/request.schema-verification';
+export const CURRENT_CATALOG_SCHEMA_CONTRACT=[...CATALOG_SCHEMA_CONTRACT,...AGENT_SCHEMA_CONTRACT,...CATALOG_REQUEST_SCHEMA_CONTRACT];
 /** Runtime readiness checks every managed generation; historical migration assertions stay frozen. */
 export async function assertCurrentCatalogSchema(db:Pick<Pool,'query'>):Promise<void>{
- await assertCatalogSchema(db);await assertAgentSchema(db);
+ await assertCatalogSchema(db);await assertAgentSchema(db);await assertCatalogRequestSchema(db);
 }

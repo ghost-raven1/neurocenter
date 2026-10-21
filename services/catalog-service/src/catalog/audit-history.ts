@@ -1,6 +1,7 @@
 import type {Pool} from 'pg';
 import type {IAuditEvent,IPage} from './dto';
 import {AGENT_AUDIT_ACTIONS,agentAuditSnapshot,isAgentAuditEvent} from '../agents/agent-audit';
+import {REQUEST_AUDIT_ACTIONS,isRequestAudit,requestAuditSnapshot} from '../catalog-requests/request.audit';
 
 const history=`SELECT operation_id AS id,coalesce(started_at,created_at) AS at,actor,actor AS "versionAuthor",
     lower(resource_type||'.'||type) AS action,resource_type AS "resourceType",resource_id AS "resourceId",
@@ -10,6 +11,7 @@ const history=`SELECT operation_id AS id,coalesce(started_at,created_at) AS at,a
     CASE WHEN action='maintenance.policy.update' OR action='feature_flag.update'
         OR action IN ('plugin.create','plugin.update','plugin.activate','plugin.delete')
         OR action IN (${AGENT_AUDIT_ACTIONS.map(action=>"'"+action+"'").join(',')})
+        OR action IN (${REQUEST_AUDIT_ACTIONS.map(action=>"'"+action+"'").join(',')})
         OR action IN ('asset.archive','asset.restore') AND (before_state->>'kind'='agent' OR after_state->>'kind'='agent')
         THEN jsonb_build_object('before',before_state,'after',after_state) ELSE NULL END FROM security_events`;
 
@@ -35,7 +37,9 @@ export async function listAuditHistory(pool:Pool,page:number,size:number):Promis
         pool.query('SELECT ((SELECT count(*) FROM operations)+(SELECT count(*) FROM security_events))::int AS n'),
         pool.query('SELECT * FROM ('+history+') events ORDER BY at DESC,id DESC LIMIT $1 OFFSET $2',[size,(page-1)*size]),
     ]);
-    const items = (rows.rows as IAuditEvent[]).map(event => isAgentAuditEvent(event.action,event.details)
+    const items = (rows.rows as IAuditEvent[]).map(event => isRequestAudit(event.action)
+        ? {...event,details:event.details?{before:requestAuditSnapshot(event.details.before),after:requestAuditSnapshot(event.details.after)}:null}
+        : isAgentAuditEvent(event.action,event.details)
         ? {...event,details:event.details?{before:agentAuditSnapshot(event.details.before),after:agentAuditSnapshot(event.details.after)}:null}
         : publicationActions.has(event.action)
         ? { ...event, details: event.details ? {

@@ -94,7 +94,7 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
         const grants = await this.pool.query(`SELECT p.id AS "projectId",p.name AS "projectName",pm.role
             FROM project_members pm JOIN projects p ON p.id=pm.project_id WHERE lower(pm.principal_name)=$1`,[email]);
         const projects = grants.rows as IAccessClaims['projects'];
-        const userRoles = ROLES.filter(role => (role === 'Главный админ' && account.is_main_admin) || projects.some(item => item.role === role));
+        const userRoles = ROLES.filter(role => role === 'Главный админ' ? account.is_main_admin : projects.some(item => item.role === role));
         const assets = await this.pool.query(`SELECT DISTINCT asset_id,asset_kind FROM project_assets WHERE project_id=ANY($1::text[])`,[projects.map(item=>item.projectId)]);
         return {email,userRoles:[...userRoles],projects,
             pluginIds:assets.rows.filter(item=>item.asset_kind!=='skill').map(item=>String(item.asset_id)),

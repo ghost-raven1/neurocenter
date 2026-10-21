@@ -18,13 +18,14 @@ const legacy=async(pool:Pool,last=5)=>{await migrateCatalog(pool,CATALOG_MIGRATI
 describe('Frozen catalog migration contract',()=>{
  it('freezes all seven SQL checksums, including the adopted baseline and physical contract',()=>{expect(CATALOG_MIGRATIONS.slice(0,7).map(m=>migrationChecksum(m.sql))).toEqual([
  '5674117e472013f221ab63b4bbc103474182bf5dbbd3763cff517975c7b8b3d8','68514dc6172c482cd9b7cb6f5ee9909f13951125b807a1acc01a650113fa0363','48ba300c7edeba86966e5569fe68292d59551577a83e1defd0001f2ff2f981f7','4e3cae536018da83de34666e4728cd872db47b6060aea67d7f8439f3179ad92a','62549de8bf998487ebe54ef75462e3280caa6ef984170ec620abea90a99aebfd','33a34d16a6a22f0756bc76972a60571755834e1874a003f91335a76a88b74ca4','cb2422c0292cb52c70e154b861c8ab3a1841207238da001452ef4803f073ab0a']);});
+ it('freezes native-agent and catalog-request migration checksums',()=>{expect(CATALOG_MIGRATIONS.filter(migration=>migration.version>=7&&migration.version<=8).map(migration=>migrationChecksum(migration.sql))).toEqual(['8fa2205e520bad439eb2bbd60f76be93a3cac649b52a7cf2bba0411664288ba6','877fcebdceb12579d3ad68d465e7e5c6de18381673b93c0fd9f47d47b79a917a']);});
  it('does not bless a missing baseline after version 6',()=>{const rows=CATALOG_MIGRATIONS.slice(1).map(m=>({...m,checksum:migrationChecksum(m.sql)}));expect(()=>validateMigrationHistory(CATALOG_MIGRATIONS,rows)).toThrow('baseline');});
 });
 describe.skipIf(!connection)('Complete catalog schema — disposable PostgreSQL',()=>{
  it('preflight is read-only, then fresh chain creates every managed table and replays unchanged',async()=>{
-  const pool=await fixture();expect(await checkCatalogSchema(pool)).toEqual({ok:true,ready:false,existingSchema:false,applied:[],pending:[0,1,2,3,4,5,6,7]});
+  const pool=await fixture();expect(await checkCatalogSchema(pool)).toEqual({ok:true,ready:false,existingSchema:false,applied:[],pending:CATALOG_MIGRATIONS.map(migration=>migration.version)});
   expect((await pool.query("SELECT to_regclass('catalog_schema_migrations') AS name")).rows[0].name).toBeNull();await expect(checkCatalogSchema(pool,true)).rejects.toThrow('миграции');await ensureCatalogSchema(pool);
-  expect(await checkCatalogSchema(pool,true)).toEqual({ok:true,ready:true,existingSchema:true,applied:[0,1,2,3,4,5,6,7],pending:[]});
+  expect(await checkCatalogSchema(pool,true)).toEqual({ok:true,ready:true,existingSchema:true,applied:CATALOG_MIGRATIONS.map(migration=>migration.version),pending:[]});
   expect((await pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(r=>r.tablename)).toEqual(CURRENT_CATALOG_SCHEMA_CONTRACT.filter(f=>f.kind==='table').map(f=>f.id).sort());
   const before=await history(pool);await ensureCatalogSchema(pool);expect(await history(pool)).toEqual(before);
  });
@@ -44,7 +45,7 @@ describe.skipIf(!connection)('Complete catalog schema — disposable PostgreSQL'
  });
  it('detects existing unversioned application data without stamping a journal',async()=>{
   const pool=await fixture();await pool.query('CREATE TABLE operator_history(value TEXT)');
-  expect(await checkCatalogSchema(pool)).toEqual({ok:true,ready:false,existingSchema:true,applied:[],pending:[0,1,2,3,4,5,6,7]});
+  expect(await checkCatalogSchema(pool)).toEqual({ok:true,ready:false,existingSchema:true,applied:[],pending:CATALOG_MIGRATIONS.map(migration=>migration.version)});
   expect((await pool.query("SELECT to_regclass('catalog_schema_migrations') AS name")).rows[0].name).toBeNull();
  });
  it('adopts only the released MCP message default without rewriting old job messages',async()=>{
@@ -60,21 +61,21 @@ describe.skipIf(!connection)('Complete catalog schema — disposable PostgreSQL'
   await expect(ensureCatalogSchema(pool)).rejects.toThrow();expect(await history(pool)).toEqual(before);
   expect((await pool.query("SELECT pg_get_expr(d.adbin,d.adrelid) AS value FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid=d.adrelid AND a.attnum=d.adnum WHERE a.attrelid='bridge_jobs'::regclass AND a.attname='message'")).rows[0].value).toBe("'operator-custom-default'::text");
  });
- it('upgrades 0+1 and serializes competing runners',async()=>{const pool=await fixture();await migrateCatalog(pool,CATALOG_MIGRATIONS.slice(0,2));expect((await checkCatalogSchema(pool)).pending).toEqual([2,3,4,5,6,7]);await Promise.all([ensureCatalogSchema(pool),ensureCatalogSchema(pool)]);expect((await history(pool)).map(r=>r.version)).toEqual([0,1,2,3,4,5,6,7]);});
+ it('upgrades 0+1 and serializes competing runners',async()=>{const pool=await fixture();await migrateCatalog(pool,CATALOG_MIGRATIONS.slice(0,2));expect((await checkCatalogSchema(pool)).pending).toEqual(CATALOG_MIGRATIONS.slice(2).map(migration=>migration.version));await Promise.all([ensureCatalogSchema(pool),ensureCatalogSchema(pool)]);expect((await history(pool)).map(r=>r.version)).toEqual(CATALOG_MIGRATIONS.map(migration=>migration.version));});
  it.each(['checksum','name','gap','unknown'])('rejects incompatible %s before baseline DDL',async kind=>{
   const pool=await fixture();await legacy(pool);await pool.query(kind==='checksum'?"UPDATE catalog_schema_migrations SET checksum='changed' WHERE version=3":kind==='name'?"UPDATE catalog_schema_migrations SET name='changed' WHERE version=3":kind==='gap'?'DELETE FROM catalog_schema_migrations WHERE version=3':"INSERT INTO catalog_schema_migrations(version,name,checksum) VALUES(99,'future','opaque')");
   await pool.query('DROP TABLE platform_bootstrap');const before=await history(pool);await expect(ensureCatalogSchema(pool)).rejects.toThrow('История');expect(await history(pool)).toEqual(before);expect((await pool.query("SELECT to_regclass('platform_bootstrap') AS name")).rows[0].name).toBeNull();
  });
  it.each(['ALTER TABLE platform_users ALTER COLUMN enabled DROP NOT NULL','ALTER TABLE platform_users ALTER COLUMN display_name TYPE varchar(200)','ALTER TABLE platform_users DROP CONSTRAINT platform_users_pkey','DROP INDEX security_events_created',"CREATE OR REPLACE FUNCTION neurocenter_project_retirement_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",'ALTER TABLE projects DISABLE TRIGGER neurocenter_project_retirement_guard'])('detects physical drift: %s',async sql=>{const pool=await fixture();await ensureCatalogSchema(pool);await pool.query(sql);await expect(checkCatalogSchema(pool,true)).rejects.toThrow();});
  it('final adoption rejects wrong structure and rolls back baseline record',async()=>{const pool=await fixture();await legacy(pool);await pool.query('ALTER TABLE platform_users ALTER COLUMN enabled DROP NOT NULL');const before=await history(pool);await expect(ensureCatalogSchema(pool)).rejects.toThrow();expect(await history(pool)).toEqual(before);});
- it.each([0,6,7])('version %i failure rolls back all new objects and ledger; retry works',async version=>{const pool=await fixture();const invalid=CATALOG_MIGRATIONS.map(m=>m.version===version?{...m,sql:m.sql+'; SELECT deliberately_missing_function()'}:m);await expect(migrateCatalog(pool,invalid)).rejects.toThrow();expect((await pool.query("SELECT to_regclass('projects') AS name,to_regclass('catalog_schema_migrations') AS ledger")).rows[0]).toEqual({name:null,ledger:null});await ensureCatalogSchema(pool);expect((await checkCatalogSchema(pool,true)).ready).toBe(true);});
+ it.each([0,6,7,8])('version %i failure rolls back all new objects and ledger; retry works',async version=>{const pool=await fixture();const invalid=CATALOG_MIGRATIONS.map(m=>m.version===version?{...m,sql:m.sql+'; SELECT deliberately_missing_function()'}:m);await expect(migrateCatalog(pool,invalid)).rejects.toThrow();expect((await pool.query("SELECT to_regclass('projects') AS name,to_regclass('catalog_schema_migrations') AS ledger")).rows[0]).toEqual({name:null,ledger:null});await ensureCatalogSchema(pool);expect((await checkCatalogSchema(pool,true)).ready).toBe(true);});
  it('read-only readiness holds the migration fence across history and physical facts',async()=>{
   const pool=await fixture();await ensureCatalogSchema(pool);const writer=await pool.connect();await writer.query('BEGIN');
   let write:Promise<void>|undefined,writerFinished=false;
   const inspect=async(sql:string,values?:unknown[],client?:import('pg').PoolClient)=>{
    const result=await (client?client.query(sql,values):pool.query(sql,values));
    if(sql.startsWith('SELECT version,name,checksum')){
-    write=(async()=>{await writer.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");await writer.query("INSERT INTO catalog_schema_migrations(version,name,checksum) VALUES(8,'future','opaque')");await writer.query('COMMIT');writerFinished=true;})();
+    write=(async()=>{await writer.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");await writer.query(`INSERT INTO catalog_schema_migrations(version,name,checksum) VALUES(${CATALOG_MIGRATIONS.at(-1)!.version+1},'future','opaque')`);await writer.query('COMMIT');writerFinished=true;})();
     for(let n=0;n<100&&!writerFinished;n++){
      if((await pool.query('SELECT 1 FROM pg_locks WHERE pid=$1 AND NOT granted',[writer.processID])).rowCount)break;
      await new Promise(resolve=>setTimeout(resolve,5));

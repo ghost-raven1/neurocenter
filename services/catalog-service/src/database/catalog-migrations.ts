@@ -1,4 +1,6 @@
 import {AGENT_SCHEMA_SQL} from '../agents/agent-schema';
+import {CATALOG_REQUEST_SCHEMA_SQL} from '../catalog-requests/request.schema';
+import {CATALOG_REQUEST_SCHEMA_ASSERT_SQL} from '../catalog-requests/request.schema-verification';
 import {AGENT_SCHEMA_ASSERT_SQL} from '../agents/agent-schema-verification';
 import {INSTALLATION_MIGRATIONS} from '../devices/installation-migrations';
 import type {CatalogMigration} from './migrations';
@@ -12,4 +14,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     ...INSTALLATION_MIGRATIONS,
     {version:6,name:'catalog-schema-adoption',sql:CATALOG_FINALIZE_SQL+'\n'+CATALOG_SCHEMA_ASSERT_SQL},
     {version:7,name:'native-agents',sql:AGENT_SCHEMA_SQL+'\n'+AGENT_SCHEMA_ASSERT_SQL},
+    {version:8,name:'catalog-requests',sql:CATALOG_REQUEST_SCHEMA_SQL+'\n'+CATALOG_REQUEST_SCHEMA_ASSERT_SQL},
 ];
