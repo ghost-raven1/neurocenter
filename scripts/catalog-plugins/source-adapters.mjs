@@ -19,6 +19,7 @@ import runtimeSource from '../../services/shared/tool-runtime-source.cjs';
 import { downloadRuntimeAsset, inspectRuntimeSource, prepareRuntimeSource } from './runtime-source.mjs';
 import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
+import {assertPortableSourceResources} from './source-resource-validation.mjs';
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const exact = (value, keys) => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).every(key => keys.includes(key));
@@ -109,7 +110,9 @@ async function compileRuntimeEntry({ directory, workingDirectory, sourceEntry })
         await fs.rm(path.join(directory, 'entrypoint.mjs'));
     }
     for (const input of Object.keys(result.metafile.inputs)) {
-        if (!within(workingDirectory, path.resolve(workingDirectory, input))) { throw new Error('Импорт выходит за пределы исходников готового комплекта.'); }
+        const filename=path.resolve(workingDirectory,input);
+        if (!within(workingDirectory, filename)) { throw new Error('Импорт выходит за пределы исходников готового комплекта.'); }
+        if(/\.[cm]?[jt]sx?$/.test(input))await assertPortableSourceResources(await fs.readFile(filename,'utf8'),input);
     }
     return { entrypoint, upstream: { compiler: 'esbuild', version: esbuild.version } };
 }
@@ -135,8 +138,9 @@ async function prepareProject(recipe, { directory, recipeDirectory, target }, { 
         const metadata = source.files.find(file => file.path === 'package.json');
         if (metadata?.size > 1048576) { throw new Error('package.json превышает 1 МиБ.'); }
         const metadataBytes = metadata ? await fs.readFile(path.join(staging, 'package.json')) : undefined;
-        const dependencies = metadataBytes ? JSON.parse(metadataBytes.toString('utf8')).dependencies ?? {} : {};
-        if (!exact(dependencies, Object.keys(dependencies)) || Object.entries(dependencies).some(([name, version]) =>
+        const manifest = metadataBytes ? JSON.parse(metadataBytes.toString('utf8')) : {};
+        const dependencies = manifest.dependencies ?? {},optionalDependencies=manifest.optionalDependencies ?? {};
+        for(const group of [dependencies,optionalDependencies])if (!exact(group, Object.keys(group)) || Object.entries(group).some(([name, version]) =>
             !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name) || typeof version !== 'string'
             || !/^[~^]?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version))) throw new Error('Зависимости исходников должны задавать npm-пакеты с точной, ^ или ~ semver версией. Git, file и install hooks не используются.');
         const lockFile = source.files.find(file => file.path === 'package-lock.json');
@@ -146,11 +150,13 @@ async function prepareProject(recipe, { directory, recipeDirectory, target }, { 
             const resolved = new URL(entry.resolved);
             if (resolved.protocol !== 'https:' || resolved.hostname !== 'registry.npmjs.org' || resolved.username || resolved.password) throw new Error('Lock-файл должен ссылаться только на официальный npm registry.');
         }
-        if (Object.keys(dependencies).length) {
-            await installDependencies(staging, dependencies, target);
+        if (Object.keys(dependencies).length||Object.keys(optionalDependencies).length) {
+            await installDependencies(staging, dependencies, target,{optionalDependencies});
             // npm helper создаёт служебный package.json; компилятор должен видеть исходный module type/imports.
             if (metadataBytes) { await fs.writeFile(path.join(staging, 'package.json'), metadataBytes); }
-            await fs.cp(path.join(staging, 'node_modules'), path.join(directory, 'node_modules'), { recursive: true, errorOnExist: true, force: false });
+            const modules = path.join(staging, 'node_modules');
+            const installed = await fs.stat(modules).catch(error => { if(error.code==='ENOENT')return undefined;throw error; });
+            if(installed)await fs.cp(modules, path.join(directory, 'node_modules'), { recursive: true, errorOnExist: true, force: false });
         }
         const compiled = await compileRuntimeEntry({ directory, workingDirectory: staging, sourceEntry: recipe.source.entrypoint });
         await fs.writeFile(path.join(directory, 'package.json'), '{"private":true,"type":"module"}\n');

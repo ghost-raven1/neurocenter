@@ -35,6 +35,7 @@ function fixture(options = {}) {
         if (relative === 'package.json') {return Response.json(options.packageFile ?? {type: 'file', encoding: 'base64', content: Buffer.from(raw).toString('base64'), size: Buffer.byteLength(raw)});}
         if (relative === 'src') {return Response.json([{name: entryName, type: 'file', size: 100}]);}
         if (relative === 'src/' + entryName) {return Response.json({type: options.entryType ?? 'file', size: 100});}
+        if (options.files?.includes(relative)) {return Response.json({type:'file',size:100});}
         return Response.json({message: 'Not Found'}, {status: 404});
     };
     return {fetch, requests};
@@ -118,6 +119,23 @@ test('Метаданные ветки закрепляются commit до чт�
         candidates: ['src/index.ts'], name: 'example-mcp', description: 'Поиск проекта', recommendedKind: 'mcp', requiresEntrypointChoice: false, runnableKinds: ['mcp'], warnings: []});
     assert.equal(f.requests[1].url.pathname, '/repos/owner/repo/commits/main');
     assert.ok(f.requests.slice(2).every(request => request.url.searchParams.get('ref') === commit));
+});
+
+test('OpenCode plugin export is selected instead of a separate installation CLI',async()=>{
+    const f=fixture({package:{name:'plugin-with-cli',bin:'bin/install.js',main:'dist/legacy.js',
+        exports:{'.':{types:'./dist/index.d.ts',node:{import:'./dist/index.js',require:'./dist/index.cjs'}}},
+        devDependencies:{'@opencode-ai/plugin':'1.0.0'}},files:['dist/index.js','dist/index.cjs','dist/legacy.js','bin/install.js']});
+    const result=await resolveRepositorySource({url:'https://github.com/owner/repo'},{fetch:f.fetch});
+    assert.equal(result.entrypoint,'dist/index.js');assert.deepEqual(result.candidates,['dist/index.js']);
+    assert.equal(result.requiresEntrypointChoice,false);assert.equal(result.recommendedKind,'plugin');assert.deepEqual(result.runnableKinds,['plugin']);
+});
+
+test('A source-only plugin repository falls back to src without choosing its installer CLI',async()=>{
+    const f=fixture({package:{name:'source-plugin',bin:'bin/install.js',exports:'./dist/index.js',
+        peerDependencies:{'@opencode-ai/plugin':'1.0.0'}},files:['bin/install.js']});
+    const result=await resolveRepositorySource({url:'https://github.com/owner/repo'},{fetch:f.fetch});
+    assert.equal(result.entrypoint,'src/index.ts');assert.deepEqual(result.candidates,['src/index.ts']);
+    assert.equal(result.recommendedKind,'plugin');assert.deepEqual(result.runnableKinds,['plugin']);
 });
 
 for (const entryName of ['index.mts', 'server.cts']) test(`Метаданные репозитория находят src/${entryName} и исключают декларацию bin`, async () => {

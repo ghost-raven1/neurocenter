@@ -92,8 +92,12 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
             if (pending.length > 65536 && !pending.includes('\n')) {fail('Некорректный служебный вывод сборщика.'); return;}
             const lines = pending.split('\n'); pending = lines.pop() ?? '';
             for (const line of lines) {
-                let event: BuildProgress;
-                try {event = JSON.parse(line) as BuildProgress;} catch {continue;}
+                let event: BuildProgress | {type:'build-error';code?:unknown};
+                try {event = JSON.parse(line) as typeof event;} catch {continue;}
+                if(event?.type==='build-error'){
+                    if(event.code==='SOURCE_RESOURCE_UNSUPPORTED')reason||='Исходники читают соседний runtime-ресурс, который не переносится при сборке JS/TS. Выберите готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом с ресурсами.';
+                    continue;
+                }
                 if (!event || event.type !== 'build-progress' || !config.targets.includes(event.target) || event.total !== config.targets.length
                     || !Number.isInteger(event.completed) || event.completed < completed || event.completed > event.total) {continue;}
                 completed = event.completed;

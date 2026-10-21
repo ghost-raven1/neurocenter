@@ -258,10 +258,15 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     process.umask(0o077);
+    let progressOutput=false;
     Promise.resolve().then(async () => {
         const { progress, ...options } = parseBuildArguments(process.argv.slice(2));
+        progressOutput=progress;
         const result = await buildRecipe({ ...options, ...(progress ? { onProgress: event => process.stdout.write(JSON.stringify(event) + '\n') } : {}) });
         console.log(JSON.stringify(result, null, progress ? undefined : 2));
     })
-        .catch(error => { console.error(error instanceof Error ? error.message : 'Сборка не выполнена.'); process.exitCode = 1; });
+        .catch(error => {
+            if(progressOutput&&error?.code==='SOURCE_RESOURCE_UNSUPPORTED')process.stdout.write(JSON.stringify({type:'build-error',code:'SOURCE_RESOURCE_UNSUPPORTED'})+'\n');
+            console.error(error instanceof Error ? error.message : 'Сборка не выполнена.'); process.exitCode = 1;
+        });
 }

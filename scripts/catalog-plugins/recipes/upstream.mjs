@@ -75,11 +75,12 @@ export const TARGETS = Object.freeze({
 });
 
 /** npm проверяет integrity всех транзитивных пакетов; установки из сети на клиенте нет. */
-export async function installDependencies(directory, dependencies, target) {
+export async function installDependencies(directory, dependencies, target, {optionalDependencies={}}={}) {
     const platform = TARGETS[target];
     if (!platform) throw new Error('Неизвестная платформа: ' + target);
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'neurocenter-prepared-runtime', version: '1.0.0', private: true, type: 'module', dependencies }, null, 2) + '\n');
+    await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'neurocenter-prepared-runtime', version: '1.0.0', private: true, type: 'module', dependencies,
+        ...(Object.keys(optionalDependencies).length?{optionalDependencies}:{}) }, null, 2) + '\n');
     await fs.mkdir(cache, { recursive: true });
     const home = await fs.mkdtemp(path.join(cache, 'npm-home-'));
     const userconfig = path.join(home, 'npmrc');
@@ -87,7 +88,7 @@ export async function installDependencies(directory, dependencies, target) {
     await Promise.all([fs.writeFile(userconfig, ''), fs.writeFile(globalconfig, '')]);
     try {
         const locked = await fs.stat(path.join(directory, 'package-lock.json')).then(() => true).catch(error => { if (error.code === 'ENOENT') return false; throw error; });
-        const args = [locked ? 'ci' : 'install', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--no-bin-links', '--no-audit', '--no-fund',
+        const args = [locked ? 'ci' : 'install', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--include=optional', '--no-bin-links', '--no-audit', '--no-fund',
             '--registry=https://registry.npmjs.org', '--cache', path.join(cache, 'npm'), '--userconfig', userconfig, '--globalconfig', globalconfig,
             '--os', platform.os, '--cpu', platform.cpu, ...(platform.libc ? ['--libc', platform.libc] : [])];
         const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));

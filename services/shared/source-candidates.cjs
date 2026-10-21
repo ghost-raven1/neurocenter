@@ -18,6 +18,9 @@ function packageEntrypoints(metadata){
  const executable=[...new Set(bins.map(clean).filter(Boolean))];
  const dependencies={...(object(metadata.dependencies)?metadata.dependencies:{}),...(object(metadata.peerDependencies)?metadata.peerDependencies:{}),...(object(metadata.devDependencies)?metadata.devDependencies:{})};
  const kind=dependencies['@opencode-ai/plugin']?'plugin':dependencies['@modelcontextprotocol/sdk']?'mcp':undefined;
+ // A plugin can ship an installer CLI; OpenCode loads its package export instead of bin.
+ const pluginEntry=kind==='plugin'&&(rootExport(metadata.exports)||clean(metadata.module)||clean(metadata.main)||clean(metadata.source));
+ if(pluginEntry)return {candidates:[pluginEntry],runnableKinds:['plugin'],recommendedKind:'plugin'};
  const fallback=[clean(metadata.module),clean(metadata.main),rootExport(metadata.exports),clean(metadata.source)].filter(Boolean);
  const candidates=executable.length?executable:[...new Set(fallback)].slice(0,1);
  return {candidates,runnableKinds:executable.length?['mcp']:kind?[kind]:[],...(kind?{recommendedKind:kind}:{})};

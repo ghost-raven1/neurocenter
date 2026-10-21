@@ -194,12 +194,13 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
  if(!source.entrypoint&&listings.has('SKILL.md'))return skillResult();
  const packageEntry=listings.get('package.json');
  const metadata=packageEntry?decodePackage(await githubJson(fetcher,contentsPath('package.json'))):{};
+ const detected=packageEntrypoints(metadata),pluginExport=detected.recommendedKind==='plugin'&&detected.runnableKinds.includes('plugin');
  const candidates=[];
  const add=value=>{if(typeof value!=='string')return;try{const entry=relativePath(value.replace(/^\.\//,''),'Файл запуска');if(isSourceEntrypoint(entry)&&!candidates.includes(entry))candidates.push(entry);}catch{}};
- const bins=(typeof metadata.bin==='string'?[metadata.bin]:object(metadata.bin)?Object.values(metadata.bin):[]).filter(value=>typeof value==='string'&&isSourceEntrypoint(value));
- for(const value of bins.length?bins:[metadata.main,metadata.module,metadata.source])add(value);
+ const bins=(pluginExport?[]:typeof metadata.bin==='string'?[metadata.bin]:object(metadata.bin)?Object.values(metadata.bin):[]).filter(value=>typeof value==='string'&&isSourceEntrypoint(value));
+ for(const value of pluginExport?detected.candidates:bins.length?bins:[metadata.main,metadata.module,metadata.source])add(value);
  const exports=object(metadata.exports)&&metadata.exports['.']!==undefined?metadata.exports['.']:metadata.exports;
- if(!bins.length&&typeof exports==='string')add(exports);else if(!bins.length&&object(exports))for(const key of ['import','default','node','require']){const value=exports[key];if(typeof value==='string')add(value);else if(object(value))for(const nested of ['import','default','require'])add(value[nested]);}
+ if(!pluginExport&&!bins.length&&typeof exports==='string')add(exports);else if(!pluginExport&&!bins.length&&object(exports))for(const key of ['import','default','node','require']){const value=exports[key];if(typeof value==='string')add(value);else if(object(value))for(const nested of ['import','default','require'])add(value[nested]);}
  for(const baseName of ['index','main','plugin','server'])for(const suffix of SOURCE_EXTENSIONS){if(!bins.length&&listings.get(baseName+'.'+suffix)?.type==='file')add(baseName+'.'+suffix);}
  const src=listings.get('src');
  if(src?.type==='dir'){
@@ -216,13 +217,15 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
   if(object(file)&&file.type==='file'&&Number.isSafeInteger(file.size)&&file.size>0&&file.size<=1048576)verified.push(candidate);
   else if(source.entrypoint===candidate)throw new Error('Файл запуска не найден в закреплённом commit или является ссылкой.');
  }
- const entrypoint=source.entrypoint??(verified.length===1?verified[0]:'');
+ // Published exports win when present; source-only repositories may still need src/index.ts.
+ const preferred=pluginExport&&!source.entrypoint?verified.filter(candidate=>detected.candidates.includes(candidate)):[];
+ const selected=preferred.length?preferred:verified;
+ const entrypoint=source.entrypoint??(selected.length===1?selected[0]:'');
  if(!verified.length){
   if(typeof inspectRepository==='function')return {...result('',[],metadata),...await inspectRepository({type:'repository',url:source.url,commit,...(source.subdirectory?{subdirectory:source.subdirectory}:{})})};
   throw new Error('В репозитории не найден JS/TS-файл запуска. Уточните папку проекта и entrypoint.');
  }
- const detected=packageEntrypoints(metadata);
- return {...result(entrypoint,verified,metadata),requiresEntrypointChoice:verified.length>1&&!source.entrypoint,runnableKinds:detected.runnableKinds,warnings:detected.runnableKinds.length?[]:['Не найдены команда запуска MCP или признаки плагина OpenCode. Обычный библиотечный export не является MCP.']};
+ return {...result(entrypoint,selected,metadata),...(detected.recommendedKind?{recommendedKind:detected.recommendedKind}:{}),requiresEntrypointChoice:selected.length>1&&!source.entrypoint,runnableKinds:detected.runnableKinds,warnings:detected.runnableKinds.length?[]:['Не найдены команда запуска MCP или признаки плагина OpenCode. Обычный библиотечный export не является MCP.']};
 }
 
 module.exports={parseRepositoryUrl,validateRepositorySource,validateRepositoryManifest,normalizeRepositorySource:validateRepositorySource,resolveRepositorySource};

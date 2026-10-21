@@ -16,6 +16,20 @@ describe('Executable npm evidence',()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({name:'plugin',version:'1.0.0',dependencies:{'@opencode-ai/plugin':'1.0.0'},exports:{'.':{types:'./index.d.ts',node:{import:'./index.mjs',require:'./index.cjs'}}}})));
   expect(await resolveNpmSource('plugin')).toMatchObject({entrypoint:'index.mjs',candidates:['index.mjs'],runnableKinds:['plugin'],recommendedKind:'plugin'});
  });
+ it.each(['dependencies','peerDependencies','devDependencies'])('A plugin export wins over its installer CLI declared through %s',async dependencyField=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>Response.json({name:'plugin-with-cli',version:'1.0.0',
+   bin:{install:'bin/install.js',alias:'bin/install.js'},main:'dist/legacy.js',
+   exports:{'.':{types:'./dist/index.d.ts',import:'./dist/index.js'}},[dependencyField]:{'@opencode-ai/plugin':'1.0.0'}})));
+  expect(await resolveNpmSource('plugin-with-cli')).toMatchObject({entrypoint:'dist/index.js',candidates:['dist/index.js'],
+   runnableKinds:['plugin'],recommendedKind:'plugin',requiresEntrypointChoice:false});
+  await expect(resolveNpmSource('plugin-with-cli@1.0.0','bin/install.js')).rejects.toThrow('из списка');
+ });
+ it('The published opencode-see-image package selects its plugin export automatically',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({name:'opencode-see-image',version:'1.4.0',
+   main:'./dist/index.js',exports:{'.':'./dist/index.js'},dependencies:{'@opencode-ai/plugin':'^1.15.0','opencode-plugin-update-kit':'0.6.0'}})));
+  expect(await resolveNpmSource('opencode-see-image@1.4.0')).toMatchObject({entrypoint:'dist/index.js',
+   candidates:['dist/index.js'],runnableKinds:['plugin'],recommendedKind:'plugin',requiresEntrypointChoice:false});
+ });
  it('Prepared adapter has one explicit adapter entrypoint and accepts its exact submit',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>Response.json({name:'opencode-snip',version:'2.0.0',main:'index.js'})));
   expect(await resolveNpmSource('opencode-snip')).toMatchObject({entrypoint:'entrypoint.mjs',candidates:['entrypoint.mjs'],runnableKinds:['plugin'],requiresEntrypointChoice:false});
