@@ -26,7 +26,6 @@ import {
     ISkillDirectoryResult,
     IAiPlugin,
     IAiPluginCreate,
-    IAiPluginFile,
     IAiPluginUpdate,
     IAiPluginVersion,
     IBundlePackage,
@@ -94,7 +93,6 @@ export interface IBffApi {
     getStorage: () => Promise<IStorageSummary>;
     getBackup: () => Promise<IBackupStatus>;
     backupNow: () => Promise<void>;
-    restore: (checkpointId: string) => Promise<{ operationId: string }>;
     updateQuotas: (projectId: string, payload: IQuota) => Promise<IQuota>;
     updateRetention: (projectId: string, payload: { retention: number }) => Promise<{ retention: number }>;
     /* PACKAGES */
@@ -102,9 +100,7 @@ export interface IBffApi {
     getAiPlugin: (id: string) => Promise<IAiPlugin>;
     createAiPlugin: (body: IAiPluginCreate) => Promise<IAiPlugin>;
     updateAiPlugin: (id: string, body: IAiPluginUpdate) => Promise<IAiPlugin>;
-    getAiPluginFile: (id: string, filePath: string, version?: number) => Promise<IAiPluginFile>;
     listAiPluginVersions: (id: string) => Promise<IAiPluginVersion[]>;
-    activateAiPluginVersion: (id: string, version: number) => Promise<IAiPlugin>;
     getAiPluginPackage: (id: string, version?: number) => Promise<IBundlePackage>;
     deleteAiPlugin: (id: string) => Promise<{ ok: boolean; id: string }>;
     /* ACCESS */
@@ -155,7 +151,6 @@ const bffApi: IBffApi = {
     getStorage: async () => base.get<IStorageSummary>('/api/maintenance/storage').then(r => r.data),
     getBackup: async () => base.get<IBackupStatus>('/api/maintenance/backup').then(r => r.data),
     backupNow: async () => base.post('/api/maintenance/backup').then(() => undefined),
-    restore: async (checkpointId) => base.post<{ operationId: string }>('/api/maintenance/restore', { checkpointId }).then(r => r.data),
     updateQuotas: async (projectId, payload) => base.patch<IQuota>(`/api/projects/${projectId}/quotas`, payload).then(r => r.data),
     updateRetention: async (projectId, payload) => base.patch<{ retention: number }>(`/api/projects/${projectId}/retention`, payload).then(r => r.data),
     listAiPlugins: async (params) => base
@@ -164,14 +159,8 @@ const bffApi: IBffApi = {
     getAiPlugin: async (id) => base.get<IAiPlugin>(`/api/ai-plugins/${encodeURIComponent(id)}`).then(r => r.data),
     createAiPlugin: async (body) => base.post<IAiPlugin>('/api/ai-plugins', body).then(r => r.data),
     updateAiPlugin: async (id, body) => base.patch<IAiPlugin>(`/api/ai-plugins/${encodeURIComponent(id)}`, body).then(r => r.data),
-    getAiPluginFile: async (id, filePath, version) => base
-        .get<IAiPluginFile>(`/api/ai-plugins/${encodeURIComponent(id)}/files`, { params: { path: filePath, version } })
-        .then(r => r.data),
     listAiPluginVersions: async (id) => base
         .get<IAiPluginVersion[]>(`/api/ai-plugins/${encodeURIComponent(id)}/versions`)
-        .then(r => r.data),
-    activateAiPluginVersion: async (id, version) => base
-        .post<IAiPlugin>(`/api/ai-plugins/${encodeURIComponent(id)}/versions/${version}/activate`)
         .then(r => r.data),
     getAiPluginPackage: async (id, version) => base
         .get<IBundlePackage>(`/api/ai-plugins/${encodeURIComponent(id)}/package`, { params: { version } })

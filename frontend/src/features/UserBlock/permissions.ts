@@ -69,4 +69,3 @@ export const ACCESS_ROUTE = 'access';
 export const RAG_ROUTE = 'rag';
 export const START_ROUTE = 'start';
 export const STORE_ROUTE = 'store';
-export const MCP_BUNDLES_ROUTE = 'mcp-bundles';

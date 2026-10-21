@@ -13,7 +13,6 @@ export const baseRoutes = {
     operations: '/operations',
     skills: '/skills',
     rag: '/rag',
-    mcpBundles: '/mcp-bundles',
     versions: '/versions',
     maintenance: '/maintenance',
     audit: '/audit',

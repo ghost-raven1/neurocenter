@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import base from '../src/core/api/base';
 import bffApi from '../src/core/api/bff';
+import {webRestoreApi} from '../src/modules/Maintenance/restore/api';
 
-vi.mock('../src/core/api/base', () => ({ default: { post: vi.fn() } }));
+vi.mock('../src/core/api/base', () => ({ default: { post: vi.fn(),get:vi.fn() } }));
 
 describe('Достоверные результаты операций', () => {
     beforeEach(() => { vi.resetAllMocks(); });
@@ -34,5 +35,15 @@ describe('Достоверные результаты операций', () => {
         vi.mocked(base.post).mockResolvedValue({data:{id:'demo'}});
         await bffApi.createProject({name:'demo',externalResourceId:''});
         expect(base.post).toHaveBeenCalledWith('/api/projects',{name:'demo',externalResourceId:''});
+    });
+    it('Чтение действующей истории инструмента сохраняет точные серверные версии',async()=>{
+        const versions=[{version:5,files:[]},{version:2,files:[]}];vi.mocked(base.get).mockResolvedValue({data:versions});
+        expect(await bffApi.listAiPluginVersions('tool/one')).toEqual(versions);
+        expect(base.get).toHaveBeenCalledWith('/api/ai-plugins/tool%2Fone/versions');expect(base.post).not.toHaveBeenCalled();
+    });
+    it('Восстановление использует сохранённое подтверждение нового feature API без старого checkpoint-only тела',async()=>{
+        const intent={kind:'restore' as const,input:{requestKey:crypto.randomUUID(),previewId:crypto.randomUUID(),digest:'a'.repeat(64),confirmation:'RESTORE nc-recovery-one'}},job={id:'confirmed',state:'queued'};
+        vi.mocked(base.post).mockResolvedValue({data:job});expect(await webRestoreApi.submit(intent)).toEqual(job);
+        expect(base.post).toHaveBeenCalledWith('/api/maintenance/restore',intent.input);
     });
 });
