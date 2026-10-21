@@ -15,8 +15,10 @@ import {SOURCE_ARCHIVE_SCHEMA_CONTRACT} from '../asset-sources/source-archive.sc
 import {assertSourceArchiveSchema} from '../asset-sources/source-archive.schema-verification';
 import {REMOTE_OPTIONS_SCHEMA_CONTRACT} from '../models/remote-options.schema-contract';
 import {assertRemoteOptionsSchema} from '../models/remote-options.schema-verification';
-export const CURRENT_CATALOG_SCHEMA_CONTRACT=[...CATALOG_SCHEMA_CONTRACT,...AGENT_SCHEMA_CONTRACT,...CATALOG_REQUEST_SCHEMA_CONTRACT,...BRIDGE_SOURCE_SCHEMA_CONTRACT,...LEARNING_SCHEMA_CONTRACT,...LEARNING_ANALYSIS_SCHEMA_CONTRACT,...SOURCE_ARCHIVE_SCHEMA_CONTRACT,...REMOTE_OPTIONS_SCHEMA_CONTRACT];
+import {CHAT_SCHEMA_CONTRACT} from '../model-chat/chat.schema-contract';
+import {assertChatSchema} from '../model-chat/chat.schema-verification';
+export const CURRENT_CATALOG_SCHEMA_CONTRACT=[...CATALOG_SCHEMA_CONTRACT,...AGENT_SCHEMA_CONTRACT,...CATALOG_REQUEST_SCHEMA_CONTRACT,...BRIDGE_SOURCE_SCHEMA_CONTRACT,...LEARNING_SCHEMA_CONTRACT,...LEARNING_ANALYSIS_SCHEMA_CONTRACT,...SOURCE_ARCHIVE_SCHEMA_CONTRACT,...REMOTE_OPTIONS_SCHEMA_CONTRACT,...CHAT_SCHEMA_CONTRACT];
 /** Runtime readiness checks every managed generation; historical migration assertions stay frozen. */
 export async function assertCurrentCatalogSchema(db:Pick<Pool,'query'>):Promise<void>{
- await assertCatalogSchema(db);await assertAgentSchema(db);await assertCatalogRequestSchema(db);await assertBridgeSourceSchema(db);await assertLearningSchema(db);await assertLearningAnalysisSchema(db);await assertSourceArchiveSchema(db);await assertRemoteOptionsSchema(db);
+ await assertCatalogSchema(db);await assertAgentSchema(db);await assertCatalogRequestSchema(db);await assertBridgeSourceSchema(db);await assertLearningSchema(db);await assertLearningAnalysisSchema(db);await assertSourceArchiveSchema(db);await assertRemoteOptionsSchema(db);await assertChatSchema(db);
 }

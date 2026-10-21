@@ -100,6 +100,29 @@ describe('Настоящий HTTP-транспорт удалённой моде
         await new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, connection, 'chat', { messages, options: {} });
         expect(received[0].body).toEqual({ model: model.model, messages, stream: false });
     });
+    it.each([
+        { usage: undefined, input: null, output: null, reported: false },
+        { usage: { prompt_tokens: 0, completion_tokens: 0 }, input: 0, output: 0, reported: true },
+        { usage: { prompt_tokens: 4 }, input: 4, output: null, reported: true },
+        { usage: { prompt_tokens: -1, completion_tokens: '7' }, input: null, output: null, reported: false },
+    ])('Сохраняет доступность usage без подмены отсутствующих счётчиков нулями %#', async ({ usage, input, output, reported }) => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model,
+            choices: [{ index: 0, finish_reason: 'stop', message: { content: 'OK' } }], ...(usage ? { usage } : {}) })); };
+        const result = await new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, connection, 'chat', { messages: [{ role: 'user', content: 'Привет' }] });
+        expect(result).toMatchObject({ prompt_eval_count: input, eval_count: output, usage_reported: reported });
+    });
+    it.each([
+        { counts: {}, reported: false },
+        { counts: { prompt_eval_count: 0, eval_count: 0 }, reported: true },
+        { counts: { eval_count: 7 }, reported: true },
+        { counts: { prompt_eval_count: '4', eval_count: -1 }, reported: false },
+    ])('Remote Ollama сообщает доступность usage без синтетических нулей %#', async ({ counts, reported }) => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model,
+            done: true, done_reason: 'stop', message: { content: 'OK' }, ...counts })); };
+        const result = await new RemoteModelClient().infer({ ...model, runtime: 'remote-ollama', capability: 'chat', dimension: null },
+            { ...connection, baseUrl: connection.baseUrl.replace('/v1', '') }, 'chat', { messages: [{ role: 'user', content: 'Привет' }] });
+        expect(result).toMatchObject({ ...counts, usage_reported: reported });
+    });
     it('Маппит Ollama defaults и contextWindow, отказывая OpenAI вместо тихого игнорирования', async () => {
         handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, done: true, done_reason: 'stop', message: { content: 'OK' } })); };
         const messages = [{ role: 'user', content: 'Привет' }], configured = { ...connection, options: { temperature: 0.2, topP: 0.8, maxOutputTokens: 4096, contextWindow: 65536 } };

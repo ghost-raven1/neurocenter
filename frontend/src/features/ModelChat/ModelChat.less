@@ -1,22 +1,42 @@
 .model-chat {
     max-width: calc(100vw - 24px);
     .ant-modal-title { padding-right: 24px; overflow-wrap: anywhere; }
-    .ant-modal-body { display: flex; flex-direction: column; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); padding: 20px 24px; }
-    &__scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; > .ant-typography { min-width: 0; overflow-wrap: anywhere; } > .ant-btn { flex-shrink: 0; } }
-    &__hint.ant-typography { margin: 8px 0 14px; font-size: 12px; }
-    &__notice { margin-bottom: 12px; }
-    &__history { min-height: 120px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; flex: 1; > .ant-empty { margin: 28px auto; } .ant-empty-image { height: 40px; font-size: 28px; color: @brand-primary; } }
-    &__turn { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-    &__message { min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #e2e8f0; > .ant-typography { display: block; margin-bottom: 5px; font-size: 12px; color: #617387; } &_user { margin-left: 32px; background: @brand-tint; } &_assistant { margin-right: 32px; background: #fff; } }
+    .ant-modal-body { padding: 0; }
+    &__title { display: flex; flex-direction: column; gap: 3px; > .ant-typography { font-size: 12px; font-weight: 400; } }
+    &__layout { display: flex; height: min(820px, calc(100vh - 145px)); height: min(820px, calc(100dvh - 145px)); min-height: 320px; }
+    &__sidebar { width: 250px; flex-shrink: 0; min-height: 0; background: #f6f8fb; border-right: 1px solid #e2e8f0; }
+    &__conversations { padding: 18px 14px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
+    &__list-heading { display: flex; justify-content: space-between; align-items: center; }
+    &__conversation-items { overflow-y: auto; flex: 1; min-height: 0; }
+    &__conversation { display: flex; flex-direction: column; gap: 4px; width: 100%; margin: 0 0 6px; padding: 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #263c52; text-align: left; cursor: pointer; > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; } > time { font-size: 11px; color: #617387; } &:hover { background: #eaf0f7; } &:focus-visible { outline: 2px solid @brand-primary; outline-offset: -2px; } &_selected { background: #e4ecf5; border-color: #c8d7e7; } &:disabled { cursor: default; opacity: .65; } }
+    &__privacy.ant-typography { font-size: 11px; line-height: 1.5; }
+    &__main { display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 18px 22px; overflow-y: auto; }
+    &__scope { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding-bottom: 12px; flex-shrink: 0; }
+    &__dialog-title { min-width: 0; display: flex; flex-direction: column; gap: 3px; > .ant-typography { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } > .ant-typography-secondary { font-size: 11px; } }
+    &__mobile-menu.ant-btn, &__mobile-list-close.ant-btn { display: none; }
+    &__notice { margin-bottom: 10px; flex-shrink: 0; }
+    &__loading { padding: 40px; flex: 1; text-align: center; }
+    &__history { min-height: 90px; overflow-y: auto; overscroll-behavior: contain; padding-right: 5px; flex: 1; > .ant-empty { margin: 28px auto; } .ant-empty-image { height: 40px; font-size: 28px; color: @brand-primary; } }
+    &__turn { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    &__message { min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #e2e8f0; > .ant-typography { display: block; margin-bottom: 5px; font-size: 12px; color: #617387; } &_user { margin-left: 30px; background: @brand-tint; } &_assistant { margin-right: 30px; background: #fff; } }
+    &__message-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; > .ant-typography { font-size: 12px; color: #617387; } .ant-btn { font-size: 11px; } }
+    &__message-files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; .ant-btn { max-width: 100%; padding: 0; overflow: hidden; text-overflow: ellipsis; } }
     &__prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
     &__markdown { overflow-wrap: anywhere; line-height: 1.65; > :last-child { margin-bottom: 0; } pre { max-width: 100%; overflow-x: auto; padding: 12px; border-radius: 6px; background: #f4f6f9; } code { white-space: pre-wrap; overflow-wrap: anywhere; } pre code { white-space: pre; overflow-wrap: normal; } h1,h2,h3,h4,h5,h6 { font-size: 16px; margin: 14px 0 8px; } blockquote { margin-left: 0; padding-left: 12px; border-left: 3px solid #ccd9e5; } table { border-collapse: collapse; } td,th { padding: 6px 10px; border: 1px solid #dce5ed; } }
     &__table { max-width: 100%; overflow-x: auto; }
     &__pending { display: flex; align-items: center; gap: 8px; color: #617387; }
     &__retry { margin-top: 10px; }
-    &__composer { flex-shrink: 0; border-top: 1px solid #edf1f5; padding-top: 14px; }
-    &__label { display: block; margin-bottom: 6px; font-weight: 500; }
-    &__composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; > .ant-typography { font-size: 12px; } > .ant-btn { flex-shrink: 0; } }
+    &__context { flex-shrink: 0; padding: 9px 0; border-top: 1px solid #edf1f5; font-size: 11px; .ant-typography { font-size: 11px; } .ant-progress { display: block; line-height: 1; margin: 4px 0; } }
+    &__context-line { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    &__context-description { display: block; font-size: 11px; line-height: 1.5; }
+    &__attachments { list-style: none; padding: 0; margin: 0; max-height: 135px; overflow-y: auto; flex-shrink: 0; > li { display: flex; align-items: flex-start; gap: 8px; padding: 7px 9px; margin-bottom: 6px; background: #f6f8fb; border: 1px solid #e2e8f0; border-radius: 7px; > .anticon { margin-top: 5px; } } }
+    &__attachment-text { min-width: 0; flex: 1; display: flex; flex-direction: column; > .ant-btn { text-align: left; padding: 0; height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; } > .ant-typography { font-size: 11px; overflow-wrap: anywhere; } }
+    &__composer { flex-shrink: 0; border-top: 1px solid #edf1f5; padding-top: 9px; }
+    &__file-picker { margin-bottom: 8px; > summary { cursor: pointer; color: @brand-primary; font-size: 12px; width: fit-content; } .file-drop-zone { margin-top: 8px; padding: 10px; gap: 5px; min-height: auto; font-size: 12px; } .file-drop-zone__icon { display: none; } .file-drop-zone .ant-typography { font-size: 11px; } }
+    &__label { display: block; margin-bottom: 6px; font-weight: 500; font-size: 12px; }
+    &__composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; > .ant-typography { font-size: 11px; } > .ant-btn { flex-shrink: 0; } }
 }
-@media (max-width: 575px) {
-    .model-chat { .ant-modal-body { padding: 16px; max-height: calc(100vh - 130px); max-height: calc(100dvh - 130px); } &__scope { align-items: flex-start; flex-wrap: wrap; } &__message { padding: 10px; &_user { margin-left: 12px; } &_assistant { margin-right: 12px; } } &__composer-actions { align-items: flex-end; > .ant-typography { max-width: 160px; } } }
+.model-chat-preview { max-width: calc(100vw - 24px); .ant-modal-title { padding-right: 20px; overflow-wrap: anywhere; } pre { max-height: 60vh; overflow: auto; padding: 12px; border: 1px solid #e2e8f0; background: #f6f8fb; white-space: pre-wrap; overflow-wrap: anywhere; } }
+@media (max-width: 760px) {
+    .model-chat { top: 8px; padding-bottom: 8px; .ant-modal-header { padding: 14px 16px; } &__layout { height: calc(100vh - 110px); height: calc(100dvh - 110px); min-height: 320px; position: relative; } &__sidebar { display: none; } &__main { padding: 12px; } &__mobile-menu.ant-btn { display: inline-flex; align-items: center; font-size: 11px; padding: 3px 6px; } &__scope { gap: 4px; } &__dialog-title { max-width: calc(100% - 185px); } &__message { padding: 10px; &_user { margin-left: 12px; } &_assistant { margin-right: 12px; } } &__composer-actions { align-items: flex-end; > .ant-typography { max-width: 150px; } } &__layout_list-open { flex-direction: column; .model-chat__sidebar { display: block; width: 100%; flex: 1; min-height: 0; } .model-chat__main { display: none; } .model-chat__mobile-list-close { display: block; margin: 10px; } } &__attachments { max-height: 105px; } }
 }

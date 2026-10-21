@@ -137,6 +137,16 @@ describe('Проверка и хостинг модели',()=>{
         const context=fixture({'/api/embed':()=>json({model:alias,embeddings:[[1,2]]})});
         await expect(context.client.infer(model,'embed',{input:['a','b']})).rejects.toThrow(/некорректные векторы/);
     });
+    it.each([
+        {usage:{},reported:false},
+        {usage:{prompt_eval_count:0,eval_count:0},reported:true},
+        {usage:{prompt_eval_count:9},reported:true},
+        {usage:{prompt_eval_count:'9',eval_count:-1},reported:false},
+    ])('inference отличает фактические счётчики токенов от их отсутствия %#',async({usage,reported})=>{
+        const context=fixture({'/api/chat':()=>json({model:alias,done:true,done_reason:'stop',message:{content:'OK'},...usage})});
+        const result=await context.client.infer({...model,capability:'chat',dimension:null},'chat',{messages:[{role:'user',content:'Привет'}]});
+        expect(result).toMatchObject({model:model.model,usage_reported:reported,...usage});
+    });
 });
 
 describe('Локальный runtime использует только уже установленные ассеты',()=>{

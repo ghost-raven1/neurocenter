@@ -1,16 +1,5 @@
 import type { ICatalogModel } from '../ModelCatalog/types';
-import type { IModelChatAnswer, IModelChatMessage, IModelChatTurn } from './types';
-
-export const MODEL_CHAT_MAX_MESSAGES = 40;
-export const MODEL_CHAT_MAX_MESSAGE_BYTES = 128 * 1024;
-const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
-const requestTooLarge = (messages: IModelChatMessage[]): boolean => bytes(JSON.stringify({ messages, stream: false })) > 8 * 1024 * 1024;
-
-/** Metadata edits keep the conversation; changing model semantics requires an explicit new dialogue. */
-export function modelChatIdentity(model: ICatalogModel): string {
-    return JSON.stringify([model.id, model.runtime, model.model, model.modelVersion, model.capability, model.modelPin,
-        model.runtime === 'ollama' ? model.manifestSha256 : model.verificationSha256]);
-}
+import type { IModelChatConversation, IModelChatDetail } from './types';
 
 export function modelChatUnavailableReason(model: ICatalogModel, canUse: boolean, projectSelected: boolean, assigned: boolean): string {
     if (model.capability === 'embedding') return 'Embedding-модель предназначена для поиска, а не для диалога.';
@@ -21,43 +10,18 @@ export function modelChatUnavailableReason(model: ICatalogModel, canUse: boolean
     if (model.runtime === 'ollama' && !model.manifestSha256) return 'Сначала запустите или проверьте модель на сервере.';
     return '';
 }
-
-/** Every successful turn is retained; context is never silently truncated. */
-export function modelChatMessages(turns: IModelChatTurn[]): IModelChatMessage[] {
-    return turns.flatMap(turn => turn.status === 'done' && turn.answer
-        ? [{ role: 'user' as const, content: turn.prompt }, { role: 'assistant' as const, content: turn.answer.content }]
-        : [{ role: 'user' as const, content: turn.prompt }]);
-}
-
-export function modelChatPromptError(prompt: string, previous: IModelChatTurn[]): string {
-    if (!prompt.trim()) return 'Введите сообщение.';
-    if (bytes(prompt) > MODEL_CHAT_MAX_MESSAGE_BYTES) return 'Сообщение слишком большое: максимум 128 КиБ текста.';
-    if (previous.some(turn => turn.status !== 'done')) return 'Повторите или измените последнее сообщение.';
-    const contextError = modelChatContextError(previous);
-    if (contextError) return contextError;
-    return requestTooLarge([...modelChatMessages(previous), { role: 'user', content: prompt }]) ? 'Диалог превышает предел запроса 8 МиБ. Начните новый диалог.' : '';
-}
-
-export function modelChatContextError(previous: IModelChatTurn[]): string {
-    const messages = modelChatMessages(previous);
-    if (messages.length + 1 > MODEL_CHAT_MAX_MESSAGES) return 'Достигнут предел 40 сообщений. Начните новый диалог.';
-    if (messages.some(message => bytes(message.content) > MODEL_CHAT_MAX_MESSAGE_BYTES)) return 'Ответ модели слишком большой для следующего запроса. Начните новый диалог.';
-    if (requestTooLarge(messages)) return 'Диалог превышает предел запроса 8 МиБ. Начните новый диалог.';
+export function modelChatPromptError(prompt: string, attachmentIds: string[], detail: IModelChatDetail | null): string {
+    if (!prompt.trim() && !attachmentIds.length) return 'Введите сообщение или прикрепите документ.';
+    if (new TextEncoder().encode(prompt).byteLength > 128 * 1024) return 'Сообщение слишком большое: максимум 128 КиБ текста.';
+    if (detail?.turns.some(turn => turn.status !== 'done')) return 'Повторите или измените последнее сообщение.';
     return '';
 }
-
-/** Provider content is data: accept only a complete, bounded assistant text response. */
-export function modelChatAnswer(value: unknown, expectedModel: string): IModelChatAnswer {
-    const object = (input: unknown): input is Record<string, unknown> => !!input && typeof input === 'object' && !Array.isArray(input);
-    if (!object(value) || value.model !== expectedModel || !Array.isArray(value.choices) || value.choices.length !== 1) throw new Error('Модель вернула некорректный ответ. Повторите запрос.');
-    const choice: unknown = value.choices[0];
-    if (!object(choice) || choice.index !== 0 || !object(choice.message) || choice.message.role !== 'assistant'
-        || typeof choice.message.content !== 'string' || !choice.message.content.trim() || bytes(choice.message.content) > 8 * 1024 * 1024
-        || !['stop', 'length'].includes(String(choice.finish_reason))) throw new Error('Модель вернула некорректный ответ. Повторите запрос.');
-    return { content: choice.message.content, finishReason: choice.finish_reason as IModelChatAnswer['finishReason'] };
+export function sortedModelChats(items: IModelChatConversation[], selected?: IModelChatConversation): IModelChatConversation[] {
+    const values = new Map(items.map(value => [value.id, value]));
+    if (selected) values.set(selected.id, selected);
+    return [...values.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
 }
-
-/** Only ordinary external links can be opened; model images never make network requests. */
+/** Rendered model output cannot make automatic image requests or open executable URL schemes. */
 export function modelChatUrl(value: string): string | undefined {
     try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : undefined; }
     catch { return undefined; }

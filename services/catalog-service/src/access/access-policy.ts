@@ -43,6 +43,16 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
     if(route==='/api/agents'){return read||main&&request.method.toUpperCase()==='POST';}
     if(/^\/api\/agents\/agent-[a-z0-9][a-z0-9-]{0,120}$/.test(route)){return read||main&&request.method.toUpperCase()==='PATCH';}
+    if (route === '/api/model-chats' || route.startsWith('/api/model-chats/')) {
+        if (!['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole)) return false;
+        const method = request.method.toUpperCase(), id = '[a-f0-9-]{36}', root = '/api/model-chats';
+        // The executor additionally checks personal ownership and the current model/project assignment.
+        if (route === root) return ['GET', 'HEAD', 'POST'].includes(method);
+        if (new RegExp(`^${root}/${id}$`).test(route)) return ['GET', 'HEAD', 'PATCH', 'DELETE'].includes(method);
+        if (new RegExp(`^${root}/${id}/attachments/${id}$`).test(route)) return ['GET', 'HEAD', 'DELETE'].includes(method);
+        if (new RegExp(`^${root}/${id}/turns/${id}$`).test(route)) return method === 'DELETE';
+        return method === 'POST' && new RegExp(`^${root}/${id}/(?:attachments|context-preview|turns(?:/${id}/(?:retry|cancel))?)$`).test(route);
+    }
     if (route === '/api/models') { return read || main; }
     const model = /^\/api\/models\/[^/]+(?:\/(.*))?$/.exec(route);
     if (model) {

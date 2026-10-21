@@ -133,13 +133,29 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 201);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 246);
+    assert.equal(Object.keys(actual.paths).length, 210);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 259);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
     assert.equal(actual.paths['/api/feature-flags'].get['x-neurocenter-service'], 'feature-flags-service');
+});
+
+test('Personal chat contracts expose bounded document inputs and CAS only to browser sessions',()=>{
+    const base='/api/model-chats',chat=base+'/{id}';
+    const expected={'':['get','post'],'/{id}':['delete','get','patch'],'/{id}/attachments':['post'],'/{id}/attachments/{attachmentId}':['delete','get'],
+        '/{id}/context-preview':['post'],'/{id}/turns':['post'],'/{id}/turns/{turnId}':['delete'],'/{id}/turns/{turnId}/retry':['post'],'/{id}/turns/{turnId}/cancel':['post']};
+    for(const [suffix,methods] of Object.entries(expected)){
+        assert.deepEqual(Object.keys(actual.paths[base+suffix]).sort(),methods);
+        for(const operation of Object.values(actual.paths[base+suffix]))assert.deepEqual(operation.security,[{sessionCookie:[]}]);
+    }
+    const upload=actual.paths[chat+'/attachments'].post.requestBody.content['application/json'].schema;
+    assert.deepEqual([...upload.required].sort(),['contentBase64','name','requestId']);assert.equal(upload.properties.contentBase64.type,'string');
+    const send=actual.paths[chat+'/turns'].post.requestBody.content['application/json'].schema;
+    assert.ok(send.required.includes('expectedRevision'));assert.ok(send.required.includes('expectedModelPin'));assert.ok(send.required.includes('requestId'));
+    assert.equal(send.properties.attachmentIds.type,'array');
+    for(const operation of Object.values(actual.paths[chat]))assert.equal(operation.parameters.some(parameter=>/^x-(?:bridge|neurocenter-internal)/i.test(parameter.name)),false);
 });
 
 test('Learning has the audited browser surface and only four device-bound channels', () => {

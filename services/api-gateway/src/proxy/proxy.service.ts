@@ -80,6 +80,7 @@ export class ProxyService {
               : this.catalogUrl;
         const snapshotPublication=snapshotPublicationRoute(method,path);
         const canonicalPath=canonicalAccessRoute(path);
+        if (/^\/api\/model-chats(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
         if(learningRoute)res.setHeader('Cache-Control','no-store');
         if(auth.deviceId&&(canonicalPath===undefined||learningRoute)){
@@ -157,7 +158,7 @@ export class ProxyService {
             // Express send(null) means no body; an explicit JSON null is a valid empty selection.
             if(body===null&&typeof contentType==='string'&&/^application\/(?:[a-z0-9.+_-]+\+)?json(?:\s*;|$)/i.test(contentType))res.json(null);
             else res.send(body);
-            if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)&&!/^\/api\/models\/[^/]+\/ollama\//.test(path)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
+            if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)&&!/^\/api\/(?:models\/[^/]+\/ollama\/|model-chats(?:\/|$))/.test(path)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
         } catch (error) {
             if(!inferenceOpen())return;
             // eslint-disable-next-line no-console

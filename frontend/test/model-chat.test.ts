@@ -1,100 +1,72 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { ICatalogModel } from '../src/features/ModelCatalog/types';
-import type { IModelChatTurn } from '../src/features/ModelChat/types';
-import { modelChatAnswer, modelChatContextError, modelChatIdentity, modelChatMessages, modelChatPromptError, modelChatUnavailableReason, modelChatUrl } from '../src/features/ModelChat/model';
-import { sendModelChat } from '../src/features/ModelChat/api';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {modelChatPromptError, modelChatUnavailableReason, modelChatUrl, sortedModelChats} from '../src/features/ModelChat/model';
+import {chatFileError, chatFileSize} from '../src/features/ModelChat/files';
+import {modelChatApi} from '../src/features/ModelChat/api';
 import api from '../src/core/api/base';
+import {detail, model, turn} from './model-chat-fixtures';
 
-vi.mock('../src/core/api/base', () => ({ default: { post: vi.fn() } }));
-const model: ICatalogModel = { id: 'model/chat', name: 'Chat', description: '', runtime: 'remote-openai', model: 'upstream-model', modelVersion: '1', capability: 'chat', dimension: null, manifestSha256: null, verificationSha256: 'a'.repeat(64), modelPin: 'c'.repeat(64), source: 'custom', revision: 1, createdAt: '', updatedAt: '' };
-const completed = (id = 1): IModelChatTurn => ({ id, prompt: 'Вопрос', status: 'done', answer: { content: 'Ответ', finishReason: 'stop' } });
-const response = (content = 'Ответ', finish_reason = 'stop') => ({ model: model.model, choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason }] });
+vi.mock('../src/core/api/base', () => ({default: {get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn()}}));
+beforeEach(() => vi.clearAllMocks());
 
-describe('Право на текстовый чат и идентичность модели', () => {
-    it('Разрешает рабочую роль в назначенном проекте и main в общем каталоге', () => {
+describe('Права, модель и сохранённый контекст', () => {
+    it('Разрешает чат только рабочей роли с назначенной проверенной моделью', () => {
         expect(modelChatUnavailableReason(model, true, true, true)).toBe('');
-        expect(modelChatUnavailableReason(model, true, false, false)).toBe('');
         expect(modelChatUnavailableReason(model, false, true, true)).toContain('рабочая роль');
         expect(modelChatUnavailableReason(model, true, true, false)).toContain('добавьте модель');
-        expect(modelChatUnavailableReason(model, false, false, false)).toContain('Выберите проект');
+        expect(modelChatUnavailableReason({...model, capability: 'embedding'}, true, true, true)).toContain('поиска');
+        expect(modelChatUnavailableReason({...model, verificationSha256: null}, true, false, false)).toContain('проверьте подключение');
+        expect(modelChatUnavailableReason({...model, archivedAt: 'now'}, true, true, true)).toBe('');
+        expect(modelChatUnavailableReason({...model, archivedAt: 'now'}, true, false, false)).toContain('убрана');
     });
-    it('Сохраняет назначенную архивную модель и не предлагает чат embedding или непроверенной модели', () => {
-        expect(modelChatUnavailableReason({ ...model, archivedAt: '2026-10-21' }, true, true, true)).toBe('');
-        expect(modelChatUnavailableReason({ ...model, archivedAt: '2026-10-21' }, true, false, false)).toContain('убрана');
-        expect(modelChatUnavailableReason({ ...model, capability: 'embedding' }, true, true, true)).toContain('поиска');
-        expect(modelChatUnavailableReason({ ...model, verificationSha256: null }, true, false, false)).toContain('проверьте подключение');
-        expect(modelChatUnavailableReason({ ...model, runtime: 'ollama' }, true, true, true)).toContain('на сервере');
-        expect(modelChatUnavailableReason({ ...model, runtime: 'ollama', manifestSha256: 'b'.repeat(64) }, true, true, true)).toBe('');
-        expect(modelChatUnavailableReason({ ...model, capability: 'vision' }, true, true, true)).toBe('');
+    it('Разрешает документ без текста; отвергает пустой ввод, незавершённый хвост и превышение UTF8', () => {
+        expect(modelChatPromptError('', ['attachment-1'], detail())).toBe('');
+        expect(modelChatPromptError(' \n ', [], null)).toContain('прикрепите');
+        expect(modelChatPromptError('я'.repeat(65536), [], detail())).toBe('');
+        expect(modelChatPromptError('я'.repeat(65537), [], detail())).toContain('128 КиБ');
+        expect(modelChatPromptError('Ещё', [], detail({turns: [turn({status: 'failed'})]}))).toContain('последнее');
     });
-    it('Имя и описание не сбрасывают контекст, протокол, версия и проверенный pin меняют идентичность', () => {
-        const identity = modelChatIdentity(model);
-        expect(modelChatIdentity({ ...model, revision: 2, name: 'Переименована', description: 'Описание' })).toBe(identity);
-        for (const patch of [{ model: 'other' }, { runtime: 'remote-ollama' as const }, { modelVersion: '2' }, { verificationSha256: 'b'.repeat(64) }, { modelPin: 'd'.repeat(64) }, { capability: 'vision' as const }])
-            expect(modelChatIdentity({ ...model, ...patch })).not.toBe(identity);
-    });
-});
-
-describe('Полная история и ограничения контекста', () => {
-    it('Передаёт каждый завершённый обмен и ровно одно ожидающее сообщение без метаданных', () => {
-        expect(modelChatMessages([completed(), { id: 2, prompt: 'Дальше', status: 'pending' }])).toEqual([
-            { role: 'user', content: 'Вопрос' }, { role: 'assistant', content: 'Ответ' }, { role: 'user', content: 'Дальше' },
-        ]);
-    });
-    it('Не усекает контекст у предела 40 сообщений, не считает failed ответом', () => {
-        const nineteen = Array.from({ length: 19 }, (_, id) => completed(id));
-        expect(modelChatPromptError('Новый', nineteen)).toBe('');
-        expect(modelChatPromptError('Новый', [...nineteen, completed(20)])).toContain('40 сообщений');
-        expect(modelChatPromptError('Новый', [{ id: 1, prompt: 'Не получился', status: 'failed' }])).toContain('последнее сообщение');
-    });
-    it('Проверяет UTF-8 байты, не изменяя пробелы и отступы содержимого', () => {
-        expect(modelChatPromptError(' \n\t ', [])).toContain('Введите');
-        expect(modelChatPromptError('я'.repeat(65536), [])).toBe('');
-        expect(modelChatPromptError('я'.repeat(65537), [])).toContain('128 КиБ');
-        expect(modelChatPromptError('  код\n  с отступом', [])).toBe('');
-    });
-    it('Показывает длинный настоящий ответ, но явно запрещает передать его дальше сверх лимита сервера', () => {
-        const answer = modelChatAnswer(response('x'.repeat(131073)), model.model);
-        expect(answer.content.length).toBe(131073);
-        expect(modelChatContextError([{ ...completed(), answer }])).toContain('слишком большой');
-    });
-    it('Учитывает сериализованный размер всего запроса, включая JSON-экранирование управляющих символов', () => {
-        const content = '\u0000'.repeat(131072), previous = Array.from({ length: 5 }, (_, id) => ({ ...completed(id), prompt: content, answer: { content, finishReason: 'stop' as const } }));
-        expect(modelChatContextError(previous)).toBe('');
-        expect(modelChatPromptError(content, previous)).toContain('8 МиБ');
-        expect(modelChatContextError([...previous, { ...completed(6), prompt: content, answer: { content, finishReason: 'stop' } }])).toContain('8 МиБ');
+    it('Обновляет запись диалога без дубликата и сортирует по изменению', () => {
+        const first = detail().conversation, second = {...first, id: 'chat-2', updatedAt: '2026-10-22'};
+        expect(sortedModelChats([first, second], {...first, title: 'Новое название', updatedAt: '2026-10-23'}).map(value => [value.id, value.title])).toEqual([['chat-1', 'Новое название'], ['chat-2', first.title]]);
     });
 });
 
-describe('Ответы и безопасный Markdown', () => {
-    it('Отличает завершённый ответ от исчерпанного лимита', () => {
-        expect(modelChatAnswer(response(), model.model)).toEqual({ content: 'Ответ', finishReason: 'stop' });
-        expect(modelChatAnswer(response('Продолжение…', 'length'), model.model).finishReason).toBe('length');
-    });
-    it.each([null, {}, { ...response(), model: 'another' }, { ...response(), choices: [] }, response(''), response(' \n '), response('content', 'tool_calls'),
-        { ...response(), choices: [{ index: 1, message: { role: 'assistant', content: 'Ответ' }, finish_reason: 'stop' }] },
-        { ...response(), choices: [{ index: 0, message: { role: 'user', content: 'Ответ' }, finish_reason: 'stop' }] },
-    ])('Не принимает неполный, пустой или чужой ответ %#', value => { expect(() => modelChatAnswer(value, model.model)).toThrow('некорректный ответ'); });
-    it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///etc/passwd', '//remote.example/image.png', '/internal', 'https://user:password@example.test'])('Не открывает опасный или неявный адрес %s', url => {
-        expect(modelChatUrl(url)).toBeUndefined();
-    });
-    it('Разрешает явные HTTP(S) ссылки', () => {
-        expect(modelChatUrl('https://example.test/path?q=1')).toBe('https://example.test/path?q=1');
-        expect(modelChatUrl('http://127.0.0.1:1234')).toBe('http://127.0.0.1:1234/');
+describe('Вложения: обратная связь до серверной проверки', () => {
+    it.each(['guide.pdf', 'file.docx', 'file.md', 'file.csv', 'code.ts', 'code.py', 'text.tsv', 'trace.jsonl', 'config.graphql', '.gitignore', '.editorconfig', 'Dockerfile', 'Makefile'])('Разрешает %s', name => expect(chatFileError({name, size: 10})).toBe(''));
+    it.each(['photo.png', 'scan.jpg', 'archive.zip', 'document.doc', 'file.exe', 'code.jsonc'])('Объясняет неподдерживаемый формат %s', name => expect(chatFileError({name, size: 10})).toContain('OCR'));
+    it('Проверяет пустые файлы и точную границу 10 МиБ', () => {
+        expect(chatFileError({name: 'a.txt', size: 0})).toContain('Пустой');
+        expect(chatFileError({name: 'a.txt', size: 10 * 1024 * 1024})).toBe('');
+        expect(chatFileError({name: 'a.txt', size: 10 * 1024 * 1024 + 1})).toContain('10 МиБ');
+        expect(chatFileSize(1024)).toBe('1 КиБ');
     });
 });
 
-describe('Запрос через Gateway', () => {
-    it.each([undefined, 'prj-example'])('Отправляет историю и scope %s без ключа, адреса провайдера и принудительных параметров', async projectId => {
-        vi.mocked(api.post).mockResolvedValueOnce({ data: response() });
-        const abort = new AbortController(), messages = [{ role: 'user' as const, content: 'Вопрос' }];
-        await expect(sendModelChat(model, messages, projectId, abort.signal)).resolves.toEqual({ content: 'Ответ', finishReason: 'stop' });
-        expect(api.post).toHaveBeenLastCalledWith('/api/models/model%2Fchat/ollama/v1/chat/completions', { messages, stream: false },
-            { params: { ...(projectId ? { projectId } : {}), expectedModelPin: model.modelPin }, signal: abort.signal, timeout: 620000 });
+describe('Безопасный вывод', () => {
+    it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///etc/passwd', '//host.test/x', '/internal', 'https://user:password@host.test'])('Не открывает %s', value => expect(modelChatUrl(value)).toBeUndefined());
+    it('Разрешает явную HTTPS-ссылку', () => expect(modelChatUrl('https://docs.example.test/guide')).toBe('https://docs.example.test/guide'));
+});
+
+describe('Серверная история через Gateway', () => {
+    it('Создаёт чат с model pin и project scope без ключа/адреса провайдера', async () => {
+        vi.mocked(api.post).mockResolvedValueOnce({data: detail()}); const controller = new AbortController();
+        await expect(modelChatApi.create(model, 'prj-one', controller.signal)).resolves.toEqual(detail());
+        expect(api.post).toHaveBeenCalledWith('/api/model-chats', {modelId: model.id, projectId: 'prj-one', expectedModelPin: model.modelPin}, {signal: controller.signal});
     });
-    it.each([undefined, '', 'wrong-pin', 'A'.repeat(64)])('Без точного pin %s не отправляет запрос', async modelPin => {
-        vi.mocked(api.post).mockClear();
-        await expect(sendModelChat({ ...model, modelPin }, [{ role: 'user', content: 'Вопрос' }], undefined, new AbortController().signal)).rejects.toThrow('Обновите каталог');
+    it('Отправляет ID вложений и idempotency key; историю составляет сервер', async () => {
+        vi.mocked(api.post).mockResolvedValueOnce({data: detail({turns: [turn()]})}); const signal = new AbortController().signal;
+        await modelChatApi.send(detail(), model, 'uuid-request', 'Вопрос', ['attachment-1'], signal);
+        expect(api.post).toHaveBeenCalledWith('/api/model-chats/chat-1/turns', {expectedRevision: 1, requestId: 'uuid-request', prompt: 'Вопрос', attachmentIds: ['attachment-1'], expectedModelPin: model.modelPin}, {signal, timeout: 620000});
+    });
+    it('Отдельно передаёт документ и отмену с CAS-ревизией', async () => {
+        vi.mocked(api.post).mockResolvedValue({data: detail()}); const signal = new AbortController().signal;
+        await modelChatApi.upload('chat/one', 'report.txt', 'dGVzdA==', 'uuid-file', signal);
+        expect(api.post).toHaveBeenLastCalledWith('/api/model-chats/chat%2Fone/attachments', {name: 'report.txt', contentBase64: 'dGVzdA==', requestId: 'uuid-file'}, {signal, timeout: 120000});
+        await modelChatApi.cancel(detail(), 'turn/1', signal);
+        expect(api.post).toHaveBeenLastCalledWith('/api/model-chats/chat-1/turns/turn%2F1/cancel', {expectedRevision: 1}, {signal});
+    });
+    it('Не обращается к API без точного pin', () => {
+        expect(() => modelChatApi.create({...model, modelPin: undefined}, undefined, new AbortController().signal)).toThrow('Обновите каталог');
         expect(api.post).not.toHaveBeenCalled();
     });
 });

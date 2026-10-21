@@ -6,6 +6,7 @@ const {createServer}=require('node:http');
 const {setImmediate:tick}=require('node:timers/promises');
 const {ProxyService}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','proxy/proxy.service.js'));
 const {modelInferenceRoute,forwardModelInference}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','proxy/model-inference-forward.js'));
+const {requiredFeatureFlag}=require(path.resolve(process.env.GATEWAY_TEST_DIST||'services/api-gateway/dist','features/feature-flag-gate.js'));
 const route='/api/models/model-fixture/ollama/v1/chat/completions';
 const reply={model:'fixture-model',choices:[{index:0,message:{role:'assistant',content:'OK'},finish_reason:'stop'}]};
 const identity={email:'chat@example.test',activeRole:'Главный админ'};
@@ -25,6 +26,20 @@ for(const suffix of ['api/chat','api/embed','v1/chat/completions','v1/embeddings
  assert.equal(modelInferenceRoute('POST','/api/models/a/ollama/'+suffix+'/extra'),false);
 });
 for(const value of [undefined,'/api/models/a/hosting','/api/models/a/connection','/api/rag/sync'])test('Other routes keep their existing transport: '+value,()=>assert.equal(modelInferenceRoute('POST',value),false));
+const savedRoot='/api/model-chats/12345678-1234-4234-8234-123456789abc';
+for(const suffix of ['attachments','turns','turns/12345678-1234-4234-8234-123456789abc/retry'])test('Saved chat processing propagates client cancellation: '+suffix,async()=>{
+ const savedRoute=savedRoot+'/'+suffix;
+ assert.equal(modelInferenceRoute('POST',savedRoute),true);assert.equal(modelInferenceRoute('GET',savedRoute),false);
+ assert.equal(requiredFeatureFlag('POST',savedRoute,{}),suffix==='attachments'?undefined:'model_hosting');
+ const f=fixture();f.req.path=savedRoute;f.transport(config=>new Promise((_resolve,reject)=>config.signal.addEventListener('abort',()=>reject(Error('cancel')),{once:true})));
+ const pending=forwardModelInference(f.http,{},f.req,f.res);f.res.destroyed=true;f.res.emit('close');assert.equal(await pending,undefined);
+ assert.equal(f.calls[0].signal.aborted,true);assert.equal(f.calls[0].maxContentLength,16*1024*1024);assert.equal(f.res.writes,0);
+});
+test('Saved chat inspection and cancellation remain available when inference is disabled',()=>{
+ for(const suffix of ['','/context-preview','/turns/12345678-1234-4234-8234-123456789abc/cancel']){
+  assert.equal(modelInferenceRoute('POST',savedRoot+suffix),false);assert.equal(requiredFeatureFlag('POST',savedRoot+suffix,{}),undefined);
+ }
+});
 test('A completed inference keeps its configured deadline and cleans listeners',async()=>{
  const f=fixture();const result=await forwardModelInference(f.http,{url:'http://catalog.fixture'},f.req,f.res);
  assert.deepEqual(result,response());assert.equal(f.calls[0].timeout,610000);assert.equal(f.calls[0].maxContentLength,8*1024*1024);

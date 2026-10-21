@@ -48,15 +48,16 @@ export class RemoteModelClient {
             if (!object(choice) || choice.index !== 0 || !['stop', 'length'].includes(String(choice.finish_reason)) || !object(choice.message)
                 || typeof choice.message.content !== 'string' || !choice.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
             const usage = object(value.usage) ? value.usage : {};
+            const inputTokens = this.tokens(usage.prompt_tokens), outputTokens = this.tokens(usage.completion_tokens);
             return { model: model.model, done: true, done_reason: choice.finish_reason, message: { role: 'assistant', content: choice.message.content },
-                prompt_eval_count: this.tokens(usage.prompt_tokens), eval_count: this.tokens(usage.completion_tokens) };
+                prompt_eval_count: inputTokens, eval_count: outputTokens, usage_reported: inputTokens !== null || outputTokens !== null };
         }
         if (value.done !== true || !['stop', 'length'].includes(String(value.done_reason)) || !object(value.message)
             || typeof value.message.content !== 'string' || !value.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
-        return value;
+        return { ...value, usage_reported: this.tokens(value.prompt_eval_count) !== null || this.tokens(value.eval_count) !== null };
     }
 
-    private tokens(value: unknown): number { return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0; }
+    private tokens(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null; }
     private openaiVectors(value: Json, count: number): unknown {
         if (value.object !== 'list' || !Array.isArray(value.data) || value.data.length !== count) { return undefined; }
         const result: unknown[] = [];

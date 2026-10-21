@@ -110,7 +110,8 @@ export class OllamaClient {
             if(!this.validVectors(value.embeddings,count,model.dimension))throw new Error('Runtime вернул некорректные векторы.');
         } else if(value.done!==true||!['stop','length'].includes(String(value.done_reason))||!object(value.message)
             ||typeof value.message.content!=='string'||!value.message.content.trim())throw new Error('Runtime не завершил ответ модели.');
-        return {...value,model:publicModel};
+        const hasUsage = [value.prompt_eval_count,value.eval_count].some(count => typeof count==='number'&&Number.isSafeInteger(count)&&count>=0);
+        return {...value,model:publicModel,...(endpoint==='chat'?{usage_reported:hasUsage}:{})};
     }
 
     private assertModel(model:IModel) {

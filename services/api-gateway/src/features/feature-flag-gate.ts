@@ -10,6 +10,7 @@ export function requiredFeatureFlag(method:string,rawPath:string,body:unknown):F
     const route=canonicalAccessRoute(rawPath),verb=method.toUpperCase();
     if(!route)return;
     if(verb==='POST'&&/^\/api\/models\/[^/]+\/ollama\/(api\/(embed|chat)|v1\/(embeddings|chat\/completions))$/.test(route))return 'model_hosting';
+    if(verb==='POST'&&/^\/api\/model-chats\/[a-f0-9-]{36}\/turns(?:\/[a-f0-9-]{36}\/retry)?$/.test(route))return 'model_hosting';
     if(verb==='POST'&&/^\/api\/models\/[^/]+\/hosting$/.test(route)&&object(body)&&typeof body.action==='string'&&['start','check'].includes(body.action))return 'model_hosting';
     if((verb==='POST'&&['/api/tool-builds','/api/tool-builds/archive'].includes(route))
         ||(verb==='POST'&&route==='/api/tool-builds/uploads')
