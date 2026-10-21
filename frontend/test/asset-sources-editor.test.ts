@@ -6,6 +6,7 @@ import { agentCatalogApi } from '../src/features/AgentCatalog/api';
 import { baseApi } from '../src/core/api';
 import { agent } from './agent-fixtures';
 import type { ICatalogAgent } from '../src/features/AgentCatalog/types';
+import type { IAssetImport } from '../src/features/AssetSources/types';
 
 const hooks=vi.hoisted(()=>{
     let cursor=0;const slots:Array<{value?:unknown;deps?:unknown[];cleanup?:()=>void}>=[],effects:Array<()=>void>=[];
@@ -17,12 +18,12 @@ const hooks=vi.hoisted(()=>{
         useEffect:(effect:()=>void|(()=>void),deps:unknown[])=>{const index=cursor++,previous=slots[index];if(previous&&same(previous.deps,deps))return;const slot=slots[index]={deps};effects.push(()=>{previous?.cleanup?.();slot.cleanup=effect()||undefined;});},
     };
 });
-const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',search:undefined as undefined|{onChange:(event:{target:{value:string}})=>void},archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>()}));
+const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',search:undefined as undefined|{onChange:(event:{target:{value:string}})=>void},archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.owner;let captureOwner=ui.owners.get(scope);if(!captureOwner){captureOwner=()=>()=>scope===ui.owner;ui.owners.set(scope,captureOwner);}return{scope,captureOwner};}}));
 vi.mock('../src/core/api',()=>({baseApi:{get:vi.fn(),post:vi.fn()},bffApi:{getSkill:vi.fn(),getAiPlugin:vi.fn()}}));
 vi.mock('../src/features/AgentCatalog/api',()=>({agentCatalogApi:{get:vi.fn()}}));
-vi.mock('../src/features/AssetSources/useAssetImports',()=>({useAssetImports:()=>({blocked:false,busy:false})}));
+vi.mock('../src/features/AssetSources/useAssetImports',()=>({useAssetImports:()=>({blocked:false,busy:false,job:ui.job,retry:ui.retry})}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:(_sections:string[],refresh:()=>void)=>{ui.live=refresh;}}));
 vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetButton:(props:typeof ui.archives[number])=>{ui.archives.push(props);return null;}}));
 vi.mock('../src/modules/Store/StoreEditModal',()=>({default:()=>null}));
@@ -33,13 +34,13 @@ vi.mock('antd',()=>{
     const content=({children}:{children?:ReactNode})=>children;const input=()=>null;
     return{Card:({children,title}:{children?:ReactNode;title?:ReactNode})=>createElement('div',null,title,children),Space:content,Tag:content,Typography:{Title:content,Text:content,Paragraph:content},Checkbox:content,
         Input:Object.assign(input,{Search:(props:NonNullable<typeof ui.search>)=>{ui.search=props;return null;}}),List:()=>null,Spin:()=>null,Empty:()=>null,Modal:()=>null,
-        Alert:({message}:{message:ReactNode})=>message,Button:({children,disabled,loading,onClick}:{children?:ReactNode;disabled?:boolean;loading?:boolean;onClick:()=>void})=>{if(children==='Редактировать')ui.buttons.push({disabled,onClick});if(typeof children==='string'&&children.startsWith('Обновить '))ui.refreshButtons.set(children,{loading,onClick});return children;}};
+        Alert:({message,description}:{message:ReactNode;description?:ReactNode})=>createElement('div',null,message,description),Button:({children,disabled,loading,onClick}:{children?:ReactNode;disabled?:boolean;loading?:boolean;onClick:()=>void})=>{if(children==='Редактировать')ui.buttons.push({disabled,onClick});if(typeof children==='string'&&(children.startsWith('Обновить ')||children==='Перечитать поставку'))ui.refreshButtons.set(children,{loading,onClick});if(children==='Проверить конфликт заново'||children==='Повторить после исправления')ui.retryButton=onClick;return children;}};
 });
 const source={source:{verified:true,commit:'a'.repeat(40)},assets:['a','b'].map(id=>({id:'source-'+id,kind:'agent',name:'Агент '+id,version:'1',license:'MIT',dependencies:[],imported:{id:'agent-'+id,originVersion:'1',version:1,updateAvailable:false}}))};
 function render(){hooks.begin();ui.buttons=[];ui.archives=[];const html=renderToStaticMarkup(createElement(AssetSources));hooks.commit();return html;}
 async function settle(){for(let n=0;n<15;n++)await Promise.resolve();return render();}
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:Error)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
-beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.editor=undefined;ui.draft='';ui.editorId='';vi.mocked(baseApi.get).mockResolvedValue({data:source});});
+beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
 afterEach(()=>hooks.dispose());
 
 it('Двойной клик и открытие второй карточки во время GET не создают конкурирующий редактор',async()=>{
@@ -84,6 +85,21 @@ it('Обновить список перечитывает локальные к
     render();await settle();vi.mocked(baseApi.get).mockClear();ui.refreshButtons.get('Обновить список')!.onClick();await settle();
     expect(baseApi.get).toHaveBeenCalledExactlyOnceWith('/api/asset-sources');expect(baseApi.post).not.toHaveBeenCalled();
     ui.refreshButtons.get('Обновить источник')!.onClick();await settle();expect(baseApi.post).toHaveBeenCalledExactlyOnceWith('/api/asset-sources/refresh');
+});
+it('Автономный источник показывает закреплённую локальную поставку и явно перечитывает её',async()=>{
+    const offline={...source,source:{...source.source,mode:'offline',error:'Сохранённая ошибка источника'}};vi.mocked(baseApi.get).mockResolvedValue({data:offline});vi.mocked(baseApi.post).mockResolvedValue({data:offline});
+    render();const html=await settle();expect(html).toContain('Автономная поставка');expect(html).toContain('Локальная поставка · aaaaaaaa');expect(html).toContain('GitHub не запрашивается');expect(html).toContain('Сохранённая ошибка источника');expect(html).not.toContain('Обновить источник');expect(baseApi.post).not.toHaveBeenCalled();
+    ui.refreshButtons.get('Перечитать поставку')!.onClick();await settle();expect(baseApi.post).toHaveBeenCalledExactlyOnceWith('/api/asset-sources/refresh');expect(render()).toContain('Агент a');
+});
+it('Непроверенная автономная поставка предлагает локальное перечитывание без обещания скачивания',async()=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:{source:{mode:'offline',verified:false},assets:[]}});render();const html=await settle();
+    expect(html).toContain('Нажмите «Перечитать поставку»');expect(html).not.toContain('скачиваются только небольшие описи');expect(baseApi.post).not.toHaveBeenCalled();
+});
+it.each(['create','conflict'])('NEEDS_INPUT предлагает повтор исправленной поставки, а проверку конфликта только для action=conflict: %s',async action=>{
+    ui.job={id:'missing-offline-blob',planDigest:'a'.repeat(64),state:'NEEDS_INPUT',message:'Файлы выбранного ассета отсутствуют в локальной поставке.',items:[{id:'bridge',kind:'bridge',name:'Мост',version:'0.9.17',current:true,action,state:'FAILED'}]};
+    render();const html=await settle(),label=action==='conflict'?'Проверить конфликт заново':'Повторить после исправления';
+    expect(html).toContain(label);expect(html).not.toContain(action==='conflict'?'Повторить после исправления':'Проверить конфликт заново');expect(html).not.toContain('Решить конфликт');
+    ui.retryButton!();expect(ui.retry).toHaveBeenCalledOnce();
 });
 it.each(['response','error']as const)('Live refresh защищён от позднего старого GET: %s',async mode=>{
     render();await settle();const old=deferred<{data:typeof source}>(),next=deferred<{data:typeof source}>();

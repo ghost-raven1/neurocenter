@@ -50,19 +50,21 @@ export default function AssetSources():JSX.Element {
  const cards=(data?.assets??[]).filter(matches),localCards=(data?.localAssets??[]).filter(matches);
  const editControls=(asset:ISourceAsset):JSX.Element|null=>asset.imported&&asset.kind!=='bridge'?<><Button loading={editing===asset.id} disabled={!!editing||imports.blocked||asset.imported.archived||asset.imported.unavailable} onClick={()=>void editAsset(asset)}>Редактировать</Button><ArchiveAssetButton kind={asset.kind} id={asset.imported.id} restore={asset.imported.archived} children={asset.imported.archived?'Вернуть из архива':'Удалить'} onArchived={()=>void load()} disabled={imports.blocked||asset.imported.unavailable}/></>:null;
  const add=(ids:string[]):void=>{if(data?.source.commit){void imports.start(ids,data.source.commit);}};
+ const offline=data?.source.mode==='offline';
  return <section className="asset-sources"><PageHeading title="Ассеты" description="Выберите инструменты, модели и агентов для общего каталога. Мост готовит установку компьютеров; состав каталога выбираете вы."
-  actions={<Space wrap><Button loading={loading} disabled={imports.blocked} onClick={()=>void load()}>Обновить список</Button><Button loading={loading} disabled={imports.blocked} onClick={()=>void load(true)}>Обновить источник</Button></Space>}/>
+  actions={<Space wrap><Button loading={loading} disabled={imports.blocked} onClick={()=>void load()}>Обновить список</Button><Button loading={loading} disabled={imports.blocked} onClick={()=>void load(true)}>{offline?'Перечитать поставку':'Обновить источник'}</Button></Space>}/>
   <Space direction="vertical" size="middle" className="asset-sources__content">
    {error&&<Alert type="error" showIcon message={error}/>}
+   {offline&&<Alert type="info" showIcon message="Автономная поставка" description="Описи и файлы читаются из локальной поставки, закреплённой точным commit. Новые ассеты появятся после загрузки обновлённой поставки на сервер. GitHub не запрашивается."/>}
    {data?.source.error&&<Alert type="warning" showIcon message={data.source.error} description="Показана последняя проверенная опись. Она закреплена точным commit; обновление не меняет уже добавленные карточки."/>}
-   <Typography.Text type="secondary">{data?.source.verified?'Проверено '+new Date(data.source.checkedAt!).toLocaleString('ru-RU')+' · '+data.source.commit?.slice(0,8):'Источник ещё не проверен. Нажмите «Обновить источник» — скачиваются только небольшие описи.'}</Typography.Text>
+   <Typography.Text type="secondary">{offline?(data?.source.verified?'Локальная поставка · '+data.source.commit?.slice(0,8):'Локальная поставка ещё не проверена. Нажмите «Перечитать поставку».'):data?.source.verified?'Проверено '+new Date(data.source.checkedAt!).toLocaleString('ru-RU')+' · '+data.source.commit?.slice(0,8):'Источник ещё не проверен. Нажмите «Обновить источник» — скачиваются только небольшие описи.'}</Typography.Text>
    {imports.error&&<Alert type="error" showIcon message={imports.error} action={imports.intent&&!imports.job?<Button loading={imports.busy} onClick={()=>void imports.repeat()}>Повторить запрос</Button>:undefined}/>}
    {imports.job&&<Card size="small" title="Добавление в каталог"><Space direction="vertical" className="asset-sources__content">
     <Typography.Text role="status">{imports.job.message}</Typography.Text>
     <List size="small" dataSource={imports.job.items} renderItem={item=><List.Item><div><Typography.Text>{item.name} · {item.version}</Typography.Text>{!item.current&&<Tag>Точная зависимость</Tag>}<div><Typography.Text type={item.state==='FAILED'||item.action==='conflict'?'danger':'secondary'}>{item.reason||item.message||item.state}</Typography.Text></div></div></List.Item>}/>
     <Space wrap>{activeImport(imports.job.state)?<Button loading={imports.busy} onClick={()=>void imports.cancel()}>Остановить импорт</Button>:<>
      {imports.job.state==='NEEDS_INPUT'&&imports.job.items.some(item=>item.replacement)&&<Button onClick={()=>setResolving(true)}>Решить конфликт</Button>}
-     {['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)&&<Button loading={imports.busy} onClick={()=>void imports.retry()}>{imports.job.state==='NEEDS_INPUT'?'Проверить конфликт заново':'Повторить после исправления'}</Button>}
+     {['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)&&<Button loading={imports.busy} onClick={()=>void imports.retry()}>{imports.job.state==='NEEDS_INPUT'&&imports.job.items.some(item=>item.action==='conflict')?'Проверить конфликт заново':'Повторить после исправления'}</Button>}
      <Button onClick={imports.clear}>Новый выбор</Button></>}</Space>
    </Space></Card>}
    <Space wrap><Input.Search aria-label="Поиск ассетов" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Название или назначение" allowClear/>
@@ -79,7 +81,7 @@ export default function AssetSources():JSX.Element {
       {editControls(asset)}
      </Space>
     </Space>
-   </Card>)}</div>:!localCards.length?<Empty description={data?.source.verified?'По выбранному запросу ассетов нет.':'Обновите источник, чтобы выбрать ассеты.'}/>:null}
+   </Card>)}</div>:!localCards.length?<Empty description={data?.source.verified?'По выбранному запросу ассетов нет.':offline?'Перечитайте локальную поставку, чтобы выбрать ассеты.':'Обновите источник, чтобы выбрать ассеты.'}/>:null}
   </Space>
   <Modal open={resolving} title="Заменить локальные карточки источником?" onCancel={()=>{if(!imports.busy){setResolving(false);}}} confirmLoading={imports.busy} okText="Заменить содержимое" cancelText="Оставить локальные"
    okButtonProps={{danger:true,disabled:!imports.job?.items.filter(item=>item.action==='conflict').every(item=>!!item.replacement)}} onOk={()=>{void imports.resolve().then(()=>setResolving(false));}}>

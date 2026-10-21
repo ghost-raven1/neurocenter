@@ -4,6 +4,9 @@ import { databaseFixture, tool } from './asset-import-db.fixture';
 import { AssetSourceSnapshots } from '../src/asset-sources/source-snapshots';
 import {createServer} from 'node:http';
 import {gzipSync} from 'node:zlib';
+import {SourceMetadataCache} from '../src/asset-sources/source-cache';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 describe('Явное обновление доверенного source: metadata-only, immutable evolution, offline cache',()=>{
  let f:Awaited<ReturnType<typeof databaseFixture>>;beforeEach(async()=>{f=await databaseFixture();});afterEach(async()=>{await f?.dispose();});
@@ -17,6 +20,21 @@ describe('Явное обновление доверенного source: metadat
   const r=remote(),sources=new AssetSourceSnapshots(f.pool,undefined,r.request);expect(r.request).not.toHaveBeenCalled();
   const snapshot=await sources.refresh();expect(snapshot.pin.commit).toBe(r.commit);expect(snapshot.pin.index.sha256).toBe(assetDigest(r.index));expect(snapshot.assets).toHaveLength(1);
   expect(r.request.mock.calls.map(([url])=>String(url))).toEqual([...r.files.keys()]);expect((await sources.latest())?.pin).toEqual(snapshot.pin);
+ });
+ it('Автономный refresh и повтор читают закреплённый CLI-кэш без GitHub; повреждение сохраняет предыдущую опись',async()=>{
+  const r=remote(),directory=path.join(f.root,'metadata');await fs.mkdir(directory);
+  for(const body of [r.index,serializeAsset(r.record.asset)])await fs.writeFile(path.join(directory,assetDigest(body)+'.json'),body,{mode:0o400});
+  const request=vi.fn(async()=>{throw new Error('GitHub заблокирован');}),pin={...f.pin,commit:r.commit,index:{path:'index.json',sha256:assetDigest(r.index)}};
+  const sources=new AssetSourceSnapshots(f.pool,pin,request,{offline:true,cache:new SourceMetadataCache(directory)});
+  const first=await sources.refresh();expect(first.assets[0].asset.id).toBe('source-tool');expect((await sources.refresh()).pin).toEqual(first.pin);expect(request).not.toHaveBeenCalled();
+  const descriptor=path.join(directory,assetDigest(serializeAsset(r.record.asset))+'.json');await fs.chmod(descriptor,0o600);await fs.writeFile(descriptor,'damaged');
+  await expect(sources.refresh()).rejects.toMatchObject({status:409});expect((await sources.status()).snapshot?.pin).toEqual(first.pin);
+  expect((await sources.status()).last?.message).toContain('кэше');expect(request).not.toHaveBeenCalled();
+ });
+ it('Неполная локальная поставка не становится snapshot и не обращается в GitHub',async()=>{
+  const r=remote(),request=vi.fn(async()=>new Response(r.index)),sources=new AssetSourceSnapshots(f.pool,{...f.pin,index:{path:'index.json',sha256:assetDigest(r.index)}},request,
+   {offline:true,cache:new SourceMetadataCache(path.join(f.root,'missing'))});
+  await expect(sources.refresh()).rejects.toMatchObject({status:409});expect(await sources.latest()).toBeUndefined();expect(request).not.toHaveBeenCalled();
  });
  it('Большой commit diff не запрашивается даже при обновлении крупной поставки',async()=>{
   const r=remote(),sources=new AssetSourceSnapshots(f.pool,undefined,r.request);

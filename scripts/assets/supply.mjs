@@ -18,19 +18,58 @@ export function assetDirectories({root,environment=process.env,artifactsDirector
     return {catalog,blobs:path.join(catalog,'.asset-source-blobs'),metadata:path.join(catalog,'.asset-source-metadata')};
 }
 
+/** Complete source metadata shares the immutable SHA cache and one exact-byte budget, including recipes. */
+function boundedMetadata(cache){
+    const seen=new Set();let total=0;
+    const account=(sha,bytes)=>{
+        if(!bytes||contract.assetDigest(bytes)!==sha||seen.has(sha))return;
+        if(total+bytes.length>32*1024*1024)throw new Error('Полные описания источника превышают 32 МиБ.');
+        seen.add(sha);total+=bytes.length;
+    };
+    return {
+        async read(sha,maximum){const bytes=await cache.read(sha,maximum);account(sha,bytes);return bytes;},
+        async write(sha,bytes){account(sha,bytes);await cache.write(sha,bytes);},
+    };
+}
+
+/** Every historical descriptor must retain resolvable exact dependency pins for later offline imports. */
+function completeGraph(records){
+    const visiting=new Set(),done=new Set(),fail=()=>{throw new Error('Зависимости полного источника не образуют согласованный граф точных версий и SHA-256.');};
+    const visit=key=>{
+        if(visiting.has(key))fail();if(done.has(key))return;visiting.add(key);
+        for(const dependency of records.get(key).asset.dependencies||[]){
+            const target=dependency.id+'@'+dependency.version,record=records.get(target);
+            if(!record||record.sha256!==dependency.sha256)fail();visit(target);
+        }
+        visiting.delete(key);done.add(key);
+    };
+    for(const key of records.keys())visit(key);
+}
+
 /** Описания читаются без бинарников; offline проверка использует только подтверждённые SHA-кэши. */
-export async function readAssetSupply({root,environment=process.env,artifactsDirectory,verifyOnly=false,withoutModels=false,ids,
+export async function readAssetSupply({root,environment=process.env,artifactsDirectory,verifyOnly=false,offlineReady=false,withoutModels=false,ids,
     signal,fetch:request=globalThis.fetch}={}) {
     const {pin,lockSha256}=await readSourcePin(root),directories=assetDirectories({root,environment,artifactsDirectory});
-    const source=new sourceReader.AssetSourceClient(pin,{contract,fetch:request,signal,offline:verifyOnly,cache:new AssetCache(directories.metadata)});
+    const mode=environment.ASSET_SOURCE_MODE||'online';
+    if(!['online','offline'].includes(mode))throw new Error('ASSET_SOURCE_MODE должен быть online или offline.');
+    const offline=verifyOnly||mode==='offline';
+    const metadata=new AssetCache(directories.metadata);
+    const source=new sourceReader.AssetSourceClient(pin,{contract,fetch:request,signal,offline,cache:offlineReady?boundedMetadata(metadata):metadata});
     const index=await source.index();
+    if(offlineReady&&index.assets.length>300)throw new Error('Полный источник превышает 300 описаний ассетов.');
     const selected=ids??index.assets.filter(entry=>entry.current&&(!withoutModels||entry.kind!=='model')).map(entry=>entry.id);
     if(!Array.isArray(selected)||new Set(selected).size!==selected.length||selected.some(id=>typeof id!=='string'))throw new Error('Выберите разные ID ассетов.');
+    if(offlineReady&&selected.some(id=>!index.assets.some(entry=>entry.current&&entry.id===id)))throw new Error('Выбранный ассет отсутствует в закреплённой описи.');
     if(ids&&withoutModels&&index.assets.some(entry=>entry.current&&entry.kind==='model'&&selected.includes(entry.id)))throw new Error('Модель выбрана вместе с --without-models.');
     const records=new Map();
-    for(let start=0;start<selected.length;start+=50){
-        const batch=await source.select(selected.slice(start,start+50));
-        for(const record of batch.assets)records.set(record.asset.id+'@'+record.asset.version,record);
+    if(offlineReady){
+        for(const entry of index.assets){signal?.throwIfAborted();const record=await source.descriptor(entry);records.set(record.asset.id+'@'+record.asset.version,record);}
+        completeGraph(records);
+    }else{
+        for(let start=0;start<selected.length;start+=50){
+            const batch=await source.select(selected.slice(start,start+50));
+            for(const record of batch.assets)records.set(record.asset.id+'@'+record.asset.version,record);
+        }
     }
     if(records.size>300||[...records.values()].reduce((sum,item)=>sum+Buffer.byteLength(JSON.stringify(item.asset)),0)>32*1024*1024)throw new Error('Выбор превышает размер поддерживаемой поставки.');
     const assets=contract.selectAssets([...records.values()],selected);
@@ -41,5 +80,5 @@ export async function readAssetSupply({root,environment=process.env,artifactsDir
         if(previous&&previous.bytes!==artifact.bytes)throw new Error('Один SHA ассета имеет разные размеры.');
         artifacts.set(artifact.sha256,previous?.url?previous:artifact);
     }
-    return {pin,revision:pin.index.sha256,lockSha256,index,assets,artifacts:[...artifacts.values()],directories,selected};
+    return {pin,revision:pin.index.sha256,lockSha256,index,assets,artifacts:[...artifacts.values()],directories,selected,offline};
 }

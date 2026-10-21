@@ -135,6 +135,7 @@ services:
       SKILLS_SERVICE_URL: http://skills-service:4200
       PROJECTS_ROOT: /data/projects
       RUNTIME_ARTIFACT_DIR: /app/runtime-artifacts
+      ASSET_SOURCE_MODE: ${ASSET_SOURCE_MODE:-online}
       BACKUP_DIR: /app/backups
       BACKUP_MAX_TOTAL_BYTES: ${BACKUP_MAX_TOTAL_BYTES:-68719476736}
       BACKUP_MAX_FILE_BYTES: ${BACKUP_MAX_FILE_BYTES:-17179869184}

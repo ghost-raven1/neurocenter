@@ -45,3 +45,6 @@ logs/
 .idea/
 .DS_Store
 deploy/production/local/
+
+# Переносимая локальная поставка ассетов; бинарники не коммитятся.
+/offline-assets/

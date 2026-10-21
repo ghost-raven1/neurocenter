@@ -1,0 +1,12 @@
+# Только dev Compose: поставка подготовлена assets:sync --offline-ready.
+# Production сохраняет штатные named volumes и мониторинг ёмкости.
+services:
+  catalog-service:
+    environment:
+      ASSET_SOURCE_MODE: offline
+    volumes:
+      - type: bind
+        source: ${OFFLINE_ASSETS_DIR:-./offline-assets}
+        target: /app/runtime-artifacts
+        bind:
+          create_host_path: false

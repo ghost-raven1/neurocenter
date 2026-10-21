@@ -3,7 +3,7 @@ import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { bridgeSourceApi, type IBridgeSource } from './bridgeSource';
 
-/** Вход на шаг проверяет только опись версий; смена роли и закрытие отсекают поздний ответ. */
+/** Вход читает локальную поставку; новые версии проверяются явно, с защитой смены роли и закрытия. */
 export function useBridgeSource() {
     const { scope, captureOwner } = useAuthRequestOwner();
     const [state, setState] = useState<{ scope: string; data?: IBridgeSource; loading: boolean; saving: boolean; error: string }>({ scope, loading: true, saving: false, error: '' });
@@ -27,8 +27,8 @@ export function useBridgeSource() {
         try {
             const data = await bridgeSourceApi.get(controller.signal);
             if (!current()) return;
-            setState({ scope, data, loading: check, saving: false, error: retainedError });
-            if (check) {
+            setState({ scope, data, loading: check && data.sourceMode !== 'offline', saving: false, error: retainedError });
+            if (check && data.sourceMode !== 'offline') {
                 const checked = await bridgeSourceApi.check(data.revision, controller.signal, force);
                 if (current()) setState({ scope, data: checked, loading: false, saving: false, error: '' });
             }
@@ -52,7 +52,7 @@ export function useBridgeSource() {
     }, [scope, captureOwner]);
     useEffect(() => {
         busy.current = false; queued.current = {check: false, force: false, reload: false}; setState({ scope, loading: true, saving: false, error: '' });
-        void load(true);
+        void load();
         return () => { request.current?.abort(); request.current = undefined; busy.current = false; activeRead.current = undefined; queued.current = {check: false, force: false, reload: false}; };
     }, [scope, load]);
 
@@ -85,6 +85,6 @@ export function useBridgeSource() {
         }
         return false;
     };
-    return { data, loading: state.scope !== scope || state.loading, saving: state.scope === scope && state.saving,
+    return { data, loading: state.scope !== scope || state.loading, checking: state.scope === scope && state.loading && activeRead.current === 'check', saving: state.scope === scope && state.saving,
         error: state.scope === scope ? state.error : '', check: () => load(true, true), reload: () => load(), save };
 }

@@ -121,6 +121,7 @@ services:
       - PROJECTS_ROOT=/data/projects
       - SKILLS_SERVICE_URL=http://skills-service:4200
       - RUNTIME_ARTIFACT_DIR=/app/runtime-artifacts
+      - ASSET_SOURCE_MODE=${ASSET_SOURCE_MODE:-online}
       - BACKUP_DIR=/app/backups
       - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
       - MODEL_RUNTIME_URL=http://model-runtime:11434

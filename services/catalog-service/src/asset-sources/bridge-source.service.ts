@@ -9,6 +9,7 @@ import {BridgeSourceRepository,bridgeSourceRepository,staleBridgeSource} from '.
 import {importView} from './import-types';
 import {assertBridgeHead} from './bridge-source-head';
 import type {IBridgeSourceView,IBridgeSourceRelease} from './bridge-source.dto';
+import {assetSourceMode} from './source-cache';
 
 const object=(value:unknown,keys:string[]):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>keys.includes(key));
 const revision=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0;
@@ -30,7 +31,7 @@ export class BridgeSourceService {
             imported={assetId:supply.assetId,version:supply.version,buildId:supply.buildId,repositoryCommit:supply.sourceCommit,targets:supply.artifacts.map(item=>String(item.target)),...(origin?{repositoryUrl:'https://github.com/'+origin}:{})};
         }
         catch(error){if(settings.installed_repository||!(error instanceof HttpException)||error.getStatus()!==404)importedError=error instanceof HttpException?error.message:'Не удалось проверить текущую поставку моста.';}
-        return {url:settings.url,revision:settings.revision,...(settings.checked_at?{checkedAt:new Date(settings.checked_at).toISOString()}:{}),
+        return {sourceMode:assetSourceMode(),url:settings.url,revision:settings.revision,...(settings.checked_at?{checkedAt:new Date(settings.checked_at).toISOString()}:{}),
             ...(settings.error?{error:settings.error}:{}),...(snapshot?{available:bridgeReleaseView(snapshot)}:{}),...(imported?{imported}:{}),...(importedError?{importedError}:{})};
     }
     async save(actor:string,body:unknown){
@@ -39,6 +40,10 @@ export class BridgeSourceService {
     }
     async check(body:unknown){
         if(!object(body,['expectedRevision','force'])||!revision(body.expectedRevision)||body.force!==undefined&&typeof body.force!=='boolean')throw new BadRequestException('Передайте текущую ревизию источника моста.');
+        if(assetSourceMode()==='offline'){
+            if((await this.repository.settings()).revision!==body.expectedRevision)throw staleBridgeSource();
+            const view=await this.view();if(view.revision!==body.expectedRevision)throw staleBridgeSource();return view;
+        }
         const expected=body.expectedRevision,existing=this.checks.get(expected);if(existing)return existing;
         const operation=this.inspect(expected,body.force===true);this.checks.set(expected,operation);
         try{return await operation;}finally{if(this.checks.get(expected)===operation)this.checks.delete(expected);}

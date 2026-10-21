@@ -28,9 +28,10 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
     const [url, setUrl] = useState('');
     const [resolving, setResolving] = useState<{jobId: string; digest: string; revision: number}>();
     const data = source.data;
+    const offline = data?.sourceMode === 'offline';
     useEffect(() => { setUrl(data?.url ?? ''); }, [data?.url, data?.revision]);
     const status = bridgeSupplyStatus(data?.available, data?.imported);
-    const fresh = !!data?.checkedAt && !data.error && !source.error && !source.loading;
+    const fresh = !offline && !!data?.checkedAt && !data.error && !source.error && !source.loading;
     const target = bridgeDeviceTarget(device);
     const targetSupported = !target || !!data?.imported?.targets.includes(target);
     const installedVersion = device?.report.bridgeVersion;
@@ -48,19 +49,21 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
     return <div className="bridge-source" aria-label="Версии и установщик моста">
         <div className="bridge-source__versions" role="status">
             <Typography.Text>{device ? `${verified && device.online ? 'Установлено' : 'Последний отчёт'}: ${installedVersion || 'версия пока неизвестна'}` : 'Компьютер ещё не выбран'}</Typography.Text>
-            <Typography.Text type="secondary">В источнике: {data?.available?.version || (source.loading ? 'проверяем…' : 'нет проверенной версии')}{data?.available && !fresh ? ' · сохранённые данные' : ''}</Typography.Text>
+            {(!offline || data?.available) && <Typography.Text type="secondary">{offline ? 'Сохранённая опись источника' : 'Последняя проверка источника'}: {data?.available?.version || (source.loading ? 'проверяем…' : 'нет проверенной версии')}{data?.available && !fresh ? ' · сохранённые данные' : ''}</Typography.Text>}
             <Typography.Text type="secondary">Готово к установке: {data?.imported?.version || 'поставка ещё не подготовлена'}</Typography.Text>
             {data?.checkedAt && Number.isFinite(Date.parse(data.checkedAt)) && <Typography.Text type="secondary">Проверено: {new Date(data.checkedAt).toLocaleString('ru-RU')}</Typography.Text>}
         </div>
         <Space wrap className="bridge-source__actions">
-            <Button loading={source.loading} disabled={source.saving || imports.blocked} onClick={() => { void source.check(); }}>Проверить версии</Button>
+            <Button loading={source.loading && !source.checking} disabled={source.checking || source.saving || imports.blocked} onClick={() => { void source.reload(); }}>Обновить локальную поставку</Button>
+            {!offline && <Button loading={source.checking} disabled={(source.loading && !source.checking) || source.saving || imports.blocked} onClick={() => { void source.check(); }}>Проверить новые версии в GitHub</Button>}
             {installerUrl && data?.imported && <Typography.Link href={installerUrl} target="_blank" rel="noopener noreferrer">Установщик моста ({windows ? 'PowerShell' : 'macOS / Linux'})</Typography.Link>}
             {canInstall && installer.origin && <Button onClick={onInstall}>{device ? installedComparison === -1 ? 'Обновить мост' : 'Показать команду установки' : 'Установить мост'}</Button>}
             {canManage && fresh && !data?.importedError && status === 'available' && <Button type="primary" loading={imports.busy} disabled={sourceBusy} onClick={() => { if (data) void imports.start(data); }}>Подготовить {data?.available?.version} к установке</Button>}
         </Space>
+        {offline && <Typography.Paragraph type="secondary">Автономная поставка. Новые версии станут доступны после загрузки обновлённой поставки на сервер. GitHub не запрашивается.</Typography.Paragraph>}
         {installer.loading && <Typography.Text type="secondary">Получаем адрес установщика…</Typography.Text>}
         {!installer.loading && !installer.origin && <Alert type="warning" showIcon message={installer.error} action={<Button onClick={installer.reload}>Повторить загрузку адреса</Button>} />}
-        {(source.error || data?.error) && <Alert type="warning" showIcon message={source.error || data?.error} description={data?.imported ? 'Новая версия не подтверждена. Уже подготовленный установщик остаётся доступен.' : 'Новая версия не подтверждена. Повторите проверку; установщик станет доступен после подготовки поставки.'} />}
+        {(source.error || data?.error) && <Alert type="warning" showIcon message={source.error || data?.error} description={offline ? 'Загрузите обновлённую локальную поставку и перечитайте её.' : data?.imported ? 'Новая версия не подтверждена. Уже подготовленный установщик остаётся доступен.' : 'Новая версия не подтверждена. Повторите проверку; установщик станет доступен после подготовки поставки.'} />}
         {data?.importedError && <Alert type="warning" showIcon message={data.importedError} description="Не удалось подтвердить подготовленную поставку. Главному администратору нужно проверить ассет моста в каталоге." />}
         {fresh && status === 'older' && <Typography.Text type="secondary">На сервере уже подготовлена более новая версия. Понижение не предлагается.</Typography.Text>}
         {fresh && status === 'conflict' && <Alert type="warning" showIcon message="У одной версии разные комплекты" description="Источник должен опубликовать исправленную поставку под новой версией. Подмена уже подготовленного комплекта недоступна." />}
@@ -78,7 +81,7 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
                 <Button onClick={imports.clear}>Закрыть результат</Button>
             </>}</Space>}
         </div>}
-        {canManage && <Collapse ghost className="bridge-source__settings"><Collapse.Panel key="source" header="Источник версий моста">
+        {canManage && !offline && <Collapse ghost className="bridge-source__settings"><Collapse.Panel key="source" header="Источник версий моста">
             <Typography.Paragraph type="secondary">Публичный GitHub-репозиторий поставок в формате neurocenter-assets. Например, ваш fork. Проверка читает описания; файлы скачиваются только при подготовке выбранной версии. Ссылка на install.sh сюда не подходит.</Typography.Paragraph>
             <Input aria-label="Репозиторий версий моста" value={url} maxLength={2048} disabled={sourceBusy || !data} onChange={event => setUrl(event.target.value)} placeholder="https://github.com/owner/neurocenter-assets" />
             <Button disabled={sourceBusy || !data || url.trim() === data.url} loading={source.saving} onClick={() => { void source.save(url).then(saved => { if (saved) void source.check(); }); }}>Сохранить и проверить</Button>

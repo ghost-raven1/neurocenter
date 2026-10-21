@@ -44,7 +44,7 @@ class AssetSourceClient {
         }finally{reader.releaseLock();}
         const bytes=Buffer.concat(chunks);
         if(this.contract.assetDigest(bytes)!==expected)throw fail('INVALID_SOURCE','SHA-256 описи отличается от закреплённого источника. Импорт остановлен.');
-        await this.cache?.write(expected,bytes);return bytes;
+        await this.cache?.write?.(expected,bytes);return bytes;
     }
     json(bytes){try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw fail('INVALID_SOURCE','Закреплённая опись содержит некорректный JSON или UTF-8.');}}
     async index(){

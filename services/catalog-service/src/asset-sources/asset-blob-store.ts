@@ -7,13 +7,14 @@ import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import { runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
+import {assetSourceMode} from './source-cache';
 
 export interface IAssetBlob { sha256: string; bytes: number; filename: string; target?: string }
 
 /** Серверный кэш поставки; URL upstream остаются только во входной описи и никогда не возвращаются устройству. */
 export class AssetBlobStore {
     constructor(private readonly pool: Pool, readonly directory = path.join(runtimeArtifactDirectory(), '.asset-source-blobs'),
-        private readonly request: typeof fetch = fetch) {}
+        private readonly request: typeof fetch = fetch,private readonly offline=assetSourceMode()==='offline') {}
 
     private async root(): Promise<void> {
         await fs.mkdir(this.directory, {recursive:true,mode:0o700});
@@ -56,6 +57,13 @@ export class AssetBlobStore {
         }
         if (!all.length) { return []; }
         await this.root();
+        const missing:typeof all=[];
+        for(const artifact of unique.values()){
+            signal.throwIfAborted();
+            try{const handle=await this.checked(artifact.sha256,artifact.bytes);await handle.close();}
+            catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(artifact);}
+        }
+        if(this.offline&&missing.length)throw new ConflictException('Файлы выбранного ассета отсутствуют в локальной поставке. Подготовьте этот ассет через assets:sync и перенесите проверенный кэш.');
         const stage = path.join(this.directory,'.stage-'+requestKey);
         try {
             const previous = await fs.lstat(stage);
@@ -65,12 +73,6 @@ export class AssetBlobStore {
         await fs.mkdir(stage,{mode:0o700});
         let release: () => void = () => undefined;
         try {
-            const missing: typeof all = [];
-            for (const artifact of unique.values()) {
-                signal.throwIfAborted();
-                try { const handle = await this.checked(artifact.sha256,artifact.bytes); await handle.close(); }
-                catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } missing.push(artifact); }
-            }
             release = await reserveCapacity({resource:'runtime-artifacts',bytes:missing.reduce((sum,file)=>sum+file.bytes,0),path:this.directory});
             for (const artifact of missing) {
                 signal.throwIfAborted();

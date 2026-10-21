@@ -16,6 +16,7 @@ import { importView, type ISourceReceipt } from './import-types';
 import {assetCardState,sourceAssetView} from './asset-source-view';
 import {bridgeSupplyIdentity} from './bridge-source-head';
 import {validBridgeVersion} from './bridge-source-version';
+import {assetSourceMode} from './source-cache';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -56,7 +57,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
             [receipt.repository+':'+receipt.external_id,await assetCardState(this.pool,receipt)] as const)));
         const view=(asset:Parameters<typeof sourceAssetView>[0],sha256:string,receipt?:ISourceReceipt)=>
             sourceAssetView(asset,sha256,receipt,receipt?states.get(receipt.repository+':'+receipt.external_id):undefined);
-        return {source:{repository:'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
+        return {source:{mode:assetSourceMode(),repository:'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
             verified:!!snapshot,lastAttemptAt:last?.attempted_at,error:last?.message||undefined},
             assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>view(asset,sha256,receipts.find(row=>row.external_id===asset.id))),
             localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};

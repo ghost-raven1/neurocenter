@@ -22,7 +22,7 @@ beforeEach(()=>{vi.clearAllMocks();fixture.data=structuredClone(source);fixture.
 
 describe('Версии и установщик на шаге компьютера',()=>{
     it('Различает установленную, найденную и подготовленную версии и показывает дату проверки',()=>{
-        const html=render();expect(html).toContain('Установлено: 0.9.5');expect(html).toContain('В источнике: 0.10.0');expect(html).toContain('Готово к установке: 0.9.10');expect(html).toContain('Проверено:');
+        const html=render();expect(html).toContain('Установлено: 0.9.5');expect(html).toContain('Последняя проверка источника: 0.10.0');expect(html).toContain('Готово к установке: 0.9.10');expect(html).toContain('Проверено:');
         expect(html).toContain('Подготовить 0.10.0 к установке');expect(html).toContain('Обновить мост');expect(fixture.start).not.toHaveBeenCalled();expect(fixture.install).not.toHaveBeenCalled();
     });
     it.each([false,true])('Ссылка установщика использует Gateway windows=%s',windows=>{
@@ -36,6 +36,20 @@ describe('Версии и установщик на шаге компьютер�
     });
     it('Сбой источника оставляет текущий установщик, помечает снимок и не предлагает импорт',()=>{
         fixture.data!.error='GitHub не отвечает';const html=render();expect(html).toContain('GitHub не отвечает');expect(html).toContain('сохранённые данные');expect(html).toContain('Установщик моста');expect(html).not.toContain('Подготовить 0.10.0');
+    });
+    it('Автономная поставка предлагает локальное обновление без проверки GitHub и не объявляет сохранённую опись свежей',()=>{
+        fixture.data={...source,sourceMode:'offline'} as IBridgeSource;const html=render();
+        expect(html).toContain('Обновить локальную поставку');expect(html).toContain('Автономная поставка');expect(html).toContain('сохранённые данные');
+        expect(html).toContain('Установщик моста');expect(html).not.toContain('Проверить новые версии в GitHub');expect(html).not.toContain('Подготовить 0.10.0');expect(html).not.toContain('Источник версий моста');
+        expect(fixture.check).not.toHaveBeenCalled();expect(fixture.start).not.toHaveBeenCalled();
+    });
+    it('В автономном режиме сохранённый отказ источника объясняет обновление локальной поставки',()=>{
+        fixture.data={...source,sourceMode:'offline',error:'Сохранённый отказ GitHub'};const html=render();
+        expect(html).toContain('Сохранённый отказ GitHub');expect(html).toContain('Загрузите обновлённую локальную поставку');expect(html).not.toContain('Повторите проверку;');expect(html).toContain('Установщик моста');
+    });
+    it('Локальная поставка без онлайн-проверок показывает готовый установщик без ложного отсутствия версии',()=>{
+        fixture.data={...source,sourceMode:'offline',available:undefined,checkedAt:undefined};const html=render();
+        expect(html).toContain('Готово к установке: 0.9.10');expect(html).toContain('Установщик моста');expect(html).not.toContain('нет проверенной версии');
     });
     it('Сбой до первой подготовки не обещает существующий установщик',()=>{
         fixture.data!.imported=undefined;fixture.error='Нет связи';const html=render();expect(html).toContain('станет доступен после подготовки');expect(html).not.toContain('остаётся доступен');

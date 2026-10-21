@@ -26,6 +26,19 @@ function fixture(assets: AssetDescriptor[] = [skill('helper')]) {
 }
 
 describe('Закреплённый серверный источник ассетов',()=>{
+    it('Автономный источник читает те же закреплённые байты из readonly кэша без сети',async()=>{
+        const f=fixture(),bytes=new Map([...f.files.values()].map(value=>[assetDigest(value),Buffer.from(value)]));
+        const request=vi.fn(async()=>{throw new Error('GitHub запрещён');});
+        const client=new AssetSourceClient(f.pin,request,undefined,{offline:true,cache:{read:async sha=>bytes.get(sha)}});
+        expect((await client.select(['helper'])).assets[0].asset.id).toBe('helper');expect(request).not.toHaveBeenCalled();
+        bytes.delete(f.pin.index.sha256);
+        await expect(client.index()).rejects.toMatchObject({status:409});expect(request).not.toHaveBeenCalled();
+    });
+    it('Повреждённый локальный SHA не вызывает сетевой fallback в автономном режиме',async()=>{
+        const f=fixture(),request=vi.fn(async()=>new Response(f.files.get('index.json')));
+        const client=new AssetSourceClient(f.pin,request,undefined,{offline:true,cache:{read:async()=>Buffer.from('damaged')}});
+        await expect(client.index()).rejects.toMatchObject({status:409});expect(request).not.toHaveBeenCalled();
+    });
     it('Читает exact index SHA и только выбранные описи, бинарные URL не запрашивает',async()=>{
         const f = fixture([skill('first'),skill('second')]);
         const result = await f.client.select(['second']);

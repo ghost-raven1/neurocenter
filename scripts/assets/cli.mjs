@@ -8,7 +8,7 @@ import {assetProgressReporter} from './progress.mjs';
 import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from './environment.mjs';
 
-const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>]';
+const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--offline-ready] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>]';
 
 /**
  * Системный каталог корневых сертификатов. Если HTTPS завершается корпоративным
@@ -42,6 +42,7 @@ export function parseAssetsArguments(args) {
         if(key==='--verify-only')options.verifyOnly=true;
         else if(key==='--download-only')options.verifyOnly=false;
         else if(key==='--without-models')options.withoutModels=true;
+        else if(key==='--offline-ready')options.offlineReady=true;
         else if(key==='--metadata-only')options.metadataOnly=true;
         else if(Object.hasOwn(values,key)&&args[index+1]&&!args[index+1].startsWith('-'))options[values[key]]=args[++index];
         else throw new Error(usage);

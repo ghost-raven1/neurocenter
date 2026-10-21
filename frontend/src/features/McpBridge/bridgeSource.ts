@@ -13,6 +13,7 @@ export interface IBridgeSourceRelease {
 export interface IBridgeSource {
     url: string;
     revision: number;
+    sourceMode?: 'online' | 'offline';
     checkedAt?: string;
     error?: string;
     importedError?: string;

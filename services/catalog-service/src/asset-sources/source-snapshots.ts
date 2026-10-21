@@ -1,12 +1,13 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { assetDigest, assertIndexEvolution, validateIndex, selectAssets, type AssetIndex, type ResolvedAsset } from '@neurocenter/asset-contract';
 import type { Pool } from 'pg';
-import { AssetSourceClient, validateSourcePin, type IAssetSourcePin } from './source-client';
+import { AssetSourceClient, validateSourcePin, type IAssetSourcePin, type AssetSourceTransport } from './source-client';
+import {assetSourceTransport} from './source-cache';
 
 export interface ISourceSnapshot {pin:IAssetSourcePin;index:AssetIndex;assets:ResolvedAsset[];checked_at:string|Date}
 /** Metadata refresh не скачивает binaries и не меняет каталог; каждый intent сохраняет выбранный commit. */
 export class AssetSourceSnapshots {
-    constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch) {}
+    constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch,private readonly transport:AssetSourceTransport=assetSourceTransport()) {}
     async latest():Promise<ISourceSnapshot|undefined> {
         return (await this.pool.query<ISourceSnapshot>('SELECT * FROM asset_source_snapshots ORDER BY checked_at DESC,commit LIMIT 1')).rows[0];
     }
@@ -36,6 +37,11 @@ export class AssetSourceSnapshots {
     }
     async refresh():Promise<ISourceSnapshot> {
         try{
+            if(this.transport.offline){
+                if(!this.initialPin)throw new ConflictException('Локальная поставка не закреплена в конфигурации приложения.');
+                const saved=await this.load(validateSourcePin(this.initialPin));
+                await this.pool.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");return saved;
+            }
             if(!await this.latest()&&this.initialPin){return await this.load(validateSourcePin(this.initialPin));}
             // Репозиторий доверенный и фиксированный. Mutable ref разрешается ровно один раз на явное действие администратора.
             // Ref API не включает diff: размер очередного commit не меняет возможность обновить список.
@@ -53,7 +59,7 @@ export class AssetSourceSnapshots {
         }catch(error){await this.pool.query('INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),$1) ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=EXCLUDED.message',[error instanceof Error?error.message:'Не удалось проверить источник.']);throw error;}
     }
     private async load(pin:IAssetSourcePin,index?:AssetIndex):Promise<ISourceSnapshot> {
-        const source=new AssetSourceClient(pin,this.request),checked=index??await source.index();
+        const source=new AssetSourceClient(pin,this.request,undefined,this.transport),checked=index??await source.index();
         if(checked.assets.length>300){throw new ConflictException('Источник содержит более 300 описей; импорт этой версии не поддерживается.');}
         const records:ResolvedAsset[]=[];let bytes=0;
         for(const entry of checked.assets){const record=await source.descriptor(entry);bytes+=Buffer.byteLength(JSON.stringify(record.asset));if(bytes>32*1024*1024){throw new ConflictException('Metadata источника превышает 32 МиБ.');}records.push(record);}

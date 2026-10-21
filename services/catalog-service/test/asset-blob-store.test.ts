@@ -32,4 +32,12 @@ describe('Серверный SHA supply cache: реальные tempfiles и iso
   const cancellation=new AbortController();cancellation.abort();const request=vi.fn(async()=>new Response(bytes)),store=new AssetBlobStore(f.pool,directory,request);
   await expect(store.importAsset(asset(),randomUUID(),cancellation.signal)).rejects.toThrow();expect(request).not.toHaveBeenCalled();await expect(store.open(sha)).rejects.toMatchObject({status:404});
  });
+ it('Автономный импорт не скачивает отсутствующий blob и не пишет registry; полный кэш принимается',async()=>{
+  const request=vi.fn(async()=>new Response(bytes)),store=new AssetBlobStore(f.pool,directory,request,true);
+  await expect(store.importAsset(asset(),randomUUID(),signal())).rejects.toThrow('локальной поставке');
+  expect(request).not.toHaveBeenCalled();expect(await fs.readdir(directory)).toEqual([]);expect((await f.pool.query('SELECT * FROM asset_source_blobs')).rows).toEqual([]);
+  await fs.writeFile(path.join(directory,sha+'.blob'),bytes,{mode:0o400});
+  const blobs=await store.importAsset(asset(),randomUUID(),signal());expect(blobs[0].sha256).toBe(sha);expect(request).not.toHaveBeenCalled();
+  expect((await f.pool.query('SELECT * FROM asset_source_blobs')).rows).toHaveLength(1);
+ });
 });
