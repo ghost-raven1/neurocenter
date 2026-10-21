@@ -90,6 +90,6 @@ export function ProjectLearning({projectId}: {projectId: string}): JSX.Element {
         {editorHypothesisId && !editorHypothesis && <Modal open title="Исходная гипотеза" onCancel={close} footer={<Button onClick={close}>Закрыть</Button>}>{details.error ? <Alert showIcon type="error" message={details.error} action={<Button onClick={details.retry}>Повторить</Button>} /> : <Spin tip="Загружаем основания версии…" />}</Modal>}
         {editor && 'candidateId' in editor && editorCandidate && data.capabilities.approve && <LearningCandidateActionModal revision={data.revision} candidate={editorCandidate} action={editor.kind} state={editorState} onClose={close} onSubmit={actions.execute} />}
         {editor?.kind === 'analysis' && data.capabilities.record && <LearningAnalysisModal revision={data.revision} experiences={data.experiences} models={resources.models} busy={analysis.busy} unconfirmed={analysis.unconfirmed} error={analysis.error} onClose={close} onStart={(ids, model, revision) => actions.busy || actions.unconfirmed ? Promise.resolve(false) : analysis.start(ids, model, revision)} />}
-        {query && !filter(data.hypotheses).length && !filter(data.experiences).length && !filter(data.candidates).length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Поиск не дал результатов" />}
+        {query && !filter(data.hypotheses).length && !filter(data.experiences).length && !filter(candidates).length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Поиск не дал результатов" />}
     </section>;
 }
