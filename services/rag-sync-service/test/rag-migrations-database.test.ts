@@ -30,7 +30,9 @@ describe('Offline migration inventory',()=>{
             {scope:'data',version:'001-rag-storage-budget',name:'rag-storage-budget',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},
             {scope:'base',version:'database-lifecycle-1',name:'database-lifecycle',checksum:sqlChecksum(DATABASE_LIFECYCLE_SCHEMA)},
             {scope:'project',version:'project-identity-1',name:'project-identity',checksum:sqlChecksum(PROJECT_IDENTITY_SCHEMA)},
-        ]));expect(result).toHaveLength(4);
+            {scope:'base',version:'platform-quota-policy-1',name:'platform-quota-policy',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},
+            {scope:'data',version:'platform-quota-applied-1',name:'platform-quota-applied',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},
+        ]));expect(result).toHaveLength(6);
     });
     it('Manifest rejects trailing arguments before opening any secret or connection',async()=>{
         await expect(cli(['manifest','garbage'],{NODE_ENV:'production',RAG_PG_URL_FILE:'/missing/never-read'})).rejects.toMatchObject({code:1});
@@ -54,7 +56,7 @@ describe.skipIf(!connection)('Versioned RAG migrations in disposable databases',
         const names=(await f.pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row=>row.tablename);
         expect(names).toContain('neurocenter_database_identity');expect(names).not.toContain('neurocenter_project_databases');
         const versions=(await f.pool.query('SELECT version,checksum FROM neurocenter_rag_schema_versions ORDER BY version')).rows;
-        expect(versions).toEqual([{version:'project-generations-1',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},{version:'project-identity-1',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)}]);
+        expect(versions).toEqual(['platform-quota-applied-1','project-generations-1','project-identity-1'].map(version=>({version,checksum:expect.stringMatching(/^[a-f0-9]{64}$/)})));
     });
     it('Lifecycle setup records its migration instead of untracked runtime DDL',async()=>{
         const f=await fixture();await setupDatabaseLifecycle(f.pool);
@@ -64,11 +66,11 @@ describe.skipIf(!connection)('Versioned RAG migrations in disposable databases',
         const f=await fixture();await oldGeneration(f.pool);await f.pool.query('DROP INDEX rag_chunks_hash_idx');
         await expect(f.store().setup()).rejects.toThrow(/структур|схем/i);
     });
-    it('The base CLI chain creates exactly eleven base tables and no project marker',async()=>{
+    it('The base CLI chain creates exactly thirteen base tables and no project marker',async()=>{
         const f=await fixture(),result=await migrateBase(f.pool,f.url);expect(result).toMatchObject({ok:true,scope:'base',ready:true,existingSchema:true,pending:[]});
         const names=(await f.pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row=>row.tablename);
         expect(names).toEqual(['neurocenter_database_purge_receipts','neurocenter_project_databases','neurocenter_rag_migrations','neurocenter_rag_schema_versions',
-            'rag_chunks','rag_generations','rag_index_state','rag_quota_events','rag_storage_budget','rag_storage_settings','rag_write_receipts']);
+            'rag_chunks','rag_generations','rag_index_state','rag_platform_quota_applied','rag_platform_quota_events','rag_platform_quota_policy','rag_quota_events','rag_storage_budget','rag_storage_settings','rag_write_receipts']);
     });
     it('Adoption preserves generation bytes, vectors, quota accounting and the original applied timestamp',async()=>{
         const f=await fixture();await oldGeneration(f.pool);
@@ -98,7 +100,7 @@ describe.skipIf(!connection)('Versioned RAG migrations in disposable databases',
     it('Parallel project initialization and replay leave one immutable receipt per migration',async()=>{
         const f=await fixture();await Promise.all(Array.from({length:4},()=>f.store().setup()));
         const before=(await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows;
-        await f.store().setup();expect((await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows).toEqual(before);expect(before).toHaveLength(2);
+        await f.store().setup();expect((await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows).toEqual(before);expect(before).toHaveLength(3);
         expect((await f.pool.query('SELECT count(*)::int AS count FROM neurocenter_database_identity')).rows[0].count).toBe(0);
     });
     it.each(['project-generations-1','project-identity-1','database-lifecycle-1'])('A changed checksum for %s fails before another migration or data write',async version=>{

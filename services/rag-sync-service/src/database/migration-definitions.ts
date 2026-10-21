@@ -3,6 +3,7 @@ import {RAG_GENERATION_SCHEMA} from '../rag/rag-generation-schema';
 import {RAG_QUOTA_MIGRATION,RAG_QUOTA_SCHEMA} from '../rag/quota/rag-quota-schema';
 import {DATABASE_LIFECYCLE_SCHEMA,PROJECT_IDENTITY_SCHEMA} from './migration-sql';
 import type {SchemaObjects} from './schema-inspection';
+import {PLATFORM_QUOTA_SCHEMA,PLATFORM_QUOTA_CACHE_SCHEMA} from '../rag/quota/platform-quota-schema';
 
 export interface RagMigration {version:string;name:string;scope:'data'|'base'|'project';sql:string;objects:SchemaObjects;schemaSha256:string;lockTables?:readonly string[];}
 export const sqlChecksum=(sql:string):string=>createHash('sha256').update(sql).digest('hex');
@@ -16,7 +17,11 @@ export const LIFECYCLE_MIGRATION:RagMigration={version:'database-lifecycle-1',na
     objects:{tables:['neurocenter_project_databases','neurocenter_database_purge_receipts']},schemaSha256:'c143148c4c6b0d83f810845db4cb0227bffa5ee06820b9d5c6e58a40d309537c'};
 export const IDENTITY_MIGRATION:RagMigration={version:'project-identity-1',name:'project-identity',scope:'project',sql:PROJECT_IDENTITY_SCHEMA,
     objects:{tables:['neurocenter_database_identity']},schemaSha256:'b1744d2c2f30dab3cf2435ee74da5815e9cbed6a5f07f3799c00511ab920eaa3'};
-export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION] as const;
+export const PLATFORM_QUOTA_MIGRATION:RagMigration={version:'platform-quota-policy-1',name:'platform-quota-policy',scope:'base',sql:PLATFORM_QUOTA_SCHEMA,
+    objects:{tables:['rag_platform_quota_policy','rag_platform_quota_events']},schemaSha256:'ee6db88af1409567bf4775b1d306dbbe632fc4d14a4d5ad273b689a7b4dfa18c'};
+export const PLATFORM_QUOTA_CACHE_MIGRATION:RagMigration={version:'platform-quota-applied-1',name:'platform-quota-applied',scope:'data',sql:PLATFORM_QUOTA_CACHE_SCHEMA,
+    objects:{tables:['rag_platform_quota_applied']},schemaSha256:'01eee6249c42330df2f100871cda22772e60314f71843a0e740cabc64c0c8575'};
+export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION,PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION] as const;
 export const QUOTA_MIGRATION:RagMigration={version:RAG_QUOTA_MIGRATION,name:'rag-storage-budget',scope:'data',sql:RAG_QUOTA_SCHEMA,
     lockTables:['rag_chunks'],
     objects:{tables:['rag_storage_settings','rag_storage_budget','rag_quota_events'],

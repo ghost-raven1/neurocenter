@@ -2,6 +2,8 @@ import {createPool} from '../database/pool';
 import { Pool } from 'pg';
 import {BadRequestException,HttpException,ServiceUnavailableException} from '@nestjs/common';
 import {setupRagQuota,ragQuotaPolicy,ragQuota,mapRagQuotaError,reserveLegacyRagQuota,type IRagQuota,type IRagQuotaUpdate} from './quota/rag-quota';
+import {applyPlatformQuotaPolicy,platformQuotaPolicy,seedPlatformQuotaPolicy,type IPlatformQuotaUpdate,type IPlatformQuotaPolicy} from './quota/platform-quota';
+import {PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION} from '../database/migration-definitions';
 import {RAG_WRITE_LOCK} from './quota/rag-quota-schema';
 import {reserveCapacity} from '../../../shared/capacity.cjs';
 import {normalizeChunkRow,rowFingerprint} from '../../../shared/rag-index-contract.cjs';
@@ -11,6 +13,7 @@ import {migrateRag,checkRagQuotaMigration} from '../database/migrations';
 import {GENERATION_MIGRATION,IDENTITY_MIGRATION} from '../database/migration-definitions';
 import {RagGenerations,ensureGenerationSearchIndex} from './rag-generations';
 import {buildUpsert,parseVector,type IUpsertRow} from './rag-rows';
+import {searchProjectIndex,type ProjectSearchInput} from './rag-search';
 export {buildUpsert,type IUpsertRow} from './rag-rows';
 
 export interface IRagDbConfig {
@@ -39,6 +42,8 @@ export class RagDb {
     private readonly scope:'base'|'project';
     public readonly generations:RagGenerations;
 
+    public search(input:ProjectSearchInput){return searchProjectIndex(this.pool,input);}
+
     constructor(config: IRagDbConfig) {
         this.scope=config.scope??'project';
         this.pool = createPool({ connectionString: config.url, max: 5 },'rag-data');
@@ -61,7 +66,18 @@ export class RagDb {
         await migrateRag(this.pool,this.scope==='project'?[GENERATION_MIGRATION,IDENTITY_MIGRATION]:[GENERATION_MIGRATION]);
         await setupRagQuota(this.pool,this.quotaPolicy);
         if(!await checkRagQuotaMigration(this.pool))throw new Error('Миграция квоты RAG не подтверждена.');
+        await migrateRag(this.pool,[PLATFORM_QUOTA_CACHE_MIGRATION]);
+        if(this.scope==='base') {
+            await migrateRag(this.pool,[PLATFORM_QUOTA_MIGRATION]);
+            await seedPlatformQuotaPolicy(this.pool);
+        }
     }
+
+    public platformQuota(update?:IPlatformQuotaUpdate,actor?:string){
+        if(this.scope!=='base')throw new Error('Настройки платформы принадлежат общей базе.');
+        return platformQuotaPolicy(this.pool,update,actor);
+    }
+    public configureQuota(policy:IPlatformQuotaPolicy|(()=>Promise<IPlatformQuotaPolicy>)):Promise<void>{return applyPlatformQuotaPolicy(this.pool,policy);}
 
     /** Лимит и счётчик принадлежат той же БД, что и знания проекта. */
     public quota(projectKey:string,update?:IRagQuotaUpdate,actor?:string):Promise<IRagQuota>{return ragQuota(this.pool,projectKey,update,actor);}

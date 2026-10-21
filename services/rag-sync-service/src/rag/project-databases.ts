@@ -6,6 +6,7 @@ import {reserveCapacity,recordCapacityQueue} from '../../../shared/capacity.cjs'
 import {DatabaseLifecycle} from '../retired-databases/database-lifecycle';
 import {databaseLock,LIFECYCLE_LOCK} from '../retired-databases/lifecycle-schema';
 import {projectDatabaseName} from './project-database-name';
+import type {IPlatformQuotaUpdate} from './quota/platform-quota';
 export {projectDatabaseName} from './project-database-name';
 
 interface IProjectRef { id:string; name:string }
@@ -40,6 +41,9 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
         if(this.provisioner!==this.admin){await this.provisioner.end();}
     }
 
+    /** Admin policy is read from the durable base, never from one project's cached settings. */
+    platformQuota(update?:IPlatformQuotaUpdate,actor?:string){return this.migrationSource.platformQuota(update,actor);}
+
     /** Получает только проверенные серверные ID, не используя локальные пути клиента. */
     async projects():Promise<IProjectRef[]> {
         const base=(process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/$/,'');
@@ -71,6 +75,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
             }
             entry.active++; entry.used=Date.now();
             await entry.db.setup();
+            await entry.db.configureQuota(()=>this.platformQuota());
             return await action(entry.db,project.id);
         } finally {
             if (entry) { entry.active--; }

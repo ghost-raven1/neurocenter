@@ -11,6 +11,8 @@ import {validateRagQuotaUpdate,type IRagQuotaUpdate} from './quota/rag-quota';
 import {projectRagContext,type IProjectRagContext} from './project-rag-context';
 import type {RagDb} from './rag-db';
 import {ragRequestHash} from '../../../shared/rag-index-contract.cjs';
+import {projectSearchInput} from './rag-search';
+import {requireRagFeatures} from './rag-features';
 
 
 @Injectable()
@@ -18,6 +20,18 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
     constructor(private readonly databases: ProjectDatabases) {}
     async onModuleInit():Promise<void> {}
     async onModuleDestroy():Promise<void> {}
+    /** Catalog owns both generation and selection revision, including during reindex promotion. */
+    async search(raw:unknown){
+        const input=projectSearchInput(raw);
+        await requireRagFeatures(['project_search']);
+        return this.read(input.projectId,async(db,id,context)=>{
+            const expected={...input};delete (expected as Partial<typeof input>).embedding;
+            if(ragRequestHash(context)!==ragRequestHash(expected))throw new ConflictException('Контекст поиска уже изменён. Повторите сообщение.');
+            const result=await db.search(input);
+            if(ragRequestHash(context)!==ragRequestHash(await projectRagContext(id)))throw new ConflictException('Индекс проекта изменился во время поиска. Повторите сообщение.');
+            return result;
+        });
+    }
     private async read<T>(project:string,action:(db:RagDb,id:string,context:IProjectRagContext)=>Promise<T>):Promise<T>{
         return this.databases.withProject(project,async(db,id)=>{const context=await projectRagContext(id);return action(db,id,context);});
     }
@@ -95,6 +109,7 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         if(write.snapshot?.complete&&(delta.chunks.length||delta.deletes.length)){throw new BadRequestException('Подтверждение снимка передаётся отдельным пустым пакетом после всех изменений.');}
         if(write.indexProfile){requireUsableVectors(delta.chunks.map(row=>({embedding:row.embedding??null})),dimension);}
         const upserts: IUpsertRow[] = delta.chunks.map(row=>toRow(row,!!write.indexProfile));
+        await requireRagFeatures(['rag_sync']);
         const base=(process.env.CATALOG_SERVICE_URL||'http://localhost:4100').replace(/\/+$/,'');
         const authorization=await fetch(base+'/internal/project-rag/write-authorize',{method:'POST',
             headers:{'content-type':'application/json','x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''},
@@ -146,8 +161,10 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         return this.databases.withProject(projectKey,async (_db,id)=>({databaseName:projectDatabaseName(id),projectId:id}));
     }
     async buildGeneration(projectId:string,generation:string){
+        await requireRagFeatures(['rag_sync']);
         const base=(process.env.CATALOG_SERVICE_URL||'http://localhost:4100').replace(/\/+$/,'');
         return this.databases.withProject(projectId,(db,id)=>db.generations.build(id,generation,async(texts,profile)=>{
+            await requireRagFeatures(['rag_sync','model_hosting']);
             const response=await fetch(base+'/internal/project-rag/reindex-embedding',{
                 method:'POST',headers:{'content-type':'application/json','x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''},
                 body:JSON.stringify({projectId:id,planId:generation,profile,input:texts}),signal:AbortSignal.timeout(110000)});

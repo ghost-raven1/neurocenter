@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {normalizeIndexProfile,normalizeChunkRow,rowFingerprint,indexSnapshotHash,embeddingSignature} from '../../shared/rag-index-contract.cjs';
 import {validateIndexWrite,requireUsableVectors,readIndexSummary,bindIndexProfile,sealIndex} from '../src/rag/rag-index-state';
 import {RagService} from '../src/rag/rag.service';
+vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}));
 import type {ProjectDatabases} from '../src/rag/project-databases';
 import {write,generation} from './rag-write.fixture';
 beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true})));

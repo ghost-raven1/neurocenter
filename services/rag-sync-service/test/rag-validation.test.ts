@@ -3,6 +3,7 @@ import {RagService} from '../src/rag/rag.service';
 import {RagController} from '../src/rag/rag.controller';
 import type {ProjectDatabases} from '../src/rag/project-databases';
 import {write} from './rag-write.fixture';
+vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}));
 
 const row={id:'test',filePath:'README.md',content:'Инструкция',contentHash:'server'};
 describe('Валидация полной дельты RAG до записи',()=>{
