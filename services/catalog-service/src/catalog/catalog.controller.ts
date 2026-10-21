@@ -13,12 +13,7 @@ import {
     IProjectDetail,
     IProjectAsset,
     IQuota,
-    ISkill,
-    ISkillCollection,
-    ISkillDetail,
     IStorageSummary,
-    IPackage,
-    IPackageDetail,
     IProjectSummary,
     IAuditEvent,
     IProjectMember,
@@ -26,15 +21,6 @@ import {
 } from './dto';
 import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
-import {
-    PACKAGE_COLLECTIONS,
-    PACKAGE_DETAILS,
-    PACKAGES,
-    SKILLS,
-    SKILL_COLLECTIONS,
-    SKILL_DETAILS,
-    toPage,
-} from './data';
 import { CatalogService } from './catalog.service';
 import {pagination} from './pagination';
 import {validateProjectRetention,validateProjectSettings} from './project-validation';
@@ -44,8 +30,8 @@ import { MEMBER_ROLE_OPTIONS, T_DEFAULT_MEMBER_ROLE, roleCan } from './rbac';
 import type { IOperationReadScope } from '../operations/operation.types';
 
 /**
- * Ключи-маршруты каталога проектов/версий/скиллов/пакетов/операций/аудит/maintenance.
- * Projects — PG-backed (БД `catalog`); остальное — mock-данные (dev).
+ * PostgreSQL-backed проекты, назначения, версии инструментов и история обслуживания.
+ * Файловые скиллы обслуживаются отдельным skills-service через Gateway.
  */
 /** Минимальная форма HTTP-запроса (заголовки, инжектированные gateway). */
 interface IHttpRequest {
@@ -446,75 +432,6 @@ export class CatalogController {
     }
 
     /**
-     * Коллекции скиллов.
-     *
-     * @returns {ISkillCollection[]}
-     */
-    @Get('skills/collections')
-    public listSkillCollections(): ISkillCollection[] {
-        return SKILL_COLLECTIONS;
-    }
-
-    /**
-     * Список скиллов.
-     *
-     * @returns {ISkill[]}
-     */
-    @Get('skills')
-    public listSkills(): ISkill[] {
-        return SKILLS;
-    }
-
-    /**
-     * Подробности скилла (с версиями).
-     *
-     * @param {string} skillId - id скилла
-     * @returns {ISkillDetail}
-     */
-    @Get('skills/:skillId')
-    public getSkill(@Param('skillId') skillId: string): ISkillDetail {
-        return SKILL_DETAILS[skillId] ?? { skill: SKILLS[0], versions: [] };
-    }
-
-    /**
-     * Публикация версии скилла.
-     *
-     * @returns {{ versionId: string }}
-     */
-    @Post('skills/publish')
-    public publishSkill(@Req() req: IHttpRequest): { versionId: string } {
-        this.assertMainAdmin(req);
-        return { versionId: 'skv-new' };
-    }
-
-    /**
-     * Перевод head коллекции скиллов.
-     *
-     * @param {string} collectionId - id коллекции
-     * @returns {{ headVersionId: string }}
-     */
-    @Post('skills/collections/:collectionId/head')
-    public moveSkillCollectionHead(@Param('collectionId') collectionId: string): { headVersionId: string } {
-        void collectionId;
-
-        return { headVersionId: 'skv-head' };
-    }
-
-    /**
-     * Ссылка на скачивание скилла.
-     *
-     * @param {string} skillId - id скилла
-     * @returns {{ downloadUrl: string, expiresAt: string }}
-     */
-    @Get('skills/:skillId/download')
-    public downloadSkill(@Param('skillId') skillId: string): { downloadUrl: string; expiresAt: string } {
-        return {
-            downloadUrl: `https://storage.internal/skills/${skillId}/current.tar.gz?token=mock`,
-            expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        };
-    }
-
-    /**
      * Список операций.
      *
      * @param {Record<string, string>} query - page/size
@@ -712,38 +629,6 @@ export class CatalogController {
     @Post('local-assets/install')
     public installLocalAsset(): never {
         throw new ConflictException('Установка в пользовательскую папку выполняется локальным мостом. Серверная запись файлов отключена; файлы не изменены.');
-    }
-
-    /**
-     * Коллекции пакетов.
-     *
-     * @returns {{ id: string, title: string }[]}
-     */
-    @Get('packages/collections')
-    public listPackageCollections(): { id: string; title: string }[] {
-        return PACKAGE_COLLECTIONS;
-    }
-
-    /**
-     * Список пакетов.
-     *
-     * @param {Record<string, string>} query - page/size
-     * @returns {IPage<IPackage>}
-     */
-    @Get('packages')
-    public listPackages(@Query() query: Record<string, string>): IPage<IPackage> {
-        return toPage(PACKAGES, Number(query.page) || 1, Number(query.size) || 20);
-    }
-
-    /**
-     * Подробности пакета.
-     *
-     * @param {string} id - id пакета
-     * @returns {IPackageDetail}
-     */
-    @Get('packages/:id')
-    public getPackage(@Param('id') id: string): IPackageDetail {
-        return PACKAGE_DETAILS[id] ?? PACKAGE_DETAILS['pk-1'];
     }
 
     /**

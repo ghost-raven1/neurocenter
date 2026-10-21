@@ -9,9 +9,6 @@ export type TSnapshotStatus = 'UPLOADING' | 'VERIFYING' | 'VERIFIED' | 'REJECTED
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
 export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD' | 'MODEL';
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
-export type TSkillState = 'PUBLISHED' | 'DEPRECATED';
-export type TCollectionScope = 'COMMON' | 'PROJECT';
-export type TPackageKind = 'LOCAL_MCP' | 'REMOTE_PROFILE' | 'PLUGIN';
 
 export interface IPage<T> {
     items: T[];
@@ -138,40 +135,6 @@ export interface ISnapshotManifest {
     signature: string;
 }
 
-export interface ISkillCollection {
-    collectionId: string;
-    scope: TCollectionScope;
-    projectId: string | null;
-    title: string;
-}
-
-export interface ISkill {
-    id: string;
-    collectionId: string;
-    slug: string;
-    owner: string;
-    state: TSkillState;
-    currentVersionId: string;
-    versionsCount: number;
-    bytes: number;
-    pinnedInCount: number;
-    nameConflict: boolean;
-}
-
-export interface ISkillVersion {
-    versionId: string;
-    skillId: string;
-    parentId: string | null;
-    author: string;
-    createdAt: string;
-    contentHash: string;
-}
-
-export interface ISkillDetail {
-    skill: ISkill;
-    versions: ISkillVersion[];
-}
-
 export interface IOperation {
     operationId: string;
     type: TOperationType;
@@ -224,33 +187,6 @@ export interface IBackupStatus {
     lastBackupAt: string | null;
     backupLagSeconds: number;
     restoreDrills: { at: string; result: string }[];
-}
-
-export interface IPackage {
-    id: string;
-    collectionId: string;
-    name: string;
-    kind: TPackageKind;
-    currentVersionId: string;
-    compatibility: string;
-    variantsCount: number;
-    origin: string;
-    pinnedInCount: number;
-}
-
-export interface IPackageVariant {
-    variantId: string;
-    os: string;
-    architecture: string;
-    runtime: string;
-    bytes: number;
-    entrypoint: string;
-}
-
-export interface IPackageDetail {
-    package: IPackage;
-    manifestHash: string;
-    variants: IPackageVariant[];
 }
 
 /** Файл MCP/плагина (манифест; бинарные — в origin/объектном хранилище). */
