@@ -21,17 +21,3 @@ export async function retirementBlockers(db:Db,projectId:string,includeGrants=tr
     return blockers;
 }
 export async function requireRetirementIdle(db:Db,projectId:string):Promise<void>{const blockers=await retirementBlockers(db,projectId,false);if(blockers.length)throw new ConflictException(blockers.join(' '));}
-
-/** Late enqueue/grant после удаления проекта запрещается в PostgreSQL, даже если HTTP начал работу раньше. */
-export async function setupRetirementReferenceGuards(db:Db):Promise<void>{
-    await db.query(`CREATE OR REPLACE FUNCTION neurocenter_retired_reference_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-        IF NEW.project_id IS NOT NULL THEN
-            PERFORM pg_advisory_xact_lock(hashtextextended('neurocenter:project-lifecycle:'||NEW.project_id,0));
-            IF EXISTS(SELECT 1 FROM project_retirements WHERE project_id=NEW.project_id) THEN
-                RAISE EXCEPTION 'Retired project reference rejected' USING ERRCODE='23514';
-            END IF;
-        END IF; RETURN NEW;
-    END $$`);
-    for(const table of ['bridge_jobs','bridge_hosted_rag_grants'])await db.query(`DROP TRIGGER IF EXISTS neurocenter_retired_reference_guard ON ${table};
-        CREATE TRIGGER neurocenter_retired_reference_guard BEFORE INSERT OR UPDATE OF project_id ON ${table} FOR EACH ROW EXECUTE FUNCTION neurocenter_retired_reference_guard()`);
-}

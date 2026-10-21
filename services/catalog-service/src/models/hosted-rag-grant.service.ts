@@ -5,7 +5,7 @@ import {DeviceInstallations} from '../devices/device-installations';
 import {InstallPlans} from '../devices/install-plans';
 import {assertRagUiJob} from '../devices/rag-ui-jobs';
 import {readHostedRagGrant} from '../devices/hosted-rag-grants';
-import {setupHostedRagGrantRevocations} from '../devices/hosted-rag-grant-schema';
+import {backfillHostedRagGrants} from '../devices/hosted-rag-grant-backfill';
 import type {PoolClient} from 'pg';
 import type {Job} from '../devices/device-job.model';
 import {ProjectEmbeddingService} from './project-embedding.service';
@@ -18,7 +18,7 @@ import type {IConfiguredProjectEmbedding,IDeviceEmbeddingContext} from './projec
 export class HostedRagGrantService implements OnModuleInit{
     private initialization?:Promise<void>;
     constructor(private readonly devices:DeviceStore,private readonly installations:DeviceInstallations,private readonly plans:InstallPlans,private readonly selection:ProjectEmbeddingService){}
-    ready():Promise<void>{return this.initialization??=(async()=>{await Promise.all([this.devices.ready(),this.selection.ready(),this.devices.access.ready()]);await setupHostedRagGrantRevocations(this.devices.pool,(job,db)=>this.validateMigration(job,db));})();}
+    ready():Promise<void>{return this.initialization??=(async()=>{await Promise.all([this.devices.ready(),this.selection.ready(),this.devices.access.ready()]);await backfillHostedRagGrants(this.devices.pool,(job,db)=>this.validateMigration(job,db));})();}
     /** Использует ту же транзакцию: DDL блокировки не ждут чтения через второй pool connection. */
     async validateMigration(job:Job,db:Pick<PoolClient,'query'>):Promise<void>{
         const device=(await db.query<Device>('SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now()',[job.device_id,job.email])).rows[0];

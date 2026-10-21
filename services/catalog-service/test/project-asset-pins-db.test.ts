@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { databaseFixture, actor, tool } from './asset-import-db.fixture';
 import { ProjectAssetRepository } from '../src/catalog/project-asset-repository';
-import { setupProjectAssetPins, pluginDeliveryPackage } from '../src/catalog/project-asset-pins';
+import { pluginDeliveryPackage } from '../src/catalog/project-asset-pins';
 import { InstallPlans } from '../src/devices/install-plans';
-import { setupInstallPlans } from '../src/devices/install-plan-schema';
 import type { DeviceStore } from '../src/devices/device-store';
 import type { DeviceArtifacts } from '../src/devices/device-artifacts';
 import { nativeCardHash } from '../src/publication/native-hash';
@@ -12,8 +11,7 @@ import { assertDeviceCatalogAsset } from '../src/devices/device-catalog-access';
 async function fixture(){
     const db=await databaseFixture();
     try{
-        await setupProjectAssetPins(db.pool);await setupProjectAssetPins(db.pool);await setupInstallPlans(db.pool);
-        await db.pool.query("INSERT INTO projects VALUES('project-a','Проект A')");
+        await db.pool.query("INSERT INTO projects(id,name) VALUES('project-a','Проект A')");
         const plugin=await db.plugins.create(tool('pin-fixture').asset.card as never,actor),first=pluginDeliveryPackage(plugin);
         const assignments=new ProjectAssetRepository(db.pool);
         const artifacts={build:async(_kind:string,id:string,version:number)=>{
@@ -36,7 +34,7 @@ describe('Exact project assignment — actual PostgreSQL and immutable packages'
         const cards=await db.assignments.catalog('project-a');expect(cards).toHaveLength(1);
         expect(cards[0]).toMatchObject({version:1,manifest:db.first.manifest.sha256,pinOrigin:'assigned',card:{version:1,description:db.plugin.description}});
         await assertDeviceCatalogAsset(db.pool,'project-a','plugin',db.plugin.id,{version:1,manifest:db.first.manifest.sha256});
-        await db.pool.query("INSERT INTO projects VALUES('project-b','Проект B')");
+        await db.pool.query("INSERT INTO projects(id,name) VALUES('project-b','Проект B')");
         await expect(db.assignments.add('project-b',db.plugin.id,'plugin',actor)).rejects.toMatchObject({status:409});
     }finally{await db.dispose();}
  });

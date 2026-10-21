@@ -7,12 +7,6 @@ export interface ISourceSnapshot {pin:IAssetSourcePin;index:AssetIndex;assets:Re
 /** Metadata refresh не скачивает binaries и не меняет каталог; каждый intent сохраняет выбранный commit. */
 export class AssetSourceSnapshots {
     constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch) {}
-    async setup():Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS asset_source_snapshots (
-            commit text PRIMARY KEY,pin jsonb NOT NULL,index jsonb NOT NULL,assets jsonb NOT NULL,checked_at timestamptz NOT NULL DEFAULT now());
-            CREATE TABLE IF NOT EXISTS asset_source_refresh (id boolean PRIMARY KEY DEFAULT true CHECK(id),attempted_at timestamptz,message text)`);
-
-    }
     async latest():Promise<ISourceSnapshot|undefined> {
         return (await this.pool.query<ISourceSnapshot>('SELECT * FROM asset_source_snapshots ORDER BY checked_at DESC,commit LIMIT 1')).rows[0];
     }

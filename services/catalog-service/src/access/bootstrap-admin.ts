@@ -12,8 +12,6 @@ export async function bootstrapAdministrator(pool:Pool,input:{email:unknown;disp
     const client=await pool.connect();
     try{
         await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(72465381)');
-        await client.query(`CREATE TABLE IF NOT EXISTS platform_bootstrap (
-            key TEXT PRIMARY KEY, principal TEXT NOT NULL, completed_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
         const receipt=(await client.query("SELECT principal FROM platform_bootstrap WHERE key='first-admin'")).rows[0];
         if(receipt){
             const current=(await client.query('SELECT is_main_admin,enabled FROM platform_users WHERE email=$1',[email])).rows[0];

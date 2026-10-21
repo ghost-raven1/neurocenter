@@ -52,7 +52,6 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
 
     async onModuleInit(): Promise<void> {
         await this.catalog.ensureSchema();
-        await this.repository.setup();
         await this.recoverOwnership();
     }
 

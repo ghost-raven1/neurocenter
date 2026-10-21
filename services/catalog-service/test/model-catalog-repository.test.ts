@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
-import { ModelsRepository, setupModelsSchema } from '../src/models/models.repository';
+import { ModelsRepository, backfillModelCatalog } from '../src/models/models.repository';
 
 const descriptor = { description: 'Модель проекта', capability: 'embedding', runtime: 'ollama', model: 'example:1', dimension: 3, manifestSha256: null, source: 'custom' };
 const row = { id: 'model-example', name: 'Пример', descriptor, revision: 1, created_at: new Date('2026-10-19T00:00:00Z'), updated_at: '2026-10-19T00:00:00Z' };
@@ -128,13 +128,9 @@ describe('Транзакционный каталог моделей', () => {
         expect(events()).toHaveLength(0);
     });
 
-    it('Схема создаёт отдельные назначения моделей и сохраняет существующие карточки', async () => {
-        await setupModelsSchema(pool);
-        const schema = query.mock.calls.find(([sql]) => sql.startsWith('CREATE TABLE IF NOT EXISTS model_catalog'))![0];
-        expect(schema).toContain('REFERENCES projects(id) ON DELETE CASCADE');
-        expect(schema).toContain('REFERENCES model_catalog(id) ON DELETE RESTRICT');
-        expect(schema).toContain('model_catalog(lower(name))');
-        expect(query.mock.calls.some(([sql]) => /(?:INSERT INTO|UPDATE|DELETE FROM) model_catalog(?:\s|\()/.test(sql))).toBe(false);
-        expect(query.mock.calls.some(([sql]) => sql.includes('project_assets'))).toBe(false);
+    it('Исторические версии переносятся как данные без runtime DDL', async () => {
+        await backfillModelCatalog(pool);
+        expect(query.mock.calls.some(([sql]) => /CREATE|ALTER|DROP/.test(sql))).toBe(false);
+        expect(query.mock.calls.at(-1)?.[0]).toBe('COMMIT');
     });
 });

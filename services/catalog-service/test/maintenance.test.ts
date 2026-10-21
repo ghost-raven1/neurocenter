@@ -6,7 +6,7 @@ import type {AccessDb} from '../src/access/access-db';
 import type {Request} from 'express';
 const mock=vi.hoisted(()=>({query:vi.fn(),release:vi.fn(),audit:vi.fn()}));
 vi.mock('../src/database/pool',()=>({createPool:()=>({query:mock.query,connect:async()=>({query:mock.query,release:mock.release}),end:vi.fn()})}));
-vi.mock('../src/access/security-events',()=>({setupSecurityEvents:vi.fn(),securityEvent:mock.audit}));
+vi.mock('../src/access/security-events',()=>({securityEvent:mock.audit}));
 describe('Настройки обслуживания',()=>{
     beforeEach(()=>{vi.clearAllMocks();mock.query.mockImplementation(async(sql:string)=>sql.startsWith('SELECT revision')?{rows:[{revision:2,policy:defaultPolicy}]}:sql.startsWith('UPDATE maintenance')?{rows:[{revision:3}]}:{rows:[]});});
     it('Сохранение и аудит выполняются в одной транзакции',async()=>{const service=new MaintenanceService();expect(await service.save({expectedRevision:2,policy:defaultPolicy},'admin@example.test')).toMatchObject({revision:3});expect(mock.audit).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({actor:'admin@example.test',action:'maintenance.policy.update'}));expect(mock.query.mock.calls.at(-1)?.[0]).toBe('COMMIT');});

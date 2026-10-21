@@ -7,22 +7,6 @@ import type { HostingAction, IHostingJobRow, IHostingProgress } from './hosting.
 export class ModelHostingRepository {
     constructor(private readonly pool: Pool) {}
 
-    async setup(): Promise<void> {
-        const client = await this.pool.connect();
-        try {
-            await client.query('BEGIN');
-            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:model-hosting-schema',0))");
-            await client.query(`CREATE TABLE IF NOT EXISTS model_hosting_jobs (
-            id text PRIMARY KEY, model_id text NOT NULL, action text NOT NULL, actor text NOT NULL,
-            state text NOT NULL, stage text NOT NULL, message text NOT NULL, progress integer,
-            started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
-            operation_id text NOT NULL UNIQUE);
-            CREATE INDEX IF NOT EXISTS model_hosting_jobs_model ON model_hosting_jobs(model_id,started_at DESC)`);
-            await client.query('COMMIT');
-        } catch (error) { await client.query('ROLLBACK'); throw error; }
-        finally { client.release(); }
-    }
-
     async latest(modelId: string): Promise<IHostingJobRow | undefined> {
         return (await this.pool.query<IHostingJobRow>('SELECT * FROM model_hosting_jobs WHERE model_id=$1 ORDER BY started_at DESC,id DESC LIMIT 1', [modelId])).rows[0];
     }

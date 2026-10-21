@@ -1,7 +1,8 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {createPool} from '../database/pool';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { IAccessClaims, IPlatformUser, IPlatformUserWrite, normalizeEmail, ROLES } from './access.model';
-import {setupSecurityEvents,securityEvent} from './security-events';
+import {securityEvent} from './security-events';
 
 /** Хранит пользователей по почте; проектные назначения остаются в project_members. */
 @Injectable()
@@ -11,12 +12,7 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
     ready():Promise<void>{return this.initialization??=this.initialize();}
     async onModuleInit(): Promise<void> {await this.ready();}
     private async initialize(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS platform_users (
-            email TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT '',
-            is_main_admin BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )`);
-        await setupSecurityEvents(this.pool);
+        await ensureCatalogSchema(this.pool);
         // Начальный локальный администратор создаётся один раз и не получает права повторно после их отзыва.
         if (process.env.SSO_DISABLE === 'true') {
             const email = normalizeEmail(process.env.DEV_USER_EMAIL || 'dev@localhost');

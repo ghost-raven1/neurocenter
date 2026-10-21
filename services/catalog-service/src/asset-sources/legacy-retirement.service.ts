@@ -24,11 +24,7 @@ export class LegacyRetirementService implements OnModuleInit {
     private readonly skills=new SkillAssetClient();
     constructor(private readonly source:AssetSourcesService){}
     async onModuleInit():Promise<void>{
-        await this.source.catalogReady();await this.source.pool.query(`
-            CREATE TABLE IF NOT EXISTS legacy_retirement_previews(id UUID PRIMARY KEY,actor TEXT NOT NULL,digest TEXT NOT NULL,payload JSONB NOT NULL,expires_at TIMESTAMPTZ NOT NULL);
-            CREATE TABLE IF NOT EXISTS legacy_retirement_operations(id UUID PRIMARY KEY REFERENCES legacy_retirement_previews(id),actor TEXT NOT NULL,request_key UUID NOT NULL,state TEXT NOT NULL,result JSONB,UNIQUE(actor,request_key));
-            CREATE TABLE IF NOT EXISTS legacy_retired_project_assets(migration_id UUID NOT NULL REFERENCES legacy_retirement_operations(id),project_id TEXT NOT NULL,asset_id TEXT NOT NULL,asset_kind TEXT NOT NULL,
-                original_record JSONB NOT NULL,record_sha256 TEXT NOT NULL,retired_by TEXT NOT NULL,retired_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(migration_id,project_id,asset_id,asset_kind))`);
+        await this.source.catalogReady();
     }
     private async refs(db:Pick<PoolClient,'query'>):Promise<Record<string,unknown>[]>{
         const result:Record<string,unknown>[]=[];

@@ -6,15 +6,14 @@ import type {Request} from 'express';
 import {ProjectEmbeddingRepository,initialGeneration} from '../src/models/project-embedding.repository';
 import {ProjectRagCoordinator} from '../src/models/project-rag-coordinator';
 import {ProjectReindexService} from '../src/models/project-reindex.service';
-import {setupModelHistory,modelFromRow,readPinnedModel} from '../src/models/model-history';
-import {setupSecurityEvents} from '../src/access/security-events';
+import {backfillModelHistory,modelFromRow,readPinnedModel} from '../src/models/model-history';
+import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {projectEmbeddingPin} from '../src/models/project-embedding.validation';
 import type {ModelsService} from '../src/models/models.service';
 import type {ModelRuntime} from '../src/models/model-runtime';
 import type {IProjectReindexPlan} from '../src/models/project-reindex.types';
 import {RagDb,type IUpsertRow} from '../../rag-sync-service/src/rag/rag-db';
 import {indexSnapshotHash,rowFingerprint,ragRequestHash} from '../../shared/rag-index-contract.cjs';
-import {operationSchema} from './operation-schema.fixture';
 
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:async()=>()=>{}}));
 const connection=process.env.RAG_CONTRACT_TEST_PG_URL,request={} as Request;
@@ -28,7 +27,7 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
     const target={deviceId:randomUUID(),assetId:'rag-fixture',assetKind:'mcp' as const,version:9,expectedManifest:'c'.repeat(64),expectedBindingId:'d'.repeat(64),expectedInstanceId:randomUUID()};
     const jobs={validateReindexTarget:vi.fn(async()=>{}),create:vi.fn(async(actor:{email:string},input:Record<string,unknown>)=>{
         if(jobRejected)throw new (await import('@nestjs/common')).ConflictException('fixture stale binding');
-        const result=await pool.query("INSERT INTO bridge_jobs(id,email,project_id,request_key,state,message,payload) VALUES($1,$2,$3,$4,'queued','Компьютер не в сети. Ожидаем мост.',$5::jsonb) ON CONFLICT(project_id,request_key) DO UPDATE SET request_key=EXCLUDED.request_key RETURNING *",[randomUUID(),actor.email,input.projectId,input.requestKey,JSON.stringify(input)]);
+        const result=await pool.query("INSERT INTO bridge_jobs(id,email,project_id,request_key,device_id,role,kind,request_hash,state,message,payload) VALUES($1,$2,$3,$4,$6,'Главный админ','connect-rag-model','fixture','queued','Компьютер не в сети. Ожидаем мост.',$5::jsonb) ON CONFLICT(email,request_key) DO UPDATE SET request_key=EXCLUDED.request_key RETURNING *",[randomUUID(),actor.email,input.projectId,input.requestKey,JSON.stringify(input),target.deviceId]);
         if(loseJobAck){loseJobAck=false;throw new ServiceUnavailableException('lost job ACK');}return result.rows[0];
     })};
     const context=()=>coordinator.context(key);
@@ -48,10 +47,10 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
         const url=new URL(connection!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw Error('Only temporary localhost DB allowed');
         admin=new Client({connectionString:connection});await admin.connect();await admin.query(`CREATE DATABASE "${name}"`);created=true;url.pathname='/'+name;
         pool=new Pool({connectionString:url.toString(),max:12});rag=new RagDb({url:url.toString()});await rag.setup();
-        await pool.query(`CREATE TABLE projects(id TEXT PRIMARY KEY);CREATE TABLE model_catalog(id TEXT PRIMARY KEY,name TEXT,descriptor JSONB,revision INTEGER,created_at TIMESTAMPTZ DEFAULT now(),updated_at TIMESTAMPTZ DEFAULT now());CREATE TABLE project_models(project_id TEXT REFERENCES projects(id),model_id TEXT REFERENCES model_catalog(id),PRIMARY KEY(project_id,model_id));CREATE TABLE bridge_jobs(id TEXT PRIMARY KEY,email TEXT,project_id TEXT,request_key UUID,state TEXT,message TEXT,percent INTEGER,payload JSONB,UNIQUE(project_id,request_key));`);
-        await operationSchema(pool);
+        await ensureCatalogSchema(pool);
+        await pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,'admin@example.test','Главный админ','Fixture','fixture','unique-fixture-token')",[target.deviceId]);
         await pool.query('INSERT INTO model_catalog(id,name,descriptor,revision) VALUES($1,$2,$3,1),($4,$5,$6,1)',[modelId,'Three',descriptor(3),nextId,'Five',descriptor(5)]);
-        await setupModelHistory(pool);await setupSecurityEvents(pool);repo=new ProjectEmbeddingRepository(pool);await repo.setup();
+        await backfillModelHistory(pool);repo=new ProjectEmbeddingRepository(pool);
         models={pool,ready:async()=>{},actor:async()=>({email:'admin@example.test',activeRole:'Главный админ'}),resolveProject:async(_request:unknown,id:string)=>{if(deny)throw new ForbiddenException();if(!(await pool.query('SELECT id FROM projects WHERE id=$1',[id])).rowCount)throw Error('Project missing');return{id};},isAssigned:async(project:string,id:string)=>!!(await pool.query('SELECT 1 FROM project_models WHERE project_id=$1 AND model_id=$2',[project,id])).rowCount,getPinned:async(id:string,pin:string)=>readPinnedModel(pool,id,pin)} as unknown as ModelsService;
         coordinator=new ProjectRagCoordinator(models);await coordinator.onModuleInit();await coordinator.onModuleDestroy();service=new ProjectReindexService(models,coordinator,{infer:async(model:{dimension:number},_operation:string,value:{input:string[]})=>({embeddings:value.input.map(()=>Array.from({length:model.dimension},(_,index)=>index+1))})} as unknown as ModelRuntime,jobs as unknown as import('../src/devices/device-jobs').DeviceJobs);await service.onModuleInit();await service.onModuleDestroy();
         vi.spyOn(coordinator.client,'call').mockImplementation(async(path:string,body?:unknown):Promise<any>=>{
@@ -68,7 +67,7 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
             if(match[2]==='retry')return rag.generations.retry(project,match[1]);return rag.generations.get(project,match[1]);
         });
     },30000);
-    beforeEach(async()=>{deny=false;loseAck=false;loseJobAck=false;jobRejected=false;jobs.create.mockClear();jobs.validateReindexTarget.mockClear();key='prj-'+randomUUID();await pool.query('INSERT INTO projects(id) VALUES($1)',[key]);await pool.query('INSERT INTO project_models(project_id,model_id) VALUES($1,$2),($1,$3)',[key,modelId,nextId]);});
+    beforeEach(async()=>{deny=false;loseAck=false;loseJobAck=false;jobRejected=false;jobs.create.mockClear();jobs.validateReindexTarget.mockClear();key='prj-'+randomUUID();await pool.query('INSERT INTO projects(id,name) VALUES($1,$1)',[key]);await pool.query('INSERT INTO project_models(project_id,model_id,added_by) VALUES($1,$2,$4),($1,$3,$4)',[key,modelId,nextId,'fixture']);});
     afterAll(async()=>{await service?.onModuleDestroy();await coordinator?.onModuleDestroy();await Promise.all([pool?.end(),rag?.close()]);if(created)await admin.query(`DROP DATABASE "${name}"`);await admin?.end();});
     it('Zero: один intent подключает пустой проект атомарно',async()=>{
         const plan=await make();expect(plan).toMatchObject({state:'building',approved:true,data:{rowCount:0}});expect((await applied(plan)).state).toBe('applied');expect(await context()).toMatchObject({generation:plan.id,revision:1,dataRevision:1,profile:{dimension:5}});expect((await repo.read(key)).blocker).toBeUndefined();expect((await rag.summary(key,plan.id)).complete).toBe(true);

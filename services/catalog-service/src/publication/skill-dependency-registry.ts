@@ -12,14 +12,6 @@ interface ISkillDependencyReservation {
     purpose?: 'publish' | 'preserve';
 }
 
-/** Резерв хранит только точные pins: содержимое скилла остаётся в файловом сервисе. */
-export async function setupSkillDependencyReservations(pool: Pool): Promise<void> {
-    await pool.query(`CREATE TABLE IF NOT EXISTS skill_dependency_reservations (
-        key TEXT NOT NULL, skill_path TEXT NOT NULL, dependencies JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(key,skill_path)
-    )`);
-}
-
 function reservationEntries(raw: unknown): ISkillDependencyReservation[] {
     const invalid = () => new BadRequestException('Нужны entries: до 200 резервов с SHA-256, путём скилла и точными зависимостями.');
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => key !== 'entries')) { throw invalid(); }

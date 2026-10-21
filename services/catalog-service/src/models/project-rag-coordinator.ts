@@ -21,12 +21,7 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
     private readonly tasks=new Set<Promise<void>>();
     constructor(private readonly models:ModelsService){}
     async onModuleInit():Promise<void>{
-        await this.models.ready();await this.models.pool.query(`CREATE TABLE IF NOT EXISTS project_rag_sync_intents(
-            id UUID PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,request_key TEXT NOT NULL,
-            payload_hash TEXT NOT NULL,payload JSONB NOT NULL,context JSONB NOT NULL,
-            state TEXT NOT NULL CHECK(state IN ('pending','uncertain','succeeded','failed')),result JSONB,error JSONB,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(project_id,request_key));
-            CREATE UNIQUE INDEX IF NOT EXISTS project_rag_pending_write ON project_rag_sync_intents(project_id) WHERE state IN ('pending','uncertain')`);
+        await this.models.ready();
         this.timer=setInterval(()=>{const task=this.recover().catch(()=>undefined);this.tasks.add(task);void task.finally(()=>this.tasks.delete(task));},3000);this.timer.unref();
     }
     async onModuleDestroy():Promise<void>{if(this.timer)clearInterval(this.timer);await Promise.allSettled([...this.tasks]);}

@@ -15,15 +15,6 @@ export class AssetBlobStore {
     constructor(private readonly pool: Pool, readonly directory = path.join(runtimeArtifactDirectory(), '.asset-source-blobs'),
         private readonly request: typeof fetch = fetch) {}
 
-    async setup(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS asset_source_blobs (
-            sha256 text PRIMARY KEY CHECK(sha256 ~ '^[a-f0-9]{64}$'),bytes bigint NOT NULL CHECK(bytes>0),created_at timestamptz NOT NULL DEFAULT now());
-            CREATE TABLE IF NOT EXISTS asset_source_blob_refs (
-                repository text NOT NULL,asset_id text NOT NULL,asset_version text NOT NULL,descriptor_sha256 text NOT NULL,
-                blob_sha256 text NOT NULL REFERENCES asset_source_blobs(sha256),
-                PRIMARY KEY(repository,asset_id,asset_version,descriptor_sha256,blob_sha256))`);
-    }
-
     private async root(): Promise<void> {
         await fs.mkdir(this.directory, {recursive:true,mode:0o700});
         const info = await fs.lstat(this.directory);

@@ -43,13 +43,7 @@ export async function readPinnedModel(db: Queryable, id: string, pin: string): P
 }
 
 /** Schema init сохраняет существующие heads; никаких моделей из внешней поставки здесь не создаётся. */
-export async function setupModelHistory(db: Queryable): Promise<void> {
-    await db.query(`ALTER TABLE model_catalog ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
-        CREATE TABLE IF NOT EXISTS model_catalog_versions (
-            model_id TEXT NOT NULL REFERENCES model_catalog(id) ON DELETE RESTRICT, revision INTEGER NOT NULL CHECK(revision>0),
-            name TEXT NOT NULL,descriptor JSONB NOT NULL CHECK(jsonb_typeof(descriptor)='object'),model_pin TEXT NOT NULL CHECK(model_pin ~ '^[a-f0-9]{64}$'),
-            created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL,PRIMARY KEY(model_id,revision));
-        CREATE INDEX IF NOT EXISTS model_catalog_version_pin ON model_catalog_versions(model_id,model_pin)`);
+export async function backfillModelHistory(db: Queryable): Promise<void> {
     const previous = await db.query<IModelRow>(`SELECT c.* FROM model_catalog c WHERE NOT EXISTS (
         SELECT 1 FROM model_catalog_versions v WHERE v.model_id=c.id AND v.revision=c.revision)`);
     for (const row of previous.rows) { await saveModelVersion(db, row); }

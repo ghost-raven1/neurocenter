@@ -14,7 +14,7 @@ describe('Явное обновление доверенного source: metadat
   const request=vi.fn(async(url:string|URL|Request)=>new Response(files.get(String(url))??null,{status:files.has(String(url))?200:404}));return {request,files,index,record,commit};
  }
  it('startup не читает сеть, refresh разрешает ref один раз и сохраняет exact index SHA без бинарников',async()=>{
-  const r=remote(),sources=new AssetSourceSnapshots(f.pool,undefined,r.request);await sources.setup();expect(r.request).not.toHaveBeenCalled();
+  const r=remote(),sources=new AssetSourceSnapshots(f.pool,undefined,r.request);expect(r.request).not.toHaveBeenCalled();
   const snapshot=await sources.refresh();expect(snapshot.pin.commit).toBe(r.commit);expect(snapshot.pin.index.sha256).toBe(assetDigest(r.index));expect(snapshot.assets).toHaveLength(1);
   expect(r.request.mock.calls.map(([url])=>String(url))).toEqual([...r.files.keys()]);expect((await sources.latest())?.pin).toEqual(snapshot.pin);
  });

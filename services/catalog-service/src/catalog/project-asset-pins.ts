@@ -16,20 +16,6 @@ export interface IProjectPinRow {
 }
 export const projectAssetColumns='project_id,asset_id,asset_kind,added_by,added_at,asset_version,asset_manifest,pin_origin,pin_snapshot';
 
-/** Старое ненумерованное назначение не становится подтверждённой версией само по себе. */
-export async function setupProjectAssetPins(db:Queryable):Promise<void>{
-    await db.query(`ALTER TABLE project_assets ADD COLUMN IF NOT EXISTS asset_version INTEGER;
-        ALTER TABLE project_assets ADD COLUMN IF NOT EXISTS asset_manifest TEXT;
-        ALTER TABLE project_assets ADD COLUMN IF NOT EXISTS pin_origin TEXT NOT NULL DEFAULT 'unresolved';
-        ALTER TABLE project_assets ADD COLUMN IF NOT EXISTS pin_snapshot JSONB;
-        DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='project_assets'::regclass AND conname='project_asset_pin_shape') THEN
-            ALTER TABLE project_assets ADD CONSTRAINT project_asset_pin_shape CHECK (
-                (asset_version IS NULL AND asset_manifest IS NULL AND pin_snapshot IS NULL AND pin_origin='unresolved') OR
-                (asset_version>0 AND asset_manifest ~ '^[a-f0-9]{64}$' AND pin_snapshot IS NOT NULL AND pin_origin IN ('assigned','manual','migration-current'))) NOT VALID;
-        END IF; END $$;`);
-
-}
-
 export function projectAssetView(row:IProjectPinRow):IProjectAsset {
     return {assetId:row.asset_id,assetKind:row.asset_kind as IProjectAsset['assetKind'],addedBy:row.added_by,
         addedAt:row.added_at instanceof Date?row.added_at.toISOString():row.added_at,

@@ -28,11 +28,6 @@ export class AssetManagementService implements OnModuleInit {
     constructor(private readonly source:AssetSourcesService) {}
     async onModuleInit():Promise<void>{
         await this.source.catalogReady();
-        await this.source.pool.query(`CREATE TABLE IF NOT EXISTS asset_management_impacts (
-            id uuid PRIMARY KEY,actor text NOT NULL,digest text NOT NULL,payload jsonb NOT NULL,expires_at timestamptz NOT NULL);
-            CREATE TABLE IF NOT EXISTS asset_management_operations (
-                id uuid PRIMARY KEY REFERENCES asset_management_impacts(id),actor text NOT NULL,mode text NOT NULL,state text NOT NULL,message text NOT NULL,
-                updated_at timestamptz NOT NULL DEFAULT now())`);
     }
     private target(raw:unknown):{kind:Kind;id:string}{
         const input=raw as Partial<ITarget>;

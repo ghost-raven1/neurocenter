@@ -4,35 +4,20 @@ import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import type { IModel, IModelDescriptor, IModelVerification, IProjectModel } from './model.types';
 import { validateModelCreate, validateModelDelete, validateModelUpdate } from './model-validation';
-import { modelFromRow as model, nextModelRevision, readPinnedModel, saveModelVersion, setupModelHistory, type IModelRow } from './model-history';
+import { modelFromRow as model, nextModelRevision, readPinnedModel, saveModelVersion, backfillModelHistory, type IModelRow } from './model-history';
 import { archiveModelWithClient } from './model-archive';
-import { setupRemoteConnections } from './remote-connection-schema';
 
 interface IAssignmentRow { project_id: string; model_id: string; added_by: string; added_at: string | Date }
 const iso = (value: string | Date): string => value instanceof Date ? value.toISOString() : value;
 const assignment = (row: IAssignmentRow): IProjectModel => ({ projectId: row.project_id, modelId: row.model_id, addedBy: row.added_by, addedAt: iso(row.added_at) });
 
 /** Каталог и назначения живут в одной БД, поэтому удаление модели защищено внешним ключом. */
-export async function setupModelsSchema(pool: Pool): Promise<void> {
+export async function backfillModelCatalog(pool: Pool): Promise<void> {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:model-catalog-schema',0))");
-        await client.query(`CREATE TABLE IF NOT EXISTS model_catalog (
-            id TEXT PRIMARY KEY, name TEXT NOT NULL, descriptor JSONB NOT NULL CHECK(jsonb_typeof(descriptor)='object'),
-            revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        ); CREATE UNIQUE INDEX IF NOT EXISTS model_catalog_name ON model_catalog(lower(name));
-        CREATE TABLE IF NOT EXISTS project_models (
-            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            model_id TEXT NOT NULL REFERENCES model_catalog(id) ON DELETE RESTRICT,
-            added_by TEXT NOT NULL, added_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(project_id,model_id)
-        ); CREATE INDEX IF NOT EXISTS project_models_model ON project_models(model_id)`);
-        await client.query('ALTER TABLE project_models ADD COLUMN IF NOT EXISTS assignment_epoch UUID NOT NULL DEFAULT gen_random_uuid()');
-        await setupModelHistory(client);
-        await setupRemoteConnections(client);
-        await client.query(`CREATE TABLE IF NOT EXISTS model_creation_requests (
-            actor TEXT NOT NULL,request_key UUID NOT NULL,request_hash TEXT NOT NULL,
-            model_id TEXT NOT NULL REFERENCES model_catalog(id) ON DELETE RESTRICT,PRIMARY KEY(actor,request_key))`);
+        await backfillModelHistory(client);
         await client.query('COMMIT');
     } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
     finally { client.release(); }

@@ -15,6 +15,8 @@ COPY services/catalog-service/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY services/catalog-service/ .
 COPY services/shared/ /shared/
+# Shared declarations resolve the same pinned contracts as the owning service.
+RUN ln -s /app/node_modules /shared/node_modules
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 

@@ -12,25 +12,6 @@ type Queryable=Pick<PoolClient,'query'>;
 /** CAS-выбор и его аудит сохраняются одной транзакцией; очистка не сбрасывает ревизию. */
 export class ProjectEmbeddingRepository {
     constructor(private readonly pool:Pool){}
-    async setup():Promise<void>{
-        const client=await this.pool.connect();
-        try{
-            await client.query('BEGIN');
-            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:project-embedding-schema',0))");
-            await client.query(`CREATE TABLE IF NOT EXISTS project_embedding_settings (
-            project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-            revision BIGINT NOT NULL CHECK(revision>0),model_id TEXT,model_pin TEXT,dimension INTEGER,
-            updated_by TEXT NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CHECK((model_id IS NULL AND model_pin IS NULL AND dimension IS NULL)
-                OR (model_id IS NOT NULL AND model_pin IS NOT NULL AND dimension IS NOT NULL AND model_pin ~ '^[a-f0-9]{64}$' AND dimension>0)))`);
-            await client.query(`ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS active_generation TEXT;
-                ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS active_snapshot TEXT;
-                ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS data_revision BIGINT NOT NULL DEFAULT 0;
-                UPDATE project_embedding_settings SET active_generation='initial-'||md5(project_id) WHERE active_generation IS NULL;
-                ALTER TABLE project_embedding_settings ALTER COLUMN active_generation SET NOT NULL`);
-            await client.query('COMMIT');
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
-    }
     private async selection(db:Queryable,projectId:string,row?:Row):Promise<IProjectEmbeddingSelection>{
         const current=row?.model_id&&row.model_pin?await readPinnedModel(db,row.model_id,row.model_pin):null;
         const modelPin=row?.model_pin??null;

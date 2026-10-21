@@ -7,7 +7,7 @@ import {AccessDb} from '../access/access-db';
 import {DeviceStore} from '../devices/device-store';
 import {securityEvent} from '../access/security-events';
 import {ragRequestHash} from '../../../shared/rag-index-contract.cjs';
-import {retirementBlockers,setupRetirementReferenceGuards} from './retirement-guards';
+import {retirementBlockers} from './retirement-guards';
 import {publicPurge,type IPurgeRow,type IPreviewRow,type IRetiredFacts,type IRetirement} from './retired-rag.types';
 
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
@@ -22,7 +22,7 @@ export class RetiredRagService implements OnModuleInit,OnModuleDestroy {
     private readonly running=new Set<string>();
     private readonly tasks=new Set<Promise<void>>();
     constructor(private readonly catalog:CatalogService,private readonly access:AccessDb,private readonly devices:DeviceStore){}
-    async onModuleInit(){await this.catalog.ensureSchema();await this.devices.ready();await setupRetirementReferenceGuards(this.pool);
+    async onModuleInit(){await this.catalog.ensureSchema();await this.devices.ready();
         this.timer=setInterval(()=>{const work=this.recover().catch(()=>undefined);this.tasks.add(work);void work.finally(()=>this.tasks.delete(work));},3000);this.timer.unref();}
     async onModuleDestroy(){if(this.timer)clearInterval(this.timer);await Promise.allSettled([...this.tasks]);await this.pool.end();}
     async list(){

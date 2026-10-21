@@ -24,9 +24,6 @@ export class OperationActionsService implements OnModuleInit {
     constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService){}
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
-        await this.models.pool.query(`CREATE TABLE IF NOT EXISTS operation_action_requests(
-            actor TEXT NOT NULL,request_key UUID NOT NULL,operation_id TEXT NOT NULL,action TEXT NOT NULL,digest TEXT NOT NULL,
-            target JSONB NOT NULL,result JSONB,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(actor,request_key))`);
     }
     private scope(actor:IModelActor){
         if(actor.activeRole==='Главный админ')return undefined;

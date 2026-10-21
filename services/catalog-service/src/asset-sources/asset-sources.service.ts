@@ -11,7 +11,6 @@ import { AssetBlobStore } from './asset-blob-store';
 import { AssetSourceSnapshots } from './source-snapshots';
 import { AssetImportRepository } from './import-repository';
 import { AssetImportWorker } from './import-worker';
-import { migrateNativeAssetData } from './migrate-native-data';
 import { SkillAssetClient } from './skill-adapter';
 import { importView, type ISourceReceipt } from './import-types';
 
@@ -37,7 +36,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     recordLocal(...args:Parameters<LocalAssetIngest['record']>){return new LocalAssetIngest(this.pool,this.blobs).record(...args);}
     catalogReady():Promise<void>{return this.catalog.ensureSchema();}
     async onModuleInit():Promise<void>{
-        await this.catalog.ensureSchema();await this.blobs.setup();await this.jobs.setup();await migrateNativeAssetData(this.pool);await this.sources.setup();
+        await this.catalog.ensureSchema();
         this.worker=new AssetImportWorker(this.pool,this.jobs,this.sources,this.blobs,this.runtime);this.worker.kick();
         this.timer=setInterval(()=>this.worker.kick(),5000);this.timer.unref();
     }

@@ -1,3 +1,4 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {createPool} from '../database/pool';
 import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
@@ -15,10 +16,7 @@ export class ProjectBackupService implements OnModuleInit,OnModuleDestroy {
     private readonly pool=createPool({connectionString:process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',max:2},'backups');
     constructor(private readonly users:AccessDb) {}
     async onModuleInit():Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS project_backups (
-            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, file_name TEXT NOT NULL, database_name TEXT NOT NULL,
-            size_bytes BIGINT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )`);
+        await ensureCatalogSchema(this.pool);
     }
     async onModuleDestroy():Promise<void> { await this.pool.end(); }
     async projectId(key:string):Promise<string> {

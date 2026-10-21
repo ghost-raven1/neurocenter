@@ -21,12 +21,6 @@ describe('Транзакционная доставка аудита файло�
     });
     const securityWrites = () => query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO security_events'));
 
-    it('Создаёт идемпотентную схему квитанций в том же пуле', async () => {
-        await repository.setup();
-        expect(query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS skill_audit_receipts'));
-        expect(connect).not.toHaveBeenCalled();
-    });
-
     it('Сохраняет UUID, фактическое время, исполнителя и безопасные состояния до COMMIT', async () => {
         expect(await repository.record({ events: [event] })).toEqual({ accepted: 1 });
         expect(securityWrites()).toHaveLength(1);

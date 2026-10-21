@@ -8,7 +8,7 @@ import type {Request} from 'express';
 import {OperationActionsService} from '../src/operations/operation-actions.service';
 import {OperationActionsController} from '../src/operations/operation-actions.controller';
 import {OperationRepository} from '../src/operations/operation-repository';
-import {setupProjectReindexOperations} from '../src/operations/project-reindex-operations';
+import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {DeviceJobs} from '../src/devices/device-jobs';
 import {recordDeviceOperation} from '../src/devices/device-operations';
 import {ProjectReindexService} from '../src/models/project-reindex.service';
@@ -27,30 +27,24 @@ describe.skipIf(!connection)('Generic journal dispatch — actual HTTP/PostgreSQ
     const operation=async(id:string)=>{const row=await repository.get(id);if(!row)throw Error('fixture operation missing');return actions.decorate(request(),row);};
     const input=async(id:string,key=randomUUID())=>({requestKey:key,expectedDigest:(await operation(id)).actions!.digest});
     const bridge=async(state='failed',kind='inspect-installation',actor=email)=>{
-        const id=randomUUID();await pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,state,message,payload,request_key) VALUES($1,$2,$3,$4,$5,$6,$7,'fixture status','{}',$8)",[id,randomUUID(),actor,role,project,kind,state,randomUUID()]);
+        const id=randomUUID(),device=randomUUID();await pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,$2,$3,'Disposable journal device',$1,$1)",[device,actor,role]);
+        await pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,state,message,payload,request_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'fixture status','{}',$8,$9)",[id,device,actor,role,project,kind,state,randomUUID(),'a'.repeat(64)]);
         await recordDeviceOperation(pool as never,{id,kind,project_id:project,email:actor},state.toUpperCase(),0,'fixture status');return 'bridge-'+id;
     };
     const rag=async(state='failed',actor=email)=>{
-        const id=randomUUID();await pool.query("INSERT INTO project_reindex_plans(id,project_id,request_key,actor,active_role,state,digest,data,message) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'fixture plan')",
+        const id=randomUUID();await pool.query("INSERT INTO project_reindex_plans(id,project_id,request_key,actor,active_role,state,digest,data,message,approved) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'fixture plan',true)",
             [id,project,randomUUID(),actor,role,state,'a'.repeat(64),{context:{generation:'old'},sourceSnapshot:'b'.repeat(64),profile:{provider:'openai',model:'fixture',dimension:3},rowCount:1}]);return 'rag-reindex-'+id;
     };
     beforeAll(async()=>{
         const url=new URL(connection!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw Error('Only temporary localhost DB allowed');
         admin=new Client({connectionString:connection});await admin.connect();await admin.query(`CREATE DATABASE "${name}"`);created=true;url.pathname='/'+name;pool=new Pool({connectionString:url.toString(),max:12});
-        await pool.query(`CREATE TABLE projects(id text PRIMARY KEY,name text);INSERT INTO projects VALUES('${project}','Fixture');
-            CREATE TABLE operations(operation_id text PRIMARY KEY,type text,project_id text,resource_type text,resource_id text,actor text,state text,percent integer,
-                bytes_done bigint DEFAULT 0,bytes_total bigint DEFAULT 0,started_at timestamptz,finished_at timestamptz,error text,log jsonb,retries integer DEFAULT 0,created_at timestamptz DEFAULT now());
-            CREATE TABLE bridge_jobs(id text PRIMARY KEY,device_id text,email text,role text,project_id text,kind text,state text,message text,payload jsonb,request_key uuid,
-                percent integer,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),UNIQUE(email,request_key));
-            CREATE TABLE project_reindex_plans(id uuid PRIMARY KEY,project_id text,request_key text,actor text,active_role text,state text,digest text,data jsonb,message text,
-                approved boolean DEFAULT true,progress integer DEFAULT 0,connection_job_id uuid,connection_error text,connection_request_key uuid,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());`);
-        await setupProjectReindexOperations(pool);repository=new OperationRepository(pool);
+        await ensureCatalogSchema(pool);await pool.query('INSERT INTO projects(id,name) VALUES($1,$2)',[project,'Fixture']);repository=new OperationRepository(pool);
         const models={pool,actor:async()=>{const c=claims();if(!c.userRoles.includes(role))throw new ForbiddenException();return {email,activeRole:role,claims:c};},resolveProject:async(_req:unknown,id:string,level:number)=>{
             if(projectLevel(claims(),role,id)<level)throw new ForbiddenException();return{id};}};
         jobs=new DeviceJobs({pool,access:{claims:async()=>claims()}} as never,{} as never,{} as never,{} as never,{} as never);
         vi.spyOn(jobs,'create').mockImplementation(async(actor,value)=>{
             const existing=(await pool.query('SELECT * FROM bridge_jobs WHERE email=$1 AND request_key=$2',[actor.email,value.requestKey])).rows[0];if(existing)return {...existing,message:existing.message};
-            const id=randomUUID();await pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,state,message,payload,request_key) VALUES($1,$2,$3,$4,$5,$6,'queued','queued fixture',$7,$8)",[id,value.deviceId,actor.email,actor.activeRole,value.projectId,value.kind,value,value.requestKey]);
+            const id=randomUUID();await pool.query("INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,state,message,payload,request_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,'queued','queued fixture',$7,$8,$9)",[id,value.deviceId,actor.email,actor.activeRole,value.projectId,value.kind,value,value.requestKey,'a'.repeat(64)]);
             await recordDeviceOperation(pool as never,{id,kind:value.kind,project_id:value.projectId!,email:actor.email},'QUEUED',0,'queued fixture');return{id,state:'queued',message:'queued fixture'};
         });
         reindex=new ProjectReindexService(models as never,{client:{call:vi.fn(async()=>({}))},context:async()=>({generation:'old'})} as never,{} as never,jobs);

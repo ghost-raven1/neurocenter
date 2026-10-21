@@ -6,11 +6,12 @@ import {Pool} from 'pg';
 import {randomUUID} from 'node:crypto';
 import {RestoreController,RestoreRunnerController} from '../src/restore/restore.controller';
 import {RestoreService} from '../src/restore/restore.service';
+import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {RestoreRepository} from '../src/restore/restore.repository';
 import {digest,type RestorePreview} from '../../shared/web-restore.cjs';
 const token='c'.repeat(64),actor='restore@example.test',other='other@example.test',checkpointId='checkpoint-one',sha='a'.repeat(64),configDigest='b'.repeat(64);
 const denied=new Set<string>();let app:INestApplication,base:string,admin:Pool,pool:Pool,repository:RestoreRepository;
-const schema='restore_test_'+randomUUID().replaceAll('-',''),runnerId=randomUUID();
+const schema='nc_restore_test_'+randomUUID().replaceAll('-',''),runnerId=randomUUID();
 const headers=(email=actor,role='Главный админ')=>({'content-type':'application/json','x-neurocenter-internal':token,'x-bridge-actor':encodeURIComponent(JSON.stringify({email,activeRole:role}))});
 async function call(route:string,body?:unknown,options:{email?:string;role?:string;runner?:boolean;token?:string}={}){
  return fetch(base+route,{method:body===undefined?'GET':'POST',headers:options.runner?{'content-type':'application/json','x-neurocenter-restore':options.token??token}:headers(options.email,options.role),...body===undefined?{}:{body:JSON.stringify(body)}});
@@ -28,7 +29,7 @@ async function ready(){
 beforeAll(async()=>{
  vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',token);vi.stubEnv('RESTORE_RUNNER_TOKEN',token);
  const url=process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog';if(!['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname))throw Error('Only isolated localhost schema');
- admin=new Pool({connectionString:url,max:1});await admin.query('CREATE SCHEMA '+schema);pool=new Pool({connectionString:url,options:'-c search_path='+schema,max:8});repository=new RestoreRepository(pool);await repository.setup();
+ const target=new URL(url);target.pathname='/postgres';admin=new Pool({connectionString:target.href,max:1});await admin.query('CREATE DATABASE '+schema);target.pathname='/'+schema;pool=new Pool({connectionString:target.href,max:8});await ensureCatalogSchema(pool);repository=new RestoreRepository(pool);
  const access={claims:async(email:string)=>({email,userRoles:denied.has(email)?[]:['Главный админ']})};
  const service=Object.assign(Object.create(RestoreService.prototype),{access,pool,repository,initialized:Promise.resolve()});
  Reflect.defineMetadata('design:paramtypes',[RestoreService],RestoreController);Reflect.defineMetadata('design:paramtypes',[RestoreService],RestoreRunnerController);
@@ -37,7 +38,7 @@ beforeAll(async()=>{
  await app.listen(0,'127.0.0.1');base=await app.getUrl();
 });
 beforeEach(async()=>{denied.clear();await pool.query('TRUNCATE web_restore_jobs,web_restore_runner,web_restore_cancelled_requests,security_events CASCADE');await report();});
-afterAll(async()=>{try{if(app)await app.close();else await pool?.end();}finally{await admin?.query('DROP SCHEMA '+schema+' CASCADE');await admin?.end();vi.unstubAllEnvs();}});
+afterAll(async()=>{try{if(app)await app.close();else await pool?.end();}finally{await admin?.query('DROP DATABASE '+schema);await admin?.end();vi.unstubAllEnvs();}});
 describe('Web restore — real PostgreSQL and Nest HTTP; no executor in request path',()=>{
  it('Rejects missing internal identity and a non-main role before creating any intent',async()=>{
   expect((await fetch(base+'/api/maintenance/restore',{headers:{'x-bridge-actor':headers()['x-bridge-actor']}})).status).toBe(403);

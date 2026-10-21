@@ -4,14 +4,12 @@ import {createHash,generateKeyPairSync,randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {SNAPSHOT_SCHEMA_SQL} from '../src/snapshots/snapshot-schema';
+import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {SnapshotRepository} from '../src/snapshots/snapshot-repository';
 import {SnapshotStorage} from '../src/snapshots/snapshot-storage';
 import {SnapshotSigner} from '../src/snapshots/snapshot-signature';
 import {SnapshotCommands,snapshotSignedPayload} from '../src/snapshots/snapshot-commands';
-import {setupSecurityEvents} from '../src/access/security-events';
 import type {CatalogService} from '../src/catalog/catalog.service';
-import {operationSchema} from './operation-schema.fixture';
 import {snapshotManifestHash} from '../../shared/project-snapshot.cjs';
 
 const dispose:Array<()=>Promise<void>>=[];afterEach(async()=>{for(const action of dispose.splice(0).reverse())await action();});
@@ -20,23 +18,20 @@ const actor={email:'snapshot@localhost',activeRole:'Главный админ'},
 const manifest=()=>({format:'neurocenter.lancedb-snapshot',schemaVersion:1,sdkVersion:'0.29.0',tables:[{name:'chunks',version:1,rows:1,schemaSha256:hash('schema')}],
     files:[{path:'chunks.lance/data/a.lance',size:3,sha256:hash('abc'),chunks:[{sha256:hash('abc'),size:3}]}]});
 async function fixture(){
-    const url=process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog',admin=new Pool({connectionString:url,max:1}),schema='snapshot_'+randomUUID().replaceAll('-','');
-    await admin.query('CREATE SCHEMA '+schema);const pool=new Pool({connectionString:url,options:'-c search_path='+schema,max:5}),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-'));
-    dispose.push(async()=>{await pool.end();await admin.query('DROP SCHEMA '+schema+' CASCADE');await admin.end();await fs.rm(directory,{recursive:true,force:true});});
-    await pool.query(`CREATE TABLE projects(id text PRIMARY KEY,name text,retention int DEFAULT30,head_snapshot_id text,head_snapshot_date text,head_author text,
-      head_revision bigint DEFAULT0,active_profile_id text,active_profile_revision bigint DEFAULT0,updated_at timestamptz DEFAULT now());
-      CREATE TABLE bridge_jobs(id text PRIMARY KEY,device_id text,email text,project_id text,kind text,state text,percent integer,message text,result jsonb,payload jsonb,lease text,lease_until timestamptz,created_at timestamptz DEFAULT now(),started_at timestamptz,updated_at timestamptz DEFAULT now());
-      CREATE TABLE platform_users(email text PRIMARY KEY,is_main_admin boolean,enabled boolean);
-      CREATE TABLE project_members(project_id text,principal_name text,role text);
-      CREATE TABLE project_assets(project_id text,asset_kind text,asset_id text,asset_version int,asset_manifest text,pin_snapshot jsonb);
-      INSERT INTO projects(id,name) VALUES('prj-snapshot-test','Snapshot');
-      INSERT INTO platform_users VALUES('snapshot@localhost',true,true),('reader@localhost',false,true);
-      INSERT INTO project_members VALUES('prj-snapshot-test','reader@localhost','Наблюдатель');`.replace(/DEFAULT(\d)/g,'DEFAULT $1'));
-    await pool.query(SNAPSHOT_SCHEMA_SQL);await setupSecurityEvents(pool);await operationSchema(pool);
+    const url=new URL(process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/postgres');url.pathname='/postgres';
+    const admin=new Pool({connectionString:url.href,max:1}),database='nc_snapshot_'+randomUUID().replaceAll('-','');
+    await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;
+    const pool=new Pool({connectionString:url.href,max:5}),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-'));
+    dispose.push(async()=>{await pool.end();await admin.query('DROP DATABASE '+database);await admin.end();await fs.rm(directory,{recursive:true,force:true});});
+    await ensureCatalogSchema(pool);
+    await pool.query(`INSERT INTO projects(id,name) VALUES('prj-snapshot-test','Snapshot');
+      INSERT INTO platform_users(email,is_main_admin,enabled) VALUES('snapshot@localhost',true,true),('reader@localhost',false,true);
+      INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES('prj-snapshot-test','reader','reader@localhost','Reader','Наблюдатель');`);
     const key=generateKeyPairSync('ed25519').privateKey.export({format:'pem',type:'pkcs8'}),keyFile=path.join(directory,'signing.pem');await fs.writeFile(keyFile,key,{mode:0o600});
     const repository=new SnapshotRepository(pool),storage=new SnapshotStorage(pool,{directory:path.join(directory,'blobs')}),signer=new SnapshotSigner(keyFile);
     const commands=new SnapshotCommands(repository,signer,{getAiPluginPackage:async()=>{throw new Error('No dependencies in this metadata fixture');}}as unknown as CatalogService);
     const input={requestKey:randomUUID(),deviceId:randomUUID(),expectedBindingId:'a'.repeat(64),expectedHeadId:null,expectedHeadRevision:0};
+    await pool.query('INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,$2,$3,$4,$5,$6)',[input.deviceId,actor.email,actor.activeRole,'Snapshot fixture','a'.repeat(64),hash(randomUUID())]);
     const create=()=>repository.create(project,actor,input);
     const verified=async()=>{
         const row=await create(),value=manifest();await repository.beginManifest(project,row.id,actor,value);await storage.put(project,hash('abc'),Buffer.from('abc'));
@@ -161,8 +156,8 @@ describe('snapshot cancellation and durable collection boundaries',()=>{
 describe('snapshot bridge receipts survive lease and verification changes',()=>{
     async function job(f:Awaited<ReturnType<typeof fixture>>,snapshotId:string,state='running'){
         const id=randomUUID(),lease=randomUUID(),payload={snapshotId,bindingId:f.input.expectedBindingId,snapshotProtocol:'project-snapshots-v1'};
-        await f.pool.query(`INSERT INTO bridge_jobs(id,device_id,email,project_id,kind,state,percent,payload,lease,lease_until)
-          VALUES($1,$2,$3,$4,'publish-project-snapshot',$5,15,$6,$7,now()-interval '1 second')`,[id,f.input.deviceId,actor.email,project,state,JSON.stringify(payload),lease]);
+        await f.pool.query(`INSERT INTO bridge_jobs(id,device_id,email,project_id,kind,state,percent,payload,lease,lease_until,role,request_key,request_hash)
+          VALUES($1,$2,$3,$4,'publish-project-snapshot',$5,15,$6,$7,now()-interval '1 second',$8,$9,$10)`,[id,f.input.deviceId,actor.email,project,state,JSON.stringify(payload),lease,actor.activeRole,id,hash(id)]);
         await f.pool.query('UPDATE project_snapshots SET job_id=$2 WHERE id=$1',[snapshotId,id]);return {id,lease};
     }
     it('accepts and replays only the exact authoritative upload receipt after a verifier/delete transition',async()=>{

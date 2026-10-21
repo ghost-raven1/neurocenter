@@ -6,15 +6,6 @@ import type { BuildConfiguration, BuildResult, BuildRow, BuildState } from './pa
 /** Очередь сборки и её проекция в «Операциях» фиксируются одной транзакцией. */
 export class PackageBuildRepository {
     constructor(private readonly pool: Pool) {}
-    async setup(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS tool_build_jobs (
-            id uuid PRIMARY KEY,actor text NOT NULL,request_key uuid NOT NULL,request_hash text NOT NULL,config jsonb NOT NULL,
-            state text NOT NULL CHECK(state IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')),percent integer NOT NULL DEFAULT 0,
-            message text NOT NULL,result jsonb,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
-            UNIQUE(actor,request_key));
-            DROP INDEX IF EXISTS tool_build_one_active;
-            CREATE UNIQUE INDEX IF NOT EXISTS tool_build_one_running ON tool_build_jobs ((true)) WHERE state='RUNNING';`);
-    }
     async existing(actor: string, key: string, fingerprint: string): Promise<BuildRow | undefined> {
         const {rows} = await this.pool.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2', [actor, key]);
         if (rows[0] && rows[0].request_hash !== fingerprint) { throw new ConflictException('Ключ запроса уже использован для другой сборки.'); }

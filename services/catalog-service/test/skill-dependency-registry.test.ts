@@ -3,7 +3,7 @@ import type { Pool } from 'pg';
 
 import { buildPackage } from '../src/catalog/bundle-package';
 import { PluginRepository } from '../src/publication/plugin-repository';
-import { reserveSkillDependencies, setupSkillDependencyReservations } from '../src/publication/skill-dependency-registry';
+import { reserveSkillDependencies } from '../src/publication/skill-dependency-registry';
 
 const config = { transport: 'remote' as const, url: 'https://example.test/mcp' };
 const dependency = { id: 'ai-plug-reserved', name: 'Закреплённый MCP', kind: 'mcp', files: [], config, metadata: { kind: 'mcp' } };
@@ -26,14 +26,6 @@ describe('Неизменяемые резервы зависимостей ск�
         });
         release = vi.fn();
         pool = { query, connect: vi.fn(async () => ({ query, release })) } as unknown as Pool;
-    });
-
-    it('Создаёт таблицу метаданных без тела и исходников скилла', async () => {
-        await setupSkillDependencyReservations(pool);
-        const sql = query.mock.calls[0][0];
-        expect(sql).toContain('PRIMARY KEY(key,skill_path)');
-        expect(sql).toContain('dependencies JSONB');
-        expect(sql).not.toMatch(/body|content|resources/);
     });
 
     it('Проверяет точную версию под блокировкой графа и сохраняет только pins', async () => {

@@ -12,7 +12,7 @@ export class ProjectEmbeddingService implements OnModuleInit {
     private readonly repository:ProjectEmbeddingRepository;
     constructor(private readonly models:ModelsService,private readonly coordinator:ProjectRagCoordinator){this.repository=new ProjectEmbeddingRepository(models.pool);}
     private initialization?:Promise<void>;
-    ready():Promise<void>{return this.initialization??=(async()=>{await this.models.ready();await this.repository.setup();})();}
+    ready():Promise<void>{return this.initialization??=(async()=>{await this.models.ready();})();}
     async onModuleInit():Promise<void>{await this.ready();}
     read(projectId:string):Promise<IProjectEmbeddingSelection>{return this.repository.read(projectId);}
     async get(request:Request,id:string):Promise<IProjectEmbeddingSelection>{

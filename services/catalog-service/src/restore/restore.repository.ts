@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
 import {ConflictException,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
 import {digest,previewResult,restoreReceipt,restoreFailureMessages,type RestorePreviewInput,type RestoreInput,type RestoreRunnerReport} from '../../../shared/web-restore.cjs';
-import {securityEvent,setupSecurityEvents} from '../access/security-events';
+import {securityEvent} from '../access/security-events';
 import type {RestoreJob,RestoreRunner} from './restore.types';
 
 const leaseSeconds=45;
@@ -10,22 +10,6 @@ const conflict=()=>new ConflictException('Проверка или назначе
 /** Все переходы и requestKey переживают HTTP retry и перезапуск каталога; executor работает отдельно. */
 export class RestoreRepository {
  constructor(readonly pool:Pool){}
- async setup(){
-  await setupSecurityEvents(this.pool);
-  await this.pool.query(`CREATE TABLE IF NOT EXISTS web_restore_runner (
-   singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),runner_id uuid NOT NULL,config_digest text NOT NULL,target_prefix text NOT NULL,
-   checkpoints jsonb NOT NULL,seen_at timestamptz NOT NULL DEFAULT now());
-   CREATE TABLE IF NOT EXISTS web_restore_jobs (
-   id uuid PRIMARY KEY,actor text NOT NULL,request_key uuid NOT NULL,kind text NOT NULL CHECK(kind IN ('preview','restore')),
-   input jsonb NOT NULL,input_hash text NOT NULL,preview_id uuid REFERENCES web_restore_jobs(id),
-   state text NOT NULL CHECK(state IN ('queued','running','ready','succeeded','failed','interrupted','cancelled')),
-   preview jsonb,receipt jsonb,error_code text,message text NOT NULL,runner_id uuid,lease_id uuid,lease_until timestamptz,
-   created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),UNIQUE(actor,request_key));
-   CREATE UNIQUE INDEX IF NOT EXISTS web_restore_preview_once ON web_restore_jobs(preview_id) WHERE kind='restore';
-   CREATE UNIQUE INDEX IF NOT EXISTS web_restore_running ON web_restore_jobs((true)) WHERE state='running';
-   CREATE INDEX IF NOT EXISTS web_restore_actor_created ON web_restore_jobs(actor,created_at DESC);
-   CREATE TABLE IF NOT EXISTS web_restore_cancelled_requests(actor text NOT NULL,request_key uuid NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(actor,request_key))`);
- }
  private async transaction<T>(action:(client:PoolClient)=>Promise<T>):Promise<T>{
   const client=await this.pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(53709189)');const result=await action(client);await client.query('COMMIT');return result;}
   catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}

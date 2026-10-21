@@ -1,10 +1,6 @@
-import type {Pool} from 'pg';
-
-/** Проекция меняется в транзакции плана; security audit и исполнитель поколения остаются отдельными. */
-export async function setupProjectReindexOperations(pool:Pool):Promise<void>{
-    const client=await pool.connect();
-    try{await client.query('BEGIN');await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:reindex-operation-projection',0))");
-    await client.query(`CREATE OR REPLACE FUNCTION project_reindex_operation() RETURNS trigger LANGUAGE plpgsql AS $$
+/** The projection follows all baseline and historical bridge tables. */
+export const REINDEX_OPERATION_SCHEMA_SQL=`
+CREATE OR REPLACE FUNCTION project_reindex_operation() RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE job_state text; job_message text; job_percent integer; projected text;
     BEGIN
         IF NEW.connection_job_id IS NOT NULL THEN
@@ -50,6 +46,5 @@ export async function setupProjectReindexOperations(pool:Pool):Promise<void>{
     DROP TRIGGER IF EXISTS project_reindex_local_operation ON bridge_jobs;
     CREATE TRIGGER project_reindex_local_operation AFTER UPDATE OF state,percent,message ON bridge_jobs
         FOR EACH ROW EXECUTE FUNCTION project_reindex_local_operation();
-    UPDATE project_reindex_plans SET updated_at=updated_at;`);
-    await client.query('COMMIT');}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
-}
+    UPDATE project_reindex_plans SET updated_at=updated_at;
+`;

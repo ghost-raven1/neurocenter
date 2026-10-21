@@ -7,12 +7,6 @@ import { normalizeSkillAuditEvents } from '../../../shared/skill-audit.cjs';
 export class SkillAuditRepository {
     constructor(private readonly pool: Pool) {}
 
-    public async setup(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS skill_audit_receipts (
-            event_id UUID PRIMARY KEY, payload JSONB NOT NULL
-        )`);
-    }
-
     public async record(raw: unknown): Promise<{ accepted: number }> {
         let events;
         try { events = normalizeSkillAuditEvents(raw); }

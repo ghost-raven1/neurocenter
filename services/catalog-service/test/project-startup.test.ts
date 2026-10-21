@@ -1,5 +1,6 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 const {query}=vi.hoisted(()=>({query:vi.fn()}));
+vi.mock('../src/database/catalog-schema',()=>({ensureCatalogSchema:vi.fn(async()=>{})}));
 vi.mock('../src/database/pool',()=>({createPool:()=>({query,end:vi.fn(),connect:async()=>({query,release:vi.fn()})})}));
 import {CatalogDb} from '../src/catalog/catalog-db';
 

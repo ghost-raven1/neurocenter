@@ -9,7 +9,7 @@ describe('Архив карточек: real PostgreSQL impact/CAS и сохра�
  let f:Awaited<ReturnType<typeof databaseFixture>>,management:AssetManagementService,id:string;
  beforeEach(async()=>{f=await databaseFixture();management=new AssetManagementService({pool:f.pool,catalogReady:async()=>undefined} as unknown as AssetSourcesService);await management.onModuleInit();
   const job=await f.jobs.create(actor,randomUUID(),await f.snapshot([tool('tool-a')]),['tool-a']),worker=f.worker();await worker.flush();await worker.stop();expect((await f.jobs.get(job.id)).state).toBe('SUCCEEDED');id=(await f.plugins.get('tool-a'))!.id;
-  await f.pool.query("INSERT INTO projects VALUES('prj-one','Первый проект'),('prj-two','Второй проект')");
+  await f.pool.query("INSERT INTO projects(id,name) VALUES('prj-one','Первый проект'),('prj-two','Второй проект')");
  });afterEach(async()=>{await f?.dispose();});
  const impact=()=>management.impact(actor,{kind:'plugin',id});
  const apply=async(mode='catalog-only')=>{const preview=await impact();return management.archive(actor,{impactId:preview.impactId,expectedDigest:preview.digest,mode});};

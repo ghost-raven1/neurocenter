@@ -1,8 +1,6 @@
-import type {Pool} from 'pg';
-
-/** Tombstone переживает FK-cascade и запрещает повторное использование удалённого ID в этом каталоге. */
-export async function setupProjectRetirements(db:Pick<Pool,'query'>):Promise<void>{
-    await db.query(`SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:project-retirement-schema',0));
+/** Frozen baseline schema; only the catalog migration runner executes this SQL. */
+export const RETIREMENT_SCHEMA_SQL=`
+SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:project-retirement-schema',0));
         CREATE TABLE IF NOT EXISTS project_retirements(
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),project_id TEXT NOT NULL UNIQUE,project_name TEXT NOT NULL,
         deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),actor TEXT NOT NULL,origin TEXT NOT NULL DEFAULT 'deletion',
@@ -24,5 +22,5 @@ export async function setupProjectRetirements(db:Pick<Pool,'query'>):Promise<voi
         END $$;
         DROP TRIGGER IF EXISTS neurocenter_project_retirement_guard ON projects;
         CREATE TRIGGER neurocenter_project_retirement_guard BEFORE INSERT OR UPDATE OF id ON projects
-            FOR EACH ROW EXECUTE FUNCTION neurocenter_project_retirement_guard()`);
-}
+            FOR EACH ROW EXECUTE FUNCTION neurocenter_project_retirement_guard()
+`;

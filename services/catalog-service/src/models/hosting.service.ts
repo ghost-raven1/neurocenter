@@ -29,7 +29,6 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
 
     async onModuleInit(): Promise<void> {
         await this.models.ready();
-        await this.repository.setup();
         const client = await this.models.pool.connect();
         let discard = false;
         const disconnected = () => { discard = true; };

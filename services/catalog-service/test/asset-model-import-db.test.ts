@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { assetDigest, serializeAsset, type ModelAsset, type ResolvedAsset } from '@neurocenter/asset-contract';
 import { databaseFixture, actor, tool } from './asset-import-db.fixture';
-import { setupModelsSchema } from '../src/models/models.repository';
 import { ModelAssetAdapter } from '../src/asset-sources/asset-model-adapter';
 import type { IImportItem, INativeAssetPin, ISourceReceipt } from '../src/asset-sources/import-types';
 import { saveModelVersion, type IModelRow } from '../src/models/model-history';
@@ -15,7 +14,7 @@ const receipt=(record:ResolvedAsset,pin:INativeAssetPin):ISourceReceipt=>({repos
 describe('Model source snapshots preserve current native head and monotonic ordinals',()=>{
  it('Historical source v1 appends snapshot-only after headv2; next edit uses maxhistory+1',async()=>{
   const db=await databaseFixture();try{
-   await setupModelsSchema(db.pool);const adapter=new ModelAssetAdapter(db.pool),current=model('2.0.0');
+   const adapter=new ModelAssetAdapter(db.pool),current=model('2.0.0');
    const publish=async(item:IImportItem)=>{const client=await db.pool.connect();try{await client.query('BEGIN');const result=await adapter.publish(item,actor,client);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}};
    const first=await publish(await adapter.preview(current,randomUUID(),[]));expect(first.version).toBe(1);
    const before=(await db.pool.query('SELECT * FROM model_catalog')).rows[0],historical=await adapter.preview(model('1.0.0',false),randomUUID(),[],receipt(current,first));
@@ -28,7 +27,7 @@ describe('Model source snapshots preserve current native head and monotonic ordi
  });
  it('Concurrent historical write invalidates planned ordinal, strict version collision does not overwrite snapshot',async()=>{
   const db=await databaseFixture();try{
-   await setupModelsSchema(db.pool);const adapter=new ModelAssetAdapter(db.pool),current=model('2.0.0'),client=await db.pool.connect();
+   const adapter=new ModelAssetAdapter(db.pool),current=model('2.0.0'),client=await db.pool.connect();
    try{
     await client.query('BEGIN');const first=await adapter.publish(await adapter.preview(current,randomUUID(),[]),actor,client);await client.query('COMMIT');
     const planned=await adapter.preview(model('1.0.0',false),randomUUID(),[],receipt(current,first));

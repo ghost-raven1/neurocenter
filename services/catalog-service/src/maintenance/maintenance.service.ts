@@ -1,7 +1,8 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {BadRequestException,ConflictException,Injectable,OnModuleDestroy,OnModuleInit} from '@nestjs/common';
 import {setMaintenanceMetrics} from '../../../shared/maintenance-metrics.cjs';
 import {createPool} from '../database/pool';
-import {setupSecurityEvents,securityEvent} from '../access/security-events';
+import {securityEvent} from '../access/security-events';
 import {defaultPolicy,nextMaintenanceRun,validateMaintenancePolicy,type MaintenancePolicy} from '../../../shared/maintenance-policy.cjs';
 
 /** Политика и аудит сохраняются одной транзакцией; runtime-квитанции пишет только операторский runner. */
@@ -10,18 +11,7 @@ export class MaintenanceService implements OnModuleInit,OnModuleDestroy {
     private readonly pool=createPool({connectionString:process.env.CATALOG_PG_URL||'postgresql://rag:rag@localhost:5432/catalog',max:3},'maintenance');
     private timer?:NodeJS.Timeout;
     async onModuleInit():Promise<void>{
-        await setupSecurityEvents(this.pool);
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS maintenance_settings (
-            singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), revision integer NOT NULL DEFAULT 0 CHECK(revision>=0),
-            policy jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());
-            CREATE TABLE IF NOT EXISTS maintenance_runs (
-            id uuid PRIMARY KEY, slot text NOT NULL, policy_revision integer NOT NULL,
-            started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz,
-            state text NOT NULL CHECK(state IN ('running','failed','succeeded')), error_code text,
-            receipt jsonb);
-            CREATE UNIQUE INDEX IF NOT EXISTS maintenance_running ON maintenance_runs ((true)) WHERE state='running';
-            CREATE UNIQUE INDEX IF NOT EXISTS maintenance_success_slot ON maintenance_runs (slot) WHERE state='succeeded';
-            CREATE INDEX IF NOT EXISTS maintenance_runs_started ON maintenance_runs(started_at DESC)`);
+        await ensureCatalogSchema(this.pool);
         await this.pool.query('INSERT INTO maintenance_settings(singleton,policy) VALUES(true,$1) ON CONFLICT DO NOTHING',[JSON.stringify(defaultPolicy)]);
         const refresh=()=>{void this.get().then(setMaintenanceMetrics).catch(()=>undefined);};refresh();this.timer=setInterval(refresh,30000);this.timer.unref();
     }

@@ -10,35 +10,6 @@ import { securityEvent } from '../access/security-events';
 /** Намерение и точные описи переживают reload и restart; частичный импорт не маскируется общим успехом. */
 export class AssetImportRepository {
     constructor(readonly pool: Pool) {}
-    async setup(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS asset_source_jobs (
-            id uuid PRIMARY KEY,actor text NOT NULL,request_key uuid NOT NULL,request_hash text NOT NULL,
-            replacement_hashes jsonb NOT NULL DEFAULT '{}'::jsonb,source jsonb NOT NULL,selected_ids jsonb NOT NULL,items jsonb NOT NULL DEFAULT '[]'::jsonb,
-            state text NOT NULL CHECK(state IN ('QUEUED','RUNNING','NEEDS_INPUT','PARTIAL','FAILED','SUCCEEDED','CANCELLED')),
-            message text NOT NULL,cancel_requested boolean NOT NULL DEFAULT false,
-            created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),UNIQUE(actor,request_key));
-            ALTER TABLE asset_source_jobs ADD COLUMN IF NOT EXISTS replacement_hashes jsonb NOT NULL DEFAULT '{}'::jsonb;
-            ALTER TABLE asset_source_jobs ADD COLUMN IF NOT EXISTS replacement_origins jsonb NOT NULL DEFAULT '{}'::jsonb;
-            CREATE TABLE IF NOT EXISTS asset_source_receipts (
-                repository text NOT NULL,external_id text NOT NULL,asset_kind text NOT NULL,asset_version text NOT NULL,
-                descriptor_sha256 text NOT NULL,source_commit text NOT NULL,native_id text NOT NULL,native_version integer NOT NULL,
-                native_hash text NOT NULL,descriptor jsonb NOT NULL,blobs jsonb NOT NULL,imported_by text NOT NULL,
-                updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(repository,external_id),UNIQUE(asset_kind,native_id));
-            CREATE TABLE IF NOT EXISTS asset_source_versions (
-                repository text NOT NULL,external_id text NOT NULL,asset_kind text NOT NULL,asset_version text NOT NULL,
-                descriptor_sha256 text NOT NULL,source_commit text NOT NULL,native_id text NOT NULL,native_version integer NOT NULL,
-                native_hash text NOT NULL,native_manifest text,descriptor jsonb NOT NULL,blobs jsonb NOT NULL,imported_by text NOT NULL,
-                created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(repository,external_id,asset_version));
-            ALTER TABLE asset_source_versions DROP CONSTRAINT IF EXISTS asset_source_versions_asset_kind_native_id_native_version_key`);
-        await this.pool.query(`ALTER TABLE asset_source_receipts ALTER COLUMN source_commit DROP NOT NULL;
-            ALTER TABLE asset_source_versions ALTER COLUMN source_commit DROP NOT NULL;
-            ALTER TABLE asset_source_receipts ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'repository';
-            ALTER TABLE asset_source_versions ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'repository';
-            ALTER TABLE asset_source_receipts ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
-            ALTER TABLE asset_source_receipts ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
-            ALTER TABLE asset_source_receipts DROP CONSTRAINT IF EXISTS asset_source_receipts_asset_kind_native_id_key;
-            CREATE UNIQUE INDEX IF NOT EXISTS asset_source_native_owner ON asset_source_receipts(asset_kind,native_id) WHERE active`);
-    }
 
     async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[]): Promise<IImportJob> {
         const fingerprint = publicationHash({source,ids:[...ids].sort()});

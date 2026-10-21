@@ -7,19 +7,22 @@ import path from 'node:path';
 import {Readable} from 'node:stream';
 import {SourceUploads} from '../src/source-upload/source-upload.service';
 import {type PinnedUploadSource} from '../src/source-upload/source-upload.model';
+import {ensureCatalogSchema} from '../src/database/catalog-schema';
 const connectionString=process.env.CATALOG_TEST_PG_URL;
 const actor={email:'admin@example.test',activeRole:'Главный админ'},other={email:'other@example.test',activeRole:'Главный админ'};
 const sha=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfacf);bytes.writeUInt32LE(0x100000c,4);bytes.writeUInt32LE(2,12);bytes.writeUInt32LE(1,16);bytes.writeUInt32LE(24,20);bytes.writeUInt32LE(0x32,32);bytes.writeUInt32LE(24,36);bytes.writeUInt32LE(1,40);return bytes;}
 describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem',()=>{
- let admin:Pool,pool:Pool,root:string,schema:string,uploads:SourceUploads;
+ let admin:Pool,pool:Pool,root:string,database:string,uploads:SourceUploads;
  beforeEach(async()=>{
-  schema='source_upload_test_'+randomUUID().replaceAll('-','');admin=new Pool({connectionString,max:1});await admin.query('CREATE SCHEMA '+schema);
-  pool=new Pool({connectionString,options:'-c search_path='+schema,max:8});root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-source-upload-db-'));
-  await pool.query(`CREATE TABLE platform_users(email text PRIMARY KEY,is_main_admin boolean,enabled boolean);INSERT INTO platform_users VALUES('admin@example.test',true,true),('other@example.test',true,true);CREATE TABLE tool_build_jobs(id uuid PRIMARY KEY,config jsonb);`);
+  const url=new URL(connectionString!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname))throw Error('Only disposable local PostgreSQL databases allowed');url.pathname='/postgres';
+  database='nc_source_upload_test_'+randomUUID().replaceAll('-','');admin=new Pool({connectionString:url.href,max:1});await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;
+  pool=new Pool({connectionString:url.href,max:8});root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-source-upload-db-'));
+  await ensureCatalogSchema(pool);
+  await pool.query("INSERT INTO platform_users(email,is_main_admin,enabled) VALUES('admin@example.test',true,true),('other@example.test',true,true)");
   uploads=new SourceUploads(pool,root);await uploads.setup();
  });
- afterEach(async()=>{uploads?.stop();await pool?.end();if(admin){await admin.query('DROP SCHEMA '+schema+' CASCADE');await admin.end();}if(root)await fs.rm(root,{recursive:true,force:true});});
+ afterEach(async()=>{uploads?.stop();await pool?.end();if(admin){await admin.query('DROP DATABASE '+database);await admin.end();}if(root)await fs.rm(root,{recursive:true,force:true});});
  const intent=(bytes=executable())=>({requestKey:randomUUID(),name:'program',sha256:sha(bytes),bytes:bytes.length});
  async function ready(){const bytes=executable(),request=intent(bytes),upload=await uploads.create(actor,request);const result=await uploads.content(actor,upload.id,Readable.from([bytes]),bytes.length);return {request,upload:result,bytes};}
  it('Exact actor request is idempotent; changed bytes and another actor cannot adopt its handle',async()=>{
@@ -69,7 +72,7 @@ describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem'
  });
  it('Retained build protects source against cancellation and expiration cleanup, including terminal history',async()=>{
   const {upload}=await ready(),source=await uploads.pin(actor,{type:'upload',uploadId:upload.id,sha256:upload.sha256,bytes:upload.bytes,entrypoint:'program'});
-  await uploads.repository.transaction(async client=>{await uploads.retain(client,actor.email,source);await client.query('INSERT INTO tool_build_jobs VALUES($1,$2)',[randomUUID(),JSON.stringify({source})]);});
+  await uploads.repository.transaction(async client=>{await uploads.retain(client,actor.email,source);await client.query("INSERT INTO tool_build_jobs(id,actor,request_key,request_hash,config,state,message) VALUES($1,$2,$3,$4,$5,'SUCCEEDED','Retained source fixture')",[randomUUID(),actor.email,randomUUID(),'a'.repeat(64),JSON.stringify({source})]);});
   await pool.query("UPDATE tool_source_uploads SET expires_at=now()-interval '1 second' WHERE id=$1",[upload.id]);
   await uploads.cleanup();await expect(uploads.cancel(actor,upload.id)).rejects.toMatchObject({status:409});expect(await fs.readFile(uploads.files.filename(upload.id))).toHaveLength(64);
   await uploads.assertRetained(actor.email,source as PinnedUploadSource);

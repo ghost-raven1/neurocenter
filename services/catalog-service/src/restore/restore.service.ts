@@ -1,3 +1,4 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {BadRequestException,ForbiddenException,Injectable,OnModuleDestroy,OnModuleInit,ServiceUnavailableException} from '@nestjs/common';
 import {timingSafeEqual} from 'node:crypto';
 import type {Request} from 'express';
@@ -15,7 +16,7 @@ export class RestoreService implements OnModuleInit,OnModuleDestroy {
  readonly pool=createPool({connectionString:process.env.CATALOG_PG_URL||'postgresql://rag:rag@localhost:5432/catalog',max:4},'web-restore');
  readonly repository=new RestoreRepository(this.pool);private initialized?:Promise<void>;
  constructor(private readonly access:AccessDb){}
- ready(){return this.initialized??=(this.repository.setup());}
+ ready(){return this.initialized??=ensureCatalogSchema(this.pool);}
  async onModuleInit(){await this.ready();}
  async onModuleDestroy(){await this.pool.end();}
  async actor(req:Request){const actor=await readModelActor(req,this.access);if(actor.activeRole!=='Главный админ')throw new ForbiddenException('Восстановлением управляет главный администратор.');return actor.email;}

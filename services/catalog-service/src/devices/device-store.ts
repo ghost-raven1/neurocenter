@@ -1,3 +1,4 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {createPool} from '../database/pool';
 import {
     BadRequestException,
@@ -13,9 +14,6 @@ import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { workspaceReport } from './device-report';
-import { migrateCatalog } from '../database/migrations';
-import {setupHostedRagGrantTable} from './hosted-rag-grant-schema';
-import { INSTALLATION_MIGRATIONS } from './installation-migrations';
 
 export const digest = (value: string): string =>
     createHash('sha256').update(value).digest('hex');
@@ -45,28 +43,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
     ready():Promise<void>{return this.initialization??=this.initialize();}
     async onModuleInit(): Promise<void> {await this.ready();}
     private async initialize(): Promise<void> {
-        await this.pool.query(`CREATE TABLE IF NOT EXISTS bridge_devices (
-            id text PRIMARY KEY,email text NOT NULL,role text NOT NULL,name text NOT NULL,fingerprint text NOT NULL,
-            token_hash text UNIQUE NOT NULL,expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days',
-            revoked boolean NOT NULL DEFAULT false,last_seen timestamptz,report jsonb NOT NULL DEFAULT '{}');
-            CREATE TABLE IF NOT EXISTS bridge_pairs (
-            code_hash text PRIMARY KEY,user_code text UNIQUE NOT NULL,name text NOT NULL,fingerprint text NOT NULL,
-            expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes',email text,role text,issued boolean NOT NULL DEFAULT false);
-            CREATE TABLE IF NOT EXISTS bridge_jobs (
-            id text PRIMARY KEY,device_id text NOT NULL REFERENCES bridge_devices(id),email text NOT NULL,
-            role text NOT NULL,project_id text,kind text NOT NULL,payload jsonb NOT NULL,request_key text NOT NULL,
-            request_hash text NOT NULL,state text NOT NULL DEFAULT 'queued',percent integer,message text NOT NULL DEFAULT 'Ожидает моста',
-            lease text,lease_until timestamptz,result jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
-            UNIQUE(email,request_key));
-            CREATE INDEX IF NOT EXISTS bridge_jobs_device_queue ON bridge_jobs(device_id,state,created_at);
-            ALTER TABLE bridge_jobs ADD COLUMN IF NOT EXISTS started_at timestamptz;
-            ALTER TABLE bridge_pairs ADD COLUMN IF NOT EXISTS proposed_token_hash text;
-            ALTER TABLE bridge_pairs ADD COLUMN IF NOT EXISTS resume_device_id text;
-            ALTER TABLE bridge_pairs ADD COLUMN IF NOT EXISTS resume_token_hash text;
-            ALTER TABLE bridge_pairs ADD COLUMN IF NOT EXISTS issued_device_id text;
-            ALTER TABLE bridge_devices ADD COLUMN IF NOT EXISTS paused_until timestamptz;`);
-        await migrateCatalog(this.pool, INSTALLATION_MIGRATIONS);
-        await setupHostedRagGrantTable(this.pool);
+        await ensureCatalogSchema(this.pool);
     }
     async onModuleDestroy(): Promise<void> {
         await this.pool.end();

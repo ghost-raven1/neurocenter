@@ -8,21 +8,10 @@ import { object, publicationHash, validatePublication } from './publication-vali
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import { securityEvent } from '../access/security-events';
 import { assertPublicationDependencies } from './publication-dependencies';
-import { setupSkillDependencyReservations } from './skill-dependency-registry';
 
 /** SQL публикаций отделён от каталога проектов; карточка и её версия меняются одной транзакцией. */
 export class PluginRepository {
     constructor(private readonly pool: Pool) {}
-
-    async setup(): Promise<void> {
-        await this.pool.query(`ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
-            ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_key TEXT;
-            ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_hash TEXT;
-            CREATE UNIQUE INDEX IF NOT EXISTS ai_plugins_publication_key ON ai_plugins (publication_key);
-            ALTER TABLE ai_plugin_versions ADD COLUMN IF NOT EXISTS metadata JSONB;
-            ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS dependencies JSONB NOT NULL DEFAULT '[]'::jsonb;`);
-        await setupSkillDependencyReservations(this.pool);
-    }
 
     async list(page: number, size: number, query: string, allowedIds?: string[]): Promise<IPage<IAiPlugin>> {
         const params: unknown[] = [];

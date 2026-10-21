@@ -1,3 +1,4 @@
+import {ensureCatalogSchema} from '../database/catalog-schema';
 import {BadRequestException,ConflictException,ForbiddenException,Injectable,NotFoundException,type OnModuleDestroy,type OnModuleInit} from '@nestjs/common';
 import {randomUUID} from 'node:crypto';
 import type {Pool,PoolClient} from 'pg';
@@ -20,7 +21,7 @@ export class SourceUploads{
  private streaming=0;
  private readonly active=new Map<string,AbortController>();
  constructor(readonly pool:Pool,root:string,private readonly inspect=inspectUploadArchive){this.repository=new SourceUploadRepository(pool);this.files=new UploadFiles(root);}
- async setup(){await this.files.setup();await this.repository.setup();}
+ async setup(){await ensureCatalogSchema(this.pool);await this.files.setup();}
  async authorize(actor:IAccessActor,epoch?:string,client:Pick<Pool,'query'>=this.pool):Promise<string>{
   if(!actor||actor.activeRole!=='Главный админ')throw new ForbiddenException('Загружать и упаковывать инструменты может главный администратор.');
   let email:string;try{email=normalizeEmail(actor.email);}catch{throw new ForbiddenException('Не подтверждён владелец загрузки.');}

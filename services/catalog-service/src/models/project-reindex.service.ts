@@ -12,7 +12,6 @@ import { ProjectRagCoordinator } from './project-rag-coordinator';
 import type { IReindexRow, IProjectReindexPlan, IGenerationReceipt } from './project-reindex.types';
 import {DeviceJobs} from '../devices/device-jobs';
 import {requireFeatureEnabled} from '../features/require-feature-enabled';
-import {setupProjectReindexOperations} from '../operations/project-reindex-operations';
 
 const sha=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -27,16 +26,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     private readonly tasks=new Set<Promise<void>>();
     constructor(private readonly models:ModelsService,private readonly coordinator:ProjectRagCoordinator,private readonly runtime:ModelRuntime,private readonly jobs:DeviceJobs){}
     async onModuleInit():Promise<void>{
-        await this.models.ready();await this.models.pool.query(`CREATE TABLE IF NOT EXISTS project_reindex_plans(
-            id UUID PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,request_key TEXT NOT NULL,
-            actor TEXT NOT NULL,active_role TEXT NOT NULL,state TEXT NOT NULL,digest TEXT NOT NULL,approved BOOLEAN NOT NULL DEFAULT false,
-            data JSONB NOT NULL,progress INTEGER NOT NULL DEFAULT 0,message TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(project_id,request_key));
-            ALTER TABLE project_reindex_plans ADD COLUMN IF NOT EXISTS connection_job_id UUID;
-            ALTER TABLE project_reindex_plans ADD COLUMN IF NOT EXISTS connection_error TEXT;
-            ALTER TABLE project_reindex_plans ADD COLUMN IF NOT EXISTS connection_request_key UUID;
-            UPDATE project_reindex_plans SET connection_request_key=id WHERE connection_request_key IS NULL`);
-        await setupProjectReindexOperations(this.models.pool);
+        await this.models.ready();
         this.timer=setInterval(()=>{this.launch();},3000);this.timer.unref();
     }
     async onModuleDestroy():Promise<void>{if(this.timer)clearInterval(this.timer);await Promise.allSettled([...this.tasks]);}
