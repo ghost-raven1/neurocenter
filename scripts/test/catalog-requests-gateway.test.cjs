@@ -3,8 +3,17 @@ const assert=require('node:assert/strict');
 const {createServer}=require('node:http');
 const {once}=require('node:events');
 const path=require('node:path');
+const fs=require('node:fs');
 const {ProxyService}=require(path.resolve('services/api-gateway/dist/proxy/proxy.service.js'));
 const {LiveService}=require(path.resolve('services/api-gateway/dist/live/live.service.js'));
+
+test('Built Swagger artifact includes usable request filters and submission/review bodies',()=>{
+ const document=JSON.parse(fs.readFileSync(path.resolve('services/api-gateway/dist/docs/openapi.json'),'utf8'));
+ const requests=document.paths['/api/catalog-requests'];
+ assert.deepEqual(requests.get.parameters.map(item=>item.name),['scope','status','kind','assetType','projectId','page','size']);
+ assert.deepEqual(requests.post.requestBody.content['application/json'].schema.required,['requestKey','kind','assetType','title','description']);
+ assert.deepEqual(document.paths['/api/catalog-requests/{id}/actions'].post.requestBody.content['application/json'].schema.required,['requestKey','expectedRevision','action']);
+});
 
 /** An isolated HTTP upstream captures only synthetic actors; no catalog or live database is used. */
 async function fixture({identity='human',allowed=true,status=201}={}){
