@@ -6,19 +6,20 @@ import { ProxyService } from './proxy.service';
 import { ConfigService } from '@nestjs/config';
 import { McpHostService } from '../features/mcp-host/host';
 import { McpHostController } from '../features/mcp-host/mcp-host.controller';
+import {ResearchMcpController} from '../features/research-mcp/research-mcp.controller';
 
 /**
  * Модуль: auth-guard + проксирование /api/* на каталожный microservice.
  */
 @Module({
-    controllers: [ProxyController, McpHostController],
+    controllers: [ProxyController, McpHostController,ResearchMcpController],
     providers: [
         ProxyService,
         AuthGuardService,
         {
             provide: 'MCP_HOST',
             useFactory: (configService: ConfigService) =>
-                new McpHostService(configService.get('NEUROCENTER_CATALOG_URL', 'http://catalog-service:4001') ?? 'http://catalog-service:4001', configService.get('NEUROCENTER_INTERNAL_TOKEN', '') ?? ''),
+                new McpHostService(configService.get('CATALOG_SERVICE_URL', 'http://localhost:4100') ?? 'http://localhost:4100', configService.get('NEUROCENTER_INTERNAL_TOKEN', '') ?? ''),
             inject: [ConfigService],
         },
     ],

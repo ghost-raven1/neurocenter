@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import {createHash} from 'node:crypto';
+import {deviceCredentialTransport} from '../security/device-credential-transport';
 
 import { filterResponse, IResourceClaims } from './access-response';
 import { AuthGuardService, IAuthPayload } from '../auth/auth-guard.service';
@@ -15,7 +16,7 @@ import {LiveService} from '../live/live.service';
 import { forwardRuntimeArtifact } from './runtime-artifact-stream';
 import { forwardBackupDownload } from './backup-download-stream';
 import {forwardToolAssetDocument,forwardToolSupply} from './tool-supply-stream';
-import {featureFlagFailure,requiredFeatureFlag} from '../features/feature-flag-gate';
+import {featureFlagsFailure,requiredFeatureFlags} from '../features/feature-flag-gate';
 import {awaitEmbedding} from './embedding-deadline';
 import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 import {forwardModelInference,modelInferenceRoute} from './model-inference-forward';
@@ -95,7 +96,8 @@ export class ProxyService {
             if(auth.deviceId&&(req.headers['x-neurocenter-job-id']||req.headers['x-neurocenter-job-lease'])){
                 const jobId=String(req.headers['x-neurocenter-job-id']||'');const lease=String(req.headers['x-neurocenter-job-lease']||'');
                 if(!/^[a-f0-9-]{36}$/.test(jobId)||!/^[a-f0-9-]{36}$/.test(lease)){res.status(403).json({message:'Некорректная аренда задания.'});return;}
-                const job=await this.http.post(`${this.catalogUrl}/internal/device-channel/jobs/${jobId}/authorize`,{lease},{headers:{authorization:req.headers.authorization,'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''}});
+                const snapshotReceipt=!!snapshotPublication&&(/\/snapshot-uploads\/[^/]+\/status$/.test(canonicalPath||'')&&method==='GET'||/\/snapshot-uploads\/[^/]+\/complete$/.test(canonicalPath||'')&&method==='POST');
+                const job=await this.http.post(`${this.catalogUrl}/internal/device-channel/jobs/${jobId}/authorize${snapshotReceipt?'?phase=snapshot-receipt':''}`,{lease},{headers:{authorization:req.headers.authorization,'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''}});
                 if(job.status<200||job.status>=300||!(snapshotPublication?job.data.projectId===snapshotPublication.projectId&&job.data.snapshotId===snapshotPublication.snapshotId&&job.data.snapshotProtocol==='project-snapshots-v1':path.startsWith('/api/rag/')&&job.data.projectId===String(payload?.projectKey||req.query.projectKey||''))){
                     res.status(403).json({message:'Доступ задания к проекту отозван или его аренда истекла.'});return;
                 }
@@ -110,9 +112,9 @@ export class ProxyService {
                 res.status(decision.status === 403 ? 403 : 503).json({message:'Не удалось проверить доступ к ресурсу.'}); return;
             }
             if (!decision.data.allowed) { res.status(403).json({message:'Активная роль не разрешает это действие в данном проекте.'}); return; }
-            const flag=requiredFeatureFlag(method,path,req.body);
-            if(flag) {
-                const failure=await featureFlagFailure(this.http,this.featureFlagsUrl,flag);
+            const flags=requiredFeatureFlags(method,path,req.body);
+            if(flags.length) {
+                const failure=await featureFlagsFailure(this.http,this.featureFlagsUrl,flags);
                 if(!inferenceOpen())return;
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
@@ -177,7 +179,10 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|opencode-models\/(context|sync)|agents\/compile|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(suffix==='opencode-models/sync'&&req.body?.credentials&&Object.keys(req.body.credentials).length&&!deviceCredentialTransport(req)){
+            res.status(403).json({message:'Перенос ключей OpenCode требует HTTPS. Для TLS-прокси настройте доверенные адреса на API Gateway.'});return;
+        }
         if(publicPair){
             const now=Date.now();for(const [key,value] of this.pairLimits){if(value.until<now){this.pairLimits.delete(key);}}
             const address=String(req.socket.remoteAddress);
@@ -196,12 +201,15 @@ export class ProxyService {
         if(suffix==='embedding'){await this.deviceEmbedding(req,res);return;}
         const auth=publicPair?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
         if(!publicPair&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+        const failure=await featureFlagsFailure(this.http,this.featureFlagsUrl,requiredFeatureFlags(req.method,req.path,req.body));
+        if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
         try{
             const response=await this.http.post(`${this.catalogUrl}/internal/device-channel/${suffix}`,req.body,{
                 headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||'',...(!publicPair||suffix==='pair/start'?{authorization:req.headers.authorization}:{})}});
             res.status(response.status).json(response.data===''?null:response.data);
             if(response.status>=200&&response.status<300&&auth&&!suffix.startsWith('embedding')){this.live.bridge(auth.email,auth.deviceId,/^jobs\//.test(suffix)?suffix.split('/')[1]:undefined);}
             if(response.status>=200&&response.status<300&&/^learning\/(record|propose|observe)$/.test(suffix))this.live.sections(['projects','audit']);
+            if(response.status>=200&&response.status<300&&suffix==='opencode-models/sync'&&response.data?.changed)this.live.sections(['catalog','projects','audit']);
             if(response.status>=200&&response.status<300&&/\/(progress|complete)$/.test(suffix)&&['succeeded','failed'].includes(String((req.body as {state?:unknown})?.state))){this.live.sections(['knowledge','projects','operations','audit']);}
         }catch{res.status(502).json({message:'Сервис подключений недоступен.'});}
     }
@@ -224,6 +232,9 @@ export class ProxyService {
             catch(error){if(!open()){timeoutReply();return;}throw error;}
             if(!open()){timeoutReply();return;}
             if(!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+            const failure=await awaitEmbedding(featureFlagsFailure(this.http,this.featureFlagsUrl,['model_hosting']),abort.signal);
+            if(!open()){timeoutReply();return;}
+            if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             try{
                 const response=await awaitEmbedding(this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`,req.body,{
                     timeout:115000,maxContentLength:8*1024*1024,signal:abort.signal,

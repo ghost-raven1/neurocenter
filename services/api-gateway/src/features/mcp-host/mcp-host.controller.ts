@@ -4,7 +4,7 @@ import axios from 'axios';
 import type { Request, Response } from 'express';
 import { AuthGuardService } from '../../auth/auth-guard.service';
 import { McpHostService } from './host';
-import { issueHostedMcpTicket, verifyHostedMcpTicket } from './ticket';
+import { issueHostedMcpTicket, verifyHostedMcpTicket,validHostedMcpSession } from './ticket';
 
 /**
  * Хост управляемых MCP-серверов: подключение проходит по устройству, далее OpenCode ходит по билету.
@@ -23,6 +23,7 @@ export class McpHostController {
         this.catalogUrl = (configService.get<string>('CATALOG_SERVICE_URL') || 'http://localhost:4100').replace(/\/+$/, '');
         this.host = new McpHostService(this.catalogUrl, process.env.NEUROCENTER_INTERNAL_TOKEN || '');
     }
+    async onModuleDestroy():Promise<void>{await this.host.onModuleDestroy();}
 
     /** Мост обменивает устройство и одобренный пакет на билет хоста; OpenCode не получает токен устройства. */
     @Post('connect')
@@ -48,14 +49,15 @@ export class McpHostController {
         if (response.status !== 200 || !response.data || typeof response.data !== 'object') {
             throw new ForbiddenException('Подключение хоста MCP не разрешено.');
         }
-        const data = response.data as { assetId?: unknown; name?: unknown; artifact?: unknown };
-        const artifact = data.artifact as { sha256?: unknown; entrypoint?: unknown; executable?: unknown; compressedBytes?: unknown } | undefined;
+        const data = response.data as { assetId?: unknown; name?: unknown; artifact?: unknown;session?:unknown };
+        const artifact = data.artifact as { sha256?: unknown; entrypoint?: unknown; executable?: unknown; compressedBytes?: unknown;unpackedBytes?:unknown;filesCount?:unknown } | undefined;
         if (
             typeof data.assetId !== 'string' || typeof data.name !== 'string' || !data.name || data.name.length > 200
             || !artifact || typeof artifact.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(artifact.sha256)
             || typeof artifact.entrypoint !== 'string' || !artifact.entrypoint || artifact.entrypoint.includes('..') || artifact.entrypoint.startsWith('/')
             || typeof artifact.executable !== 'boolean'
-            || !Number.isSafeInteger(artifact.compressedBytes as number) || (artifact.compressedBytes as number) < 1             || (artifact.compressedBytes as number) > 2 * 1024 * 1024 * 1024
+            || !Number.isSafeInteger(artifact.compressedBytes as number) || (artifact.compressedBytes as number) < 1 || (artifact.compressedBytes as number) > 2 * 1024 * 1024 * 1024
+            || !validHostedMcpSession(data.session)||data.session.deviceId!==auth.deviceId||data.session.projectId!==input.projectId||data.session.assetId!==data.assetId
         ) {
             throw new BadGatewayException('Сервис хоста MCP ответил некорректно. Повторите позже.');
         }
@@ -64,6 +66,9 @@ export class McpHostController {
             entrypoint: artifact.entrypoint,
             executable: artifact.executable,
             compressedBytes: artifact.compressedBytes as number,
+            session:data.session,
+            ...(Number.isSafeInteger(artifact.unpackedBytes)?{unpackedBytes:artifact.unpackedBytes as number}:{}),
+            ...(Number.isSafeInteger(artifact.filesCount)?{filesCount:artifact.filesCount as number}:{}),
             name: data.name,
         });
         return { path: `/api/mcp-host/m/${ticket}` };
