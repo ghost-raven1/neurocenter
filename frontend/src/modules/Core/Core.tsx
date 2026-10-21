@@ -1,4 +1,4 @@
-import { AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
+import { ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
@@ -94,7 +94,8 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         .map(item => ({ key: item.route, label: navigation[item.name]?.title ?? item.title, icon: navigation[item.name]?.icon }));
     const selected = items.find(item => location.pathname.startsWith(item.key));
     const brand = <div className="app__brand"><DeploymentUnitOutlined /><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
-    const menu = <nav aria-label="Основная навигация"><Menu theme="dark" mode="inline" items={items} selectedKeys={selected ? [selected.key] : []} onClick={({key}) => { history.push(key); setMenuOpen(false); }} /></nav>;
+    const menuItems = [...items, {key: '/api/docs', label: <a href="/api/docs" target="_blank" rel="noopener noreferrer">Swagger API</a>, icon: <ApiOutlined />}];
+    const menu = <nav aria-label="Основная навигация"><Menu theme="dark" mode="inline" items={menuItems} selectedKeys={selected ? [selected.key] : []} onClick={({key}) => { if (key !== '/api/docs') { history.push(key); } setMenuOpen(false); }} /></nav>;
 
     return (
         <Layout className="app">
