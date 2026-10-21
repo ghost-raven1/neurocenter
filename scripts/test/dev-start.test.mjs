@@ -175,6 +175,15 @@ async function fixture(t, mode) {
                     else options.signal.addEventListener('abort',cancel,{once:true});
                 });
             }
+            if(!process.env.DEV_START_MODE.startsWith('native-cancel-')&&!process.env.DEV_START_MODE.startsWith('profile-ready')){
+                // A fake healthy response must not outrun the deliberately failing child on a busy host.
+                const deadline=Date.now()+10000;
+                while(!fs.readFileSync(process.env.DEV_START_CALLS,'utf8').trim().split('\\n').filter(Boolean).map(JSON.parse)
+                    .some(event=>event.kind==='child-exit'&&event.service==='catalog')){
+                    if(Date.now()>=deadline)throw Error('FIXTURE_CATALOG_EXIT_NOT_OBSERVED');
+                    await new Promise(resolve=>setTimeout(resolve,10));
+                }
+            }
             await new Promise(resolve=>setTimeout(resolve,300));
             record({kind:'health-end',port:url.port});
             return url.port==='5173'
@@ -199,7 +208,7 @@ async function fixture(t, mode) {
         let stdout = '', stderr = '';
         cli.stdout.setEncoding('utf8').on('data', value => { stdout += value; });
         cli.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
-        const timer = setTimeout(() => cli.kill('SIGKILL'), 12000);
+        const timer = setTimeout(() => cli.kill('SIGKILL'), 30000);
         let cancelling=false;
         const cancel=mode==='model-runtime-cancel'||mode.startsWith('native-cancel-')?setInterval(async()=>{
             const awaited=mode==='model-runtime-cancel'?'model-runtime-wait':'health-start';
@@ -212,7 +221,7 @@ async function fixture(t, mode) {
             cli.once('close', (code, signal) => resolve({code, signal}));
         }).finally(() => {clearTimeout(timer);clearInterval(cancel);});
         if(status.code===0) {
-            const stopped=spawnSync(process.execPath,[path.join(checkout,'scripts/dev.mjs'),'down'],{cwd:checkout,env,encoding:'utf8',timeout:10000});
+            const stopped=spawnSync(process.execPath,[path.join(checkout,'scripts/dev.mjs'),'down'],{cwd:checkout,env,encoding:'utf8',timeout:20000});
             assert.equal(stopped.status,0,stopped.stdout+stopped.stderr);
         }
         const events = await eventsFrom(calls);
@@ -259,6 +268,7 @@ test('Полный запуск готовит файлы, сохраняя вы
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 8);
     assert.ok(result.events.some(event => event.kind === 'health-start'));
+    assert.ok(result.events.some(event => event.kind === 'child-exit' && event.service === 'catalog'));
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
 });
 
