@@ -7,13 +7,15 @@ import {reserveCapacity} from '../../../shared/capacity.cjs';
 import {normalizeChunkRow,rowFingerprint} from '../../../shared/rag-index-contract.cjs';
 import {readIndexManifest,readIndexSummary,bindIndexProfile,invalidateIndexSeal,sealIndex,requireUsableVectors,validateIndexWrite,
     type IRagIndexWrite,type IRagIndexManifest,type IRagIndexSummary} from './rag-index-state';
-import {RAG_GENERATION_SCHEMA} from './rag-generation-schema';
+import {migrateRag,checkRagQuotaMigration} from '../database/migrations';
+import {GENERATION_MIGRATION,IDENTITY_MIGRATION} from '../database/migration-definitions';
 import {RagGenerations,ensureGenerationSearchIndex} from './rag-generations';
 import {buildUpsert,parseVector,type IUpsertRow} from './rag-rows';
 export {buildUpsert,type IUpsertRow} from './rag-rows';
 
 export interface IRagDbConfig {
     url: string;
+    scope?:'base'|'project';
 }
 
 /**
@@ -34,9 +36,11 @@ export class RagDb {
     private readonly pool: Pool;
     private setupDone: Promise<void> | null = null;
     private readonly quotaPolicy=ragQuotaPolicy();
+    private readonly scope:'base'|'project';
     public readonly generations:RagGenerations;
 
     constructor(config: IRagDbConfig) {
+        this.scope=config.scope??'project';
         this.pool = createPool({ connectionString: config.url, max: 5 },'rag-data');
         this.generations=new RagGenerations(this.pool);
     }
@@ -54,15 +58,9 @@ export class RagDb {
     }
 
     private async init(): Promise<void> {
-        const client=await this.pool.connect();
-        try{
-            await client.query('BEGIN');await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:rag-generation-schema',0))");
-            await client.query(`CREATE TABLE IF NOT EXISTS neurocenter_rag_schema_versions(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
-            const applied=await client.query("SELECT 1 FROM neurocenter_rag_schema_versions WHERE version='project-generations-1'");
-            if(!applied.rows.length){await client.query(RAG_GENERATION_SCHEMA);await client.query("INSERT INTO neurocenter_rag_schema_versions(version) VALUES('project-generations-1')");}
-            await client.query('COMMIT');
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        await migrateRag(this.pool,this.scope==='project'?[GENERATION_MIGRATION,IDENTITY_MIGRATION]:[GENERATION_MIGRATION]);
         await setupRagQuota(this.pool,this.quotaPolicy);
+        if(!await checkRagQuotaMigration(this.pool))throw new Error('Миграция квоты RAG не подтверждена.');
     }
 
     /** Лимит и счётчик принадлежат той же БД, что и знания проекта. */

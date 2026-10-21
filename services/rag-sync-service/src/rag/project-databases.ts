@@ -17,7 +17,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     private readonly baseUrl=process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag';
     private readonly admin=createPool({connectionString:this.baseUrl,max:2},'rag-admin');
     private readonly provisioner=process.env.RAG_PROVISION_PG_URL?createPool({connectionString:process.env.RAG_PROVISION_PG_URL,max:1},'rag-provisioner'):this.admin;
-    private readonly migrationSource=new RagDb({url:this.baseUrl});
+    private readonly migrationSource=new RagDb({url:this.baseUrl,scope:'base'});
     private readonly cache=new Map<string,ICacheEntry>();
     private readonly pending=new Map<string,Promise<void>>();
     private readonly migrated=new Set<string>();

@@ -13,8 +13,12 @@ WORKDIR /app/mcp/neurocenter-asset-sync
 # без повторного npm install, который пересчитывал версии вне lock-файла.
 RUN npm ci --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
-# MCP использует общий TAR-парсер и его типы уже во время собственной сборки.
-COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts services/shared/rag-index-contract.cjs services/shared/rag-index-contract.d.cts /app/services/shared/
+# MCP использует общие контракты и их типы уже во время собственной сборки.
+COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts \
+    services/shared/rag-index-contract.cjs services/shared/rag-index-contract.d.cts \
+    services/shared/rag-ui-contract.cjs services/shared/rag-ui-contract.d.cts \
+    services/shared/opencode-model-scan.cjs services/shared/opencode-model-scan.d.cts \
+    services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts /app/services/shared/
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
 

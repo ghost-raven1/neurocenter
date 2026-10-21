@@ -5,6 +5,8 @@ import {projectDatabaseName} from '../rag/project-database-name';
 import {ragRequestHash} from '../../../shared/rag-index-contract.cjs';
 import {databaseLock,LIFECYCLE_LOCK,setupDatabaseLifecycle} from './lifecycle-schema';
 import type {IDatabaseIdentity,IPurgeCommand,IPurgeReceipt,IRetiredDatabaseFacts} from './lifecycle-types';
+import {migrateRag} from '../database/migrations';
+import {IDENTITY_MIGRATION} from '../database/migration-definitions';
 
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
 const conflict=()=>new ConflictException('База, план или её использование изменились. Подготовьте новый план удаления.');
@@ -148,7 +150,7 @@ export class DatabaseLifecycle implements OnModuleDestroy {
         if(!physical)throw new NotFoundException('Физическая база отсутствует. Удаление не подтверждено.');if(!physical.datallowconn)throw conflict();
         const url=new URL(this.baseUrl);url.pathname='/'+databaseName;const target=createPool({connectionString:url.toString(),max:1},'database-identity');
         try{
-            if(adopt){await target.query(`CREATE TABLE IF NOT EXISTS neurocenter_database_identity(singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton),id UUID NOT NULL,project_id TEXT NOT NULL)`);
+            if(adopt){await migrateRag(target,[IDENTITY_MIGRATION]);
                 await target.query('INSERT INTO neurocenter_database_identity(singleton,id,project_id) VALUES(true,$1,$2) ON CONFLICT DO NOTHING',[marker,projectId]);}
             if(!(await target.query("SELECT to_regclass('public.neurocenter_database_identity') AS name")).rows[0].name)throw conflict();
             const actual=(await target.query('SELECT id,project_id FROM neurocenter_database_identity WHERE singleton')).rows[0];
