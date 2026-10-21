@@ -1,3 +1,5 @@
+import {CHAT_RESEARCH_SCHEMA_SQL} from '../model-chat/chat-research.schema';
+import {CHAT_RESEARCH_SCHEMA_ASSERT_SQL} from '../model-chat/chat-research.schema-verification';
 import {AGENT_SCHEMA_SQL} from '../agents/agent-schema';
 import {BRIDGE_SOURCE_SCHEMA_SQL} from '../asset-sources/bridge-source.schema';
 import {BRIDGE_SOURCE_SCHEMA_ASSERT_SQL} from '../asset-sources/bridge-source.schema-verification';
@@ -23,6 +25,12 @@ import {CHAT_COMPACTION_SCHEMA_SQL} from '../model-chat/chat-compaction.schema';
 import {CHAT_COMPACTION_SCHEMA_ASSERT_SQL} from '../model-chat/chat-compaction.schema-verification';
 import {CHAT_STORAGE_SCHEMA_SQL} from '../model-chat/chat-storage.schema';
 import {CHAT_STORAGE_SCHEMA_ASSERT_SQL} from '../model-chat/chat-storage.schema-verification';
+import {CHAT_GROUP_SCHEMA_SQL} from '../model-chat/chat-group.schema';
+import {CHAT_GROUP_SCHEMA_ASSERT_SQL} from '../model-chat/chat-group.schema-verification';
+import {OPENCODE_MODEL_SYNC_SCHEMA_SQL} from '../models/opencode-model-sync.schema';
+import {OPENCODE_MODEL_SYNC_SCHEMA_ASSERT_SQL} from '../models/opencode-model-sync.schema-verification';
+import {MODEL_USAGE_SCHEMA_SQL} from '../model-usage/model-usage.schema';
+import {MODEL_USAGE_SCHEMA_ASSERT_SQL} from '../model-usage/model-usage.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
@@ -38,4 +46,8 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:13,name:'personal-model-chat-and-documents',sql:CHAT_SCHEMA_SQL+'\n'+CHAT_SCHEMA_ASSERT_SQL},
     {version:14,name:'persistent-model-chat-context',sql:CHAT_COMPACTION_SCHEMA_SQL+'\n'+CHAT_COMPACTION_SCHEMA_ASSERT_SQL},
     {version:15,name:'model-chat-ceph-attachments',sql:CHAT_STORAGE_SCHEMA_SQL+'\n'+CHAT_STORAGE_SCHEMA_ASSERT_SQL},
+    {version:16,name:'project-agent-chat-rounds',sql:CHAT_GROUP_SCHEMA_SQL+'\n'+CHAT_GROUP_SCHEMA_ASSERT_SQL},
+    {version:17,name:'opencode-model-auto-sync',sql:OPENCODE_MODEL_SYNC_SCHEMA_SQL+'\n'+OPENCODE_MODEL_SYNC_SCHEMA_ASSERT_SQL},
+    {version:18,name:'model-inference-usage-ledger',sql:MODEL_USAGE_SCHEMA_SQL+'\n'+MODEL_USAGE_SCHEMA_ASSERT_SQL},
+    {version:19,name:'bounded-chat-research',sql:CHAT_RESEARCH_SCHEMA_SQL+'\n'+CHAT_RESEARCH_SCHEMA_ASSERT_SQL},
 ];
