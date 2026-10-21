@@ -17,7 +17,8 @@ const futureVersion = '0.' + (Number(bridgeVersion.split('.')[1]) + 1) + '.0';
 const incompatibleVersion = '0.' + (Number(bridgeVersion.split('.')[1]) - 1) + '.0';
 const target = `${process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
 const file = `neurocenter-asset-sync-${target}-${bridgeVersion}.tgz`;
-const archive = path.join(root, 'bridge-dist/runtime', file);
+const archive = path.join(process.env.TEST_RUNTIME_DIR || path.join(root, 'bridge-dist/runtime'), file);
+const siteOrigin = 'http://panel.fixture.test:5173';
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-native-installer-')));
 const installDirectory = path.join(temporary, 'папка с пробелами', 'MCP');
 const entry = path.join(installDirectory, 'dist/index.js');
@@ -34,7 +35,13 @@ async function waitFor(predicate, label, timeout = 10000) {
     while (Date.now() < deadline) { if (await predicate()) return; await delay(50); }
     throw new Error('Не дождались: ' + label);
 }
-async function check(name, action) { await action(); cases.push(name); console.log('OK ' + name); }
+async function check(name, action) {
+    await action(); cases.push(name); console.log('OK ' + name);
+    // Each case has already checked its own backup; do not accumulate many unpacked runtimes on a small QA disk.
+    for (const folder of await fs.readdir(path.dirname(installDirectory))) {
+        if (folder.startsWith('.neurocenter-previous.')) await fs.rm(path.join(path.dirname(installDirectory), folder), { recursive: true, force: true });
+    }
+}
 async function installer(env, script) {
     return new Promise((resolve, reject) => {
         child = spawn('/bin/bash', [script], { env, cwd: temporary, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -139,8 +146,8 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
     env.BASE_URL = origin + '/api/bridge';
     const script = path.join(temporary, 'install.sh');
-    await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', env.BASE_URL.replace(/\/api\/bridge$/, '')).replaceAll('__RECONNECT__', '0'));
-    const profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(origin).slice(0, 20));
+    await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', siteOrigin).replaceAll('__RECONNECT__', '0'));
+    const profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(siteOrigin).slice(0, 20));
     const config = path.join(env.XDG_CONFIG_HOME, 'opencode/opencode.json');
     let installedConfig, installedMtime;
     await check('Реальный Bash устанавливает готовый архив без Node/npm, регистрирует MCP и запускает heartbeat', async () => {
@@ -151,8 +158,23 @@ try {
         const setting = JSON.parse(installedConfig).mcp['neurocenter-asset-sync'];
         assert.equal(setting.command[0], await fs.realpath(path.join(installDirectory, 'bin/node')));
         assert.equal(setting.command[1], await fs.realpath(entry));
+        assert.equal(setting.environment.NEUROCENTER_URL, siteOrigin);
+        assert.equal(setting.environment.NEUROCENTER_API_URL, origin);
         assert.equal((await fs.stat(path.join(profile, 'credentials.json'))).mode & 0o777, 0o600);
         assert.equal(JSON.parse(await fs.readFile(path.join(profile, 'credentials.json'), 'utf8')).deviceId, deviceId);
+    });
+    await check('Короткая команда использует bundled Node, сохранённый Gateway и существующее подключение', async () => {
+        const command = path.join(temporary, '.local/bin/neurocenter-bridge');
+        const result = await new Promise((resolve, reject) => {
+            const process = spawn(command, ['connect', '--open'], { env, cwd: temporary, stdio: ['ignore', 'pipe', 'pipe'] });
+            let stdout = '', stderr = ''; process.stdout.on('data', value => stdout += value); process.stderr.on('data', value => stderr += value);
+            const timeout = setTimeout(() => { process.kill('SIGTERM'); reject(Error('Короткая команда не завершилась.')); }, 10000);
+            process.once('error', cause => { clearTimeout(timeout); reject(cause); }); process.once('close', status => { clearTimeout(timeout); resolve({ status, stdout, stderr }); });
+        });
+        assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /Существующее подключение сохранено/);
+        assert.equal(pairStarts, 1); assert.doesNotMatch(result.stdout, /"connected"|"deviceId"/);
+        assert.deepEqual(JSON.parse(await fs.readFile(path.join(installDirectory, 'installation.json'), 'utf8')), { schemaVersion: 1, siteUrl: siteOrigin, apiUrl: origin });
+        assert.equal((await fs.stat(command)).mode & 0o700, 0o700);
     });
     await check('Повтор реального установщика сохраняет подключение, JSON и резервную копию прежней версии', async () => {
         expectedEntryInode = (await fs.stat(entry)).ino;

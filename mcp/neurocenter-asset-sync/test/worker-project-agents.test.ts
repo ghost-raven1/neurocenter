@@ -3,12 +3,13 @@ import path from 'node:path';
 import http from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {isolateAgentHome} from './project-agents.fixture.js';
 import {runWorker} from '../src/bridge/worker.js';
 import {writeState} from '../src/bridge/state.js';
 import * as workspace from '../src/bridge/workspace.js';
 import {workspaceFixture} from './bridge-fixture.js';
 import {BRIDGE_CAPABILITIES} from '../src/bridge/protocol.js';
-import {PROJECT_AGENTS_NOTE,createProjectAgentsPayload,validateProjectAgentsResult,type ProjectAgent,type ProjectAgentsPayload} from '../src/features/project-agents/contract.js';
+import {PROJECT_AGENTS_NOTE,compileProjectAgents,createProjectAgentsPayload,validateProjectAgentsResult,type ProjectAgent,type ProjectAgentsPayload} from '../src/features/project-agents/contract.js';
 import {agentFile} from '../src/features/project-agents/receipt.js';
 const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.fn()}));
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
@@ -27,6 +28,7 @@ describe('Native agent jobs over the actual HTTP polling transport',()=>{
    expect(req.headers.authorization).toBe('Bearer fixture');let output:unknown={};
    if(route==='jobs/claim'){output=job;job=null;responseBytes=Math.max(responseBytes,Buffer.byteLength(JSON.stringify(output)));}
    if(route.endsWith('/authorize')&&deny){res.writeHead(409,{'content-type':'application/json'});res.end(JSON.stringify({message:'revoked /Users/private/FAKE_SECRET'}));return;}
+   if(route==='agents/compile'){output=compileProjectAgents(payload,body.mappings);payload.compilation=output as NonNullable<ProjectAgentsPayload['compilation']>;}
    if(route.endsWith('/complete')){
     expect(body.lease).toBe(lease);completionAttempts.push(body);
     if(loseAck){loseAck=false;res.writeHead(503,{'content-type':'application/json'});res.end('{"message":"lost ACK"}');return;}
@@ -34,11 +36,11 @@ describe('Native agent jobs over the actual HTTP polling transport',()=>{
    res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(output));
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
-  fixture=await workspaceFixture();const address=server.address() as {port:number};vi.stubEnv('NEUROCENTER_URL','http://127.0.0.1:'+address.port);
+  fixture=await workspaceFixture();await isolateAgentHome(fixture.temporary);const address=server.address() as {port:number};vi.stubEnv('NEUROCENTER_URL','http://127.0.0.1:'+address.port);
   await fs.rm(path.join(fixture.root,'.opencode'),{recursive:true});
   await workspace.setRoot(path.dirname(fixture.root));await workspace.bindProject('test-project',path.basename(fixture.root));
   await writeState('credentials',{token:'fixture',deviceId,email:'fixture@example.test'});
-  payload=createProjectAgentsPayload({schemaVersion:1,projectId:'test-project',bindingId:await workspace.projectBindingId('test-project'),instanceId:await workspace.projectInstanceId('test-project'),revision:1,agents:[agent]});
+  payload=createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId:await workspace.projectBindingId('test-project'),instanceId:await workspace.projectInstanceId('test-project'),revision:1,agents:[agent]});
   vi.spyOn(workspace,'workspaceReport').mockResolvedValue({} as never);vi.spyOn(process.stderr,'write').mockReturnValue(true);vi.spyOn(process,'exit').mockImplementation((()=>undefined) as never);
  });
  afterEach(async()=>{
@@ -51,7 +53,7 @@ describe('Native agent jobs over the actual HTTP polling transport',()=>{
  it('polls and atomically applies a near-limit 32-agent snapshot with a durable compact completion',async()=>{
   const {manifestSha256:_manifest,...body}=payload;
   payload=createProjectAgentsPayload({...body,agents:Array.from({length:32},(_,index)=>({...agent,id:'agent-'+index,slug:'nc-review-'+index,prompt:'x'.repeat(65000)}))});
-  queue();await runWorker();expect(BRIDGE_CAPABILITIES).toContain('project-agents-v1');expect(responseBytes).toBeGreaterThan(2_000_000);
+  queue();await runWorker();expect(BRIDGE_CAPABILITIES).toContain('project-agents-v2');expect(responseBytes).toBeGreaterThan(2_000_000);
   expect(completionAttempts).toHaveLength(1);const completed=completionAttempts[0]!;expect(completed.state).toBe('succeeded');expect(completed.message).toBe(PROJECT_AGENTS_NOTE);
   expect(validateProjectAgentsResult(completed.result,payload).agents).toHaveLength(32);expect(Buffer.byteLength(JSON.stringify(completed.result))).toBeLessThan(10000);
   for(const current of payload.agents)expect(await fs.readFile(path.join(fixture.root,agentFile(current.slug)),'utf8')).toContain(current.prompt);

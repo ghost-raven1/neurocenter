@@ -15,7 +15,7 @@ await fs.mkdir(directory,{recursive:true});
 const project=path.join(directory,'проекты','мой проект');await fs.mkdir(project,{recursive:true});
 const load=relative=>import(pathToFileURL(path.join(content,'dist',relative)).href);
 const contract=await load('features/project-agents/contract.js'),protocol=await load('bridge/protocol.js');
-assert.equal(contract.PROJECT_AGENTS_JOB,'configure-project-agents');assert.ok(protocol.BRIDGE_CAPABILITIES.includes('project-agents-v1'));
+assert.equal(contract.PROJECT_AGENTS_JOB,'configure-project-agents');assert.ok(protocol.BRIDGE_CAPABILITIES.includes('project-agents-v2'));
 const metadata=JSON.parse(await fs.readFile(path.join(content,'runtime.json'),'utf8')),engine=path.join(content,metadata.probeEngine.file);
 assert.equal(createHash('sha256').update(await fs.readFile(engine)).digest('hex'),metadata.probeEngine.sha256);
 const nativeHome=path.join(directory,'native-home');await fs.mkdir(nativeHome);
@@ -47,6 +47,7 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(req.headers.authorization,'Bearer isolated-fixture');const route=req.url.slice('/api/device-channel/'.length);requests++;
   let result={};
   if(route==='jobs/claim'){current=queue.shift();result=current??null;}
+  else if(route==='agents/compile'){result=contract.compileProjectAgents(current.payload,input.mappings);current.payload.compilation=result;}
   else if(route.endsWith('/authorize')||route.endsWith('/progress')){assert.ok(current);assert.equal(input.lease,current.lease);}
   else if(route.endsWith('/complete')){
    assert.ok(current);assert.equal(route,`jobs/${current.id}/complete`);assert.equal(input.lease,current.lease);ackAttempts++;
@@ -84,10 +85,10 @@ try{
  queue=Array.from({length:6},(_,index)=>{
   const revision=index+1,agents=revision>=5?[]:[{...agent,prompt:revision>=2?'Edited project prompt':agent.prompt,enabled:revision!==3}];
   return {id:randomUUID(),lease:randomUUID(),kind:contract.PROJECT_AGENTS_JOB,project_id:'runtime-agents',badInstance:revision===6,
-   payload:contract.createProjectAgentsPayload({schemaVersion:1,projectId:'runtime-agents',bindingId,instanceId:revision===6?randomUUID():instanceId,revision,agents})};
+   payload:contract.createProjectAgentsPayload({schemaVersion:2,projectId:'runtime-agents',bindingId,instanceId:revision===6?randomUUID():instanceId,revision,agents})};
  });
  const code=`const{runWorker}=await import(${JSON.stringify(pathToFileURL(path.join(content,'dist/bridge/worker.js')).href)});await runWorker();`;
- child=spawn(process.execPath,['--input-type=module','-e',code],{cwd:content,env:process.env,stdio:['ignore','ignore','pipe']});child.stderr.on('data',chunk=>{stderr+=chunk;});child.once('error',fail);
+ child=spawn(process.execPath,['--input-type=module','-e',code],{cwd:content,env:{...process.env,HOME:nativeHome,XDG_CONFIG_HOME:nativeEnv.XDG_CONFIG_HOME,XDG_DATA_HOME:nativeEnv.XDG_DATA_HOME},stdio:['ignore','ignore','pipe']});child.stderr.on('data',chunk=>{stderr+=chunk;});child.once('error',fail);
  const exited=new Promise(resolve=>child.once('exit',(code,signal)=>resolve({code,signal})));
  const timeout=setTimeout(()=>fail(new Error('Compiled agent worker acceptance timed out')),120000);
  try{await completed;}finally{clearTimeout(timeout);}

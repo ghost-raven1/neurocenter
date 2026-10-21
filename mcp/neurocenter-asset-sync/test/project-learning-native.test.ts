@@ -7,8 +7,8 @@ import {afterEach,describe,expect,it,vi} from 'vitest';
 import {workspaceFixture} from './bridge-fixture.js';
 import {hash} from '../src/bridge/state.js';
 import {projectBindingId,projectInstanceId} from '../src/bridge/workspace.js';
+import {isolateAgentHome,preparedAgentsPayload} from './project-agents.fixture.js';
 import {configureProjectAgents} from '../src/features/project-agents/index.js';
-import {createProjectAgentsPayload} from '../src/features/project-agents/contract.js';
 import {LEARNING_COLLECTOR_FILE} from '../src/features/project-learning/collector-plugin.js';
 import {learningQueueRoot} from '../src/features/project-learning/observation-queue.js';
 
@@ -24,10 +24,10 @@ describe.runIf(!!binary)('Native project learning collector',()=>{
     it('auto-discovers the managed plugin and runs metadata-only hooks inside pinned OpenCode',async()=>{
         expect(process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256).toMatch(/^[a-f0-9]{64}$/);
         expect(hash(await fs.readFile(binary!))).toBe(process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256);
-        fixture=await workspaceFixture();
+        fixture=await workspaceFixture();await isolateAgentHome(fixture.temporary);
         const root=fixture.root,bindingId=await projectBindingId('test-project'),instanceId=await projectInstanceId('test-project');
-        await configureProjectAgents(createProjectAgentsPayload({schemaVersion:1,projectId:'test-project',bindingId,instanceId,revision:1,agents:[{id:'agent-fixture',slug:'nc-fixture',version:1,
-            enabled:true,description:'Fixture',prompt:'Fixture prompt',mode:'subagent',permission:{bash:'deny'}}]}),async()=>undefined,async()=>undefined);
+        const payload=preparedAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[{id:'agent-fixture',slug:'nc-fixture',version:1,
+            enabled:true,description:'Fixture',prompt:'Fixture prompt',mode:'subagent',permission:{bash:'deny'}}]});await configureProjectAgents(payload,async()=>undefined,async()=>undefined,async()=>payload.compilation!);
         const home=path.join(fixture.temporary,'native-home'),projectConfig=path.join(root,'.opencode'),marker=path.join(fixture.temporary,'native-marker.json');
         config=path.join(home,'config/opencode');await fs.mkdir(config,{recursive:true});
         const dependencies={'@opencode-ai/plugin':'1.14.48'};

@@ -1,7 +1,7 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,70 @@ async function fixture(os='Darwin',arch='arm64',binaryName='opencode') {
     const run=(args=['--binary',archive], overrides={})=>spawnSync('bash',[script,...args],{env:{...env,...overrides},encoding:'utf8'});
     return {root,archive,env,run};
 }
+
+test('Неподходящая версия, неизвестные параметры и архитектура не меняют установку',async()=>{
+    const f=await fixture(); await mkdir(f.env.OPENCODE_INSTALL_DIR); await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'previous');
+    await writeFile(path.join(f.root,'package/bin/opencode'),'#!/bin/sh\necho 0.0.1\n',{mode:0o755});
+    execFileSync('tar',['-czf',f.archive,'-C',f.root,'package']);
+    for(const [args,env] of [[undefined,{}],[['--wrong'],{}],[['--binary'],{}],[['--help'],{}],[undefined,{TEST_ARCH:'sparc'}],[undefined,{OPENCODE_VERSION:'../../bad'}]]) {
+        const result=f.run(args,env); assert.equal(result.status,args?.[0]==='--help'?0:1,result.stderr);
+        assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'utf8'),'previous');
+    }
+});
+
+test('Профиль с комментарием пути не блокирует PATH, пробелы и кавычки сохраняются',async()=>{
+    const f=await fixture(); const directory=path.join(f.root,"папка с ' кавычкой");
+    await writeFile(f.env.OPENCODE_PROFILE,'# '+directory+'\n');
+    const env={OPENCODE_INSTALL_DIR:directory,SHELL:''}; const first=f.run(undefined,env);assert.equal(first.status,0,first.stderr);
+    assert.equal(f.run(undefined,env).status,0);
+    const profile=await readFile(f.env.OPENCODE_PROFILE,'utf8');assert.equal(profile.split('export PATH=').length-1,1);
+    const shell=spawnSync('/bin/bash',['-c','. "$1"; command -v opencode','fixture',f.env.OPENCODE_PROFILE],{encoding:'utf8',env:{PATH:'/usr/bin:/bin'}});
+    assert.equal(shell.status,0,shell.stderr);assert.equal(shell.stdout.trim(),path.join(directory,'opencode'));
+});
+
+test('Fish PATH экранирует кавычки и обратный слеш и не дублируется',async()=>{
+    const f=await fixture();const env={OPENCODE_INSTALL_DIR:path.join(f.root,"fish ' quote \\ path"),SHELL:'/usr/bin/fish'};
+    assert.equal(f.run(undefined,env).status,0);assert.equal(f.run(undefined,env).status,0);
+    const profile=await readFile(f.env.OPENCODE_PROFILE,'utf8');assert.equal(profile.split('fish_add_path').length-1,1);
+    assert.match(profile,/fish_add_path '.*fish \\' quote \\\\ path'/);
+});
+
+test('Занятая блокировка не удаляется вторым установщиком',async()=>{
+    const f=await fixture();await mkdir(path.join(f.env.OPENCODE_INSTALL_DIR,'.opencode-install-lock'),{recursive:true});
+    await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'.opencode-install-lock/owner.pid'),'qa-existing');
+    const result=f.run();assert.notEqual(result.status,0);assert.match(result.stderr,/Другая установка/);
+    assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'.opencode-install-lock/owner.pid'),'utf8'),'qa-existing');
+});
+
+for(const code of [60,28,22])test(`Отказ загрузки ${code} сохраняет бинарник и поясняет следующий шаг`,async()=>{
+    const f=await fixture();await mkdir(f.env.OPENCODE_INSTALL_DIR);await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'previous');
+    await writeFile(path.join(f.root,'fake-bin/curl'),'#!/bin/sh\nprintf \'%s\\n\' "$*" > "$TEST_ROOT/curl-args"\nexit "$TEST_CURL_CODE"\n',{mode:0o755});
+    const result=f.run([],{TEST_ROOT:f.root,TEST_CURL_CODE:String(code),BASE_URL:'https://gateway.example.test/api/bridge'});
+    assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/CURL_CA_BUNDLE/:code===28?/вовремя/:/Не удалось скачать/);
+    assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'utf8'),'previous');
+    const args=await readFile(path.join(f.root,'curl-args'),'utf8');assert.match(args,/--connect-timeout 20 --max-time 600 --retry 2/);assert.doesNotMatch(args,/--insecure|strict-ssl=false/);
+});
+
+test('Ошибка атомарной замены очищает staging, временный бинарник и свою блокировку',async()=>{
+    const f=await fixture();await mkdir(f.env.OPENCODE_INSTALL_DIR);await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'previous');
+    await writeFile(path.join(f.root,'fake-bin/mv'),'#!/bin/sh\nexit 1\n',{mode:0o755});
+    const result=f.run();assert.notEqual(result.status,0);assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'utf8'),'previous');
+    assert.deepEqual(await readdir(f.env.OPENCODE_INSTALL_DIR),['opencode']);
+});
+
+test('Отказ распаковки понятен и сохраняет установку без потока низкоуровневых ошибок',async()=>{
+    const f=await fixture();await mkdir(f.env.OPENCODE_INSTALL_DIR);await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'previous');
+    await writeFile(path.join(f.root,'fake-bin/tar'),'#!/bin/sh\nif [ "$1" = -xzf ]; then echo "fixture-raw-error: no space left" >&2; exit 1; fi\nexec /usr/bin/tar "$@"\n',{mode:0o755});
+    const result=f.run();assert.notEqual(result.status,0);assert.match(result.stderr,/свободное место/);assert.doesNotMatch(result.stderr,/fixture-raw-error/);assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'utf8'),'previous');
+});
+
+test('Режим curl | bash работает без SHELL, не печатает JSON и показывает этапы',async()=>{
+    const f=await fixture();const env={...f.env};delete env.SHELL;
+    const source=await readFile(script,'utf8');
+    const run=spawnSync('bash',['-s','--','--binary',f.archive],{input:source,env,encoding:'utf8'});assert.equal(run.status,0,run.stderr);
+    for(const step of ['[1/4]','[2/4]','[3/4]','[4/4]'])assert.ok(run.stdout.includes(step));
+    assert.doesNotMatch(run.stdout,/\x1b\[|"ok"/);
+});
 
 for(const [os,arch,binary] of [['Darwin','arm64','opencode'],['Darwin','x86_64','opencode'],['Linux','x86_64','opencode'],['Linux','aarch64','opencode'],['MINGW64_NT-10.0','x86_64','opencode.exe'],['MSYS_NT-10.0','aarch64','opencode.exe']]) {
     test(`Установка для ${os} / ${arch} сохраняет существующие настройки`, async()=>{

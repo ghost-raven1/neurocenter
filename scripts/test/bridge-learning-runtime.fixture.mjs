@@ -23,9 +23,11 @@ assert.equal(createHash('sha256').update(await fs.readFile(engine)).digest('hex'
 const project=path.join(directory,'projects','проект');await fs.mkdir(project,{recursive:true});
 await workspace.setRoot(path.dirname(project));await workspace.bindProject('runtime-learning',path.basename(project));
 const bindingId=await workspace.projectBindingId('runtime-learning'),instanceId=await workspace.projectInstanceId('runtime-learning');
-const payload=revision=>contract.createProjectAgentsPayload({schemaVersion:1,projectId:'runtime-learning',bindingId,instanceId,revision,
+const payload=revision=>contract.createProjectAgentsPayload({schemaVersion:2,projectId:'runtime-learning',bindingId,instanceId,revision,
  agents:revision===1?[{id:'agent-learning',slug:'nc-learning',version:1,enabled:true,description:'Fixture',prompt:'Fixture prompt',mode:'subagent',permission:{bash:'deny'}}]:[]});
-await agents.configureProjectAgents(payload(1),async()=>undefined,async()=>undefined);
+const compiler=async revision=>contract.compileProjectAgents(payload(revision),[]);
+process.env.HOME=path.join(directory,'isolated-bridge-home');process.env.XDG_CONFIG_HOME=path.join(process.env.HOME,'.config');process.env.XDG_DATA_HOME=path.join(process.env.HOME,'.local/share');
+await agents.configureProjectAgents(payload(1),async()=>undefined,async()=>undefined,()=>compiler(1));
 const home=path.join(directory,'native-home'),config=path.join(home,'config/opencode'),projectConfig=path.join(project,'.opencode');
 const marker=path.join(directory,'native-marker.json'),collector=path.join(project,LEARNING_COLLECTOR_FILE);
 await fs.mkdir(config,{recursive:true});
@@ -62,6 +64,6 @@ try{await hooks.event({event:{type:'session.idle',properties:{sessionID:'stale-r
 finally{await fs.writeFile(identityFile,identity);}
 files=(await fs.readdir(queueDirectory)).filter(file=>file.endsWith('.json'));assert.equal(files.length,1);
 assert.equal(await fs.readFile(path.join(queueDirectory,files[0]),'utf8'),raw);
-await agents.configureProjectAgents(payload(2),async()=>undefined,async()=>undefined);
+await agents.configureProjectAgents(payload(2),async()=>undefined,async()=>undefined,()=>compiler(2));
 await assert.rejects(fs.stat(collector),error=>error.code==='ENOENT');
 console.log(JSON.stringify({nativePluginDiscovered:true,metadataOnly:true,repeatedIdleNoDuplicate:true,staleBindingDropped:true,managedCollectorRemoved:true,engineVersion:metadata.probeEngine.version}));

@@ -1,0 +1,44 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {workspaceFixture} from './bridge-fixture.js';
+import {isolateAgentHome} from './project-agents.fixture.js';
+import {projectBindingId,projectInstanceId} from '../src/bridge/workspace.js';
+import {configureProjectAgents} from '../src/features/project-agents/index.js';
+import {projectAgentsFailureResult} from '../src/features/project-agents/model-compiler.js';
+import {createProjectAgentsPayload,compileProjectAgents,renderProjectAgent,type ProjectAgent} from '../src/features/project-agents/contract.js';
+import {agentFile} from '../src/features/project-agents/receipt.js';
+
+const agent:ProjectAgent={id:'agent-model',slug:'nc-model',version:1,enabled:true,description:'QA',prompt:'Preserve prompt.',mode:'subagent',permission:{bash:'deny'},model:'neurocenter/model-chat'};
+describe('Private native model compilation and cross-scope namespace',()=>{
+ let f:Awaited<ReturnType<typeof workspaceFixture>>,home:string,bindingId:string,instanceId:string;
+ const global=()=>path.join(home,'.config/opencode/opencode.json');
+ const config=(patch:Record<string,unknown>={})=>({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://provider.example.test/v1',apiKey:'{file:DO_NOT_READ}'},models:{alias:{id:'upstream-chat',limit:{context:128000},options:{temperature:0}}}}},...patch});
+ const payload=()=>createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[agent],modelRequirements:[{kind:'catalog',agentId:agent.id,catalogModelId:'model-chat',modelPin:'d'.repeat(64),runtime:'remote-openai',runtimeModel:'upstream-chat',baseUrl:'https://provider.example.test/v1',options:{temperature:0,contextWindow:128000},capability:'chat'}]});
+ const apply=async(authorize=async()=>undefined)=>{const p=payload();return configureProjectAgents(p,authorize,async()=>undefined,async mappings=>compileProjectAgents(p,mappings));};
+ beforeEach(async()=>{f=await workspaceFixture();home=await isolateAgentHome(f.temporary);bindingId=await projectBindingId('test-project');instanceId=await projectInstanceId('test-project');await fs.writeFile(global(),JSON.stringify(config()));});
+ afterEach(async()=>{vi.restoreAllMocks();vi.unstubAllEnvs();await fs.rm(f.temporary,{recursive:true,force:true});});
+ it('compiles one exact configured alias and never resolves local credential files or reads auth.json',async()=>{
+  const auth=path.join(home,'.local/share/opencode/auth.json');await fs.mkdir(path.dirname(auth),{recursive:true});await fs.writeFile(auth,'not JSON and PRIVATE');
+  await fs.symlink('/must-not-be-read',path.join(home,'.config/opencode/DO_NOT_READ'));
+  const result=await apply();expect(result.schemaVersion).toBe(2);expect(result.compiledManifestSha256).toMatch(/^[a-f0-9]{64}$/);
+  const rendered=await fs.readFile(path.join(f.root,agentFile(agent.slug)),'utf8');expect(rendered).toContain('"model": "team/alias"');expect(rendered).not.toContain('neurocenter/model-chat');expect(rendered).toContain(agent.prompt);expect(JSON.stringify(result)).not.toContain('PRIVATE');
+ });
+ it.each(['absent','ambiguous','disabled','options','malformed'])('rejects %s correspondence with actionable public guidance and no file write',async issue=>{
+  const c=config() as any;if(issue==='absent')c.provider={};if(issue==='ambiguous')c.provider.team.models.second={...c.provider.team.models.alias};if(issue==='disabled')c.disabled_providers=['team'];if(issue==='options')c.provider.team.models.alias.limit.context=4096;if(issue==='malformed'){await fs.writeFile(global(),'{invalid');}else await fs.writeFile(global(),JSON.stringify(c));
+  let error:unknown;try{await apply();}catch(cause){error=cause;}expect(projectAgentsFailureResult(error)).toMatchObject({code:'OPENCODE_AGENT_MODEL_SETUP_REQUIRED',agentId:agent.id,action:'sync-opencode-models'});
+  await expect(fs.stat(path.join(f.root,agentFile(agent.slug)))).rejects.toHaveProperty('code','ENOENT');
+ });
+ it('a provider change after approval is caught before commit and previous files survive',async()=>{
+  await apply();const file=path.join(f.root,agentFile(agent.slug)),before=await fs.readFile(file,'utf8'),p=payload();p.revision=2;
+  const {manifestSha256:_manifest,compilation:_compilation,...body}=p;const next=createProjectAgentsPayload({...body,agents:[{...agent,prompt:'new prompt'}]});
+  await expect(configureProjectAgents(next,async()=>undefined,async()=>undefined,async mappings=>{const approved=compileProjectAgents(next,mappings);await fs.writeFile(global(),JSON.stringify(config({disabled_providers:['team']})));return approved;})).rejects.toHaveProperty('code','OPENCODE_AGENT_MODEL_SETUP_REQUIRED');expect(await fs.readFile(file,'utf8')).toBe(before);
+ });
+ it.each(['xdg-markdown','home-markdown','custom-markdown','inline-global','inline-env','frontmatter'])('refuses an actual global shadow definition: %s',async source=>{
+  if(source==='inline-global')await fs.writeFile(global(),JSON.stringify(config({agent:{'nc-model':{prompt:'global'}}})));
+  else if(source==='inline-env')vi.stubEnv('OPENCODE_CONFIG_CONTENT',JSON.stringify({agent:{'nc-model':{prompt:'inline'}}}));
+  else{const directory=source==='home-markdown'?path.join(home,'.opencode/agent'):source==='custom-markdown'?path.join(home,'custom/agents'):path.join(home,'.config/opencode/agents');await fs.mkdir(directory,{recursive:true});if(source==='custom-markdown')vi.stubEnv('OPENCODE_CONFIG_DIR',path.dirname(directory));await fs.writeFile(path.join(directory,source==='frontmatter'?'manual.md':'nc-model.md'),source==='frontmatter'?'---\nname: nc-model\n---\nManual':'Manual');}
+  await expect(apply()).rejects.toHaveProperty('code','AGENTS_LOCAL_CONFLICT');await expect(fs.stat(path.join(f.root,agentFile(agent.slug)))).rejects.toHaveProperty('code','ENOENT');
+ });
+ it('a canonical catalogue reference can never be rendered directly',()=>{expect(()=>renderProjectAgent(agent)).toThrow();});
+});

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import type { IncomingMessage } from 'node:http';
-import { hub, jobContext, readState, type Credentials } from './state.js';
+import { apiHub, jobContext, readState, type Credentials } from './state.js';
 import { LIMITS, type RuntimeArtifact } from '../features/runtime-artifacts/model.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
@@ -15,7 +15,7 @@ export async function downloadJobRuntimeArtifact(artifact: RuntimeArtifact, time
         || !Number.isSafeInteger(artifact.compressedBytes) || artifact.compressedBytes <= 0 || artifact.compressedBytes > LIMITS.compressedBytes) {
         throw new Error('Артефакт доступен только в одобренном задании этого подключения.');
     }
-    const url = new URL(`/api/device-channel/jobs/${job.id}/runtime/${artifact.sha256}`, hub());
+    const url = new URL(`/api/device-channel/jobs/${job.id}/runtime/${artifact.sha256}`, apiHub());
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Неподдерживаемый протокол площадки.');
     return new Promise((resolve, reject) => {
         let response: IncomingMessage | undefined;

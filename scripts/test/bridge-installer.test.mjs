@@ -27,6 +27,7 @@ async function fixture(platform = 'Darwin', arch = 'arm64', libc = 'glibc') {
     for (const folder of ['fake-bin', 'package/bin', 'package/dist']) await fs.mkdir(path.join(root, folder), { recursive: true });
     await fs.writeFile(path.join(root, 'package/package.json'), JSON.stringify({ name: 'neurocenter-asset-sync', version }));
     await fs.writeFile(path.join(root, 'package/dist/index.js'), '// Пакет для проверки установщика');
+    await fs.writeFile(path.join(root,'package/dist/bridge-cli.js'),'// Short CLI fixture');
     const buildId = 'a'.repeat(64);
     await fs.writeFile(path.join(root, 'package/dist/build.json'), JSON.stringify({ version, buildId }));
     const runtimePlatform = platform === 'Darwin' ? 'darwin' : 'linux';
@@ -41,7 +42,9 @@ case "$1" in
     *)
         echo "$*" >> "$TEST_ROOT/events"
         printf '%s %s\\n' "$2" "$NEUROCENTER_URL" >> "$TEST_ROOT/site-origins"
-        if [ "$2" = --prepare-upgrade ]; then
+        if [ "$2" = --install-command ]; then
+            echo "$HOME/.local/bin/neurocenter-bridge"
+        elif [ "$2" = --prepare-upgrade ]; then
             if [ "\${TEST_FAIL_UPGRADE:-0}" = 1 ]; then
                 printf '%s' '{"ok":false,"error":"На компьютере выполняется задание"}'
                 exit 1
@@ -54,7 +57,7 @@ case "$1" in
                 printf '%s' '{"ok":false,"error":"Подключение не настроено"}'
                 exit 1
             fi
-            printf '%s' '{"ok":true}'
+            if [ -n "\${TEST_FINISH_RESULT:-}" ]; then printf '%s' "$TEST_FINISH_RESULT"; else printf '%s' '{"ok":true}'; fi
         elif [ "$2" = --init ]; then
             if [ -n "\${TEST_INIT_GATE:-}" ]; then
                 touch "$TEST_INIT_GATE.started"
@@ -106,10 +109,10 @@ for(const platform of ['Darwin','Linux'])test(`Установщик ${platform} 
     const urls=(await fs.readFile(path.join(f.root,'urls'),'utf8')).trim().split('\n');
     assert.equal(urls.length,2);assert.ok(urls.every(url=>url.startsWith(gateway+'/runtime/')));assert.ok(urls[1].endsWith('.tgz.sha256'));
     const observed=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n');
-    assert.deepEqual(observed,[`--init ${site}`,`--reconnect-open ${site}`]);
+    assert.deepEqual(observed,[`--init ${site}`,`--install-command ${site}`,`--reconnect-open ${site}`]);
     assert.equal(f.run({BASE_URL:gateway,SITE_URL:site}).status,0);
-    const upgrade=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n').slice(2);
-    assert.deepEqual(upgrade,[`--prepare-upgrade ${site}`,`--init ${site}`,`--finish-upgrade ${site}`,`--reconnect-open ${site}`]);
+    const upgrade=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n').slice(3);
+    assert.deepEqual(upgrade,[`--prepare-upgrade ${site}`,`--init ${site}`,`--finish-upgrade ${site}`,`--install-command ${site}`,`--reconnect-open ${site}`]);
 });
 for (const [platform, arch, libc, target] of [['Darwin', 'arm64', 'glibc', 'darwin-arm64'], ['Darwin', 'x86_64', 'glibc', 'darwin-x64'],
     ['Linux', 'x86_64', 'glibc', 'linux-x64'], ['Linux', 'aarch64', 'glibc', 'linux-arm64'],
@@ -339,4 +342,48 @@ test('Управляющие последовательности из отве�
     const f = await fixture(); const result = f.run({ TEST_INIT_RESULT: JSON.stringify({ ok: true, configPath: '/tmp/\u001b[31m/config.json' }) });
     assert.equal(result.status, 0, result.stderr);
     assert.doesNotMatch(result.stdout, /\x1b/);
+});
+
+for(const payload of ['{"ok":false}', '{invalid'])test(`Нулевой код init без подтверждения ${payload} возвращает прежний мост`,async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'package.json'),'{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+    await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
+    const result=f.run({TEST_INIT_RESULT:payload});assert.notEqual(result.status,0);assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');
+    assert.doesNotMatch(result.stdout,/Готово!|Команда подключения готова/);assert.doesNotMatch(await fs.readFile(path.join(f.root,'events'),'utf8'),/--connect-open/);
+});
+test('Неподтверждённое снятие паузы не выдаётся за готовое подключение',async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'package.json'),'{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+    const result=f.run({TEST_FINISH_RESULT:'{"ok":false}'});assert.notEqual(result.status,0);assert.match(result.stderr,/не подтвердила снятие паузы/);assert.doesNotMatch(result.stdout,/Готово!/);
+});
+test('Старый архив без короткой команды не заменяет предыдущую установку',async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
+    await fs.rm(path.join(f.root,'package/dist/bridge-cli.js'));await f.pack();
+    const result=f.run();assert.notEqual(result.status,0);assert.match(result.stderr,/опубликовать новую сборку/);assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');
+});
+for(const code of [60,28,22])test(`Сетевая ошибка ${code} понятна, установка и lock сохраняют инварианты`,async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
+    await fs.writeFile(path.join(f.root,'fake-bin/curl'),'#!/bin/sh\nprintf \'%s\\n\' "$*" > "$TEST_ROOT/curl-args"\nexit "$TEST_CURL_CODE"\n',{mode:0o755});
+    const result=f.run({TEST_CURL_CODE:String(code)});assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/CURL_CA_BUNDLE/:code===28?/вовремя/:/Не удалось скачать/);
+    assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');
+    await assert.rejects(fs.access(f.env.INSTALL_DIR+'.install-lock'),{code:'ENOENT'});
+    assert.match(await fs.readFile(path.join(f.root,'curl-args'),'utf8'),/--connect-timeout 20 --max-time 600 --retry 2/);
+});
+test('API Gateway transport сохраняется отдельно от site identity',async()=>{
+    const f=await fixture();const binary=path.join(f.root,'package/bin/node');await fs.writeFile(binary,(await fs.readFile(binary,'utf8')).replace('echo "$*" >> "$TEST_ROOT/events"','echo "$*" >> "$TEST_ROOT/events"\n        printf \'%s\\n\' "$NEUROCENTER_API_URL" >> "$TEST_ROOT/api-origins"'));await f.pack();
+    const result=f.run({BASE_URL:'https://gateway.example.test/api/bridge',SITE_URL:'https://panel.example.test'});assert.equal(result.status,0,result.stderr);
+    assert.ok((await fs.readFile(path.join(f.root,'api-origins'),'utf8')).trim().split('\n').every(line=>line==='https://gateway.example.test'));
+});
+test('Отказ распаковки сохраняет предыдущий мост и сообщает о свободном месте',async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
+    await fs.writeFile(path.join(f.root,'fake-bin/tar'),'#!/bin/sh\nif [ "$1" = -xzf ]; then echo "fixture-raw-error: no space left" >&2; exit 1; fi\nexec /usr/bin/tar "$@"\n',{mode:0o755});
+    const result=f.run();assert.notEqual(result.status,0);assert.match(result.stderr,/свободное место/);assert.doesNotMatch(result.stderr,/fixture-raw-error/);assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');
+    await assert.rejects(fs.access(f.env.INSTALL_DIR+'.install-lock'),{code:'ENOENT'});
+});
+test('SIGTERM во время init восстанавливает прежнюю версию, снимает паузу и свою блокировку',{timeout:15000},async()=>{
+    const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'package.json'),'{"name":"neurocenter-asset-sync","version":"0.9.0"}');await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
+    const gate=path.join(f.root,'cancel-gate');const child=spawn('bash',[f.scriptPath],{env:{...f.env,TEST_INIT_GATE:gate},stdio:['ignore','ignore','pipe']});let errors='';child.stderr.on('data',chunk=>errors+=chunk);
+    const finished=new Promise((resolve,reject)=>{child.once('close',resolve);child.once('error',reject);});
+    try {const deadline=Date.now()+8000;while(!await fs.access(gate+'.started').then(()=>true,()=>false)){assert.ok(Date.now()<deadline,errors);await new Promise(resolve=>setTimeout(resolve,20));}child.kill('SIGTERM');}
+    finally {await fs.writeFile(gate+'.release','continue');}
+    assert.notEqual(await finished,0);assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');await assert.rejects(fs.access(f.env.INSTALL_DIR+'.install-lock'),{code:'ENOENT'});
+    assert.match(await fs.readFile(path.join(f.root,'events'),'utf8'),/--finish-upgrade/);
 });

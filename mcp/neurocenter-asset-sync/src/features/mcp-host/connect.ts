@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { hub, readState, type Credentials } from '../../bridge/state.js';
+import { hub, apiHub, readState, type Credentials } from '../../bridge/state.js';
 import type { Package } from '../../bridge/package.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
@@ -9,12 +9,11 @@ export const hostedMcpPath = (path: string): boolean =>
     /^\/api\/mcp-host\/m\/[A-Za-z0-9_=-]+\.[A-Za-z0-9_-]+$/.test(path);
 
 export const hostedMcpUrlPrefix = (): string =>
-    hub().replace(/\/+$/, '') + '/api/mcp-host/m/';
+    apiHub().replace(/\/+$/, '') + '/api/mcp-host/m/';
 
 export const isHostedMcpUrl = (value: unknown): value is string =>
     typeof value === 'string'
-    && value.startsWith(hostedMcpUrlPrefix())
-    && hostedMcpPath('/api/mcp-host/m/' + value.slice(hostedMcpUrlPrefix().length));
+    && [apiHub(),hub()].some(origin=>value.startsWith(origin+'/api/mcp-host/m/')&&hostedMcpPath(value.slice(origin.length)));
 
 /** Берёт билет хоста у площадки за устройство и одобренный пакет; токен устройства в проект не уходит. */
 export async function requestHostedMcpConnection(projectId: string, pkg: Package): Promise<string> {
@@ -23,7 +22,7 @@ export async function requestHostedMcpConnection(projectId: string, pkg: Package
         || /[\r\n]/.test(credentials.token) || !projectId) {
         throw new Error('Хост MCP доступен только подключённому проекту. Проверьте подключение к Нейроцентру.');
     }
-    const url = new URL('/api/mcp-host/connect', hub());
+    const url = new URL('/api/mcp-host/connect', apiHub());
     if (!['http:', 'https:'].includes(url.protocol)) { throw new Error('Неподдерживаемый протокол площадки.'); }
     const body = JSON.stringify({ projectId, pkg });
     return await new Promise<string>((resolve, reject) => {

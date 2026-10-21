@@ -3,13 +3,13 @@ import {hash} from '../../bridge/state.js';
 import {journalDirectory,parseJournal} from '../../bridge/installation-journal.js';
 import {readBoundedUtf8} from '../../bridge/read-bounded.js';
 import {JOURNAL_BYTES_LIMIT,LOCK_BYTES_LIMIT} from '../../bridge/installation-limits.js';
-import type {ProjectAgentsPayload,ProjectAgentReceipt} from './contract.js';
+import type {ProjectAgentReceipt} from './contract.js';
 import {LEARNING_COLLECTOR_FILE} from '../project-learning/collector-plugin.js';
 
 export const AGENTS_RECEIPT='.opencode/neurocenter/agents.json';
 export const agentFile=(slug:string):string=>'.opencode/agents/'+slug+'.md';
 export const agentsJournalKey=(projectId:string):string=>hash('project-agents:'+projectId).slice(0,24);
-export type AgentsReceipt=Omit<ProjectAgentsPayload,'agents'>&{agents:ProjectAgentReceipt[];collector?:{path:string;sha256:string}};
+export type AgentsReceipt={schemaVersion:1|2;projectId:string;bindingId:string;instanceId:string;revision:number;manifestSha256:string;compiledManifestSha256?:string;agents:ProjectAgentReceipt[];collector?:{path:string;sha256:string}};
 const damaged=()=>new Error('Квитанция агентов не подтверждена приватным журналом моста. Сохраните локальные файлы перед повторной настройкой.');
 const exact=(value:unknown,keys:string[],optional:string[]=[]):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
     &&keys.every(key=>Object.hasOwn(value,key))&&Object.keys(value).every(key=>keys.includes(key)||optional.includes(key));
@@ -17,7 +17,7 @@ const exact=(value:unknown,keys:string[],optional:string[]=[]):value is Record<s
 export function parseAgentsReceipt(raw:string):AgentsReceipt{
     let value:unknown;try{value=JSON.parse(raw);}catch{throw damaged();}
     const keys=['schemaVersion','projectId','bindingId','instanceId','revision','manifestSha256','agents'];
-    if(!exact(value,keys,['collector'])||value.schemaVersion!==1||typeof value.projectId!=='string'||!value.projectId||value.projectId.length>200
+    if(!exact(value,keys,['collector',...(value&&typeof value==='object'&&(value as {schemaVersion?:unknown}).schemaVersion===2?['compiledManifestSha256']:[])])||![1,2].includes(Number(value.schemaVersion))||value.schemaVersion===2&&(typeof value.compiledManifestSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.compiledManifestSha256))||typeof value.projectId!=='string'||!value.projectId||value.projectId.length>200
         ||typeof value.bindingId!=='string'||!/^[a-f0-9]{64}$/.test(value.bindingId)||typeof value.instanceId!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value.instanceId)
         ||!Number.isSafeInteger(value.revision)||Number(value.revision)<1||typeof value.manifestSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.manifestSha256)
         ||!Array.isArray(value.agents)||value.agents.length>32)throw damaged();

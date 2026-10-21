@@ -57,7 +57,7 @@ try {
         assert.equal(loaded.buildId, metadata.buildId);
         assert.equal(loaded.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(loaded.capabilities.includes('project-snapshots-v1'), true);
-        assert.equal(loaded.capabilities.includes('project-agents-v1'), true);
+        assert.equal(loaded.capabilities.includes('project-agents-v2'), true);
         assert.equal(loaded.capabilities.includes('project-learning-v1'), true);
     });
     await check('Встроенный runtime запускается без Node и npm в PATH', async () => {
@@ -114,7 +114,7 @@ try {
         assert.equal(status.ragSupported, metadata.ragSupported);
         assert.equal(status.capabilities.includes('hosted-rag-profile-values-v1'), true);
         assert.equal(status.capabilities.includes('project-snapshots-v1'), true);
-        assert.equal(status.capabilities.includes('project-agents-v1'), true);
+        assert.equal(status.capabilities.includes('project-agents-v2'), true);
         assert.equal(status.capabilities.includes('project-learning-v1'), true);
     });
     await check('В артефакте отсутствуют старые команды небезопасной записи', async () => {

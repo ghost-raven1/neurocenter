@@ -1,14 +1,15 @@
 import {describe,expect,it} from 'vitest';
+import {preparedAgentsPayload} from './project-agents.fixture.js';
 import yaml from 'js-yaml';
 import {serializeAsset,toAgentRecord,validateAsset} from '@neurocenter/asset-contract';
 import {hash} from '../src/bridge/state.js';
 import {AGENT_PERMISSION_KEYS,PROJECT_AGENTS_NOTE,agentDefinitionDigest,normalizeAgentDefinition,createProjectAgentsPayload,
-    normalizeProjectAgentsPayload,renderProjectAgent,validateProjectAgentsResult,type ProjectAgent} from '../src/features/project-agents/contract.js';
+    normalizeProjectAgentsPayload,compileProjectAgents,renderProjectAgent,validateProjectAgentsResult,type ProjectAgent} from '../src/features/project-agents/contract.js';
 
 const definition={description:'Reviews code',prompt:'Read the code and explain defects.',mode:'subagent' as const,permission:{edit:'deny' as const,bash:'ask' as const}};
 const agent:ProjectAgent={id:'agent-review',slug:'nc-review',version:1,enabled:true,...definition};
-const base={schemaVersion:1 as const,projectId:'project',bindingId:'a'.repeat(64),instanceId:'11111111-1111-4111-8111-111111111111',revision:1,agents:[agent]};
-const result=()=>{const payload=createProjectAgentsPayload(base);return{schemaVersion:1 as const,projectId:payload.projectId,bindingId:payload.bindingId,instanceId:payload.instanceId,
+const base={schemaVersion:2 as const,projectId:'project',bindingId:'a'.repeat(64),instanceId:'11111111-1111-4111-8111-111111111111',revision:1,agents:[agent]};
+const result=()=>{const payload=preparedAgentsPayload(base);return{schemaVersion:2 as const,compiledManifestSha256:preparedAgentsPayload(base).compilation!.manifestSha256,projectId:payload.projectId,bindingId:payload.bindingId,instanceId:payload.instanceId,
     revision:payload.revision,manifestSha256:payload.manifestSha256,agents:[{id:agent.id,slug:agent.slug,version:1,enabled:true,sha256:hash(renderProjectAgent(agent))}],changed:true,
     readiness:'configured' as const,checkedAt:'2026-10-21T00:00:00.000Z',note:PROJECT_AGENTS_NOTE};};
 
@@ -19,6 +20,12 @@ describe('Shared native agent contract',()=>{
   expect(createProjectAgentsPayload({...base,agents:[agent,other]})).toEqual(createProjectAgentsPayload({...base,agents:[other,agent]}));
   const payload=createProjectAgentsPayload(base);expect(normalizeProjectAgentsPayload(payload)).toEqual(payload);
   payload.agents[0]!.prompt='Changed';expect(()=>normalizeProjectAgentsPayload(payload)).toThrow('конфигурация');
+ });
+ it('native mappings require actual string provider/config keys and reject number/object coercion',()=>{
+  const payload=createProjectAgentsPayload({...base,agents:[{...agent,model:'provider/model'}],modelRequirements:[{kind:'native',agentId:agent.id,selector:'provider/model'}]});
+  const mapping={agentId:agent.id,provider:'provider',configKey:'model',runtime:'remote-openai',model:'model',baseUrl:'https://provider.example.test/v1',options:{},capability:'chat'};
+  expect(compileProjectAgents(payload,[mapping]).mappings[0]).toEqual(mapping);
+  for(const field of ['provider','configKey'])for(const value of [1,null,[],['provider'],{},true])expect(()=>compileProjectAgents(payload,[{...mapping,[field]:value}])).toThrow();
  });
  it('separates UTF8 prompt body from JSON-safe native YAML frontmatter',()=>{
   const rendered=renderProjectAgent({...agent,description:'A: value "quoted" --- model: body-only',prompt:'---\nmodel: body-only\n!`do-not-run`',model:'provider/model',temperature:0,topP:1,steps:7});
@@ -54,7 +61,7 @@ describe('Shared native agent contract',()=>{
   const agents=Array.from({length:32},(_,index)=>({...agent,id:'agent-'+String(index).padStart(2,'0')+'x'.repeat(30),slug:'nc-'+String(index).padStart(2,'0')+'-reviewer-with-readable-name'}));
   const payload=createProjectAgentsPayload({...base,agents});expect(payload.agents).toHaveLength(32);
   const receipt={...result(),manifestSha256:payload.manifestSha256,agents:payload.agents.map(item=>({id:item.id,slug:item.slug,version:item.version,enabled:item.enabled,sha256:hash(renderProjectAgent(item))}))};
-  expect(Buffer.byteLength(JSON.stringify(receipt))).toBeLessThan(10000);expect(validateProjectAgentsResult(receipt,payload).agents).toHaveLength(32);
+  expect(Buffer.byteLength(JSON.stringify(receipt))).toBeLessThan(10000);expect(validateProjectAgentsResult({...receipt,compiledManifestSha256:preparedAgentsPayload({...base,agents}).compilation!.manifestSha256},preparedAgentsPayload({...base,agents})).agents).toHaveLength(32);
  });
  it('counts the manifest envelope in the two-MiB polling payload limit',()=>{
   const initial=createProjectAgentsPayload({...base,agents:Array.from({length:32},(_,index)=>({...agent,id:'agent-'+index,slug:'nc-a'+index,prompt:'x'.repeat(65000)}))});
@@ -64,7 +71,7 @@ describe('Shared native agent contract',()=>{
  });
  it.each([{changed:'true'},{readiness:'ready'},{revision:2},{manifestSha256:'b'.repeat(64)},{note:'untrusted prompt'},{checkedAt:'not-a-date'},
   {rolledBack:true},{rolledBack:false},{agents:[]},{recoveryPath:'bad\0path'}])('refuses a stale, changed or rolled-back success receipt %j',patch=>{
-   expect(()=>validateProjectAgentsResult({...result(),...patch},createProjectAgentsPayload(base))).toThrow('конфигурация');
+   expect(()=>validateProjectAgentsResult({...result(),...patch},preparedAgentsPayload(base))).toThrow('конфигурация');
  });
  it('retains exact disabled SHA and permits removal through an empty desired set',()=>{
   const disabled=createProjectAgentsPayload({...base,agents:[{...agent,enabled:false}]});

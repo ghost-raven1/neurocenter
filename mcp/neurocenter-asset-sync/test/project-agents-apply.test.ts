@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {isolateAgentHome,preparedAgentsPayload} from './project-agents.fixture.js';
 import {configureProjectAgents} from '../src/features/project-agents/index.js';
 import {createProjectAgentsPayload,renderProjectAgent,validateProjectAgentsResult,type ProjectAgent} from '../src/features/project-agents/contract.js';
 import {AGENTS_RECEIPT,agentFile,agentsJournalKey} from '../src/features/project-agents/receipt.js';
@@ -11,7 +12,7 @@ import {workspaceFixture} from './bridge-fixture.js';
 import {bindProject,projectBindingId,projectInstanceId} from '../src/bridge/workspace.js';
 import {hash,jobContext,stateDir,writeState} from '../src/bridge/state.js';
 import {deliverCompletions,pendingCompletions} from '../src/bridge/completions.js';
-import {recoverFileJobs} from '../src/bridge/installation-files.js';
+import {recoverFileJobs,commitChanges} from '../src/bridge/installation-files.js';
 import {journalDirectory} from '../src/bridge/installation-journal.js';
 import {LEARNING_COLLECTOR_FILE} from '../src/features/project-learning/collector-plugin.js';
 import {scanProjectInventory} from '../src/bridge/project-inventory.js';
@@ -21,9 +22,9 @@ const authorize=async()=>undefined,progress=async()=>undefined;
 describe('Atomic project agent delivery with private ownership',()=>{
  let fixture:Awaited<ReturnType<typeof workspaceFixture>>,bindingId:string,instanceId:string;
  const file=(relative:string)=>path.join(fixture.root,relative);
- const payload=(revision=1,agents=[agent])=>createProjectAgentsPayload({schemaVersion:1,projectId:'test-project',bindingId,instanceId,revision,agents});
- const apply=(revision=1,agents=[agent],auth=authorize)=>configureProjectAgents(payload(revision,agents),auth,progress);
- beforeEach(async()=>{fixture=await workspaceFixture();bindingId=await projectBindingId('test-project');instanceId=await projectInstanceId('test-project');});
+ const payload=(revision=1,agents=[agent])=>preparedAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision,agents});
+ const apply=(revision=1,agents=[agent],auth=authorize)=>configureProjectAgents(payload(revision,agents),auth,progress,async()=>payload(revision,agents).compilation!);
+ beforeEach(async()=>{fixture=await workspaceFixture();await isolateAgentHome(fixture.temporary);bindingId=await projectBindingId('test-project');instanceId=await projectInstanceId('test-project');});
  afterEach(async()=>{vi.restoreAllMocks();vi.unstubAllEnvs();await fs.rm(fixture.temporary,{recursive:true,force:true});});
 
  it('installs native agents and replays without rewriting files, private history or unrelated settings',async()=>{
@@ -93,7 +94,7 @@ describe('Atomic project agent delivery with private ownership',()=>{
  it('rejects stale project tuples/revisions and a second payload for the same revision',async()=>{
   await apply(2);await expect(apply(1)).rejects.toThrow('устарели');await expect(apply(2,[{...agent,prompt:'different'}])).rejects.toThrow('устарели');
   await expect(configureProjectAgents({...payload(3),bindingId:'b'.repeat(64)},authorize,progress)).rejects.toThrow('конфигурация');
-  const {manifestSha256:_manifest,...body}=payload(3);
+  const {manifestSha256:_manifest,compilation:_compilation,...body}=payload(3);
   const wrong=createProjectAgentsPayload({...body,bindingId:'b'.repeat(64)});await expect(configureProjectAgents(wrong,authorize,progress)).rejects.toThrow('устарели');
  });
  it('authorization loss and same-byte inode replacement are caught before commit',async()=>{
@@ -122,7 +123,7 @@ describe('Atomic project agent delivery with private ownership',()=>{
  it.each(['partial','committed'])('recovers an actual SIGKILL at the %s transaction boundary',async boundary=>{
   const context={id:randomUUID(),lease:randomUUID(),deviceId:randomUUID()},target=boundary==='partial'?file(agentFile(agent.slug)):path.join(journalDirectory(fixture.root),'history');
   const feature=new URL('../src/features/project-agents/index.ts',import.meta.url).href,bridge=new URL('../src/bridge/state.ts',import.meta.url).href;
-  const source=`import fs from 'node:fs/promises';import {configureProjectAgents} from ${JSON.stringify(feature)};import {jobContext} from ${JSON.stringify(bridge)};const link=fs.link.bind(fs);fs.link=async function(from,to){if(${boundary==='partial'?`to===${JSON.stringify(target)}`:`String(to).startsWith(${JSON.stringify(target+'/')})`}){${boundary==='partial'?'await link(from,to);':''}process.kill(process.pid,'SIGKILL');}return link(from,to);};await jobContext.run(${JSON.stringify(context)},()=>configureProjectAgents(${JSON.stringify(payload())},async()=>undefined,async()=>undefined));`;
+  const source=`import fs from 'node:fs/promises';import {configureProjectAgents} from ${JSON.stringify(feature)};import {jobContext} from ${JSON.stringify(bridge)};const link=fs.link.bind(fs);fs.link=async function(from,to){if(${boundary==='partial'?`to===${JSON.stringify(target)}`:`String(to).startsWith(${JSON.stringify(target+'/')})`}){${boundary==='partial'?'await link(from,to);':''}process.kill(process.pid,'SIGKILL');}return link(from,to);};await jobContext.run(${JSON.stringify(context)},()=>configureProjectAgents(${JSON.stringify(payload())},async()=>undefined,async()=>undefined,async()=>(${JSON.stringify(payload().compilation)})));`;
   const child=spawn(process.execPath,['--import',createRequire(import.meta.url).resolve('tsx'),'--input-type=module','-e',source],{env:process.env,stdio:['ignore','ignore','pipe']});let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
   const exit=await new Promise<{code:number|null;signal:NodeJS.Signals|null}>((resolve,reject)=>{child.on('error',reject);child.on('exit',(code,signal)=>resolve({code,signal}));});expect(exit.signal,stderr).toBe('SIGKILL');
   await recoverFileJobs();const pending=await pendingCompletions();expect(pending).toHaveLength(1);expect(pending[0]!.state).toBe(boundary==='partial'?'failed':'succeeded');
@@ -133,6 +134,12 @@ describe('Atomic project agent delivery with private ownership',()=>{
   }
   else{expect(await fs.readFile(file(agentFile(agent.slug)),'utf8')).toBe(renderProjectAgent(agent));expect(validateProjectAgentsResult(pending[0]!.result,payload()).readiness).toBe('configured');expect((await apply()).changed).toBe(false);}
  },15000);
+ it('upgrades a privately owned v1 receipt at the same desired revision without executing the old protocol',async()=>{
+  const body=renderProjectAgent(agent),manifest=hash('previous-v1-canonical-payload'),receipt={schemaVersion:1,projectId:'test-project',bindingId,instanceId,revision:1,manifestSha256:manifest,agents:[{id:agent.id,slug:agent.slug,version:1,enabled:true,sha256:hash(body)}]};
+  await commitChanges(fixture.root,[{relative:agentFile(agent.slug),before:null,after:body},{relative:AGENTS_RECEIPT,before:null,after:JSON.stringify(receipt)+'\n'}],{action:'install',assetKey:agentsJournalKey('test-project'),manifest,result:{...receipt,readiness:'configured'}});
+  const result=await apply();expect(result.schemaVersion).toBe(2);expect(result.compiledManifestSha256).toMatch(/^[a-f0-9]{64}$/);expect(await fs.readFile(file(agentFile(agent.slug)),'utf8')).toBe(body);
+  expect(JSON.parse(await fs.readFile(file(AGENTS_RECEIPT),'utf8')).schemaVersion).toBe(2);
+ });
  it('reconnects a deleted whole .opencode and reinstalls from private proof without removing the bridge',async()=>{
   const credentials={deviceId:randomUUID(),token:'preserve-device',email:'owner@example.test'};await writeState('credentials',credentials);await apply();
   const credentialsBefore=await fs.readFile(path.join(stateDir(),'credentials.json'),'utf8');await fs.rm(file('.opencode'),{recursive:true});await expect(apply()).rejects.toThrow();

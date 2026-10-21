@@ -3,7 +3,7 @@ import { runtimeArtifactConnection } from '../features/runtime-artifacts/connect
 import { configurationConnection } from '../features/local-configuration/launcher-descriptor.js';
 import { pathToFileURL } from 'node:url';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
-import { hash, hub } from './state.js';
+import { hash, hub, apiHub } from './state.js';
 import { safeTarget } from './workspace.js';
 import type { Package } from './package.js';
 import { assetBase, legacyMcpConfigKey, mcpConfigKey, receiptPath as managedReceiptPath, sameValue as same, type Receipt } from './installation-receipt.js';
@@ -182,14 +182,14 @@ export async function planInstall(plan: InstallationPlan, pkg: Package, options:
                 const previousValue = previous?.config?.value as { type?: unknown; url?: unknown } | undefined;
                 const previousIsHosted = !!previousValue && typeof previousValue === 'object'
                     && previousValue.type === 'remote' && isHostedMcpUrl(previousValue.url)
-                    && new URL(previousValue.url).origin === hub();
+                    && [hub(),apiHub()].includes(new URL(previousValue.url).origin);
                 if (previousIsHosted) {
                     // Билет живёт до истечения: обновление и восстановление не переподключают канал.
-                    value = { type: 'remote', enabled: true, url: previousValue.url };
+                    value = { type: 'remote', enabled: true, url: new URL(new URL(previousValue.url as string).pathname,apiHub()).href };
                 } else if (useHosted) {
                     // Комплекс исполняет площадка: билет выдаётся здесь, локальный процесс не поднимается.
                     const channelPath = await options.hostedMcp!(pkg);
-                    value = { type: 'remote', enabled: true, url: new URL(channelPath, hub()).href };
+                    value = { type: 'remote', enabled: true, url: new URL(channelPath, apiHub()).href };
                 } else {
                     if (!runtime && !config.command) {
                         throw new Error('Не задана команда MCP.');

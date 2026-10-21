@@ -5,13 +5,44 @@ import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {opencodeModelCandidates,readOpenCodeModelMetadata} from '../src/bridge/opencode-model-scan.js';
 import {modelScanDigest,validModelScan} from '../../../services/shared/opencode-model-scan.cjs';
-const context={projectId:'prj-test',bindingId:'a'.repeat(64),instanceId:randomUUID()};
+const context={scope:'project' as const,projectId:'prj-test',bindingId:'a'.repeat(64),instanceId:randomUUID()};
 const secret='DO_NOT_EXPORT_SECRET';
 const provider=(baseURL='http://127.0.0.1:9999/v1')=>({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL,apiKey:secret},models:{'model-v1':{name:'Team model'}}}}});
 const directories:string[]=[];
 afterEach(async()=>{await Promise.all(directories.splice(0).map(dir=>fs.rm(dir,{recursive:true,force:true})));});
 async function fixture(){const home=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-model-scan-')));directories.push(home);const root=path.join(home,'project');await fs.mkdir(root);await fs.mkdir(path.join(home,'.config/opencode'),{recursive:true});return {home,root,managedDirectory:path.join(home,'managed'),environment:{XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share')}};}
 describe('Чтение OpenCode передаёт только metadata',()=>{
+ it.each(['inline','environment','file','auth'])('Только opt-in разрешает чтение ключа %s в отдельный transient payload',async source=>{
+  const f=await fixture(),config=provider();
+  if(source==='environment')config.provider.team.options.apiKey='{env:QA_MODEL_KEY}';
+  if(source==='file'){config.provider.team.options.apiKey='{file:./key.txt}';await fs.writeFile(path.join(f.root,'key.txt'),secret+'\n');}
+  if(source==='auth'){
+   delete (config.provider.team.options as {apiKey?:string}).apiKey;
+   await fs.mkdir(path.join(f.home,'.local/share/opencode'),{recursive:true});await fs.writeFile(path.join(f.home,'.local/share/opencode/auth.json'),JSON.stringify({team:{type:'api',key:secret}}));
+  }
+  await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(config));
+  const metadata=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,QA_MODEL_KEY:secret}});
+  expect(JSON.stringify(metadata)).not.toContain(secret);
+  const credentials:Record<string,string>={},scan=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,QA_MODEL_KEY:secret},credentialTarget:credentials});
+  expect(Object.values(credentials)).toEqual([secret]);expect(JSON.stringify(scan)).not.toContain(secret);expect(scan).not.toHaveProperty('credentials');
+ });
+ it.each(['missing-env','missing-file','symlink-file','oauth','embedded-reference'])('Неподдерживаемый или недоступный credential %s не передаётся',async source=>{
+  const f=await fixture(),config=provider();config.provider.team.options.apiKey=source==='embedded-reference'?'prefix-{env:QA_KEY}':source==='missing-env'?'{env:MISSING_KEY}':'{file:./key.txt}';
+  if(source==='symlink-file'){await fs.writeFile(path.join(f.home,'outside-key'),secret);await fs.symlink(path.join(f.home,'outside-key'),path.join(f.root,'key.txt'));}
+  if(source==='oauth'){
+   delete (config.provider.team.options as {apiKey?:string}).apiKey;await fs.mkdir(path.join(f.home,'.local/share/opencode'),{recursive:true});
+   await fs.writeFile(path.join(f.home,'.local/share/opencode/auth.json'),JSON.stringify({team:{type:'oauth',access:secret,refresh:secret}}));
+  }
+  await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(config));const credentials:Record<string,string>={};
+  const scan=await readOpenCodeModelMetadata(f.root,context,{...f,credentialTarget:credentials});expect(credentials).toEqual({});expect(JSON.stringify(scan)).not.toContain(secret);
+ });
+ it('Env URL разворачивается локально, проходит тот же safe endpoint validation и не раскрывает имя переменной',async()=>{
+  const f=await fixture();await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(provider('{env:QA_MODEL_URL}')));
+  const scan=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,QA_MODEL_URL:'https://provider.example.test/v1'}});
+  expect(scan.candidates[0]).toMatchObject({baseUrl:'https://provider.example.test/v1',blocker:null});expect(JSON.stringify(scan)).not.toContain('QA_MODEL_URL');
+  const unsafe=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,QA_MODEL_URL:'https://user:secret@example.test/v1'}});
+  expect(unsafe.candidates[0]).toMatchObject({baseUrl:null,blocker:'unsafe-endpoint'});
+ });
  it('JSONC и deep merge не раскрывают inline/auth/env/file keys',async()=>{
   const f=await fixture();await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),JSON.stringify(provider()));
   await fs.writeFile(path.join(f.root,'opencode.jsonc'),'// project\n'+JSON.stringify({provider:{team:{models:{'model-v2':{name:'Project model',modalities:{input:['text','image']}}},options:{apiKey:'{file:~/.secret}'}}}}));
@@ -43,12 +74,42 @@ describe('Чтение OpenCode передаёт только metadata',()=>{
  });
 });
 describe('Совместимость с metadata OpenCode 1.14.48',()=>{
+ it('Global читает общие JSON/JSONC без проекта, игнорируя повреждённые project layers',async()=>{
+  const f=await fixture(),source={scope:'global' as const,deviceId:randomUUID()};
+  await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),JSON.stringify(provider('https://global.example.test/v1')));
+  await fs.writeFile(path.join(f.home,'.config/opencode/opencode.jsonc'),JSON.stringify({provider:{team:{models:{'model-v1':{limit:{context:128000},options:{temperature:0.2}}}}}}));
+  await fs.writeFile(path.join(f.root,'opencode.json'),'{invalid');await fs.mkdir(path.join(f.root,'.opencode'));await fs.writeFile(path.join(f.root,'.opencode/opencode.json'),'{invalid');
+  const scan=await readOpenCodeModelMetadata(f.root,source,f);expect(scan).toMatchObject({schemaVersion:2,scope:'global',deviceId:source.deviceId});
+  expect(scan).not.toHaveProperty('projectId');expect(scan.candidates[0]).toMatchObject({baseUrl:'https://global.example.test/v1',options:{temperature:0.2,contextWindow:128000}});
+  expect(scan.warnings).not.toContain('invalid-json');expect(scan.warnings).not.toContain('ancestor-config-not-scanned');expect(validModelScan(scan,source)).toBe(true);
+  expect(validModelScan(scan,{...source,deviceId:randomUUID()})).toBe(false);
+  for(const patch of [{projectId:'fake-project'},{schemaVersion:1},{scope:'project'}]){
+   const invalid={...scan,...patch};invalid.digest=modelScanDigest(invalid);expect(validModelScan(invalid,source)).toBe(false);
+  }
+ });
+ it('Effective project сохраняет глобальные модели и накладывает свои параметры; global remains independent',async()=>{
+  const f=await fixture();await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),JSON.stringify(provider()));
+  await fs.writeFile(path.join(f.home,'.config/opencode/opencode.jsonc'),JSON.stringify({provider:{team:{models:{'model-v1':{limit:{context:128000},options:{temperature:0.1}},globalOnly:{}}}}}));
+  await fs.writeFile(path.join(f.root,'opencode.jsonc'),JSON.stringify({provider:{team:{models:{'model-v1':{limit:{context:64000},options:{temperature:0.8}}}}}}));
+  const project=await readOpenCodeModelMetadata(f.root,context,f),global=await readOpenCodeModelMetadata(f.home,{scope:'global',deviceId:randomUUID()},f);
+  expect(project.candidates[0]!.options).toEqual({contextWindow:64000,temperature:0.8});expect(global.candidates[0]!.options).toEqual({contextWindow:128000,temperature:0.1});
+  expect(project.candidates.map(item=>item.configKey)).toEqual(['model-v1','globalOnly']);
+ });
+ it('Читает родительские конфиги до ближайшей Git-границы с документированным порядком слоёв',async()=>{
+  const f=await fixture();await fs.mkdir(path.join(f.root,'.git'));const nested=path.join(f.root,'nested');await fs.mkdir(nested);
+  await fs.writeFile(path.join(f.home,'opencode.json'),'{invalid outside worktree');
+  await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(provider('https://parent.example.test/v1')));
+  await fs.writeFile(path.join(nested,'opencode.jsonc'),JSON.stringify({provider:{team:{models:{'model-v1':{name:'Nested model'}}}}}));
+  let scan=await readOpenCodeModelMetadata(nested,context,f);expect(scan.candidates[0]).toMatchObject({name:'Nested model',baseUrl:'https://parent.example.test/v1'});expect(scan.warnings).not.toContain('ancestor-config-not-scanned');expect(scan.warnings).not.toContain('invalid-json');
+  await fs.mkdir(path.join(f.root,'.opencode'));await fs.writeFile(path.join(f.root,'.opencode/opencode.json'),JSON.stringify({provider:{team:{models:{'model-v1':{name:'Parent dot config'}}}}}));
+  scan=await readOpenCodeModelMetadata(nested,context,f);expect(scan.candidates[0]!.name).toBe('Parent dot config');
+ });
  it('Импортирует upstream id, provider.api и числовые options без capability-limit и boolean temperature',()=>{
   const config={provider:{team:{npm:'@ai-sdk/openai-compatible',api:'https://example.test/v1/',options:{apiKey:secret,timeout:120000},models:{alias:{id:'upstream-model',name:'Visible name',temperature:true,limit:{context:128000,output:64000},options:{temperature:0,topP:1,maxOutputTokens:32768}}}}}};
-  expect(opencodeModelCandidates(config)[0]).toMatchObject({name:'Visible name',model:'upstream-model',modelVersion:'upstream-model',baseUrl:'https://example.test/v1',options:{temperature:0,topP:1,maxOutputTokens:32768},timeoutMs:120000,blocker:null});
+  expect(opencodeModelCandidates(config)[0]).toMatchObject({name:'Visible name',model:'upstream-model',modelVersion:'upstream-model',baseUrl:'https://example.test/v1',options:{temperature:0,topP:1,maxOutputTokens:32768,contextWindow:128000},outputTokenLimit:64000,timeoutMs:120000,blocker:null});
   expect(JSON.stringify(opencodeModelCandidates(config))).not.toContain(secret);
   const plain=provider();plain.provider.team.models['model-v1']={name:'Plain',...{temperature:true,limit:{context:65536,output:4096}}};
-  expect(opencodeModelCandidates(plain)[0]).not.toHaveProperty('options');
+  expect(opencodeModelCandidates(plain)[0]).toMatchObject({options:{contextWindow:65536},outputTokenLimit:4096});
  });
  it('baseURL имеет приоритет над provider.api и builtin адресом',()=>{
   const config={provider:{openai:{api:'https://api-fallback.test/v1',options:{baseURL:'https://chosen.test/v1'},models:{model:{}}}}};

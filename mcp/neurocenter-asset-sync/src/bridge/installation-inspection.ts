@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse, type ParseError } from 'jsonc-parser';
-import { hash, hub, stateDir } from './state.js';
+import { hash, hub, apiHub, stateDir } from './state.js';
 import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
 import { verify, type Package } from './package.js';
 import { projectFolder, projectBindingId, safeTarget } from './workspace.js';
@@ -106,7 +106,7 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
         const receiptValue = (receipt?.config?.value ?? null) as { type?: unknown; url?: unknown } | null;
         const hostedInstallation = pkg.plugin.kind === 'mcp' && !!receiptValue && typeof receiptValue === 'object'
             && receiptValue.type === 'remote' && isHostedMcpUrl(receiptValue.url)
-            && (() => { try { return new URL(receiptValue.url).origin === hub(); } catch { return false; } })();
+            && (() => { try { return [hub(),apiHub()].includes(new URL(receiptValue.url).origin); } catch { return false; } })();
         // Платформа исполняет комплекс: локальный кэш для такой установки не требуется.
         if (!hostedInstallation) { await resolvePreparedRuntimeArtifact(pkg); }
         if (!options.lockHeld && await busy(root)) { return occupied('inspection-busy'); }

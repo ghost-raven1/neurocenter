@@ -6,6 +6,7 @@ DEFAULT_BASE_URL='__BASE_URL__'
 DEFAULT_SITE_URL='__SITE_URL__'
 BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
 SITE_URL="${SITE_URL:-$DEFAULT_SITE_URL}"
+BASE_URL="${BASE_URL%/}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.opencode/neurocenter-asset-sync}"
 VERSION='__BRIDGE_VERSION__'
 RECONNECT='__RECONNECT__'
@@ -64,6 +65,9 @@ JS
 }
 case "$(uname -s)" in Darwin) PLATFORM='darwin' ;; Linux) PLATFORM='linux' ;; *) fail 'Для Windows используйте install.ps1 в PowerShell. Эта ОС не поддерживается Bash-установщиком.' ;; esac
 case "$(uname -m)" in arm64|aarch64) ARCH='arm64' ;; x86_64|amd64) ARCH='x64' ;; *) fail 'Для этой архитектуры пока нет автономного пакета MCP.' ;; esac
+case "$BASE_URL" in http://*/api/bridge|https://*/api/bridge) ;; *) fail 'Нужен адрес API Gateway с путём /api/bridge.' ;; esac
+case "$BASE_URL$SITE_URL" in *[[:space:]]*|*'@'*|*'?'*|*'#'*|*'\\'*) fail 'Адрес сервера не должен содержать ключи, пароль или параметры.' ;; esac
+case "$SITE_URL" in http://*|https://*) ;; *) fail 'Нужен HTTP(S)-адрес сайта.' ;; esac
 if [ "$PLATFORM" = darwin ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then ARCH='arm64'; fi
 SUFFIX=''
 if [ "$PLATFORM" = linux ] && command -v ldd >/dev/null 2>&1; then
@@ -79,21 +83,52 @@ INSTALL_LOCK="$INSTALL_DIR.install-lock"
 mkdir "$INSTALL_LOCK" 2>/dev/null || fail "Другая установка моста уже выполняется. Дождитесь её завершения. Если она была прервана, проверьте PID в $INSTALL_LOCK/owner.pid и удалите только эту блокировку после завершения процесса."
 STAGING_DIR=''
 UPGRADE_PREPARED='0'
+PREVIOUS_DIR=''
+PREVIOUS_COMPATIBLE='0'
+PUBLISHED='0'
+REGISTRATION_OK='0'
 finish_upgrade() {
     if [ "$UPGRADE_PREPARED" = '1' ]; then
         "$UPGRADE_NODE" "$UPGRADE_ENTRY" --finish-upgrade > "$STAGING_DIR/finish-upgrade.json" || return 1
+        "$UPGRADE_NODE" -e 'try{const fs=require("node:fs");if(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).ok!==true)process.exit(1)}catch{process.exit(1)}' "$STAGING_DIR/finish-upgrade.json" || return 1
         UPGRADE_PREPARED='0'
     fi
 }
-trap 'INSTALL_EXIT_STATUS=$?; trap - EXIT; finish_upgrade || printf "  Не удалось снять паузу очереди; повторите установку после восстановления связи.\n" >&2; if [ -n "$STAGING_DIR" ]; then rm -rf "$STAGING_DIR"; fi; rm -rf "$INSTALL_LOCK"; exit "$INSTALL_EXIT_STATUS"' EXIT
+cleanup() {
+    local status=$?
+    trap - EXIT
+    if [ "$PUBLISHED" = '1' ] && [ "$REGISTRATION_OK" = '0' ] && [ "$PREVIOUS_COMPATIBLE" = '1' ] && [ -d "$PREVIOUS_DIR" ]; then
+        if mv "$INSTALL_DIR" "$STAGING_DIR/failed-cancelled" && mv "$PREVIOUS_DIR" "$INSTALL_DIR"; then
+            UPGRADE_NODE="$STAGING_DIR/failed-cancelled/bin/node"; UPGRADE_ENTRY="$STAGING_DIR/failed-cancelled/dist/index.js"
+            printf '  Прежняя версия восстановлена после прерванной регистрации.\n' >&2
+        fi
+    fi
+    finish_upgrade || printf '  Не удалось снять паузу очереди; повторите установку после восстановления связи.\n' >&2
+    if [ -n "$STAGING_DIR" ]; then rm -rf "$STAGING_DIR"; fi
+    rm -rf "$INSTALL_LOCK"
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 printf '%s\n' "$$" > "$INSTALL_LOCK/owner.pid"
 STAGING_DIR="$(mktemp -d "$INSTALL_PARENT/.neurocenter-install.XXXXXX")"
 ARCHIVE="neurocenter-asset-sync-$PLATFORM-$ARCH$SUFFIX-$VERSION.tgz"
 printf '\n%sНейроцентр%s · установка MCP\n' "$BOLD" "$RESET"
 printf 'Версия %s · %s / %s%s\n' "$VERSION" "$PLATFORM" "$ARCH" "$SUFFIX"
 step 1 'Скачиваем автономный пакет'
-curl -fsSL "$BASE_URL/runtime/$ARCHIVE" -o "$STAGING_DIR/bridge.tgz" || fail 'Администратор ещё не разместил автономный пакет для этой системы. Предыдущая установка сохранена.'
-curl -fsSL "$BASE_URL/runtime/$ARCHIVE.sha256" -o "$STAGING_DIR/expected.sha256" || fail 'Не удалось получить контрольную сумму MCP.'
+download() {
+    local status=0
+    curl -fsSL "$1" -o "$2" --connect-timeout 20 --max-time 600 --retry 2 --retry-delay 1 || status=$?
+    case "$status" in
+        0) return 0 ;;
+        60) fail 'Сертификат площадки не подтверждён. Настройте корпоративный CA через CURL_CA_BUNDLE или SSL_CERT_FILE. Проверка TLS остаётся включённой.' ;;
+        28) fail 'Площадка не ответила вовремя. Проверьте сеть и повторите установку; предыдущая версия сохранена.' ;;
+        *) fail 'Не удалось скачать пакет MCP с площадки. Проверьте соединение и наличие подготовленного пакета. Предыдущая установка сохранена.' ;;
+    esac
+}
+download "$BASE_URL/runtime/$ARCHIVE" "$STAGING_DIR/bridge.tgz"
+download "$BASE_URL/runtime/$ARCHIVE.sha256" "$STAGING_DIR/expected.sha256"
 step 2 'Проверяем и устанавливаем пакет'
 EXPECTED="$(awk '{print $1}' "$STAGING_DIR/expected.sha256")"
 if command -v sha256sum >/dev/null 2>&1; then ACTUAL="$(sha256sum "$STAGING_DIR/bridge.tgz" | awk '{print $1}')";
@@ -108,15 +143,16 @@ done < "$STAGING_DIR/entries"
 tar -tvzf "$STAGING_DIR/bridge.tgz" > "$STAGING_DIR/details"
 if grep -Eq '^[^d-]' "$STAGING_DIR/details"; then fail 'Архив MCP со ссылками или специальными файлами не поддерживается.'; fi
 mkdir "$STAGING_DIR/package"
-tar -xzf "$STAGING_DIR/bridge.tgz" -C "$STAGING_DIR/package"
+tar -xzf "$STAGING_DIR/bridge.tgz" -C "$STAGING_DIR/package" 2>/dev/null || fail 'Не удалось распаковать пакет. Проверьте свободное место и права на папку установки; предыдущая версия сохранена.'
 NODE="$STAGING_DIR/package/bin/node"
 test -f "$STAGING_DIR/package/dist/index.js" || fail 'В архиве нет программы MCP.'
+test -f "$STAGING_DIR/package/dist/bridge-cli.js" || fail 'Пакет моста устарел: в нём нет команды подключения. Администратору нужно опубликовать новую сборку; прежняя установка сохранена.'
 test -x "$NODE" || fail 'В архиве нет исполняемого Node.js.'
 case "$("$NODE" --version)" in v24.*) ;; *) fail 'Runtime MCP не запускается или имеет неподдерживаемую версию.' ;; esac
 [ "$("$NODE" -p 'process.platform + ":" + process.arch')" = "$PLATFORM:$ARCH" ] || fail 'Runtime в архиве не соответствует ОС и архитектуре компьютера.'
 "$NODE" -e 'const fs=require("node:fs"),p=process.argv[1],v=process.argv[2],t=process.argv[3];const read=f=>JSON.parse(fs.readFileSync(p+"/"+f,"utf8"));const m=read("package.json"),r=read("runtime.json"),b=read("dist/build.json");if(m.name!=="neurocenter-asset-sync"||m.version!==v||r.version!==v||b.version!==v||r.target!==t||r.buildId!==b.buildId||!/^[a-f0-9]{64}$/.test(b.buildId))process.exit(1)' "$STAGING_DIR/package" "$VERSION" "$PLATFORM-$ARCH$SUFFIX" || fail 'Версия или отпечаток пакета MCP не совпадает с установщиком. Файлы не заменены.'
 NEUROCENTER_URL="$SITE_URL"; export NEUROCENTER_URL
-PREVIOUS_COMPATIBLE='0'
+NEUROCENTER_API_URL="${BASE_URL%/api/bridge}"; export NEUROCENTER_API_URL
 if [ -e "$INSTALL_DIR" ]; then
     "$NODE" -e 'const fs=require("node:fs");if(JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8")).name!=="neurocenter-asset-sync")process.exit(1)' "$INSTALL_DIR" || fail 'Папка установки занята посторонними файлами. Укажите отдельную папку MCP.'
     "$NODE" -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8")).version;const a=String(v).match(/^(\d+)\.(\d+)\.(\d+)$/);const b=process.argv[2].split(".").map(Number);if(!a)process.exit(1);const x=a.slice(1).map(Number);for(let i=0;i<3;i++){if(x[i]>b[i])process.exit(1);if(x[i]<b[i])break}' "$INSTALL_DIR" "$VERSION" || fail 'Автоматическое понижение версии MCP запрещено. Предыдущая установка сохранена.'
@@ -128,9 +164,8 @@ if [ -e "$INSTALL_DIR" ]; then
         show_result error "$STAGING_DIR/upgrade.json" || true
         fail 'Обновление не выполнено. Файлы предыдущего моста сохранены. Причина указана выше.'
     fi
-    UPGRADE_PREPARED="$("$NODE" -e 'const fs=require("node:fs");const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(result.ok!==true)process.exit(1);process.stdout.write(result.paused===false?"0":"1")' "$STAGING_DIR/upgrade.json")" || fail 'Мост не подтвердил подготовку обновления. Файлы не заменены.'
+    UPGRADE_PREPARED="$("$NODE" -e 'try{const fs=require("node:fs");const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(result.ok!==true)process.exit(1);process.stdout.write(result.paused===false?"0":"1")}catch{process.exit(1)}' "$STAGING_DIR/upgrade.json")" || fail 'Мост не подтвердил подготовку обновления. Файлы не заменены.'
 fi
-PREVIOUS_DIR=''
 if [ -e "$INSTALL_DIR" ]; then
     PREVIOUS_DIR="$(mktemp -d "$INSTALL_PARENT/.neurocenter-previous.XXXXXX")"; rmdir "$PREVIOUS_DIR"
     mv "$INSTALL_DIR" "$PREVIOUS_DIR"
@@ -139,25 +174,36 @@ if ! mv "$STAGING_DIR/package" "$INSTALL_DIR"; then
     if [ -n "$PREVIOUS_DIR" ]; then mv "$PREVIOUS_DIR" "$INSTALL_DIR"; fi
     fail 'Не удалось заменить MCP. Предыдущая установка восстановлена.'
 fi
+PUBLISHED='1'
 NODE="$INSTALL_DIR/bin/node"
 UPGRADE_NODE="$NODE"
 UPGRADE_ENTRY="$INSTALL_DIR/dist/index.js"
 success 'Автономный пакет установлен, системные Node.js и npm не нужны'
 printf '  Установлено: %s\n' "$INSTALL_DIR"
 step 3 'Регистрируем MCP в OpenCode'
-if ! "$NODE" "$INSTALL_DIR/dist/index.js" --init > "$STAGING_DIR/init.json"; then
+INIT_OK='0'
+if "$NODE" "$INSTALL_DIR/dist/index.js" --init > "$STAGING_DIR/init.json"; then
+    if show_result init "$STAGING_DIR/init.json"; then INIT_OK='1'; fi
+else
     show_result error "$STAGING_DIR/init.json" || true
+fi
+if [ "$INIT_OK" != '1' ]; then
     if [ -n "$PREVIOUS_DIR" ] && [ "$PREVIOUS_COMPATIBLE" = '1' ]; then
         mv "$INSTALL_DIR" "$STAGING_DIR/failed"
         UPGRADE_NODE="$STAGING_DIR/failed/bin/node"
         UPGRADE_ENTRY="$STAGING_DIR/failed/dist/index.js"
         mv "$PREVIOUS_DIR" "$INSTALL_DIR"
+        PUBLISHED='0'
         fail 'Регистрация MCP не удалась. Совместимая предыдущая версия восстановлена. Повторите установку или перезапустите OpenCode для восстановления подключения.'
     fi
     fail "Регистрация MCP не удалась. Предыдущая версия сохранена в $PREVIOUS_DIR; автоматический откат на несовместимую версию запрещён."
 fi
-show_result init "$STAGING_DIR/init.json"
+REGISTRATION_OK='1'
 finish_upgrade || fail 'Мост установлен, но очередь не подтвердила снятие паузы. Проверьте соединение и повторите установку.'
+if ! "$NODE" "$INSTALL_DIR/dist/bridge-cli.js" --install-command > "$STAGING_DIR/command.txt"; then
+    fail 'Мост установлен, но короткая команда не зарегистрирована. Проверьте права в ~/.local/bin и повторите установку.'
+fi
+success 'Команда подключения готова: ~/.local/bin/neurocenter-bridge connect --open'
 if [ -n "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\n' "$PREVIOUS_DIR"; fi
 step 4 'Проверяем подключение к Нейроцентру'
 CONNECT='--connect-open'

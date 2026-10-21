@@ -15,6 +15,14 @@ export const hash = (text: string | Buffer): string =>
     createHash('sha256').update(text).digest('hex');
 export const hub = (): string =>
     new URL(process.env.NEUROCENTER_URL || 'http://localhost:5173').origin;
+/** API transport can change without replacing the existing site identity and its private state namespace. */
+export const apiHub = (): string => {
+    const value = process.env.NEUROCENTER_API_URL;
+    if (!value) return hub();
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== value || url.username || url.password) throw new Error('Адрес API Gateway должен быть HTTP(S) origin без ключей и параметров.');
+    return url.origin;
+};
 export const stateDir = (): string =>
     path.join(
         process.env.NEUROCENTER_BRIDGE_HOME ||
@@ -51,7 +59,7 @@ export async function writeState(name: string, value: unknown): Promise<void> {
 }
 export async function api<T>(route: string, input?: unknown, tokenOverride?: string): Promise<T> {
     const credentials = await readState<Credentials>('credentials');
-    const response = await fetch(hub() + '/api/device-channel/' + route, {
+    const response = await fetch(apiHub() + '/api/device-channel/' + route, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -85,7 +93,7 @@ export async function authorizedFetch(
         );
     }
     const job = jobContext.getStore();
-    return fetch(hub() + route, {
+    return fetch(apiHub() + route, {
         ...options,
         headers: {
             ...options.headers,

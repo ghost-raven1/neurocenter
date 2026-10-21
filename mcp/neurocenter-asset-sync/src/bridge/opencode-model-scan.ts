@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { parse, parseTree, type Node, type ParseError } from 'jsonc-parser';
 import { projectBindingId, projectFolder, projectInstanceId } from './workspace.js';
 import { readBoundedSnapshot, fileFingerprint } from './read-bounded.js';
-import type { IOpenCodeModelCandidate, IOpenCodeModelScan } from '../../../../services/shared/opencode-model-scan.cjs';
+import type { IOpenCodeModelCandidate, IOpenCodeModelScan, IOpenCodeModelSource } from '../../../../services/shared/opencode-model-scan.cjs';
 const shared=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../services/shared/opencode-model-scan.cjs':'../shared/opencode-model-scan.cjs',import.meta.url))) as typeof import('../../../../services/shared/opencode-model-scan.cjs');
 type Json=Record<string,unknown>;
 const object=(value:unknown):value is Json=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -47,9 +47,9 @@ function endpoint(value:unknown):{url:string|null;blocker:IOpenCodeModelCandidat
     }catch{return {url:null,blocker:'unsafe-endpoint'};}
 }
 /** Pure metadata projection: provider keys, custom headers and file contents are deliberately absent. */
-export function opencodeModelCandidates(config:Json,auth:Json={},experimentalModels=false):IOpenCodeModelCandidate[] {
+export function opencodeModelCandidates(config:Json,auth:Json={},experimentalModels=false,requestedSelectors:readonly string[]=[]):IOpenCodeModelCandidate[] {
     const providers:Json=JSON.parse(JSON.stringify(object(config.provider)?config.provider:{}));
-    for(const selected of [config.model,config.small_model]){
+    for(const selected of [config.model,config.small_model,...requestedSelectors.filter(selector=>object(config.provider)&&Object.hasOwn(config.provider,selector.split('/')[0]!))]){
         if(typeof selected!=='string'||!selected.includes('/'))continue;
         const [provider,...parts]=selected.split('/'),model=parts.join('/');
         if(!provider||!id(provider)||!id(model))continue;
@@ -79,11 +79,13 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
             const disabled=Array.isArray(config.disabled_providers)&&config.disabled_providers.includes(provider)
                 ||Array.isArray(config.enabled_providers)&&!config.enabled_providers.includes(provider);
             const defaults=modelOptions(metadata.options),apiModel=metadata.id??model;
+            if(defaults&&object(metadata.limit)&&bounded(metadata.limit.context,128,2097152,true))defaults.contextWindow=metadata.limit.context;
             const overridden=metadata.provider!==undefined||!empty(metadata.headers)||defaults===null||!id(apiModel)||apiModel.length>128;
-            result.push({candidateId:randomUUID(),provider,name:text(metadata.name,128)?metadata.name:model,model:overridden?model:apiModel as string,modelVersion:overridden?model:apiModel as string,
+            result.push({candidateId:randomUUID(),configKey:model,provider,name:text(metadata.name,128)?metadata.name:model,model:overridden?model:apiModel as string,modelVersion:overridden?model:apiModel as string,
                 capability:Array.isArray(modalities.input)&&modalities.input.includes('image')?'vision':'chat',runtime:supported?'remote-openai':null,
                 baseUrl:address.url,hasKey:credentialSource!=='none',credentialSource,
                 ...(!overridden&&defaults&&Object.keys(defaults).length?{options:defaults}:{}),
+                ...(object(metadata.limit)&&bounded(metadata.limit.output,1,2097152,true)?{outputTokenLimit:metadata.limit.output}:{}),
                 ...(supported&&typeof options.timeout==='number'?{timeoutMs:options.timeout}:{}),
                 blocker:disabled?'disabled-provider':!supported||overridden?'unsupported-provider':address.blocker});
         }
@@ -92,9 +94,9 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
 }
 
 /** Читает документированные конфиги выбранного проекта и пользователя, без рекурсивного сканирования home. */
-export async function readOpenCodeModelMetadata(root:string,context:{projectId:string;bindingId:string;instanceId:string},options:{home?:string;environment?:NodeJS.ProcessEnv;authorize?:()=>Promise<unknown>;managedDirectory?:string}={}):Promise<IOpenCodeModelScan> {
+export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeModelSource,options:{home?:string;environment?:NodeJS.ProcessEnv;authorize?:()=>Promise<unknown>;managedDirectory?:string;credentialTarget?:Record<string,string>;readAuth?:boolean;requestedSelectors?:readonly string[];agentNamespaceTarget?:{names:Set<string>;directories:Set<string>}}={}):Promise<IOpenCodeModelScan> {
     const home=options.home??os.homedir(),env=options.environment??process.env,authorize=options.authorize??(async()=>{});
-    const warnings=new Set<string>(['ancestor-config-not-scanned','organization-config-not-scanned',...(process.platform==='darwin'?['managed-preferences-not-scanned']:[])]);
+    const warnings=new Set<string>([...(context.scope==='project'?['ancestor-config-not-scanned']:[]),'organization-config-not-scanned',...(process.platform==='darwin'?['managed-preferences-not-scanned']:[])]);
     const snapshots:Array<{file:string;fingerprint:string}>=[];
     const read=async(file:string):Promise<Json|null>=>{
         await authorize();
@@ -109,35 +111,85 @@ export async function readOpenCodeModelMetadata(root:string,context:{projectId:s
             return value;
         }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')warnings.add((error as Error).message==='unsafe-path'?'unsafe-path':'read-failed');return null;}
     };
-    let config:Json={};
+    let config:Json={};const keyDirectories:Record<string,string>={};
+    const apply=(value:Json,directory:string):void=>{
+        if(object(value.provider))for(const [provider,entry]of Object.entries(value.provider))if(object(entry)&&object(entry.options)&&Object.hasOwn(entry.options,'apiKey'))keyDirectories[provider]=directory;
+        if(options.agentNamespaceTarget)for(const kind of ['agent','mode'])if(value[kind]!==undefined){if(!object(value[kind]))warnings.add('invalid-json');else for(const name of Object.keys(value[kind]))options.agentNamespaceTarget.names.add(name);}
+        config=merge(config,value);
+    };
     const layer=async(directory:string,names=['opencode.json','opencode.jsonc']):Promise<void>=>{
         // OpenCode 1.14.48 последовательно накладывает JSONC поверх JSON.
-        for(const name of names){const value=await read(path.join(directory,name));if(value)config=merge(config,value);}
+        for(const name of names){const value=await read(path.join(directory,name));if(value)apply(value,directory);}
     };
+    options.agentNamespaceTarget?.directories.add(path.join(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode'));
     await layer(path.join(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode'),['config.json','opencode.json','opencode.jsonc']);
-    if(env.OPENCODE_CONFIG){const value=await read(path.resolve(root,env.OPENCODE_CONFIG));if(value)config=merge(config,value);}
+    if(env.OPENCODE_CONFIG){const file=path.resolve(root,env.OPENCODE_CONFIG),value=await read(file);if(value)apply(value,path.dirname(file));}
     const localDirectories:string[]=[];
-    if(!flag(env.OPENCODE_DISABLE_PROJECT_CONFIG)){await layer(root);localDirectories.push(path.join(root,'.opencode'));}
+    if(context.scope==='project'&&!flag(env.OPENCODE_DISABLE_PROJECT_CONFIG)){
+        const ancestors=[path.resolve(root)];let gitBoundary=false;
+        // OpenCode ConfigPaths.files reverses its bounded walk; .opencode directories keep nearest-first order.
+        for(let index=0;index<64;index++){
+            await authorize();const directory=ancestors[ancestors.length-1]!;
+            try{const marker=await fs.lstat(path.join(directory,'.git'));if(marker.isSymbolicLink())warnings.add('unsafe-path');gitBoundary=true;break;}
+            catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT'){warnings.add('read-failed');break;}}
+            const parent=path.dirname(directory);if(parent===directory)break;ancestors.push(parent);
+        }
+        const directories=gitBoundary?ancestors:[path.resolve(root)];if(gitBoundary)warnings.delete('ancestor-config-not-scanned');
+        for(const directory of [...directories].reverse())await layer(directory);
+        localDirectories.push(...directories.map(directory=>path.join(directory,'.opencode')));
+    }
     localDirectories.push(path.join(home,'.opencode'));
     if(env.OPENCODE_CONFIG_DIR)localDirectories.push(path.resolve(root,env.OPENCODE_CONFIG_DIR));
-    for(const directory of new Set(localDirectories.map(directory=>path.resolve(directory))))await layer(directory);
-    if(env.OPENCODE_CONFIG_CONTENT){const source=env.OPENCODE_CONFIG_CONTENT,errors:ParseError[]=[];const value:unknown=source.length<=1024*1024?parse(source,errors,{allowTrailingComma:true}):null;if(!errors.length&&object(value)&&!duplicate(parseTree(source))){config=merge(config,value);if(source.includes('{file:'))warnings.add('file-reference-not-expanded');if(source.includes('{env:'))warnings.add('env-reference-not-expanded');}else warnings.add('invalid-json');}
+    for(const directory of new Set(localDirectories.map(directory=>path.resolve(directory)))){options.agentNamespaceTarget?.directories.add(directory);await layer(directory);}
+    if(env.OPENCODE_CONFIG_CONTENT){const source=env.OPENCODE_CONFIG_CONTENT,errors:ParseError[]=[];const value:unknown=source.length<=1024*1024?parse(source,errors,{allowTrailingComma:true}):null;if(!errors.length&&object(value)&&!duplicate(parseTree(source))){apply(value,root);if(source.includes('{file:'))warnings.add('file-reference-not-expanded');if(source.includes('{env:'))warnings.add('env-reference-not-expanded');}else warnings.add('invalid-json');}
     const managed=options.managedDirectory??(process.platform==='darwin'?'/Library/Application Support/opencode':process.platform==='win32'?env.ProgramData&&path.join(env.ProgramData,'opencode'):'/etc/opencode');
-    if(managed)await layer(managed);
-    const auth=await read(path.join(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode','auth.json'));
+    if(managed){options.agentNamespaceTarget?.directories.add(managed);await layer(managed);}
+    const auth=options.readAuth===false?null:await read(path.join(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode','auth.json'));
     await authorize();
     for(const snapshot of snapshots){try{if(fileFingerprint(await fs.lstat(snapshot.file,{bigint:true}))!==snapshot.fingerprint)warnings.add('source-changed');}catch{warnings.add('source-changed');}}
-    let candidates=opencodeModelCandidates(config,auth??{},flag(env.OPENCODE_ENABLE_EXPERIMENTAL_MODELS));
+    if(object(config.provider))for(const entry of Object.values(config.provider))if(object(entry)&&object(entry.options)&&typeof entry.options.baseURL==='string'){
+        const match=/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(entry.options.baseURL);if(match&&env[match[1]!])entry.options.baseURL=env[match[1]!]!;
+    }
+    let candidates=opencodeModelCandidates(config,auth??{},flag(env.OPENCODE_ENABLE_EXPERIMENTAL_MODELS),options.requestedSelectors);
     if(object(config.provider)&&Object.values(config.provider).reduce<number>((sum,value)=>sum+(object(value)&&object(value.models)?Object.keys(value.models).length:0),0)>100)warnings.add('entry-limit');
     if(warnings.has('source-changed')||warnings.has('ambiguous-config')||warnings.has('invalid-json')||warnings.has('unsafe-path')||warnings.has('read-failed'))candidates=[];
-    const now=new Date();const scan:IOpenCodeModelScan={schemaVersion:1,...context,scanId:randomUUID(),checkedAt:now.toISOString(),expiresAt:new Date(now.getTime()+900000).toISOString(),warnings:[...warnings],candidates,digest:''};
+    if(options.credentialTarget){
+        for(const candidate of candidates){
+            if(candidate.blocker||!candidate.hasKey)continue;await authorize();
+            const providers=object(config.provider)?config.provider:{},provider=providers[candidate.provider];
+            const providerOptions=object(provider)&&object(provider.options)?provider.options:{};
+            let key:unknown=providerOptions.apiKey;
+            if(typeof key==='string'){
+                const envRef=/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(key),fileRef=/^\{file:([^{}]+)\}$/.exec(key);
+                if(envRef)key=env[envRef[1]!];
+                else if(fileRef){
+                    try{
+                        const filename=fileRef[1]!.startsWith('~/')?path.join(home,fileRef[1]!.slice(2)):path.resolve(keyDirectories[candidate.provider]??root,fileRef[1]!);
+                        let current=path.parse(filename).root;for(const part of filename.slice(current.length).split(path.sep)){current=path.join(current,part);if((await fs.lstat(current)).isSymbolicLink())throw Error();}
+                        const snapshot=await readBoundedSnapshot(filename,16384);snapshots.push({file:filename,fingerprint:snapshot.fingerprint});
+                        key=snapshot.bytes.toString('utf8').trim();if(!Buffer.from(snapshot.bytes.toString('utf8')).equals(snapshot.bytes))key=undefined;
+                    }catch{key=undefined;}
+                }else if(key.includes('{env:')||key.includes('{file:'))key=undefined;
+            }else {const credential=auth?.[candidate.provider];key=object(credential)&&credential.type==='api'?credential.key:undefined;}
+            if(typeof key==='string'&&key.length>0&&key.length<=8192&&!/[\x00-\x20\x7f]/.test(key))options.credentialTarget[candidate.candidateId]=key;
+        }
+        await authorize();
+        for(const snapshot of snapshots){try{if(fileFingerprint(await fs.lstat(snapshot.file,{bigint:true}))!==snapshot.fingerprint)warnings.add('source-changed');}catch{warnings.add('source-changed');}}
+        if(warnings.has('source-changed')){candidates=[];for(const key of Object.keys(options.credentialTarget))delete options.credentialTarget[key];}
+    }
+    const now=new Date();const scan:IOpenCodeModelScan={schemaVersion:2,...context,scanId:randomUUID(),checkedAt:now.toISOString(),expiresAt:new Date(now.getTime()+900000).toISOString(),warnings:[...warnings],candidates,digest:''};
     scan.digest=shared.modelScanDigest(scan);
     if(!shared.validModelScan(scan,context))throw Error('Метаданные моделей не прошли проверку формата.');
     return scan;
 }
 export async function scanOpenCodeModels(projectId:string,authorize:()=>Promise<unknown>):Promise<IOpenCodeModelScan> {
     await authorize();const root=await projectFolder(projectId),bindingId=await projectBindingId(projectId),instanceId=await projectInstanceId(projectId);
-    const result=await readOpenCodeModelMetadata(root,{projectId,bindingId,instanceId},{authorize});
+    const result=await readOpenCodeModelMetadata(root,{scope:'project',projectId,bindingId,instanceId},{authorize});
     await authorize();if(bindingId!==await projectBindingId(projectId)||instanceId!==await projectInstanceId(projectId))throw Error('Папка проекта изменилась во время чтения.');
     return result;
+}
+
+/** Device-global metadata never discovers a project folder or obtains a project binding. */
+export async function scanGlobalOpenCodeModels(deviceId:string,authorize:()=>Promise<unknown>):Promise<IOpenCodeModelScan> {
+    await authorize();return readOpenCodeModelMetadata(os.homedir(),{scope:'global',deviceId},{authorize});
 }

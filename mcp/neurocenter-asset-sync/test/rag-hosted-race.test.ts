@@ -3,7 +3,7 @@ import {createHostedRelay,inferHosted} from '../src/features/rag-hosted/relay.js
 import {requestProfile,type HostedProfile} from '../src/features/rag-hosted/profile.js';
 const state=vi.hoisted(()=>({assert:vi.fn()}));
 vi.mock('../src/features/rag-hosted/profile.js',async importOriginal=>({...await importOriginal<object>(),assertHostedInstallation:state.assert}));
-vi.mock('../src/bridge/state.js',()=>({hub:()=> 'http://broker.fixture',readState:async()=>({token:'synthetic-device-key'})}));
+vi.mock('../src/bridge/state.js',()=>({hub:()=> 'http://broker.fixture',apiHub:()=> 'http://broker.fixture',readState:async()=>({token:'synthetic-device-key'})}));
 const nativeFetch=globalThis.fetch;
 afterEach(()=>vi.unstubAllGlobals());
 function selection(revision:number,pin:string){return {revision,modelPin:pin,profile:{provider:'openai' as const,model:'neurocenter/model-fixture/sha256/'+pin,dimension:3},model:null};}

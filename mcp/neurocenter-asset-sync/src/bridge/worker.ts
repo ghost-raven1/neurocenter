@@ -1,5 +1,6 @@
 import {reindexHostedRag} from '../features/rag-hosted/reindex.js';
 import {publishProjectSnapshot} from '../features/project-snapshot/publish.js';
+import {projectAgentsFailureResult} from '../features/project-agents/model-compiler.js';
 import {configureProjectAgents,projectAgentsFailureMessage} from '../features/project-agents/index.js';
 import {PROJECT_AGENTS_JOB,type ProjectAgentsPayload} from '../features/project-agents/contract.js';
 import {finalizeRagReindex,releaseRagReindex,recoverRagRestore} from '../features/rag-index/restore-recovery.js';
@@ -12,7 +13,7 @@ import path from 'node:path';
 import { io } from 'socket.io-client';
 import {
     api,
-    hub,
+    apiHub,
     readState,
     writeState,
     stateDir,
@@ -56,6 +57,7 @@ import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
 import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 import { connectHostedRag, startHostedRagConnections, stopHostedRagConnections, type HostedSelection } from '../features/rag-hosted/index.js';
 import {synchronizeLearningObservations} from '../features/project-learning/observation-sync.js';
+import { synchronizeOpenCodeModels } from './opencode-model-sync.js';
 
 interface Job {
     id: string;
@@ -105,7 +107,7 @@ export async function runWorker(): Promise<void> {
     await writeState('worker-version', { pid: process.pid, version: BRIDGE_VERSION, buildId: await bridgeBuildId() });
     let running = false;
     let stopped = false;
-    const socket = io(hub(), {
+    const socket = io(apiHub(), {
         transports: ['websocket', 'polling'],
         auth: { token: credentials.token },
         reconnection: true,
@@ -124,7 +126,7 @@ export async function runWorker(): Promise<void> {
                 socket.disconnect().connect();
             }
             const report = await workspaceReport();
-            if (!stopped) { await api('heartbeat', report); }
+            if (!stopped) { await api('heartbeat', report); void synchronizeOpenCodeModels(() => stopped).catch(() => undefined); }
         })().finally(() => { heartbeatPending = undefined; });
         return heartbeatPending;
     };
@@ -163,7 +165,7 @@ export async function runWorker(): Promise<void> {
                     const result = await api(`jobs/${current.id}/authorize`, {
                         lease: current.lease,
                     });
-                    if ([PROJECT_AGENTS_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model','publish-project-snapshot'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
+                    if (!(current.kind==='scan-opencode-models'&&current.payload.scope==='global'&&!current.project_id) && [PROJECT_AGENTS_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model','publish-project-snapshot'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
                         throw new Error('Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.');
                     }
                     return result;
@@ -181,7 +183,7 @@ export async function runWorker(): Promise<void> {
                     let result: unknown;
                     if(current.kind===PROJECT_AGENTS_JOB){
                         if(current.payload.projectId!==current.project_id)throw new Error('Задание настройки агентов не соответствует проекту.');
-                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>configureProjectAgents(current.payload,authorize,update));
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>configureProjectAgents(current.payload,authorize,update,mappings=>api('agents/compile',{jobId:current.id,lease:current.lease,payloadManifest:current.payload.manifestSha256,mappings})));
                     }else if(current.kind==='publish-project-snapshot'){
                         if(current.payload.snapshotProtocol!=='project-snapshots-v1'||!current.payload.snapshotId||!current.project_id||!current.payload.bindingId)throw new Error('Задание полного снимка не поддерживается. Обновите мост и создайте новую публикацию.');
                         result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>publishProjectSnapshot({projectId:current.project_id!,bindingId:current.payload.bindingId!,snapshotId:current.payload.snapshotId!,snapshotProtocol:'project-snapshots-v1'},authorize,update));
@@ -340,7 +342,7 @@ export async function runWorker(): Promise<void> {
                             ...(current.payload.installSet ? { packages: sortedRefs(current.payload.installSet.packages) } : {}),
                             bindingId: current.payload.bindingId, unchanged: true,
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
-                        } : workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
+                        } : current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureResult(error):workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
                             state: 'failed', result, message: current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });

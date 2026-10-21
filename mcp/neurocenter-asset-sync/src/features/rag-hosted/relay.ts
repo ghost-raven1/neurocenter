@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {timingSafeEqual} from 'node:crypto';
-import {hub,readState,type Credentials} from '../../bridge/state.js';
+import {apiHub,readState,type Credentials} from '../../bridge/state.js';
 import {assertHostedInstallation,requestProfile,type HostedProfile,type HostedRequestProfile} from './profile.js';
 const budget=1024*1024;
 export const hostedInstallationIdentity=(profile:HostedRequestProfile)=>({kind:profile.pkg.plugin.kind,id:profile.pkg.plugin.id,version:profile.pkg.plugin.version,manifest:profile.pkg.manifest.sha256});
@@ -16,7 +16,7 @@ export async function inferHosted(source:HostedRequestProfile,input:string|strin
     const profile=structuredClone(source);
     await assertHostedInstallation(profile);
     const credentials=await readState<Credentials>('credentials');if(!credentials?.token)throw new Error('Компьютер не подключён.');
-    const response=await fetch(hub()+'/api/device-channel/embedding',{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+credentials.token},
+    const response=await fetch(apiHub()+'/api/device-channel/embedding',{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+credentials.token},
         body:JSON.stringify({installation:hostedInstallationIdentity(profile),projectId:profile.projectId,bindingId:profile.bindingId,instanceId:profile.instanceId,expectedRevision:profile.selection.revision,expectedModelPin:profile.selection.modelPin,model:profile.selection.profile.model,input}),signal});
     const length=Number(response.headers.get('content-length'));if(length>64*65535*24){await response.body?.cancel();throw new Error('Ответ модели превышает лимит.');}
     if(!response.ok){await response.body?.cancel();throw Object.assign(new Error('Серверная модель недоступна или подключение изменилось. Проверьте модель и права на проект.'),{status:response.status});}

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
-import {hub} from '../bridge/state.js';
+import {hub,apiHub} from '../bridge/state.js';
 import {atomicText,syncDirectory} from '../bridge/atomic-file.js';
 import {readBoundedSnapshot} from '../bridge/read-bounded.js';
 import {withGlobalConfigLock} from './global-config-lock.js';
@@ -26,7 +26,7 @@ export async function installBridgeGlobal(): Promise<{
 }> {
     const indexJs = fileURLToPath(new URL('../index.js', import.meta.url));
     const nodePath = process.execPath;
-    const entry = { type: 'local', enabled: true, command: [nodePath, indexJs],environment:{NEUROCENTER_URL:hub()} };
+    const entry = { type: 'local', enabled: true, command: [nodePath, indexJs],environment:{NEUROCENTER_URL:hub(),...(apiHub()===hub()?{}:{NEUROCENTER_API_URL:apiHub()})} };
     const dir = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode');
     await fs.mkdir(dir,{recursive:true});
     const selected=await selectedConfig(dir);
