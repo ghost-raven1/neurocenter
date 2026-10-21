@@ -10,7 +10,7 @@ Descriptor `schemaVersion: 1` содержит стабильный `id`, `kind`
 
 Локальная ZIP-загрузка использует `source.type: archive` с SHA-256 и числом байтов исходного архива. Runtime artifact может не иметь URL: тогда его байты обязаны уже находиться в проверенном серверном SHA-кэше. Отсутствующий локальный blob даёт ошибку до сетевых загрузок; адрес GitHub не выдумывается. Публикация реального транспорта создаёт новую source-версию и сохраняет нативные package pins.
 
-Общий пакет `@neurocenter/asset-contract` проверяет source envelope у producer и importer. Нативные toolpkg, skillpkg, model bundle и bridge release остаются форматами установки своих runtime; отдельного альтернативного source-формата у них нет. Проверка envelope не заменяет проверку нативного пакета перед записью.
+Общий пакет `@neurocenter/asset-contract` проверяет source envelope у producer и importer. Нативные toolpkg, skillpkg, model bundle и bridge release остаются форматами установки своих runtime; отдельного альтернативного source-формата у них нет. Агент имеет собственный `kind: agent` с промптом и настройками OpenCode, доставляемыми inline; [общий шаблон и настройки проекта](agents-opencode-2026-10-21.md) версионируются отдельно. Проверка envelope не заменяет проверку нативного пакета перед записью.
 
 ## Импорт и установка
 
