@@ -7,6 +7,7 @@ import { ModelInferenceController, modelInferenceBody } from '../src/models/infe
 import type { ModelsService } from '../src/models/models.service';
 import type { OllamaClient } from '../src/models/ollama-client';
 import type { IModel } from '../src/models/model.types';
+import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
 
 const png = Buffer.from('89504e470d0a1a0a0000', 'hex').toString('base64');
 const model = (capability: IModel['capability'] = 'embedding'): IModel => ({
@@ -66,6 +67,32 @@ describe('Ограниченный запрос модели', () => {
 });
 
 describe('Права и совместимость inference API', () => {
+    it.each(['embed', 'embeddings', 'chat', 'completions'] as const)('Проверяет ожидаемый semantic pin перед %s без подмены модели', async method => {
+        const capability = method === 'embed' || method === 'embeddings' ? 'embedding' : 'chat';
+        const { controller, runtime, request } = harness(capability), card = model(capability);
+        runtime.infer.mockResolvedValue({ model: card.model, embeddings: [[1, 0, -1]], message: { role: 'assistant', content: 'Ответ' }, done_reason: 'stop' } as never);
+        const body = capability === 'embedding' ? { input: ['Текст'] } : { messages: [{ role: 'user', content: 'Привет' }] };
+        await expect(controller[method](card.id, request as unknown as Request, body, undefined, 'a'.repeat(64))).rejects.toBeInstanceOf(ConflictException);
+        expect(runtime.infer).not.toHaveBeenCalled();
+        await expect(controller[method](card.id, request as unknown as Request, body, undefined, projectEmbeddingPin(card))).resolves.toBeTruthy();
+        expect(runtime.infer).toHaveBeenCalledOnce();
+    });
+    it.each(['', 'a', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64), 42, null, ['a'.repeat(64)], { pin: 'a'.repeat(64) }])('Отклоняет некорректный expectedModelPin %# до runtime', async pin => {
+        const { controller, models, runtime, request } = harness('chat');
+        await expect(controller.completions('model-one', request as unknown as Request, { messages: [{ role: 'user', content: 'Привет' }] }, undefined, pin as unknown as string)).rejects.toBeInstanceOf(BadRequestException);
+        expect(runtime.infer).not.toHaveBeenCalled(); expect(models.getUsable).not.toHaveBeenCalled();
+    });
+    it('Ожидаемый pin не меняется от оформления карточки, но защищает от новой проверенной удалённой конфигурации', async () => {
+        const { controller, models, runtime, request } = harness('chat');
+        const original = { ...model('chat'), runtime: 'remote-openai', modelVersion: '1', verificationSha256: 'a'.repeat(64) } as IModel;
+        const body = { messages: [{ role: 'user', content: 'Привет' }] }, pin = projectEmbeddingPin(original);
+        models.getUsable.mockResolvedValue({ ...original, name: 'Новое имя', description: 'Новое описание', revision: 2 });
+        runtime.infer.mockResolvedValue({ message: { role: 'assistant', content: 'Ответ' }, done_reason: 'stop' } as never);
+        await expect(controller.completions(original.id, request as unknown as Request, body, undefined, pin)).resolves.toBeTruthy();
+        models.getUsable.mockResolvedValue({ ...original, verificationSha256: 'b'.repeat(64), revision: 3 });
+        await expect(controller.completions(original.id, request as unknown as Request, body, undefined, pin)).rejects.toBeInstanceOf(ConflictException);
+        expect(runtime.infer).toHaveBeenCalledOnce();
+    });
     it.each(['rights', 'model'] as const)('Поздний отзыв %s не выдаёт рассчитанный ответ', async change => {
         const { controller, models, runtime, request } = harness();
         runtime.infer.mockImplementation(async () => {

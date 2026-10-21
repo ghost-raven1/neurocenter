@@ -1,0 +1,22 @@
+.model-chat {
+    max-width: calc(100vw - 24px);
+    .ant-modal-title { padding-right: 24px; overflow-wrap: anywhere; }
+    .ant-modal-body { display: flex; flex-direction: column; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); padding: 20px 24px; }
+    &__scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; > .ant-typography { min-width: 0; overflow-wrap: anywhere; } > .ant-btn { flex-shrink: 0; } }
+    &__hint.ant-typography { margin: 8px 0 14px; font-size: 12px; }
+    &__notice { margin-bottom: 12px; }
+    &__history { min-height: 120px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; flex: 1; > .ant-empty { margin: 28px auto; } .ant-empty-image { height: 40px; font-size: 28px; color: @brand-primary; } }
+    &__turn { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+    &__message { min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #e2e8f0; > .ant-typography { display: block; margin-bottom: 5px; font-size: 12px; color: #617387; } &_user { margin-left: 32px; background: @brand-tint; } &_assistant { margin-right: 32px; background: #fff; } }
+    &__prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
+    &__markdown { overflow-wrap: anywhere; line-height: 1.65; > :last-child { margin-bottom: 0; } pre { max-width: 100%; overflow-x: auto; padding: 12px; border-radius: 6px; background: #f4f6f9; } code { white-space: pre-wrap; overflow-wrap: anywhere; } pre code { white-space: pre; overflow-wrap: normal; } h1,h2,h3,h4,h5,h6 { font-size: 16px; margin: 14px 0 8px; } blockquote { margin-left: 0; padding-left: 12px; border-left: 3px solid #ccd9e5; } table { border-collapse: collapse; } td,th { padding: 6px 10px; border: 1px solid #dce5ed; } }
+    &__table { max-width: 100%; overflow-x: auto; }
+    &__pending { display: flex; align-items: center; gap: 8px; color: #617387; }
+    &__retry { margin-top: 10px; }
+    &__composer { flex-shrink: 0; border-top: 1px solid #edf1f5; padding-top: 14px; }
+    &__label { display: block; margin-bottom: 6px; font-weight: 500; }
+    &__composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; > .ant-typography { font-size: 12px; } > .ant-btn { flex-shrink: 0; } }
+}
+@media (max-width: 575px) {
+    .model-chat { .ant-modal-body { padding: 16px; max-height: calc(100vh - 130px); max-height: calc(100dvh - 130px); } &__scope { align-items: flex-start; flex-wrap: wrap; } &__message { padding: 10px; &_user { margin-left: 12px; } &_assistant { margin-right: 12px; } } &__composer-actions { align-items: flex-end; > .ant-typography { max-width: 160px; } } }
+}

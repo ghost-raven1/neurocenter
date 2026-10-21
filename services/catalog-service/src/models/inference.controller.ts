@@ -67,23 +67,29 @@ export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, o
 export class ModelInferenceController {
     constructor(private readonly models: ModelsService, @Inject(ModelRuntime) private readonly runtime: IModelInferenceRuntime) {}
     @Post(':id/ollama/api/embed')
-    embed(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string) {
-        return this.run(id, request, input, 'embed', false, projectId);
+    embed(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string, @Query('expectedModelPin') expectedModelPin?: string) {
+        return this.run(id, request, input, 'embed', false, projectId, expectedModelPin);
     }
     @Post(':id/ollama/api/chat')
-    chat(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string) {
-        return this.run(id, request, input, 'chat', false, projectId);
+    chat(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string, @Query('expectedModelPin') expectedModelPin?: string) {
+        return this.run(id, request, input, 'chat', false, projectId, expectedModelPin);
     }
     @Post(':id/ollama/v1/embeddings')
-    embeddings(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string) {
-        return this.run(id, request, input, 'embed', true, projectId);
+    embeddings(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string, @Query('expectedModelPin') expectedModelPin?: string) {
+        return this.run(id, request, input, 'embed', true, projectId, expectedModelPin);
     }
     @Post(':id/ollama/v1/chat/completions')
-    completions(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string) {
-        return this.run(id, request, input, 'chat', true, projectId);
+    completions(@Param('id') id: string, @Req() request: Request, @Body() input: unknown, @Query('projectId') projectId?: string, @Query('expectedModelPin') expectedModelPin?: string) {
+        return this.run(id, request, input, 'chat', true, projectId, expectedModelPin);
     }
-    private async run(id: string, request: Request, input: unknown, endpoint: 'embed' | 'chat', openai: boolean, projectId?: string) {
+    /** Pin снимка UI не позволяет отправить старый диалог в уже изменённую семантику модели. */
+    private async run(id: string, request: Request, input: unknown, endpoint: 'embed' | 'chat', openai: boolean, projectId?: string, expectedModelPin?: string) {
+        if (expectedModelPin !== undefined && (typeof expectedModelPin !== 'string' || !/^[a-f0-9]{64}$/.test(expectedModelPin))) {
+            throw new BadRequestException('Передайте корректный SHA-256 ожидаемой модели.');
+        }
         const model = await this.models.getUsable(id, request, projectId);
+        const modelPin = projectEmbeddingPin(model);
+        if (expectedModelPin !== undefined && expectedModelPin !== modelPin) throw new ConflictException('Модель изменилась. Обновите каталог и начните новый диалог.');
         if (endpoint === 'embed' && model.capability !== 'embedding' || endpoint === 'chat' && model.capability === 'embedding') {
             throw new BadRequestException('Протокол запроса не соответствует модели.');
         }
@@ -98,7 +104,7 @@ export class ModelInferenceController {
             abort.signal.throwIfAborted();
             const result = await this.runtime.infer(model, endpoint, body, abort.signal);
             const current = await this.models.getUsable(id, request, projectId);
-            if (projectEmbeddingPin(current) !== projectEmbeddingPin(model)) throw new ConflictException('Модель изменилась во время запроса. Обновите подключение.');
+            if (projectEmbeddingPin(current) !== modelPin) throw new ConflictException('Модель изменилась во время запроса. Обновите подключение.');
             if (!openai) { return result; }
             if (endpoint === 'embed') {
                 if (!Array.isArray(result.embeddings)) { throw new Error('Некорректные векторы'); }

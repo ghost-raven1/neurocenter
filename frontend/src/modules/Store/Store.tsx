@@ -339,7 +339,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 message={projectCatalogReady ? 'Не удалось обновить каталог проекта — показаны предыдущие данные' : 'Каталог проекта не загружен'}
                 description={projectCatalogError}
                 action={<Button size="small" loading={projectLoading} onClick={() => { void loadProject(); }}>Повторить загрузку каталога</Button>} />}
-            <CatalogTabs projects={projects} bridge={bridge} scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} isMain={isMain} tools={<>
+            <CatalogTabs projects={projects} bridge={bridge} scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} canChat={isMain || canInstall} isMain={isMain} tools={<>
             <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}

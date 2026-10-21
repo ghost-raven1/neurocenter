@@ -18,6 +18,7 @@ import {forwardToolAssetDocument,forwardToolSupply} from './tool-supply-stream';
 import {featureFlagFailure,requiredFeatureFlag} from '../features/feature-flag-gate';
 import {awaitEmbedding} from './embedding-deadline';
 import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
+import {forwardModelInference,modelInferenceRoute} from './model-inference-forward';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -54,7 +55,11 @@ export class ProxyService {
      */
     public async forward(req: Request, res: Response): Promise<void> {
         if(req.path.startsWith('/api/device-channel/')){await this.deviceChannel(req,res);return;}
+        const inference=modelInferenceRoute((req.method||'GET').toUpperCase(),canonicalAccessRoute(req.path));
+        const inferenceOpen=()=>!inference||!req.aborted&&!res.destroyed&&!res.writableEnded;
+        if(!inferenceOpen())return;
         const auth = await this.authGuard.authenticate(req);
+        if(!inferenceOpen())return;
 
         if (!auth) {
             res.status(401).json({ error: 'unauthorized' });
@@ -99,6 +104,7 @@ export class ProxyService {
                 email:auth.email, activeRole:auth.activeRole, method, path, query:req.query,
                 body:payload ? {projectKey:payload.projectKey,projectName:payload.projectName,path:payload.path,role:payload.role} : {},
             },{headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN || ''}});
+            if(!inferenceOpen())return;
             if (decision.status !== 201 && decision.status !== 200) {
                 res.status(decision.status === 403 ? 403 : 503).json({message:'Не удалось проверить доступ к ресурсу.'}); return;
             }
@@ -106,6 +112,7 @@ export class ProxyService {
             const flag=requiredFeatureFlag(method,path,req.body);
             if(flag) {
                 const failure=await featureFlagFailure(this.http,this.featureFlagsUrl,flag);
+                if(!inferenceOpen())return;
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
@@ -124,18 +131,19 @@ export class ProxyService {
             if(['GET','HEAD'].includes(method)&&/\/backups\/[^/]+\/download\/*$/.test(path)){
                 await forwardBackupDownload(this.http,`${upstreamBase}${path}`,this.buildHeaders(req.headers,auth),req,res);return;
             }
-            const upstream = await this.http.request({
+            const upstreamRequest={
                 method,
                 ...(method==='POST'&&supplyPath==='/api/bridge-source/check'?{timeout:60000}:{}),
                 // Source inspection chains external reads; leave time to return before the client's 90 s deadline.
                 ...(method === 'GET' && /^\/api\/tool-builds\/(?:repository|npm)$/.test(supplyPath || '') ? {timeout: 85000} : {}),
-                ...(/^\/api\/models\/[^/]+\/ollama\//.test(path) ? {timeout: 610000, maxContentLength: 8 * 1024 * 1024} : {}),
-                responseType: 'json',
+                responseType: 'json' as const,
                 url: `${upstreamBase}${coordinatedRagSync ? '/api/rag/sync' : path}`,
                 headers: this.buildHeaders(req.headers, auth),
                 params: req.query,
                 data: req.body,
-            });
+            };
+            const upstream = inference?await forwardModelInference(this.http,upstreamRequest,req,res):await this.http.request(upstreamRequest);
+            if(!upstream)return;
 
             res.status(upstream.status);
             if (typeof upstream.headers['content-disposition']==='string') { res.setHeader('content-disposition',upstream.headers['content-disposition']); }
@@ -151,6 +159,7 @@ export class ProxyService {
             else res.send(body);
             if(upstream.status>=200&&upstream.status<300&&!['GET','HEAD','OPTIONS'].includes(method)&&!/^\/api\/models\/[^/]+\/ollama\//.test(path)){this.live.mutation(path,auth.email,upstream.data as Record<string,unknown>,method);}
         } catch (error) {
+            if(!inferenceOpen())return;
             // eslint-disable-next-line no-console
             console.error('[api-gateway] proxy error:', error instanceof Error ? error.message : 'upstream-unavailable');
             res.status(502).json({ error: 'upstream-unavailable' });

@@ -11,10 +11,11 @@ interface IProps {
     canHost: boolean; busy: boolean; onAssign: () => void; onView: () => void;
     disabled?: boolean; onEdit?: () => void; onRemove?: () => void; onConfigure?: () => void;
     assignmentUnavailableReason?: string;onConnect?:()=>void;connectionUnavailableReason?:string;
+    onChat?: () => void; chatUnavailableReason?: string;
 }
 
 /** В карточке видны назначение, подключение и главное действие; технические сведения открываются отдельно. */
-export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason }: IProps): JSX.Element {
+export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,onChat,chatUnavailableReason }: IProps): JSX.Element {
     const remote = model.runtime !== 'ollama';
     return <article className={`model-card${assigned ? ' model-card_assigned' : ''}`} aria-label={model.name}>
         <div className="model-card__heading">
@@ -36,6 +37,9 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
         <ModelHosting model={model} canManage={canHost && !disabled && !model.archivedAt} compact onManage={onConfigure ?? onView} />
         <div className="model-card__actions">
             <Button type="text" onClick={onView}>Подробнее</Button>
+            {model.capability !== 'embedding' && onChat && <Tooltip title={chatUnavailableReason}><span aria-label={chatUnavailableReason} tabIndex={chatUnavailableReason ? 0 : undefined}>
+                <Button aria-label={`Чат с моделью ${model.name}`} disabled={busy || disabled || !!chatUnavailableReason} onClick={onChat}>Чат</Button>
+            </span></Tooltip>}
             {remote && canHost && !model.archivedAt && onConfigure && <Button disabled={busy || disabled}
                 aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>

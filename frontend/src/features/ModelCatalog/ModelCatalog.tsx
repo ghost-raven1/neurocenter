@@ -12,6 +12,8 @@ import { ModelDetails } from './ModelDetails';
 import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
 import { OpenCodeImportModal } from './OpenCodeImportModal';
+import { ModelChatModal } from '../ModelChat/ModelChatModal';
+import { modelChatUnavailableReason } from '../ModelChat/model';
 import { filterCatalogModels } from './modelCatalogState';
 import type { ICatalogModel, IRemoteConnectionHint } from './types';
 import { useModelCatalog } from './useModelCatalog';
@@ -23,10 +25,11 @@ export interface IModelCatalogProps {
     embedded?: boolean;
     canManage: boolean;
     isMain: boolean;
+    canChat?: boolean;
 }
 
 /** Проект получает право на модель; веса и общий хостинг не копируются в каждый проект. */
-export function ModelCatalog({ projectId, projectName, embedded, canManage, isMain }: IModelCatalogProps): JSX.Element {
+export function ModelCatalog({ projectId, projectName, embedded, canManage, isMain, canChat = isMain }: IModelCatalogProps): JSX.Element {
     const { scope, captureOwner } = useAuthRequestOwner();
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
     const embeddingTarget=useEmbeddingTarget(projectId);
@@ -37,6 +40,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [editing, setEditing] = useState<ICatalogModel | 'new' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
+    const [chatId, setChatId] = useState<string | null>(null);
     const [connectionHint, setConnectionHint] = useState<IRemoteConnectionHint>();
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
@@ -44,12 +48,19 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     useEffect(() => {
         if (previousScope.current === formScope) return;
         previousScope.current = formScope;
-        setViewId(null); setEditing(null); setConnection(null); setImporting(false); setConnectionHint(undefined); setError(''); setBusy(null);
+        setViewId(null); setEditing(null); setConnection(null); setImporting(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
     }, [formScope]);
     const lock = useRef(false);
     const assigned = useMemo(() => new Set(catalog?.assignedModelIds ?? []), [catalog]);
     const shown = useMemo(() => catalog ? filterCatalogModels(catalog, query, !!projectId && assignedOnly) : [], [catalog, query, projectId, assignedOnly]);
     const viewing = catalog?.items.find(model => model.id === viewId);
+    const chatting = catalog?.items.find(model => model.id === chatId);
+    useEffect(() => {
+        if (!chatId || !catalog) return;
+        if (!chatting || !canChat || !!projectId && !assigned.has(chatId)) {
+            setChatId(null); setError('Чат закрыт: модель больше недоступна в текущем профиле или проекте.');
+        }
+    }, [chatId, catalog, chatting, canChat, projectId, assigned]);
     const archived = (): void => { setViewId(null); void refresh(); };
     const assignmentReason=(model:ICatalogModel,connecting=false):string=>{
         if(loading)return 'Дождитесь загрузки актуального каталога моделей.';
@@ -111,7 +122,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)}
                     canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
                     onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
-                    onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)} />
+                    onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)}
+                    onChat={() => setChatId(model.id)} chatUnavailableReason={modelChatUnavailableReason(model, canChat, !!projectId, assigned.has(model.id))} />
             </Col>)}
         </Row> : <Empty description={query ? 'По этому запросу модели не найдены' : assignedOnly && projectId ? 'В проект пока не добавлены модели' : 'Пока нет доступных моделей'}>
             {(query || assignedOnly && canManage) && <Button onClick={() => { setQuery(''); setAssignedOnly(false); }}>Показать все модели</Button>}
@@ -126,6 +138,9 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 if (saved && saved.runtime !== 'ollama' && !saved.verificationSha256) setConnection(saved);
             }} />}
         {isMain && connection && <RemoteConnectionModal key={`${connection.id}:${connection.revision}`} model={connection} hint={connectionHint} onClose={() => { setConnection(null); setConnectionHint(undefined); }} onSaved={refresh} />}
+        {chatting && canChat && (!projectId || assigned.has(chatting.id)) && <ModelChatModal key={JSON.stringify([scope, projectId, chatting.id])} model={chatting} projectId={projectId} projectName={projectName}
+            unavailableReason={loading ? 'Дождитесь обновления каталога перед следующим запросом.' : loadError ? 'Обновите каталог перед следующим запросом.'
+                : modelChatUnavailableReason(chatting, canChat, !!projectId, assigned.has(chatting.id))} onClose={() => setChatId(null)} />}
         {isMain && importing && projectId && <OpenCodeImportModal key={`${scope}:${projectId}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
             const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}

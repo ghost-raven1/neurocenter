@@ -17,6 +17,18 @@ const render = (canHost = false, canAssign = false, assigned = true, projectSele
 beforeEach(() => { ui.hosting = { state: 'ready', message: 'Проверка пройдена', checkedAt: '2026-10-19T01:00:00Z' }; });
 
 describe('Модели в общем и проектном каталоге', () => {
+    it('Chat и vision предлагают текстовый чат с объяснением недоступности, embedding — только поиск', () => {
+        const props = { model, canHost: false, canAssign: false, assigned: true, projectSelected: true, busy: false, onAssign: vi.fn(), onView: vi.fn(), onChat: vi.fn() };
+        expect(renderToStaticMarkup(createElement(ModelCard, props))).not.toContain('Чат с моделью');
+        for (const capability of ['chat', 'vision'] as const) {
+            const card = { ...model, capability, archivedAt: '2026-10-21' };
+            const html = renderToStaticMarkup(createElement(ModelCard, { ...props, model: card }));
+            expect(html).toContain('Чат с моделью Поиск по проекту');
+            const blocked = renderToStaticMarkup(createElement(ModelCard, { ...props, model: card, chatUnavailableReason: 'Сначала проверьте модель.' }));
+            expect(blocked).toContain('Сначала проверьте модель.');
+            expect(blocked).toMatch(/<button[^>]*aria-label="Чат с моделью Поиск по проекту"[^>]*disabled=""/);
+        }
+    });
     it.each(['ready', 'stopped', 'unavailable', 'error'] as const)('Удалённая модель в состоянии %s всегда открывает настройки API из карточки', state => {
         ui.hosting = { state, message: '', checkedAt: null };
         const props = { model: { ...model, runtime: 'remote-openai' as const }, canHost: true, canAssign: false,
