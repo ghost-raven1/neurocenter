@@ -89,9 +89,14 @@ try{
   assert.equal(projectRequest.status,'needs_info');assert.equal((await repo.get(owner,projectRequest.id)).permissions.canResubmit,true);
   await rejects(repo.action(reviewer,projectRequest.id,action(projectRequest,'start')),409);
   projectRequest=await repo.action(owner,projectRequest.id,action(projectRequest,'resubmit'));
+  const submittedRevision=projectRequest.revision;
   projectRequest=await repo.action(reviewer,projectRequest.id,action(projectRequest,'start'));
   assert.equal(projectRequest.status,'in_progress');assert.equal(projectRequest.permissions.canEdit,false);
+  const started=await repo.get(owner,projectRequest.id);
+  await rejects(repo.edit(owner,projectRequest.id,{requestKey:randomUUID(),expectedRevision:submittedRevision,title:'Stale',description:'Keep this draft'}),409);
+  assert.deepEqual(await repo.get(owner,projectRequest.id),started);
   await rejects(repo.edit(owner,projectRequest.id,{requestKey:randomUUID(),expectedRevision:projectRequest.revision,title:'Late',description:'Late'}),403);
+  assert.deepEqual(await repo.get(owner,projectRequest.id),started);
  });
  await check('Completion rejects missing, wrong-kind or unassigned targets and invalid transitions without partial history',async()=>{
   const count=projectRequest.history.length;

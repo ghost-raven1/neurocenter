@@ -4,12 +4,13 @@ import {useEffect,useId,useRef,useState} from 'react';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 import {errorMessage} from '../../common/utils/errorMessage';
 import {catalogRequestsApi} from './api';
-import {requestEditPayload,requestPayload,requireRequest} from './model';
+import {requestEditPayload,requestPayload,requireRequest,requireRequestDetail} from './model';
 import {requestAssets,requestKinds,requestSourceUrl} from './presentation';
 import {createRequestKeys} from './requestKeys';
 import {readPendingCreation,savePendingCreation,clearPendingCreation} from './pendingCreation';
 import {RequestTargetPicker} from './RequestTargetPicker';
-import type {ICatalogRequest,IRequestAssetType,IRequestCreate,IRequestProject} from './types';
+import {RequestEditConflict} from './RequestEditConflict';
+import type {ICatalogRequest,IRequestAssetType,IRequestCreate,IRequestProject,IRequestDetail} from './types';
 
 interface IValues extends Omit<IRequestCreate,'target'> {targetId?:string}
 interface IProps {open:boolean;projects:IRequestProject[];projectId?:string;assetType?:IRequestAssetType;request?:ICatalogRequest;onClose:()=>void;onDenied?:()=>void;onSaved:(value:ICatalogRequest)=>void}
@@ -23,7 +24,18 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
     const selectedType=Form.useWatch('assetType',form)??request?.assetType??assetType;
     const selectedProject=Form.useWatch('projectId',form)??request?.projectId??projectId;
     const [busy,setBusy]=useState(false),[error,setError]=useState(''),[unconfirmed,setUnconfirmed]=useState(false),[storageError,setStorageError]=useState(false),[storageRetry,setStorageRetry]=useState(0);
-    const lock=useRef(false),keys=useRef(createRequestKeys()),pending=useRef<{payload:IRequestCreate;key:string}>(),dirty=useRef(false);
+    const lock=useRef(false),keys=useRef(createRequestKeys()),pending=useRef<{payload:IRequestCreate;key:string;revision?:number}>(),dirty=useRef(false);
+    const [editBase,setEditBase]=useState(request),[conflicted,setConflicted]=useState(false),[latest,setLatest]=useState<IRequestDetail|null>(null),[latestLoading,setLatestLoading]=useState(false),[latestError,setLatestError]=useState(''),[failedDraft,setFailedDraft]=useState('');
+    const conflictRead=useRef(0);
+    const checkLatest=async():Promise<void>=>{
+        if(!request)return;const owns=captureOwner(),read=++conflictRead.current,current=()=>owns()&&read===conflictRead.current;
+        if(!owns())return;setLatest(null);setLatestLoading(true);setLatestError('');
+        try{const value=requireRequestDetail(await catalogRequestsApi.get(request.id));if(current())setLatest(value);}
+        catch(cause){if(current()){
+            if(isAxiosError(cause)&&[401,403,404].includes(cause.response?.status??0)){pending.current=undefined;dirty.current=false;form.resetFields();onDenied?.();onClose();return;}
+            setLatestError(errorMessage(cause,'Не удалось проверить актуальную заявку. Ваши поля сохранены.'));
+        }}finally{if(current())setLatestLoading(false);}
+    };
     const context=JSON.stringify([assetType,projectId??null]),previousContext=useRef(context);
     useEffect(()=>{
         if(request||previousContext.current===context)return;
@@ -39,14 +51,15 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
     };
     useEffect(()=>{if(open)restore();},[open,scope,storageRetry]);
     const submit=async(values:IValues):Promise<void>=>{
-        const owns=captureOwner();if(!owns()||lock.current||storageError)return;
+        const owns=captureOwner();if(!owns()||lock.current||storageError||conflicted)return;
         if(!request&&!pending.current){try{if(readPendingCreation(scope)){restore();return;}}catch(cause){setStorageError(true);setError(errorMessage(cause,'Не удалось проверить предыдущую отправку.'));return;}}
         try{
             const payload=pending.current?.payload??requestPayload({...values,target:values.targetId?{type:values.assetType,id:values.targetId}:undefined});
-            const key=pending.current?.key??keys.current.forIntent(request?'edit:'+request.id:'create',{...payload,revision:request?.revision});
+            const revision=pending.current?.revision??editBase?.revision;
+            const key=pending.current?.key??keys.current.forIntent(request?'edit:'+request.id:'create',{...payload,revision});
             if(!request){try{savePendingCreation(scope,{schemaVersion:1,payload,key});}catch(cause){setStorageError(true);setError(errorMessage(cause,'Заявка не отправлена.'));return;}}
-            pending.current={payload,key};lock.current=true;setBusy(true);setError('');
-            const saved=request?await catalogRequestsApi.edit(request.id,requestEditPayload(payload),request.revision,key):await catalogRequestsApi.create(payload,key);
+            pending.current={payload,key,revision};lock.current=true;setBusy(true);setError('');
+            const saved=request?await catalogRequestsApi.edit(request.id,requestEditPayload(payload),revision!,key):await catalogRequestsApi.create(payload,key);
             requireRequest(saved);if(!owns())return;
             if(!request)clearPendingCreation(scope,key);
             pending.current=undefined;setUnconfirmed(false);keys.current.clear();dirty.current=false;form.resetFields();onSaved(saved);
@@ -56,6 +69,7 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
                 if(status===401||status===403){if(!request&&pending.current){try{clearPendingCreation(scope,pending.current.key);}catch{setStorageError(true);}}pending.current=undefined;dirty.current=false;form.resetFields();onDenied?.();onClose();return;}
                 const ambiguous=!!pending.current&&(status===undefined||status>=500||status===408);
                 setUnconfirmed(ambiguous);if(!ambiguous){if(!request&&pending.current){try{clearPendingCreation(scope,pending.current.key);}catch(storageCause){setStorageError(true);setUnconfirmed(true);setError(errorMessage(storageCause,'Не удалось обновить подтверждение.'));return;}}pending.current=undefined;}
+                if(request&&status===409){setConflicted(true);const values=form.getFieldsValue(true);setFailedDraft([values.title,values.description,values.sourceUrl].filter(Boolean).join('\n\n'));void checkLatest();}
                 setError(errorMessage(cause,request?'Не удалось сохранить заявку. Введённые данные сохранены.':'Не удалось подтвердить приём заявки.'));
             }
         }finally{lock.current=false;if(owns())setBusy(false);}
@@ -77,10 +91,12 @@ export function RequestFormModal({open,projects,projectId,assetType='plugin',req
             <Form.Item name="description" label="Описание" rules={[{required:true,whitespace:true,message:'Расскажите, что требуется и зачем'},{max:4000,message:'До 4000 символов'}]}><Input.TextArea rows={4} showCount maxLength={4000} placeholder={kind==='issue'?'Что произошло, как повторить и что ожидалось':'Что нужно сделать и для какой задачи'}/></Form.Item>
             <Form.Item name="sourceUrl" label="Ссылка на источник" extra="Необязательно. Ссылка сохраняется для рассмотрения; скачивание и установка не запускаются." rules={[{validator:(_,value:string|undefined)=>{try{requestSourceUrl(value);return Promise.resolve();}catch(cause){return Promise.reject(cause);}}}]}><Input placeholder="https://github.com/owner/repository" maxLength={2048}/></Form.Item>
             {error&&<Alert role="alert" showIcon type="error" message={error}/>}
+            {conflicted&&<RequestEditConflict latest={latest} loading={latestLoading} error={latestError} draft={failedDraft} disabled={busy||unconfirmed} onRefresh={()=>{void checkLatest();}} onUseLatest={()=>{if(latest?.permissions.canEdit&&!busy&&!unconfirmed&&!latestError){setEditBase(latest);setConflicted(false);setError('');pending.current=undefined;}}}/>}
+            {request&&editBase&&editBase.revision!==request.revision&&!conflicted&&<Alert type="info" showIcon message={'Выбрана актуальная версия '+editBase.revision} description="Ваши поля сохранены. Нажмите «Сохранить изменения», чтобы отправить их с проверкой этой версии."/>}
             {storageError&&<Alert type="warning" showIcon message="Новая отправка приостановлена" description="Предыдущая заявка могла быть принята. Сначала проверьте сохранённый запрос и список своих заявок." action={<Button disabled={busy} onClick={()=>setStorageRetry(value=>value+1)}>Повторить проверку отправки</Button>}/>}
             {unconfirmed&&<Alert type="warning" showIcon message="Подтверждение не получено" description="Повторите отправку: используется тот же запрос, поэтому вторая заявка не создаётся. До подтверждения его поля заблокированы."/>}
             {request&&<Typography.Paragraph type="secondary">Сохранение уточнения не отправляет заявку повторно. После проверки нажмите «Отправить на рассмотрение» в её карточке.</Typography.Paragraph>}
-            <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={onClose}>Закрыть</Button><Button type="primary" disabled={busy||storageError} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void submit(form.getFieldsValue(true));}else form.submit();}}>{unconfirmed?'Проверить / повторить предыдущую отправку':request?'Сохранить изменения':'Отправить заявку'}</Button></Space>
+            <Space wrap className="catalog-requests__form-actions"><Button disabled={busy} onClick={onClose}>Закрыть</Button><Button type="primary" disabled={busy||storageError||conflicted} loading={busy} onClick={()=>{if(unconfirmed&&pending.current){void submit(form.getFieldsValue(true));}else form.submit();}}>{unconfirmed?'Проверить / повторить предыдущую отправку':request?'Сохранить изменения':'Отправить заявку'}</Button></Space>
         </Form>
     </Modal>;
 }

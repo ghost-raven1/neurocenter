@@ -4,7 +4,7 @@ import {beforeEach,afterEach,describe,expect,it,vi} from 'vitest';
 import {RequestFormModal} from '../src/features/CatalogRequests/RequestFormModal';
 import {catalogRequestsApi} from '../src/features/CatalogRequests/api';
 import {pendingCreationKey,readPendingCreation} from '../src/features/CatalogRequests/pendingCreation';
-import {catalogRequest,requestInput} from './catalog-request-fixtures';
+import {catalogRequest,requestInput,requestDetail} from './catalog-request-fixtures';
 
 const ui=vi.hoisted(()=>({cursor:0,slots:[] as Array<{value?:unknown;deps?:unknown[]}>,effects:[] as Array<()=>void>,owner:'author',epoch:0,initialized:false,
     values:{} as Record<string,unknown>,finish:undefined as ((value:Record<string,unknown>)=>void)|undefined,change:undefined as (()=>void)|undefined,buttons:new Map<string,{click?:()=>void;disabled?:boolean}>(),resets:0,
@@ -20,11 +20,11 @@ vi.mock('react',async original=>({...await original<typeof import('react')>(),
 }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const owner=ui.owner,epoch=ui.epoch;return{scope:owner,captureOwner:()=>()=>owner===ui.owner&&epoch===ui.epoch};}}));
 vi.mock('../src/features/CatalogRequests/RequestTargetPicker',()=>({RequestTargetPicker:()=>null}));
-vi.mock('../src/features/CatalogRequests/api',()=>({catalogRequestsApi:{create:vi.fn(),edit:vi.fn()}}));
+vi.mock('../src/features/CatalogRequests/api',()=>({catalogRequestsApi:{create:vi.fn(),edit:vi.fn(),get:vi.fn()}}));
 vi.mock('antd',()=>{
     const content=({children}:{children?:ReactNode})=>children;
     const Form=Object.assign(({children,onFinish,onValuesChange,initialValues}:{children?:ReactNode;onFinish:typeof ui.finish;onValuesChange:()=>void;initialValues:Record<string,unknown>})=>{ui.finish=onFinish;ui.change=onValuesChange;if(!ui.initialized){ui.initialized=true;ui.values={...initialValues};}return children;},{useForm:()=>[ui.form],useWatch:(key:string)=>ui.values[key],Item:content});
-    return {Form,Input:Object.assign(()=>null,{TextArea:()=>null}),Modal:content,Select:()=>null,Space:content,Typography:{Paragraph:content},Alert:({message,description,action}:{message:ReactNode;description?:ReactNode;action?:ReactNode})=>createElement('div',null,message,description,action),Button:({children,onClick,disabled}:{children?:ReactNode;onClick?:()=>void;disabled?:boolean})=>{ui.buttons.set(String(children),{click:onClick,disabled});return children;}};
+    return {Form,Input:Object.assign(()=>null,{TextArea:()=>null}),Modal:content,Select:()=>null,Space:content,Spin:content,Tag:content,Descriptions:Object.assign(content,{Item:content}),Typography:{Paragraph:content,Title:content},Alert:({message,description,action}:{message:ReactNode;description?:ReactNode;action?:ReactNode})=>createElement('div',null,message,description,action),Button:({children,onClick,disabled}:{children?:ReactNode;onClick?:()=>void;disabled?:boolean})=>{ui.buttons.set(Array.isArray(children)?children.join(''):String(children),{click:onClick,disabled});return children;}};
 });
 const records=new Map<string,string>(),onClose=vi.fn(),onSaved=vi.fn();let deniedWrite=false;
 const flush=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
@@ -32,9 +32,9 @@ function render(request?:ReturnType<typeof catalogRequest>,context:{assetType?:'
 function resetInstance(){ui.cursor=0;ui.slots=[];ui.effects=[];ui.initialized=false;ui.values={};ui.buttons.clear();ui.fields=[];}
 function fill(changes:Record<string,unknown>={}){ui.values={...requestInput(),targetId:undefined,...changes};}
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>{resolve=done;});return{promise,resolve};}
-beforeEach(()=>{vi.clearAllMocks();resetInstance();ui.owner='author';ui.epoch=0;ui.resets=0;records.clear();deniedWrite=false;
+beforeEach(()=>{vi.resetAllMocks();resetInstance();ui.owner='author';ui.epoch=0;ui.resets=0;records.clear();deniedWrite=false;
     vi.stubGlobal('sessionStorage',{getItem:(key:string)=>records.get(key)??null,setItem:(key:string,value:string)=>{if(deniedWrite)throw Error('QuotaExceededError');records.set(key,value);},removeItem:(key:string)=>records.delete(key)});
-    vi.mocked(catalogRequestsApi.create).mockResolvedValue(catalogRequest() as never);vi.mocked(catalogRequestsApi.edit).mockResolvedValue(catalogRequest({revision:2}) as never);
+    vi.mocked(catalogRequestsApi.get).mockResolvedValue(requestDetail());vi.mocked(catalogRequestsApi.create).mockResolvedValue(catalogRequest() as never);vi.mocked(catalogRequestsApi.edit).mockResolvedValue(catalogRequest({revision:2}) as never);
 });
 afterEach(()=>vi.unstubAllGlobals());
 
@@ -79,6 +79,26 @@ describe('Явная подача и восстановление заявки',
     });
     it('403 clears private form fields and does not pretend that submission succeeded',async()=>{
         vi.mocked(catalogRequestsApi.create).mockRejectedValueOnce({isAxiosError:true,response:{status:403}});render();fill();ui.finish!(ui.values);await flush();expect(onSaved).not.toHaveBeenCalled();expect(onClose).toHaveBeenCalledOnce();expect(ui.resets).toBe(1);expect(readPendingCreation('author')).toBeNull();
+    });
+    it('After409 the current editable version is shown, but only explicit selection rebases the preserved draft',async()=>{
+        const original=catalogRequest(),latest=requestDetail({title:'ЧУЖОЕ НАЗВАНИЕ',description:'ЧУЖОЙ ТЕКСТ',revision:2});
+        vi.mocked(catalogRequestsApi.get).mockResolvedValue(latest);vi.mocked(catalogRequestsApi.edit).mockRejectedValueOnce({isAxiosError:true,response:{status:409,data:{message:'Заявка изменилась'}}}).mockResolvedValueOnce(requestDetail({revision:3}));
+        render(original);fill({description:'МОЙ ТЕКСТ'});ui.finish!(ui.values);await flush();const firstKey=vi.mocked(catalogRequestsApi.edit).mock.calls[0][3];
+        const html=render(original);expect(html).toContain('ЧУЖОЙ ТЕКСТ');expect(html).toContain('МОЙ ТЕКСТ');expect(ui.values.description).toBe('МОЙ ТЕКСТ');expect(ui.fields).toEqual([]);
+        expect(ui.buttons.get('Сохранить изменения')?.disabled).toBe(true);ui.finish!(ui.values);await flush();expect(catalogRequestsApi.edit).toHaveBeenCalledOnce();
+        ui.buttons.get('Использовать актуальную версию 2')!.click!();render(original);expect(catalogRequestsApi.edit).toHaveBeenCalledOnce();ui.finish!(ui.values);await flush();
+        const retry=vi.mocked(catalogRequestsApi.edit).mock.calls[1];expect(retry[1].description).toBe('МОЙ ТЕКСТ');expect(retry[2]).toBe(2);expect(retry[3]).not.toBe(firstKey);expect(onSaved).toHaveBeenCalledOnce();
+    });
+    it('Stale edit after review starts keeps copyable draft and forbids another save',async()=>{
+        const latest=requestDetail({status:'in_progress',revision:2,permissions:{canEdit:false,canCancel:true,canReview:false,canResubmit:false}});
+        vi.mocked(catalogRequestsApi.get).mockResolvedValue(latest);vi.mocked(catalogRequestsApi.edit).mockRejectedValueOnce({isAxiosError:true,response:{status:409}});
+        const original=catalogRequest();render(original);fill({description:'ТЕКСТ ДЛЯ КОПИРОВАНИЯ'});ui.finish!(ui.values);await flush();const html=render(original);
+        expect(html).toContain('Сейчас редактирование недоступно');expect(html).toContain('ТЕКСТ ДЛЯ КОПИРОВАНИЯ');expect(html).toContain('В работе');expect(ui.buttons.has('Использовать актуальную версию 2')).toBe(false);expect(ui.buttons.get('Сохранить изменения')?.disabled).toBe(true);
+        ui.finish!(ui.values);await flush();expect(catalogRequestsApi.edit).toHaveBeenCalledOnce();expect(ui.resets).toBe(0);
+    });
+    it('A403 while checking current edit version clears private fields and closes the form',async()=>{
+        vi.mocked(catalogRequestsApi.get).mockRejectedValueOnce({isAxiosError:true,response:{status:403}});vi.mocked(catalogRequestsApi.edit).mockRejectedValueOnce({isAxiosError:true,response:{status:409}});
+        render(catalogRequest());fill({description:'PRIVATE'});ui.finish!(ui.values);await flush();expect(ui.resets).toBe(1);expect(onClose).toHaveBeenCalledOnce();expect(onSaved).not.toHaveBeenCalled();
     });
     it('Owner edit409 keeps draft and expected revision; never silently rebases a newer version',async()=>{
         vi.mocked(catalogRequestsApi.edit).mockRejectedValueOnce({isAxiosError:true,response:{status:409,data:{message:'Заявка изменилась'}}});const original=catalogRequest();render(original);fill({description:'МОЙ ТЕКСТ'});ui.finish!(ui.values);await flush();

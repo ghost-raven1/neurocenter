@@ -99,8 +99,8 @@ export class CatalogRequestRepository {
  edit(actor:IAccessActor,id:string,raw:unknown):Promise<RequestDetail>{
   uuid(id);const input=editInput(raw);return this.mutate(actor,input.requestKey,'edit',{id,...input},async(db,current)=>{
    const before=await this.row(db,current,id,true);
-   if(!permissions(current,before).canEdit)throw new ForbiddenException('Редактировать можно свою новую заявку или заявку на доработке.');
    if(before.revision!==input.expectedRevision)throw new ConflictException('Заявка уже изменилась. Обновите её перед сохранением.');
+   if(!permissions(current,before).canEdit)throw new ForbiddenException('Редактировать можно свою новую заявку или заявку на доработке.');
    if(before.kind==='add'&&input.target||before.kind!=='add'&&!input.target)throw new BadRequestException('Обновление и проблема требуют карточку каталога.');
    const target=input.target?await checkedTarget(db,current,input.target,before.asset_type,before.project_id):null;
    const row=(await db.query<RequestRow>(`UPDATE catalog_requests SET title=$2,description=$3,source_url=$4,target=$5::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *`,[id,input.title,input.description,input.sourceUrl,target?JSON.stringify(target):null])).rows[0];

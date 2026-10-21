@@ -114,8 +114,20 @@ try{
   const before=await get('owner',project);
   project=await edit('owner',before,{title:'QA owner edited request'});assert.equal(project.revision,before.revision+1);
   await edit('owner',before,{title:'Stale overwrite'},409);
+  const current=await get('owner',project);assert.equal(current.title,project.title);
+  project=await edit('owner',current,{title:'Explicitly rebased owner draft'});assert.equal(project.revision,before.revision+2);
   await request('owner',base+'/'+project.id,{method:'PATCH',status:400,body:{requestKey:randomUUID(),expectedRevision:project.revision,title:'Forged scope',description:'x',projectId:null}});
-  const saved=await get('owner',project);assert.equal(saved.title,project.title);assert.deepEqual(saved.history.map(item=>item.revision),[1,2]);
+  const saved=await get('owner',project);assert.equal(saved.title,project.title);assert.deepEqual(saved.history.map(item=>item.revision),[1,2,3]);
+ });
+ await check('A stale owner edit conflicts before a new review state forbids editing, without mutating history',async()=>{
+  const before=await create('owner'),reviewed=await action('reviewer',before,'start');
+  assert.equal(reviewed.revision,before.revision+1);assert.equal(reviewed.status,'in_progress');
+  const snapshot=await get('owner',reviewed);
+  await edit('owner',before,{title:'Unsaved stale draft'},409);
+  assert.deepEqual(await get('owner',reviewed),snapshot);
+  await edit('owner',reviewed,{title:'Current revision still cannot edit'},403);
+  assert.deepEqual(await get('owner',reviewed),snapshot);
+  assert.deepEqual(snapshot.history.map(event=>event.action),['create','start']);
  });
  await check('Review requires comments, and an add request cannot complete without a matching existing card',async()=>{
   await action('reviewer',project,'needs_info',{},400);
@@ -205,7 +217,10 @@ try{
  if(args.includes('--browser')){
   const contextFile=path.join(root,'.run/catalog-requests/browser-context.json'),release=path.join(root,'.run/catalog-requests/browser.release');
   await fs.rm(release,{force:true});
-  const context={base:fixture.base,gateway:fixture.gatewayUrl,catalog:fixture.catalogUrl,database:fixture.database,ids,
+  const editableRequest=await create('owner',{title:'QA stale draft editable',description:'Browser acceptance: keep an unsaved draft while another owner session edits this request.'});
+  const conflictRequest=await create('owner',{title:'QA stale draft recovery',description:'Browser acceptance: keep an unsaved owner draft while the reviewer starts this request.'});
+  const brief=row=>({id:row.id,title:row.title,revision:row.revision});
+  const context={base:fixture.base,gateway:fixture.gatewayUrl,catalog:fixture.catalogUrl,database:fixture.database,ids,editableRequest:brief(editableRequest),conflictRequest:brief(conflictRequest),
    login:Object.fromEntries(Object.keys(actors).map(actor=>[actor,fixture.loginUrl(actor)])),release,expiresAt:new Date(Date.now()+30*60000).toISOString()};
   await fs.mkdir(path.dirname(contextFile),{recursive:true});await fs.writeFile(contextFile,JSON.stringify(context,null,2)+'\n',{mode:0o600});
   console.log('BROWSER_READY '+JSON.stringify({contextFile,base:fixture.base}));
