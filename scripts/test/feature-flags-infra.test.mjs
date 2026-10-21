@@ -13,14 +13,14 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const image='sha256:'+'a'.repeat(64);
 const images=()=>Object.fromEntries(applicationServices.map(service=>[service,image]));
 
-/** Разбор Compose не создаёт сервисы, тома и данные. */
+/** Разбор топологии Compose не требует env_file сервисов и не создаёт контейнеры. */
 function configuration(file) {
-    const result=spawnSync('docker',['compose','-f',path.join(root,file),'config','--format','json'],{cwd:root,encoding:'utf8',
+    const result=spawnSync('docker',['compose','-f',path.join(root,file),'config','--no-env-resolution','--format','json'],{cwd:root,encoding:'utf8',
         env:{...process.env,NEUROCENTER_CONFIG_DIR:'/tmp/neurocenter-flags-topology',PANEL_URL:'https://fixture.invalid',
             NEUROCENTER_HOST:'fixture.invalid',NEUROCENTER_RELEASE:'fixture',BOOTSTRAP_ADMIN_EMAIL:'admin@fixture.invalid',
             SSO_HOST:'https://sso.fixture.invalid',SSO_CLIENT_ID:'fixture',REDIRECT_URI:'https://fixture.invalid/auth/callback',
             TLS_CERT_FILE:'/tmp/neurocenter-flags-topology/cert',TLS_KEY_FILE:'/tmp/neurocenter-flags-topology/key'}});
-    assert.equal(result.status,0,'Compose должен разобрать конфигурацию');return JSON.parse(result.stdout);
+    assert.equal(result.status,0,`Compose должен разобрать конфигурацию (status=${result.status}, signal=${result.signal ?? 'none'})`);return JSON.parse(result.stdout);
 }
 
 for(const file of ['docker-compose.yml','compose.production.yml'])test(`${file}: сервис флагов внутренний и использует существующий каталог PostgreSQL`,()=>{

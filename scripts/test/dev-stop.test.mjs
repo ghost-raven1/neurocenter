@@ -37,7 +37,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
-    for(const directory of ['models','embedding','vision','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
+    for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     const entry = path.join(serviceDirectory, 'dist/main.js');
     const worker = `const net=require('node:net');
         if(process.env.DEV_STOP_IGNORE_TERM==='1')process.on('SIGTERM',()=>{});

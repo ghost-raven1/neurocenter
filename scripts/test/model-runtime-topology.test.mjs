@@ -7,14 +7,14 @@ import path from 'node:path';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const image='ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c';
 
-/** Compose config только разбирает топологию: контейнеры и веса не создаются. */
+/** Разбор топологии Compose не требует env_file сервисов и не создаёт контейнеры. */
 function configuration(file) {
-    const result=spawnSync('docker',['compose','-f',path.join(root,file),'config','--format','json'],{cwd:root,encoding:'utf8',
+    const result=spawnSync('docker',['compose','-f',path.join(root,file),'config','--no-env-resolution','--format','json'],{cwd:root,encoding:'utf8',
         env:{...process.env,NEUROCENTER_CONFIG_DIR:'/tmp/neurocenter-model-topology',PANEL_URL:'https://fixture.invalid',
             NEUROCENTER_HOST:'fixture.invalid',NEUROCENTER_RELEASE:'fixture',BOOTSTRAP_ADMIN_EMAIL:'admin@fixture.invalid',
             SSO_HOST:'https://sso.fixture.invalid',SSO_CLIENT_ID:'fixture',REDIRECT_URI:'https://fixture.invalid/auth/callback',
             TLS_CERT_FILE:'/tmp/neurocenter-model-topology/cert',TLS_KEY_FILE:'/tmp/neurocenter-model-topology/key'}});
-    assert.equal(result.status,0,'Compose должен разобрать конфигурацию');
+    assert.equal(result.status,0,`Compose должен разобрать конфигурацию (status=${result.status}, signal=${result.signal ?? 'none'})`);
     return JSON.parse(result.stdout);
 }
 
