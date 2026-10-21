@@ -29,8 +29,12 @@ describe('Настоящий HTTP-транспорт удалённой моде
 
     it('Отправляет exact модель, размерность и Bearer только заданному API, сопоставляя индексы ответа', async () => {
         handler = (_req, res) => { const value = response(); value.data.reverse(); res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
-        expect(await infer()).toEqual({ model: model.model, embeddings: [[1, 2, 3], [2, 2, 3]], prompt_eval_count: 4 });
+        expect(await infer()).toEqual({ model: model.model, embeddings: [[1, 2, 3], [2, 2, 3]], prompt_eval_count: 4, usage_reported: true });
         expect(received).toEqual([{ url: '/v1/embeddings', authorization: 'Bearer fixture-secret', body: { model: model.model, input: ['первый', 'второй'], dimensions: 3, encoding_format: 'float' } }]);
+    });
+    it('Не подменяет отсутствующий счётчик embedding нулём', async () => {
+        handler = (_req, res) => { const value = response(); delete (value as Partial<typeof value>).usage; res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
+        expect(await infer()).toMatchObject({ prompt_eval_count: null, usage_reported: false });
     });
     it('Remote Ollama использует /api/embed без скачивания весов или команды pull', async () => {
         handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, embeddings: [[1, 2, 3], [2, 3, 4]], prompt_eval_count: 2 })); };

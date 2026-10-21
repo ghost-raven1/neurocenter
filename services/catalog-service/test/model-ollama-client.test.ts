@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {describe,it,expect,vi} from 'vitest';
 import {OllamaClient,modelRuntimeUrl,type IModelProgress} from '../src/models/ollama-client';
 import {localModelAlias} from '../src/models/local-model-alias';

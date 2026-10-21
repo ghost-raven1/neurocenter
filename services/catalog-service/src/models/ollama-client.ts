@@ -1,6 +1,9 @@
+import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import {visionFixture} from '../../../shared/vision-fixture.cjs';
 import type {IModel,IModelVerification} from './model.types';
 import {localModelAlias} from './local-model-alias';
+import {withModelUsage} from '../model-usage/model-usage.context';
+import type {ModelUsageRecorder} from '../model-usage/model-usage.types';
 
 export interface IModelProgress {stage:string;message:string;progress:number|null;}
 export interface IRuntimeModelStatus {
@@ -30,8 +33,9 @@ export function modelRuntimeUrl(env:NodeJS.ProcessEnv=process.env):string {
 export class OllamaClient {
     private readonly fetch:typeof globalThis.fetch;
     private readonly environment:NodeJS.ProcessEnv;
-    constructor(options:{fetch?:typeof globalThis.fetch;env?:NodeJS.ProcessEnv}={}) {
-        this.fetch=options.fetch||globalThis.fetch;this.environment=options.env||process.env;
+    private readonly usage?:ModelUsageRecorder;
+    constructor(options:{fetch?:typeof globalThis.fetch;env?:NodeJS.ProcessEnv;usage?:ModelUsageRecorder}={}) {
+        this.fetch=options.fetch||globalThis.fetch;this.environment=options.env||process.env;this.usage=options.usage;
     }
 
     async status(model:IModel):Promise<IRuntimeModelStatus> {
@@ -133,8 +137,9 @@ export class OllamaClient {
     }
 
     private async probeEmbedding(model:IModel,signal?:AbortSignal):Promise<number> {
-        const value=await this.request('/api/embed',{model:model.model,input:['Локальная проверка базы знаний.','Local knowledge test.'],truncate:false,keep_alive:'5m'},signal,180000);
-        if(value.model!==model.model||!this.validVectors(value.embeddings,2,null))throw new Error('Модель не вернула корректные ненулевые векторы ожидаемой размерности.');
+        const value=await this.verifyInfer(model,'embed',{model:model.model,input:['Локальная проверка базы знаний.','Local knowledge test.'],truncate:false,keep_alive:'5m'},signal,value=>{
+            if(value.model!==model.model||!this.validVectors(value.embeddings,2,null))throw new Error('Модель не вернула корректные ненулевые векторы ожидаемой размерности.');
+        });
         const dimension=(value.embeddings as number[][])[0].length;
         if(model.dimension!==null&&model.dimension!==dimension)throw new Error(`Размерность модели не совпадает с карточкой: ожидалась ${model.dimension}, получена ${dimension}. Проверьте карточку модели.`);
         return dimension;
@@ -143,9 +148,9 @@ export class OllamaClient {
     private async probeChat(model:IModel,signal?:AbortSignal) {
         const vision=model.capability==='vision';
         const content=vision?'Read the digits at the top and the color of the square at the bottom. Return only JSON with string fields number and color. Use an English lowercase color name.':'Reply with the word OK.';
-        const value=await this.request('/api/chat',{model:model.model,messages:[{role:'user',content,...(vision?{images:[visionFixture().toString('base64')]}:{})}],
+        await this.verifyInfer(model,'chat',{model:model.model,messages:[{role:'user',content,...(vision?{images:[visionFixture().toString('base64')]}:{})}],
             stream:false,think:false,keep_alive:'5m',options:{temperature:0,num_ctx:4096,num_predict:64},
-            ...(vision?{format:{type:'object',properties:{number:{type:'string'},color:{type:'string'}},required:['number','color'],additionalProperties:false}}:{})},signal,600000);
+            ...(vision?{format:{type:'object',properties:{number:{type:'string'},color:{type:'string'}},required:['number','color'],additionalProperties:false}}:{})},signal,value=>{
         const message=value.message;
         if(value.model!==model.model||value.done!==true||value.done_reason!=='stop'||!object(message)||typeof message.content!=='string'
             ||!message.content.trim()||message.content.length>32768)throw new Error('Модель не вернула завершённый содержательный ответ.');
@@ -154,6 +159,13 @@ export class OllamaClient {
             try {observation=JSON.parse(message.content);} catch {throw new Error('Модель не распознала тестовое изображение.');}
             if(!object(observation)||Object.keys(observation).length!==2||observation.number!=='42'||observation.color!=='red')throw new Error('Модель неверно распознала число или цвет тестового изображения.');
         }
+        });
+    }
+
+    private async verifyInfer(model:IModel,endpoint:'chat'|'embed',body:JsonObject,signal:AbortSignal|undefined,validate:(value:JsonObject)=>void):Promise<JsonObject>{
+        await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
+        const action=async(signal?:AbortSignal)=>{const value=await this.request('/api/'+endpoint,body,signal,endpoint==='chat'?600000:180000);validate(value);return value;};
+        return this.usage?withModelUsage({purpose:'verification'},()=>this.usage!.observe(model,endpoint,action,signal)):action(signal);
     }
 
     private async response(endpoint:string,body:JsonObject|undefined,signal:AbortSignal|undefined,timeout:number):Promise<Response> {

@@ -41,7 +41,8 @@ export class RemoteModelClient {
             if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => validVector(vector, model.dimension))
                 || vectors.some(vector => vector.length !== vectors[0].length)) { throw new RemoteModelError('response', 'Удалённая модель вернула неполные или несовместимые векторы.'); }
             const usage = openai && object(value.usage) ? value.usage.prompt_tokens : value.prompt_eval_count;
-            return { model: model.model, embeddings: vectors, prompt_eval_count: Number.isSafeInteger(usage) && Number(usage) >= 0 ? Number(usage) : 0 };
+            const inputTokens = this.tokens(usage);
+            return { model: model.model, embeddings: vectors, prompt_eval_count: inputTokens, usage_reported: inputTokens !== null };
         }
         if (openai) {
             const choice = Array.isArray(value.choices) && value.choices.length === 1 ? value.choices[0] : undefined;

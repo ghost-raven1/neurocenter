@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RemoteConnectionService } from '../src/models/remote-connection.service';
 import { RemoteModelClient } from '../src/models/remote-model-client';

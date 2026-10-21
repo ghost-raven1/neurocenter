@@ -8,13 +8,16 @@ import { RemoteModelClient, RemoteModelError } from './remote-model-client';
 import { remoteConnectionInput, remoteVerificationDigest } from './remote-model-validation';
 import { isRemoteModel } from './remote-model.types';
 import { notifyModelCatalogChange } from './model-events';
+import { ModelUsageService } from '../model-usage/model-usage.service';
+import { requireFeaturesEnabled } from '../features/require-feature-enabled';
+import { withModelUsage } from '../model-usage/model-usage.context';
 
 /** Все запросы провайдеру выполняются сервером; bridge получает только Gateway API и project pin. */
 @Injectable()
 export class RemoteConnectionService {
     readonly repository: RemoteConnectionRepository;
     private readonly client = new RemoteModelClient();
-    constructor(private readonly models: ModelsService) { this.repository = new RemoteConnectionRepository(models.pool); }
+    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService) { this.repository = new RemoteConnectionRepository(models.pool); }
     private async remote(id: string): Promise<IModel> {
         const model = await this.models.get(id);
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите модель удалённого API.');
@@ -53,12 +56,14 @@ export class RemoteConnectionService {
         if (!row || row.revoked_at) throw new ConflictException('Сначала настройте подключение удалённого API.');
         const connection = this.repository.connection(row);
         try {
-            const result = model.capability === 'embedding'
+            const infer = async (signal?: AbortSignal) => model.capability === 'embedding'
                 ? await this.client.infer(model, connection, 'embed', { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] }, signal)
                 : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
                     ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
                     ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
                     options: { num_predict: Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
+            await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
+            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
             if (model.capability === 'vision') {
                 let observed: Record<string, unknown>;
                 try { observed = JSON.parse((result.message as { content: string }).content); } catch { throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.'); }

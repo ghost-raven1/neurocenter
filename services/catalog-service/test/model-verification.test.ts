@@ -1,3 +1,4 @@
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {describe, expect, it, vi} from 'vitest';
 import {ForbiddenException} from '@nestjs/common';
 import type {Pool} from 'pg';

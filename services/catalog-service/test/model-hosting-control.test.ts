@@ -1,8 +1,10 @@
+import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 import 'reflect-metadata';
 import { EventEmitter } from 'node:events';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelHostingController } from '../src/models/hosting.controller';
 import { ModelHostingService } from '../src/models/hosting.service';
 import { ModelHostingRepository } from '../src/models/hosting.repository';
@@ -35,6 +37,7 @@ function harness(locked = true) {
 function waitForAbort(_model: IModel, _progress: (value: IHostingProgress) => Promise<void>, signal: AbortSignal): Promise<void> {
     return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
 }
+beforeEach(()=>{vi.mocked(requireFeaturesEnabled).mockReset().mockResolvedValue(undefined);});
 afterEach(() => vi.useRealTimers());
 
 describe('Проверка и взаимное исключение управления моделью', () => {
@@ -315,4 +318,11 @@ describe('Проверка состояния восстанавливает з�
         expect(pool.connect).not.toHaveBeenCalled(); expect(pool.query).not.toHaveBeenCalled();
         expect(owner.query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
     });
+});
+
+
+describe('Hosting worker respects a later feature disable',()=>{
+ it('Disabled hosting refuses a new queued operation before worker creation',async()=>{const f=harness();vi.mocked(requireFeaturesEnabled).mockRejectedValueOnce(new ForbiddenException('Функция отключена'));await expect(f.service.control(card.id,{action:'start',expectedRevision:card.revision},hostingActor)).rejects.toHaveProperty('status',403);expect(f.repository.create).not.toHaveBeenCalled();expect(f.runtime.start).not.toHaveBeenCalled();});
+ it('Disable after enqueue blocks heavyweight bundle preparation and runtime execution',async()=>{const f=harness();vi.mocked(requireFeaturesEnabled).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new ForbiddenException('Функция отключена'));const prepare=vi.spyOn((f.service as unknown as {bundles:ModelBundleRuntime}).bundles,'prepare');await f.service.control(card.id,{action:'start',expectedRevision:card.revision},hostingActor);await vi.waitFor(()=>expect(f.repository.update).toHaveBeenLastCalledWith(expect.anything(),expect.objectContaining({stage:'failed'}),'failed'));expect(prepare).not.toHaveBeenCalled();expect(f.runtime.start).not.toHaveBeenCalled();});
+ it('Stop remains available when every admission lookup would fail',async()=>{const f=harness();vi.mocked(requireFeaturesEnabled).mockImplementation(async()=>{throw new ForbiddenException('Функция отключена');});await f.service.control(card.id,{action:'stop',expectedRevision:card.revision},hostingActor);await vi.waitFor(()=>expect(f.runtime.stop).toHaveBeenCalledOnce());expect(requireFeaturesEnabled).not.toHaveBeenCalled();});
 });

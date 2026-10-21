@@ -16,7 +16,7 @@ const model = (capability: IModel['capability'] = 'embedding'): IModel => ({
 });
 function harness(capability: IModel['capability'] = 'embedding') {
     const card = model(capability);
-    const models = { getUsable: vi.fn(async () => card) };
+    const models = { getUsable: vi.fn(async () => card), actor: vi.fn(async () => ({ email: 'developer@localhost' })), resolveProject: vi.fn(async (_req: Request, id: string) => ({ id })) };
     const runtime = { infer: vi.fn(async () => ({ model: card.model, embeddings: [[1, 0, -1]], prompt_eval_count: 7 })) };
     const request = new EventEmitter() as EventEmitter & { res: EventEmitter & { writableEnded: boolean } };
     request.res = Object.assign(new EventEmitter(), { writableEnded: false });

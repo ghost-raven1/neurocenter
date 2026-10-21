@@ -4,6 +4,7 @@ import { ModelsService } from './models.service';
 import { ModelRuntime, type IModelInferenceRuntime } from './model-runtime';
 import { projectEmbeddingPin } from './project-embedding.validation';
 import { remoteModelOptions } from './remote-model-options';
+import { withModelUsage } from '../model-usage/model-usage.context';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -102,7 +103,8 @@ export class ModelInferenceController {
         try {
             if (request.aborted || request.res?.destroyed) { abort.abort(); }
             abort.signal.throwIfAborted();
-            const result = await this.runtime.infer(model, endpoint, body, abort.signal);
+            const actor = await this.models.actor(request), canonicalProject = projectId === undefined ? null : (await this.models.resolveProject(request, projectId, 2, actor)).id;
+            const result = await withModelUsage({ purpose: 'direct', actorEmail: actor.email, projectId: canonicalProject }, () => this.runtime.infer(model, endpoint, body, abort.signal));
             const current = await this.models.getUsable(id, request, projectId);
             if (projectEmbeddingPin(current) !== modelPin) throw new ConflictException('Модель изменилась во время запроса. Обновите подключение.');
             if (!openai) { return result; }

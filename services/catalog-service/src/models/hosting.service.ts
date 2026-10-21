@@ -1,3 +1,4 @@
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import { BadRequestException, ConflictException, Injectable, Logger, Optional, type OnModuleInit, type BeforeApplicationShutdown } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
@@ -9,6 +10,7 @@ import type { IModel } from './model.types';
 import { RemoteConnectionService } from './remote-connection.service';
 import { isRemoteModel } from './remote-model.types';
 import { ModelBundleRuntime } from './model-bundle-runtime';
+import { withModelUsage } from '../model-usage/model-usage.context';
 
 const lock = "hashtextextended('neurocenter:model-hosting',0)";
 const actions: readonly string[] = ['start', 'stop', 'check'];
@@ -138,6 +140,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             const current = await this.models.get(id);
             if (current.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
             if (this.stopping) { throw new ConflictException('Сервис перезапускается. Повторите действие после запуска.'); }
+            if(action!=='stop')await requireFeaturesEnabled(['model_hosting']);
             const row = await this.repository.create(lease, id, action, actor);
             const abort = new AbortController();
             if (this.stopping) { abort.abort(new Error('Сервис перезапускается. Повторите действие после запуска.')); }
@@ -180,19 +183,20 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             const claims = await this.access.claims(row.actor);
             if (!claims.userRoles.includes('Главный админ')) { throw new Error('Права управления хостингом отозваны.'); }
             abort.signal.throwIfAborted();
+            if(row.action!=='stop')await requireFeaturesEnabled(['model_hosting']);
             if (isRemoteModel(model)) {
                 if (!this.remote) throw new Error('Сервис удалённых подключений не зарегистрирован.');
-                await this.remote.check(model, row.actor, async () => {
+                await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id }, () => this.remote!.check(model, row.actor, async () => {
                     const current = await this.access.claims(row.actor);
                     if (!current.userRoles.includes('Главный админ')) throw new Error('Права управления подключением отозваны.');
-                }, abort.signal);
+                }, abort.signal));
             } else if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
             else {
                 if (row.action === 'start') {
                     if (!this.bundles) throw new Error('Исполнитель проверенных поставок моделей не зарегистрирован.');
                     await this.bundles.prepare(model, progress, abort.signal);
                 }
-                const verified = row.action === 'start' ? await this.runtime.start(model, progress, abort.signal) : await this.runtime.check(model, abort.signal);
+                const verified = await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id }, () => row.action === 'start' ? this.runtime.start(model, progress, abort.signal) : this.runtime.check(model, abort.signal));
                 abort.signal.throwIfAborted();
                 await this.models.pinVerified(model, verified, row.actor, async () => {
                     abort.signal.throwIfAborted();
