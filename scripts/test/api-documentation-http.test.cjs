@@ -2,6 +2,9 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const vm = require('node:vm');
+const fs = require('node:fs/promises');
+const {createRequire} = require('node:module');
+const {createHash} = require('node:crypto');
 const {createServer} = require('node:http');
 const {startDocumentationFixture} = require('./api-documentation.fixture.cjs');
 
@@ -12,6 +15,20 @@ async function fixture(t, options) {
     t.after(() => app.close());
     return app;
 }
+
+test('Swagger serves the pinned UI5.14.0 assets resolved by the running Nest adapter', async t => {
+    const requireRuntime = createRequire(path.join(dist, 'docs/setup-api-documentation.js'));
+    const requireSwagger = createRequire(requireRuntime.resolve('@nestjs/swagger/package.json'));
+    assert.equal(requireSwagger('swagger-ui-dist/package.json').version, '5.14.0');
+    const assets = requireSwagger('swagger-ui-dist/absolute-path.js')();
+    const app = await fixture(t);
+    const sha = value => createHash('sha256').update(value).digest('hex');
+    for (const filename of ['swagger-ui.css','swagger-ui-bundle.js','swagger-ui-standalone-preset.js']) {
+        const response = await fetch(app.base + '/api/docs/' + filename);
+        assert.equal(response.status, 200);
+        assert.equal(sha(Buffer.from(await response.arrayBuffer())), sha(await fs.readFile(path.join(assets, filename))), filename);
+    }
+});
 
 test('Swagger UI, schema and local static assets precede the wildcard API proxy', async t => {
     const app = await fixture(t);
