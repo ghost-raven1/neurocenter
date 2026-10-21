@@ -30,6 +30,10 @@ export class LiveService implements OnModuleDestroy {
         data?: Record<string, unknown>,
         method?: string,
     ): void {
+        if (/^\/api\/catalog-requests(?:\/|$)/.test(path)) {
+            this.sections(['requests', 'audit']);
+            return;
+        }
         if (path.startsWith('/api/feature-flags')) {
             this.sections(['maintenance','catalog','knowledge','projects','audit']);
             return;

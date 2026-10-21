@@ -131,9 +131,9 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 169);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 207);
-    for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect']) assert.ok(actual.paths[representative], representative);
+    assert.equal(Object.keys(actual.paths).length, 173);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 213);
+    for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
@@ -154,6 +154,25 @@ test('Actual project and skill contracts include usable typed bodies, responses 
     assert.ok(jsonResponse(pluginPackage).properties.manifest);
     assert.equal(pluginPackage.parameters.find(item => item.name === 'version').required, false);
     for (const [pathname, methods] of Object.entries(actual.paths)) if(pathname.startsWith('/api/rag/')) for (const item of Object.values(methods)) for(const parameter of item.parameters) if(parameter.name === 'projectKey') assert.equal(parameter.required, true, pathname);
+});
+
+test('Catalog requests document typed submissions, review actions and scoped filters', () => {
+    const requests = actual.paths['/api/catalog-requests'];
+    const create = requests.post.requestBody.content['application/json'].schema;
+    assert.deepEqual(create.required, ['requestKey','kind','assetType','title','description']);
+    assert.deepEqual([...create.properties.kind.enum].sort(), ['add','issue','update']);
+    assert.deepEqual([...create.properties.assetType.enum].sort(), ['mcp','model','plugin','skill']);
+    assert.equal(create.properties.target.nullable, true);
+    assert.deepEqual(create.properties.target.required, ['type','id']);
+    const filters = requests.get.parameters.filter(item => item.in === 'query');
+    assert.deepEqual(filters.map(item => item.name), ['scope','status','kind','assetType','projectId','page','size']);
+    assert.ok(filters.every(item => item.required === false));
+    const action = actual.paths['/api/catalog-requests/{id}/actions'].post.requestBody.content['application/json'].schema;
+    assert.deepEqual(action.required, ['requestKey','expectedRevision','action']);
+    assert.deepEqual([...action.properties.action.enum].sort(), ['cancel','complete','needs_info','reject','resubmit','start']);
+    assert.equal(action.properties.expectedRevision.type, 'number');
+    assert.ok(jsonResponse(requests.get).properties.items.items.properties.permissions);
+    assert.ok(jsonResponse(actual.paths['/api/catalog-requests/{id}'].get).properties.history.items.properties.actor);
 });
 
 test('Redirects, manual OAuth JSON, binary streams and HEAD reflect the actual HTTP transport', () => {

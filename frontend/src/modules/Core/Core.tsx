@@ -94,7 +94,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         .map(item => ({ key: item.route, label: navigation[item.name]?.title ?? item.title, icon: navigation[item.name]?.icon }));
     const selected = items.find(item => location.pathname.startsWith(item.key));
     const brand = <div className="app__brand"><DeploymentUnitOutlined /><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
-    const menuItems = [...items, {key: '/api/docs', label: <a href="/api/docs" target="_blank" rel="noopener noreferrer">Swagger API</a>, icon: <ApiOutlined />}];
+    const menuItems = [...items, {key: '/api/docs', className: 'app__documentation-item', label: <a className="app__documentation-link" href="/api/docs" target="_blank" rel="noopener noreferrer">Swagger API</a>, icon: <ApiOutlined />}];
     const menu = <nav aria-label="Основная навигация"><Menu theme="dark" mode="inline" items={menuItems} selectedKeys={selected ? [selected.key] : []} onClick={({key}) => { if (key !== '/api/docs') { history.push(key); } setMenuOpen(false); }} /></nav>;
 
     return (
