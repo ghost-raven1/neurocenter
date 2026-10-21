@@ -118,14 +118,14 @@ describe('Контекст: честная оценка и реальные да
     it('В основном статусе нет технических лимитов; подробности закрыты по умолчанию', () => {
         const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false}));
         const summary = html.slice(html.indexOf('<summary>'), html.indexOf('</summary>'));
-        expect(summary).toContain('Контекст готов'); expect(summary).toContain('Подробнее'); expect(summary).not.toContain('токен'); expect(summary).not.toContain('КиБ'); expect(html).toContain('<details>'); expect(html).not.toContain('<details open');
+        expect(summary).toContain('Оценка контекста'); expect(summary).toContain('Подробнее'); expect(summary).not.toContain('токен'); expect(summary).not.toContain('КиБ'); expect(html).toContain('<details>'); expect(html).not.toContain('<details open');
     });
     it('При неизвестном окне нет выдуманного процента и точного подсчёта', () => {
         const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false})); expect(html).toContain('≈ 1 токенов'); expect(html).toContain('не сообщил размер окна модели'); expect(html).not.toContain('progressbar'); expect(html).not.toContain('по данным API');
     });
     it('Учитывает резерв ответа при известном окне и отделяет лимит передачи', () => {
         const context = {...detail().context, contextWindowTokens: 1000, estimatedInputTokens: 400, reservedOutputTokens: 100};
-        const html = render(createElement(ChatContextMeter, {context, loading: false, usage: turn().answer!.usage})); expect(html).toContain('aria-valuenow="50"'); expect(html).toContain('Резерв ответа: 100'); expect(html).toContain('Технические сведения:'); expect(html).toContain('по данным API');
+        const html = render(createElement(ChatContextMeter, {context, loading: false, usage: turn().answer!.usage})); expect(html).toContain('aria-valuenow="50"'); expect(html).toContain('Резерв ответа: 100'); expect(html).toContain('Предварительная оценка переписки и вложений:'); expect(html).toContain('по данным API');
     });
     it('Не превращает отсутствующий usage в измеренный ноль', () => {
         const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false, usage: {inputTokens: null, outputTokens: null, totalTokens: null, reported: false}})); expect(html).not.toContain('по данным API');

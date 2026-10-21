@@ -14,7 +14,7 @@ export function ChatContextMeter({context, loading, error, rejected, usage, comp
     const compressionFailed = failed && phase === 'compacting';
     const blocked = rejected || modelChatContextBlocked(context);
     const status = running ? 'Сжимаем раннюю переписку…' : compressionFailed ? 'Не удалось сжать контекст' : rejected ? 'Сообщение требует проверки' : blocked ? 'Сообщение не помещается в контекст'
-        : context?.compactionNeeded && context.canCompact ? 'Сожмём раннюю переписку при отправке' : compaction?.state === 'ready' ? 'Контекст сжат · история сохранена' : context ? 'Контекст готов' : 'Контекст';
+        : context?.compactionNeeded && context.canCompact ? 'Сожмём раннюю переписку при отправке' : compaction?.state === 'ready' ? 'Контекст сжат · история сохранена' : context ? 'Оценка контекста' : 'Контекст';
     if (context?.participants) return <div className="model-chat__context" aria-label="Контекст участников">
         <details><summary><span role="status" aria-live="polite">{running && <Spin size="small"/>}{status} · {context.participants.length}</span><span className="model-chat__context-more">Окна участников</span></summary>
             <div className="model-chat__participant-budgets">{context.participants.map(participant => <div key={participant.agentId}><Typography.Text strong>{participant.name} · {participant.modelName}</Typography.Text><ChatContextMeter context={participant.context} loading={loading}/></div>)}</div>
@@ -30,7 +30,7 @@ export function ChatContextMeter({context, loading, error, rejected, usage, comp
                 {compaction && <Typography.Text type="secondary">{compaction.coveredTurns ? `Ранних обменов в сводке: ${number(compaction.coveredTurns)}. ` : ''}При необходимости ранняя переписка сжимается; полная история и документы сохраняются в диалоге.</Typography.Text>}
                 {compressionFailed && <Typography.Text type="warning">Сжатие не завершилось. История сохранена; повторите запрос под последним сообщением.</Typography.Text>}
                 {usage?.reported && <Typography.Text type="secondary">Последний запрос по данным API: вход {usage.inputTokens == null ? 'не указан' : number(usage.inputTokens)}, ответ {usage.outputTokens == null ? 'не указан' : number(usage.outputTokens)} токенов.</Typography.Text>}
-                {context && <Typography.Text type="secondary">Технические сведения: в запросе {context.messageCount} сообщений; {Math.ceil(context.requestBytes / 1024)} / {Math.floor(context.maxRequestBytes / 1024)} КиБ. Это ограничения передачи, а не размер окна модели.</Typography.Text>}
+                {context && <Typography.Text type="secondary">Предварительная оценка переписки и вложений: {context.messageCount} сообщений; {Math.ceil(context.requestBytes / 1024)} / {Math.floor(context.maxRequestBytes / 1024)} КиБ. Контекст проекта и результаты исследования добавляются при отправке. Это ограничения передачи, а не размер окна модели.</Typography.Text>}
                 {error && !rejected && <Typography.Text type="warning">{error}</Typography.Text>}
             </div>
         </details>
