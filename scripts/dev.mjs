@@ -14,6 +14,7 @@ import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs'
 import {privateSnapshotFile} from './snapshots/control.mjs';
 import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
+import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const stateDir = path.join(root, '.run');
@@ -49,25 +50,29 @@ function run(command, args, cwd = root, env = process.env) {
 }
 
 /** Общий source contract устанавливается по HTTPS и integrity корневого lock-файла. */
-function prepareWorkspaceDependencies() {
-    run(node, [npmCli(process.env), 'ci', '--ignore-scripts', '--no-audit', '--no-fund']);
+async function installDependencies(cwd = root, extra = []) {
+    const npm = npmCli(process.env);
+    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args], cwd, env));
+}
+async function prepareWorkspaceDependencies() {
+    await installDependencies(root, ['--ignore-scripts']);
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
-function forPackages(command, next) {
+async function forPackages(command, next) {
     const npm = npmCli(process.env);
     for (const {dir, label} of packages) {
         next(`${command === 'install' ? 'Зависимости' : 'Сборка'} · ${label}`);
         const started = Date.now();
         const cwd = path.join(root, dir);
-        if (command === 'install') { run(node, [ npm, 'ci', '--no-audit', '--no-fund' ], cwd); }
+        if (command === 'install') { await installDependencies(cwd); }
         else {
             try { run(node, [ npm, 'run', 'build' ], cwd); }
             catch {
                 // Повреждённый или неполный node_modules (прерванная установка, сбой диска) восстанавливаем
                 // из lock-файла и повторяем сборку один раз; настоящая ошибка кода проявится повторно.
                 output.warning(`Сборка «${label}» не прошла; восстанавливаем зависимости из lock-файла и повторяем.`);
-                run(node, [ npm, 'ci', '--no-audit', '--no-fund' ], cwd);
+                await installDependencies(cwd);
                 run(node, [ npm, 'run', 'build' ], cwd);
             }
         }
@@ -180,12 +185,12 @@ async function start(profile) {
     checkCompose();
     output.success('Docker готов к запуску');
     next('Установка общего контракта ассетов');
-    prepareWorkspaceDependencies();
+    await prepareWorkspaceDependencies();
     next('Проверка поставки проекта');
     if (prepareAssets) { await prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels}); }
     else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
-    forPackages('build', next);
+    await forPackages('build', next);
     next('Запуск PostgreSQL');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
@@ -350,15 +355,15 @@ async function main() {
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
-        prepareWorkspaceDependencies();
-        forPackages(command, next);
+        await prepareWorkspaceDependencies();
+        await forPackages(command, next);
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }
     else if (command === 'build') {
         const next = progress(packages.length + 1);
-        next('Установка общего контракта ассетов'); prepareWorkspaceDependencies();
-        forPackages(command, next); output.success('Проект собран');
+        next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
+        await forPackages(command, next); output.success('Проект собран');
     }
     else if (command === 'up') { await start(profile); }
     else if (command === 'down') {

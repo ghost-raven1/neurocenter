@@ -24,7 +24,7 @@ async function fixture(t, mode = 'ready') {
             require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'unexpected-command',command:${JSON.stringify(command)}})+'\\n');
             process.exitCode=92;`, {mode: 0o700});
     }
-    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -34,7 +34,8 @@ async function fixture(t, mode = 'ready') {
     for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
-    await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
+    await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2),home:process.env.HOME,
+        configKeys:Object.keys(process.env).filter(key=>/^npm_config_/i.test(key)),hasToken:!!(process.env.NPM_TOKEN||process.env.NODE_AUTH_TOKEN)})+'\\n');
         process.exitCode=7;`);
     const hook = path.join(directory, 'isolated-network.mjs');
     await fs.writeFile(hook, `import {appendFileSync} from 'node:fs';
@@ -73,7 +74,7 @@ async function fixture(t, mode = 'ready') {
         assert.doesNotMatch(result.stderr, /REAL_NETWORK_FORBIDDEN/);
         return {...result, events};
     }
-    return {checkout, logs, run};
+    return {checkout, logs, env, run};
 }
 
 for (const args of [[], ['--help'], ['—help'], ['help'], ['-h'], ['down', '--help'], ['up', '—help']]) {
@@ -183,8 +184,24 @@ test('Ошибка сборки видна в stderr и не подменяет�
     assert.equal(result.status, 1);
     assert.match(result.stderr, /код\S*\s+7/);
     // Отказ корневой зависимости останавливает сборку до обращения к пакетам сервисов.
-    assert.deepEqual(result.events.filter(event => event.kind === 'npm').map(event=>event.args),[
-        ['ci','--ignore-scripts','--no-audit','--no-fund'],
-    ]);
+    const installs=result.events.filter(event=>event.kind==='npm');
+    assert.equal(installs.length,1);
+    assert.deepEqual(installs[0].args.slice(0,4),['ci','--ignore-scripts','--no-audit','--no-fund']);
+    assert.ok(installs[0].args.includes('--registry=https://registry.npmjs.org/'));
+    assert.ok(installs[0].args.includes('--strict-ssl=true'));
+    assert.ok(installs[0].args.some(arg=>arg.startsWith('--userconfig=')));
+    assert.ok(installs[0].args.some(arg=>arg.startsWith('--globalconfig=')));
     assert.doesNotMatch(result.stdout, /Нейроцентр готов|Сборка завершена/);
+});
+
+test('Dev build dependency install ignores hostile global/user config and removes its temporary HOME after failure',async t=>{
+    const f=await fixture(t),home=path.join(f.checkout,'host-home'),globalconfig=path.join(f.checkout,'host-global.npmrc');
+    await fs.mkdir(home);const hostile='registry=http://127.0.0.1:9/\n@fixture:registry=http://127.0.0.1:9/\nstrict-ssl=false\n';
+    await fs.writeFile(path.join(home,'.npmrc'),hostile);await fs.writeFile(globalconfig,hostile);
+    Object.assign(f.env,{HOME:home,NPM_CONFIG_GLOBALCONFIG:globalconfig,npm_config_registry:'http://127.0.0.1:9/',NPM_CONFIG_OFFLINE:'true',NPM_TOKEN:'synthetic',NODE_AUTH_TOKEN:'synthetic'});
+    const result=await f.run('build'),call=result.events.find(event=>event.kind==='npm');
+    assert.equal(result.status,1);assert.deepEqual(call.configKeys,[]);assert.equal(call.hasToken,false);assert.notEqual(call.home,home);
+    assert.ok(call.args.includes('--registry=https://registry.npmjs.org/'));assert.ok(call.args.includes('--strict-ssl=true'));
+    await assert.rejects(fs.stat(call.home),{code:'ENOENT'});
+    assert.equal(await fs.readFile(path.join(home,'.npmrc'),'utf8'),hostile);assert.equal(await fs.readFile(globalconfig,'utf8'),hostile);
 });

@@ -41,7 +41,7 @@ async function fixture(t, mode) {
     });
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -71,6 +71,8 @@ async function fixture(t, mode) {
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
+        else if(args[0]==='volume'&&args[1]==='inspect')process.exitCode=1;
+        else if(args.some(arg=>arg.endsWith('/compose.chat-storage.dev.yml')))console.log('fixture chat storage ready');
         else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding'){
             if(process.env.DEV_START_MODE==='model-runtime-error'){
                 console.error('PRIVATE fixture Docker failure');process.exitCode=35;
@@ -108,6 +110,13 @@ async function fixture(t, mode) {
         setInterval(()=>{},1000);
     `);
     await fs.mkdir(path.join(checkout,'services/catalog-service/node_modules/pg'),{recursive:true});
+    await fs.mkdir(path.join(checkout,'services/catalog-service/dist/model-chat'),{recursive:true});
+    await fs.writeFile(path.join(checkout,'services/catalog-service/dist/model-chat/chat-object-storage.js'),`
+        module.exports.ChatObjectStorage=class {
+            constructor(config){this.config=config;}
+            async initialize(){require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'chat-storage-preflight',endpoint:this.config.endpoint})+'\\n');}
+        };
+    `);
     await fs.writeFile(path.join(checkout,'services/catalog-service/node_modules/pg/index.js'),`
         const fs=require('node:fs');
         module.exports.Client=class {
@@ -163,6 +172,7 @@ async function fixture(t, mode) {
             return server;
         };
         globalThis.fetch=async (input,options)=>{
+            if(String(input)==='http://127.0.0.1:19010/minio/health/ready')return new Response('',{status:200});
             const url=new URL(input);
             record({kind:'health-start',port:url.port,path:url.pathname,search:url.search});
             if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
