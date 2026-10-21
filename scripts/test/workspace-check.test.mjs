@@ -15,7 +15,7 @@ test('npm и обычный node-потомок используют выбра�
     try {
         if (process.platform !== 'win32') await fs.writeFile(path.join(temporary, 'node'), '#!/bin/sh\nexit 82\n', {mode: 0o700});
         const selected = nodeRuntime({...process.env, NODE_BIN: process.execPath, PATH: temporary + path.delimiter + process.env.PATH});
-        assert.ok(Number(selected.version.split('.')[0]) >= 24);
+        assert.equal(Number(selected.version.split('.')[0]), 24);
         const command = process.platform === 'win32' ? 'node.exe' : 'node';
         const child = spawnSync(command, ['-p', 'process.versions.node'], {env: selected.env, encoding: 'utf8'});
         assert.equal(child.status, 0); assert.equal(child.stdout.trim(), selected.version);
@@ -70,15 +70,18 @@ async function projectRuntimeFixture(t, platform, arch) {
         const selected=nodeRuntime(environment);
         console.log(JSON.stringify({node:selected.node,version:selected.version,calls:globalThis.runtimeCalls}));
     `);
-    function run(settings = {}, environment = {}) {
-        const result = spawnSync(process.execPath, ['--import', hook, runner], {cwd: checkout, encoding: 'utf8', timeout: 10000,
+    function execute(settings = {}, environment = {}) {
+        return spawnSync(process.execPath, ['--import', hook, runner], {cwd: checkout, encoding: 'utf8', timeout: 10000,
             env: {RUNTIME_FIXTURE_SETTINGS: JSON.stringify({platform, arch, current, pathNode, ...settings}),
                 RUNTIME_FIXTURE_ENV: JSON.stringify({PATH: path.dirname(pathNode), ...environment})}});
+    }
+    function run(settings = {}, environment = {}) {
+        const result = execute(settings,environment);
         assert.equal(result.error, undefined);
         assert.equal(result.status, 0, result.stderr);
         return JSON.parse(result.stdout);
     }
-    return {run, current, pathNode, expected: path.join(toolchains, `node-v24.22.0-${platform}-${arch}/bin/node`)};
+    return {run, execute, current, pathNode, expected: path.join(toolchains, `node-v24.22.0-${platform}-${arch}/bin/node`)};
 }
 
 for (const [platform, arch] of [['darwin', 'arm64'], ['darwin', 'x64'], ['linux', 'arm64'], ['linux', 'x64']]) {
@@ -99,6 +102,26 @@ test('Работающий current или PATH сохраняет приорит
     assert.equal(fromPath.node, f.pathNode);
     assert.deepEqual(fromPath.calls, [f.current, f.pathNode]);
 });
+
+test('Node 25 в current и PATH пропускается: упаковщику нужен стабильный Node 24', async t => {
+    const f=await projectRuntimeFixture(t,'darwin','arm64'),selected=f.run({currentVersion:'25.1.0',pathVersion:'25.2.0'});
+    assert.equal(selected.node,f.expected);assert.equal(selected.version,'24.22.0');
+    assert.deepEqual(selected.calls,[f.current,f.pathNode,f.expected]);
+});
+
+for(const version of ['garbage','24','24.1','24.1.2invalid','24.01.0','24.1.0-rc.1',25]) {
+    test(`Некорректный ответ version=${JSON.stringify(version)} не выбирается вместо настоящего Node 24`,async t=>{
+        const f=await projectRuntimeFixture(t,'darwin','arm64'),selected=f.run({currentVersion:version,pathVersion:'24.11.0'});
+        assert.equal(selected.node,f.pathNode);assert.equal(selected.version,'24.11.0');assert.deepEqual(selected.calls,[f.current,f.pathNode]);
+    });
+}
+
+for(const version of ['20.19.5','25.1.0','invalid']) {
+    test(`Явный NODE_BIN ${version} в shared utility отклоняется без подмены установленным toolchain`,async t=>{
+        const f=await projectRuntimeFixture(t,'darwin','arm64'),result=f.execute({currentVersion:version},{NODE_BIN:f.current});
+        assert.equal(result.status,1);assert.match(result.stderr,/NODE_BIN.*24/);assert.equal(result.stdout,'');
+    });
+}
 
 test('Dev-команда соблюдает явный npm CLI и запускает его выбранным Node во всех пакетах', async () => {
     const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter dev runtime ')));
@@ -135,7 +158,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         assert.equal(result.status, 0, result.stderr);
         const calls = (await fs.readFile(records, 'utf8')).trim().split('\n').map(value => JSON.parse(value));
         assert.deepEqual(calls.map(call => path.relative(checkout, call.cwd)).sort(), ['',...workspacePackages].sort());
-        for (const call of calls) {assert.ok(Number(call.node.split('.')[0]) >= 24); assert.deepEqual(call.args,call.cwd===checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);}
+        for (const call of calls) {assert.equal(Number(call.node.split('.')[0]),24); assert.deepEqual(call.args,call.cwd===checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);}
         assert.doesNotMatch(result.stderr, /REAL_NETWORK_FORBIDDEN/);
         await assert.rejects(fs.access(networkCalls), {code: 'ENOENT'});
         assert.deepEqual(await fs.readdir(dockerConfig), []);

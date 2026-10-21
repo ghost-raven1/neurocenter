@@ -96,9 +96,12 @@ test('CLI находит Node в относительном PATH из друго
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 
-test('CLI объясняет отсутствие выбранного Node и возвращает код 127', async t => {
+test('CLI заменяет отсутствующий NODE_BIN доступным Node 24 до запуска программы', async t => {
     const f = await fixture(t), result = await f.run({overrides: {NODE_BIN: path.join(f.caller, 'missing-node')}});
-    assert.equal(result.status, 127);
-    assert.match(result.stderr, /не найден Node.js/);
-    assert.deepEqual(result.events, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /NODE_BIN.*Node.js 24/);
+    assert.match(result.stdout, /Использование: scripts\/dev\.sh/);
+    assert.ok(result.events.some(event => event.kind === 'startup'));
+    assert.ok(result.events.every(event => event.kind === 'startup' && event.cwd === f.checkout));
+    await assert.rejects(fs.access(path.join(f.checkout,'.run')), {code: 'ENOENT'});
 });

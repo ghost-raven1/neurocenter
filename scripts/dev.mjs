@@ -319,9 +319,9 @@ async function main() {
         process.exitCode = 1;
         return;
     }
-    if (Number(process.versions.node.split('.')[0]) < 24) {
+    if (Number(process.versions.node.split('.')[0]) !== 24) {
         const runtime = nodeRuntime();
-        const result = spawnSync(runtime.node, [fileURLToPath(import.meta.url), ...args], {stdio:'inherit',env:process.env});
+        const result = spawnSync(runtime.node, [fileURLToPath(import.meta.url), ...args], {stdio:'inherit',env:runtime.env});
         if (result.error) { throw result.error; }
         process.exitCode = result.status ?? 1;
         return;

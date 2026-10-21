@@ -23,7 +23,7 @@ function projectToolchains() {
     } catch { return []; }
 }
 
-/** Все команды сборки и их npm-потомки используют один проверенный Node 24+. */
+/** Все команды сборки и их npm-потомки используют один проверенный стабильный Node 24. */
 export function nodeRuntime(environment = process.env) {
     const executable = process.platform === 'win32' ? 'node.exe' : 'node';
     const candidates = environment.NODE_BIN ? [environment.NODE_BIN] : [process.execPath,
@@ -36,12 +36,12 @@ export function nodeRuntime(environment = process.env) {
         if (result.status !== 0) continue;
         try {
             const info = JSON.parse(result.stdout);
-            if (Number(info.version.split('.')[0]) < 24 || !path.isAbsolute(info.binary)) continue;
+            if (typeof info.version !== 'string' || !/^24\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(info.version) || !path.isAbsolute(info.binary)) continue;
             return {node: info.binary, version: info.version, env: {...environment,
                 NODE_BIN: info.binary, PATH: [path.dirname(info.binary), environment.PATH].filter(Boolean).join(path.delimiter)}};
         } catch { /* Следующий установленный runtime. */ }
     }
-    throw new Error(environment.NODE_BIN ? 'NODE_BIN должен указывать на работающий Node.js 24 или новее.' : 'Для проекта нужен Node.js 24 или новее. Укажите NODE_BIN или активируйте Node 24.');
+    throw new Error(environment.NODE_BIN ? 'NODE_BIN должен указывать на работающий стабильный Node.js 24.' : 'Для проекта нужен стабильный Node.js 24. Укажите NODE_BIN или активируйте Node 24.');
 }
 
 /** npm запускается выбранным Node, независимо от shebang системного npm. */
