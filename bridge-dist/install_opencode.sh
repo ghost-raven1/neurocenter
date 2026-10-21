@@ -2,7 +2,8 @@
 # Устанавливает готовый пакет с площадки Нейроцентра без npm и прав администратора.
 set -euo pipefail
 umask 077
-BASE_URL="${BASE_URL:-__BASE_URL__}"
+DEFAULT_BASE_URL='__BASE_URL__'
+BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
 VERSION="${OPENCODE_VERSION:-1.14.48}"
 INSTALL_DIR="${OPENCODE_INSTALL_DIR:-$HOME/.local/bin}"
 CONFIG_DIR="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"

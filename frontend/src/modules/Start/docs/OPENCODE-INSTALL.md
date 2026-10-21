@@ -2,18 +2,18 @@
 
 ## 1. Установите OpenCode
 
-Скопируйте команду со страницы «Начало работы»: она уже содержит адрес вашей площадки.
+Скопируйте команду со страницы «Начало работы»: она уже содержит публичный адрес API Gateway вашей площадки.
 
 macOS, Linux и WSL:
 
 ```sh
-curl -fsSL __BRIDGE_BASE__/install_opencode.sh | bash
+__INSTALL_POSIX__
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm __BRIDGE_BASE__/install_opencode.ps1 | iex
+__INSTALL_WINDOWS__
 ```
 
 В Git Bash подходит Bash-команда. Установщик выбирает пакет по ОС и архитектуре; архивы скачиваются с Нейроцентра. Глобальная установка OpenCode через npm не требуется. Существующая конфигурация и ключи сохраняются.

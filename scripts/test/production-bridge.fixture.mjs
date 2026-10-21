@@ -19,7 +19,9 @@ export async function verifyProductionBridge({ check, request, query }) {
         assert.equal((await request(file.replace('darwin-arm64', 'unsupported'))).status, 404);
         const script = await request('/api/bridge/install.sh?reconnect=1'); assert.equal(script.status, 200);
         assert.ok(script.data.includes("RECONNECT='1'")); assert.ok(script.data.includes("VERSION='"+bridgeVersion+"'")); assert.ok(script.data.includes('https://panel.test/api/bridge'));
-        assert.equal(script.data.includes('__BASE_URL__'), false); assert.equal(script.data.includes('__RECONNECT__'), false);
+        assert.equal(script.data.includes('__BASE_URL__'), false); assert.equal(script.data.includes('__SITE_URL__'), false); assert.equal(script.data.includes('__RECONNECT__'), false);
+        assert.ok(script.data.includes("DEFAULT_SITE_URL='https://panel.test'"));
+        const config=await request('/api/bridge/config');assert.equal(config.status,200);assert.deepEqual(config.data,{origin:'https://panel.test'});
     });
     await check('Новый протокол подключения проходит HTTPS и повторяет ответ без нового устройства или секретов', async () => {
         const pair = await channel('pair/start', { name: 'Изолированная проверка MCP', fingerprint: 'a'.repeat(64), credentialHash: hash(token) });

@@ -12,6 +12,9 @@ import './Start.less';
 import {BridgeSetup} from './BridgeSetup';
 import { startQueryUrl, startStep } from './startQuery';
 import {StartProjectStep} from './StartProjectStep';
+import {useBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
+import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
+import {openCodeInstallerCommand} from '../../features/McpBridge/connectionCommands';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -34,12 +37,11 @@ const Start = () => {
     const project = selectedProject?.name;
     const go = (next: number): void => history.replace(startQueryUrl(location.search, { step: next }, location.hash));
     const selectProject = (value: string): void => history.replace(startQueryUrl(location.search, { project: value }, location.hash));
-    const bridgeBase = `${window.location.origin}/api/bridge`;
+    const installer=useBridgeInstaller(step<2);
     const windows = /Windows/i.test(navigator.userAgent);
-    const installCommand = windows
-        ? `irm ${bridgeBase}/install_opencode.ps1 | iex`
-        : `curl -fsSL ${bridgeBase}/install_opencode.sh | bash`;
-    const instructions = installDoc.replace(/__BRIDGE_BASE__/g, bridgeBase);
+    const instructions = installer.origin?installDoc
+        .replace('__INSTALL_POSIX__',()=>openCodeInstallerCommand(installer.origin!,false))
+        .replace('__INSTALL_WINDOWS__',()=>openCodeInstallerCommand(installer.origin!,true)):'';
 
     useEffect(() => {
         if (!ready || error || requestedProject || projects.length !== 1) { return; }
@@ -65,13 +67,13 @@ const Start = () => {
                     {step === 0 && <>
                         <Title level={3}>Начните с ИИ-помощника</Title>
                         <Paragraph type="secondary">Скопируйте команду и выполните её в терминале. Если OpenCode уже установлен, переходите к подключению.</Paragraph>
-                        <div className="start__command"><code>{installCommand}</code><Button icon={<CopyOutlined />} onClick={() => { void copy(installCommand); }}>Копировать команду</Button></div>
+                        <BridgeInstallerCommand installer={installer} windows={windows} openCode onCopy={text=>{void copy(text);}}/>
                         <Paragraph type="secondary">Установщик сам определит систему и архитектуру. Поддерживаются macOS, Linux и Windows (PowerShell, WSL или Git Bash). Готовые пакеты скачиваются с этой площадки.</Paragraph>
                         <Button type="primary" onClick={() => go(1)}>Продолжить <ArrowRightOutlined /></Button>
-                        <Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>
+                        {installer.origin&&<Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>}
                     </>}
                     {step === 1 && <>
-                        <BridgeSetup origin={window.location.origin} windows={windows} projectId={selectedProject?.id} onCopy={text=>{void copy(text);}}/>
+                        <BridgeSetup origin={window.location.origin} installer={installer} windows={windows} projectId={selectedProject?.id} onCopy={text=>{void copy(text);}}/>
                         <Space wrap style={{marginTop:16}}><Button onClick={() => go(0)}>Назад</Button><Button onClick={() => go(2)}>Папка и проект <ArrowRightOutlined /></Button></Space>
                     </>}
                     {step === 2 && <StartProjectStep projects={projects} ready={ready} loading={loading} error={error} requestedProject={requestedProject} selectedProject={selectedProject} refresh={refresh} onSelect={selectProject} onBack={()=>go(1)}/>}

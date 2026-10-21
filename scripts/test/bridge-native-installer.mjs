@@ -139,7 +139,7 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
     env.BASE_URL = origin + '/api/bridge';
     const script = path.join(temporary, 'install.sh');
-    await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__RECONNECT__', '0'));
+    await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', env.BASE_URL.replace(/\/api\/bridge$/, '')).replaceAll('__RECONNECT__', '0'));
     const profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(origin).slice(0, 20));
     const config = path.join(env.XDG_CONFIG_HOME, 'opencode/opencode.json');
     let installedConfig, installedMtime;

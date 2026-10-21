@@ -270,6 +270,7 @@ services:
     environment:
       <<: *runtime
       PORT: 4000
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-}
       AUTH_GUARD_ENABLED: 'true'
       BRIDGE_DIST: /app/bridge-dist
       CATALOG_SERVICE_URL: http://catalog-service:4100

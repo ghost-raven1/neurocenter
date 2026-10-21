@@ -6,6 +6,15 @@ export function panelOrigin():string {
     if(!['http:','https:'].includes(panel.protocol)||panel.username||panel.password){throw new Error('Некорректный PANEL_URL');}
     return panel.origin;
 }
+/** Публичная раздача идёт через Gateway; внутренние proxy targets и заголовки клиента не используются. */
+export function publicApiOrigin():string {
+    const configured=process.env.API_PUBLIC_URL;
+    if(!configured){return process.env.NODE_ENV==='production'?panelOrigin():'http://localhost:4000';}
+    const api=new URL(configured);
+    if(/[\u0000-\u0020\u007f]/.test(configured)||!['http:','https:'].includes(api.protocol)||api.username||api.password
+        ||api.pathname!=='/'||api.search||api.hash){throw new Error('Некорректный API_PUBLIC_URL: укажите HTTP(S) origin без пути.');}
+    return api.origin;
+}
 export function allowBrowserOrigin(origin:unknown):boolean {
     return origin===undefined||origin===panelOrigin();
 }

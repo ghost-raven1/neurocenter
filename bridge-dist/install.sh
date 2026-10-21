@@ -2,7 +2,10 @@
 # Автономный мост: Node и зависимости уже находятся в проверенном пакете площадки.
 set -euo pipefail
 umask 077
-BASE_URL="${BASE_URL:-__BASE_URL__}"
+DEFAULT_BASE_URL='__BASE_URL__'
+DEFAULT_SITE_URL='__SITE_URL__'
+BASE_URL="${BASE_URL:-$DEFAULT_BASE_URL}"
+SITE_URL="${SITE_URL:-$DEFAULT_SITE_URL}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.opencode/neurocenter-asset-sync}"
 VERSION='__BRIDGE_VERSION__'
 RECONNECT='__RECONNECT__'
@@ -112,7 +115,7 @@ test -x "$NODE" || fail 'В архиве нет исполняемого Node.js
 case "$("$NODE" --version)" in v24.*) ;; *) fail 'Runtime MCP не запускается или имеет неподдерживаемую версию.' ;; esac
 [ "$("$NODE" -p 'process.platform + ":" + process.arch')" = "$PLATFORM:$ARCH" ] || fail 'Runtime в архиве не соответствует ОС и архитектуре компьютера.'
 "$NODE" -e 'const fs=require("node:fs"),p=process.argv[1],v=process.argv[2],t=process.argv[3];const read=f=>JSON.parse(fs.readFileSync(p+"/"+f,"utf8"));const m=read("package.json"),r=read("runtime.json"),b=read("dist/build.json");if(m.name!=="neurocenter-asset-sync"||m.version!==v||r.version!==v||b.version!==v||r.target!==t||r.buildId!==b.buildId||!/^[a-f0-9]{64}$/.test(b.buildId))process.exit(1)' "$STAGING_DIR/package" "$VERSION" "$PLATFORM-$ARCH$SUFFIX" || fail 'Версия или отпечаток пакета MCP не совпадает с установщиком. Файлы не заменены.'
-NEUROCENTER_URL="${BASE_URL%/api/bridge}"; export NEUROCENTER_URL
+NEUROCENTER_URL="$SITE_URL"; export NEUROCENTER_URL
 PREVIOUS_COMPATIBLE='0'
 if [ -e "$INSTALL_DIR" ]; then
     "$NODE" -e 'const fs=require("node:fs");if(JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8")).name!=="neurocenter-asset-sync")process.exit(1)' "$INSTALL_DIR" || fail 'Папка установки занята посторонними файлами. Укажите отдельную папку MCP.'

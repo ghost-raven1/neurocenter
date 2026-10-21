@@ -10,6 +10,7 @@ const directory=process.env.GATEWAY_TEST_DIST||path.resolve('services/api-gatewa
 require('node:module').createRequire(path.join(directory,'entry.cjs'))('reflect-metadata');
 const {BridgeSupplyService,bridgeRequest}=require(path.join(directory,'bridge/bridge-supply.service.js'));
 const {BridgeController}=require(path.join(directory,'bridge/bridge.controller.js'));
+const {publicApiOrigin}=require(path.join(directory,'security/browser-security.js'));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const archive=Buffer.from('synthetic-bridge-runtime');
 function descriptor(version='9.8.7',payload=archive){
@@ -74,16 +75,43 @@ test('Настоящий HTTP runtime больше metadata-лимита 128KiB 
 });
 test('Установщики закрепляют импортированную версию, Gateway origin и reconnect без package-version fallback',async t=>{
     environment(t,'BRIDGE_TEMPLATES_DIR',path.resolve('bridge-dist'));environment(t,'PANEL_URL','https://panel.fixture.example/path');
+    environment(t,'API_PUBLIC_URL','https://gateway.fixture.example:8443');
     const f=await fixture(t),controller=new BridgeController(f.service);
     for(const method of ['installScript','installWindowsBridge']){
         const req=request(),res=new Response();req.query.reconnect='1';await controller[method](req,res);
-        const text=res.body.toString();assert.ok(text.includes("'9.8.7'"));assert.ok(text.includes('https://panel.fixture.example/api/bridge'));
-        assert.equal(/__BASE_URL__|__BRIDGE_VERSION__|__RECONNECT__|untrusted.example/.test(text),false);
+        const text=res.body.toString();assert.ok(text.includes("'9.8.7'"));assert.ok(text.includes('https://gateway.fixture.example:8443/api/bridge'));
+        assert.ok(text.includes(method==='installScript'?"DEFAULT_SITE_URL='https://panel.fixture.example'":"$HubUrl = 'https://panel.fixture.example'"));
+        assert.equal(/https:\/\/panel.fixture.example\/api\/bridge|__BASE_URL__|__SITE_URL__|__BRIDGE_VERSION__|__RECONNECT__|untrusted.example/.test(text),false);
         assert.equal(res.headers['cache-control'],'no-store');assert.ok(text.includes(method==='installScript'?"RECONNECT='1'":"$Reconnect = '1'"));
     }
     assert.equal(f.calls.length,2);assert.ok(f.calls.every(call=>call.url==='/internal/asset-sources/bridge'));
     assert.equal(BridgeController.prototype.artifact,undefined);
 });
+test('Runtime-конфигурация и OpenCode используют тот же публичный Gateway, без upstream URL и заголовков',async t=>{
+    environment(t,'BRIDGE_TEMPLATES_DIR',path.resolve('bridge-dist'));environment(t,'API_PUBLIC_URL','https://gateway.fixture.example:8443');
+    environment(t,'VITE_API_PROXY_TARGET','http://api-gateway:4000');
+    const f=await fixture(t),controller=new BridgeController(f.service);
+    assert.deepEqual(controller.configuration(),{origin:'https://gateway.fixture.example:8443'});
+    for(const method of ['installOpenCodeScript','installOpenCodeWindows']){
+        const req=request(),res=new Response();req.headers.forwarded='host=spoofed.example;proto=http';
+        await controller[method](req,res);const text=res.body.toString();
+        assert.ok(text.includes('https://gateway.fixture.example:8443/api/bridge'));
+        assert.equal(/__BASE_URL__|untrusted.example|spoofed.example|api-gateway:4000/.test(text),false);
+    }
+    assert.equal(f.calls.length,0);
+});
+for(const [mode,expected]of [['development','http://localhost:4000'],['production','https://panel.fixture.example']]){
+    test('Пустая публичная настройка использует безопасный default: '+mode,t=>{
+        environment(t,'API_PUBLIC_URL','');environment(t,'NODE_ENV',mode);environment(t,'PANEL_URL','https://panel.fixture.example/path');
+        assert.equal(publicApiOrigin(),expected);
+    });
+}
+for(const value of ['not a URL','file:///tmp','ftp://host.test','https://owner:secret@host.test','https://host.test/path','https://host.test?x=1','https://host.test#fragment',' https://host.test','https://ho\nst.test']){
+    test('Некорректный API_PUBLIC_URL не маскируется fallback: '+JSON.stringify(value),t=>{
+        environment(t,'API_PUBLIC_URL',value);assert.throws(()=>publicApiOrigin());
+        assert.throws(()=>new BridgeController({}).configuration());
+    });
+}
 test('Исторический runtime остаётся exact: запрос old version не может получить новый head',async t=>{
     const f=await fixture(t),file=f.state.supply.artifacts[0].file;
     f.state.supply=descriptor('9.8.8');

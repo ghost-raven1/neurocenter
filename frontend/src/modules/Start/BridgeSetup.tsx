@@ -1,5 +1,4 @@
 import {Alert,Button,Collapse,Radio,Select,Space,Typography} from 'antd';
-import {CopyOutlined} from '@ant-design/icons';
 import {useHistory} from 'react-router-dom';
 import {useEffect,useState} from 'react';
 import {useBridge} from '../../features/McpBridge/useBridge';
@@ -8,13 +7,14 @@ import {InstalledBridgeConnect} from '../../features/McpBridge/InstalledBridgeCo
 import {PairingCode} from '../../features/McpBridge/PairingCode';
 import {awaitingBridgeReport,bridgeOperationBlocker} from '../../features/McpBridge/readiness';
 import {roleLevel} from '../../features/UserBlock/roles';
-import {bridgeInstallerCommand} from '../../features/McpBridge/connectionCommands';
+import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
+import type {IBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {projectBindingUrl} from '../Projects/projectNavigation';
 
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({origin,windows:browserWindows,onCopy,projectId}:{origin:string;windows:boolean;onCopy:(text:string)=>void;projectId?:string})=>{
+export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projectId}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string})=>{
     const bridge=useBridge();const history=useHistory();
     const connectionRequested=new URLSearchParams(history.location.search).get('addComputer')==='1';
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
@@ -28,7 +28,6 @@ export const BridgeSetup=({origin,windows:browserWindows,onCopy,projectId}:{orig
         ['durable-completions','managed-installations','install-set-v1','workspace-instance-v1'].some(capability=>!device.report.capabilities?.includes(capability)));
     const folderBlocked=!!bridgeOperationBlocker(device);
     const preservesConnection=!!device&&!needsReconnect;
-    const installCommand=bridgeInstallerCommand(origin,windows,needsReconnect);
     const currentAction=action??(connectionRequested?'connect':needsUpdate&&!needsReconnect?'install':'connect');
     const healthy=bridge.devicesReady&&!!device?.online&&!needsReconnect&&!needsUpdate;
     useEffect(()=>{
@@ -36,7 +35,7 @@ export const BridgeSetup=({origin,windows:browserWindows,onCopy,projectId}:{orig
     },[connectionRequested,history.location]);
     const installation=<>
         <Typography.Paragraph>{preservesConnection?'Выполните команду в терминале этого компьютера. Установщик установит доступную на этой площадке сборку моста.':'Выполните команду на компьютере, где будете работать. Установщик сам откроет страницу подтверждения в браузере.'}</Typography.Paragraph>
-        <div className="start__command"><code>{installCommand}</code><Button icon={<CopyOutlined/>} onClick={()=>onCopy(installCommand)}>Копировать команду</Button></div>
+        <BridgeInstallerCommand installer={installer} windows={windows} reconnect={needsReconnect} onCopy={onCopy}/>
         <Alert type="info" showIcon message={preservesConnection?'Перезапустите OpenCode после обновления':'Следующий шаг — подтвердить компьютер'}
             description={preservesConnection?'Сохранённое подключение будет использовано повторно. Файлы и история установок сохраняются. Затем нажмите «Проверить подключение», чтобы увидеть версию работающего моста.':'На открывшейся странице проверьте имя компьютера и нажмите «Подключить компьютер». Затем дождитесь статуса «На связи». Вводить код обычно не требуется.'}/>
         <Typography.Paragraph type="secondary" style={{marginTop:12}}>Готовый пакет содержит Node.js и зависимости моста. Устанавливать npm не требуется. Существующие настройки OpenCode сохраняются.</Typography.Paragraph>

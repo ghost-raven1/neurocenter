@@ -68,7 +68,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
         expect(html.includes('Сначала синхронизируйте полный индекс с сервером')).toBe(blocked);
     });
     it('На странице начала работы обновление установщика не блокирует переход к папкам',()=>{
-        const html=renderToStaticMarkup(createElement(BridgeSetup,{origin:'https://panel.example.test',windows:false,onCopy:vi.fn()}));
+        const html=renderToStaticMarkup(createElement(BridgeSetup,{origin:'https://panel.example.test',installer:{origin:'https://gateway.example.test',loading:false,error:'',reload:vi.fn()},windows:false,onCopy:vi.fn()}));
         expect(buttonAttributes(html,'Связать папку проекта')).not.toContain('disabled');
         expect(html).toContain('Обновите мост');
     });

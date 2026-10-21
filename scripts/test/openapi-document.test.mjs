@@ -131,13 +131,19 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 173);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 213);
+    assert.equal(Object.keys(actual.paths).length, 174);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 214);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
     assert.equal(actual.paths['/api/feature-flags'].get['x-neurocenter-service'], 'feature-flags-service');
+});
+
+test('Bridge installer configuration exposes the trusted public Gateway origin', () => {
+    const config = actual.paths['/api/bridge/config'].get;
+    assert.deepEqual(config.security, []);
+    assert.equal(jsonResponse(config).properties.origin.type, 'string');
 });
 
 test('Actual project and skill contracts include usable typed bodies, responses and queries', () => {

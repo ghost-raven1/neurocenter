@@ -18,7 +18,7 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequest
 vi.mock('react-router-dom', () => ({ useHistory: () => ({ push: vi.fn(), location: { pathname: '/start' } }) }));
 
 const capabilities = [...(fixture.bridge.device.report.capabilities??[])];
-const setup = () => renderToStaticMarkup(createElement(BridgeSetup, { origin: 'https://panel.example.test', windows: false, onCopy: vi.fn() }));
+const setup = () => renderToStaticMarkup(createElement(BridgeSetup, { origin: 'https://panel.example.test', installer:{origin:'https://gateway.example.test',loading:false,error:'',reload:vi.fn()}, windows: false, onCopy: vi.fn() }));
 beforeEach(() => {
     fixture.bridge.device.online=true;fixture.bridge.device.lastSeen=null;
     fixture.bridge.device.report={bridgeVersion:'0.9.0',protocolVersion:2,capabilities:[...capabilities]};
@@ -59,6 +59,8 @@ describe('Обновление уже подключённого моста', ()
         fixture.bridge.device.report.capabilities = ['durable-completions', 'managed-installations'];
         const html = setup();
         expect(html).toContain('/api/bridge/install.sh');
+        expect(html).toContain('https://gateway.example.test/api/bridge/install.sh');
+        expect(html).not.toContain('https://panel.example.test/api/bridge/install.sh');
         expect(html).toContain('Сохранённое подключение будет использовано повторно');
         expect(html).toContain('Перезапустите OpenCode');
         expect(html).not.toContain('Следующий шаг — подтвердить компьютер');

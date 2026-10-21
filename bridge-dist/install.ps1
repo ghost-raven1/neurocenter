@@ -1,7 +1,7 @@
 # Автономная установка Windows: Node и зависимости приходят с площадки.
 $ErrorActionPreference = 'Stop'
 $BridgeBase = '__BASE_URL__'
-$HubUrl = $BridgeBase -replace '/api/bridge$', ''
+$HubUrl = '__SITE_URL__'
 $Version = '__BRIDGE_VERSION__'
 $Reconnect = '__RECONNECT__' -eq '1'
 $Architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()

@@ -1,8 +1,8 @@
-import { Controller, Get, Req, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Header, Req, Res, NotFoundException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Request, Response } from 'express';
-import {panelOrigin} from '../security/browser-security';
+import {panelOrigin,publicApiOrigin} from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
 
 /**
@@ -21,6 +21,13 @@ export class BridgeController {
             '..',
             'bridge-dist',
         );
+    }
+
+    /** Runtime-настройка для готового frontend: внешний адрес раздачи не зависит от адреса UI. */
+    @Get('config')
+    @Header('Cache-Control','no-store')
+    public configuration():{origin:string} {
+        return {origin:publicApiOrigin()};
     }
 
     /**
@@ -81,7 +88,7 @@ export class BridgeController {
         }
     }
 
-    /** Подставляет адрес площадки с проверкой прокси-заголовков. */
+    /** Разделяет адрес скачивания и идентичность площадки, сохраняя существующее подключение моста. */
     private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
         await bridgeRequest(req, res, async signal => {
             const version = bridge ? (await this.supply.supply(signal)).version : undefined;
@@ -92,7 +99,10 @@ export class BridgeController {
                 script = script.replace('__BRIDGE_VERSION__', version!);
             }
             if (signal.aborted) { return; }
-            script = script.replace(/__BASE_URL__/g, `${panelOrigin()}/api/bridge`).replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
+            const quote = (value:string):string => value.replace(/'/g,file.endsWith('.sh')?"'\"'\"'":"''");
+            script = script.replace(/__BASE_URL__/g, () => quote(`${publicApiOrigin()}/api/bridge`))
+                .replace(/__SITE_URL__/g, () => quote(panelOrigin()))
+                .replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
             res.setHeader('cache-control', 'no-store');
             res.setHeader('content-type', file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8');
             res.send(script);

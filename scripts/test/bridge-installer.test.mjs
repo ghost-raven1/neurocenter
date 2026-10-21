@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const script = fileURLToPath(new URL('../../bridge-dist/install.sh', import.meta.url));
 const version = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package.json', import.meta.url), 'utf8')).version;
-const renderedTemplate=(await fs.readFile(script,'utf8')).replace('__BRIDGE_VERSION__',version);
+const renderedTemplate=(await fs.readFile(script,'utf8')).replace('__BRIDGE_VERSION__',version).replace('__SITE_URL__','https://platform.example');
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 test('Оба установщика, протокол и lock-файл раздают текущую версию моста', async () => {
@@ -40,6 +40,7 @@ case "$1" in
     -) exec "$TEST_FORMATTER_NODE" "$@" ;;
     *)
         echo "$*" >> "$TEST_ROOT/events"
+        printf '%s %s\\n' "$2" "$NEUROCENTER_URL" >> "$TEST_ROOT/site-origins"
         if [ "$2" = --prepare-upgrade ]; then
             if [ "\${TEST_FAIL_UPGRADE:-0}" = 1 ]; then
                 printf '%s' '{"ok":false,"error":"На компьютере выполняется задание"}'
@@ -97,6 +98,19 @@ esac
     };
     return { root, env, run, pack, scriptPath };
 }
+for(const platform of ['Darwin','Linux'])test(`Установщик ${platform} скачивает с Gateway и сохраняет площадку при установке и reconnect`,async()=>{
+    const f=await fixture(platform),gateway='https://gateway.example.test/api/bridge',site='https://panel.example.test';
+    const rendered=renderedTemplate.replace("RECONNECT='__RECONNECT__'","RECONNECT='1'");
+    await fs.writeFile(f.scriptPath,rendered);
+    assert.equal(f.run({BASE_URL:gateway,SITE_URL:site}).status,0);
+    const urls=(await fs.readFile(path.join(f.root,'urls'),'utf8')).trim().split('\n');
+    assert.equal(urls.length,2);assert.ok(urls.every(url=>url.startsWith(gateway+'/runtime/')));assert.ok(urls[1].endsWith('.tgz.sha256'));
+    const observed=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n');
+    assert.deepEqual(observed,[`--init ${site}`,`--reconnect-open ${site}`]);
+    assert.equal(f.run({BASE_URL:gateway,SITE_URL:site}).status,0);
+    const upgrade=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n').slice(2);
+    assert.deepEqual(upgrade,[`--prepare-upgrade ${site}`,`--init ${site}`,`--finish-upgrade ${site}`,`--reconnect-open ${site}`]);
+});
 for (const [platform, arch, libc, target] of [['Darwin', 'arm64', 'glibc', 'darwin-arm64'], ['Darwin', 'x86_64', 'glibc', 'darwin-x64'],
     ['Linux', 'x86_64', 'glibc', 'linux-x64'], ['Linux', 'aarch64', 'glibc', 'linux-arm64'],
     ['Linux', 'x86_64', 'musl', 'linux-x64-musl'], ['Linux', 'aarch64', 'musl', 'linux-arm64-musl']]) {
