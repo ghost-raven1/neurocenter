@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import * as zlib from 'node:zlib';
 import { Header } from 'tar';
 import { readSourceArchive } from '../src/package-build/source-archive';
+import {inspectSkillSource} from '../src/package-build/skill-source';
 
 interface FixtureFile {path: string; content?: string | Buffer; type?: string; link?: string; mode?: number; encrypted?: boolean; crc?: number; utf8?: boolean; nameBytes?: Buffer}
 const crc32 = (zlib as typeof zlib & {crc32(bytes: Buffer): number}).crc32;
@@ -46,6 +47,26 @@ function paxPath(value: string): string {
 }
 
 describe('Предварительное чтение архивов исходников', () => {
+    it.each(['zip','tgz'])('Сохраняет вложенный скилл, build/dist resources и бинарные bytes из %s',async extension=>{
+        const binary=Buffer.from([137,80,78,71,0,255,128]),instruction='---\nname: nested-skill\ndescription: Вложенный скилл\n---\n\n[Правила](references/rules.md)';
+        const files=[{path:'package/README.md',content:'README соседней папки'},
+            {path:'package/root/my-skill/SKILL.md',content:instruction},{path:'package/root/my-skill/references/rules.md',content:'Правила'},
+            {path:'package/root/my-skill/scripts/build/helper.py',content:'print("never executed")'},
+            {path:'package/root/my-skill/assets/dist/diagram.png',content:binary},{path:'package/root/my-skill/references/bom.md',content:'\uFEFFExact BOM bytes'}];
+        const read=await readSourceArchive(request('skill.'+extension,extension==='zip'?zip(files):zlib.gzipSync(tar(files))));
+        expect(read.skipped).toBe(0);const skill=inspectSkillSource(read.files);
+        expect(skill.entrypoint).toBe('root/my-skill/SKILL.md');expect(skill.resources).toHaveLength(4);
+        expect(skill.resources.find(file=>file.path==='references/bom.md')?.content).toBe('\uFEFFExact BOM bytes');
+        const saved=skill.resources.find(file=>file.path==='assets/dist/diagram.png')!;
+        expect(saved.encoding).toBe('base64');expect(Buffer.from(saved.content,'base64')).toEqual(binary);
+    });
+    it('Несколько SKILL.md в архиве требуют явный путь и сохраняют ресурсы выбранного скилла',async()=>{
+        const instruction=(name:string)=>'---\nname: '+name+'\ndescription: Выбор скилла\n---\n\nИнструкция';
+        const read=await readSourceArchive(request('skills.zip',zip([{path:'bundle/a/SKILL.md',content:instruction('first')},{path:'bundle/a/references/a.md',content:'A'},
+            {path:'bundle/b/SKILL.md',content:instruction('second')},{path:'bundle/b/references/b.md',content:'B'}])));
+        expect(()=>inspectSkillSource(read.files)).toThrow('несколько SKILL.md');
+        const selected=inspectSkillSource(read.files,{entrypoint:'b/SKILL.md'});expect(selected.slug).toBe('second');expect(selected.resources).toEqual([{path:'references/b.md',content:'B'}]);
+    });
     it.each(['zip', 'tar', 'tar.gz', 'tgz'])('Читает %s с единым корнем в общий источник files', async extension => {
         const bytes = extension === 'zip' ? zip(source) : extension === 'tar' ? tar(source) : zlib.gzipSync(tar(source));
         await expect(readSourceArchive(request('tool.' + extension, bytes))).resolves.toEqual({rootName: 'tool', skipped: 0,

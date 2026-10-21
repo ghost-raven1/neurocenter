@@ -60,7 +60,7 @@ function validateRepositorySource(value,{pinned=true}={}){
  if(value.release&&parsed.release&&(release.tag!==parsed.release.tag||parsed.release.asset&&release.asset!==parsed.release.asset))throw new Error('Поля релиза не совпадают со ссылкой.');
  const entrypoint=!pinned&&(value.entrypoint===undefined||value.entrypoint==='')?undefined:relativePath(value.entrypoint,'Файл запуска');
  if(entrypoint&&/\.d\.[cm]?ts$/i.test(entrypoint))throw new Error('Нужен исполняемый JS/TS-файл, без деклараций типов.');
- if(pinned&&!value.snapshotSha256&&!release&&entrypoint&&entrypoint!==manifestName&&!isSourceEntrypoint(entrypoint))throw new Error('Репозиторий должен содержать исполняемый JS/TS-файл запуска или neurocenter.tool.json, без деклараций типов.');
+ if(pinned&&!value.snapshotSha256&&!release&&entrypoint&&!/(?:^|\/)SKILL\.md$/.test(entrypoint)&&entrypoint!==manifestName&&!isSourceEntrypoint(entrypoint))throw new Error('Репозиторий должен содержать исполняемый JS/TS-файл запуска, SKILL.md или neurocenter.tool.json, без деклараций типов.');
  if(pinned){
   if(typeof value.commit!=='string'||!commitPattern.test(value.commit))throw new Error('Репозиторий должен быть закреплён полным SHA commit (40 или 64 hex).');
   if(release){
@@ -99,8 +99,8 @@ async function githubJson(fetcher,pathname,{optional=false}={}){
  finally{reader.releaseLock();}
  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('GitHub вернул некорректный JSON.');}
 }
-function githubFileBytes(value,label){
- if(!object(value)||value.type!=='file'||value.encoding!=='base64'||!Number.isSafeInteger(value.size)||value.size<1||value.size>65536||typeof value.content!=='string'||value.content.length>90000)throw new Error(label+' репозитория должен быть обычным файлом до 64 КиБ.');
+function githubFileBytes(value,label,limit=65536){
+ if(!object(value)||value.type!=='file'||value.encoding!=='base64'||!Number.isSafeInteger(value.size)||value.size<1||value.size>limit||typeof value.content!=='string'||value.content.length>Math.ceil(limit*1.4))throw new Error(label+' репозитория должен быть обычным файлом допустимого размера.');
  const normalized=value.content.replace(/\n/g,'');
  const bytes=Buffer.from(normalized,'base64');
  if(bytes.toString('base64')!==normalized||bytes.length!==value.size||!Buffer.from(bytes.toString('utf8')).equals(bytes))throw new Error('GitHub вернул повреждённый '+label+'.');
@@ -124,7 +124,7 @@ function validateRepositoryManifest(value){
 }
 
 /** Все чтения после commits/{ref} используют только полученный SHA; URL загрузки из API не исполняется. */
-async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,metadata:includeMetadata=true,inspectAsset,inspectRepository}={}){
+async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,metadata:includeMetadata=true,inspectAsset,inspectRepository,inspectSkill}={}){
  const source=validateRepositorySource({type:'repository',...input},{pinned:false});
  const parsed=parseRepositoryUrl(source.url),base=`/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repository)}`;
  const repository=await githubJson(fetcher,base);
@@ -145,6 +145,13 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
   return {...result(manifestName,[manifestName],manifest),recommendedKind:'mcp',adapter:manifest.source.adapter,
    supportedTargets:runtimeSourceTargets(manifest.source),runtimeSource:manifest.source,manifestSha256:createHash('sha256').update(bytes).digest('hex')};
  };
+ const skillResult=async()=>{
+  if(typeof inspectSkill!=='function')throw new Error('Проверка SKILL.md недоступна.');
+  const entrypoint=source.entrypoint??'SKILL.md';
+  const content=githubFileBytes(await githubJson(fetcher,contentsPath(entrypoint)),'SKILL.md',1048576).toString('utf8');
+  const metadata=inspectSkill([{path:entrypoint,content}]);
+  return {...result(entrypoint,[entrypoint],metadata),recommendedKind:'skill',runnableKinds:['skill'],warnings:[]};
+ };
  if(isPreparedRagRepository({...source,commit})){
   const prepared=RAG_PLUGIN_SOURCE;
   const entry=await githubJson(fetcher,contentsPath(prepared.entrypoint),{optional:true});
@@ -153,6 +160,7 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
    recommendedKind:'plugin',preparedAdapter:prepared.adapter,preparedVersion:prepared.version,supportedTargets:[...prepared.supportedTargets]};
  }
  if(source.entrypoint===manifestName)return manifestResult(await githubJson(fetcher,contentsPath(manifestName)));
+ if(source.entrypoint&&/(?:^|\/)SKILL\.md$/.test(source.entrypoint))return skillResult();
  if(source.entrypoint&&!isSourceEntrypoint(source.entrypoint)&&source.entrypoint!==manifestName){
   if(typeof inspectRepository!=='function')throw new Error('Проверка готовой поставки репозитория недоступна.');
   return {...result('',[]),...await inspectRepository({type:'repository',url:source.url,commit,...(source.subdirectory?{subdirectory:source.subdirectory}:{})},source.entrypoint)};
@@ -167,6 +175,7 @@ async function resolveRepositorySource(input,{fetch:fetcher=globalThis.fetch,met
  const listings=new Map(directory.filter(object).map(entry=>[entry.name,entry]));
  const knownEntries=new Map(directory.filter(object).map(entry=>[entry.name,entry]));
  if(!source.entrypoint&&listings.has(manifestName))return manifestResult(await githubJson(fetcher,contentsPath(manifestName)));
+ if(!source.entrypoint&&listings.has('SKILL.md'))return skillResult();
  const packageEntry=listings.get('package.json');
  const metadata=packageEntry?decodePackage(await githubJson(fetcher,contentsPath('package.json'))):{};
  const candidates=[];

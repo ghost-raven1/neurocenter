@@ -18,7 +18,7 @@ export function RepositoryMetadataDetails({ metadata, entrypoint }: { metadata: 
         {metadata.adapter ? <>
             <Typography.Text>{adapterLabels[metadata.adapter]}</Typography.Text>
             <Typography.Text type="secondary">{metadata.release ? 'Файл запуска' : 'Рецепт поставки'}: {metadata.entrypoint}</Typography.Text>
-        </> : <Typography.Text type="secondary">Файл запуска: {entrypoint || 'выберите ниже'}</Typography.Text>}
+        </> : <Typography.Text type="secondary">{metadata.recommendedKind === 'skill' ? 'Инструкция скилла' : 'Файл запуска'}: {entrypoint || 'выберите ниже'}</Typography.Text>}
         {!!metadata.supportedTargets?.length && <>
             <Typography.Text type="secondary">Поддерживаемые платформы</Typography.Text>
             <Space wrap>{metadata.supportedTargets.map(target => <Tag key={target}>{packagingPlatformLabels[target] || target}</Tag>)}</Space>

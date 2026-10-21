@@ -1,4 +1,5 @@
 import { LocalAssetIngest } from './local-asset-ingest';
+import {LocalSkillIngest} from './local-skill-ingest';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import type { Request } from 'express';
 import { assetDigest,serializeAsset,selectAssets, toBridgeRelease, type BridgeAsset, type ModelAsset } from '@neurocenter/asset-contract';
@@ -11,8 +12,8 @@ import { AssetBlobStore } from './asset-blob-store';
 import { AssetSourceSnapshots } from './source-snapshots';
 import { AssetImportRepository } from './import-repository';
 import { AssetImportWorker } from './import-worker';
-import { SkillAssetClient } from './skill-adapter';
 import { importView, type ISourceReceipt } from './import-types';
+import {assetCardState,sourceAssetView} from './asset-source-view';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -24,10 +25,13 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     private worker:AssetImportWorker;private timer?:ReturnType<typeof setInterval>;
     constructor(private readonly catalog:CatalogService,private readonly access:AccessDb,private readonly runtime:RuntimeArtifacts) {}
     prepareLocal(...args:Parameters<LocalAssetIngest['prepare']>){return new LocalAssetIngest(this.pool,this.blobs).prepare(...args);}
+    prepareLocalSkill(...args:Parameters<LocalSkillIngest['prepare']>){return new LocalSkillIngest(this.pool,this.blobs).prepare(...args);}
+    publishLocalSkill(...args:Parameters<LocalSkillIngest['publish']>){return new LocalSkillIngest(this.pool,this.blobs).publish(...args);}
+    recordLocalSkill(...args:Parameters<LocalSkillIngest['record']>){return new LocalSkillIngest(this.pool,this.blobs).record(...args);}
     async exportLocalReceipt(input:{assetId:string;sourceVersion:string;sourceSha256:string}){
         if(!input||typeof input.assetId!=='string'||typeof input.sourceVersion!=='string'||!/^([a-f0-9]{64})$/.test(input.sourceSha256))throw new BadRequestException('Invalid immutable export reference.');
         const row=(await this.pool.query<ISourceReceipt>("SELECT * FROM asset_source_versions WHERE repository='local-archive' AND external_id=$1 AND asset_version=$2 AND descriptor_sha256=$3",[input.assetId,input.sourceVersion,input.sourceSha256])).rows[0];
-        if(!row||!['mcp','plugin'].includes(row.asset_kind))throw new NotFoundException('Local source envelope not found.');
+        if(!row||!['mcp','plugin','skill'].includes(row.asset_kind))throw new NotFoundException('Local source envelope not found.');
         try{if(row.descriptor.id!==input.assetId||row.descriptor.version!==input.sourceVersion||row.descriptor.kind!==row.asset_kind||assetDigest(serializeAsset(row.descriptor))!==input.sourceSha256)throw new Error();}
         catch{throw new ConflictException('Immutable source envelope checksum changed.');}
         return row;
@@ -43,26 +47,17 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     async onApplicationShutdown():Promise<void>{if(this.timer){clearInterval(this.timer);}await this.worker?.stop();await this.pool.end();}
     async actor(req:Request):Promise<string>{const actor=await readModelActor(req,this.access);if(actor.activeRole!=='Главный админ'){throw new ForbiddenException('Управлять источниками и общим каталогом может главный администратор.');}return actor.email;}
     async view(){
-        const {snapshot,last}=await this.sources.status(),receipts=snapshot?await this.jobs.receipts(snapshot.pin.repository):[];
-        const states=new Map<string,{archived:boolean;unavailable?:boolean}>();
-        await Promise.all(receipts.map(async receipt=>{
-            try{
-                const row=receipt.asset_kind==='agent'?(await this.pool.query('SELECT archived_at FROM agent_catalog WHERE id=$1',[receipt.native_id])).rows[0]
-                    :receipt.asset_kind==='model'?(await this.pool.query('SELECT archived_at FROM model_catalog WHERE id=$1',[receipt.native_id])).rows[0]
-                    :receipt.asset_kind==='skill'?await new SkillAssetClient().inspect(receipt.native_id)
-                    :['mcp','plugin'].includes(receipt.asset_kind)?(await this.pool.query('SELECT archived_at FROM ai_plugins WHERE id=$1',[receipt.native_id])).rows[0]:{};
-                states.set(receipt.external_id,{archived:!!(row?.archived_at??row?.archivedAt),unavailable:!row});
-            }catch{states.set(receipt.external_id,{archived:false,unavailable:true});}
-        }));
+        const {snapshot,last}=await this.sources.status();
+        const [sourceReceipts,localReceipts]=await Promise.all([snapshot?this.jobs.receipts(snapshot.pin.repository):[],this.jobs.receipts('local-archive')]);
+        const receipts=sourceReceipts.filter(receipt=>receipt.active!==false),local=localReceipts.filter(receipt=>receipt.active!==false);
+        const states=new Map(await Promise.all([...receipts,...local].map(async receipt=>
+            [receipt.repository+':'+receipt.external_id,await assetCardState(this.pool,receipt)] as const)));
+        const view=(asset:Parameters<typeof sourceAssetView>[0],sha256:string,receipt?:ISourceReceipt)=>
+            sourceAssetView(asset,sha256,receipt,receipt?states.get(receipt.repository+':'+receipt.external_id):undefined);
         return {source:{repository:'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
             verified:!!snapshot,lastAttemptAt:last?.attempted_at,error:last?.message||undefined},
-            assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>{
-                const receipt=receipts.find(row=>row.external_id===asset.id),card=asset.card;
-                return {id:asset.id,kind:asset.kind,version:asset.version,sha256,name:card.name,description:'description'in card?card.description:asset.kind==='skill'?asset.card.meta.description:asset.kind==='model'?asset.card.descriptor.description:asset.kind==='agent'?asset.card.definition.description:undefined,
-                    license:asset.license.spdx,dependencies:(asset.dependencies??[]).map(({id,version})=>({id,version})),
-                    imported:receipt?{id:receipt.native_id,version:receipt.native_version,originVersion:receipt.asset_version,
-                        updateAvailable:receipt.descriptor_sha256!==sha256,...states.get(asset.id)}:undefined};
-            })};
+            assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>view(asset,sha256,receipts.find(row=>row.external_id===asset.id))),
+            localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};
     }
     async refresh(){await this.sources.refresh();return this.view();}
     async start(actor:string,body:unknown){

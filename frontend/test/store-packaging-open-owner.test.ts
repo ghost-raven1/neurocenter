@@ -63,7 +63,7 @@ vi.mock('../src/modules/Store/useProjectCatalog', () => ({useProjectCatalog: () 
 vi.mock('../src/features/McpBridge/useBridge', () => ({useBridge: () => ({device: ui.bridgeDevice, devices: [], jobs: [], installations: [], errors: {}, reload: vi.fn()})}));
 vi.mock('../src/modules/Store/installPlans/useInstallPlan', () => ({useInstallPlan: () => ({busy: '', review: null, failure: null})}));
 vi.mock('../src/core/socket/useSectionUpdates', () => ({useSectionUpdates: () => undefined}));
-vi.mock('../src/core/api/bff', () => ({default: {getAiPlugin: vi.fn(), listAiPlugins: vi.fn(), listSkills: vi.fn()}}));
+vi.mock('../src/core/api/bff', () => ({default: {getAiPlugin: vi.fn(), getSkill:vi.fn(), listAiPlugins: vi.fn(), listSkills: vi.fn()}}));
 vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({useNpmMetadata: () => ({resolve: vi.fn()})}));
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({useRepositoryMetadata: () => ({resolve: vi.fn()})}));
 vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({useToolBuild: () => ({job: ui.job, reset: ui.reset, active: false, submitting: false, unresolved: false})}));
@@ -147,6 +147,11 @@ describe('Переход к папке из карточки инструмен�
 });
 
 describe('Открытие опубликованного инструмента принадлежит текущей форме упаковки', () => {
+    it('Опубликованный скилл открывается из skills API с сохранением common/slug',async()=>{
+        ui.job={...job('skill-build'),result:{catalogId:'common/careful-reviewer',name:'Ревьюер',version:1,kind:'skill'}};
+        vi.mocked(bffApi.getSkill).mockResolvedValue({id:'common/careful-reviewer',path:'common/careful-reviewer',meta:{name:'Ревьюер',slug:'careful-reviewer',scope:'common',description:'Проверяет код',version:1,tags:[],mcp:[],plugins:[]},body:'Инструкция'} as never);
+        open();await flush();render();expect(bffApi.getSkill).toHaveBeenCalledExactlyOnceWith('common/careful-reviewer');expect(bffApi.getAiPlugin).not.toHaveBeenCalled();expect(ui.view?.id).toBe('common/careful-reviewer');
+    });
     it.each(['success', 'failure'] as const)('Поздний %s прежнего открытия не меняет новый черновик после reset', async outcome => {
         const response = deferred<IAiPlugin>(); vi.mocked(bffApi.getAiPlugin).mockReturnValue(response.promise);
         open(); click('Упаковать ещё'); render(); expect(ui.form).toBe(true);

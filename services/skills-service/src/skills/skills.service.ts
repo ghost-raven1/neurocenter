@@ -153,7 +153,9 @@ export class SkillsService implements OnApplicationBootstrap {
 
     public async inspectAssetSkill(id: string) {
         const file = await this.getSkill(id);
-        return {...importedSkillSnapshot(file),name:file.meta.name,archivedAt:file.meta.archivedAt,payloadHash:importedSkillPayloadHash(skillCreateFromFile(file)),archive:file.meta.assetArchive};
+        const payloadHash=importedSkillPayloadHash(skillCreateFromFile(file));
+        return {...importedSkillSnapshot(file),name:file.meta.name,archivedAt:file.meta.archivedAt,payloadHash,archive:file.meta.assetArchive,
+            ...(file.meta.assetImport?.version===file.meta.version&&file.meta.assetImport.payloadHash===payloadHash?{importRequestKey:file.meta.assetImport.requestKey}:{})};
     }
 
     public async archivedAssetSkills(): Promise<ISkillListSummary[]> { return (await this.walk('common')).filter(file=>!!file.meta.archivedAt); }

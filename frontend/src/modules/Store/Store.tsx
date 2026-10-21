@@ -432,13 +432,13 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             </Modal>
 
             <StoreCreateModal key={'create:' + accessKey} open={createOpen} onClose={() => setCreateOpen(false)} onPackage={()=>{setCreateOpen(false);setPackagingOpen(true);}} onCreated={()=>{changeSearch('');setFilter('all');setInstalledOnly(false);void loadCatalog();}} />
-            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen} scope={accessKey} projectId={targetProject?.id} onClose={() => setPackagingOpen(false)} onPublished={async (id, current) => {
+            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen} scope={accessKey} projectId={targetProject?.id} onClose={() => setPackagingOpen(false)} onPublished={async (id, current, kind) => {
                 const owns = captureOwner();
                 if (!owns() || !current()) return;
-                const app = await bffApi.getAiPlugin(id);
+                const app = kind === 'skill' ? fromSkill(await bffApi.getSkill(id)) : fromPlugin(await bffApi.getAiPlugin(id));
                 if (!owns() || !current()) return;
                 changeSearch(''); setFilter('all'); setInstalledOnly(false); setPackagingOpen(false);
-                void loadCatalog(); setViewApp(fromPlugin(app));
+                void loadCatalog(); setViewApp(app);
             }} />}
 
             <StoreDetailsModal viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}

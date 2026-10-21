@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToolPackagingModal } from '../src/modules/Store/packaging/ToolPackagingModal';
 import { packagingFilesMetadata, packagingReferenceSource } from '../src/modules/Store/packaging/packagingDraft';
-import type { NpmPackageMetadata, RepositoryMetadata, RepositoryQuery, ToolBuild } from '../src/modules/Store/packaging/types';
+import {readPackagingArchive} from '../src/modules/Store/packaging/sourceArchive';
+import type { NpmPackageMetadata, PackagingKind, RepositoryMetadata, RepositoryQuery, ToolBuild } from '../src/modules/Store/packaging/types';
 
 const hooks = vi.hoisted(() => {
     let cursor = 0;
@@ -48,6 +49,8 @@ const ui = vi.hoisted(() => ({
     finish: undefined as (() => void) | undefined, close: undefined as (() => void) | undefined,
     job: undefined as ToolBuild | undefined,
     source: '' as string, selectSource: undefined as ((event: { target: { value: string } }) => void) | undefined,
+    kind: '' as PackagingKind, selectKind: undefined as ((event: {target:{value:PackagingKind}})=>void)|undefined,
+    kinds: [] as Array<{value:string;disabled?:boolean}>, selectFiles: undefined as ((files:File[],archive?:boolean)=>void)|undefined,
     owners: new Map<string, () => () => boolean>(),
 }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), useState: hooks.useState, useRef: hooks.useRef, useMemo: hooks.useMemo, useEffect: hooks.useEffect }));
@@ -61,6 +64,8 @@ vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({ useRepo
 } }));
 vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: false, submitting: false, unresolved: false, submit: ui.submit, reset: ui.reset }) }));
 vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,forget:async()=>true }) }));
+vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
+vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect}:{onSelect:typeof ui.selectFiles})=>{ui.selectFiles=onSelect;return null;}}));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     const input = (props: InputProps) => { ui.inputs.set(props['aria-label'] ?? '', props); return null; };
@@ -70,7 +75,7 @@ vi.mock('antd', () => {
         Modal: ({ open, onCancel, children, footer }: { open: boolean; onCancel: () => void; children?: ReactNode; footer?: ReactNode }) => { ui.close = onCancel; return open ? createElement('div', null, children, createElement('footer', null, footer)) : null; },
         Form: Object.assign(({ children, onFinish }: { children?: ReactNode; onFinish: () => void }) => { ui.finish = onFinish; return children; }, { Item: content }),
         Input: Object.assign(input, { Search: input, TextArea: input }),
-        Radio: { Group: ({ 'aria-label': label, value, onChange }: { 'aria-label': string; value: string; onChange: typeof ui.selectSource }) => { if (label === 'Источник инструмента') { ui.source = value; ui.selectSource = onChange; } return null; } },
+        Radio: { Group: ({ 'aria-label': label, value, onChange,options }: { 'aria-label': string; value: string; onChange: typeof ui.selectSource;options:typeof ui.kinds }) => { if (label === 'Источник инструмента') { ui.source = value; ui.selectSource = onChange; } else if(label==='Тип инструмента'){ui.kind=value as PackagingKind;ui.selectKind=onChange as typeof ui.selectKind;ui.kinds=options;} return null; } },
         Select: (props:SelectProps) => {ui.selects.set(props['aria-label']??'',props);return null;}, Collapse: Object.assign(content, { Panel: content }), Space: content,
         Progress: () => null, Spin: () => null, Tag: content, Divider: content,
         Typography: { Text: content, Paragraph: content },
@@ -197,5 +202,47 @@ describe('Автоматические данные источника', () => {
         expect(packagingReferenceSource('https://www.npmjs.com/package/@team/my-tool')).toBe('npm');
         expect(packagingReferenceSource('https://gitlab.com/team/my-tool')).toBeUndefined();
         expect(packagingReferenceSource('https://github.com.attacker.example/team/my-tool')).toBeUndefined();
+    });
+});
+
+const skillText='---\nname: careful-reviewer\ndescription: Проверяет изменения и важные риски\n---\n\nПрочитай [правила](references/rules.md) и проверь код.';
+function selectedFile(name:string,content:string):File {const bytes=new TextEncoder().encode(content);return {name,size:bytes.length,arrayBuffer:async()=>bytes.buffer} as File;}
+async function chooseSkill(content=skillText){render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('SKILL.md',content),selectedFile('references/rules.md','Проверь ошибки и граничные случаи.')]);await flush();render();return render();}
+
+describe('Упаковка скилла через тот же поток',()=>{
+    it('SKILL.md автоматически определяет тип, название и описание; ресурсы уходят без JS entrypoint',async()=>{
+        const html=await chooseSkill();expect(ui.kind).toBe('skill');expect(html).toContain('careful-reviewer');expect(html).toContain('Инструкция определена: SKILL.md');
+        expect(ui.buttons.get('Упаковать и добавить')?.disabled).toBe(false);ui.finish!();await flush();
+        expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',name:'careful-reviewer',description:'Проверяет изменения и важные риски',source:{type:'files',entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:skillText},{path:'references/rules.md',content:'Проверь ошибки и граничные случаи.'}]}}));
+    });
+    it('Некорректный SKILL.md блокирует отправку, исправление исходников снимает ошибку',async()=>{
+        let html=await chooseSkill('---\nname: [broken\n---\nТекст');expect(html).toContain('некорректный YAML');ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+        ui.selectFiles!([selectedFile('SKILL.md',skillText),selectedFile('references/rules.md','Проверь код')]);await flush();render();html=render();expect(html).not.toContain('некорректный YAML');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledOnce();
+    });
+    it('Замена скилла исходниками JS сбрасывает автоматический тип и требует реальный JS файл',async()=>{
+        await chooseSkill();ui.selectFiles!([selectedFile('index.ts','console.log("MCP");')]);await flush();render();render();expect(ui.kind).toBe('mcp');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledWith(expect.objectContaining({kind:'mcp',source:expect.objectContaining({entrypoint:'index.ts'})}));
+    });
+    it.each(['npm','upload'])('Источник %s явно исключает скилл и сбрасывает предыдущий выбор',async source=>{
+        await chooseSkill();ui.selectSource!({target:{value:source}});const html=render();expect(ui.kind).toBe('mcp');expect(ui.kinds.find(kind=>kind.value==='skill')?.disabled).toBe(true);expect(html.toLowerCase()).toContain('скилл');
+    });
+    it('Репозиторий с SKILL.md закрепляет commit и подпапку без команды запуска',async()=>{
+        render();ui.selectSource!({target:{value:'repository'}});render();input('Ссылка на репозиторий GitHub','https://github.com/team/skills');
+        ui.repositoryMetadata={url:'https://github.com/team/skills',commit:'a'.repeat(40),ref:'main',subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md',candidates:['SKILL.md'],name:'careful-reviewer',description:'Проверяет изменения',recommendedKind:'skill',runnableKinds:['skill']};
+        const html=render();render();expect(html).toContain('Инструкция скилла');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:{type:'repository',url:'https://github.com/team/skills',ref:'a'.repeat(40),subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md'}}));
+    });
+    it('Находит SKILL.md во вложенной папке архива и сохраняет полный путь в запросе',async()=>{
+        render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('README.md','Опись архива'),selectedFile('download/my-skill/SKILL.md',skillText),selectedFile('download/my-skill/references/rules.md','Правила')]);await flush();render();let html=render();
+        expect(ui.kind).toBe('skill');expect(html).toContain('download/my-skill/SKILL.md');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledWith(expect.objectContaining({kind:'skill',source:expect.objectContaining({entrypoint:'download/my-skill/SKILL.md'})}));
+    });
+    it('Несколько SKILL.md показывают выбор по пути и до выбора POST не отправляется',async()=>{
+        render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!(['first','second'].flatMap(root=>[selectedFile(root+'/SKILL.md',skillText),selectedFile(root+'/references/rules.md',root)]));await flush();render();render();
+        expect(ui.buttons.get('Выберите скилл')?.disabled).toBe(true);ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();render();ui.selects.get('Скилл в исходниках')!.onChange('second/SKILL.md');render();render();
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:expect.objectContaining({entrypoint:'second/SKILL.md'})}));
+    });
+    it('Архив с папкой-обёрткой сохраняет вложенную инструкцию и base64 ресурс в POST',async()=>{
+        const files=[{path:'README.md',content:'Опись'}, {path:'bundle/review/SKILL.md',content:skillText},{path:'bundle/review/references/rules.md',content:'Правила'},{path:'bundle/review/assets/image.png',content:'iVBORw0KGgoA//4=',encoding:'base64' as const}];
+        vi.mocked(readPackagingArchive).mockResolvedValue({files,skipped:0});
+        render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('review.zip','synthetic archive')],true);await flush();render();render();
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:{type:'files',entrypoint:'bundle/review/SKILL.md',files}}));
     });
 });

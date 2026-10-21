@@ -49,7 +49,7 @@ export const SourceFilesPicker: FC<Props> = ({ disabled, reading, uploaded, arch
         <input ref={element => { folder.current = element; element?.setAttribute('webkitdirectory', ''); }} type="file" multiple className="tool-packaging__file" onChange={event => selection(event.currentTarget)} />
         <input ref={files} type="file" multiple className="tool-packaging__file" onChange={event => selection(event.currentTarget)} />
         <input ref={archive} type="file" accept=".zip,.tar,.tar.gz,.tgz" aria-label="Архив исходников" className="tool-packaging__file" onChange={event => selection(event.currentTarget, true)} />
-        <Paragraph type="secondary" className="tool-packaging__limits">До 100 текстовых файлов: 1 МБ на файл, 5 МБ всего. Зависимости, .git и файлы ключей пропускаются.</Paragraph>
+        <Paragraph type="secondary" className="tool-packaging__limits">До 100 файлов: 1 МБ на файл, 5 МБ всего. Исходники и SKILL.md — UTF-8; ресурсы скилла могут быть PNG, PDF и другими бинарными файлами. Зависимости, .git и файлы ключей пропускаются.</Paragraph>
         <div role="status" aria-live="polite">
             {reading && <Text type="secondary">Читаем файлы и проверяем содержимое…</Text>}
             {uploaded && <div className="tool-packaging__selection">

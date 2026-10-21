@@ -12,7 +12,7 @@ export async function exportCatalogRelease({asset:filename,release,output,dryRun
     if(typeof filename!=='string'||!filename||typeof output!=='string'||!output||typeof release!=='string'||!/^[a-z0-9][a-z0-9._+-]{0,63}$/i.test(release)||/^(latest|main|master|head)$/i.test(release)||typeof dryRun!=='boolean')throw new Error('Укажите asset.json, неизменяемый release и новую output.');
     const [built]=await readyManifest(filename),asset=structuredClone(built.asset),directory=await inspectBuildOutput(output);
     asset.version='release-'+release;
-    asset.delivery.artifacts.forEach(artifact=>{artifact.url=`https://github.com/ghost-raven1/neurocenter-assets/releases/download/${release}/${artifact.descriptor.sha256}.tar.gz`;});
+    if(asset.kind!=='skill')asset.delivery.artifacts.forEach(artifact=>{artifact.url=`https://github.com/ghost-raven1/neurocenter-assets/releases/download/${release}/${artifact.descriptor.sha256}.tar.gz`;});
     validateAsset(asset);
     const descriptor=path.join(directory,'asset.json');
     if(!dryRun){

@@ -26,7 +26,8 @@
     "react-redux": "^9.0.0",
     "react-router-dom": "^5.3.4",
     "remark-gfm": "4.0.1",
-    "socket.io-client": "^4.7.0"
+    "socket.io-client": "^4.7.0",
+    "js-yaml": "5.2.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
@@ -36,6 +37,7 @@
     "less": "^4.2.0",
     "typescript": "5.9.3",
     "vite": "7.3.7",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "@types/js-yaml": "4.0.9"
   }
 }

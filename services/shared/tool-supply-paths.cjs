@@ -9,7 +9,9 @@ const toolSourcePath=sha=>'source/'+checkedSha(sha)+'.source';
 function assertToolSupplyLayout(asset){
     const paths=new Map([['asset.json',{name:'asset.json',sha:'descriptor'}],['readme.md',{name:'README.md',sha:'readme'}]]);
     const add=(name,sha)=>{const key=name.normalize('NFC').toLowerCase();for(const [known,saved]of paths){if(known===key&&saved.sha===sha&&saved.name===name)return;if(known===key||known.startsWith(key+'/')||key.startsWith(known+'/'))throw new Error('Пути ролей поставки конфликтуют.');}paths.set(key,{name,sha});};
-    for(const {descriptor}of asset.delivery.artifacts)add(toolRuntimePath(descriptor.sha256),descriptor.sha256);
+    const artifacts=asset.kind==='skill'&&asset.delivery.type==='inline'?[]:asset.delivery.artifacts;
+    if(!Array.isArray(artifacts))throw new Error('Неподдерживаемая доставка ассета.');
+    for(const {descriptor}of artifacts)add(toolRuntimePath(descriptor.sha256),descriptor.sha256);
     if(asset.source.type==='archive')add(toolSourcePath(asset.source.sha256),asset.source.sha256);
     if(asset.recipe)add(asset.recipe.path,asset.recipe.sha256);
 }

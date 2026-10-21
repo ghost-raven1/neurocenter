@@ -1,5 +1,5 @@
 import {ConflictException,PayloadTooLargeException} from '@nestjs/common';
-import {assetDigest,serializeAsset,validateAsset,type ToolAsset} from '@neurocenter/asset-contract';
+import {assetDigest,serializeAsset,validateAsset,type ToolAsset,type SkillAsset} from '@neurocenter/asset-contract';
 import {constants,createWriteStream} from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,13 +15,13 @@ import {cleanStaleSupplyStages,markSupplyStage} from './supply-staging';
 
 export const maximumSupplyBytes=4*1024**3;
 interface SupplyFile {sha256:string;bytes:number;name:string;roles:string[]}
-export interface ToolSupplyPlan {asset:ToolAsset;descriptor:Buffer;files:SupplyFile[];filename:string;inputBytes:number}
+export interface ToolSupplyPlan {asset:ToolAsset|SkillAsset;descriptor:Buffer;files:SupplyFile[];filename:string;inputBytes:number}
 const missing=()=>new ConflictException('Точная поставка этой сборки недоступна. Восстановите исходные проверенные файлы ассета.');
 
 /** Transport is a tar container around the existing envelope, never another asset schema. */
 export function toolSupplyPlan(receipt:ISourceReceipt):ToolSupplyPlan{
-    let asset:ToolAsset,descriptor:Buffer;
-    try{const checked=validateAsset(receipt.descriptor);if(!['mcp','plugin'].includes(checked.kind))throw missing();asset=checked as ToolAsset;descriptor=Buffer.from(serializeAsset(asset));}catch{throw missing();}
+    let asset:ToolAsset|SkillAsset,descriptor:Buffer;
+    try{const checked=validateAsset(receipt.descriptor);if(!['mcp','plugin','skill'].includes(checked.kind))throw missing();asset=checked as ToolAsset|SkillAsset;descriptor=Buffer.from(serializeAsset(asset));}catch{throw missing();}
     if(receipt.repository!=='local-archive'||receipt.asset_kind!==asset.kind||receipt.external_id!==asset.id||receipt.asset_version!==asset.version
         ||assetDigest(descriptor)!==receipt.descriptor_sha256||!Array.isArray(receipt.blobs))throw missing();
     const retained=new Map<string,number>();
@@ -32,7 +32,7 @@ export function toolSupplyPlan(receipt:ISourceReceipt):ToolSupplyPlan{
         const previous=unique.get(sha256);if(previous){if(previous.bytes!==bytes)throw missing();if(!exactPath||previous.name===name){previous.roles.push(role);return;}}
         const lower=name.toLowerCase();if([...names].some(saved=>saved===lower||saved.startsWith(lower+'/')||lower.startsWith(saved+'/')))throw missing();names.add(lower);unique.set(previous?sha256+':recipe':sha256,{sha256,bytes,name,roles:[role]});
     };
-    for(const {descriptor:item} of asset.delivery.artifacts)add(item.sha256,item.compressedBytes,'artifacts/'+item.sha256+'.tar.gz','runtime '+item.target);
+    if(asset.kind!=='skill')for(const {descriptor:item} of asset.delivery.artifacts)add(item.sha256,item.compressedBytes,'artifacts/'+item.sha256+'.tar.gz','runtime '+item.target);
     if(asset.source.type==='archive')add(asset.source.sha256,asset.source.bytes,'source/'+asset.source.sha256+'.source','original source snapshot (opaque bytes)');
     if(asset.recipe){const bytes=retained.get(asset.recipe.sha256);if(!bytes||bytes>1024**2)throw missing();add(asset.recipe.sha256,bytes,asset.recipe.path,'public recipe',true);}
     const files=[...unique.values()],inputBytes=files.reduce((sum,file)=>sum+file.bytes,descriptor.length);

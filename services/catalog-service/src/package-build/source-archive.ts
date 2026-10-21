@@ -3,9 +3,9 @@ import { Readable } from 'node:stream';
 import * as zlib from 'node:zlib';
 import { Header, Parser, type ReadEntry } from 'tar';
 import { portablePath } from '../../../shared/runtime-artifacts.cjs';
-import { MAX_PACKAGE_BYTES, object, packageFiles } from '../publication/publication-validation';
+import { MAX_PACKAGE_BYTES, object, packageFiles,filePath } from '../publication/publication-validation';
 
-interface SourceFile {path: string; content: string}
+interface SourceFile {path: string; content: string;encoding?:'base64'}
 interface ArchiveEntry {path: string; directory: boolean; content?: Buffer}
 interface ZipEntry {fileName: string; fileNameRaw: Buffer; uncompressedSize: number; externalFileAttributes: number; generalPurposeBitFlag: number; crc32: number}
 interface ZipArchive {
@@ -19,9 +19,9 @@ const crc32 = (zlib as typeof zlib & {crc32(bytes: Buffer, previous?: number): n
 const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024, MAX_TAR_BYTES = 10 * 1024 * 1024, MAX_FILE_BYTES = 1024 * 1024;
 function fail(message: string): never {throw new BadRequestException(message);}
 const macMetadata = (part: string): boolean => ['__macosx', '.ds_store'].includes(part.toLowerCase()) || part.startsWith('._');
-const ignored = (parts: string[]): boolean => parts.some(raw => {
+const ignored = (parts: string[],skill=false): boolean => parts.some(raw => {
     const part = raw.toLowerCase();
-    return ['.git', 'node_modules', 'dist', 'build', '.npmrc', '.yarnrc', '.yarnrc.yml'].includes(part)
+    return ['.git', 'node_modules', '.npmrc', '.yarnrc', '.yarnrc.yml',...skill?[]:['dist','build']].includes(part)
         || macMetadata(part) || /^\.env(?:\.|$)/.test(part) || /^(?:id_rsa|id_ed25519)(?:\.|$)/.test(part) || /\.(?:pem|key)$/.test(part);
 });
 
@@ -62,18 +62,24 @@ class ArchiveContents {
         const wrapper = commonRoot(files.filter(entry => !entry.path.split('/').some(macMetadata)));
         // Имя внешней папки build/dist не делает весь проект результатом сборки.
         const rootName = wrapper && (!ignored([wrapper]) || ['build', 'dist', 'node_modules'].includes(wrapper.toLowerCase())) ? wrapper : commonRoot(relevant);
+        const skill=files.some(entry=>/(?:^|\/)SKILL\.md$/.test(entry.path));
         const accepted: SourceFile[] = [];
         let skipped = 0;
         for (const entry of files) {
             const parts = entry.path.split('/').slice(rootName && entry.path.startsWith(rootName + '/') ? 1 : 0);
-            if (ignored(parts)) {skipped++; continue;}
+            if (ignored(parts,skill)) {skipped++; continue;}
             let content: string;
-            try {content = new TextDecoder('utf-8', {fatal: true}).decode(entry.content!);}
-            catch {fail('В архиве нужны текстовые исходники UTF-8: ' + parts.join('/'));}
-            accepted.push({path: parts.join('/'), content});
+            let encoding:'base64'|undefined;
+            try {content = new TextDecoder('utf-8', {fatal: true,ignoreBOM:true}).decode(entry.content!);if(content.includes('\0'))throw new Error();}
+            catch {
+                if(!skill||!/(?:^|\/)(?:scripts|references|assets)\//.test(parts.join('/')))fail('В архиве нужны текстовые исходники UTF-8: '+parts.join('/'));
+                content=entry.content!.toString('base64');encoding='base64';
+            }
+            accepted.push({path: parts.join('/'), content,...(encoding?{encoding}:{})});
         }
         if (!accepted.length) {fail('В архиве нет подходящих текстовых исходников.');}
-        return {files: packageFiles(accepted).map(({path, content}) => ({path, content: content!})), skipped, ...(rootName ? {rootName} : {})};
+        if(skill&&accepted.length>100)fail('Допустимо до 100 файлов исходников.');
+        return {files:skill?accepted.map(file=>({...file,path:filePath(file.path)})):packageFiles(accepted).map(({path, content}) => ({path, content: content!})), skipped, ...(rootName ? {rootName} : {})};
     }
 }
 

@@ -2,7 +2,7 @@ import {SourceUploadService} from '../source-upload/source-upload.service';
 import { inspectGithubReleaseAsset, inspectGithubRepository } from '../../../shared/release-inspection.cjs';
 import { ConflictException, ForbiddenException, Injectable, Optional, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
 import { createRequire } from 'node:module';
-import type {ToolAsset} from '@neurocenter/asset-contract';
+import type {ToolAsset,SkillAsset} from '@neurocenter/asset-contract';
 import {validateAsset,toToolPublication} from '@neurocenter/asset-contract';
 import {createHash} from 'node:crypto';
 import {AssetSourcesService} from '../asset-sources/asset-sources.service';
@@ -28,6 +28,8 @@ import { readSourceArchive } from './source-archive';
 import { PackageBuildRepository } from './package-build.repository';
 import { buildView, requestHash, validId, validateBuildInput, type BuildConfiguration, type BuildRow } from './package-build.model';
 import {createToolSupply,toolSupplyPlan} from './supply-export';
+import {inspectSkillSource} from './skill-source';
+import {buildSkillAsset} from './build-skill';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -157,7 +159,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     }
     async repositorySource(actor: IAccessActor, input: Omit<RepositoryInput, 'type'>) {
         await this.requireMain(actor);
-        try {return await resolveRepositorySource(input, {inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository});}
+        try {return await resolveRepositorySource(input, {inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository,inspectSkill:files=>inspectSkillSource(files,{metadataOnly:true})});}
         catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось проверить репозиторий GitHub.');}
     }
 
@@ -192,8 +194,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await this.requireMain(actor);
         if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['requestKey','asset'].includes(key)))throw new BadRequestException('Импорт принимает только requestKey и asset.');
         const input=raw as {requestKey:string;asset:unknown};if(!validId(input.requestKey))throw new BadRequestException('Нужен UUID ключа импорта.');
-        let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(checked.kind!=='mcp'&&checked.kind!=='plugin')throw new BadRequestException('Нужен MCP/plugin asset.');
+        let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(!['mcp','plugin','skill'].includes(checked.kind))throw new BadRequestException('Нужен MCP/plugin/skill asset.');
         if(checked.dependencies?.length)throw new BadRequestException('Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.');
+        if(checked.kind==='skill')return this.importSkillAsset(actor,checked as SkillAsset,input.requestKey);
         const asset=checked as ToolAsset,files=asset.delivery.artifacts.map(({descriptor})=>({archivePath:path.join(runtimeArtifactDirectory(),descriptor.sha256+'.tar.gz'),sha256:descriptor.sha256,bytes:descriptor.compressedBytes,filename:descriptor.sha256+'.tar.gz',target:descriptor.target}));
         for(const [index,file]of files.entries()){
             try{await this.artifacts.importArchive(file.archivePath,asset.delivery.artifacts[index].descriptor);}catch{throw new ConflictException('Проверенный архив поставки отсутствует или повреждён. Загрузите исходную поставку повторно.');}
@@ -216,14 +219,16 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         let source: BuildConfiguration['source'];
         if (input.source.type === 'npm') {
             const resolved = await resolveNpmSource(input.source.specifier, input.source.entrypoint);
-            if (!resolved.runnableKinds.includes(input.kind)) {throw new BadRequestException('Пакет не объявляет исполняемый MCP или плагин OpenCode выбранного типа. Выберите пакет инструмента.');}
+            if (input.kind==='skill'||!resolved.runnableKinds.includes(input.kind)) {throw new BadRequestException('Пакет не объявляет исполняемый MCP или плагин OpenCode выбранного типа. Выберите пакет инструмента.');}
             if (!resolved.entrypoint) {throw new BadRequestException('В пакете несколько команд запуска. Выберите исполняемый файл перед упаковкой.');}
             source = {type: 'npm', ...resolved};
         }
         else if (input.source.type === 'upload') {if(!this.uploads)throw new ServiceUnavailableException('Сервис загрузки готовится к работе. Повторите позже.');source=await this.uploads.pin(actor,input.source);}
         else if (input.source.type === 'repository') {
             try {
-                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint, inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository});
+                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint, inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository,inspectSkill:files=>inspectSkillSource(files,{metadataOnly:true})});
+                if(input.kind==='skill'&&(!/(?:^|\/)SKILL\.md$/.test(resolved.entrypoint)||resolved.release||resolved.runtimeSource))throw new BadRequestException('Для скилла выберите исходники с SKILL.md, без runtime или релиза.');
+                if(input.kind!=='skill'&&resolved.recommendedKind==='skill')throw new BadRequestException('Источник содержит скилл. Выберите тип «Скилл».');
                 if (!resolved.entrypoint) {throw new BadRequestException(resolved.requiresReleaseChoice ? 'Выберите файл релиза перед упаковкой.' : 'Выберите исполняемый файл перед упаковкой.');}
                 source = validateRepositorySource({type: 'repository', url: resolved.url, commit: resolved.commit, subdirectory: resolved.subdirectory, entrypoint: resolved.entrypoint,
                     ...(resolved.runtimeSource ? {runtimeSource: resolved.runtimeSource, ...(resolved.manifestSha256 ? {manifestSha256: resolved.manifestSha256} : {})} : {}), ...(resolved.release ? {release: resolved.release} : {}), ...(resolved.snapshotSha256 ? {snapshotSha256: resolved.snapshotSha256} : {})});
@@ -334,9 +339,10 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         try {
             await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
             if (!this.lease || this.stopping) { throw new Error('Сборщик останавливается.'); }
-            releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: stagingLimit, path: root});
+            releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: row.config.kind==='skill'&&row.config.source.type==='files'?64*1024**2:stagingLimit, path: root});
             await fs.mkdir(stage, {mode: 0o700});
             await this.progress(row.id, 10, 'Подготовка исходников и закреплённой версии');
+            if(row.config.kind==='skill'){await this.executeSkill(row,stage);return;}
             await this.progress(row.id, 30, 'Сборка платформенных комплектов и проверка SHA');
             if(row.config.source.type==='upload'){if(!this.uploads)throw new Error('Сервис сохранённых исходников недоступен.');await this.uploads.assertRetained(row.actor,row.config.source);}
             const manifest = await runPackageBuilder(row.config, stage, child => {
@@ -387,5 +393,43 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private async progress(id: string, percent: number, message: string): Promise<void> {
         await this.repository.progress(id, 'RUNNING', percent, message);
         void notifyDeviceOperations();
+    }
+
+    /** Native skill write is journaled before Catalog atomically commits its source receipt and build result. */
+    private async executeSkill(row:BuildRow,stage:string):Promise<void>{
+        const built=await buildSkillAsset(row.config,stage);
+        await this.progress(row.id,60,'Проверка SKILL.md, ресурсов и связанной версии ассета');
+        const prepared=await this.sources.prepareLocalSkill(built.asset,row.request_key,built.sourceFile),lease=this.currentLease();
+        await this.withLease(lease,async()=>{
+            await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
+            await lease.query('BEGIN');
+            try{
+                await lease.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+built.asset.card.slug]);
+                const native=await this.sources.publishLocalSkill(prepared,row.actor);
+                await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
+                const source=await this.sources.recordLocalSkill(lease,prepared,native,row.actor);
+                await this.repository.completeWithPublication(lease,row.id,{catalogId:native.id,name:built.asset.card.name,version:native.version,kind:'skill',...source});
+                this.currentLease(lease);await lease.query('COMMIT');
+            }catch(error){await lease.query('ROLLBACK').catch(()=>undefined);throw error;}
+        });
+        await this.notifySkillPublication();
+    }
+    private async importSkillAsset(actor:IAccessActor,asset:SkillAsset,requestKey:string){
+        const prepared=await this.sources.prepareLocalSkill(asset,requestKey);
+        await this.requireMain(actor);
+        const client=await this.pool.connect();
+        try{
+            await client.query('BEGIN');await this.requireMain(actor);
+            await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+asset.card.slug]);
+            const native=await this.sources.publishLocalSkill(prepared,actor.email);await this.requireMain(actor);
+            const source=await this.sources.recordLocalSkill(client,prepared,native,actor.email);await client.query('COMMIT');
+            await this.notifySkillPublication();return {catalogId:native.id,name:asset.card.name,version:native.version,kind:'skill' as const,...source};
+        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }
+    private async notifySkillPublication(){
+        await fetch((process.env.API_GATEWAY_URL||'http://localhost:4000')+'/internal/events',{
+            method:'POST',headers:{'content-type':'application/json','x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''},
+            body:JSON.stringify({sections:['skills','catalog','operations','audit']}),signal:AbortSignal.timeout(1500),
+        }).catch(()=>undefined);
     }
 }

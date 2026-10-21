@@ -1,6 +1,6 @@
 import {createElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {expect,it,vi} from 'vitest';
+import {beforeEach,expect,it,vi} from 'vitest';
 import {ArchiveAssetButton} from '../src/features/AssetManagement/ArchiveAssetButton';
 import {baseApi} from '../src/core/api';
 
@@ -20,8 +20,9 @@ vi.mock('antd',()=>{
   Modal:({open,children,footer}:{open:boolean;children?:ReactNode;footer?:ReactNode})=>open?createElement('div',null,children,footer):null,
  };
 });
-function render(){ui.cursor=0;ui.buttons.clear();ui.radios.clear();ui.alerts=[];return renderToStaticMarkup(createElement(ArchiveAssetButton,{kind:'model',id:'model-seven'}));}
+function render(restore=false){ui.cursor=0;ui.buttons.clear();ui.radios.clear();ui.alerts=[];return renderToStaticMarkup(createElement(ArchiveAssetButton,{kind:'model',id:'model-seven',restore,children:restore?'Вернуть из архива':'Удалить'}));}
 const flush=async()=>{for(let n=0;n<10;n++)await Promise.resolve();};
+beforeEach(()=>{vi.resetAllMocks();ui.states=[];ui.cursor=0;});
 
 it('Объясняет active-model blockers, оставляет catalog-only и убирает warning после свежей проверки без blockers',async()=>{
  const projects=[{id:'prj-one',name:'Досье'},{id:'prj-two',name:'База команды'}];
@@ -36,4 +37,13 @@ it('Объясняет active-model blockers, оставляет catalog-only и
  ui.buttons.get('Обновить проверку')!.onClick!();await flush();const clear=render();
  expect(ui.alerts).toEqual([]);expect(clear).not.toContain('Сначала выберите другую модель');expect(ui.radios.get('catalog-and-projects')?.disabled).toBe(false);
  expect(baseApi.post).toHaveBeenCalledTimes(2);expect(baseApi.post).toHaveBeenLastCalledWith('/api/asset-management/impact',{kind:'model',id:'model-seven'});
+});
+it.each([{projects:[]},{projects:[{id:'prj-one',name:'Сохранённый проект'}]}])('Восстановление показывает точные назначения $projects без выбора последствий удаления',async({projects})=>{
+ const impact={impactId:'restore-one',digest:'b'.repeat(64),target:{kind:'model',id:'model-seven',name:'Модель7d',version:2,archived:true},projects,preserved:[]};
+ vi.mocked(baseApi.post).mockResolvedValueOnce({data:impact}).mockResolvedValueOnce({data:{state:'SUCCEEDED',message:'Восстановлено'}});
+ render(true);ui.buttons.get('Вернуть из архива')!.onClick!();await flush();const html=render(true);
+ if(projects.length){expect(html).toContain('Карточка подключена к проектам: Сохранённый проект.');expect(html).not.toContain('Подключений к проектам нет.');}
+ else{expect(html).toContain('Подключений к проектам нет.');expect(html).not.toContain('Карточка подключена к проектам:');}
+ expect(ui.radios.size).toBe(0);expect(html).not.toContain('Также убрать из');
+ ui.buttons.get('Вернуть в каталог')!.onClick!();await flush();expect(baseApi.post).toHaveBeenLastCalledWith('/api/asset-management/archive',{impactId:impact.impactId,expectedDigest:impact.digest,mode:'restore'});
 });

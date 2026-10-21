@@ -15,6 +15,26 @@ async function rawRecord(value:unknown):Promise<void>{
 }
 
 describe('Durable exact request упаковщика',()=>{
+    it.each(['files','repository'] as const)('Восстанавливает skill %s с точным SKILL.md и ресурсами',async type=>{
+        const value:ToolBuildRequest={...request(),kind:'skill',source:type==='files'?{type,entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:'---\nname: review\ndescription: Проверка\n---\nТекст'},{path:'references/check.md',content:'Границы'}]}:{type,url:'https://github.com/team/skills',ref:'a'.repeat(40),entrypoint:'SKILL.md',subdirectory:'skills/review'}};
+        await saveStoredBuildDraft('alice',value);expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);
+    });
+    it('Сохраняет явный выбор вложенного SKILL.md при повторном открытии',async()=>{
+        const value:ToolBuildRequest={...request(),kind:'skill',source:{type:'files',entrypoint:'download/selected/SKILL.md',files:[{path:'download/selected/SKILL.md',content:'Инструкция'},{path:'other/SKILL.md',content:'Другая инструкция'}]}};
+        await saveStoredBuildDraft('alice',value);expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);
+    });
+    it('Восстанавливает exact base64 бинарных ресурсов скилла без UTF-8 преобразований',async()=>{
+        const value:ToolBuildRequest={...request(),kind:'skill',source:{type:'files',entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:'---\nname: review\ndescription: Проверка\n---\nИнструкция'},{path:'assets/image.png',content:'iVBORw0KGgoA//4=',encoding:'base64'}]}};
+        await saveStoredBuildDraft('alice',value);expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);
+    });
+    it.each([
+        {type:'npm',specifier:'skill@1.0.0'},
+        {type:'upload',uploadId:other,sha256:'a'.repeat(64),bytes:100,entrypoint:'SKILL.md'},
+        {type:'files',entrypoint:'index.ts',files:[{path:'SKILL.md',content:'Текст'}]},
+        {type:'files',entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:'Текст'}],args:['--run']},
+    ])('Повреждённый skill source %j не восстанавливается в POST',async source=>{
+        await expect(saveStoredBuildDraft('alice',{...request(),kind:'skill',source} as ToolBuildRequest)).rejects.toThrow();
+    });
     it('После закрытия соединения восстанавливает UUID и все исходные байты',async()=>{
         const original=request();await saveStoredBuildDraft('alice',original);
         original.source.type==='files'&& (original.source.files[0].content='изменено после сохранения');

@@ -21,11 +21,12 @@ import { SourceArchiveUploader } from './SourceArchiveUploader';
 import { useSourceUpload } from './useSourceUpload';
 import { uploadedBuildSource } from './uploadTypes';
 import { packagingFilesMetadata, packagingReferenceSource, type PackagingSourceMode } from './packagingDraft';
+import {skillPackagingSource} from './skillPackagingSource';
 import type { PackagingFilesResult } from './sourceFiles';
 import type { NpmPackageMetadata, PackagingKind, RepositoryRelease } from './types';
 import './ToolPackaging.less';
 
-interface Props { open: boolean; scope: string; projectId?: string; onClose: () => void; onPublished: (id: string, current: () => boolean) => Promise<void> }
+interface Props { open: boolean; scope: string; projectId?: string; onClose: () => void; onPublished: (id: string, current: () => boolean, kind?: PackagingKind) => Promise<void> }
 const { Paragraph } = Typography;
 
 /** Упаковка и публикация выполняются одной серверной операцией, с возобновляемым прогрессом. */
@@ -75,7 +76,6 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
     const [openingRequest, setOpeningRequest] = useState<typeof openingView>();
     const opening = openingRequest === openingView && !!openingView.request;
     const busy = build.submitting || build.active || preparing || resetting || reading || source === 'upload' && upload.busy;
-    const candidates = useMemo(() => packagingEntrypoints(uploaded?.files ?? [], kind), [uploaded, kind]);
     const metadata = source === 'npm' ? npm.metadata : source === 'repository' ? repository.metadata : undefined;
     const selectedUploadEntry = upload.upload?.metadata?.candidates.includes(uploadEntry?.id === upload.upload.id ? uploadEntry.value : '') ? uploadEntry!.value : upload.upload?.metadata?.entrypoint || '';
     const sourceKey = source === 'npm' ? `npm:${specifier.trim()}` : source === 'repository' ? `repository:${JSON.stringify([repositoryUrl.trim(), repositoryRef.trim(), subdirectory.trim(), repositoryEntrypoint.trim(), release])}` : source === 'upload' ? `upload:${upload.upload?.id ?? ''}:${selectedUploadEntry}` : 'files';
@@ -87,14 +87,20 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
     const npmEntrypoint = (value: NpmPackageMetadata): string => npmEntry?.specifier === value.specifier && value.candidates.includes(npmEntry.value) ? npmEntry.value : value.entrypoint;
     const selectedNpmEntry = npm.metadata ? npmEntrypoint(npm.metadata) : '';
     const filesMetadata = useMemo(() => packagingFilesMetadata(uploaded?.files ?? []), [uploaded]);
-    const suggestedName = source === 'npm' ? defaultPackagingTitle(npm.metadata?.package ?? specifier.trim()) : source === 'repository' ? defaultPackagingTitle(repository.metadata?.name || repositoryName(repositoryUrl)) : defaultPackagingTitle(source === 'upload' ? (upload.upload?.name || upload.intent?.name || '').replace(/\.(?:zip|tar|tar\.gz|tgz|exe)$/i,'') : filesMetadata.name || uploaded?.rootName || archiveName.replace(/\.(?:zip|tar|tar\.gz|tgz)$/i, '')) || 'Мой инструмент';
-    const suggestedDescription = metadata?.description || (source === 'files' ? filesMetadata.description : '') || '';
-    const effectiveKind = source === 'upload' ? 'mcp' : packagingKind(kind, metadata, explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity);
-    const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry : source === 'files' ? !!uploaded?.files.length && !!entrypoint : !!metadata
+    const skillMetadata=useMemo(()=>skillPackagingSource(uploaded?.files??[],{...(name.trim()?{name:name.trim()}:{}),...(description.trim()?{description:description.trim()}:{}),...(entrypoint?{entrypoint}:{})}),[uploaded,name,description,entrypoint]);
+    const recommended=useMemo(()=>source==='files'?{recommendedKind:skillMetadata?'skill' as const:'mcp' as const}:metadata,[source,skillMetadata,metadata]);
+    const effectiveKind = source === 'upload' ? 'mcp' : source==='npm'&&kind==='skill'?'mcp':packagingKind(kind, recommended, explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity);
+    const candidates = useMemo(() => packagingEntrypoints(uploaded?.files ?? [], effectiveKind), [uploaded, effectiveKind]);
+    const fileMetadata=effectiveKind==='skill'?skillMetadata:filesMetadata;
+    const suggestedName = source === 'npm' ? defaultPackagingTitle(npm.metadata?.package ?? specifier.trim()) : source === 'repository' ? defaultPackagingTitle(repository.metadata?.name || repositoryName(repositoryUrl)) : defaultPackagingTitle(source === 'upload' ? (upload.upload?.name || upload.intent?.name || '').replace(/\.(?:zip|tar|tar\.gz|tgz|exe)$/i,'') : fileMetadata?.name || uploaded?.rootName || archiveName.replace(/\.(?:zip|tar|tar\.gz|tgz)$/i, '')) || 'Мой инструмент';
+    const suggestedDescription = metadata?.description || (source === 'files' ? fileMetadata?.description : '') || '';
+    const fileError=source==='files'&&effectiveKind!=='skill'&&uploaded?.files.some(file=>file.encoding)?'Бинарные ресурсы поддерживаются в скиллах. Выберите тип «Скилл» или текстовые исходники инструмента.':'';
+    const skillError=source==='files'&&effectiveKind==='skill'?(candidates.length>1&&!entrypoint?'':skillMetadata?.error||(!skillMetadata?'Добавьте SKILL.md и ресурсы скилла.':'')):fileError;
+    const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
         && (!metadata.runnableKinds || metadata.runnableKinds.includes(effectiveKind)) && (source === 'npm' ? !!selectedNpmEntry : !repository.metadata?.requiresReleaseChoice && !!selectedRepositoryEntry);
     const hasSource = source === 'npm' ? !!specifier.trim() : source === 'repository' ? !!repositoryUrl.trim() : source === 'upload' ? !!upload.upload : !!uploaded?.files.length;
     const sourceBlocked = (!!metadata || source === 'upload' && upload.upload?.state === 'READY') && !sourceReady;
-    const sourceAction = metadata?.runnableKinds?.length === 0 ? 'Нет команды запуска' : source === 'repository' && repository.metadata?.requiresReleaseChoice ? 'Выберите файл релиза' : sourceBlocked ? 'Выберите команду запуска' : sourceReady ? 'Упаковать и добавить' : 'Проверить источник';
+    const sourceAction = metadata?.runnableKinds?.length === 0 ? 'Нет команды запуска' : source === 'repository' && repository.metadata?.requiresReleaseChoice ? 'Выберите файл релиза' : effectiveKind==='skill'&&candidates.length>1&&!entrypoint?'Выберите скилл':sourceBlocked ? 'Выберите команду запуска' : sourceReady ? 'Упаковать и добавить' : 'Проверить источник';
     const progressStep = build.job || build.active ? 2 : sourceReady ? 1 : 0;
 
     useEffect(() => { alive.current = true; return () => { alive.current = false; readRequest.current++; archiveRequest.current?.abort(); }; }, []);
@@ -124,10 +130,10 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
         }
     }, [candidates, entrypoint]);
     useEffect(() => {
-        if (!metadata) return;
+        if (!recommended) return;
         const explicit = explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity;
-        setKind(current => packagingKind(current, metadata, explicit));
-    }, [sourceKey, metadata, metadataIdentity]);
+        setKind(current => packagingKind(current, recommended, explicit));
+    }, [sourceKey, recommended, metadataIdentity]);
     useEffect(() => {
         if (source === 'repository' && release && open && !build.unresolved && !build.active) void repository.resolve().catch(() => {});
     }, [sourceKey, open, build.unresolved, build.active]);
@@ -140,6 +146,8 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
         const controller = new AbortController();
         archiveRequest.current = controller;
         manualEntrypoint.current = false;
+        explicitKind.current=undefined;
+        setKind('mcp');
         setReading(true); setError(''); setUploaded(undefined); setEntrypoint(''); setArchiveName('');
         try {
             if (fromArchive && selected.length !== 1) throw new Error('Добавьте один архив за раз.');
@@ -169,13 +177,14 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
             if (resolved?.runnableKinds?.length === 0 || repositoryMetadata?.requiresReleaseChoice) return;
             if (npmMetadata && !npmSelected) throw new Error('Выберите команду запуска npm-пакета.');
             const title = packagingTitle(name, npmMetadata?.package || repositoryMetadata?.name || suggestedName);
-            const summary = description.trim() || resolved?.description?.trim() || (source === 'files' ? filesMetadata.description : '') || `Инструмент ${title} для OpenCode.`;
+            const summary = description.trim() || resolved?.description?.trim() || (source === 'files' ? fileMetadata?.description : '') || `Инструмент ${title} для OpenCode.`;
             if (summary.length > 2000) throw new Error('Описание — до 2000 символов.');
-            if (source === 'files' && (!uploaded?.files.length || !entrypoint)) throw new Error('Выберите исходники и файл запуска.');
+            if(skillError)throw new Error(skillError);
+            if (source === 'files' && (!uploaded?.files.length || !entrypoint)) throw new Error(effectiveKind==='skill'?'Выберите папку скилла с SKILL.md.':'Выберите исходники и файл запуска.');
             const identity = npmMetadata ? `npm:${npmMetadata.package}` : repositoryMetadata ? `repository:${repositoryMetadata.url}:${repositoryMetadata.subdirectory ?? ''}` : undefined;
             const explicit = explicitKind.current?.source === sourceKey || !!identity && explicitKind.current?.package === identity;
             // POST принадлежит хуку; поздний ответ не удерживает подготовку следующей формы.
-            void build.submit({ name: title, description: summary, kind: source === 'upload' ? 'mcp' : packagingKind(kind, resolved, explicit),
+            void build.submit({ name: title, description: summary, kind: source === 'upload' ? 'mcp' : source==='files'?effectiveKind:packagingKind(source==='npm'&&kind==='skill'?'mcp':kind, resolved, explicit),
                 source: source === 'upload' ? uploadedBuildSource(upload.upload!,selectedUploadEntry) : npmMetadata ? { type: 'npm', specifier: npmMetadata.specifier, entrypoint: npmSelected } : repositoryMetadata ? repositoryBuildSource(repositoryMetadata, repositoryEntry?.revision === revision(repositoryMetadata) ? repositoryEntry.value : repositoryMetadata.entrypoint) : { type: 'files', files: uploaded!.files, entrypoint } });
         } catch (cause) { if (current()) setError(errorMessage(cause, 'Не удалось начать упаковку.')); }
         finally { if (current()) setPreparing(false); }
@@ -187,7 +196,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
         openingView.request = request;
         const current = () => alive.current && owns() && currentOpeningView.current === openingView && openingView.request === request;
         setOpeningRequest(openingView); setError('');
-        try { await onPublished(build.job.result.catalogId, current); }
+        try { await onPublished(build.job.result.catalogId, current,build.job.result.kind); }
         catch (cause) { if (current()) setError(errorMessage(cause, 'Инструмент опубликован. Не удалось открыть карточку — обновите каталог.')); }
         finally { if (current()) { openingView.request = undefined; setOpeningRequest(undefined); } }
     };
@@ -239,8 +248,8 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
             </>} />}
         {build.recoveryBlocked && <Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>}
         {showingProgress ? <PackagingBuildStatus active={open} job={build.job} name={name || suggestedName || 'Сборка инструмента'} /> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy || build.unresolved || build.recoveryBlocked}>
-            <Paragraph type="secondary">Выберите источник. Мы определим название, версию и способ запуска — останется проверить карточку и добавить инструмент.</Paragraph>
-            <Form.Item label="Откуда добавить инструмент"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value); setError(''); }} options={[{ label: 'npm', value: 'npm' }, { label: 'GitHub', value: 'repository' }, { label: 'Исходники', value: 'files' }, {label:'Готовая поставка',value:'upload'}]} optionType="button" className="tool-packaging__sources" /></Form.Item>
+            <Paragraph type="secondary">Добавьте MCP, плагин или скилл. Мы определим тип и данные карточки по источнику. SKILL.md найдётся и во вложенной папке архива; если скиллов несколько, выберите нужный.</Paragraph>
+            <Form.Item label="Откуда добавить инструмент"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value);if(event.target.value==='npm'||event.target.value==='upload'){setKind('mcp');}setError(''); }} options={[{ label: 'npm', value: 'npm' }, { label: 'GitHub', value: 'repository' }, { label: 'Исходники', value: 'files' }, {label:'Готовая поставка',value:'upload'}]} optionType="button" className="tool-packaging__sources" /></Form.Item>
             {source === 'npm' ? <>
                 <Form.Item label="Пакет или ссылка npm" extra="Версия закрепится перед сборкой. Можно указать package@version.">
                     <Input.Search aria-label="npm-пакет или ссылка" value={specifier} onChange={event => setSpecifier(event.target.value)} placeholder="Например, opencode-snip" loading={npm.loading} enterButton="Проверить"
@@ -250,17 +259,18 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
                 {npm.metadata && <NpmMetadataDetails metadata={npm.metadata} />}
                 {npm.metadata && <SourceEntrypointChoice label="Команда npm-пакета" candidates={npm.metadata.candidates} value={selectedNpmEntry} onChange={value => setNpmEntry({specifier:npm.metadata!.specifier,value})} />}
                 {npm.error && <Alert type="error" role="alert" showIcon message={npm.error} description="Исправьте название или ссылку и нажмите «Проверить» ещё раз. Сборка ещё не запущена." />}
+                <Paragraph type="secondary">Скиллы добавляются из GitHub или во вкладке «Исходники» — SKILL.md с ресурсами, без npm и команды запуска.</Paragraph>
             </> : source === 'repository' ? <>
                 <Form.Item label="Ссылка на GitHub" extra="Репозиторий или готовая поставка из Releases. Публичная HTTPS-ссылка без токена.">
                     <Input.Search aria-label="Ссылка на репозиторий GitHub" value={repositoryUrl} onChange={event => setRepositoryUrl(event.target.value)} placeholder="https://github.com/owner/repository" loading={repository.loading} enterButton="Проверить"
                         onPaste={event => { if (pasteReference(event.clipboardData.getData('text'))) event.preventDefault(); }}
                         onPressEnter={event => event.preventDefault()} onBlur={() => { if (repositoryUrl.trim()) void repository.resolve().catch(() => {}); }} onSearch={() => { void repository.resolve(true).catch(() => {}); }} />
                 </Form.Item>
-                <Paragraph type="secondary">JS и TypeScript — из исходников. Для Python, Java, .NET, Go, Rust и native нужна готовая поставка в репозитории или Releases: способ запуска определим по содержимому.</Paragraph>
+                <Paragraph type="secondary">Скилл определим по SKILL.md. Для набора скиллов укажите подпапку одного скилла. JS и TypeScript упакуем из исходников; другим языкам нужна готовая поставка.</Paragraph>
                 <Collapse ghost className="tool-packaging__details"><Collapse.Panel header="Ветка и подпапка" key="repository">
                     <Form.Item label="Ветка, тег или commit" extra="По умолчанию — основная ветка репозитория."><Input aria-label="Ветка, тег или commit" value={repositoryRef} onChange={event => setRepositoryRef(event.target.value)} placeholder="Например, main или v1.0.0" /></Form.Item>
                     <Form.Item label="Подпапка" extra="Для инструмента внутри monorepo."><Input aria-label="Подпапка репозитория" value={subdirectory} onChange={event => setSubdirectory(event.target.value)} placeholder="Например, packages/my-tool" /></Form.Item>
-                    <Form.Item label={repositoryRuntime ? 'Рецепт поставки' : 'Файл запуска или рецепт'} extra="По умолчанию определяется автоматически."><Input aria-label={repositoryRuntime ? 'Рецепт поставки репозитория вручную' : 'Файл запуска репозитория вручную'} value={repositoryEntrypoint} onChange={event => { setRepositoryEntrypoint(event.target.value); setRepositoryEntry(undefined); }} placeholder={repositoryRuntime ? 'neurocenter.tool.json' : 'src/server.ts'} /></Form.Item>
+                    <Form.Item label={effectiveKind==='skill'?'Инструкция скилла':repositoryRuntime ? 'Рецепт поставки' : 'Файл запуска или рецепт'} extra="По умолчанию определяется автоматически."><Input aria-label={repositoryRuntime ? 'Рецепт поставки репозитория вручную' : 'Файл запуска репозитория вручную'} value={repositoryEntrypoint} onChange={event => { setRepositoryEntrypoint(event.target.value); setRepositoryEntry(undefined); }} placeholder={effectiveKind==='skill'?'SKILL.md':repositoryRuntime ? 'neurocenter.tool.json' : 'src/server.ts'} /></Form.Item>
                 </Collapse.Panel></Collapse>
                 {repository.metadata && <RepositoryMetadataDetails metadata={repository.metadata} entrypoint={selectedRepositoryEntry} />}
                 {repository.metadata && <ReleaseAssetChoice metadata={repository.metadata} onChange={value => { setRepositoryRelease({url:repositoryUrl.trim(),value}); setRepositoryEntrypoint(''); setRepositoryEntry(undefined); }} />}
@@ -269,15 +279,17 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
                     else setRepositoryEntry({ revision: repositoryRevision, value });
                 }} />}
                 {repository.error && <Alert type="error" role="alert" showIcon message={repository.error} description="Проверьте ссылку. Для инструмента в подпапке или другой ветке откройте «Ветка и подпапка», затем повторите проверку." />}
-            </> : source === 'upload' ? <SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /> : <>
-                <Form.Item label="Исходники JS / TypeScript"><SourceFilesPicker disabled={busy} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
+            </> : source === 'upload' ? <><SourceArchiveUploader upload={upload} entrypoint={selectedUploadEntry} onEntrypointChange={value => setUploadEntry(upload.upload ? {id:upload.upload.id,value} : undefined)} disabled={build.submitting || build.active || preparing || resetting || build.unresolved || build.recoveryBlocked} /><Paragraph type="secondary">Для скилла используйте вкладку «Исходники»: выберите SKILL.md с ресурсами или их архив. Исполняемый файл скиллу не нужен.</Paragraph></> : <>
+                <Form.Item label="Исходники или скилл"><SourceFilesPicker disabled={busy} reading={reading} uploaded={uploaded} archiveName={archiveName} onSelect={(input, fromArchive) => { void readFiles(input, fromArchive); }} /></Form.Item>
+                <Paragraph type="secondary">Папки внутри архива сохраняются. Найдём SKILL.md, а scripts, references и assets рядом с ним станут ресурсами скилла, включая PNG и PDF. Если найдём несколько скиллов, покажем их пути для выбора.</Paragraph>
                 <Paragraph type="secondary" className="tool-packaging__language-note">Готовые поставки других языков добавляются по ссылке на GitHub Release или во вкладке «Готовая поставка».</Paragraph>
-                {uploaded && <SourceEntrypointChoice candidates={candidates} value={entrypoint} onChange={value => { manualEntrypoint.current = true; setEntrypoint(value); }} />}
-                {uploaded && !candidates.length && <Alert type="warning" showIcon message="В исходниках нет файла запуска JS или TypeScript" description="Выберите архив с исходниками инструмента или добавьте готовую поставку по ссылке на GitHub Release." />}
+                {uploaded && <SourceEntrypointChoice skill={effectiveKind==='skill'} label={effectiveKind==='skill'?'Скилл в исходниках':'Файл запуска'} candidates={candidates} value={entrypoint} onChange={value => { manualEntrypoint.current = true; setEntrypoint(value); }} />}
+                {skillError&&<Alert type="error" role="alert" showIcon message={skillError}/>}
+                {uploaded && !candidates.length&&!skillError && <Alert type="warning" showIcon message="В исходниках нет SKILL.md или файла запуска JS / TypeScript" description="Выберите папку одного скилла или исходники инструмента. Для готовой программы используйте GitHub Release или «Готовая поставка»." />}
             </>}
-            {sourceReady && <PackagingSummary name={name.trim() || suggestedName} description={description.trim() || suggestedDescription} kind={effectiveKind} entrypoint={source === 'files' && candidates.length === 1 ? entrypoint : undefined} />}
+            {sourceReady && <PackagingSummary name={name.trim() || suggestedName} description={description.trim() || suggestedDescription} kind={effectiveKind} entrypoint={source === 'files' && (candidates.length === 1||effectiveKind==='skill') ? entrypoint : undefined} />}
             <Collapse ghost className="tool-packaging__details"><Collapse.Panel header="Настроить карточку и тип инструмента" key="details">
-                <Form.Item label="Тип инструмента" extra={metadata?.recommendedKind ? 'Тип определён по источнику. Можно изменить вручную.' : 'MCP предоставляет инструменты помощнику; плагин расширяет OpenCode.'}><Radio.Group aria-label="Тип инструмента" value={repositoryRuntime || source === 'upload' ? 'mcp' : kind} onChange={event => { explicitKind.current = { source: sourceKey, package: metadataIdentity }; setKind(event.target.value); }} options={[{ label: 'MCP', value: 'mcp', disabled: !!metadata?.runnableKinds && !metadata.runnableKinds.includes('mcp') }, { label: 'Плагин OpenCode', value: 'plugin', disabled: repositoryRuntime || source === 'upload' || !!metadata?.runnableKinds && !metadata.runnableKinds.includes('plugin') }]} /></Form.Item>
+                <Form.Item label="Тип инструмента" extra={recommended?.recommendedKind ? 'Тип определён по источнику. Можно изменить вручную.' : 'MCP предоставляет инструменты; плагин расширяет OpenCode; скилл содержит инструкции и ресурсы.'}><Radio.Group aria-label="Тип инструмента" value={effectiveKind} onChange={event => { explicitKind.current = { source: sourceKey, package: metadataIdentity }; setKind(event.target.value); }} options={[{ label: 'MCP', value: 'mcp', disabled: !!metadata?.runnableKinds && !metadata.runnableKinds.includes('mcp') }, { label: 'Плагин OpenCode', value: 'plugin', disabled: repositoryRuntime || source === 'upload' || !!metadata?.runnableKinds && !metadata.runnableKinds.includes('plugin') },{label:'Скилл',value:'skill',disabled:source==='npm'||source==='upload'||repositoryRuntime||!!metadata?.runnableKinds&&!metadata.runnableKinds.includes('skill')}]} /></Form.Item>
                 <Form.Item label="Название в каталоге"><Input aria-label="Название в каталоге" value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={suggestedName || 'Название из пакета'} /></Form.Item>
                 <Form.Item label="Описание"><Input.TextArea aria-label="Описание инструмента" rows={2} value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} placeholder={suggestedDescription || 'Кратко опишите инструмент'} /></Form.Item>
             </Collapse.Panel></Collapse>

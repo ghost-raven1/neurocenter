@@ -19,7 +19,7 @@ function validSource(value:unknown):boolean {
     if(value.type==='npm')return fields(value,['type','specifier','entrypoint'])&&text(value.specifier)
         &&(value.entrypoint===undefined||text(value.entrypoint));
     if(value.type==='files')return fields(value,['type','files','entrypoint','args'])&&text(value.entrypoint)
-        &&Array.isArray(value.files)&&value.files.length>0&&value.files.every(file=>object(file)&&fields(file,['path','content'])&&text(file.path)&&typeof file.content==='string')
+        &&Array.isArray(value.files)&&value.files.length>0&&value.files.every(file=>object(file)&&fields(file,['path','content','encoding'])&&text(file.path)&&typeof file.content==='string'&&(file.encoding===undefined||file.encoding==='base64'))
         &&(value.args===undefined||Array.isArray(value.args)&&value.args.every(arg=>typeof arg==='string'));
     if(value.type!=='repository'||!fields(value,['type','url','ref','subdirectory','entrypoint','release'])
         ||!text(value.url)||typeof value.ref!=='string'||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(value.ref)
@@ -34,8 +34,11 @@ function validSource(value:unknown):boolean {
 /** Восстановление не доверяет изменяемым данным браузера больше, чем новой форме. */
 function requestJSON(request:ToolBuildRequest):string {
     if(!request||Object.keys(request).some(key=>!['requestKey','kind','name','description','source'].includes(key))
-        ||!uuid.test(request.requestKey)||!['mcp','plugin'].includes(request.kind)||typeof request.name!=='string'||typeof request.description!=='string'
+        ||!uuid.test(request.requestKey)||!['mcp','plugin','skill'].includes(request.kind)||typeof request.name!=='string'||typeof request.description!=='string'
         ||!validSource(request.source))throw new Error('Сохранённый запрос упаковки повреждён. Проверьте операции перед новой сборкой.');
+    if(request.kind==='skill'&&(request.source.type!=='files'&&request.source.type!=='repository'
+        ||!/(?:^|\/)SKILL\.md$/.test(request.source.entrypoint)||request.source.entrypoint.split('/').some(part=>!part||part==='.'||part==='..'||/[\\\x00-\x1f\x7f]/.test(part))||'release'in request.source&&request.source.release!==undefined
+        ||'args'in request.source&&request.source.args!==undefined))throw new Error('Скилл восстанавливается из SKILL.md и ресурсов, без команды запуска.');
     const bytes=JSON.stringify(request);
     if(new TextEncoder().encode(bytes).length>maximumBytes)throw new Error('Исходники упаковки превышают лимит локального восстановления.');
     return bytes;

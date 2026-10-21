@@ -3,7 +3,7 @@ import { toSkillCreate, type ResolvedAsset, type SkillAsset } from '@neurocenter
 import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
 import { importDependencyContext } from './tool-adapter';
 
-export interface ISkillSnapshot extends INativeAssetPin {name?:string;archivedAt?:string;payloadHash?:string;archive?:{requestKey:string;previousHash:string;payloadHash:string;version:number;restore:boolean}}
+export interface ISkillSnapshot extends INativeAssetPin {name?:string;archivedAt?:string;payloadHash?:string;importRequestKey?:string;archive?:{requestKey:string;previousHash:string;payloadHash:string;version:number;restore:boolean}}
 /** Только internal gateway-to-service вызовы; браузер не задаёт target URL или исполнителя. */
 export class SkillAssetClient {
     constructor(private readonly request:typeof fetch=fetch) {}
