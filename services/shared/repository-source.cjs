@@ -21,7 +21,7 @@ function reference(value){
 }
 function decode(value){try{return decodeURIComponent(value);}catch{throw new Error('Некорректное кодирование ссылки GitHub.');}}
 
-/** Обычная tree-ссылка задаёт первый сегмент ветки; ветку со слешем можно уточнить полем ref. */
+/** Tree/blob задают первый сегмент ветки; ветку со слешем можно уточнить полем ref. */
 function parseRepositoryUrl(value,options={}){
  if(typeof value!=='string'||value.length>2048||/[\x00-\x20\x7f\\]/.test(value))throw new Error('Укажите публичный репозиторий https://github.com/владелец/репозиторий.');
  let parsed;try{parsed=new URL(value);}catch{throw new Error('Некорректная ссылка GitHub.');}
@@ -32,7 +32,7 @@ function parseRepositoryUrl(value,options={}){
  const owner=decode(parts[0]||''),repository=decode(parts[1]||'').replace(/\.git$/i,'');
  if(!/^[a-z0-9][a-z0-9-]{0,38}$/i.test(owner)||!/^[a-z0-9._-]{1,100}$/i.test(repository)||repository==='.'||repository==='..')throw new Error('Некорректные владелец или имя репозитория GitHub.');
  let ref=options.ref===undefined||options.ref===''?undefined:reference(options.ref),subdirectory=options.subdirectory===undefined||options.subdirectory===''?undefined:relativePath(options.subdirectory,'Папка проекта');
- let release;
+ let release,entrypoint;
  if(parts[2]==='releases'){
   if(parts[3]==='latest'&&parts.length===4)release={tag:'latest'};
   else if(parts[3]==='tag'&&parts.length>=5)release={tag:parts.slice(4).map(decode).join('/')};
@@ -41,24 +41,40 @@ function parseRepositoryUrl(value,options={}){
   release=validateReleaseInput(release);
   if(subdirectory)throw new Error('Подпапка относится к исходникам, а не к файлу релиза.');
  }else if(parts.length>2){
-  if(parts[2]!=='tree'||parts.length<4||parts.slice(3).some(part=>!part))throw new Error('Используйте ссылку на репозиторий или его /tree/ветка/папка.');
+  const view=parts[2];
+  if(!['tree','blob'].includes(view)||parts.length<4||parts.slice(3).some(part=>!part))throw new Error('Используйте ссылку на репозиторий, /tree/ветка/папка или /blob/ветка/файл.');
   const tail=parts.slice(3).map(decode).join('/');
   const treeRef=ref??reference(decode(parts[3]));
-  if(tail!==treeRef&&!tail.startsWith(treeRef+'/'))throw new Error('Ветка ref не совпадает со ссылкой tree. Укажите канонический URL репозитория и ref отдельно.');
-  const treeDirectory=tail===treeRef?undefined:relativePath(tail.slice(treeRef.length+1),'Папка в ссылке tree');
-  if(subdirectory&&treeDirectory&&subdirectory!==treeDirectory)throw new Error('Папка subdirectory не совпадает с папкой в ссылке tree.');
-  ref=treeRef;subdirectory=subdirectory??treeDirectory;
+  if(tail!==treeRef&&!tail.startsWith(treeRef+'/'))throw new Error('Ветка ref не совпадает со ссылкой '+view+'. Укажите канонический URL репозитория и ref отдельно.');
+  const treeDirectory=tail===treeRef?undefined:relativePath(tail.slice(treeRef.length+1),'Путь в ссылке '+view);
+  if(view==='tree'){
+   if(subdirectory&&treeDirectory&&subdirectory!==treeDirectory)throw new Error('Папка subdirectory не совпадает с папкой в ссылке tree.');
+   subdirectory=subdirectory??treeDirectory;
+  }else{
+   const file=treeDirectory;
+   if(!file||!isSourceEntrypoint(file)&&!/(?:^|\/)SKILL\.md$/.test(file)&&file.split('/').at(-1)!==manifestName)throw new Error('Ссылка blob должна указывать на SKILL.md, исполняемый JS/TS-файл или neurocenter.tool.json.');
+   if(/(?:^|\/)(?:\.git|node_modules|\.npmrc|\.yarnrc(?:\.yml)?|\.env(?:\..*)?|id_rsa|id_ed25519)(?:\/|$)/i.test(file))throw new Error('Файл в ссылке blob содержит секретный или служебный путь.');
+   if(subdirectory&&!file.startsWith(subdirectory+'/'))throw new Error('Папка subdirectory не содержит файл в ссылке blob.');
+   if(file.split('/').at(-1)===manifestName){
+    const directory=file.includes('/')?file.slice(0,file.lastIndexOf('/')):undefined;
+    if(subdirectory&&subdirectory!==directory)throw new Error('Папка subdirectory не совпадает с папкой рецепта в ссылке blob.');
+    subdirectory=directory;entrypoint=manifestName;
+   }else entrypoint=subdirectory?file.slice(subdirectory.length+1):file;
+   if(options.entrypoint!==undefined&&options.entrypoint!==''&&options.entrypoint!==entrypoint)throw new Error('Файл entrypoint не совпадает с файлом в ссылке blob.');
+  }
+  ref=treeRef;
  }
- return {url:`https://github.com/${owner.toLowerCase()}/${repository.toLowerCase()}`,owner:owner.toLowerCase(),repository:repository.toLowerCase(),...(ref?{ref}:{}),...(subdirectory?{subdirectory}:{}),...(release?{release}:{})};
+ return {url:`https://github.com/${owner.toLowerCase()}/${repository.toLowerCase()}`,owner:owner.toLowerCase(),repository:repository.toLowerCase(),...(ref?{ref}:{}),...(subdirectory?{subdirectory}:{}),...(entrypoint?{entrypoint}:{}),...(release?{release}:{})};
 }
 
 /** Builder принимает только полный commit; HTTP-форма может передать ветку до разрешения через GitHub. */
 function validateRepositorySource(value,{pinned=true}={}){
  if(!exact(value,pinned?['type','url','commit','subdirectory','entrypoint','runtimeSource','manifestSha256','release','snapshotSha256']:['type','url','ref','subdirectory','entrypoint','release'])||value.type!=='repository')throw new Error('Источник repository содержит неподдерживаемые поля.');
- const parsed=parseRepositoryUrl(value.url,pinned?{subdirectory:value.subdirectory}:{ref:value.ref,subdirectory:value.subdirectory});
+ const parsed=parseRepositoryUrl(value.url,pinned?{subdirectory:value.subdirectory,entrypoint:value.entrypoint}:{ref:value.ref,subdirectory:value.subdirectory,entrypoint:value.entrypoint});
  const release=value.release?validateReleaseInput(value.release):parsed.release;
  if(value.release&&parsed.release&&(release.tag!==parsed.release.tag||parsed.release.asset&&release.asset!==parsed.release.asset))throw new Error('Поля релиза не совпадают со ссылкой.');
- const entrypoint=!pinned&&(value.entrypoint===undefined||value.entrypoint==='')?undefined:relativePath(value.entrypoint,'Файл запуска');
+ const selected=value.entrypoint===undefined||value.entrypoint===''?parsed.entrypoint:value.entrypoint;
+ const entrypoint=!pinned&&(selected===undefined||selected==='')?undefined:relativePath(selected,'Файл запуска');
  if(entrypoint&&/\.d\.[cm]?ts$/i.test(entrypoint))throw new Error('Нужен исполняемый JS/TS-файл, без деклараций типов.');
  if(pinned&&!value.snapshotSha256&&!release&&entrypoint&&!/(?:^|\/)SKILL\.md$/.test(entrypoint)&&entrypoint!==manifestName&&!isSourceEntrypoint(entrypoint))throw new Error('Репозиторий должен содержать исполняемый JS/TS-файл запуска, SKILL.md или neurocenter.tool.json, без деклараций типов.');
  if(pinned){

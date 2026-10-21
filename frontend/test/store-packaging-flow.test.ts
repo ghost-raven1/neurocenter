@@ -174,6 +174,20 @@ describe('Проверка источника до добавления инст
         expect(preventDefault).toHaveBeenCalledOnce();
     });
 
+    it('GitHub остаётся доступен после переключения всех источников и сохраняет введённый адрес', () => {
+        render(); input('npm-пакет или ссылка', '@team/tool');
+        ui.selectSource!({ target: { value: 'repository' } }); render();
+        input('Ссылка на репозиторий GitHub', 'https://github.com/team/tool/blob/main/SKILL.md');
+        for (const source of ['files', 'upload', 'npm', 'repository']) {
+            ui.selectSource!({ target: { value: source } }); render();
+            expect(ui.source).toBe(source);
+            if (source === 'npm') expect(ui.inputs.get('npm-пакет или ссылка')?.value).toBe('@team/tool');
+        }
+        expect(ui.inputs.get('Ссылка на репозиторий GitHub')?.value).toBe('https://github.com/team/tool/blob/main/SKILL.md');
+        expect(ui.buttons.get('Проверить источник')?.disabled).toBe(false);
+        expect(ui.submit).not.toHaveBeenCalled();
+    });
+
     it('Упаковать ещё очищает прежние исходники и пользовательскую карточку', async () => {
         ready(); input('Название в каталоге', 'Предыдущий инструмент'); input('Описание инструмента', 'Предыдущее описание');
         ui.job = { id: 'built', operationId: 'operation', state: 'SUCCEEDED', percent: 100, message: 'Готово', result: { catalogId: 'tool', name: 'Tool', version: 1 } };
@@ -229,6 +243,15 @@ describe('Упаковка скилла через тот же поток',()=>{
         render();ui.selectSource!({target:{value:'repository'}});render();input('Ссылка на репозиторий GitHub','https://github.com/team/skills');
         ui.repositoryMetadata={url:'https://github.com/team/skills',commit:'a'.repeat(40),ref:'main',subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md',candidates:['SKILL.md'],name:'careful-reviewer',description:'Проверяет изменения',recommendedKind:'skill',runnableKinds:['skill']};
         const html=render();render();expect(html).toContain('Инструкция скилла');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:{type:'repository',url:'https://github.com/team/skills',ref:'a'.repeat(40),subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md'}}));
+    });
+    it('Прямая ссылка на SKILL.md становится проверенным источником с commit, без blob-URL в POST',async()=>{
+        render(); const preventDefault=vi.fn();
+        ui.inputs.get('npm-пакет или ссылка')!.onPaste!({clipboardData:{getData:()=> 'https://github.com/team/skills/blob/main/skills/careful-reviewer/SKILL.md#L4'},preventDefault});
+        render();expect(ui.source).toBe('repository');
+        ui.repositoryMetadata={url:'https://github.com/team/skills',commit:'c'.repeat(40),ref:'main',subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md',candidates:['SKILL.md'],name:'careful-reviewer',description:'Проверяет изменения',recommendedKind:'skill',runnableKinds:['skill']};
+        render();render();ui.finish!();await flush();
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:{type:'repository',url:'https://github.com/team/skills',ref:'c'.repeat(40),subdirectory:'skills/careful-reviewer',entrypoint:'SKILL.md'}}));
     });
     it('Находит SKILL.md во вложенной папке архива и сохраняет полный путь в запросе',async()=>{
         render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('README.md','Опись архива'),selectedFile('download/my-skill/SKILL.md',skillText),selectedFile('download/my-skill/references/rules.md','Правила')]);await flush();render();let html=render();

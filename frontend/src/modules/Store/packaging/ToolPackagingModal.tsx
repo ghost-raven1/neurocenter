@@ -261,12 +261,12 @@ export const ToolPackagingModal: FC<Props> = ({ open, scope, projectId, onClose,
                 {npm.error && <Alert type="error" role="alert" showIcon message={npm.error} description="Исправьте название или ссылку и нажмите «Проверить» ещё раз. Сборка ещё не запущена." />}
                 <Paragraph type="secondary">Скиллы добавляются из GitHub или во вкладке «Исходники» — SKILL.md с ресурсами, без npm и команды запуска.</Paragraph>
             </> : source === 'repository' ? <>
-                <Form.Item label="Ссылка на GitHub" extra="Репозиторий или готовая поставка из Releases. Публичная HTTPS-ссылка без токена.">
+                <Form.Item label="Ссылка на GitHub" extra="Публичная HTTPS-ссылка на репозиторий, папку, SKILL.md, файл запуска или поставку из Releases. Без токена.">
                     <Input.Search aria-label="Ссылка на репозиторий GitHub" value={repositoryUrl} onChange={event => setRepositoryUrl(event.target.value)} placeholder="https://github.com/owner/repository" loading={repository.loading} enterButton="Проверить"
                         onPaste={event => { if (pasteReference(event.clipboardData.getData('text'))) event.preventDefault(); }}
                         onPressEnter={event => event.preventDefault()} onBlur={() => { if (repositoryUrl.trim()) void repository.resolve().catch(() => {}); }} onSearch={() => { void repository.resolve(true).catch(() => {}); }} />
                 </Form.Item>
-                <Paragraph type="secondary">Скилл определим по SKILL.md. Для набора скиллов укажите подпапку одного скилла. JS и TypeScript упакуем из исходников; другим языкам нужна готовая поставка.</Paragraph>
+                <Paragraph type="secondary">Скилл определим по SKILL.md. Для набора скиллов вставьте ссылку на папку нужного скилла или его SKILL.md. JS и TypeScript упакуем из исходников; другим языкам нужна готовая поставка.</Paragraph>
                 <Collapse ghost className="tool-packaging__details"><Collapse.Panel header="Ветка и подпапка" key="repository">
                     <Form.Item label="Ветка, тег или commit" extra="По умолчанию — основная ветка репозитория."><Input aria-label="Ветка, тег или commit" value={repositoryRef} onChange={event => setRepositoryRef(event.target.value)} placeholder="Например, main или v1.0.0" /></Form.Item>
                     <Form.Item label="Подпапка" extra="Для инструмента внутри monorepo."><Input aria-label="Подпапка репозитория" value={subdirectory} onChange={event => setSubdirectory(event.target.value)} placeholder="Например, packages/my-tool" /></Form.Item>

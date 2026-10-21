@@ -171,4 +171,33 @@ test('Skill packaging survives the native catalog, export, project, bridge and a
   local=(await f.request('main','/api/asset-sources')).localAssets.find(value=>value.id===asset.id);assert.equal(local.imported.archived,false);
   assert.ok((await f.pool.query('SELECT count(*)::int n FROM asset_source_versions')).rows[0].n>=1);
  });
+ await t.test('A GitHub file link packages the pinned skill and resources through Gateway into the native catalog',async()=>{
+  const commit='b'.repeat(40),prefix='skills/qa-github-skill',api='https://api.github.com/repos/example/qa-skills';
+  const instruction=files[0].content.replaceAll('qa-packaging-skill','qa-github-skill');
+  f.state.github.set(api,{name:'qa-skills',private:false,default_branch:'main'});
+  for(const ref of ['main',commit])f.state.github.set(api+'/commits/'+ref,{sha:commit});
+  f.state.github.set(api+'/contents/'+prefix+'/SKILL.md?ref='+commit,{type:'file',encoding:'base64',content:Buffer.from(instruction).toString('base64'),size:Buffer.byteLength(instruction)});
+  const root=path.join(f.temporary,'github-source'),tree='qa-skills-'+commit;
+  for(const file of [{...files[0],content:instruction},...files.slice(1)]){
+   const name=path.join(root,tree,prefix,file.path);await fs.mkdir(path.dirname(name),{recursive:true});
+   await fs.writeFile(name,Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8'));
+  }
+  const archive=path.join(f.temporary,'github-source.tgz');await require('tar').c({cwd:root,file:archive,gzip:true,portable:true},[tree]);
+  f.state.github.set('https://codeload.github.com/example/qa-skills/tar.gz/'+commit,new Response(await fs.readFile(archive)));
+  const link='https://github.com/example/qa-skills/blob/main/'+prefix+'/SKILL.md';
+  const metadata=await f.request('main','/api/tool-builds/repository?'+new URLSearchParams({url:link}));
+  assert.equal(metadata.recommendedKind,'skill');assert.equal(metadata.commit,commit);
+  const source={type:'repository',url:metadata.url,ref:metadata.commit,entrypoint:metadata.entrypoint,...(metadata.subdirectory?{subdirectory:metadata.subdirectory}:{})};
+  const accepted=await f.request('main','/api/tool-builds',{method:'POST',body:{...payload(),name:metadata.name,source},status:201});
+  const built=await completed(f,accepted.id);assert.equal(built.state,'SUCCEEDED',built.error||built.message);
+  const card=await f.request('main','/api/skills/common/qa-github-skill');
+  assert.deepEqual(card.resources.map(value=>value.path).sort(),files.slice(1).map(value=>value.path).sort());
+  assert.deepEqual(Buffer.from(card.resources.find(value=>value.path==='assets/preview.png').content,'base64'),Buffer.from(files.at(-1).content,'base64'));
+  const exported=validateAsset(await f.request('main','/api/tool-builds/'+built.id+'/asset'));
+  assert.deepEqual(exported.source,{type:'git',repository:'https://github.com/example/qa-skills',commit,path:prefix});
+  assert.ok((await f.request('main','/api/asset-sources')).localAssets.some(value=>value.id===exported.id));
+  const jobs=(await f.pool.query('SELECT count(*)::int n FROM tool_build_jobs')).rows[0].n;
+  await f.request('main','/api/tool-builds/repository?'+new URLSearchParams({url:link.replace('SKILL.md','missing/SKILL.md')}),{status:400});
+  assert.equal((await f.pool.query('SELECT count(*)::int n FROM tool_build_jobs')).rows[0].n,jobs);
+ });
 });

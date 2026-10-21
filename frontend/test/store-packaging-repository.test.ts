@@ -20,6 +20,10 @@ describe('Источник упаковки из репозитория GitHub',
             url: 'https://github.com/owner/tool/tree/main', ref: 'feature/tools', subdirectory: 'packages/mcp', entrypoint: 'src/cli.ts',
         });
     });
+    it.each(['SKILL.md', 'src/server.ts', 'neurocenter.tool.json'])('Передаёт прямую ссылку на %s для серверного определения папки и файла', file => {
+        const url = `https://github.com/owner/tool/blob/main/skills/reviewer/${file}`;
+        expect(repositoryQuery({ url: ` ${url}#L12-L20 ` })).toEqual({ url });
+    });
     it.each(['git@github.com:owner/tool.git', 'http://github.com/owner/tool', 'https://gitlab.com/owner/tool', 'https://user:token@github.com/owner/tool', 'https://github.com:4430/owner/tool', 'https://github.com/owner/tool?access_token=secret'])('Не отправляет неподдерживаемый адрес или секрет: %s', url => {
         expect(() => repositoryQuery({ url })).toThrow();
     });

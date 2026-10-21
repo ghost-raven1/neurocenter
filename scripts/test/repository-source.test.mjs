@@ -52,6 +52,45 @@ test('Ветка со слешем задаётся явно или одним �
     assert.throws(() => parseRepositoryUrl('https://github.com/owner/repo/tree/main/pkg', {ref: 'other'}), /ref не совпадает/);
 });
 
+test('Blob-ссылка сохраняет корень JS-проекта и точный вложенный SKILL.md', () => {
+    const base = {url: 'https://github.com/owner/repo', owner: 'owner', repository: 'repo', ref: 'main'};
+    assert.deepEqual(parseRepositoryUrl('https://github.com/Owner/Repo/blob/main/src/server.ts'), {...base, entrypoint: 'src/server.ts'});
+    assert.deepEqual(parseRepositoryUrl('https://github.com/owner/repo/blob/main/skills/example/SKILL.md'), {...base, entrypoint: 'skills/example/SKILL.md'});
+    assert.deepEqual(parseRepositoryUrl('https://github.com/owner/repo/blob/main/packages/tool/src/server.ts', {subdirectory: 'packages/tool', entrypoint: 'src/server.ts'}),
+        {...base, subdirectory: 'packages/tool', entrypoint: 'src/server.ts'});
+    assert.deepEqual(parseRepositoryUrl('https://github.com/owner/repo/blob/main/packages/tool/neurocenter.tool.json'),
+        {...base, subdirectory: 'packages/tool', entrypoint: 'neurocenter.tool.json'});
+    assert.deepEqual(validateRepositorySource({type: 'repository', url: 'https://github.com/owner/repo/blob/main/skills/example/SKILL.md'}, {pinned: false}),
+        {type: 'repository', url: base.url, ref: 'main', entrypoint: 'skills/example/SKILL.md'});
+    assert.deepEqual(validateRepositorySource({type: 'repository', url: 'https://github.com/owner/repo/blob/main/skills/example/SKILL.md', commit, entrypoint: 'skills/example/SKILL.md'}),
+        {type: 'repository', url: base.url, commit, entrypoint: 'skills/example/SKILL.md'});
+});
+
+test('Blob-ссылка согласует ветку со слешем, папку и явно выбранный файл', () => {
+    for (const url of ['https://github.com/owner/repo/blob/feature/branch/src/server.ts', 'https://github.com/owner/repo/blob/feature%2Fbranch/src/server.ts']) {
+        assert.equal(parseRepositoryUrl(url, {ref: 'feature/branch'}).entrypoint, 'src/server.ts');
+    }
+    for (const [url, options, message] of [
+        ['https://github.com/owner/repo/blob/main/src/server.ts', {ref: 'other'}, /ref не совпадает/],
+        ['https://github.com/owner/repo/blob/main/src/server.ts', {subdirectory: 'other'}, /subdirectory/],
+        ['https://github.com/owner/repo/blob/main/src/server.ts', {entrypoint: 'src/other.ts'}, /entrypoint/],
+        ['https://github.com/owner/repo/blob/main/packages/tool/neurocenter.tool.json', {subdirectory: 'packages'}, /папкой рецепта/],
+    ]) assert.throws(() => parseRepositoryUrl(url, options), message);
+    assert.throws(() => validateRepositorySource({type: 'repository', url: 'https://github.com/owner/repo/blob/main/skills/example/SKILL.md', commit, entrypoint: 'other/SKILL.md'}), /entrypoint/);
+});
+
+test('Небезопасная blob-ссылка отклоняется до обращения к GitHub', async () => {
+    let requests = 0;
+    const fetch = async () => {requests++; throw new Error('Сети быть не должно');};
+    for (const path of ['main', 'main/README.md', 'main/src/server.d.ts', 'main/%2e%2e/SKILL.md', 'main/src/%2e%2e/server.ts',
+        'main/%2Fetc/SKILL.md', 'main/src%5cserver.ts', 'main/.git/SKILL.md', 'main/.env/SKILL.md', 'main/node_modules/tool/server.js']) {
+        await assert.rejects(resolveRepositorySource({url: 'https://github.com/owner/repo/blob/' + path}, {fetch}));
+    }
+    for (const url of ['https://token@github.com/owner/repo/blob/main/SKILL.md', 'https://github.com/owner/repo/blob/main/SKILL.md?token=secret',
+        'https://github.com/owner/repo/blob/main/SKILL.md#secret']) await assert.rejects(resolveRepositorySource({url}, {fetch}));
+    assert.equal(requests, 0);
+});
+
 test('Не превращает ссылку или ref в SSRF, выражение Git или обход относительных путей', async () => {
     let calls = 0;
     const fetch = async () => {calls++; throw new Error('Сети быть не должно');};
@@ -93,6 +132,45 @@ test('Перед enqueue уточнённый entrypoint проверяется 
     const result = await resolveRepositorySource({type: 'repository', url: 'https://github.com/owner/repo', ref: commit, entrypoint: 'src/index.ts'}, {fetch: f.fetch, metadata: false});
     assert.equal(result.commit, commit); assert.equal(result.entrypoint, 'src/index.ts');
     assert.equal(f.requests.length, 3);
+});
+
+test('Blob JS/TS проверяется в закреплённом commit и не обрезает корень проекта', async () => {
+    const f = fixture();
+    const result = await resolveRepositorySource({url: 'https://github.com/owner/repo/blob/main/src/index.ts'}, {fetch: f.fetch, metadata: false});
+    assert.equal(result.url, 'https://github.com/owner/repo');
+    assert.equal(result.entrypoint, 'src/index.ts');
+    assert.equal(result.subdirectory, undefined);
+    assert.equal(f.requests.length, 3);
+    assert.equal(f.requests[2].url.pathname, '/repos/owner/repo/contents/src/index.ts');
+    assert.equal(f.requests[2].url.searchParams.get('ref'), commit);
+});
+
+test('Blob SKILL.md проверяется целиком в commit и сохраняет точную вложенную папку', async () => {
+    const f = fixture(), content = '---\nname: example\ndescription: Example skill\n---\n\nInstructions';
+    const fetch = async (value, init) => {
+        const url = new URL(value);
+        if (url.pathname === '/repos/owner/repo/contents/skills/example/SKILL.md') {
+            assert.equal(url.searchParams.get('ref'), commit);
+            return Response.json({type: 'file', encoding: 'base64', content: Buffer.from(content).toString('base64'), size: Buffer.byteLength(content)});
+        }
+        return f.fetch(value, init);
+    };
+    const result = await resolveRepositorySource({url: 'https://github.com/owner/repo/blob/main/skills/example/SKILL.md'}, {fetch,
+        inspectSkill: files => {assert.deepEqual(files, [{path: 'skills/example/SKILL.md', content}]); return {name: 'Example', description: 'Example skill'};}});
+    assert.equal(result.commit, commit);
+    assert.equal(result.entrypoint, 'skills/example/SKILL.md');
+    assert.equal(result.recommendedKind, 'skill');
+    assert.deepEqual(result.runnableKinds, ['skill']);
+});
+
+test('Blob-рецепт выбирает папку проекта, проверяет исходные байты и закрепляет SHA', async () => {
+    const f = fixture({manifest: toolManifest});
+    const result = await resolveRepositorySource({url: 'https://github.com/owner/repo/blob/main/packages/tool/neurocenter.tool.json'}, {fetch: f.fetch});
+    assert.equal(result.subdirectory, 'packages/tool');
+    assert.equal(result.entrypoint, 'neurocenter.tool.json');
+    assert.equal(result.manifestSha256, createHash('sha256').update(JSON.stringify(toolManifest)).digest('hex'));
+    assert.equal(f.requests.length, 3);
+    assert.ok(f.requests.slice(2).every(request => request.url.searchParams.get('ref') === commit));
 });
 
 test('Частный репозиторий, неверный SHA и ссылка вместо entrypoint не доходят до сборки', async () => {

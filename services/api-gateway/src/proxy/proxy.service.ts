@@ -118,6 +118,8 @@ export class ProxyService {
             }
             const upstream = await this.http.request({
                 method,
+                // Source inspection chains external reads; leave time to return before the client's 90 s deadline.
+                ...(method === 'GET' && /^\/api\/tool-builds\/(?:repository|npm)$/.test(supplyPath || '') ? {timeout: 85000} : {}),
                 ...(/^\/api\/models\/[^/]+\/ollama\//.test(path) ? {timeout: 610000, maxContentLength: 8 * 1024 * 1024} : {}),
                 responseType: 'json',
                 url: `${upstreamBase}${coordinatedRagSync ? '/api/rag/sync' : path}`,
