@@ -9,6 +9,7 @@ import { useSectionUpdates } from '../../core/socket/useSectionUpdates';
 import { auditActorLabel, describeAuditAction, featureFlagAuditChanges, formatAuditTime, maintenanceAuditChanges } from './auditHelpers';
 import { auditEventSummary, auditResourceKind, auditResourceTitle, publicationAuditChanges } from './auditPresentation';
 import { agentAuditChanges, agentAuditProject } from './agentAudit';
+import {requestAuditChanges} from '../../features/CatalogRequests/auditPresentation';
 
 const { Paragraph, Text } = Typography;
 const LEVEL_LABELS: Record<string, string> = { INFO: 'Информация', WARN: 'Внимание', ERROR: 'Ошибка', DEBUG: 'Отладка' };
@@ -22,7 +23,7 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
     const retry = useCallback(() => setAttempt(value => value + 1), []);
     const flagEvent=event.action==='feature_flag.update';
     const changes=flagEvent?featureFlagAuditChanges(event.details):maintenanceAuditChanges(event.details);
-    const publicationChanges = [...publicationAuditChanges(event), ...agentAuditChanges(event)];
+    const publicationChanges = [...publicationAuditChanges(event), ...agentAuditChanges(event), ...requestAuditChanges(event)];
     const summary = auditEventSummary(event);
     const agentProject = agentAuditProject(event);
     useSectionUpdates(['audit', 'operations'], retry, Boolean(event.correlationId));

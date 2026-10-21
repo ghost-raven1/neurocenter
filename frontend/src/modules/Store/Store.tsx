@@ -6,6 +6,7 @@ import { useHistory, useLocation } from 'react-router-dom';
 import bffApi from '../../core/api/bff';
 import { baseRoutes } from '../../core/baseRoutes';
 import { PageHeading } from '../../common/components/PageHeading';
+import { CatalogHeaderActions } from '../../features/CatalogRequests/CatalogHeaderActions';
 import { errorMessage } from '../../common/utils/errorMessage';
 import './Store.less';
 import { isMainAdminRole, roleLevel, projectRoleLevel } from '../../features/UserBlock/roles';
@@ -322,7 +323,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     return (
         <div className="store">
-            {!embedded && <PageHeading title="Каталог" description="Соберите инструменты, модели и агентов команды в общем и проектных каталогах." actions={isMain && catalogSection(location.search) === 'tools' && <Space wrap><Button onClick={() => setCreateOpen(true)}>Добавить вручную</Button><Button type="primary" onClick={() => setPackagingOpen(true)}>Упаковать инструмент</Button></Space>} />}
+            {!embedded && <PageHeading title="Каталог" description="Соберите инструменты, модели и агентов команды в общем и проектных каталогах." actions={<CatalogHeaderActions key={accessKey} section={catalogSection(location.search)} projects={projects} projectId={targetProject?.id} assetType={filter === 'all' ? undefined : filter} isMain={isMain} onCreate={() => setCreateOpen(true)} onPackage={() => setPackagingOpen(true)} />} />}
             <div className="store__destination">
                 <div><Text strong>Каталог проекта</Text><Paragraph type="secondary">{!projectsReady
                     ? projectsLoading ? 'Загружаем доступные проекты…' : 'Загрузите список проектов, чтобы продолжить.'
@@ -337,7 +338,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 message={projectCatalogReady ? 'Не удалось обновить каталог проекта — показаны предыдущие данные' : 'Каталог проекта не загружен'}
                 description={projectCatalogError}
                 action={<Button size="small" loading={projectLoading} onClick={() => { void loadProject(); }}>Повторить загрузку каталога</Button>} />}
-            <CatalogTabs bridge={bridge} scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} isMain={isMain} tools={<>
+            <CatalogTabs projects={projects} bridge={bridge} scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} isMain={isMain} tools={<>
             <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}

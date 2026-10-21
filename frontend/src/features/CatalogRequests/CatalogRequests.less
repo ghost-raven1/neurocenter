@@ -1,0 +1,23 @@
+.catalog-requests {
+    &__heading, &__card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    &__heading h3 { margin-top: 0; }
+    &__heading > div { max-width: 680px; }
+    &__filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    &__filters .ant-select { min-width: 180px; }
+    &__card { width: 100%; }
+    &__card-heading > .ant-btn { padding: 0; height: auto; white-space: normal; text-align: left; overflow-wrap: anywhere; font-weight: 600; }
+    &__card-heading > .ant-tag { flex-shrink: 0; }
+    &__description { margin: 10px 0 8px; }
+    &__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+    &__form-actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+    &__detail-tools { margin-bottom: 16px; }
+    &__actions { margin: 16px 0 24px; }
+    &__actions .ant-alert { margin-top: 12px; }
+    .ant-alert { margin-bottom: 12px; }
+}
+@media (max-width: 640px) {
+    .catalog-requests {
+        &__heading { flex-direction: column; }
+        &__filters .ant-select { width: 100%; }
+    }
+}

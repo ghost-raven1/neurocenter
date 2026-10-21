@@ -1,4 +1,5 @@
 import type { IAuditEvent } from '../../core/api/interfaces';
+import {requestAuditAction} from '../../features/CatalogRequests/auditPresentation';
 
 const ACTION_LABELS: Record<string, string> = {
     install: 'Установка', delete: 'Удаление', release: 'Выпуск', sync: 'Синхронизация',
@@ -13,13 +14,14 @@ const RESOURCE_LABELS: Record<string, string> = {
     skill: 'Скилл', plugin: 'MCP / плагин', mcp: 'MCP-сервер', project: 'Проект', quota: 'Квоты',
     backup: 'Резервная копия', snapshot: 'Снимок', rag: 'База знаний', package: 'Пакет',
     profile: 'Профиль', asset: 'Инструмент', catalog: 'Каталог',
-    agent: 'Агент OpenCode',
+    agent: 'Агент OpenCode', catalog_request:'Заявка по каталогу',
     bridge:'Мост', maintenance:'Обслуживание', user:'Пользователь', feature_flag:'Функция платформы',
 };
 
 /** Переводит реальные коды operations, сохраняя неизвестное действие без догадок. */
 export function describeAuditAction(action: string): { label: string; color: string } {
     const normalized = action?.toLowerCase() || '';
+    const request=requestAuditAction(normalized);if(request)return request;
     const agentLabels: Record<string, {label: string; color: string}> = {
         'agent.create': {label:'Агент добавлен',color:'blue'}, 'agent.update': {label:'Шаблон агента изменён',color:'cyan'},
         'agent.archive': {label:'Агент убран из каталога',color:'red'}, 'agent.restore': {label:'Агент возвращён в каталог',color:'blue'},
@@ -74,8 +76,8 @@ export function filterAuditPage(events: IAuditEvent[], search: string, outcome: 
         if (!query) { return true; }
         const names = [event.details?.before, event.details?.after].flatMap(value => {
             if (!value || typeof value !== 'object' || Array.isArray(value)) { return []; }
-            const name = (value as Record<string, unknown>).name;
-            return typeof name === 'string' ? [name] : [];
+            const snapshot=value as Record<string,unknown>;
+            return [snapshot.name,snapshot.title].filter((name):name is string=>typeof name==='string');
         });
         return [ event.action, describeAuditAction(event.action).label, event.resourceType,
             auditResourceLabel(event.resourceType), event.resourceId, event.actor, auditActorLabel(event.actor),

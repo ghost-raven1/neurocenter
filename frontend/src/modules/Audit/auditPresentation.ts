@@ -1,6 +1,7 @@
 import type { IAuditEvent } from '../../core/api/interfaces';
 import { auditResourceLabel } from './auditHelpers';
 import { agentAuditSummary, agentAuditTitle, isAgentAudit } from './agentAudit';
+import {requestAuditSummary,requestAuditTitle} from '../../features/CatalogRequests/auditPresentation';
 
 interface IPublicationSnapshot {
     name?: string;
@@ -32,6 +33,7 @@ function snapshot(value: unknown): IPublicationSnapshot {
 
 /** Использует название из события, в том числе после удаления карточки. */
 export function auditResourceTitle(event: IAuditEvent): string {
+    const request=requestAuditTitle(event);if(request)return request;
     const agent = agentAuditTitle(event); if (agent) return agent;
     if (publicationActions.has(event.action)) {
         return snapshot(event.details?.after).name || snapshot(event.details?.before).name || event.resourceId || 'Название не сохранено';
@@ -73,6 +75,7 @@ export function publicationAuditChanges(event: IAuditEvent): IAuditChange[] {
 
 /** Краткая сводка подтверждённых изменений для строки журнала. */
 export function auditEventSummary(event: IAuditEvent): string | undefined {
+    const request=requestAuditSummary(event);if(request)return request;
     if (isAgentAudit(event)) return agentAuditSummary(event);
     if (!publicationActions.has(event.action)) { return undefined; }
     const before = snapshot(event.details?.before), after = snapshot(event.details?.after);
