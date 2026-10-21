@@ -1,4 +1,4 @@
-export type TSourceAssetKind='mcp'|'plugin'|'skill'|'model'|'bridge';
+export type TSourceAssetKind='mcp'|'plugin'|'skill'|'model'|'bridge'|'agent';
 export interface ISourceAsset {id:string;kind:TSourceAssetKind;name:string;description?:string;version:string;sha256:string;license:string;dependencies:Array<{id:string;version:string}>;imported?:{id:string;version:number;originVersion:string;updateAvailable:boolean;archived?:boolean;unavailable?:boolean}}
 export interface ISourceList {source:{repository:string;commit?:string;checkedAt?:string;verified:boolean;error?:string;lastAttemptAt?:string};assets:ISourceAsset[]}
 export interface IImportIntent {requestKey:string;commit:string;ids:string[];jobId?:string}

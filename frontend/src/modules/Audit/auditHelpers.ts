@@ -4,7 +4,7 @@ const ACTION_LABELS: Record<string, string> = {
     install: 'Установка', delete: 'Удаление', release: 'Выпуск', sync: 'Синхронизация',
     restore: 'Восстановление', create: 'Создание', update: 'Обновление', upload: 'Загрузка',
     verify: 'Проверка', transfer: 'Передача', move: 'Перемещение', cleanup: 'Очистка',
-    import: 'Импорт', publish: 'Публикация', activate: 'Возврат версии',
+    import: 'Импорт', publish: 'Публикация', activate: 'Возврат версии', archive: 'Удаление из каталога',
 };
 const ACTION_COLORS: Record<string, string> = {
     install: 'green', delete: 'red', release: 'geekblue', sync: 'purple', restore: 'volcano', create: 'blue', update: 'cyan',
@@ -13,12 +13,20 @@ const RESOURCE_LABELS: Record<string, string> = {
     skill: 'Скилл', plugin: 'MCP / плагин', mcp: 'MCP-сервер', project: 'Проект', quota: 'Квоты',
     backup: 'Резервная копия', snapshot: 'Снимок', rag: 'База знаний', package: 'Пакет',
     profile: 'Профиль', asset: 'Инструмент', catalog: 'Каталог',
+    agent: 'Агент OpenCode',
     bridge:'Мост', maintenance:'Обслуживание', user:'Пользователь', feature_flag:'Функция платформы',
 };
 
 /** Переводит реальные коды operations, сохраняя неизвестное действие без догадок. */
 export function describeAuditAction(action: string): { label: string; color: string } {
     const normalized = action?.toLowerCase() || '';
+    const agentLabels: Record<string, {label: string; color: string}> = {
+        'agent.create': {label:'Агент добавлен',color:'blue'}, 'agent.update': {label:'Шаблон агента изменён',color:'cyan'},
+        'agent.archive': {label:'Агент убран из каталога',color:'red'}, 'agent.restore': {label:'Агент возвращён в каталог',color:'blue'},
+        'project.agent.assign': {label:'Агент добавлен в проект',color:'blue'}, 'project.agent.update': {label:'Настройки агента изменены',color:'cyan'},
+        'project.agent.remove': {label:'Агент убран из проекта',color:'red'}, 'project.agents.connect': {label:'Настройки отправлены мосту',color:'purple'},
+    };
+    if (agentLabels[normalized]) return agentLabels[normalized];
     if (normalized === 'skill.dependencies.preserve') { return { label: 'История зависимостей', color: 'orange' }; }
     if (normalized === 'skill.directory.create') { return { label: 'Создание папки', color: 'blue' }; }
     if (normalized === 'project.settings.update') { return { label: 'Настройки проекта', color: 'cyan' }; }

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { baseApi } from '../../core/api';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 
-export type TManagedAssetKind='mcp'|'plugin'|'skill'|'model';
+export type TManagedAssetKind='mcp'|'plugin'|'skill'|'model'|'agent';
 interface IImpact {impactId:string;digest:string;target:{kind:TManagedAssetKind;id:string;name:string;version:number;archived:boolean};projects:Array<{id:string;name:string}>;preserved:string[];removeBlockers?:Array<{id:string;name:string}>}
 interface IProps {kind:TManagedAssetKind;id:string;onArchived?:()=>void;children?:ReactNode;disabled?:boolean;restore?:boolean;buttonProps?:Pick<ButtonProps,'type'|'icon'|'size'|'aria-label'>}
 const errorText=(error:unknown):string=>(error as {response?:{data?:{message?:string}}})?.response?.data?.message||'Сервер не подтвердил действие. Повторите тот же запрос.';
@@ -24,6 +24,7 @@ export function ArchiveAssetButton({kind,id,onArchived,children='Удалить'
   footer={<Space><Button disabled={busy} onClick={()=>setOpen(false)}>Отмена</Button><Button danger type="primary" loading={busy} disabled={!impact} onClick={()=>void archive()}>{restore?'Вернуть в каталог':'Убрать из каталога'}</Button></Space>}>
   {error&&<Alert type="error" showIcon message={error} action={!impact?<Button onClick={()=>void preview()}>Повторить проверку</Button>:undefined}/>}
   {impact&&<><Typography.Paragraph>{restore?'Карточка снова станет доступна для выбора в общем каталоге.':'Карточка будет архивирована.'} История версий, файлы и установленные на компьютерах инструменты сохранятся.</Typography.Paragraph>
+   {kind==='agent'&&!restore&&<Typography.Paragraph type="secondary">При удалении из проектов агенты будут отключены в сохранённых настройках. Их управляемые файлы OpenCode удалятся после применения через мост в каждой связанной папке. Недоступные компьютеры сохранят прежние файлы до подключения.</Typography.Paragraph>}
    {!restore&&impact.projects.length>0?<><Typography.Paragraph>Карточка подключена к проектам: {impact.projects.map(project=>project.name).join(', ')}.</Typography.Paragraph>
     <Radio.Group value={mode} onChange={e=>setMode(e.target.value)}><Space direction="vertical"><Radio value="catalog-only">Сохранить подключения проектов</Radio><Radio value="catalog-and-projects" disabled={!!impact.removeBlockers?.length}>Также убрать из {impact.projects.length} проектов</Radio></Space></Radio.Group></>:<Typography.Text type="secondary">Подключений к проектам нет.</Typography.Text>}
    {!restore&&!!impact.removeBlockers?.length&&<Alert type="warning" showIcon message="Нельзя убрать активную модель из проектов"

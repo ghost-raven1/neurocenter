@@ -6,6 +6,7 @@ declare module 'react-router-dom' {
     export interface IRouterHistory {
         push(path: string): void;
         replace(path: string): void;
+        block(prompt: string): () => void;
         location: IRouterLocation;
     }
 

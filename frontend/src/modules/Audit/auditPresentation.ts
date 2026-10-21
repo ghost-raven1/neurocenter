@@ -1,5 +1,6 @@
 import type { IAuditEvent } from '../../core/api/interfaces';
 import { auditResourceLabel } from './auditHelpers';
+import { agentAuditSummary, agentAuditTitle, isAgentAudit } from './agentAudit';
 
 interface IPublicationSnapshot {
     name?: string;
@@ -31,6 +32,7 @@ function snapshot(value: unknown): IPublicationSnapshot {
 
 /** Использует название из события, в том числе после удаления карточки. */
 export function auditResourceTitle(event: IAuditEvent): string {
+    const agent = agentAuditTitle(event); if (agent) return agent;
     if (publicationActions.has(event.action)) {
         return snapshot(event.details?.after).name || snapshot(event.details?.before).name || event.resourceId || 'Название не сохранено';
     }
@@ -39,6 +41,7 @@ export function auditResourceTitle(event: IAuditEvent): string {
 
 /** Различает MCP и плагин по сохранённому типу публикации. */
 export function auditResourceKind(event: IAuditEvent): string {
+    if (isAgentAudit(event)) return 'Агент OpenCode';
     if (publicationActions.has(event.action)) {
         const kind = snapshot(event.details?.after).kind || snapshot(event.details?.before).kind;
         if (kind === 'plugin') { return 'Плагин OpenCode'; }
@@ -70,6 +73,7 @@ export function publicationAuditChanges(event: IAuditEvent): IAuditChange[] {
 
 /** Краткая сводка подтверждённых изменений для строки журнала. */
 export function auditEventSummary(event: IAuditEvent): string | undefined {
+    if (isAgentAudit(event)) return agentAuditSummary(event);
     if (!publicationActions.has(event.action)) { return undefined; }
     const before = snapshot(event.details?.before), after = snapshot(event.details?.after);
     if (!Object.keys(before).length && !Object.keys(after).length) { return undefined; }

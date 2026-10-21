@@ -8,6 +8,7 @@ import type { IAuditEvent, IOperationDetail } from '../../core/api/interfaces';
 import { useSectionUpdates } from '../../core/socket/useSectionUpdates';
 import { auditActorLabel, describeAuditAction, featureFlagAuditChanges, formatAuditTime, maintenanceAuditChanges } from './auditHelpers';
 import { auditEventSummary, auditResourceKind, auditResourceTitle, publicationAuditChanges } from './auditPresentation';
+import { agentAuditChanges, agentAuditProject } from './agentAudit';
 
 const { Paragraph, Text } = Typography;
 const LEVEL_LABELS: Record<string, string> = { INFO: 'Информация', WARN: 'Внимание', ERROR: 'Ошибка', DEBUG: 'Отладка' };
@@ -21,8 +22,9 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
     const retry = useCallback(() => setAttempt(value => value + 1), []);
     const flagEvent=event.action==='feature_flag.update';
     const changes=flagEvent?featureFlagAuditChanges(event.details):maintenanceAuditChanges(event.details);
-    const publicationChanges = publicationAuditChanges(event);
+    const publicationChanges = [...publicationAuditChanges(event), ...agentAuditChanges(event)];
     const summary = auditEventSummary(event);
+    const agentProject = agentAuditProject(event);
     useSectionUpdates(['audit', 'operations'], retry, Boolean(event.correlationId));
 
     useEffect(() => {
@@ -48,6 +50,7 @@ export default function AuditDetails({ event }: { event: IAuditEvent }): JSX.Ele
         <Descriptions column={1} size="small" className="audit-page__detail-meta">
             <Descriptions.Item label="Время">{formatAuditTime(event.at)}</Descriptions.Item>
             <Descriptions.Item label="Исполнитель">{auditActorLabel(event.actor)}</Descriptions.Item>
+            {agentProject && <Descriptions.Item label="Проект">{agentProject}</Descriptions.Item>}
         </Descriptions>
         {(!event.actor || event.actor === 'admin') && <Paragraph type="secondary">В исходной записи не сохранена почта пользователя: указан технический исполнитель {event.actor || 'без имени'}.</Paragraph>}
         {changes.length>0&&<Descriptions title={flagEvent?'Изменение функции':'Изменённые настройки обслуживания'} column={1} size="small">{changes.map(change=><Descriptions.Item key={change.label} label={change.label}><Text delete>{change.before}</Text> → <Text>{change.after}</Text></Descriptions.Item>)}</Descriptions>}

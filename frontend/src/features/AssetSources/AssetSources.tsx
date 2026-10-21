@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Checkbox, Empty, Input, List, Modal, Space, Spin, Tag, Typography } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { baseApi, bffApi } from '../../core/api';
 import { PageHeading } from '../../common/components/PageHeading';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -13,13 +13,18 @@ import { fromPlugin, fromSkill } from '../../modules/Store/storeHelpers';
 import type { IStoreApp } from '../../modules/Store/AppCard';
 import { ModelEditModal } from '../ModelCatalog/ModelEditModal';
 import type { ICatalogModel } from '../ModelCatalog/types';
+import { AgentEditModal } from '../AgentCatalog/AgentEditModal';
+import { agentCatalogApi } from '../AgentCatalog/api';
+import type { ICatalogAgent } from '../AgentCatalog/types';
 import './AssetSources.less';
 
-const labels={mcp:'MCP',plugin:'Плагин',skill:'Скилл',model:'Модель',bridge:'Мост компьютера'};
+const labels={mcp:'MCP',plugin:'Плагин',skill:'Скилл',model:'Модель',bridge:'Мост компьютера',agent:'Агент OpenCode'};
 /** Главный администратор явно выбирает состав общего каталога; обычное добавление занимает один клик. */
 export default function AssetSources():JSX.Element {
  const {scope,captureOwner}=useAuthRequestOwner(),[data,setData]=useState<ISourceList>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[selected,setSelected]=useState<string[]>([]),[query,setQuery]=useState('');
  const [edit,setEdit]=useState<IStoreApp|null>(null),[model,setModel]=useState<ICatalogModel>(),[editing,setEditing]=useState(''),[resolving,setResolving]=useState(false);
+ const [agent,setAgent]=useState<ICatalogAgent>();
+ const editRequest=useRef<object>();
  const load=useCallback(async(refresh=false):Promise<void>=>{
   const owns=captureOwner();setLoading(true);setError('');
   try{const response=refresh?await baseApi.post<ISourceList>('/api/asset-sources/refresh'):await baseApi.get<ISourceList>('/api/asset-sources');if(owns()){setData(response.data);setSelected(previous=>previous.filter(id=>response.data.assets.some(asset=>asset.id===id)));}}
@@ -27,16 +32,19 @@ export default function AssetSources():JSX.Element {
   finally{if(owns()){setLoading(false);}}
  },[captureOwner]);
  const imports=useAssetImports(()=>void load());
- useEffect(()=>{setResolving(false);setData(undefined);setSelected([]);setEdit(null);setModel(undefined);setQuery('');void load();},[scope,load]);
+ useEffect(()=>{editRequest.current=undefined;setEditing('');setResolving(false);setData(undefined);setSelected([]);setEdit(null);setModel(undefined);setAgent(undefined);setQuery('');void load();},[scope,load]);
+ /** Single-flight prevents a late card lookup from replacing another editor's unsaved prompt. */
  const editAsset=async(asset:ISourceAsset):Promise<void>=>{
-  if(!asset.imported||asset.kind==='bridge'){return;}const owns=captureOwner();setEditing(asset.id);setError('');
-  try{if(asset.kind==='model'){const {data}=await baseApi.get<ICatalogModel>('/api/models/'+encodeURIComponent(asset.imported.id));if(owns()){setModel(data);}}
-   else{const app=asset.kind==='skill'?fromSkill(await bffApi.getSkill(asset.imported.id)):fromPlugin(await bffApi.getAiPlugin(asset.imported.id));if(owns()){setEdit(app);}}
-  }catch(cause){if(owns()){setError(errorMessage(cause,'Не удалось открыть текущую карточку.'));}}finally{if(owns()){setEditing('');}}
+  if(!asset.imported||asset.kind==='bridge'||editRequest.current){return;}const owns=captureOwner();if(!owns()){return;}const request={};editRequest.current=request;setEditing(asset.id);setError('');
+  const current=()=>owns()&&editRequest.current===request;
+  try{if(asset.kind==='model'){const {data}=await baseApi.get<ICatalogModel>('/api/models/'+encodeURIComponent(asset.imported.id));if(current()){setModel(data);}}
+   else if(asset.kind==='agent'){const card=await agentCatalogApi.get(asset.imported.id);if(current()){setAgent(card);}}
+   else{const app=asset.kind==='skill'?fromSkill(await bffApi.getSkill(asset.imported.id)):fromPlugin(await bffApi.getAiPlugin(asset.imported.id));if(current()){setEdit(app);}}
+  }catch(cause){if(current()){setError(errorMessage(cause,'Не удалось открыть текущую карточку.'));}}finally{if(editRequest.current===request){editRequest.current=undefined;if(owns()){setEditing('');}}}
  };
  const cards=(data?.assets??[]).filter(asset=>(asset.name+' '+asset.description+' '+labels[asset.kind]).toLowerCase().includes(query.trim().toLowerCase()));
  const add=(ids:string[]):void=>{if(data?.source.commit){void imports.start(ids,data.source.commit);}};
- return <section className="asset-sources"><PageHeading title="Ассеты" description="Выберите готовые инструменты для общего каталога. Мост готовит установку компьютеров; модели и инструменты добавляются отдельно."
+ return <section className="asset-sources"><PageHeading title="Ассеты" description="Выберите инструменты, модели и агентов для общего каталога. Мост готовит установку компьютеров; состав каталога выбираете вы."
   actions={<Button loading={loading} disabled={imports.blocked} onClick={()=>void load(true)}>Обновить источник</Button>}/>
   <Space direction="vertical" size="middle" className="asset-sources__content">
    {error&&<Alert type="error" showIcon message={error}/>}
@@ -60,7 +68,7 @@ export default function AssetSources():JSX.Element {
      {!!asset.dependencies.length&&<Typography.Text type="secondary">Включает точные зависимости: {asset.dependencies.map(dep=>dep.id+' '+dep.version).join(', ')}</Typography.Text>}
      {asset.imported&&<Typography.Text type="secondary">В каталоге: версия источника {asset.imported.originVersion}{asset.imported.archived?' · в архиве':asset.imported.updateAvailable?' · доступно обновление':''}</Typography.Text>}
      <Space wrap><Button type="primary" disabled={imports.blocked||!data?.source.verified||asset.imported?.archived||asset.imported?.unavailable} onClick={()=>add([asset.id])}>{asset.imported?(asset.imported.updateAvailable?'Обновить':'Проверить и добавить'):'Добавить'}</Button>
-      {asset.imported&&asset.kind!=='bridge'&&<><Button loading={editing===asset.id} disabled={imports.blocked||asset.imported.archived||asset.imported.unavailable} onClick={()=>void editAsset(asset)}>Редактировать</Button><ArchiveAssetButton kind={asset.kind} id={asset.imported.id} restore={asset.imported.archived} children={asset.imported.archived?'Вернуть из архива':'Удалить'} onArchived={()=>void load()} disabled={imports.blocked}/></>}
+      {asset.imported&&asset.kind!=='bridge'&&<><Button loading={editing===asset.id} disabled={!!editing||imports.blocked||asset.imported.archived||asset.imported.unavailable} onClick={()=>void editAsset(asset)}>Редактировать</Button><ArchiveAssetButton kind={asset.kind} id={asset.imported.id} restore={asset.imported.archived} children={asset.imported.archived?'Вернуть из архива':'Удалить'} onArchived={()=>void load()} disabled={imports.blocked}/></>}
      </Space>
     </Space>
    </Card>)}</div>:<Empty description={data?.source.verified?'По выбранному запросу ассетов нет.':'Обновите источник, чтобы выбрать ассеты.'}/>}
@@ -72,5 +80,6 @@ export default function AssetSources():JSX.Element {
   </Modal>
   <StoreEditModal key={scope} editApp={edit} onClose={()=>setEdit(null)} onSaved={()=>void load()}/>
   {model&&<ModelEditModal key={model.id+':'+scope} model={model} onClose={()=>setModel(undefined)} onSaved={()=>load()}/>}
+  {agent&&<AgentEditModal key={agent.id+':'+agent.version+':'+scope} agent={agent} onClose={()=>setAgent(undefined)} onSaved={()=>load()}/>}
  </section>;
 }
