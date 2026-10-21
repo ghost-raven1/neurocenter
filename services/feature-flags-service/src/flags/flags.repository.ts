@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { FEATURE_FLAGS, FEATURE_FLAG_KEYS, type FeatureFlagKey, type FeatureFlagValues, type IFeatureFlag } from '../../../shared/feature-flags.cjs';
 import { featureFlagKey, featureFlagPatch } from './flag-validation';
+import {migrateFeatureFlags} from '../database/migrations';
 
 interface IFlagRow { flag_key: FeatureFlagKey; overrides: unknown; revision: number | string; updated_at: Date | string; updated_by: string }
 
@@ -23,21 +24,11 @@ export class FlagsRepository {
     constructor(private readonly pool: Pool) {}
 
     async setup(): Promise<void> {
+        await migrateFeatureFlags(this.pool);
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
-            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:security-events-schema',0))");
-            await client.query(`CREATE TABLE IF NOT EXISTS security_events (
-                event_id UUID PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL,
-                resource_id TEXT NOT NULL, before_state JSONB, after_state JSONB,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            ); CREATE INDEX IF NOT EXISTS security_events_created ON security_events(created_at DESC)`);
-            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:feature-flags-schema',0))");
-            await client.query(`CREATE TABLE IF NOT EXISTS feature_flags (
-                flag_key TEXT PRIMARY KEY, overrides JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(overrides)='object'),
-                revision BIGINT NOT NULL DEFAULT 1 CHECK(revision>0), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                updated_by TEXT NOT NULL DEFAULT 'system:defaults'
-            )`);
+            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");
             for (const item of FEATURE_FLAGS) {
                 await client.query('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING', [item.key]);
             }

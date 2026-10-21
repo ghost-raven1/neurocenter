@@ -4,6 +4,9 @@ import type { Pool } from 'pg';
 import { FEATURE_FLAGS, defaultFeatureFlags } from '../../shared/feature-flags.cjs';
 import { FlagsRepository } from '../src/flags/flags.repository';
 import { featureFlagKey, featureFlagPatch } from '../src/flags/flag-validation';
+import {migrateFeatureFlags} from '../src/database/migrations';
+
+vi.mock('../src/database/migrations', () => ({migrateFeatureFlags: vi.fn()}));
 
 const rows = () => FEATURE_FLAGS.map(item => ({ flag_key: item.key, overrides: {}, revision: '1', updated_at: new Date('2026-10-19T00:00:00Z'), updated_by: 'system:defaults' }));
 const query = vi.fn(), release = vi.fn(), connect = vi.fn();
@@ -14,6 +17,7 @@ describe('Хранилище переключателей и аудит', () => 
     let repository: FlagsRepository;
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(migrateFeatureFlags).mockResolvedValue({ok:true,ready:true,applied:[1],pending:[]});
         connect.mockResolvedValue({ query, release });
         query.mockImplementation(async (sql: string, values?: unknown[]) => {
             if (sql.startsWith('SELECT * FROM feature_flags WHERE flag_key=ANY')) { return { rows: rows() }; }
@@ -24,16 +28,15 @@ describe('Хранилище переключателей и аудит', () => 
         repository = new FlagsRepository(pool);
     });
 
-    it('Начальная схема сериализована с каталогом, а повтор не сбрасывает настройки', async () => {
+    it('Применяет миграции перед defaults, а повтор не сбрасывает настройки', async () => {
         await repository.setup();
+        expect(migrateFeatureFlags).toHaveBeenCalledExactlyOnceWith(pool);
         const statements = query.mock.calls.map(([sql]) => sql);
         expect(statements[0]).toBe('BEGIN');
-        expect(statements[1]).toContain('neurocenter:security-events-schema');
-        expect(statements[3]).toContain('neurocenter:feature-flags-schema');
-        expect(statements[4]).toContain('overrides JSONB');
+        expect(statements[1]).toContain('neurocenter:catalog:migrations');
         expect(statements.filter(sql => sql.startsWith('INSERT INTO feature_flags'))).toEqual(Array(3).fill('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING'));
         expect(statements.at(-1)).toBe('COMMIT');
-        expect(statements.some(sql => sql.includes('catalog_schema_migrations') || sql.includes('CREATE TABLE IF NOT EXISTS projects'))).toBe(false);
+        expect(statements.some(sql => /CREATE|ALTER|DROP/.test(sql))).toBe(false);
     });
 
     it('Все зарегистрированные функции включены по умолчанию, переопределение действует отдельно', async () => {
@@ -98,9 +101,9 @@ describe('Хранилище переключателей и аудит', () => 
     });
 
     it('Ошибка схемы не фиксирует частично подготовленное состояние', async () => {
-        query.mockImplementation(async (sql: string) => { if (sql.startsWith('CREATE TABLE IF NOT EXISTS feature_flags')) { throw new Error('БД недоступна'); } return { rows: [] }; });
+        vi.mocked(migrateFeatureFlags).mockRejectedValueOnce(new Error('БД недоступна'));
         await expect(repository.setup()).rejects.toThrow('БД недоступна');
-        expect(query.mock.calls.at(-1)).toEqual(['ROLLBACK']);
+        expect(connect).not.toHaveBeenCalled();expect(query).not.toHaveBeenCalled();
     });
 
     it.each([null, [], {}, { enabled: 1, expectedRevision: 1 }, { enabled: false }, { enabled: false, expectedRevision: 0 },
