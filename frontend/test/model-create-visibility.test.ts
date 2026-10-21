@@ -12,7 +12,7 @@ const ui = vi.hoisted(() => ({
     assignedOnly: true, submit: undefined as ((values: IModelCreate) => void) | undefined,
     cards: [] as Array<{ model: ICatalogModel; assigned: boolean; canAssign: boolean; onAssign: () => void;onConnect?:()=>void;connectionUnavailableReason?:string }>,
     reindex: vi.fn(), view: undefined as (() => void) | undefined, edit: undefined as (() => void) | undefined,
-    owner:'admin-a',loading:false,loadError:'',reindexPending:false,reindexBusy:false,planState:undefined as string|undefined,targetBlocked:false,
+    owner:'admin-a',loading:false,loadError:'',reindexPending:false,reindexBusy:false,planState:undefined as string|undefined,targetBlocked:false,runtime:'ollama',
     target:{deviceId:'device-one',assetId:'rag-one',assetKind:'mcp' as const,version:9,expectedManifest:'a'.repeat(64),expectedBindingId:'b'.repeat(64),expectedInstanceId:'11111111-1111-4111-8111-111111111111'},
 }));
 
@@ -38,7 +38,7 @@ vi.mock('antd', () => {
     const input = () => null;
     const Form = Object.assign(({ children, onFinish }: { children?: ReactNode; onFinish: typeof ui.submit }) => {
         ui.submit = onFinish; return children;
-    }, { Item: content, useForm: () => [{}], useWatch: (name:string) => name==='runtime'?'ollama':'chat' });
+    }, { Item: content, useForm: () => [{}], useWatch: (name:string) => name==='runtime'?ui.runtime:'chat' });
     return {
         Form, Tooltip: content, Modal: content, Space: content, Row: content, Col: content, Spin: () => null, Empty: content,
         Alert: ({ message }: { message: string }) => message,
@@ -76,10 +76,14 @@ beforeEach(() => {
     ui.nextCatalog = { items: [existing, created], assignedModelIds: [existing.id] };
     ui.refresh.mockImplementation(async () => { ui.catalog = ui.nextCatalog; });
     ui.reindex.mockResolvedValue(undefined);
-    ui.owner='admin-a';ui.loading=false;ui.loadError='';ui.reindexPending=false;ui.reindexBusy=false;ui.planState=undefined;ui.targetBlocked=false;
+    ui.owner='admin-a';ui.loading=false;ui.loadError='';ui.reindexPending=false;ui.reindexBusy=false;ui.planState=undefined;ui.targetBlocked=false;ui.runtime='ollama';
 });
 
 describe('Новая модель видна после сохранения в проектном каталоге', () => {
+    it('Создание удалённой модели явно ведёт от карточки к адресу и API-ключу', () => {
+        ui.runtime='remote-openai';render();ui.buttons.get('Добавить модель')!();const html=render();
+        expect(html).toContain('Шаг 1 из 2 — карточка модели');expect(html).toContain('Далее: подключение API');
+    });
     it('Успешное создание снимает фильтры и показывает карточку для явного назначения проекту', async () => {
         const pending = deferred<ICatalogModel>(); vi.mocked(modelCatalogApi.create).mockReturnValueOnce(pending.promise);
         create(); render(); expect(ui.query).toBe('Старый'); expect(ui.assignedOnly).toBe(true);

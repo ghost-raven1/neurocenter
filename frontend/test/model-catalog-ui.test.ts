@@ -17,6 +17,17 @@ const render = (canHost = false, canAssign = false, assigned = true, projectSele
 beforeEach(() => { ui.hosting = { state: 'ready', message: 'Проверка пройдена', checkedAt: '2026-10-19T01:00:00Z' }; });
 
 describe('Модели в общем и проектном каталоге', () => {
+    it.each(['ready', 'stopped', 'unavailable', 'error'] as const)('Удалённая модель в состоянии %s всегда открывает настройки API из карточки', state => {
+        ui.hosting = { state, message: '', checkedAt: null };
+        const props = { model: { ...model, runtime: 'remote-openai' as const }, canHost: true, canAssign: false,
+            assigned: false, projectSelected: false, busy: false, onAssign: vi.fn(), onView: vi.fn(), onConfigure: vi.fn() };
+        const html = renderToStaticMarkup(createElement(ModelCard, props));
+        expect(html).toContain('Настроить API модели Поиск по проекту');
+        expect(html.match(/>Настроить API</g)).toHaveLength(1);
+        for (const changed of [{ canHost: false }, { model: { ...props.model, archivedAt: '2026-10-21' } }, { model }]) {
+            expect(renderToStaticMarkup(createElement(ModelCard, { ...props, ...changed }))).not.toContain('Настроить API модели');
+        }
+    });
     it('Назначенная проверенная embedding-модель предлагает подключение отдельно от удаления, с причиной блокировки',()=>{
         const verified={...model,manifestSha256:'a'.repeat(64)},props={model:verified,canHost:false,canAssign:true,assigned:true,projectSelected:true,busy:false,onAssign:vi.fn(),onView:vi.fn(),onConnect:vi.fn()};
         const html=renderToStaticMarkup(createElement(ModelCard,props));expect(html).toContain('Подключить модель');expect(html).toContain('Убрать из проекта');

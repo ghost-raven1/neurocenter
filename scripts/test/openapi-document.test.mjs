@@ -324,6 +324,22 @@ test('Retained disabled endpoints advertise their error instead of a fabricated 
     assert.ok(actual.paths['/api/projects/import-local'].post.responses['201']);
 });
 
+test('Remote connection docs expose bounded generation defaults and a write-only key with the model CAS receipt', () => {
+    const item = actual.paths['/api/models/{id}/connection'];
+    const body = item.put.requestBody.content['application/json'].schema;
+    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['contextWindow','maxOutputTokens','temperature','topP']);
+    assert.match(body.properties.options.properties.contextWindow.description, /Remote Ollama/);
+    assert.match(body.properties.timeoutMs.description, /1000 to 300000/);
+    assert.match(body.properties.apiKey.description, /Write-only/);
+    assert.ok(!body.required.includes('options')); assert.ok(!body.required.includes('apiKey'));
+    for (const method of ['get','put']) {
+        const result = jsonResponse(item[method]);
+        assert.equal(result.properties.modelRevision.type, 'number');
+        assert.ok(result.required.includes('modelRevision'));
+        assert.ok(!Object.hasOwn(result.properties, 'apiKey'));
+    }
+});
+
 test('All path parameters are required, operation IDs unique, schemas local and generation deterministic', () => {
     const ids = new Set();
     for (const [pathname, methods] of Object.entries(actual.paths)) for (const item of Object.values(methods)) {

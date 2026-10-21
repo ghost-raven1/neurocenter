@@ -28,7 +28,6 @@ export function ModelHosting({ model, canManage, compact, onManage }: IProps): J
             {!error && operation?.state !== 'failed' && (state === 'unavailable' || state === 'error') && message && <div className="model-runtime__reason">{message}</div>}
             {canManage && !busy && !remote && (state === 'missing' || state === 'stopped') && <Button size="small" onClick={() => { void operate('start'); }}>{state === 'missing' ? 'Подготовить модель' : 'Запустить'}</Button>}
             {canManage && !busy && remote && state === 'stopped' && <Button size="small" onClick={() => { void operate('check'); }}>Проверить подключение</Button>}
-            {canManage && !busy && remote && (state === 'unavailable' || state === 'error') && onManage && <Button size="small" onClick={onManage}>Настроить API</Button>}
             {canManage && !busy && !remote && state === 'error' && onManage && <Button size="small" onClick={onManage}>Проверить подключение</Button>}
         </div>;
     }

@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { ModelsService } from './models.service';
 import { ModelRuntime, type IModelInferenceRuntime } from './model-runtime';
 import { projectEmbeddingPin } from './project-embedding.validation';
+import { remoteModelOptions } from './remote-model-options';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -53,9 +54,12 @@ export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, o
     const options = object(input.options) ? input.options : {};
     const temperature = openai ? input.temperature : options.temperature;
     const tokens = openai ? input.max_tokens : options.num_predict;
-    if (temperature !== undefined && (typeof temperature !== 'number' || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)
-        || tokens !== undefined && (!Number.isSafeInteger(tokens) || Number(tokens) < 1 || Number(tokens) > 2048)) { return invalid(); }
-    return { messages, think: false, options: { temperature: temperature ?? 0, num_predict: tokens ?? 1024, num_ctx: 4096 } };
+    const topP = openai ? input.top_p : options.top_p;
+    const contextWindow = openai ? undefined : options.num_ctx;
+    remoteModelOptions({ ...(temperature === undefined ? {} : { temperature }), ...(tokens === undefined ? {} : { maxOutputTokens: tokens }),
+        ...(topP === undefined ? {} : { topP }), ...(contextWindow === undefined ? {} : { contextWindow }) });
+    return { messages, think: false, options: { ...(temperature === undefined ? {} : { temperature }), ...(tokens === undefined ? {} : { num_predict: tokens }),
+        ...(topP === undefined ? {} : { top_p: topP }), ...(contextWindow === undefined ? {} : { num_ctx: contextWindow }) } };
 }
 
 /** Модель выбирается по карточке, права проверяются заново перед каждым inference-запросом. */

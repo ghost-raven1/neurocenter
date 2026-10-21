@@ -12,6 +12,7 @@ import {projectEmbeddingPin} from '../src/models/project-embedding.validation';
 import type {IModel} from '../src/models/model.types';
 import {assertLearningAnalysisSchema} from '../src/learning/learning-analysis-schema-verification';
 import {requireRetirementIdle} from '../src/retired-rag/retirement-guards';
+import {RemoteModelClient} from '../src/models/remote-model-client';
 
 const projectId='prj-agents';
 const request={headers:{'x-bridge-actor':encodeURIComponent(JSON.stringify(main))}} as unknown as Request;
@@ -52,6 +53,22 @@ describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',(
   const done=await service.get(request,projectId,job.id);expect(done.state).toBe('completed');expect(done.hypothesisIds).toHaveLength(1);expect(modelCalls).toBe(1);
   const overview=await learning.overview(request,projectId);expect(overview.hypotheses[0]).toMatchObject({status:'open',origin:'llm',model:{modelId:model.id,modelPin:projectEmbeddingPin(model),sourceRevision:job.sourceRevision,analysisId:job.id}});
   expect((await learning.context(request,projectId)).entries).toEqual([]);
+ });
+ it.each([undefined,{temperature:0.7,topP:0.8,maxOutputTokens:8192}])('uses remote OpenAI connection defaults in the durable learning flow: %j',async options=>{
+  let providerBody:Record<string,unknown>|undefined;
+  const client=new RemoteModelClient({fetch:vi.fn(async(_url,init)=>{
+   providerBody=JSON.parse(String(init?.body));const answer=await resultFor();
+   return new Response(JSON.stringify({model:model.model,choices:[{index:0,finish_reason:'stop',message:answer.message}]}),{headers:{'content-type':'application/json'}});
+  }) as typeof fetch});
+  infer.mockImplementationOnce(async(card:IModel,endpoint:'chat',body:Record<string,unknown>,signal:AbortSignal)=>{
+   modelCalls++;expect(body.options).toEqual({});
+   return client.infer(card,{modelId:card.id,revision:1,baseUrl:'http://127.0.0.1:1/v1',requestDimensions:false,options},endpoint,body,signal);
+  });
+  const job=await create();await worker().work();
+  expect((await service.get(request,projectId,job.id)).state).toBe('completed');expect(modelCalls).toBe(1);
+  expect(providerBody).not.toHaveProperty('num_ctx');expect(providerBody).not.toHaveProperty('contextWindow');
+  if(options)expect(providerBody).toMatchObject({temperature:0.7,top_p:0.8,max_tokens:8192});
+  else{expect(providerBody).not.toHaveProperty('temperature');expect(providerBody).not.toHaveProperty('max_tokens');}
  });
  it('recovers a lost create reply by the same key after learning revision changes, without a new model call',async()=>{
   const exp=await experience(),body={requestKey:randomUUID(),expectedRevision:await revision(),experienceIds:[exp.id],modelId:model.id};

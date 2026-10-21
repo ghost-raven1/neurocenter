@@ -83,6 +83,37 @@ describe('Настоящий HTTP-транспорт удалённой моде
         expect(result).toMatchObject({ done: true, done_reason: 'stop', message: { role: 'assistant', content: 'OK' } });
         expect(received[0]).toMatchObject({ url: '/v1/chat/completions', body: { stream: false, max_tokens: 32, messages: [{ role: 'user', content: [{ type: 'text', text: 'Опиши' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,' + image } }] }] } });
     });
+    it('Применяет connection defaults, а явный запрос переопределяет только заданные поля', async () => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, choices: [{ index: 0, finish_reason: 'stop', message: { content: 'OK' } }] })); };
+        const configured = { ...connection, options: { temperature: 0.7, topP: 0.9, maxOutputTokens: 8192 } };
+        const chat = { ...model, capability: 'chat' as const, dimension: null }, messages = [{ role: 'user', content: 'Привет' }];
+        await new RemoteModelClient().infer(chat, configured, 'chat', { messages });
+        await new RemoteModelClient().infer(chat, configured, 'chat', { messages, options: { temperature: 0, top_p: 0.5 } });
+        expect(received.map(item => item.body)).toEqual([
+            { model: model.model, messages, stream: false, temperature: 0.7, top_p: 0.9, max_tokens: 8192 },
+            { model: model.model, messages, stream: false, temperature: 0, top_p: 0.5, max_tokens: 8192 },
+        ]);
+    });
+    it('Не навязывает провайдеру отсутствующие параметры генерации', async () => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, choices: [{ index: 0, finish_reason: 'stop', message: { content: 'OK' } }] })); };
+        const messages = [{ role: 'user', content: 'Привет' }];
+        await new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, connection, 'chat', { messages, options: {} });
+        expect(received[0].body).toEqual({ model: model.model, messages, stream: false });
+    });
+    it('Маппит Ollama defaults и contextWindow, отказывая OpenAI вместо тихого игнорирования', async () => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: model.model, done: true, done_reason: 'stop', message: { content: 'OK' } })); };
+        const messages = [{ role: 'user', content: 'Привет' }], configured = { ...connection, options: { temperature: 0.2, topP: 0.8, maxOutputTokens: 4096, contextWindow: 65536 } };
+        await new RemoteModelClient().infer({ ...model, capability: 'chat', runtime: 'remote-ollama', dimension: null }, configured, 'chat', { messages, options: { num_predict: 99 } });
+        expect(received[0].body).toEqual({ model: model.model, messages, stream: false, think: false, options: { temperature: 0.2, top_p: 0.8, num_predict: 99, num_ctx: 65536 } });
+        await expect(new RemoteModelClient().infer({ ...model, capability: 'chat', dimension: null }, configured, 'chat', { messages })).rejects.toThrow('Ollama');
+        await expect(new RemoteModelClient().infer(model, { ...connection, options: { temperature: 0.5 } }, 'embed', { input: ['Текст'] })).rejects.toThrow('Embedding');
+        expect(received).toHaveLength(1);
+    });
+    it('Применяет сохранённый timeout ко всему ответу, включая тело', async () => {
+        handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{'); };
+        await expect(new RemoteModelClient().infer(model, { ...connection, timeoutMs: 1000 }, 'embed', { input: ['Текст'] })).rejects.toMatchObject({ kind: 'unavailable', message: 'Удалённая модель не ответила вовремя.' });
+        expect(received).toHaveLength(1);
+    });
     it.each(['tool_calls', 'incomplete', 'empty', 'wrong-model'])('Chat отклоняет %s без неявного fallback', async problem => {
         handler = (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ model: problem === 'wrong-model' ? 'wrong' : model.model,
             choices: [{ index: 0, finish_reason: problem === 'tool_calls' ? 'tool_calls' : problem === 'incomplete' ? null : 'stop', message: { content: problem === 'empty' ? '' : 'OK' } }] })); };

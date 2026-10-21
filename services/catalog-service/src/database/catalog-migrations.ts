@@ -15,6 +15,8 @@ import {CATALOG_FINALIZE_SQL} from './finalize-schema';
 import {CATALOG_SCHEMA_ASSERT_SQL} from './schema-verification';
 import {SOURCE_ARCHIVE_SCHEMA_SQL} from '../asset-sources/source-archive.schema';
 import {SOURCE_ARCHIVE_SCHEMA_ASSERT_SQL} from '../asset-sources/source-archive.schema-verification';
+import {REMOTE_OPTIONS_SCHEMA_SQL} from '../models/remote-options.schema';
+import {REMOTE_OPTIONS_SCHEMA_ASSERT_SQL} from '../models/remote-options.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
@@ -26,4 +28,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:9,name:'bridge-source-settings',sql:BRIDGE_SOURCE_SCHEMA_SQL+'\n'+BRIDGE_SOURCE_SCHEMA_ASSERT_SQL},
     {version:10,name:'project-learning-and-hypotheses',sql:LEARNING_SCHEMA_SQL+'\n'+LEARNING_ANALYSIS_SCHEMA_SQL+'\n'+LEARNING_SCHEMA_ASSERT_SQL+'\n'+LEARNING_ANALYSIS_SCHEMA_ASSERT_SQL},
     {version:11,name:'asset-source-archive-import',sql:SOURCE_ARCHIVE_SCHEMA_SQL+'\n'+SOURCE_ARCHIVE_SCHEMA_ASSERT_SQL},
+    {version:12,name:'remote-model-connection-options',sql:REMOTE_OPTIONS_SCHEMA_SQL+'\n'+REMOTE_OPTIONS_SCHEMA_ASSERT_SQL},
 ];

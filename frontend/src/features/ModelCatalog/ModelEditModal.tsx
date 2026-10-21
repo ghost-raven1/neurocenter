@@ -49,6 +49,8 @@ export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element
         <Form form={form} name="model-catalog-edit" layout="vertical" disabled={busy}
             initialValues={model ?? { capability: 'embedding', runtime: 'remote-openai' }} onFinish={values => { void submit(values); }}>
             {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" />}
+            {!model && remote && <Alert type="info" showIcon message="Шаг 1 из 2 — карточка модели"
+                description="После сохранения укажите адрес API и API-ключ, затем проверьте подключение." className="model-catalog__notice" />}
             <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Введите название' }, { max: 128, message: 'До 128 символов' }]}>
                 <Input placeholder="Например, Модель для поиска по проекту" autoFocus />
             </Form.Item>
@@ -73,7 +75,7 @@ export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element
                     <InputNumber min={1} max={16384} precision={0} style={{ width: '100%' }} placeholder="Например, 2560" />
                 </Form.Item>}
             </>}
-            <Space className="model-catalog__form-actions"><Button disabled={busy} onClick={onClose}>Отмена</Button><Button type="primary" htmlType="submit" loading={busy}>Сохранить</Button></Space>
+            <Space className="model-catalog__form-actions"><Button disabled={busy} onClick={onClose}>Отмена</Button><Button type="primary" htmlType="submit" loading={busy}>{!model && remote ? 'Далее: подключение API' : 'Сохранить'}</Button></Space>
         </Form>
     </Modal>;
 }

@@ -10,7 +10,7 @@ const secret='DO_NOT_EXPORT_SECRET';
 const provider=(baseURL='http://127.0.0.1:9999/v1')=>({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL,apiKey:secret},models:{'model-v1':{name:'Team model'}}}}});
 const directories:string[]=[];
 afterEach(async()=>{await Promise.all(directories.splice(0).map(dir=>fs.rm(dir,{recursive:true,force:true})));});
-async function fixture(){const home=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-model-scan-')));directories.push(home);const root=path.join(home,'project');await fs.mkdir(root);await fs.mkdir(path.join(home,'.config/opencode'),{recursive:true});return {home,root,environment:{XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share')}};}
+async function fixture(){const home=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-model-scan-')));directories.push(home);const root=path.join(home,'project');await fs.mkdir(root);await fs.mkdir(path.join(home,'.config/opencode'),{recursive:true});return {home,root,managedDirectory:path.join(home,'managed'),environment:{XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share')}};}
 describe('Чтение OpenCode передаёт только metadata',()=>{
  it('JSONC и deep merge не раскрывают inline/auth/env/file keys',async()=>{
   const f=await fixture();await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),JSON.stringify(provider()));
@@ -28,18 +28,97 @@ describe('Чтение OpenCode передаёт только metadata',()=>{
   const candidate=opencodeModelCandidates(provider(url))[0];expect(candidate.baseUrl).toBeNull();expect(candidate.blocker).toBeTruthy();
  });
  it('Отключённый provider не импортируется молча',()=>{expect(opencodeModelCandidates({...provider(),disabled_providers:['team']})[0].blocker).toBe('disabled-provider');});
- it.each(['invalid-json','duplicate-keys','symlink','ambiguous'])('Проблема %s запрещает частичный список',async problem=>{
+ it.each(['invalid-json','duplicate-keys','symlink'])('Проблема %s запрещает частичный список',async problem=>{
   const f=await fixture();await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),JSON.stringify(provider()));const file=path.join(f.root,'opencode.json');
   if(problem==='invalid-json')await fs.writeFile(file,'{"provider":');
   if(problem==='duplicate-keys')await fs.writeFile(file,'{"provider":{},"provider":{}}');
   if(problem==='symlink')await fs.symlink(path.join(f.home,'.config/opencode/opencode.json'),file);
-  if(problem==='ambiguous'){await fs.writeFile(file,'{}');await fs.writeFile(path.join(f.root,'opencode.jsonc'),'{}');}
-  const scan=await readOpenCodeModelMetadata(f.root,context,f);expect(scan.candidates).toEqual([]);expect(scan.warnings).toContain(problem==='symlink'?'unsafe-path':problem==='ambiguous'?'ambiguous-config':'invalid-json');
+  const scan=await readOpenCodeModelMetadata(f.root,context,f);expect(scan.candidates).toEqual([]);expect(scan.warnings).toContain(problem==='symlink'?'unsafe-path':'invalid-json');
  });
  it('Отзыв owner прерывает чтение, секретные поля и чужая папка не проходят server contract',async()=>{
   const f=await fixture();await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(provider()));
   await expect(readOpenCodeModelMetadata(f.root,context,{...f,authorize:vi.fn().mockRejectedValue(Error('Role revoked'))})).rejects.toThrow('Role revoked');
   const scan=await readOpenCodeModelMetadata(f.root,context,f);const changed={...scan,candidates:scan.candidates.map(candidate=>({...candidate,apiKey:secret}))};changed.digest=modelScanDigest(changed);
   expect(validModelScan(changed,context)).toBe(false);expect(validModelScan(scan,{...context,instanceId:randomUUID()})).toBe(false);
+ });
+});
+describe('Совместимость с metadata OpenCode 1.14.48',()=>{
+ it('Импортирует upstream id, provider.api и числовые options без capability-limit и boolean temperature',()=>{
+  const config={provider:{team:{npm:'@ai-sdk/openai-compatible',api:'https://example.test/v1/',options:{apiKey:secret,timeout:120000},models:{alias:{id:'upstream-model',name:'Visible name',temperature:true,limit:{context:128000,output:64000},options:{temperature:0,topP:1,maxOutputTokens:32768}}}}}};
+  expect(opencodeModelCandidates(config)[0]).toMatchObject({name:'Visible name',model:'upstream-model',modelVersion:'upstream-model',baseUrl:'https://example.test/v1',options:{temperature:0,topP:1,maxOutputTokens:32768},timeoutMs:120000,blocker:null});
+  expect(JSON.stringify(opencodeModelCandidates(config))).not.toContain(secret);
+  const plain=provider();plain.provider.team.models['model-v1']={name:'Plain',...{temperature:true,limit:{context:65536,output:4096}}};
+  expect(opencodeModelCandidates(plain)[0]).not.toHaveProperty('options');
+ });
+ it('baseURL имеет приоритет над provider.api и builtin адресом',()=>{
+  const config={provider:{openai:{api:'https://api-fallback.test/v1',options:{baseURL:'https://chosen.test/v1'},models:{model:{}}}}};
+  expect(opencodeModelCandidates(config)[0].baseUrl).toBe('https://chosen.test/v1');
+  config.provider.openai.options.baseURL='';expect(opencodeModelCandidates(config)[0].baseUrl).toBe('https://api-fallback.test/v1');
+ });
+ it.each([
+  {headers:{Authorization:secret}}, {options:{apiKey:secret}}, {options:{headers:{Authorization:secret}}}, {options:{temperature:'{env:SECRET}'}},
+  {options:{temperature:-0.1}}, {options:{temperature:2.1}}, {options:{topP:1.1}}, {options:{maxOutputTokens:32769}}, {options:{maxOutputTokens:1.5}},
+  {options:{reasoningEffort:'high'}}, {options:null}, {provider:{api:'https://override.test/v1'}}, {id:'https://example.test/secret'},
+ ])('Параметры или headers, которые нельзя безопасно перенести, блокируются: %j',metadata=>{
+  const config={provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://example.test/v1'},models:{alias:metadata}}}};
+  const candidate=opencodeModelCandidates(config)[0];expect(candidate.blocker).toBe('unsupported-provider');expect(candidate).not.toHaveProperty('options');expect(JSON.stringify(candidate)).not.toContain(secret);
+ });
+ it.each([{headers:{Authorization:secret}},{timeout:false},{timeout:999},{timeout:300001},{timeout:1000.5},{extraBody:{key:secret}}])('Неподдерживаемые provider options блокируются: %j',options=>{
+  const candidate=opencodeModelCandidates({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://example.test/v1',...options},models:{alias:{}}}}})[0];
+  expect(candidate.blocker).toBe('unsupported-provider');expect(candidate).not.toHaveProperty('timeoutMs');expect(JSON.stringify(candidate)).not.toContain(secret);
+ });
+ it('Учитывает whitelist/blacklist, deprecated и opt-in alpha, сохраняя enabled-provider blocker',()=>{
+  const config={provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://example.test/v1'},whitelist:['allowed','denied','old','preview'],blacklist:['denied'],models:{allowed:{},denied:{},other:{},old:{status:'deprecated'},preview:{status:'alpha'}}}}};
+  expect(opencodeModelCandidates(config).map(model=>model.model)).toEqual(['allowed']);
+  expect(opencodeModelCandidates(config,{},true).map(model=>model.model)).toEqual(['allowed','preview']);
+  expect(opencodeModelCandidates({...config,enabled_providers:['other']})[0].blocker).toBe('disabled-provider');
+ });
+ it('Фильтры OpenCode используют точный config alias, а не upstream id и не wildcard',()=>{
+  const config={provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://example.test/v1'},whitelist:['alias'],blacklist:['upstream-model','ali*'],models:{alias:{id:'upstream-model'}}}}};
+  expect(opencodeModelCandidates(config).map(model=>model.model)).toEqual(['upstream-model']);
+  config.provider.team.whitelist=['upstream-model'];expect(opencodeModelCandidates(config)).toEqual([]);
+  config.provider.team.whitelist=['ali*'];expect(opencodeModelCandidates(config)).toEqual([]);
+ });
+ it('Слои global config.json→json→jsonc→custom→project→.opencode→home→configdir→content→managed накладываются последовательно',async()=>{
+  const f=await fixture();const layer=(name:string)=>JSON.stringify({provider:{team:{models:{'model-v1':{name}}}}});
+  await fs.writeFile(path.join(f.home,'.config/opencode/config.json'),JSON.stringify(provider()));
+  await fs.writeFile(path.join(f.home,'.config/opencode/opencode.json'),layer('global-json'));
+  await fs.writeFile(path.join(f.home,'.config/opencode/opencode.jsonc'),'// JSONC wins\n'+layer('global-jsonc'));
+  expect((await readOpenCodeModelMetadata(f.root,context,f)).candidates[0].name).toBe('global-jsonc');
+  await fs.writeFile(path.join(f.root,'custom.json'),layer('custom'));const environment={...f.environment,OPENCODE_CONFIG:'custom.json'};
+  expect((await readOpenCodeModelMetadata(f.root,context,{...f,environment})).candidates[0].name).toBe('custom');
+  await fs.writeFile(path.join(f.root,'opencode.json'),layer('project-json'));
+  await fs.writeFile(path.join(f.root,'opencode.jsonc'),layer('project-jsonc'));
+  expect((await readOpenCodeModelMetadata(f.root,context,{...f,environment})).candidates[0].name).toBe('project-jsonc');
+  for(const [directory,name]of [[path.join(f.root,'.opencode'),'local'],[path.join(f.home,'.opencode'),'home'],[path.join(f.root,'customdir'),'configdir']]){
+   await fs.mkdir(directory!,{recursive:true});await fs.writeFile(path.join(directory!,'opencode.json'),layer(name!));
+   const scan=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...environment,OPENCODE_CONFIG_DIR:'customdir'}});
+   expect(scan.candidates[0].name).toBe(name);expect(scan.warnings).not.toContain('ambiguous-config');expect(validModelScan(scan,context)).toBe(true);
+  }
+  const content={...environment,OPENCODE_CONFIG_DIR:'customdir',OPENCODE_CONFIG_CONTENT:layer('content')};
+  expect((await readOpenCodeModelMetadata(f.root,context,{...f,environment:content})).candidates[0].name).toBe('content');
+  await fs.mkdir(f.managedDirectory);await fs.writeFile(path.join(f.managedDirectory,'opencode.json'),layer('managed-json'));
+  await fs.writeFile(path.join(f.managedDirectory,'opencode.jsonc'),layer('managed-jsonc'));
+  expect((await readOpenCodeModelMetadata(f.root,context,{...f,environment:content})).candidates[0].name).toBe('managed-jsonc');
+ });
+ it.each(['true','1','TRUE'])('Disable-project=%s не читает даже повреждённые project/.opencode файлы',async flag=>{
+  const f=await fixture();await fs.writeFile(path.join(f.home,'.config/opencode/config.json'),JSON.stringify(provider()));
+  await fs.writeFile(path.join(f.root,'opencode.json'),'{invalid');await fs.mkdir(path.join(f.root,'.opencode'));await fs.writeFile(path.join(f.root,'.opencode/opencode.json'),'{invalid');
+  const scan=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,OPENCODE_DISABLE_PROJECT_CONFIG:flag}});
+  expect(scan.candidates).toHaveLength(1);expect(scan.warnings).not.toContain('invalid-json');
+ });
+ it('Не изменяет файлы и не разворачивает env/file references в inline config',async()=>{
+  const f=await fixture();const file=path.join(f.root,'opencode.jsonc'),source='// preserve me\n'+JSON.stringify(provider());await fs.writeFile(file,source);
+  const scan=await readOpenCodeModelMetadata(f.root,context,{...f,environment:{...f.environment,OPENCODE_CONFIG_CONTENT:JSON.stringify({provider:{team:{options:{apiKey:'{env:PRIVATE_KEY}'}}}})}});
+  expect(await fs.readFile(file,'utf8')).toBe(source);expect(scan.warnings).toContain('env-reference-not-expanded');expect(scan.candidates[0]).toMatchObject({hasKey:true,credentialSource:'environment'});expect(JSON.stringify(scan)).not.toContain('PRIVATE_KEY');
+ });
+ it('Добавочные числовые defaults проверяются серверным контрактом и входят в digest',async()=>{
+  const f=await fixture();const config={provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://example.test/v1',timeout:1000},models:{alias:{options:{temperature:0.2,topP:0,maxOutputTokens:1}}}}}};
+  await fs.writeFile(path.join(f.root,'opencode.json'),JSON.stringify(config));const scan=await readOpenCodeModelMetadata(f.root,context,f);expect(validModelScan(scan,context)).toBe(true);
+  const tampered=structuredClone(scan);tampered.candidates[0].options!.temperature=0.7;expect(validModelScan(tampered,context)).toBe(false);
+  for(const patch of [{options:{apiKey:secret}},{options:{temperature:'0.2'}},{options:{temperature:NaN}},{options:{maxOutputTokens:32769}},{timeoutMs:999},{timeoutMs:Infinity}]){
+   const changed={...scan,candidates:scan.candidates.map(candidate=>({...candidate,...patch}))};changed.digest=modelScanDigest(changed);expect(validModelScan(changed,context)).toBe(false);
+  }
+  const older={...scan,candidates:scan.candidates.map(({options:_options,timeoutMs:_timeout,...candidate})=>candidate)};older.digest=modelScanDigest(older);expect(validModelScan(older,context)).toBe(true);
  });
 });

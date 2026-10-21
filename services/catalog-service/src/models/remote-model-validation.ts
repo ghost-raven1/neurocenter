@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { IModel } from './model.types';
 import type { IRemoteConnectionInput, IRemoteModelConnection } from './remote-model.types';
+import { remoteModelOptions, remoteModelTimeout } from './remote-model-options';
 
 /** Адрес разрешает явный self-hosted API, но не credentials, redirects и metadata endpoints. */
 export function remoteModelBaseUrl(value: unknown): string {
@@ -23,7 +24,7 @@ export function remoteModelBaseUrl(value: unknown): string {
 export function remoteConnectionInput(value: unknown): IRemoteConnectionInput {
     if (!value || typeof value !== 'object' || Array.isArray(value)) { throw new BadRequestException('Передайте настройки удалённого подключения.'); }
     const body = value as Record<string, unknown>;
-    if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision', 'baseUrl', 'requestDimensions', 'credential', 'apiKey', 'credentialEnv'].includes(key))
+    if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision', 'baseUrl', 'requestDimensions', 'credential', 'apiKey', 'credentialEnv', 'options', 'timeoutMs'].includes(key))
         || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
         || !Number.isSafeInteger(body.expectedModelRevision) || Number(body.expectedModelRevision) < 1
         || typeof body.requestDimensions !== 'boolean' || !['none', 'stored', 'environment'].includes(String(body.credential))) {
@@ -34,12 +35,15 @@ export function remoteConnectionInput(value: unknown): IRemoteConnectionInput {
     if (body.credential === 'environment' ? typeof body.credentialEnv !== 'string' || !/^NEUROCENTER_REMOTE_MODEL_[A-Z0-9_]{1,100}$/.test(body.credentialEnv)
         : body.credentialEnv !== undefined) { throw new BadRequestException('Для ключа окружения используйте имя NEUROCENTER_REMOTE_MODEL_*.'); }
     return { expectedRevision: Number(body.expectedRevision), expectedModelRevision: Number(body.expectedModelRevision), baseUrl: remoteModelBaseUrl(body.baseUrl), requestDimensions: body.requestDimensions,
+        options: remoteModelOptions(body.options), timeoutMs: remoteModelTimeout(body.timeoutMs),
         credential: body.credential as IRemoteConnectionInput['credential'], ...(body.apiKey === undefined ? {} : { apiKey: String(body.apiKey) }),
         ...(body.credentialEnv === undefined ? {} : { credentialEnv: String(body.credentialEnv) }) };
 }
 
 /** Pin отражает семантику API; ротация ключа отдельно проверяется ревизией приватного подключения. */
 export function remoteVerificationDigest(model: IModel, connection: IRemoteModelConnection, dimension: number | null): string {
+    const options = remoteModelOptions(connection.options);
     return createHash('sha256').update(JSON.stringify({ schemaVersion: 1, runtime: model.runtime, model: model.model, modelVersion: model.modelVersion,
-        capability: model.capability, baseUrl: remoteModelBaseUrl(connection.baseUrl), requestDimensions: connection.requestDimensions, dimension })).digest('hex');
+        capability: model.capability, baseUrl: remoteModelBaseUrl(connection.baseUrl), requestDimensions: connection.requestDimensions, dimension,
+        ...(Object.keys(options).length ? { options: Object.fromEntries(Object.entries(options).sort(([a], [b]) => a.localeCompare(b))) } : {}) })).digest('hex');
 }

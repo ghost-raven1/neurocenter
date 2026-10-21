@@ -33,14 +33,21 @@ export interface IModelCreate {
     modelVersion?: string;
 }
 
+/** Приватные значения по умолчанию; пустые параметры оставляют выбор провайдеру. */
+export interface IRemoteModelOptions {
+    temperature?: number; topP?: number; maxOutputTokens?: number; contextWindow?: number;
+}
+export interface IRemoteConnectionHint { baseUrl: string; hasKey: boolean; options?: IRemoteModelOptions; timeoutMs?: number; }
 export interface IRemoteConnection {
-    modelId: string; revision: number; baseUrl: string; requestDimensions: boolean;
+    modelId: string; modelRevision: number; revision: number; baseUrl: string; requestDimensions: boolean;
     credential: 'none' | 'stored' | 'environment'; credentialEnv: string | null; hasKey: boolean;
     checkedAt: string | null; verified: boolean; canStoreKey: boolean;
+    options: IRemoteModelOptions; timeoutMs: number;
 }
 export interface IRemoteConnectionInput {
     expectedRevision: number; expectedModelRevision: number; baseUrl: string; requestDimensions: boolean;
     credential: IRemoteConnection['credential']; apiKey?: string; credentialEnv?: string;
+    options?: IRemoteModelOptions; timeoutMs?: number;
 }
 
 export type TModelHostingAction = 'start' | 'stop' | 'check';

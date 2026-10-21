@@ -54,7 +54,9 @@ export class OpenCodeModelImport {
                 await securityEvent(db, { actor, action: 'model.import.opencode', resourceId: id, before: null, after: { provider: candidate.provider, model: candidate.model, runtime: candidate.runtime } });
             }
             await db.query('COMMIT');
-            return { model: modelFromRow(saved), baseUrl, hasKeyOnComputer: candidate.hasKey, repeated: !!previous.rows[0] };
+            return { model: modelFromRow(saved), baseUrl, hasKeyOnComputer: candidate.hasKey, repeated: !!previous.rows[0],
+                ...(candidate.options === undefined ? {} : { options: candidate.options }),
+                ...(candidate.timeoutMs === undefined ? {} : { timeoutMs: candidate.timeoutMs }) };
         } catch (cause) {
             await db.query('ROLLBACK').catch(() => undefined);
             if ((cause as { code?: string }).code === '23505') throw new ConflictException('Карточка с таким названием уже есть. Укажите другое название.');

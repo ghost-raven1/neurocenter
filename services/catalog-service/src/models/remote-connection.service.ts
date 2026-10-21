@@ -20,7 +20,7 @@ export class RemoteConnectionService {
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите модель удалённого API.');
         return model;
     }
-    async read(id: string) { await this.remote(id); return this.repository.view(id, await this.repository.head(id)); }
+    async read(id: string) { const model = await this.remote(id); return this.repository.view(id, await this.repository.head(id), model.revision); }
     async save(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>) {
         await this.remote(id);
         const saved = await this.repository.save(id, remoteConnectionInput(value), actor, authorize);
@@ -39,7 +39,7 @@ export class RemoteConnectionService {
     async status(model: IModel): Promise<IModelHosting> {
         const row = await this.repository.head(model.id);
         if (!row || row.revoked_at) return { state: 'unavailable', message: 'Настройте подключение удалённого API.', checkedAt: null };
-        const view = this.repository.view(model.id, row);
+        const view = this.repository.view(model.id, row, model.revision);
         try { this.repository.connection(row); }
         catch (cause) { return { state: 'unavailable', message: cause instanceof ServiceUnavailableException ? cause.message : 'Ключ подключения недоступен.', checkedAt: null }; }
         if (row.credential_kind !== 'none' && !view.hasKey) return { state: 'unavailable', message: 'Нужен API-ключ подключения. Обратитесь к главному администратору.', checkedAt: null };
@@ -57,7 +57,8 @@ export class RemoteConnectionService {
                 ? await this.client.infer(model, connection, 'embed', { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] }, signal)
                 : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
                     ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
-                    ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }], options: { temperature: 0, num_predict: 64 } }, signal);
+                    ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
+                    options: { num_predict: Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
             if (model.capability === 'vision') {
                 let observed: Record<string, unknown>;
                 try { observed = JSON.parse((result.message as { content: string }).content); } catch { throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.'); }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateModelCreate, validateModelDescriptor } from '../src/models/model-validation';
 import { remoteConnectionInput, remoteModelBaseUrl, remoteVerificationDigest } from '../src/models/remote-model-validation';
 import type { IModel } from '../src/models/model.types';
+import { assertRemoteModelOptions, remoteModelOptions } from '../src/models/remote-model-options';
 
 const input = { name: 'API модели', capability: 'embedding', runtime: 'remote-openai', model: 'text-embedding-example', modelVersion: '2026-10', dimension: 1536 };
 const descriptor = { description: '', capability: 'embedding', runtime: 'remote-openai', model: input.model, modelVersion: input.modelVersion,
@@ -27,6 +28,25 @@ describe('Контракт удалённой модели без адреса �
         expect(remoteVerificationDigest(model, { ...connection, baseUrl: 'https://other.example.test/v1' }, 1536)).not.toBe(first);
         expect(remoteVerificationDigest({ ...model, modelVersion: '2027' }, connection, 1536)).not.toBe(first);
         expect(remoteVerificationDigest(model, connection, 2560)).not.toBe(first);
+        expect(remoteVerificationDigest(model, { ...connection, options: {}, timeoutMs: 300000 }, 1536)).toBe(first);
+        const configured = { ...connection, options: { temperature: 0.3, topP: 0.8 } };
+        expect(remoteVerificationDigest(model, configured, 1536)).not.toBe(first);
+        expect(remoteVerificationDigest(model, { ...connection, options: { topP: 0.8, temperature: 0.3 } }, 1536)).toBe(remoteVerificationDigest(model, configured, 1536));
+    });
+    it('Оставляет параметры пустыми по умолчанию, отдельно ограничивая transport timeout', () => {
+        const base = { expectedRevision: 0, expectedModelRevision: 1, baseUrl: 'https://api.example.test/v1', requestDimensions: false, credential: 'none' };
+        expect(remoteConnectionInput(base)).toMatchObject({ options: {}, timeoutMs: 90000 });
+        expect(remoteConnectionInput({ ...base, options: { temperature: 0, topP: 1, maxOutputTokens: 32768, contextWindow: 2097152 }, timeoutMs: 300000 })).toMatchObject({ timeoutMs: 300000 });
+        for (const timeoutMs of [null, 999, 300001, 1500.5, '90000']) expect(() => remoteConnectionInput({ ...base, timeoutMs })).toThrow('Таймаут');
+    });
+    it.each([null, [], { apiKey: 'secret' }, { temperature: null }, { temperature: 2.01 }, { topP: -0.1 }, { topP: Infinity },
+        { maxOutputTokens: 0 }, { maxOutputTokens: 1.5 }, { maxOutputTokens: 32769 }, { contextWindow: 127 }, { contextWindow: 2097153 }])('Отклоняет неразрешённые generation options: %j', value => {
+        expect(() => remoteModelOptions(value)).toThrow();
+    });
+    it('Не обещает embedding sampling или OpenAI contextWindow', () => {
+        expect(() => assertRemoteModelOptions(model, { temperature: 0 })).toThrow('Embedding');
+        expect(() => assertRemoteModelOptions({ runtime: 'remote-openai', capability: 'chat' }, { contextWindow: 4096 })).toThrow('Ollama');
+        expect(() => assertRemoteModelOptions({ runtime: 'remote-ollama', capability: 'vision' }, { contextWindow: 4096 })).not.toThrow();
     });
 });
 

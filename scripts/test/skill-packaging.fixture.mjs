@@ -35,7 +35,8 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
   if(vite)await finish(()=>vite.close());if(io)await finish(()=>new Promise(resolve=>io.close(resolve)));
   if(gateway)await finish(()=>gateway.close());if(catalog)await finish(()=>catalog.close());if(skills)await finish(()=>skills.close());
   if(upstream)await finish(()=>closeServer(upstream));await finish(()=>pool.end());
-  if(created)await finish(()=>admin.query('DROP DATABASE '+database+' WITH (FORCE)'));await finish(()=>admin.end());
+  // pg-pool end() may resolve before client sockets finish closing; normal DROP waits instead of killing them.
+  if(created)await finish(()=>admin.query('DROP DATABASE '+database));await finish(()=>admin.end());
   globalThis.fetch=originalFetch;for(const key of Object.keys(process.env))if(!(key in environment))delete process.env[key];Object.assign(process.env,environment);
   await finish(()=>fs.rm(temporary,{recursive:true,force:true}));if(failures.length)throw new AggregateError(failures,'QA cleanup failed.');
  };
@@ -43,7 +44,7 @@ export async function startSkillPackagingFixture({adminUrl:configuredAdminUrl,br
   await admin.query('CREATE DATABASE '+database);created=true;
   for(const key of Object.keys(process.env))if(key.endsWith('_FILE')||key.startsWith('SNAPSHOT_'))delete process.env[key];
   Object.assign(process.env,{NODE_ENV:'production',CATALOG_PG_URL:url.href,RAG_PG_URL:url.href,RAG_PROVISION_PG_URL:url.href,
-   NEUROCENTER_INTERNAL_TOKEN:randomBytes(32).toString('hex'),NEUROCENTER_MODEL_CREDENTIAL_KEY:randomBytes(32).toString('hex'),
+   NEUROCENTER_INTERNAL_TOKEN:randomBytes(32).toString('hex'),NEUROCENTER_MODEL_CREDENTIAL_KEY:randomBytes(32).toString('base64'),
    SSO_DISABLE:'true',DEV_USER_EMAIL:actors.main.email,CAPACITY_REQUIRED:'false',BIND_HOST:'127.0.0.1',
    PROJECTS_ROOT:path.join(temporary,'projects'),SKILLS_STORAGE_PATH:path.join(temporary,'skills'),RUNTIME_ARTIFACT_DIR:path.join(temporary,'runtime'),
    BACKUP_DIR:path.join(temporary,'backups'),MODEL_STORAGE_PATH:path.join(temporary,'models'),ASSET_SYNC_MCP_BIN:path.join(temporary,'no-runtime.js')});

@@ -28,7 +28,7 @@ describe('Ограниченный запрос модели', () => {
             .toEqual({ input: ['Текст'], truncate: false });
         expect(modelInferenceBody('chat', { messages: [{ role: 'user', content: 'Привет', tool_calls: [{ command: 'shell' }] }],
             stream: false, options: { temperature: 0.3, num_predict: 50, num_ctx: 999999, numa: true }, think: true }))
-            .toEqual({ messages: [{ role: 'user', content: 'Привет' }], think: false, options: { temperature: 0.3, num_predict: 50, num_ctx: 4096 } });
+            .toEqual({ messages: [{ role: 'user', content: 'Привет' }], think: false, options: { temperature: 0.3, num_predict: 50, num_ctx: 999999 } });
     });
     it.each([null, [], {}, { input: [] }, { input: [''] }, { input: ['ok', 42] }, { input: Array(65).fill('text') }, { input: 'x'.repeat(1024 * 1024) }])('Отклоняет некорректный embedding-запрос %#', value => {
         expect(() => modelInferenceBody('embed', value)).toThrow(BadRequestException);
@@ -36,7 +36,7 @@ describe('Ограниченный запрос модели', () => {
     it('Переводит OpenAI мультимодальное сообщение в локальные текст и PNG без сетевого URL', () => {
         expect(modelInferenceBody('chat', { messages: [{ role: 'user', content: [{ type: 'text', text: 'Описание' },
             { type: 'image_url', image_url: { url: 'data:image/png;base64,' + png } }] }], temperature: 0.2, max_tokens: 64 }, true))
-            .toEqual({ messages: [{ role: 'user', content: 'Описание', images: [png] }], think: false, options: { temperature: 0.2, num_predict: 64, num_ctx: 4096 } });
+            .toEqual({ messages: [{ role: 'user', content: 'Описание', images: [png] }], think: false, options: { temperature: 0.2, num_predict: 64 } });
     });
     it.each(['https://example.invalid/private.png', 'http://169.254.169.254/data', 'file:///etc/passwd', 'data:image/svg+xml;base64,' + png])('Не передаёт runtime внешний источник изображения %s', url => {
         expect(() => modelInferenceBody('chat', { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url } }] }] }, true)).toThrow(BadRequestException);
@@ -48,9 +48,16 @@ describe('Ограниченный запрос модели', () => {
         const message = { role: 'user', content: 'Текст' };
         for (const input of [{ messages: Array(41).fill(message) }, { messages: [{ ...message, role: 'tool' }] },
             { messages: [{ ...message, content: 'x'.repeat(128 * 1024 + 1) }] }, { messages: [{ ...message, images: Array(5).fill(png) }] },
-            { messages: [message], options: { num_predict: 2049 } }, { messages: [message], options: { temperature: -1 } }]) {
+            { messages: [message], options: { num_predict: 32769 } }, { messages: [message], options: { temperature: -1 } },
+            { messages: [message], options: { top_p: 1.01 } }, { messages: [message], options: { num_ctx: 2097153 } }]) {
             expect(() => modelInferenceBody('chat', input)).toThrow(BadRequestException);
         }
+    });
+    it('Сохраняет отсутствие параметров и пропускает только разрешённые явные overrides', () => {
+        const messages = [{ role: 'user', content: 'Текст' }];
+        expect(modelInferenceBody('chat', { messages })).toEqual({ messages, think: false, options: {} });
+        expect(modelInferenceBody('chat', { messages, top_p: 0, max_tokens: 8192 }, true))
+            .toEqual({ messages, think: false, options: { top_p: 0, num_predict: 8192 } });
     });
     it.each([true, 'true', 1])('Явно отклоняет неподдерживаемую потоковую передачу %#', stream => {
         expect(() => modelInferenceBody('chat', { stream, messages: [{ role: 'user', content: 'Текст' }] }, true)).toThrow('stream: false');

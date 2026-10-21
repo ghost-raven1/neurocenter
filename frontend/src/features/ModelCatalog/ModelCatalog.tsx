@@ -13,7 +13,7 @@ import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
 import { OpenCodeImportModal } from './OpenCodeImportModal';
 import { filterCatalogModels } from './modelCatalogState';
-import type { ICatalogModel } from './types';
+import type { ICatalogModel, IRemoteConnectionHint } from './types';
 import { useModelCatalog } from './useModelCatalog';
 import './ModelCatalog.less';
 
@@ -37,7 +37,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [editing, setEditing] = useState<ICatalogModel | 'new' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
-    const [connectionHint, setConnectionHint] = useState<{baseUrl:string;hasKey:boolean}>();
+    const [connectionHint, setConnectionHint] = useState<IRemoteConnectionHint>();
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
     const formScope = JSON.stringify([scope, projectId]), previousScope = useRef(formScope);
@@ -126,8 +126,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 if (saved && saved.runtime !== 'ollama' && !saved.verificationSha256) setConnection(saved);
             }} />}
         {isMain && connection && <RemoteConnectionModal key={`${connection.id}:${connection.revision}`} model={connection} hint={connectionHint} onClose={() => { setConnection(null); setConnectionHint(undefined); }} onSaved={refresh} />}
-        {isMain && importing && projectId && <OpenCodeImportModal key={`${scope}:${projectId}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, baseUrl, hasKey) => {
-            const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint({baseUrl,hasKey}); setConnection(model);
+        {isMain && importing && projectId && <OpenCodeImportModal key={`${scope}:${projectId}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
+            const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}
     </div>;
 }

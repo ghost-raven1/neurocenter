@@ -2,6 +2,8 @@ import type { IModel } from './model.types';
 import type { IRemoteModelConnection } from './remote-model.types';
 import { isRemoteModel } from './remote-model.types';
 import { remoteModelBaseUrl } from './remote-model-validation';
+import { assertRemoteModelOptions, remoteModelOptions } from './remote-model-options';
+import type { IRemoteModelOptions } from './remote-model.types';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -22,6 +24,7 @@ export class RemoteModelClient {
             || endpoint === 'embed' && model.capability !== 'embedding' || endpoint === 'chat' && model.capability === 'embedding') {
             throw new RemoteModelError('response', 'Запрос не соответствует удалённой модели.');
         }
+        assertRemoteModelOptions(model, remoteModelOptions(connection.options));
         const openai = model.runtime === 'remote-openai';
         const texts = endpoint === 'embed' ? (Array.isArray(body.input) ? body.input : [body.input]) : [];
         if (endpoint === 'embed' && (!texts.length || texts.length > 64 || texts.some(text => typeof text !== 'string' || !text.trim()) || Buffer.byteLength(JSON.stringify(texts)) > 1024 * 1024)) {
@@ -29,9 +32,9 @@ export class RemoteModelClient {
         }
         const dimension = connection.requestDimensions && model.dimension ? { dimensions: model.dimension } : {};
         const payload = endpoint === 'embed' ? { model: model.model, input: texts, ...dimension, ...(openai ? { encoding_format: 'float' } : { truncate: false }) }
-            : this.chatBody(model, body, openai);
+            : this.chatBody(model, body, openai, connection.options);
         const route = openai ? endpoint === 'embed' ? '/embeddings' : '/chat/completions' : '/api/' + endpoint;
-        const value = await this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal);
+        const value = await this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
         if (value.model !== model.model) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'); }
         if (endpoint === 'embed') {
             const vectors = openai ? this.openaiVectors(value, texts.length) : value.embeddings;
@@ -65,9 +68,20 @@ export class RemoteModelClient {
         return result;
     }
 
-    private chatBody(model: IModel, body: Json, openai: boolean): Json {
+    private chatBody(model: IModel, body: Json, openai: boolean, defaults?: IRemoteModelOptions): Json {
         if (!Array.isArray(body.messages) || !body.messages.length || body.messages.length > 40) { throw new RemoteModelError('response', 'Передайте сообщения для модели.'); }
-        if (!openai) { return { model: model.model, messages: body.messages, stream: false, think: false, options: body.options }; }
+        const supplied = object(body.options) ? body.options : {};
+        const options = remoteModelOptions({ ...defaults,
+            ...(supplied.temperature === undefined ? {} : { temperature: supplied.temperature }),
+            ...(supplied.top_p === undefined ? {} : { topP: supplied.top_p }),
+            ...(supplied.num_predict === undefined ? {} : { maxOutputTokens: supplied.num_predict }),
+            ...(supplied.num_ctx === undefined ? {} : { contextWindow: supplied.num_ctx }) });
+        assertRemoteModelOptions(model, options);
+        if (!openai) { return { model: model.model, messages: body.messages, stream: false, think: false, options: {
+            ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+            ...(options.topP === undefined ? {} : { top_p: options.topP }),
+            ...(options.maxOutputTokens === undefined ? {} : { num_predict: options.maxOutputTokens }),
+            ...(options.contextWindow === undefined ? {} : { num_ctx: options.contextWindow }) } }; }
         const messages = body.messages.map(message => {
             if (!object(message) || typeof message.content !== 'string' || !['system', 'user', 'assistant'].includes(String(message.role))) { throw new RemoteModelError('response', 'Некорректные сообщения модели.'); }
             if (!Array.isArray(message.images) || !message.images.length) { return { role: message.role, content: message.content }; }
@@ -78,14 +92,16 @@ export class RemoteModelClient {
                 return { type: 'image_url', image_url: { url: 'data:image/' + mime + ';base64,' + image } };
             })] };
         });
-        const options = object(body.options) ? body.options : {};
-        return { model: model.model, messages, stream: false, temperature: options.temperature ?? 0, max_tokens: options.num_predict ?? 1024 };
+        return { model: model.model, messages, stream: false,
+            ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+            ...(options.topP === undefined ? {} : { top_p: options.topP }),
+            ...(options.maxOutputTokens === undefined ? {} : { max_tokens: options.maxOutputTokens }) };
     }
 
-    private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal): Promise<Json> {
+    private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal, timeoutMs?: number): Promise<Json> {
         signal?.throwIfAborted();
         if (apiKey && (apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(apiKey))) { throw new RemoteModelError('authorization', 'Сохранённый ключ удалённого API некорректен.'); }
-        const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
+        const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
         try {
             const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', redirect: 'error', signal: deadline,
                 headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: 'Bearer ' + apiKey } : {}) }, body: JSON.stringify(body) });

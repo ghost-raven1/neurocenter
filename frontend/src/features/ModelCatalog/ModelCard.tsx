@@ -36,6 +36,8 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
         <ModelHosting model={model} canManage={canHost && !disabled && !model.archivedAt} compact onManage={onConfigure ?? onView} />
         <div className="model-card__actions">
             <Button type="text" onClick={onView}>Подробнее</Button>
+            {remote && canHost && !model.archivedAt && onConfigure && <Button disabled={busy || disabled}
+                aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>
                 <Button type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</Button>
             </span></Tooltip>}

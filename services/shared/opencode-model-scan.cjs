@@ -9,6 +9,8 @@ const iso=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&ne
 const SCAN_WARNINGS=['read-failed','invalid-json','unsafe-path','source-changed','file-reference-not-expanded','env-reference-not-expanded','ancestor-config-not-scanned','organization-config-not-scanned','managed-preferences-not-scanned','entry-limit','ambiguous-config'];
 const canonical=value=>Array.isArray(value)?value.map(canonical):object(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const digest=scan=>{const {digest:_digest,...publicScan}=scan;return createHash('sha256').update(JSON.stringify(canonical(publicScan))).digest('hex');};
+const bounded=(value,min,max,integer=false)=>typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max&&(!integer||Number.isInteger(value));
+const validOptions=value=>object(value)&&Object.entries(value).every(([key,option])=>key==='temperature'?bounded(option,0,2):key==='topP'?bounded(option,0,1):key==='maxOutputTokens'&&bounded(option,1,32768,true));
 /** Exact metadata schema excludes API keys, auth contents, arbitrary paths and configuration fragments. */
 function validModelScan(scan,source){
  if(!exact(scan,['schemaVersion','projectId','bindingId','instanceId','scanId','checkedAt','expiresAt','warnings','candidates','digest'])||scan.schemaVersion!==1
@@ -18,10 +20,12 @@ function validModelScan(scan,source){
   ||!Array.isArray(scan.candidates)||scan.candidates.length>100||Buffer.byteLength(JSON.stringify(scan))>128*1024)return false;
  const ids=new Set();
  for(const item of scan.candidates){
-  if(!exact(item,['candidateId','provider','name','model','modelVersion','capability','runtime','baseUrl','hasKey','credentialSource','blocker'])||!uuid(item.candidateId)||ids.has(item.candidateId)
+  const keys=['candidateId','provider','name','model','modelVersion','capability','runtime','baseUrl','hasKey','credentialSource','blocker',...(object(item)&&Object.hasOwn(item,'options')?['options']:[]),...(object(item)&&Object.hasOwn(item,'timeoutMs')?['timeoutMs']:[])];
+  if(!exact(item,keys)||!uuid(item.candidateId)||ids.has(item.candidateId)
    ||!text(item.provider,128)||!text(item.name,128)||!text(item.model,200)||!text(item.modelVersion,128)||!['chat','vision'].includes(item.capability)
    ||![null,'remote-openai','remote-ollama'].includes(item.runtime)||typeof item.hasKey!=='boolean'||!['none','inline','environment','file','auth'].includes(item.credentialSource)
-   ||![null,'unsupported-provider','missing-endpoint','unresolved-endpoint','unsafe-endpoint','disabled-provider'].includes(item.blocker))return false;
+   ||![null,'unsupported-provider','missing-endpoint','unresolved-endpoint','unsafe-endpoint','disabled-provider'].includes(item.blocker)
+   ||Object.hasOwn(item,'options')&&!validOptions(item.options)||Object.hasOwn(item,'timeoutMs')&&!bounded(item.timeoutMs,1000,300000,true))return false;
   if(item.baseUrl!==null){try{const url=new URL(item.baseUrl);if(!text(item.baseUrl,1024)||!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)return false;}catch{return false;}}
   if(!item.blocker&&(!item.runtime||!item.baseUrl))return false;
   ids.add(item.candidateId);
