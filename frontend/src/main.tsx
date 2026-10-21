@@ -9,6 +9,7 @@ import { store } from './store';
 import './common/styles/app.less';
 import ruRU from 'antd/es/locale/ru_RU';
 import { ConfigProvider } from 'antd';
+import { FeatureAvailabilityProvider } from './features/FeatureFlags/FeatureAvailability';
 
 /**
  * Точка монтирования приложения.
@@ -27,7 +28,7 @@ const main = (): void => {
           <ConfigProvider locale={ruRU}>
             <Provider store={store}>
                 <BrowserRouter>
-                    <App />
+                    <FeatureAvailabilityProvider><App /></FeatureAvailabilityProvider>
                 </BrowserRouter>
             </Provider>
           </ConfigProvider>

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createFeatureFlagsController, initialFeatureFlagsState } from '../src/features/FeatureFlags/featureFlagsController';
-import { featureFlagKeys, requireFeatureFlagList } from '../src/features/FeatureFlags/types';
+import { featureDefinition, featureFlagKeys, requireFeatureFlagList } from '../src/features/FeatureFlags/types';
 import type { IFeatureFlag, TFeatureFlagKey } from '../src/features/FeatureFlags/types';
 
-const flag = (key: TFeatureFlagKey, enabled = true, revision = 1): IFeatureFlag => ({ key, name: key, description: 'Описание функции', enabled, revision, updatedAt: '2026-10-19T12:00:00Z', updatedBy: 'system:defaults' });
-const list = () => ({ items: featureFlagKeys.map(key => flag(key)) });
+const flag = (key: TFeatureFlagKey, enabled = true, revision = 1): IFeatureFlag => ({ ...featureDefinition(key), key, name: key, description: 'Описание функции', enabled, revision, updatedAt: '2026-10-19T12:00:00Z', updatedBy: 'system:defaults' });
+const list = (...overrides: IFeatureFlag[]) => ({ items: featureFlagKeys.map(key => overrides.find(item => item.key === key) ?? flag(key)) });
 const httpError = (status: number) => ({ isAxiosError: true, response: { status, data: { message: status === 409 ? 'Настройка изменилась' : 'Доступ запрещён' } } });
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (value: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
@@ -25,11 +25,11 @@ describe('Состояние функций платформы', () => {
         expect(h.state.items).toBeNull(); expect(h.state.readError).toBe('Нет связи');
         await h.controller.save('model_hosting', false); expect(h.write).not.toHaveBeenCalled();
     });
-    it('Требует все три уникальные функции и корректное булево состояние', () => {
+    it('Требует все 21 уникальную функций и корректное булево состояние', () => {
         expect(requireFeatureFlagList({ items: [...list().items].reverse() }).map(item => item.key)).toEqual(featureFlagKeys);
         expect(() => requireFeatureFlagList({ items: [flag('model_hosting')] })).toThrow('неполный');
-        expect(() => requireFeatureFlagList({ items: Array(3).fill(flag('model_hosting')) })).toThrow('повторяющиеся');
-        expect(() => requireFeatureFlagList({ items: [flag('model_hosting'), flag('rag_sync'), { ...flag('tool_builds'), enabled: 'false' }] })).toThrow('не подтвердил');
+        expect(() => requireFeatureFlagList({ items: Array(featureFlagKeys.length).fill(flag('model_hosting')) })).toThrow('повторяющиеся');
+        expect(() => requireFeatureFlagList(list({ ...flag('tool_builds'), enabled: 'false' as unknown as boolean }))).toThrow('не подтвердил');
     });
     it('Переключатель меняется после ответа, повторное нажатие не создаёт PATCH', async () => {
         const h = harness(); await h.controller.refresh(); const pending = deferred<IFeatureFlag>(); h.write.mockReturnValue(pending.promise);
@@ -52,13 +52,13 @@ describe('Состояние функций платформы', () => {
         const h = harness(); await h.controller.refresh(); const pending = deferred<IFeatureFlag>(); h.write.mockReturnValue(pending.promise);
         const saving = h.controller.save('model_hosting', false); await h.controller.refresh(); await h.controller.refresh();
         expect(h.read).toHaveBeenCalledOnce();
-        h.read.mockResolvedValue({ items: [flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync')] });
+        h.read.mockResolvedValue(list(flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync')));
         pending.resolve(flag('model_hosting', false, 2)); await saving; await flush();
         expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.[0].enabled).toBe(false);
     });
     it('Конфликт перечитывает значение и требует явного просмотра без автоповтора изменения', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(409));
-        h.read.mockResolvedValue({ items: [flag('model_hosting', false, 3), flag('tool_builds'), flag('rag_sync')] });
+        h.read.mockResolvedValue(list(flag('model_hosting', false, 3), flag('tool_builds'), flag('rag_sync')));
         await h.controller.save('model_hosting', false); await flush();
         expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.[0]).toMatchObject({ enabled: false, revision: 3 });
         expect(h.state.rows.model_hosting.needsReview).toBe(true);
@@ -79,7 +79,7 @@ describe('Состояние функций платформы', () => {
         await h.controller.save('rag_sync', false); await flush(); h.controller.useCurrent('rag_sync');
         expect(h.state.rows.rag_sync.needsReview).toBe(true); expect(h.state.readError).toBe('Нет связи');
         await h.controller.save('rag_sync', false); expect(h.write).toHaveBeenCalledOnce();
-        h.read.mockResolvedValue({ items: [flag('model_hosting'), flag('tool_builds'), flag('rag_sync', false, 2)] });
+        h.read.mockResolvedValue(list(flag('model_hosting'), flag('tool_builds'), flag('rag_sync', false, 2)));
         await h.controller.refresh(); expect(h.state.rows.rag_sync.needsReview).toBe(true);
         h.controller.useCurrent('rag_sync'); expect(h.state.rows.rag_sync.needsReview).toBe(false); expect(h.write).toHaveBeenCalledOnce();
     });
@@ -91,7 +91,7 @@ describe('Состояние функций платформы', () => {
     });
     it('Отказ доступа очищает прежние значения, временный отказ их сохраняет с предупреждением', async () => {
         const h = harness(); await h.controller.refresh(); h.read.mockRejectedValueOnce(new Error('Нет связи'));
-        await h.controller.refresh(); expect(h.state.items).toHaveLength(3); expect(h.state.readError).toBe('Нет связи');
+        await h.controller.refresh(); expect(h.state.items).toHaveLength(featureFlagKeys.length); expect(h.state.readError).toBe('Нет связи');
         h.read.mockRejectedValueOnce(httpError(403)); await h.controller.refresh();
         expect(h.state.items).toBeNull(); expect(h.state.readError).toBe('Доступ запрещён');
     });
@@ -108,7 +108,7 @@ describe('Владелец запросов функций и StrictMode', () =>
         const h = harness(); const first = deferred<unknown>(), second = deferred<unknown>();
         h.read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
         const previous = h.controller.refresh(); h.controller.dispose(); h.controller.activate(); const current = h.controller.refresh();
-        second.resolve({ items: [flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync')] }); await current;
+        second.resolve(list(flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync'))); await current;
         expect(h.state.items?.[0].enabled).toBe(false); expect(h.state.loading).toBe(false);
         const before = h.changed.mock.calls.length; first.resolve(list()); await previous;
         expect(h.changed).toHaveBeenCalledTimes(before); expect(h.state.items?.[0].enabled).toBe(false);

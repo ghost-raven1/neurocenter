@@ -9,6 +9,9 @@
     &__row &__error { margin: 16px 0 0; }
     &__saved { display: block; margin-top: 12px; color: #1666b5; }
     &__loading { padding: 28px; text-align: center; }
+    &__group { margin-top: 24px; > h4.ant-typography { margin-bottom: 12px; } }
+    &__dependency.ant-typography { color: #8b6516; }
+    &__dependencies.ant-typography { font-size: 12px; }
     @media (max-width: 575px) {
         .ant-card-extra { max-width: 100%; }
         &__setting { flex-direction: column; gap: 14px; }
@@ -17,3 +20,5 @@
         &__error .ant-btn { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
     }
 }
+.feature-availability-notice { margin-bottom: 12px; .ant-alert-content { min-width: 0; } .ant-alert-message { overflow-wrap: anywhere; } }
+.feature-action { display: inline-flex; max-width: 100%; vertical-align: middle; &_block { display: flex; width: 100%; } }

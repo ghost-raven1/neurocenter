@@ -5,6 +5,7 @@ import type { RootState } from '../../store';
 import { authDataScope } from '../UserBlock/authDataScope';
 import { FeatureFlagRow } from './FeatureFlagRow';
 import { useFeatureFlags } from './useFeatureFlags';
+import { configuredBlockers, featureGroups } from './types';
 import './FeatureFlags.less';
 
 function AccountFeatureFlags(): JSX.Element {
@@ -17,8 +18,11 @@ function AccountFeatureFlags(): JSX.Element {
             message={items ? 'Не удалось обновить функции — показаны последние данные' : 'Состояние функций недоступно'} description={readError}
             action={<Button loading={loading} disabled={saving} onClick={() => { void refresh(); }}>Повторить загрузку</Button>} />}
         {!items && loading && <div className="feature-flags__loading"><Spin tip="Загружаем функции…" /></div>}
-        {items?.map(flag => <FeatureFlagRow key={flag.key} flag={flag} state={rows[flag.key]} disabled={loading || !!readError}
-            onChange={enabled => { void save(flag.key, enabled); }} onRefresh={() => { void refresh(); }} onUseCurrent={() => useCurrent(flag.key)} />)}
+        {items && featureGroups.filter(group => items.some(flag => flag.group === group.key)).map(group => <section key={group.key} className="feature-flags__group" aria-label={group.name}>
+            <Typography.Title level={4}>{group.name}</Typography.Title>
+            {items.filter(flag => flag.group === group.key).map(flag => <FeatureFlagRow key={flag.key} flag={flag} state={rows[flag.key]} disabled={loading || !!readError}
+                blockedBy={configuredBlockers(flag.key, items)} onChange={enabled => { void save(flag.key, enabled); }} onRefresh={() => { void refresh(); }} onUseCurrent={() => useCurrent(flag.key)} />)}
+        </section>)}
     </Card>;
 }
 

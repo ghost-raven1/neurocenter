@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FeatureFlagsPanel } from '../src/features/FeatureFlags/FeatureFlagsPanel';
 import { FeatureFlagRow } from '../src/features/FeatureFlags/FeatureFlagRow';
 import { initialFeatureFlagsState } from '../src/features/FeatureFlags/featureFlagsController';
+import { featureDefinition } from '../src/features/FeatureFlags/types';
 import type { IFeatureFlag } from '../src/features/FeatureFlags/types';
 
 const ui = vi.hoisted(() => ({ role: 'Главный админ', assigned: ['Главный админ'], hook: vi.fn() }));
@@ -11,7 +12,7 @@ vi.mock('react-redux', () => ({ useSelector: (select: (state: unknown) => unknow
     id: 'user-one', email: 'admin@example.test', activeRole: ui.role, userRoles: ui.assigned, projectRoles: [], routePermissions: [],
 }, policies: {} } }) }));
 vi.mock('../src/features/FeatureFlags/useFeatureFlags', () => ({ useFeatureFlags: () => ui.hook() }));
-const flag: IFeatureFlag = { key: 'model_hosting', name: 'Хостинг моделей', description: 'Запуск и содержательная проверка моделей.', enabled: true, revision: 1, updatedAt: '2026-10-19T12:00:00Z', updatedBy: 'system:defaults' };
+const flag: IFeatureFlag = { ...featureDefinition('model_hosting'), key: 'model_hosting', name: 'Хостинг моделей', description: 'Запуск и содержательная проверка моделей.', enabled: true, revision: 1, updatedAt: '2026-10-19T12:00:00Z', updatedBy: 'system:defaults' };
 beforeEach(() => {
     vi.clearAllMocks(); ui.role = 'Главный админ'; ui.assigned = ['Главный админ'];
     ui.hook.mockReturnValue({ ...initialFeatureFlagsState(), items: [flag], refresh: vi.fn(), save: vi.fn(), useCurrent: vi.fn() });
