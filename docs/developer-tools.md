@@ -73,3 +73,33 @@ node --test scripts/test/tool-build-cancellation-admission.test.mjs \
   scripts/test/tool-build-cancellation-worker-guard.test.mjs \
   scripts/test/tool-build-cancellation-barrier.test.mjs
 ```
+
+## Прогнать настоящую сборку, установку и возврат версии
+
+Собери все пакеты через `npm run build:isolated -- --all`. В том же явно выбранном кандидате задай абсолютные пути:
+
+- `TOOL_BUILD_TEST_DIST` — `repository/services/catalog-service/dist`;
+- `TOOL_BUILD_BRIDGE_DIST` — `repository/mcp/neurocenter-asset-sync/dist`;
+- `TOOL_BUILD_SCRIPT` — `repository/scripts/catalog-plugins/build.mjs`.
+
+`TOOL_BUILD_CANCEL_TEST_PG_URL` имеет тот же строгий допуск собственной одноразовой БД, что и проверки отмены выше. Затем:
+
+```sh
+node scripts/test/tool-build-roundtrip.mjs
+```
+
+CLI строит маленький JS-плагин настоящим сборщиком, дожидается публикации, закрепляет пакет за проектом и устанавливает отдельным процессом моста в собственный HOME. Затем публикует изменённый исходник как явную новую версию, устанавливает её и возвращает проект и установку к первой. Проверяет SQL, байты старых исходников/runtime, сохранение ручных записей конфигурации и отсутствие дополнительной сборки при точном повторе UUID.
+
+Нужны Node 24 и POSIX; подтверждённая ОС — macOS ARM64. Runtime transport и Gateway/device authorization задаются стендом; установленный hook вызывается через сгенерированную конфигурацию без запуска обычного OpenCode. Проверка не подтверждает его первый запуск, корпоративный Linux/Windows, произвольные рецепты или внешние сервисы. Она не использует рабочий профиль моста или основной PostgreSQL.
+
+Квитанция содержит SHA harness, путь кандидата, результат каждого шага и ошибки очистки. Незавершённые собственные процессы, ошибку удаления тестовой БД и изменение проверяемого harness нельзя считать GREEN. Защиты процесса и финализаторов проверяются без PostgreSQL:
+
+```sh
+node --test --test-concurrency=1 \
+  scripts/test/tool-build-roundtrip-process.test.mjs \
+  scripts/test/package-publication-rollback-finalizer.test.mjs
+```
+
+Для углублённого аудита сохранены `scripts/test/native/package-publication-rollback.test.mjs` и `scripts/test/tool-build-version-cas.mjs`: реальный SQL с потерянным ACK, последующим чужим COMMIT, блокировками и отзывом прав. Сейчас они требуют специально подготовленный собственный PostgreSQL 16.15 с приватной описью владельца, PID, сроком lease и source-freeze receipt; один PG URL не заменяет этот допуск. Исторический `connection.json` остановленного стенда использовать нельзя. Универсальная переносимая команда подготовки такого стенда ещё не поставляется; эти два harness не входят в обычный `check` и не должны запускать чужую инфраструктуру. Общая команда roundtrip выше от этой исторической описи не зависит.
+
+[Контракт новой версии](tool-build-versions.md) отделяет общую редакцию каталога, закрепление проекта и локальную установку.
