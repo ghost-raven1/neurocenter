@@ -138,7 +138,7 @@ async function requirePrivateStore(store){
 export async function uploadExternalBackup({source,expectedHash,backupId,config=externalBackupConfiguration(),store=createExternalS3Store(config)}){
     validateInput({backupId,expectedHash});
     const manifest=await verifyBackup(source,expectedHash);
-    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3'].includes(manifest.format)){throw new Error('Внешняя доставка требует полный recovery-v3 комплект (или исторический v2)');}
+    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3','neurocenter-recovery-v4'].includes(manifest.format)){throw new Error('Внешняя доставка требует полный recovery-v4 комплект (или исторический v2/v3)');}
     const raw=await readFile(path.join(source,'manifest.json'));
     if(manifestDigest(raw)!==expectedHash){throw new Error('Опись изменилась после проверки');}
     let bytes=0,files=0;
@@ -169,7 +169,7 @@ export async function uploadExternalBackup({source,expectedHash,backupId,config=
 function safeRemoteManifest(raw,expectedHash){
     if(digest(raw)!==expectedHash){throw new Error('SHA256 внешней описи не совпадает с сохранённой квитанцией');}
     const manifest=validateManifest(JSON.parse(raw));
-    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3'].includes(manifest.format)){throw new Error('Нужен recovery-v3 комплект (или исторический v2)');}
+    if(!['neurocenter-recovery-v2','neurocenter-recovery-v3','neurocenter-recovery-v4'].includes(manifest.format)){throw new Error('Нужен recovery-v4 комплект (или исторический v2/v3)');}
     const directories=new Set(manifest.entries.filter(item=>item.type==='directory').map(item=>item.path));
     for(const entry of manifest.entries){
         let parent=path.posix.dirname(entry.path);

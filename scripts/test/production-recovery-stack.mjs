@@ -139,7 +139,7 @@ try{
         const raw=await readFile(path.join(destination,'manifest.json'),'utf8');for(const name of ['catalog_url','postgres_password','internal_token']){assert.ok(!raw.includes((await readFile(path.join(source.directory,'secrets',name),'utf8')).trim()));}
     });
     await check('Опись DR v2 включает четвёртый том и точный SHA готового комплекта',async()=>{
-        const manifest=await verifyBackup(destination,receipt.sha256);assert.equal(manifest.format,'neurocenter-recovery-v3');
+        const manifest=await verifyBackup(destination,receipt.sha256);assert.equal(manifest.format,'neurocenter-recovery-v4');
         for(const volume of ['skills','projects','backups','runtime-artifacts'])assert.ok(manifest.entries.some(entry=>entry.path==='files/'+volume&&entry.type==='directory'));
         const archive=manifest.entries.find(entry=>entry.path==='files/runtime-artifacts/'+runtimeArtifact.sha256+'.tar.gz');
         assert.equal(archive?.type,'file');assert.equal(archive.sha256,runtimeArtifact.sha256);assert.equal(archive.size,runtimeArtifact.compressedBytes);

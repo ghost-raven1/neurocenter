@@ -10,6 +10,8 @@ import {verifyBackup,writeManifest,projectDatabasePattern} from './recovery-mani
 import {databaseLifecycleLock} from './database-lifecycle-lock.mjs';
 import {dumpSnapshotMetadata} from './snapshot-recovery-dump.mjs';
 import {exportSnapshotRecovery,previewSnapshotRecovery,restoreSnapshotRecovery,snapshotTargetOverlay} from './snapshot-recovery-storage.mjs';
+import {dumpChatMetadata} from './chat-recovery-dump.mjs';
+import {exportChatRecovery,previewChatRecovery,restoreChatRecovery,chatTargetOverlay} from './chat-recovery-storage.mjs';
 
 const directoryExists=async filename=>{try{await lstat(filename);return true;}catch(error){if(error.code==='ENOENT'){return false;}throw error;}};
 const quote=value=>"'"+value.replace(/'/g,"''")+"'";
@@ -26,9 +28,9 @@ export function assertExternalDestination(destination,mounts){
     for(const {Source:source} of mounts){if(typeof source==='string'&&(destination===source||destination.startsWith(source+path.sep))){throw new Error('Каталог копии должен находиться вне рабочих томов Docker');}}
 }
 
-async function imageId(image){return JSON.parse(await docker(['image','inspect',image]))[0].Id;}
-async function postgresContainer(client){
-    const found=(await containers(client)).find(item=>item.Config.Labels['com.docker.compose.service']==='postgres');
+async function imageId(image,run=docker){return JSON.parse(await run(['image','inspect',image]))[0].Id;}
+async function postgresContainer(client,inspect=containers){
+    const found=(await inspect(client)).find(item=>item.Config.Labels['com.docker.compose.service']==='postgres');
     if(!found?.State.Running){throw new Error('PostgreSQL не запущен');}return found;
 }
 
@@ -84,7 +86,7 @@ async function noPendingJobs(container,run=docker){
     if(count!=='0'){throw new Error('Есть незавершённые задания MCP: дождитесь их завершения перед копированием');}
 }
 
-const backupAdapters={composeClient,composeConfiguration,containers,serviceImageIds,maintenanceLock,databaseLifecycleLock,docker,volumeTransfer,exportSnapshotRecovery};
+const backupAdapters={composeClient,composeConfiguration,containers,serviceImageIds,maintenanceLock,databaseLifecycleLock,docker,volumeTransfer,exportSnapshotRecovery,exportChatRecovery};
 
 export function backupProduction(options,injected){
     if(options.beforePause!==undefined&&typeof options.beforePause!=='function'){throw new Error('beforePause должен быть проверкой перед остановкой');}
@@ -106,7 +108,7 @@ export function pauseBudget(maxPauseMs,now=Date.now){
 
 /** Согласованная офлайн-копия всех БД и четырёх серверных томов. */
 async function backupOperation({directory,projectName,files=[],destination,offline=false,maxPauseMs,progress=()=>{}},hooks,injected={}){
-    const {composeClient,composeConfiguration,containers,serviceImageIds,maintenanceLock,databaseLifecycleLock,docker,volumeTransfer,exportSnapshotRecovery}={...backupAdapters,...injected};
+    const {composeClient,composeConfiguration,containers,serviceImageIds,maintenanceLock,databaseLifecycleLock,docker,volumeTransfer,exportSnapshotRecovery,exportChatRecovery}={...backupAdapters,...injected};
     if(!offline){throw new Error('Укажите --offline: команда приостанавливает приложения на время копирования');}
     if(!destination){throw new Error('Укажите --destination для новой копии');}
     const parent=await privateDirectory(path.dirname(path.resolve(destination)),{create:false});destination=path.join(parent,path.basename(destination));
@@ -147,8 +149,9 @@ async function backupOperation({directory,projectName,files=[],destination,offli
             for(const db of databases){progress('Копируем БД '+db.name);await timedDocker(['exec',postgres.Id,'pg_dump','-U','nc_owner','-d',db.name,'--format=custom'],{outputFile:path.join(temporary,db.file)});}
             progress('Копируем Markdown, серверные проекты, готовые комплекты и сохранённые копии');await volumeTransfer('backup',temporary,names,helperImage,timedDocker);
             progress('Копируем точные версии объектов полных снимков и закрытую идентичность подписи');const snapshotObjects=await exportSnapshotRecovery({directory,destination:temporary,sql:(database,text)=>sql(postgres.Id,database,text,timedDocker),checkDeadline:remainingMs});
+            progress('Копируем точные версии оригиналов чата из обоих закрытых бакетов');const chatObjects=await exportChatRecovery({directory,destination:temporary,sql:(database,text)=>sql(postgres.Id,database,text,timedDocker),applicationS3:config.services?.['catalog-service']?.environment?.CHAT_S3_ENDPOINT?config.services['catalog-service'].environment:false,checkDeadline:remainingMs});
             await noOtherClients(postgres.Id,timedDocker,lifecycle);
-            const {manifest,sha256}=await writeManifest(temporary,{createdAt,postgresMajor:16,postgresImage:postgres.Image,images,quiesced:true,databases,snapshotObjects},{checkDeadline:remainingMs});
+            const {manifest,sha256}=await writeManifest(temporary,{createdAt,postgresMajor:16,postgresImage:postgres.Image,images,quiesced:true,databases,snapshotObjects,chatObjects},{checkDeadline:remainingMs});
             await verifyBackup(temporary,sha256,{checkDeadline:remainingMs});remainingMs();lifecycle.assertHeld();await rename(temporary,destination);
             const handle=await open(parent,'r');try{await handle.sync();}finally{await handle.close();}
             remainingMs();result={ok:true,destination,sha256,createdAt,databases:databases.length,files:manifest.entries.filter(entry=>entry.type==='file').length,bytes:manifest.entries.reduce((sum,entry)=>sum+(entry.size||0),0)};
@@ -169,56 +172,65 @@ export async function assertNewTarget(client,names,injected={}){
     if((await deps.containers(client)).length||Object.values(names).some(name=>volumes.includes(name))){throw new Error('Восстановление разрешено только в новый Compose-проект без существующих контейнеров и томов');}
 }
 
+const restoreAdapters={composeClient,composeConfiguration,serviceImageIds,productionModelKeyIdentity,assertProductionModelKey,docker,containers,maintenanceLock,volumeTransfer,dumpSnapshotMetadata,previewSnapshotRecovery,restoreSnapshotRecovery,snapshotTargetOverlay,dumpChatMetadata,previewChatRecovery,restoreChatRecovery,chatTargetOverlay};
+
 /** Полная проверка new-target не создаёт контейнеры, тома или базы. */
-export async function previewRestoreProduction({directory,projectName,files=[],source,expectedHash,progress=()=>{}}){
+export async function previewRestoreProduction({directory,projectName,files=[],source,expectedHash,progress=()=>{}},injected={}){
+    const {composeClient,composeConfiguration,serviceImageIds,productionModelKeyIdentity,docker,containers,dumpSnapshotMetadata,previewSnapshotRecovery,dumpChatMetadata,previewChatRecovery}={...restoreAdapters,...injected};
     if(!projectName){throw new Error('Укажите --project-name для нового стека восстановления');}
     source=await realpath(source);if(/[,\x00-\x1f]/.test(source)){throw new Error('Некорректный путь копии');}
     progress('Проверяем весь комплект до создания целевого PostgreSQL');const manifest=await verifyBackup(source,expectedHash);
     const client=composeClient({directory,projectName,files});const config=await composeConfiguration(client);const names=volumeNames(config);const images=await serviceImageIds(config);
     await productionModelKeyIdentity(directory,config);
-    if(applicationServices.some(service=>images[service]!==manifest.images[service])||await imageId(config.services.postgres.image)!==manifest.postgresImage){throw new Error('Для восстановления нужны те же образы, что были при копировании; обновление выполняется отдельно');}
-    await assertNewTarget(client,names);
+    if(applicationServices.some(service=>images[service]!==manifest.images[service])||await imageId(config.services.postgres.image,docker)!==manifest.postgresImage){throw new Error('Для восстановления нужны те же образы, что были при копировании; обновление выполняется отдельно');}
+    await assertNewTarget(client,names,{docker,containers});
     const metadata=await dumpSnapshotMetadata(source,manifest,docker),snapshotRecovery=await previewSnapshotRecovery({directory,source,manifest,metadata,applicationS3:!!config.services['catalog-service'].environment?.SNAPSHOT_S3_ENDPOINT});
-    return {manifest,client,names,images,source,config,snapshotRecovery};
+    const chatMetadata=await dumpChatMetadata(source,manifest,docker),chatRecovery=await previewChatRecovery({directory,source,manifest,metadata:chatMetadata,applicationS3:config.services['catalog-service'].environment?.CHAT_S3_ENDPOINT?config.services['catalog-service'].environment:false});
+    return {manifest,client,names,images,source,config,snapshotRecovery,chatRecovery};
 }
 
 /** Восстановление никогда не удаляет или перезаписывает существующий рабочий стек. */
-export async function restoreProduction(options){
+export async function restoreProduction(options,injected={}){
+    const {composeClient,assertProductionModelKey,docker,containers,maintenanceLock,volumeTransfer,restoreSnapshotRecovery,snapshotTargetOverlay,restoreChatRecovery,chatTargetOverlay}={...restoreAdapters,...injected};
     const {directory,projectName,expectedHash,progress=()=>{},beforeMutation=async()=>{}}=options;
     if(typeof beforeMutation!=='function')throw new Error('Некорректная проверка разрешения записи.');
-    const {manifest,names,images,source,config,snapshotRecovery,client:initialClient}=await previewRestoreProduction(options);
+    const {manifest,names,images,source,config,snapshotRecovery,chatRecovery,client:initialClient}=await previewRestoreProduction(options,injected);
     let client=initialClient;
     return maintenanceLock(client,images['catalog-service'],'restore',async()=>{
-        await assertNewTarget(client,names);const started=Date.now();
+        await assertNewTarget(client,names,{docker,containers});const started=Date.now();
         await beforeMutation();
-        const receipts=await privateDirectory(path.join(directory,'recovery-receipts')),overlay=await snapshotTargetOverlay(directory,projectName,source,snapshotRecovery);
-        if(overlay)client=composeClient({...options,files:[...(options.files||[]),overlay]});
-        progress('Готовим новый пустой кластер и роли из закрытой конфигурации');await client.run(['up','-d','--wait','postgres']);
+        const receipts=await privateDirectory(path.join(directory,'recovery-receipts')),overlay=await snapshotTargetOverlay(directory,projectName,source,snapshotRecovery),chatOverlay=await chatTargetOverlay(directory,projectName,chatRecovery);
+        if(overlay||chatOverlay)client=composeClient({...options,files:[...(options.files||[]),...[overlay,chatOverlay].filter(Boolean)]});
+        progress('Готовим новый пустой кластер и роли из закрытой конфигурации');await beforeMutation();await client.run(['up','-d','--wait','postgres']);
         await beforeMutation();
-        await client.run(['--profile','setup','run','--rm','database-init']);const postgres=await postgresContainer(client);
+        await client.run(['--profile','setup','run','--rm','database-init']);const postgres=await postgresContainer(client,containers);
         await beforeMutation();
         await client.run(['create','--no-recreate','--no-build','catalog-service','skills-service']);
         await volumeTransfer('check-empty',source,names,images['catalog-service']);
         // Ни bootstrap, ни серверные процессы ещё не запускались: эти две базы созданы только initializer.
-        for(const name of ['catalog','rag']){await beforeMutation();await sql(postgres.Id,'postgres','DROP DATABASE '+name+';');}
+        for(const name of ['catalog','rag']){await beforeMutation();await sql(postgres.Id,'postgres','DROP DATABASE '+name+';',docker);}
         for(const db of manifest.databases){
             progress('Восстанавливаем БД '+db.name);
             await beforeMutation();
-            await sql(postgres.Id,'postgres',`CREATE DATABASE ${db.name} OWNER ${db.owner} TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE ${quote(db.collate)} LC_CTYPE ${quote(db.ctype)}; REVOKE ALL ON DATABASE ${db.name} FROM PUBLIC;${db.name==='catalog'?'':` GRANT CONNECT ON DATABASE ${db.name} TO nc_backup;`}`);
+            await sql(postgres.Id,'postgres',`CREATE DATABASE ${db.name} OWNER ${db.owner} TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE ${quote(db.collate)} LC_CTYPE ${quote(db.ctype)}; REVOKE ALL ON DATABASE ${db.name} FROM PUBLIC;${db.name==='catalog'?'':` GRANT CONNECT ON DATABASE ${db.name} TO nc_backup;`}`,docker);
+            await beforeMutation();
             await docker(['exec','-i',postgres.Id,'pg_restore','-U','nc_owner','--exit-on-error','--single-transaction','--dbname',db.name],{inputFile:path.join(source,db.file)});
-            await sql(postgres.Id,db.name,'ANALYZE;');
+            await beforeMutation();
+            await sql(postgres.Id,db.name,'ANALYZE;',docker);
         }
         await beforeMutation();progress('Восстанавливаем серверные файлы');await volumeTransfer('restore',source,names,images['catalog-service']);
         await volumeTransfer('verify',source,names,images['catalog-service']);
-        const actual=await databaseInventory(postgres.Id);
+        const actual=await databaseInventory(postgres.Id,docker);
         if(JSON.stringify(actual)!==JSON.stringify(manifest.databases)){throw new Error('Список восстановленных баз расходится с описью');}
-        await assertProductionModelKey(directory,config,input=>sql(postgres.Id,'catalog',input));
-        progress('Проверяем и переносим immutable версии объектов снимков в новое хранилище');const snapshotResult=await restoreSnapshotRecovery({source,preview:snapshotRecovery,sql:(database,text)=>sql(postgres.Id,database,text),beforeMutation});
+        await assertProductionModelKey(directory,config,input=>sql(postgres.Id,'catalog',input,docker));
+        progress('Проверяем и переносим immutable версии объектов снимков в новое хранилище');const snapshotResult=await restoreSnapshotRecovery({source,preview:snapshotRecovery,sql:(database,text)=>sql(postgres.Id,database,text,docker),beforeMutation});
+        let chatResult;try{progress('Проверяем и переносим оригиналы чата в два новых закрытых бакета');chatResult=await restoreChatRecovery({source,preview:chatRecovery,sql:(database,text)=>sql(postgres.Id,database,text,docker),beforeMutation});}
+        catch(error){await writeFile(path.join(receipts,projectName+'-chat-failed-'+randomUUID()+'.json'),JSON.stringify({ok:false,projectName,sha256:expectedHash,applicationsStarted:false,chatOverlay,chatStorage:error.chatRecoveryReceipt||{state:'failed',phase:'admission',sourceS3Mutated:false}},null,2)+'\n',{flag:'wx',mode:0o600,flush:true});throw error;}
         // Старые коды подключения и индикатор online не переживают перенос на другой сервер.
-        await beforeMutation();await sql(postgres.Id,'catalog','BEGIN; DELETE FROM bridge_pairs; UPDATE bridge_devices SET last_seen=NULL; COMMIT;');
+        await beforeMutation();await sql(postgres.Id,'catalog','BEGIN; DELETE FROM bridge_pairs; UPDATE bridge_devices SET last_seen=NULL; COMMIT;',docker);
         // Квитанция хранится отдельно от исходной копии; сессии и публичные приложения остаются остановлены.
         const receipt={ok:true,projectName,sha256:expectedHash,restoredAt:new Date().toISOString(),databases:actual.length,durationMs:Date.now()-started,applicationsStarted:false};
-        await writeFile(path.join(receipts,projectName+'-'+randomUUID()+'.json'),JSON.stringify({...receipt,...(overlay?{snapshotOverlay:overlay,snapshotStorage:snapshotResult}:{})},null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
+        await writeFile(path.join(receipts,projectName+'-'+randomUUID()+'.json'),JSON.stringify({...receipt,...(overlay?{snapshotOverlay:overlay,snapshotStorage:snapshotResult}:{}),chatStorage:chatResult,...(chatOverlay?{chatOverlay}:{})},null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
         return receipt;
     });
 }

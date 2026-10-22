@@ -5,6 +5,7 @@ import path from 'node:path';
 import {inventory,volumeKeys} from './recovery-files.mjs';
 import {applicationServices} from './compose-client.mjs';
 import {validateSnapshotInventory} from './snapshot-recovery-metadata.mjs';
+import {validateChatInventory} from './chat-recovery-metadata.mjs';
 
 export const manifestName='manifest.json';
 export const manifestDigest=raw=>createHash('sha256').update(raw).digest('hex');
@@ -12,7 +13,7 @@ export const projectDatabasePattern=/^nc_rag_[0-9a-f]{32}$/;
 
 /** Фиксированные имена/владельцы не позволяют описи подставить SQL или другой том. */
 export function validateManifest(manifest){
-    if(!['neurocenter-recovery-v1','neurocenter-recovery-v2','neurocenter-recovery-v3'].includes(manifest?.format)||manifest.postgresMajor!==16||!/^sha256:[a-f0-9]{64}$/.test(manifest.postgresImage)||!Number.isFinite(Date.parse(manifest.createdAt))||manifest.quiesced!==true){throw new Error('Неизвестный формат или версия комплекта восстановления');}
+    if(!['neurocenter-recovery-v1','neurocenter-recovery-v2','neurocenter-recovery-v3','neurocenter-recovery-v4'].includes(manifest?.format)||manifest.postgresMajor!==16||!/^sha256:[a-f0-9]{64}$/.test(manifest.postgresImage)||!Number.isFinite(Date.parse(manifest.createdAt))||manifest.quiesced!==true){throw new Error('Неизвестный формат или версия комплекта восстановления');}
     if(!Array.isArray(manifest.databases)||manifest.databases.length<2||manifest.databases.length>10000){throw new Error('Некорректный список баз');}
     const names=new Set();
     for(const db of manifest.databases){
@@ -28,7 +29,7 @@ export function validateManifest(manifest){
         if(entry.type==='file'&&(!Number.isSafeInteger(entry.size)||entry.size<0||!/^[a-f0-9]{64}$/.test(entry.sha256))){throw new Error('Некорректный размер или SHA256 файла');}
         paths.add(entry.path);
     }
-    const allowedRoots=['databases','files',...(manifest.format==='neurocenter-recovery-v3'?['snapshot-objects','operatorsecrets']:[])];
+    const allowedRoots=['databases','files',...(['neurocenter-recovery-v3','neurocenter-recovery-v4'].includes(manifest.format)?['snapshot-objects','operatorsecrets']:[]),...(manifest.format==='neurocenter-recovery-v4'?['chat-objects']:[])];
     if(manifest.entries.some(entry=>!allowedRoots.includes(entry.path.split('/')[0]))){throw new Error('Посторонние файлы в комплекте');}
     for(const db of manifest.databases){if(!manifest.entries.some(entry=>entry.path===db.file&&entry.type==='file'&&entry.size>0)){throw new Error('Отсутствует дамп базы '+db.name);}}
     const dumps=manifest.entries.filter(entry=>entry.type==='file'&&entry.path.startsWith('databases/'));
@@ -36,12 +37,13 @@ export function validateManifest(manifest){
     const manifestVolumes=manifest.format==='neurocenter-recovery-v1'?volumeKeys.filter(key=>key!=='runtime-artifacts'):volumeKeys;
     for(const key of manifestVolumes){if(!manifest.entries.some(entry=>entry.path==='files/'+key&&entry.type==='directory')){throw new Error('Отсутствует серверный том '+key);}}
     if(manifest.entries.some(entry=>entry.path.startsWith('files/')&&!manifestVolumes.includes(entry.path.split('/')[1]))){throw new Error('Неизвестный серверный том');}
-    if(manifest.format==='neurocenter-recovery-v3')validateSnapshotInventory(manifest.snapshotObjects,manifest.entries);
+    if(['neurocenter-recovery-v3','neurocenter-recovery-v4'].includes(manifest.format))validateSnapshotInventory(manifest.snapshotObjects,manifest.entries);
+    if(manifest.format==='neurocenter-recovery-v4')validateChatInventory(manifest.chatObjects,manifest.entries);
     return manifest;
 }
 
 export async function writeManifest(directory,metadata,{checkDeadline=()=>{}}={}){
-    const manifest=validateManifest({...metadata,snapshotObjects:metadata.snapshotObjects||{schemaVersion:1,blobs:[]},format:'neurocenter-recovery-v3',entries:await inventory(directory,{checkDeadline})});
+    const manifest=validateManifest({...metadata,snapshotObjects:metadata.snapshotObjects||{schemaVersion:1,blobs:[]},chatObjects:metadata.chatObjects||{schemaVersion:1,source:null,objects:[],discardedObjects:[],transfers:[]},format:'neurocenter-recovery-v4',entries:await inventory(directory,{checkDeadline})});
     const raw=JSON.stringify(manifest,null,2)+'\n';
     await writeFile(path.join(directory,manifestName),raw,{flag:'wx',mode:0o600,flush:true});return {manifest,sha256:manifestDigest(raw)};
 }

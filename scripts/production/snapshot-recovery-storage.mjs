@@ -18,7 +18,7 @@ const quote=value=>"'"+value.replace(/'/g,"''")+"'";
 export function snapshotRecoveryStore(configuration,{checkDeadline=()=>120000}={}){
  const {Client}=require('minio'),url=new URL(configuration.endpoint),transport=url.protocol==='https:'?https:http;
  const request=(...args)=>{const outgoing=transport.request(...args),deadline=setTimeout(()=>outgoing.destroy(new Error('snapshot-recovery-s3-deadline')),Math.min(120000,checkDeadline()));deadline.unref();outgoing.setTimeout(30000,()=>outgoing.destroy(new Error('snapshot-recovery-s3-idle')));outgoing.once('close',()=>clearTimeout(deadline));return outgoing;};
- return new Client({endPoint:url.hostname,port:Number(url.port)||(url.protocol==='https:'?443:80),useSSL:url.protocol==='https:',accessKey:configuration.accessKey,secretKey:configuration.secretKey,region:configuration.region,transport:{request},retryOptions:{disableRetry:true}});
+ return new Client({endPoint:url.hostname.replace(/^\[|\]$/g,''),port:Number(url.port)||(url.protocol==='https:'?443:80),useSSL:url.protocol==='https:',accessKey:configuration.accessKey,secretKey:configuration.secretKey,region:configuration.region,transport:{request},retryOptions:{disableRetry:true}});
 }
 async function verifyStream(stream,row,{destination,checkDeadline=()=>{}}={}){
  let received=0;const digest=createHash('sha256');let file;const timer=setTimeout(()=>stream.destroy(new Error('Истёк срок передачи объекта снимка.')),120000);timer.unref();

@@ -14,7 +14,7 @@ import {manifestDigest} from '../production/recovery-manifest.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex'),quote=value=>"'"+value.replace(/'/g,"''")+"'";
 async function allVersions(store,bucket){const rows=[];for await(const row of store.listObjects(bucket,'',true,{IncludeVersion:true}))rows.push({name:row.name,versionId:row.versionId,isDeleteMarker:row.isDeleteMarker});return rows;}
 async function bytes(stream){const chunks=[];for await(const chunk of stream)chunks.push(chunk);return Buffer.concat(chunks);}
-test('Actual PG16 → v3 exact S3 versions/signing identity → new Compose+bucket, with readonly preflight negatives', {skip:process.env.SNAPSHOT_RECOVERY_ACCEPTANCE!=='1',timeout:180000},async()=>{
+test('Actual PG16 → v4 exact S3 versions/signing identity → new Compose+bucket, with readonly preflight negatives', {skip:process.env.SNAPSHOT_RECOVERY_ACCEPTANCE!=='1',timeout:180000},async()=>{
  const nonce=randomUUID().replaceAll('-','').slice(0,16),name='nc-snapshot-recovery-'+nonce,access='restore'+nonce,secret=randomUUID()+randomUUID(),sourceBucket='source-'+nonce,targetBucket='target-'+nonce;
  let fixture,started=false,store,configuration,sourceVersion,originalVersions,signature;const payload=Buffer.alloc(512*1024+7);for(let index=0;index<payload.length;index++)payload[index]=index%251;const sha256=hash(payload),projectId="prj-quote'\\tab\tline\n$restore$",key=snapshotObjectKey(projectId,sha256),signing=generateKeyPairSync('ed25519'),publicKey=signing.publicKey.export({type:'spki',format:'pem'}).toString();
  try{
@@ -32,7 +32,7 @@ test('Actual PG16 → v3 exact S3 versions/signing identity → new Compose+buck
    await sql('catalog',`SET ROLE nc_catalog; CREATE TABLE project_snapshot_blob_refs(snapshot_id integer,project_id text,sha256 text,bytes bigint); INSERT INTO project_snapshot_blob_refs VALUES(1,${quote(projectId)},${quote(sha256)},${payload.length}),(2,${quote(projectId)},${quote('c'.repeat(64))},9);`);
    await sql('catalog','SET ROLE nc_catalog; CREATE TABLE project_snapshot_blob_writes(project_id text,sha256 text,write_id uuid,bytes bigint,storage_id text,created_at timestamptz);');
   }});
-  assert.equal(fixture.manifest.format,'neurocenter-recovery-v3');assert.equal(fixture.manifest.snapshotObjects.blobs.length,1);assert.deepEqual(await readFile(path.join(fixture.source,fixture.manifest.snapshotObjects.blobs[0].file)),payload);assert.equal(fixture.manifest.snapshotObjects.blobs[0].versionId,sourceVersion);
+  assert.equal(fixture.manifest.format,'neurocenter-recovery-v4');assert.equal(fixture.manifest.snapshotObjects.blobs.length,1);assert.deepEqual(await readFile(path.join(fixture.source,fixture.manifest.snapshotObjects.blobs[0].file)),payload);assert.equal(fixture.manifest.snapshotObjects.blobs[0].versionId,sourceVersion);
   const input={directory:fixture.directory,projectName:fixture.targetProject,files:fixture.files,source:fixture.source,expectedHash:fixture.sha256};
   const sourceConfigBefore=await readFile(path.join(fixture.directory,'snapshot-recovery.json'));
   // Existing bucket is rejected while the new target still has no containers or volumes.

@@ -15,6 +15,7 @@ import {volumeKeys} from '../production/recovery-files.mjs';
 import {writeManifest,verifyBackup} from '../production/recovery-manifest.mjs';
 import {externalBackupConfiguration,signedS3Request,retryExternalOperation,createExternalS3Store,uploadExternalBackup,downloadExternalBackup,EXTERNAL_CHUNK_BYTES} from '../production/external-backup.mjs';
 import {snapshotObjectFile} from '../production/snapshot-recovery-metadata.mjs';
+import {chatObjectKey,chatObjectFile} from '../production/chat-recovery-metadata.mjs';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const env={EXTERNAL_BACKUP_S3_ENDPOINT:'https://objects.example.test',EXTERNAL_BACKUP_S3_REGION:'eu-test-1',EXTERNAL_BACKUP_S3_BUCKET:'recovery-test',
@@ -27,7 +28,7 @@ function memoryStore(){
     return {objects,puts,gets,async assertPrivate(){},async put(key,bytes){puts.push(key);if(!objects.has(key)){objects.set(key,Buffer.from(bytes));}},
         async get(key,limit){gets.push(key);if(!objects.has(key)){throw Object.assign(new Error('Отсутствует объект'),{status:404});}const bytes=objects.get(key);if(bytes.length>limit){throw new Error('Превышен размер ответа');}return Buffer.from(bytes);}};
 }
-async function fixture(action,{large=false,snapshots=false}={}){
+async function fixture(action,{large=false,snapshots=false,chat=false}={}){
     const root=await mkdtemp(path.join(tmpdir(),'nc-external-backup-'));const source=path.join(root,'source');await mkdir(source,{mode:0o700});
     try{
         await mkdir(path.join(source,'databases'));for(const name of ['catalog','rag']){await writeFile(path.join(source,'databases',name+'.dump'),'PGDMP fixture '+name);}
@@ -38,9 +39,10 @@ async function fixture(action,{large=false,snapshots=false}={}){
         if(large){await writeFile(path.join(source,'files/projects/large.bin'),Buffer.alloc(EXTERNAL_CHUNK_BYTES+17,37));}
         let snapshotObjects;
         if(snapshots){const bytes=Buffer.from('exact snapshot object bytes'),sha256=sha(bytes),file=snapshotObjectFile('project-fixture',sha256);await mkdir(path.dirname(path.join(source,file)),{recursive:true,mode:0o700});await writeFile(path.join(source,file),bytes,{mode:0o600});await mkdir(path.join(source,'operatorsecrets'),{mode:0o700});await writeFile(path.join(source,'operatorsecrets/snapshot_signing_key'),generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});snapshotObjects={schemaVersion:1,blobs:[{projectId:'project-fixture',sha256,bytes:bytes.length,storageId:'s3:'+'b'.repeat(32),versionId:'exact-version-1',file}],keyFiles:['operatorsecrets/snapshot_signing_key']};}
+        let chatObjects;if(chat){const sourceIdentity={storageId:'d'.repeat(64),projectBucket:'chat-project-source',personalBucket:'chat-personal-source'},bytes=Buffer.from('private original chat bytes');chatObjects={schemaVersion:1,source:sourceIdentity,objects:[],discardedObjects:[],transfers:[]};await mkdir(path.join(source,'chat-objects'),{mode:0o700});for(let index=0;index<2;index++){const id='12345678-1234-4234-8234-00000000000'+(index+1),conversationId='12345678-1234-4234-8234-000000000004',ownerEmail='owner@test',projectId=index?null:'project-fixture',file=chatObjectFile(id);await writeFile(path.join(source,file),bytes,{mode:0o600});chatObjects.objects.push({id,storageId:sourceIdentity.storageId,bucket:index?sourceIdentity.personalBucket:sourceIdentity.projectBucket,objectKey:chatObjectKey(projectId,ownerEmail,conversationId,id),versionId:index?null:'old-version',sha256:sha(bytes),bytes:bytes.length,state:'LIVE',attachmentId:'12345678-1234-4234-8234-00000000000'+(index+5),conversationId,ownerEmail,projectId,file});}}
         const image='sha256:'+'a'.repeat(64);const {manifest,sha256}=await writeManifest(source,{createdAt:'2026-10-18T00:00:00Z',postgresMajor:16,postgresImage:image,
             images:Object.fromEntries(applicationServices.map(service=>[service,image])),quiesced:true,
-            databases:['catalog','rag'].map(name=>({name,owner:name==='catalog'?'nc_catalog':'nc_rag',encoding:'UTF8',collate:'C.UTF-8',ctype:'C.UTF-8',file:'databases/'+name+'.dump'})),...(snapshotObjects?{snapshotObjects}:{})});
+            databases:['catalog','rag'].map(name=>({name,owner:name==='catalog'?'nc_catalog':'nc_rag',encoding:'UTF8',collate:'C.UTF-8',ctype:'C.UTF-8',file:'databases/'+name+'.dump'})),...(snapshotObjects?{snapshotObjects}:{}),...(chatObjects?{chatObjects}:{})});
         const store=memoryStore();const values={source,expectedHash:sha256,backupId,config,store};await action({root,source,manifest,sha256,store,values});
     }finally{await rm(root,{recursive:true,force:true});}
 }
@@ -150,7 +152,7 @@ test('External download privacy gate rejects before reading a manifest or creati
     assert.ok(!(await readdir(root)).some(name=>name.startsWith('.neurocenter-external-')));
 }));
 
-test('Полный recovery-v3 комплект проходит внешний readback и восстанавливается в новый каталог',async()=>fixture(async({root,manifest,sha256,store,values})=>{
+test('Полный recovery-v4 комплект проходит внешний readback и восстанавливается в новый каталог',async()=>fixture(async({root,manifest,sha256,store,values})=>{
     const receipt=await uploadExternalBackup(values);
     assert.equal(receipt.verification,'sha256-readback');assert.equal(receipt.independence,'operator-declared');assert.equal(receipt.crossHostRestoreVerified,false);
     assert.equal(receipt.files,manifest.entries.filter(entry=>entry.type==='file').length);assert.equal(store.puts.at(-1),manifestKey);
@@ -161,11 +163,19 @@ test('Полный recovery-v3 комплект проходит внешний 
     assert.equal(await readFile(path.join(destination,'files/projects/config.json'),'utf8'),'{"settings":"сохраняем параметры"}');
     assert.equal((await stat(destination)).mode&0o777,0o700);
 }));
-test('External v3 roundtrip retains exact S3 object files and private signer bytes/modes',async()=>fixture(async({root,source,manifest,values})=>{
+test('External v4 roundtrip retains exact S3 object files and private signer bytes/modes',async()=>fixture(async({root,source,manifest,values})=>{
     await uploadExternalBackup(values);const destination=path.join(root,'download');await downloadExternalBackup({...values,destination});
     for(const file of [manifest.snapshotObjects.blobs[0].file,...manifest.snapshotObjects.keyFiles]){assert.deepEqual(await readFile(path.join(destination,file)),await readFile(path.join(source,file)));assert.equal((await stat(path.join(destination,file))).mode&0o777,0o600);}
     assert.equal((await stat(path.join(destination,'operatorsecrets'))).mode&0o777,0o700);
 },{snapshots:true}));
+
+test('External v4 roundtrip preserves both private chat originals, exact versions, hashes and ownership metadata',async()=>fixture(async({root,source,manifest,sha256,values})=>{
+    assert.equal(manifest.format,'neurocenter-recovery-v4');await uploadExternalBackup(values);const destination=path.join(root,'chat-download');await downloadExternalBackup({...values,destination});const actual=await verifyBackup(destination,sha256);assert.deepEqual(actual.chatObjects,manifest.chatObjects);assert.deepEqual(actual.chatObjects.objects.map(row=>row.versionId),['old-version',null]);for(const row of actual.chatObjects.objects){assert.deepEqual(await readFile(path.join(destination,row.file)),await readFile(path.join(source,row.file)));assert.equal((await stat(path.join(destination,row.file))).mode&0o777,0o600);}assert.equal((await stat(path.join(destination,'chat-objects'))).mode&0o777,0o700);
+},{chat:true}));
+
+test('Trusted legacy v2/v3 bundles without chat refs retain actual upload/download compatibility',async()=>{
+ for(const format of ['neurocenter-recovery-v2','neurocenter-recovery-v3'])await fixture(async({root,source,manifest,values})=>{const historical={...manifest,format};delete historical.chatObjects;const raw=JSON.stringify(historical)+'\n';await writeFile(path.join(source,'manifest.json'),raw,{mode:0o600});const expectedHash=sha(raw),input={...values,expectedHash};await uploadExternalBackup(input);const destination=path.join(root,'legacy-download');await downloadExternalBackup({...input,destination});assert.equal((await verifyBackup(destination,expectedHash)).format,format);});
+});
 
 test('Файл больше блока передаётся несколькими объектами и собирается без потери байтов',async()=>fixture(async({root,sha256,store,values})=>{
     await uploadExternalBackup(values);assert.equal([...store.objects.keys()].filter(key=>key.includes('/'+sha('files/projects/large.bin')+'/')).length,2);

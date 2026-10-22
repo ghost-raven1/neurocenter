@@ -8,6 +8,7 @@ import {repositoryRoot} from './compose-client.mjs';
 import {restoreCheckpoints,privateJson} from './restore-checkpoints.mjs';
 import {executeWebRestoreJob,restoreJournalDirectory,acknowledgeRestoreJournal} from './web-restore-job.mjs';
 import {snapshotRecoveryFingerprint} from './snapshot-recovery-config.mjs';
+import {chatRecoveryFingerprint} from './chat-recovery-config.mjs';
 
 /** Конфиг — только operator-owned файлы; API/браузер не выбирают Compose и серверные пути. */
 export async function restoreRunnerConfiguration({directory,backupRoot,targetPrefix='neurocenter-restore',registry,files=[]}){
@@ -15,7 +16,7 @@ export async function restoreRunnerConfiguration({directory,backupRoot,targetPre
  const sources=[path.join(directory,'.env'),path.join(directory,'secrets/model_credential_key'),path.join(repositoryRoot,'compose.production.yml'),...files];
  const digests=[];for(const filename of sources){const info=await lstat(filename);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>4*1024*1024)throw new Error('Небезопасный файл конфигурации восстановления.');
   if(filename.startsWith(path.resolve(directory)+path.sep)&&info.mode&0o077)throw new Error('Production конфигурация должна быть закрыта.');const bytes=await readFile(filename),after=await lstat(filename);if(info.size!==after.size||info.mtimeMs!==after.mtimeMs||info.ino!==after.ino)throw new Error('Конфигурация изменилась при чтении.');digests.push({file:path.resolve(filename),sha256:createHash('sha256').update(bytes).digest('hex')});}
- return {targetPrefix,configDigest:contract.digest({targetPrefix,sources:digests,snapshotRecovery:await snapshotRecoveryFingerprint(directory)}),checkpoints:await restoreCheckpoints({directory,backupRoot,registry})};
+ return {targetPrefix,configDigest:contract.digest({targetPrefix,sources:digests,snapshotRecovery:await snapshotRecoveryFingerprint(directory),chatRecovery:await chatRecoveryFingerprint(directory)}),checkpoints:await restoreCheckpoints({directory,backupRoot,registry})};
 }
 export function restoreRunnerApi(origin,token,request=fetch){
  const url=new URL(origin);if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.pathname!=='/'||url.search||url.hash||url.protocol==='http:'&&!['localhost','127.0.0.1','[::1]'].includes(url.hostname)||typeof token!=='string'||token.length<32||token.length>256||/[\x00-\x20\x7f]/.test(token))throw new Error('Нужен доверенный HTTPS endpoint каталога (или loopback HTTP) и закрытый токен runner.');
