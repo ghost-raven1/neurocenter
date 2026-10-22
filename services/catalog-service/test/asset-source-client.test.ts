@@ -52,9 +52,9 @@ describe('Закреплённый серверный источник ассе�
         expect((await f.client.select(['helper','dependency'])).assets.map(item=>item.asset.id)).toEqual(['dependency','helper']);
         expect(f.request).toHaveBeenCalledTimes(3);
     });
-    it.each([[],['helper','helper'],['unknown'],[1],Array.from({length:51},(_,index)=>'asset-'+index)])('Отклоняет недопустимый выбор %j',async ids=>{
+    it.each([[],['helper','helper'],['unknown'],[1],Array.from({length:51},(_,index)=>'asset-'+index)].map(ids=>({ids})))('Отклоняет недопустимый выбор $ids',async({ids})=>{
         const f = fixture(); await expect(f.client.select(ids)).rejects.toMatchObject({status:400});
-        expect(f.request.mock.calls.length).toBeLessThanOrEqual(1);
+        expect(f.request).toHaveBeenCalledTimes(ids[0]==='unknown'?1:0);
     });
     it.each([
         {commit:'main'}, {repository:'https://github.com/other/repo'}, {repository:'owner/../repo'}, {repository:'owner/.'}, {repository:'owner/repo.git'}, {index:{path:'../index.json',sha256:'b'.repeat(64)}},

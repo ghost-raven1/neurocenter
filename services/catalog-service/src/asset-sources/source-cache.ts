@@ -42,5 +42,5 @@ export class SourceMetadataCache{
 }
 
 export function assetSourceTransport():AssetSourceTransport{
-    return assetSourceMode()==='offline'?{offline:true,cache:new SourceMetadataCache()}:{};
+    return {offline:assetSourceMode()==='offline',cache:new SourceMetadataCache()};
 }
