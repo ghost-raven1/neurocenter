@@ -208,7 +208,7 @@ async function start(profile) {
     output.info('Снимки LanceDB','Проверка ключа и изолированного SDK-исполнителя');
     const snapshots=await prepareDevSnapshots(root,process.env);
     output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
-    const chatStorage=await prepareDevChatStorage(root,process.env);
+    const chatStorage=await prepareDevChatStorage(root,process.env,{output});
     const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
     next('Остановка прежних локальных процессов');
     await stop();

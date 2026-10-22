@@ -1,0 +1,34 @@
+# Local single-host Ceph RGW. Development only: one replica, no high availability.
+services:
+  chat-ceph:
+    image: ${CHAT_DEV_CEPH_IMAGE:-quay.io/ceph/ceph:v20.2.4@sha256:6bb1c8a42fbc0bf87938946990b65174466997bc11c31eb5a323225a779fd8f9}
+    command: [/bin/bash, /usr/local/bin/neurocenter-dev-ceph]
+    restart: unless-stopped
+    mem_limit: 3g
+    stop_grace_period: 40s
+    cap_drop: [ALL]
+    # Native Linux keeps the host UID on private 0600 bind-mounted secret files.
+    # Allow reading those files while retaining DAC write protection.
+    cap_add: [DAC_READ_SEARCH]
+    security_opt: [no-new-privileges:true]
+    ports: ["127.0.0.1:${CHAT_DEV_S3_PORT:-19011}:9000"]
+    environment:
+      CHAT_DEV_S3_ACCESS_KEY_FILE: /run/secrets/chat_s3_access_key
+      CHAT_DEV_S3_SECRET_KEY_FILE: /run/secrets/chat_s3_secret_key
+    secrets: [chat_s3_access_key, chat_s3_secret_key]
+    volumes:
+      - ceph-chat-data:/var/lib/neurocenter-ceph
+      - ./scripts/workspace/dev-ceph.sh:/usr/local/bin/neurocenter-dev-ceph:ro
+    healthcheck:
+      test: [CMD, /bin/bash, /usr/local/bin/neurocenter-dev-ceph, --health]
+      interval: 5s
+      timeout: 4s
+      retries: 36
+      start_period: 20s
+volumes:
+  ceph-chat-data:
+secrets:
+  chat_s3_access_key:
+    file: ${CHAT_DEV_S3_ACCESS_KEY_FILE:?Prepare private local Ceph credentials first}
+  chat_s3_secret_key:
+    file: ${CHAT_DEV_S3_SECRET_KEY_FILE:?Prepare private local Ceph credentials first}

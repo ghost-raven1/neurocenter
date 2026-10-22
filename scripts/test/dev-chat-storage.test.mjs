@@ -5,82 +5,63 @@ import path from 'node:path';
 import os from 'node:os';
 import {prepareDevChatStorage} from '../workspace/dev-chat-storage.mjs';
 
-const ready = async () => ({ok: true});
-const external = {CHAT_S3_ENDPOINT: 'https://ceph.example.test', CHAT_S3_PROJECT_BUCKET: 'project-chat', CHAT_S3_PERSONAL_BUCKET: 'personal-chat',
-    CHAT_S3_ACCESS_KEY_FILE: 'secrets/access', CHAT_S3_SECRET_KEY_FILE: 'secrets/secret'};
+const external={CHAT_S3_ENDPOINT:'https://ceph.example.test',CHAT_S3_PROJECT_BUCKET:'project-chat',CHAT_S3_PERSONAL_BUCKET:'personal-chat',
+    CHAT_S3_ACCESS_KEY_FILE:'secrets/access',CHAT_S3_SECRET_KEY_FILE:'secrets/secret'};
+const proofs=[];
+async function fixture(t){
+    const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-chat-startup-')));
+    t.after(async()=>{await fs.rm(root,{recursive:true,force:true});proofs.push({root,removed:await fs.lstat(root).then(()=>false,error=>error.code==='ENOENT')});if(process.env.CHAT_STARTUP_TEST_EVIDENCE)await fs.writeFile(process.env.CHAT_STARTUP_TEST_EVIDENCE,JSON.stringify(proofs,null,2)+'\n');});
+    return root;
+}
+function dependencies(){
+    const warnings=[],infos=[],calls=[],forbid=name=>()=>{calls.push(name);throw Error('Unexpected '+name);};
+    return{warnings,infos,calls,run:forbid('Docker'),fetch:forbid('health request'),probe:forbid('S3 probe'),output:{warning:value=>warnings.push(value),info:(...value)=>infos.push(value)}};
+}
+async function secrets(root){
+    await fs.mkdir(path.join(root,'secrets'));
+    await fs.writeFile(path.join(root,'secrets/access'),'test-access',{mode:0o600});await fs.writeFile(path.join(root,'secrets/secret'),'test-secret',{mode:0o600});
+}
 
-test('External Ceph stays external, resolves secret paths, and rejects partial configuration', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-external-'));
-    try {
-        await fs.mkdir(path.join(root, 'secrets')); await fs.writeFile(path.join(root, 'secrets/access'), 'test-access', {mode: 0o600}); await fs.writeFile(path.join(root, 'secrets/secret'), 'test-secret', {mode: 0o600});
-        let probed = false;
-        const result = await prepareDevChatStorage(root, external, {run() {throw Error('Must not start Docker');}, probe: async config => {assert.equal(config.secretKey, 'test-secret'); probed = true;}});
-        assert.equal(result.CHAT_S3_ACCESS_KEY_FILE, path.join(root, 'secrets/access')); assert.ok(probed);
-        assert.equal(result.CHAT_S3_ENDPOINT, external.CHAT_S3_ENDPOINT);
-        await assert.rejects(prepareDevChatStorage(root, {CHAT_S3_ENDPOINT: external.CHAT_S3_ENDPOINT}), /CHAT_S3_ACCESS_KEY/);
-        await assert.rejects(prepareDevChatStorage(root, {...external, CHAT_S3_ACCESS_KEY: 'inline-value'}), /только CHAT_S3_ACCESS_KEY_FILE/);
-    } finally {await fs.rm(root, {recursive: true, force: true});}
+test('External Ceph stays external, resolves secret paths, and rejects partial configuration',async t=>{
+    const root=await fixture(t);await secrets(root);let probed=false;
+    const result=await prepareDevChatStorage(root,external,{run(){throw Error('Must not start Docker');},probe:async config=>{assert.equal(config.secretKey,'test-secret');probed=true;}});
+    assert.equal(result.CHAT_S3_ACCESS_KEY_FILE,path.join(root,'secrets/access'));assert.ok(probed);assert.equal(result.CHAT_S3_ENDPOINT,external.CHAT_S3_ENDPOINT);
+    await assert.rejects(prepareDevChatStorage(root,{CHAT_S3_ENDPOINT:external.CHAT_S3_ENDPOINT}),/CHAT_S3_ACCESS_KEY/);
+    await assert.rejects(prepareDevChatStorage(root,{...external,CHAT_S3_ACCESS_KEY:'inline-value'}),/только CHAT_S3_ACCESS_KEY_FILE/);
 });
 
-test('Local S3 reuses private credentials across restarts and never exposes them in Docker arguments', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-store-'));
-    try {
-        const calls = [], run = (command, args, options) => {calls.push({command, args, options}); return {status: 0, stdout: args[0] === 'volume' ? '' : undefined};};
-        const a = await prepareDevChatStorage(root, {}, {run, fetch: ready, probe: async () => {}});
-        const before = await fs.readFile(a.CHAT_S3_SECRET_KEY_FILE);
-        const b = await prepareDevChatStorage(root, {}, {run, fetch: ready, probe: async () => {}});
-        assert.deepEqual(b, a); assert.deepEqual(await fs.readFile(b.CHAT_S3_SECRET_KEY_FILE), before);
-        assert.equal((await fs.stat(a.CHAT_S3_SECRET_KEY_FILE)).mode & 0o777, 0o600);
-        assert.equal(a.CHAT_S3_ENDPOINT, 'http://127.0.0.1:19010');
-        assert.deepEqual(calls[0].args.slice(0, 2), ['volume', 'ls']);
-        assert.equal(calls[0].options.encoding, 'utf8');
-        assert.ok(calls.every(call => !JSON.stringify(call.args).includes(before.toString().trim())));
-        assert.equal(calls.filter(call => call.args[0] === 'compose').length, 2);
-    } finally {await fs.rm(root, {recursive: true, force: true});}
+test('Disabled local Ceph never starts MinIO, probes a registry or creates credential files, and reports unavailable attachments',async t=>{
+    const root=await fixture(t),deps=dependencies();assert.deepEqual(await prepareDevChatStorage(root,{CHAT_DEV_CEPH:'false'},deps),{});
+    assert.deepEqual(deps.calls,[]);assert.deepEqual(await fs.readdir(root),[]);
+    assert.equal(deps.warnings.length,1);assert.match(deps.warnings[0],/Ceph.*отключён/);assert.match(deps.warnings[0],/продолж/);assert.match(deps.warnings[0],/вложен/i);
+    assert.ok(deps.infos.some(value=>value.join(' ').includes('CHAT_S3_ENDPOINT')));
 });
 
-test('Missing original credentials beside an existing volume fail without replacing identity', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-store-'));
-    try {
-        await assert.rejects(prepareDevChatStorage(root, {}, {run: (_command, args) => ({status: 0, stdout: args[args.indexOf('--filter') + 1].slice('name='.length) + '\n'}), fetch: ready}), /Ключи.*потеряны/);
-        await assert.rejects(fs.stat(path.join(root, '.run/chat-storage/access-key')), {code: 'ENOENT'});
-        await assert.rejects(prepareDevChatStorage(root, {CHAT_DEV_S3_PORT: 'NaN'}), /CHAT_DEV_S3_PORT/);
-    } finally {await fs.rm(root, {recursive: true, force: true});}
+for(const state of ['pair','access-only','secret-only','invalid-pair','symlink'])test('Unconfigured Ceph preserves legacy local keys without reading, completing or replacing them: '+state,async t=>{
+    const root=await fixture(t),directory=path.join(root,'.run/chat-storage');await fs.mkdir(directory,{recursive:true,mode:0o700});
+    const access=path.join(directory,'access-key'),secret=path.join(directory,'secret-key'),foreign=path.join(root,'foreign-key');
+    await fs.writeFile(foreign,'private-foreign-key',{mode:0o600});
+    if(state==='symlink')await fs.symlink(foreign,access);
+    else if(state!=='secret-only')await fs.writeFile(access,state==='invalid-pair'?'invalid': 'neurocenter-original-access\n',{mode:0o600});
+    if(['pair','secret-only','invalid-pair'].includes(state))await fs.writeFile(secret,state==='invalid-pair'?'damaged':'original-secret-with-enough-bytes\n',{mode:0o600});
+    const before=await Promise.all([access,secret].map(async file=>{try{const info=await fs.lstat(file);return{ino:info.ino,dev:info.dev,mode:info.mode,bytes:info.isSymbolicLink()?await fs.readlink(file):await fs.readFile(file)};}catch(error){if(error.code==='ENOENT')return null;throw error;}}));
+    const deps=dependencies();assert.deepEqual(await prepareDevChatStorage(root,{CHAT_DEV_CEPH:'false',CHAT_DEV_S3_PORT:'NaN'},deps),{});assert.deepEqual(deps.calls,[]);
+    const after=await Promise.all([access,secret].map(async file=>{try{const info=await fs.lstat(file);return{ino:info.ino,dev:info.dev,mode:info.mode,bytes:info.isSymbolicLink()?await fs.readlink(file):await fs.readFile(file)};}catch(error){if(error.code==='ENOENT')return null;throw error;}}));
+    assert.deepEqual(after,before);assert.equal(await fs.readFile(foreign,'utf8'),'private-foreign-key');assert.ok(!JSON.stringify(deps.warnings).includes('original-secret'));
 });
 
-test('A failed S3 launch reports failure before old application services are stopped', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-store-'));
-    try {
-        await assert.rejects(prepareDevChatStorage(root, {}, {run: (_command, args) => ({status: args[0] === 'volume' ? 0 : 1, stdout: ''}), fetch: ready}), /прежние сервисы сохранены/);
-    } finally {await fs.rm(root, {recursive: true, force: true});}
+test('An explicitly configured Ceph outage stays a failure without local fallback or credential mutation',async t=>{
+    const root=await fixture(t);await secrets(root);const deps=dependencies(),failure=Error('owned external Ceph unavailable');
+    const before=await Promise.all(['access','secret'].map(name=>fs.readFile(path.join(root,'secrets',name))));
+    await assert.rejects(prepareDevChatStorage(root,external,{...deps,probe:async()=>{throw failure;}}),error=>error===failure);
+    assert.deepEqual(deps.warnings,[]);assert.deepEqual(deps.calls,[]);await assert.rejects(fs.lstat(path.join(root,'.run')),{code:'ENOENT'});
+    assert.deepEqual(await Promise.all(['access','secret'].map(name=>fs.readFile(path.join(root,'secrets',name)))),before);
 });
 
-for (const [name, result] of [
-    ['timeout', {status: null, error: Object.assign(new Error('timed out'), {code: 'ETIMEDOUT'})}],
-    ['permission', {status: 1, stderr: 'permission denied'}],
-    ['daemon', {status: 1, stderr: 'cannot connect to daemon'}],
-    ['nonzero', {status: 2, stdout: ''}],
-    ['signal', {status: null, signal: 'SIGTERM'}],
-    ['missing-output', {status: 0}],
-    ['malformed-output', {status: 0, stdout: 'unverified volume output'}],
-]) test(`Uncertain Docker volume probe (${name}) never creates replacement credentials`, async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-store-probe-'));
-    try {
-        let failure;
-        try {await prepareDevChatStorage(root, {}, {run: (_command, args) => args[0] === 'volume' ? result : {status: 1}, fetch: ready, probe: async () => {}});}
-        catch (error) {failure = error;}
-        for (const name of ['access-key', 'secret-key']) await assert.rejects(fs.stat(path.join(root, '.run/chat-storage', name)), {code: 'ENOENT'});
-        assert.match(failure?.message || '', /Не удалось проверить.*Docker/);
-    } finally {await fs.rm(root, {recursive: true, force: true});}
-});
-
-test('A partial credential pair never gets completed implicitly even with proven absent volume', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-chat-store-partial-'));
-    try {
-        const directory = path.join(root, '.run/chat-storage'); await fs.mkdir(directory, {recursive: true});
-        const original = 'neurocenter-original-access\n'; await fs.writeFile(path.join(directory, 'access-key'), original, {mode: 0o600});
-        await assert.rejects(prepareDevChatStorage(root, {}, {run: () => ({status: 0, stdout: ''}), fetch: ready, probe: async () => {}}), /Ключи.*потеряны/);
-        assert.equal(await fs.readFile(path.join(directory, 'access-key'), 'utf8'), original);
-        await assert.rejects(fs.stat(path.join(directory, 'secret-key')), {code: 'ENOENT'});
-    } finally {await fs.rm(root, {recursive: true, force: true});}
+test('Explicit external credentials still reject unsafe operator files before probing Ceph',async t=>{
+    const root=await fixture(t);await secrets(root);const deps=dependencies();
+    await fs.chmod(path.join(root,'secrets/secret'),0o644);
+    await assert.rejects(prepareDevChatStorage(root,external,deps),/UNSAFE_OPERATOR_FILE/);assert.deepEqual(deps.calls,[]);assert.deepEqual(deps.warnings,[]);
+    await fs.chmod(path.join(root,'secrets/secret'),0o600);await fs.rm(path.join(root,'secrets/access'));await fs.symlink(path.join(root,'secrets/secret'),path.join(root,'secrets/access'));
+    await assert.rejects(prepareDevChatStorage(root,external,deps));assert.deepEqual(deps.calls,[]);assert.deepEqual(deps.warnings,[]);
 });

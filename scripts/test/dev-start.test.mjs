@@ -83,7 +83,10 @@ async function fixture(t, mode) {
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
         else if(args[0]==='volume'&&args[1]==='ls')process.stdout.write('');
-        else if(args.some(arg=>arg.endsWith('/compose.chat-storage.dev.yml')))console.log('fixture chat storage ready');
+        else if(args.some(arg=>arg.endsWith('/compose.chat-storage.ceph.dev.yml'))){
+            if(process.env.DEV_START_MODE==='profile-ready-no-ceph'){console.error('owned fixture: unavailable local Ceph image pull');process.exitCode=41;}
+            else console.log('fixture chat storage ready');
+        }
         else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding'){
             if(process.env.DEV_START_MODE==='model-runtime-error'){
                 console.error('PRIVATE fixture Docker failure');process.exitCode=35;
@@ -153,7 +156,7 @@ async function fixture(t, mode) {
         const spawn=childProcess.spawn;
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
-            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry,modelKeyFile:args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string'});
+            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry,modelKeyFile:args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string',chatS3Keys:Object.keys(args[2]?.env||{}).filter(key=>key.startsWith('CHAT_S3_'))});
             return child;
         };
         const writeFileSync=fs.writeFileSync;
@@ -260,6 +263,19 @@ async function fixture(t, mode) {
     }
     return {run, checkout};
 }
+
+test('Unavailable local Ceph starts all applications without pulling legacy MinIO or exposing partial S3 settings',async t=>{
+    const f=await fixture(t,'profile-ready-no-ceph'),result=await f.run('--profile=fast');
+    assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stdout+result.stderr,/Ceph.*недоступен/);
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.some(arg=>String(arg).endsWith('/compose.chat-storage.dev.yml'))).length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.some(arg=>String(arg).endsWith('/compose.chat-storage.ceph.dev.yml'))).length,1);
+    assert.equal(result.events.filter(event=>event.kind==='chat-storage-preflight').length,0);
+    for(const child of result.events.filter(event=>event.kind==='child-spawn'))assert.deepEqual(child.chatS3Keys,[]);
+    await assert.rejects(fs.lstat(path.join(f.checkout,'.run/chat-storage')),{code:'ENOENT'});
+    const stopped=result.events.findIndex(event=>event.kind==='test-stops-healthy-stack');assert.ok(stopped>=0);
+    assert.equal(result.events.slice(0,stopped).filter(event=>event.kind==='child-stop').length,0);
+});
 
 test('Запуск называет завершившийся сервис, порт, код выхода и его отдельный лог', async t => {
     const f = await fixture(t, 'immediate'), result = await f.run();
