@@ -41,7 +41,7 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwne
  return {captureOwner:ui.owners.get(ui.epoch)!};
 }}));
 vi.mock('../src/modules/Store/packaging/useToolBuild',()=>({useToolBuild:()=>({
- job:ui.job,draft:ui.draft,active:false,submitting:false,unresolved:ui.unresolved,recoveryBlocked:ui.recoveryBlocked,
+ job:ui.job,draft:ui.draft,active:false,submitting:false,recovering:false,unresolved:ui.unresolved,recoveryBlocked:ui.recoveryBlocked,
  submit:ui.submit,retrySaved:ui.retrySaved,reset:ui.reset,recheck:vi.fn(),retryRecovery:vi.fn(),
 })}));
 vi.mock('../src/modules/Store/packaging/useSourceUpload',()=>({useSourceUpload:()=>({

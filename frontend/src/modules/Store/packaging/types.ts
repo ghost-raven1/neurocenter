@@ -4,8 +4,15 @@ export type PackagingSource = { type: 'npm'; specifier: string; entrypoint?: str
     | { type: 'files'; files: PackagingFile[]; entrypoint: string; args?: string[] }
     | { type: 'repository'; url: string; ref: string; subdirectory?: string; entrypoint: string; release?: RepositoryRelease }
     | UploadedSource;
+export interface ToolBuildPublication { catalogId: string; expectedVersion: number; expectedSourceHash: string }
+export interface BuildPublicationTargetPreview extends ToolBuildPublication {
+    name: string; description: string; kind: PackagingKind;
+    sourceSummaries: Array<{repository:string;externalId:string;assetVersion:string}>;
+    updateSupported: boolean; unsupportedReason?: string;
+}
+export type ToolPackagingStart = {source:'files'} | {publication:{catalogId:string;kind:PackagingKind}};
 export interface ToolBuildRequest {
-    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource;
+    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource; publication?: ToolBuildPublication;
 }
 export interface ToolBuild {
     id: string; operationId: string; requestKey: string; publicationStartedAt: string | null;

@@ -15,6 +15,21 @@ async function rawRecord(value:unknown):Promise<void>{
 }
 
 describe('Durable exact request упаковщика',()=>{
+    it('Новая версия сохраняет точную цель CAS вместе с исходниками и UUID',async()=>{
+        const value={...request(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        await saveStoredBuildDraft('alice',value);expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);
+        await expect(saveStoredBuildDraft('alice',{...value,publication:{...value.publication,expectedVersion:8}})).rejects.toThrow('другой запрос');
+        expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);
+    });
+    it.each([null,{}, {catalogId:' ',expectedVersion:1,expectedSourceHash:'b'.repeat(64)},
+        {catalogId:'native',expectedVersion:0,expectedSourceHash:'b'.repeat(64)},
+        {catalogId:'native',expectedVersion:1.5,expectedSourceHash:'b'.repeat(64)},
+        {catalogId:'native',expectedVersion:1,expectedSourceHash:'bad'},
+        {catalogId:'native',expectedVersion:1,expectedSourceHash:'b'.repeat(64),origins:[]},
+    ])('Повреждённая цель публикации %j не допускается в POST',async publication=>{
+        await expect(saveStoredBuildDraft('alice',{...request(),publication} as ToolBuildRequest)).rejects.toThrow();
+        expect(await readStoredBuildDraft('alice')).toBeUndefined();
+    });
     it.each(['files','repository'] as const)('Восстанавливает skill %s с точным SKILL.md и ресурсами',async type=>{
         const value:ToolBuildRequest={...request(),kind:'skill',source:type==='files'?{type,entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:'---\nname: review\ndescription: Проверка\n---\nТекст'},{path:'references/check.md',content:'Границы'}]}:{type,url:'https://github.com/team/skills',ref:'a'.repeat(40),entrypoint:'SKILL.md',subdirectory:'skills/review'}};
         await saveStoredBuildDraft('alice',value);expect((await readStoredBuildDraft('alice'))?.request).toEqual(value);

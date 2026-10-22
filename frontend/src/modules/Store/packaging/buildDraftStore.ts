@@ -37,11 +37,18 @@ function validSource(value:unknown):boolean {
         &&typeof release.sha256==='string'&&/^[a-f0-9]{64}$/.test(release.sha256);
 }
 
+/** CAS принадлежит серверной цели; дополнительные origin pins в браузере не принимаются. */
+function validPublication(value:unknown):boolean {
+    return object(value)&&fields(value,['catalogId','expectedVersion','expectedSourceHash'])&&text(value.catalogId)
+        &&value.catalogId.length<=240&&!/[\x00-\x1f\x7f]/.test(value.catalogId)&&value.catalogId===value.catalogId.trim()&&Number.isSafeInteger(value.expectedVersion)&&Number(value.expectedVersion)>0
+        &&typeof value.expectedSourceHash==='string'&&/^[a-f0-9]{64}$/.test(value.expectedSourceHash);
+}
+
 /** Восстановление не доверяет изменяемым данным браузера больше, чем новой форме. */
 function requestJSON(request:ToolBuildRequest):string {
-    if(!request||Object.keys(request).some(key=>!['requestKey','kind','name','description','source'].includes(key))
+    if(!request||Object.keys(request).some(key=>!['requestKey','kind','name','description','source','publication'].includes(key))
         ||!uuid.test(request.requestKey)||!['mcp','plugin','skill'].includes(request.kind)||typeof request.name!=='string'||typeof request.description!=='string'
-        ||!validSource(request.source))throw new Error('Сохранённый запрос упаковки повреждён. Проверьте операции перед новой сборкой.');
+        ||!validSource(request.source)||(request.publication!==undefined&&!validPublication(request.publication)))throw new Error('Сохранённый запрос упаковки повреждён. Проверьте операции перед новой сборкой.');
     if(request.kind==='skill'&&(request.source.type!=='files'&&request.source.type!=='repository'
         ||!/(?:^|\/)SKILL\.md$/.test(request.source.entrypoint)||request.source.entrypoint.split('/').some(part=>!part||part==='.'||part==='..'||/[\\\x00-\x1f\x7f]/.test(part))||'release'in request.source&&request.source.release!==undefined
         ||'args'in request.source&&request.source.args!==undefined))throw new Error('Скилл восстанавливается из SKILL.md и ресурсов, без команды запуска.');

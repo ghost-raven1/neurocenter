@@ -86,6 +86,19 @@ describe('POST упаковки принадлежит durable запросу и
         records.set('alice',{scope:'alice',schemaVersion:1,request:{...body(),requestKey:'11111111-1111-4111-8111-111111111111'}});scope='bob';await ready();
         expect(current.draft).toBeUndefined();expect(io.resume).not.toHaveBeenCalled();expect(io.create).not.toHaveBeenCalled();
     });
+    it('Конфликт цели новой версии оставляет источник; явная новая цель отправляется с новым UUID',async()=>{
+        await ready();const original={...body(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        io.create.mockRejectedValueOnce(new AxiosError('Карточка изменилась','ERR_BAD_REQUEST',undefined,undefined,{status:409} as never));await current.submit(original);render();
+        expect(current.unresolved).toBe(false);expect(records.has('alice')).toBe(false);expect(original.source).toEqual(body().source);
+        await current.submit({...original,publication:{...original.publication,expectedVersion:8,expectedSourceHash:'c'.repeat(64)}});
+        expect(io.create).toHaveBeenCalledTimes(2);const [first,second]=io.create.mock.calls.map(call=>call[0] as ToolBuildRequest);
+        expect(second.requestKey).not.toBe(first.requestKey);expect(second.source).toEqual(first.source);expect(first.publication?.expectedVersion).toBe(7);expect(second.publication?.expectedVersion).toBe(8);
+    });
+    it('Неизвестный ACK новой версии повторяет exact CAS и прежний UUID после reload',async()=>{
+        await ready();const original={...body(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};io.create.mockRejectedValueOnce(Error('Lost ACK'));await current.submit(original);const record=records.get('alice')!;
+        hooks.dispose();io.resume.mockRejectedValue(new BuildRequestUnresolvedError());await ready();await flush();render();await current.retrySaved();
+        expect(io.create.mock.lastCall?.[0]).toEqual(record.request);expect(io.create.mock.calls[1][0].publication).toEqual(original.publication);expect(io.create.mock.calls[1][0].requestKey).toBe(record.request.requestKey);
+    });
     it('Явный первый HTTP400 допускает исправление формы с новым UUID',async()=>{
         await ready();io.create.mockRejectedValueOnce(new AxiosError('Invalid source','ERR_BAD_REQUEST',undefined,undefined,{status:400} as never));
         await current.submit(body());render();expect(records.has('alice')).toBe(false);expect(current.unresolved).toBe(false);

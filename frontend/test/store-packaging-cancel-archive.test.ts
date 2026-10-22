@@ -10,6 +10,12 @@ async function active(){await saveStoredBuildDraft('alice',request());return sav
 async function archived(){const intent=await active();expect(await archiveStoredBuildCancellation('alice',key,intent,ack)).toBe(true);return intent;}
 
 describe('Архив незавершённой подтверждённой отмены',()=>{
+    it('Архив и восстановление сохраняют UUID и CAS новой версии без обновления цели',async()=>{
+        const value={...request(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        await saveStoredBuildDraft('alice',value);const intent=await saveStoredBuildCancellation('alice','request',key);
+        expect(await archiveStoredBuildCancellation('alice',key,intent,ack)).toBe(true);expect(await restoreStoredBuildArchive('alice',key)).toBe(true);
+        expect((await readStoredBuildRecovery('alice')).draft?.request).toEqual(value);
+    });
     it('Архивирует точные исходники, intent и ACK; освобождает текущую форму без ложного CANCELLED',async()=>{
         const intent=await archived();expect(await readStoredBuildRecovery('alice')).toEqual({draft:undefined,cancellation:undefined});
         expect(await listStoredBuildArchives('alice')).toEqual([{requestKey:key,jobId:job,name:'Ручное имя'}]);expect(await listStoredBuildArchives('bob')).toEqual([]);

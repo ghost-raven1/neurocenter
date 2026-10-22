@@ -1,4 +1,5 @@
-import './feature-flags-enabled';
+import {FeatureAvailabilityContext} from '../src/features/FeatureFlags/FeatureAvailability';
+import {featureFlagKeys,type IEvaluatedFeatureFlags} from '../src/features/FeatureFlags/types';
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,20 +36,20 @@ const hooks = vi.hoisted(() => {
     };
 });
 interface InputProps {
-    value?: string; 'aria-label'?: string;
+    value?: string; 'aria-label'?: string; disabled?:boolean;
     onChange?: (event: { target: { value: string } }) => void;
     onPaste?: (event: { clipboardData: { getData: (format: string) => string }; preventDefault: () => void }) => void;
 }
 interface ButtonProps { children?: ReactNode; disabled?: boolean; onClick?: () => void; htmlType?: string; }
 interface SelectProps { 'aria-label'?: string; value?: string; onChange: (value: string) => void; }
 const ui = vi.hoisted(() => ({
-    scope: 'admin-a', projectId: 'project-a', open: true,
-    start: undefined as {source:'files'} | undefined, active: false, unresolved:false,recoveryBlocked:false,pickerDisabled:false,
+    flags:true as boolean|null, catalogFlag:true,scope: 'admin-a', projectId: 'project-a', open: true,
+    start: undefined as {source:'files'} | {publication:{catalogId:string;kind:PackagingKind}} | undefined, active: false, unresolved:false,recoveryBlocked:false,pickerDisabled:false,
     inputs: new Map<string, InputProps>(), buttons: new Map<string, ButtonProps>(),
     selects: new Map<string, SelectProps>(),
     metadata: new Map<string, NpmPackageMetadata>(),
     repositoryMetadata: undefined as RepositoryMetadata | undefined, repositoryQuery: undefined as RepositoryQuery | undefined,
-    resolve: vi.fn(), submit: vi.fn(), reset: vi.fn(), cancel: vi.fn(), retryCancel: vi.fn(),
+    publicationTarget:vi.fn(), draft:undefined as {request:import('../src/modules/Store/packaging/types').ToolBuildRequest}|undefined, resolve: vi.fn(), submit: vi.fn(), reset: vi.fn(), cancel: vi.fn(), retryCancel: vi.fn(),
     cancelling:false,cancelPending:false,cancelled:false,canCancel:false,canDetach:false,canRestoreArchived:false,archiving:false,
     archived:[] as Array<{requestKey:string;jobId:string;name:string}>,detach:vi.fn(),restoreArchived:vi.fn(),
     finish: undefined as (() => void) | undefined, close: undefined as (() => void) | undefined,
@@ -68,10 +69,11 @@ vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({ useNpmMetadata
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({ useRepositoryMetadata: (query: RepositoryQuery) => {
     ui.repositoryQuery=query; return { metadata:ui.repositoryMetadata, resolve:async()=>ui.repositoryMetadata };
 } }));
-vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: ui.unresolved,recoveryBlocked:ui.recoveryBlocked, submit: ui.submit, reset: ui.reset,
+vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ draft:ui.draft,job: ui.job, active: ui.active, submitting: false, unresolved: ui.unresolved,recoveryBlocked:ui.recoveryBlocked, submit: ui.submit, reset: ui.reset,
     cancel:ui.cancel,retryCancel:ui.retryCancel,cancelling:ui.cancelling,cancelPending:ui.cancelPending,cancelled:ui.cancelled,canCancel:ui.canCancel,
     canDetach:ui.canDetach,detach:ui.detach,canRestoreArchived:ui.canRestoreArchived,archived:ui.archived,archiving:ui.archiving,restoreArchived:ui.restoreArchived }) }));
 vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,error:ui.uploadError,select:ui.uploadSelect,upload:ui.upload,intent:ui.uploadIntent,forget:async()=>true }) }));
+vi.mock('../src/modules/Store/packaging/api',()=>({packagingApi:{publicationTarget:(...args:unknown[])=>ui.publicationTarget(...args)}}));
 vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
 vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect,disabled}:{onSelect:typeof ui.selectFiles;disabled:boolean})=>{ui.selectFiles=onSelect;ui.pickerDisabled=disabled;return null;}}));
 vi.mock('antd', () => {
@@ -84,7 +86,7 @@ vi.mock('antd', () => {
         Form: Object.assign(({ children, onFinish }: { children?: ReactNode; onFinish: () => void }) => { ui.finish = onFinish; return children; }, { Item: content }),
         Input: Object.assign(input, { Search: input, TextArea: input }),
         Radio: { Group: ({ 'aria-label': label, value, onChange,options }: { 'aria-label': string; value: string; onChange: typeof ui.selectSource;options:typeof ui.kinds }) => { if (label === 'Источник инструмента') { ui.source = value; ui.selectSource = onChange; } else if(label==='Тип инструмента'){ui.kind=value as PackagingKind;ui.selectKind=onChange as typeof ui.selectKind;ui.kinds=options;} return null; } },
-        Select: (props:SelectProps) => {ui.selects.set(props['aria-label']??'',props);return null;}, Collapse: Object.assign(content, { Panel: content }), Space: content,
+        Tooltip:content,Select: (props:SelectProps) => {ui.selects.set(props['aria-label']??'',props);return null;}, Collapse: Object.assign(content, { Panel: content }), Space: content,
         Progress: () => null, Spin: () => null, Tag: content, Divider: content,
         Typography: { Text: content, Paragraph: content },
     };
@@ -99,22 +101,69 @@ function deferred<T>() {
 const flush = async () => { for (let turn = 0; turn < 10; turn++) await Promise.resolve(); };
 function render() {
     hooks.begin(); ui.inputs.clear(); ui.buttons.clear(); ui.selects.clear(); ui.finish = undefined; ui.selectFiles=undefined;
-    const html = renderToStaticMarkup(createElement(ToolPackagingModal, { open: ui.open, start: ui.start, scope: ui.scope, projectId: ui.projectId, onClose: () => { ui.open = false; }, onPublished: vi.fn() }));
+    const data=ui.flags===null?null:{flags:Object.fromEntries(featureFlagKeys.map(key=>[key,key==='tool_catalog'?ui.catalogFlag:ui.flags])),configured:{},blockedBy:Object.fromEntries(featureFlagKeys.map(key=>[key,[]]))}as IEvaluatedFeatureFlags;
+    const html = renderToStaticMarkup(createElement(FeatureAvailabilityContext.Provider,{value:{data,loading:false,error:null,refresh:async()=>undefined}},createElement(ToolPackagingModal, { open: ui.open, start: ui.start, scope: ui.scope, projectId: ui.projectId, onClose: () => { ui.open = false; }, onPublished: vi.fn() })));
     hooks.commit(); return html;
 }
 function input(label: string, value: string) { ui.inputs.get(label)!.onChange!({ target: { value } }); }
 function ready() { render(); input('npm-пакет или ссылка', metadata.package); ui.metadata.set(metadata.package, metadata); render(); }
 beforeEach(() => {
-    vi.resetAllMocks(); ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
+    vi.resetAllMocks();ui.flags=true;ui.catalogFlag=true; ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
     ui.resolve.mockImplementation(async () => metadata);
     ui.reset.mockImplementation(() => { ui.job = undefined;ui.cancelled=false; });
     ui.upload=undefined;ui.uploadIntent=undefined;ui.uploadError='';ui.uploadSelect.mockResolvedValue(undefined);
     ui.unresolved=false;ui.recoveryBlocked=false;ui.pickerDisabled=false;ui.cancelling=false;ui.cancelPending=false;ui.cancelled=false;ui.canCancel=false;
-    ui.canDetach=false;ui.canRestoreArchived=false;ui.archiving=false;ui.archived=[];
+    ui.canDetach=false;ui.canRestoreArchived=false;ui.archiving=false;ui.archived=[];ui.draft=undefined;
+    ui.publicationTarget.mockResolvedValue({catalogId:'native-tool',name:'Существующий инструмент',description:'Текущий инструмент',kind:'plugin',expectedVersion:7,expectedSourceHash:'b'.repeat(64),sourceSummaries:[],updateSupported:true});
 });
 afterEach(() => hooks.dispose());
 
 describe('Проверка источника до добавления инструмента', () => {
+    it('Явная новая версия читает свежую цель, требует подтверждения и отправляет CAS вместо нового инструмента',async()=>{
+        ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();render();
+        expect(ui.publicationTarget).toHaveBeenCalledWith({catalogId:'native-tool',kind:'plugin'},expect.any(AbortSignal));
+        expect(ui.buttons.has('Подготовить новую версию')).toBe(true);ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+        ui.buttons.get('Подготовить новую версию')!.onClick!();render();ready();render();
+        expect(ui.inputs.get('Название в каталоге')?.disabled).toBe(true);expect(ui.kind).toBe('plugin');
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({name:'Существующий инструмент',kind:'plugin',publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}}));
+    });
+    it('Неподдерживаемая новая версия показывает продолжение и не отправляется через Enter',async()=>{
+        ui.publicationTarget.mockResolvedValue({catalogId:'common/review',name:'Review',description:'Текст',kind:'skill',expectedVersion:2,expectedSourceHash:'c'.repeat(64),sourceSummaries:[],updateSupported:false,unsupportedReason:'Обновление скилла через упаковщик пока недоступно.'});
+        ui.start={publication:{catalogId:'common/review',kind:'skill'}};render();render();await flush();expect(render()).toContain('Обновление скилла через упаковщик пока недоступно.');
+        expect(ui.buttons.get('Подготовить новую версию')?.disabled).toBe(true);ready();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Активный сохранённый запрос приоритетнее новой цели',async()=>{
+        ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};ui.active=true;render();render();await flush();expect(ui.publicationTarget).not.toHaveBeenCalled();
+        ui.active=false;ui.unresolved=true;render();render();expect(ui.publicationTarget).not.toHaveBeenCalled();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Явное обновление CAS сохраняет источник и описание и требует нового подтверждения',async()=>{
+        ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();render();ui.buttons.get('Подготовить новую версию')!.onClick!();render();ready();input('Описание инструмента','Ручное описание');render();
+        ui.publicationTarget.mockResolvedValue({catalogId:'native-tool',name:'Существующий инструмент',description:'Новое серверное описание',kind:'plugin',expectedVersion:8,expectedSourceHash:'c'.repeat(64),sourceSummaries:[],updateSupported:true});
+        ui.buttons.get('Обновить цель')!.onClick!();render();await flush();render();expect(ui.inputs.get('npm-пакет или ссылка')!.value).toBe(metadata.package);
+        ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();ui.buttons.get('Подготовить новую версию')!.onClick!();render();
+        expect(ui.inputs.get('Описание инструмента')!.value).toBe('Ручное описание');ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({description:'Ручное описание',publication:{catalogId:'native-tool',expectedVersion:8,expectedSourceHash:'c'.repeat(64)},source:{type:'npm',specifier:metadata.specifier,entrypoint:'index.js'}}));
+    });
+    it('Поздний GET A не подменяет цель B; отказ сети даёт повтор без POST',async()=>{
+        const a=deferred<unknown>();ui.publicationTarget.mockReturnValueOnce(a.promise);ui.start={publication:{catalogId:'old',kind:'plugin'}};render();render();await flush();
+        ui.publicationTarget.mockRejectedValueOnce(Error('Target offline'));ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();expect(render()).toContain('Target offline');
+        a.resolve({catalogId:'old',name:'Stale target',kind:'plugin',expectedVersion:1,expectedSourceHash:'d'.repeat(64),updateSupported:true});await flush();expect(render()).not.toContain('Stale target');
+        ui.buttons.get('Обновить цель')!.onClick!();render();await flush();render();ui.buttons.get('Подготовить новую версию')!.onClick!();render();ready();ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledWith(expect.objectContaining({publication:expect.objectContaining({catalogId:'native-tool'})}));
+    });
+    it('Восстановленная цель и исходники не подменяются новым переходом',async()=>{
+        ui.draft={request:{requestKey:'11111111-1111-4111-8111-111111111111',kind:'mcp',name:'Сохранённый MCP',description:'Мои данные',publication:{catalogId:'saved',expectedVersion:3,expectedSourceHash:'e'.repeat(64)},source:{type:'npm',specifier:'saved@2.0.0',entrypoint:'saved.js'}}};
+        ui.unresolved=true;ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();const html=render();expect(ui.publicationTarget).not.toHaveBeenCalled();expect(html).toContain('Сначала завершите сохранённый запрос');expect(html).toContain('Сохранённый MCP');expect(ui.inputs.get('npm-пакет или ссылка')!.value).toBe('saved@2.0.0');expect(ui.kind).toBe('mcp');expect(ui.inputs.get('Название в каталоге')!.disabled).toBe(true);
+    });
+    it.each([false,null])('Новая версия не публикуется при флагах %s; архивы и отмена видны',async flags=>{
+        ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();render();ui.buttons.get('Подготовить новую версию')!.onClick!();render();ready();ui.flags=flags;ui.archived=[{requestKey:'old',jobId:'old',name:'Сохранённый запрос'}];ui.canRestoreArchived=true;
+        const html=render();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();expect(html).toContain('Сохранённый запрос');expect(ui.buttons.get('Открыть сохранённый запрос')!.disabled).not.toBe(true);
+        ui.catalogFlag=false;ui.flags=true;render();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Поздняя проверка цели прежнего владельца не раскрывает её после смены профиля',async()=>{
+        const wait=deferred<unknown>();ui.publicationTarget.mockReturnValueOnce(wait.promise);ui.start={publication:{catalogId:'old-owner',kind:'plugin'}};render();render();ui.scope='admin-b';render();render();wait.resolve({catalogId:'old-owner',name:'Private old target',kind:'plugin',expectedVersion:1,expectedSourceHash:'d'.repeat(64),updateSupported:true});await flush();expect(render()).not.toContain('Private old target');expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Флаг, выключенный во время проверки источника, не допускает поздний POST новой версии',async()=>{
+        ui.start={publication:{catalogId:'native-tool',kind:'plugin'}};render();render();await flush();render();ui.buttons.get('Подготовить новую версию')!.onClick!();render();ready();const wait=deferred<NpmPackageMetadata>();ui.resolve.mockReturnValueOnce(wait.promise);ui.finish!();ui.catalogFlag=false;render();wait.resolve(metadata);await flush();expect(ui.submit).not.toHaveBeenCalled();
+    });
     it('Прямое добавление архива открывает выбор файла и не отправляет сборку', () => {
         ui.start={source:'files'}; render();
         const html=render(); expect(ui.source).toBe('files'); expect(ui.selectFiles).toBeTypeOf('function');

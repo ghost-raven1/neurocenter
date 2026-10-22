@@ -106,7 +106,7 @@ const StoreCreateModal: FC<IProps> = ({open,onClose,onCreated,onPackage}) => {
                 try { checkDependencyPins(value ?? []); return Promise.resolve(); } catch (cause) { return Promise.reject(cause); }
             }}]}><DependencyPinsEditor disabled={busy || resourcesBusy} onLoadingChange={setDependenciesBusy} /></Form.Item>
             {error && <Alert role="alert" type="error" showIcon message={error} style={{marginTop:16}} />}
-            <Typography.Paragraph type="secondary" style={{marginTop:16}}>Заполненная форма остаётся в этой вкладке при закрытии и ошибке. Новую версию существующего инструмента создавайте через «Редактировать».</Typography.Paragraph>
+            <Typography.Paragraph type="secondary" style={{marginTop:16}}>Заполненная форма остаётся в этой вкладке при закрытии и ошибке. Для новой поставки существующего инструмента откройте его карточку и выберите «Новая версия».</Typography.Paragraph>
             <Space wrap style={{display:'flex',justifyContent:'flex-end'}}><Button disabled={busy || reading} onClick={onClose}>Закрыть</Button><FeatureButton features={['tool_catalog']} type="primary" htmlType="submit" loading={busy} disabled={reading}>Добавить в магазин</FeatureButton></Space>
         </Form>
     </Modal>;

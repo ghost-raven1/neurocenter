@@ -1,3 +1,4 @@
+import {FeatureButton} from '../../features/FeatureFlags/FeatureAvailability';
 import { CopyOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Descriptions, Empty, Grid, message, Modal, Radio, Space, Spin, Tabs, Tag, Timeline, Typography } from 'antd';
 import { Component, FC, lazy, PropsWithChildren, Suspense, useEffect, useState } from 'react';
@@ -32,6 +33,8 @@ interface IProps {
     onClose: () => void;
     /** Передаётся только при наличии права редактирования выбранного инструмента. */
     onEdit?: () => void;
+    /** Новая упаковка использует свежую серверную цель, а не показанную проектную версию. */
+    onNewVersion?: () => void;
     /** Common catalog action is passed only when the current main admin can manage its head. */
     archiveAction?: React.ReactNode;
     projectName?: string;
@@ -50,7 +53,7 @@ interface IDetailState { key: string; value: TStoreDetail | null; error: string 
 interface IHistoryState { key: string; value: IAiPluginVersion[] | null; error: string | null; }
 
 /** Полная инструкция, метаданные и действительная история выбранного инструмента. */
-const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, archiveAction, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
+const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion, archiveAction, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
     const columns = Grid.useBreakpoint().sm ? 2 : 1;
     const identity = viewApp ? `${viewApp.kind}:${viewApp.id}:${viewApp.version}:${viewApp.projectManifest??''}` : '';
     const [state, setState] = useState<IDetailState>({ key: '', value: null, error: null });
@@ -204,7 +207,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, archiveAction
         onCancel={onClose}
         destroyOnClose
         footer={<div className="store-details__footer">
-            <div className="store-details__secondary-actions">{onEdit && <Button icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</Button>}{archiveAction}</div>
+            <div className="store-details__secondary-actions">{onNewVersion&&<FeatureButton features={['tool_builds','tool_catalog']} disabled={!detail||!!loadError} onClick={onNewVersion}>Новая версия</FeatureButton>}{onEdit && <Button icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</Button>}{archiveAction}</div>
             <div className="store-details__primary-actions">
                 {onAddToProject && <Button type="primary" loading={addingToProject} disabled={!detail || !!loadError || addingToProject} onClick={onAddToProject}>Добавить в проект</Button>}
                 {onChooseProjectFolder && <Button type="primary" onClick={onChooseProjectFolder}>Выбрать папку проекта</Button>}

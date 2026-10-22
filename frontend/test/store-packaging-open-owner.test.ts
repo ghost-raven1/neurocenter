@@ -43,7 +43,7 @@ const ui = vi.hoisted(() => ({
     buttons: new Map<string, ButtonProps>(), errors: [] as string[], form: false, open: false,
     job: undefined as ToolBuild | undefined, view: null as {id: string} | null, reset: vi.fn(),
     bridgeDevice: undefined as IBridgeDevice | undefined, assets: [] as Array<{assetKind: 'mcp'; assetId: string}>,
-    chooseFolder: undefined as (() => void) | undefined,
+    chooseFolder: undefined as (() => void) | undefined,newVersion:undefined as (()=>void)|undefined,publicationTarget:vi.fn(),
     history: {location: {pathname: '/store', search: '?p=prj-a', hash: ''}, replace: vi.fn(), push: vi.fn()},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.useState,
@@ -65,6 +65,7 @@ vi.mock('../src/features/McpBridge/useBridge', () => ({useBridge: () => ({device
 vi.mock('../src/modules/Store/installPlans/useInstallPlan', () => ({useInstallPlan: () => ({busy: '', review: null, failure: null})}));
 vi.mock('../src/core/socket/useSectionUpdates', () => ({useSectionUpdates: () => undefined}));
 vi.mock('../src/core/api/bff', () => ({default: {getAiPlugin: vi.fn(), getSkill:vi.fn(), listAiPlugins: vi.fn(), listSkills: vi.fn()}}));
+vi.mock('../src/modules/Store/packaging/api',()=>({packagingApi:{publicationTarget:(...args:unknown[])=>ui.publicationTarget(...args)}}));
 vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({useNpmMetadata: () => ({resolve: vi.fn()})}));
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({useRepositoryMetadata: () => ({resolve: vi.fn()})}));
 vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({useToolBuild: () => ({job: ui.job, reset: ui.reset, active: false, submitting: false, unresolved: false})}));
@@ -75,10 +76,11 @@ vi.mock('../src/features/McpBridge/ProjectInstallationReadiness', () => ({Projec
 vi.mock('../src/modules/Store/ProjectKnowledgeLink', () => ({ProjectKnowledgeLink: () => null}));
 vi.mock('../src/modules/Store/CatalogTabs', () => ({CatalogTabs: ({tools}: {tools: ReactNode}) => tools}));
 vi.mock('../src/modules/Store/UnavailableProjectAssets', () => ({default: () => null}));
+vi.mock('../src/modules/Store/StoreArchiveAction',()=>({StoreArchiveAction:()=>null}));
 vi.mock('../src/modules/Store/StoreCreateModal', () => ({default: () => null}));
 vi.mock('../src/features/Catalog/StoreEditModal', () => ({default: () => null}));
-vi.mock('../src/modules/Store/StoreDetailsModal', () => ({default: ({viewApp, onChooseProjectFolder}: {viewApp: typeof ui.view; onChooseProjectFolder?: () => void}) => {
-    ui.view = viewApp; ui.chooseFolder = onChooseProjectFolder; return null;
+vi.mock('../src/modules/Store/StoreDetailsModal', () => ({default: ({viewApp, onChooseProjectFolder,onNewVersion}: {viewApp: typeof ui.view; onChooseProjectFolder?: () => void;onNewVersion?:()=>void}) => {
+    ui.view = viewApp; ui.chooseFolder = onChooseProjectFolder;ui.newVersion=onNewVersion; return null;
 }}));
 vi.mock('../src/modules/Store/installPlans/InstallPlanModal', () => ({InstallPlanModal: () => null}));
 vi.mock('../src/modules/Store/installPlans/InstallPlanFailureModal', () => ({InstallPlanFailureModal: () => null}));
@@ -92,7 +94,7 @@ vi.mock('antd', () => {
         Form: Object.assign(({children}: {children?: ReactNode}) => { ui.form = true; return children; }, {Item: content}),
         Input: Object.assign(input, {Search: input, TextArea: input}), Radio: {Group: () => null}, Select: input,
         Collapse: Object.assign(content, {Panel: content}), Checkbox: content, Col: content, Row: content, Empty: content,
-        Space: content, Spin: () => null, Progress: () => null, Typography: {Text: content, Paragraph: content},
+        Card:content,Tag:content,Tooltip:content,Space: content, Spin: () => null, Progress: () => null, Typography: {Text: content, Paragraph: content},
     };
 });
 
@@ -114,6 +116,7 @@ function open() { render(); click('Упаковать инструмент'); re
 beforeEach(() => {
     vi.resetAllMocks(); ui.scope = 'admin-a'; ui.owners.clear(); ui.location = {pathname: '/store', search: '?p=prj-a', hash: ''};
     ui.history.location = ui.location; ui.job = job('old-package'); ui.view = null;
+    ui.publicationTarget.mockResolvedValue({catalogId:'listed-tool',kind:'mcp',name:'Live head',description:'Live',expectedVersion:9,expectedSourceHash:'b'.repeat(64),sourceSummaries:[],updateSupported:true});
     ui.bridgeDevice = undefined; ui.assets = []; ui.chooseFolder = undefined;
     ui.reset.mockImplementation(() => { ui.job = undefined; });
     vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items: [], page: 1, size: 100, total: 0});
@@ -122,6 +125,15 @@ beforeEach(() => {
 afterEach(() => hooks.dispose());
 
 describe('Переход к папке из карточки инструмента', () => {
+    it('Новая версия карточки открывает упаковщик с native id, не с названием или source revision',async()=>{
+        ui.job=undefined;vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items:[{...plugin('listed-tool'),name:'Listed title',revision:'v-source-old',version:2}],page:1,size:100,total:1});
+        render();await flush();render();click('Новая версия');render();render();await flush();render();
+        expect(ui.publicationTarget).toHaveBeenCalledWith({catalogId:'listed-tool',kind:'mcp'},expect.any(AbortSignal));expect(ui.open).toBe(true);
+    });
+    it('Новая версия из деталей закрывает детали и запрашивает свежую цель, не published pinned edition',async()=>{
+        vi.mocked(bffApi.getAiPlugin).mockResolvedValue(plugin('listed-tool'));ui.job=job('listed-tool');open();await flush();render();expect(ui.newVersion).toBeTypeOf('function');ui.job=undefined;ui.newVersion!();render();render();await flush();render();
+        expect(ui.view).toBeNull();expect(ui.publicationTarget).toHaveBeenCalledWith({catalogId:'listed-tool',kind:'mcp'},expect.any(AbortSignal));
+    });
     it.each(['Проект A', 'prj-a'])('Разрешённая карточка в каталоге %s передаёт канонический проект', async target => {
         ui.location.search = `?p=${encodeURIComponent(target)}`;
         ui.bridgeDevice = {id:'computer', name:'Компьютер', role:'Разработчик', fingerprint:'', online:true, lastSeen:null,

@@ -38,6 +38,7 @@ import { pendingLocalJob } from '../../features/McpBridge/operationHelpers';
 import { useAvailableProjects } from '../Projects/useAvailableProjects';
 import { projectBindingUrl } from '../Projects/projectNavigation';
 import { storeProjectQuery, storeQueryUrl, storeSearchQuery } from './storeQuery';
+import type {ToolPackagingStart} from './packaging/types';
 import { ToolPackagingModal } from './packaging/ToolPackagingModal';
 import { mergeProjectCatalog } from './projectCatalogSnapshots';
 import { useProjectCatalog } from './useProjectCatalog';
@@ -116,7 +117,8 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     const [createOpen, setCreateOpen] = useState(false);
     const [packagingOpen, setPackagingOpen] = useState(false);
-    const [packagingStart, setPackagingStart] = useState<{source:'files'}>();
+    const [packagingStart, setPackagingStart] = useState<ToolPackagingStart>();
+    const newVersion=(app:IStoreApp):void=>{setViewApp(null);setPackagingStart({publication:{catalogId:app.id,kind:app.kind}});setPackagingOpen(true);};
     const projectsInitialized = useRef(false);
     useEffect(() => { setSearch(query); }, [query]);
     const changeSearch = (value: string): void => {
@@ -305,6 +307,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 <FeatureButton features={['tool_catalog']} size="small" block type="primary" disabled={!projectsReady||!!referenceBlocker} title={referenceBlocker ?? undefined} onClick={()=>setPicker({app})}>Добавить в проекты</FeatureButton>
                 {referenceBlocker && <Text type="secondary">{referenceBlocker}</Text>}
             </>}
+            {isMain && <FeatureButton features={['tool_builds','tool_catalog']} size="small" block onClick={()=>newVersion(app)}>Новая версия</FeatureButton>}
             {canEditTool(user, app) && <FeatureButton features={['tool_catalog']} size="small" block onClick={()=>openEdit(app)}>Редактировать</FeatureButton>}
             <StoreArchiveAction app={app} common={commonCatalog} isMain={isMain} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} />
             {!canManage && !isMain && <Text type="secondary">Доступно в каталоге проекта</Text>}
@@ -451,7 +454,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 void loadCatalog(); setViewApp(app);
             }} />}
 
-            <StoreDetailsModal viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}
+            <StoreDetailsModal onNewVersion={isMain&&viewApp?()=>newVersion(viewApp):undefined} viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}
                 archiveAction={viewApp ? <StoreArchiveAction app={viewApp} common={commonCatalog} isMain={isMain} block={false} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} /> : undefined}
                 projectName={target ?? undefined}
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}

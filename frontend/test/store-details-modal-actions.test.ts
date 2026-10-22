@@ -1,3 +1,4 @@
+import './feature-flags-enabled';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
@@ -25,6 +26,9 @@ afterEach(()=>{h.hooks.dispose();vi.unstubAllGlobals();});
 describe('Store detail actual modal lifecycle',()=>{
  it('uses fetched version for installation and only exposes optional actions supplied by authorized parent',async()=>{
   expect(render()).not.toContain('Редактировать');props={onInstall:h.install,onEdit:h.edit,onAddToProject:h.add,onChooseProjectFolder:h.choose,projectName:'QA',archiveAction:createElement('span',null,'Archive approved')};expect(await open()).toContain('Archive approved');expect(render()).toContain('Выбранный проект: QA');uiNode(h.ui,'Install').onInstall();expect(h.install).toHaveBeenCalledWith(7);uiNode(h.ui,'Button','Редактировать').onClick();uiNode(h.ui,'Button','Добавить в проект').onClick();uiNode(h.ui,'Button','Выбрать папку').onClick();expect(h.edit).toHaveBeenCalledOnce();expect(h.add).toHaveBeenCalledOnce();expect(h.choose).toHaveBeenCalledOnce();uiNode(h.ui,'Button','Закрыть').onClick();uiNode(h.ui,'Modal').onCancel();expect(h.close).toHaveBeenCalledTimes(2);
+ });
+ it('Новая версия — отдельное действие от редактирования метаданных',async()=>{
+  const update=vi.fn();props={onNewVersion:update,onEdit:h.edit};await open();expect(uiNode(h.ui,'Button','Новая версия').disabled).toBe(false);uiNode(h.ui,'Button','Новая версия').onClick();expect(update).toHaveBeenCalledOnce();expect(h.edit).not.toHaveBeenCalled();
  });
  it('refresh network failure preserves content but disables mutations, retry recovers',async()=>{
   props={onEdit:h.edit,onInstall:h.install};await open();vi.mocked(bff.getAiPlugin).mockRejectedValueOnce(Error('Offline'));h.live();render();await flushModal();expect(render()).toContain('Не удалось обновить данные');expect(render()).toContain('Full detail');expect(uiNode(h.ui,'Button','Редактировать').disabled).toBe(true);expect(uiNode(h.ui,'Install').disabled).toBe(true);uiNode(h.ui,'Button','Повторить').onClick();render();await flushModal();expect(render()).not.toContain('Не удалось обновить данные');expect(uiNode(h.ui,'Install').disabled).toBe(false);

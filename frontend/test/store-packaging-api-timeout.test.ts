@@ -21,6 +21,12 @@ async function serverFixture(handler: http.RequestListener) {
 }
 
 describe('Ограничение HTTP ожидания только для упаковки', () => {
+    it('Цель новой версии читается отдельным GET с slash catalogId и без отправки сборки',async()=>{
+        const requests:string[]=[];let params:Record<string,string>|undefined;
+        const preview={catalogId:'common/tool',kind:'skill',name:'Tool',description:'Details',expectedVersion:7,expectedSourceHash:'b'.repeat(64),sourceSummaries:[],updateSupported:false};
+        const close=await serverFixture((request,response)=>{const url=new URL(request.url!,'http://127.0.0.1');requests.push(request.method+' '+url.pathname);params=Object.fromEntries(url.searchParams);response.setHeader('content-type','application/json');response.end(JSON.stringify(preview));});
+        try{expect(await packagingApi.publicationTarget({kind:'skill',catalogId:'common/tool'})).toEqual(preview);expect(requests).toEqual(['GET /api/tool-builds/publication-target']);expect(params).toEqual({kind:'skill',catalogId:'common/tool'});}finally{await close();}
+    });
     it('Зависшая проверка архива отменяется через 30 секунд без создания сборки', async () => {
         let received!: () => void; const seen = new Promise<void>(resolve => { received = resolve; });
         const requests: string[] = [];

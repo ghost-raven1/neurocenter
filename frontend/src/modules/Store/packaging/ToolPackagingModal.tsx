@@ -15,6 +15,8 @@ import { repositoryBuildSource, repositoryName } from './repositorySource';
 import { RepositoryMetadataDetails } from './RepositoryMetadataDetails';
 import { NpmMetadataDetails } from './NpmMetadataDetails';
 import { PackagingBuildStatus } from './PackagingBuildStatus';
+import { usePackagingPublication } from './usePackagingPublication';
+import { PackagingPublicationPanel } from './PackagingPublicationPanel';
 import { PackagingSummary } from './PackagingSummary';
 import { SourceEntrypointChoice } from './SourceEntrypointChoice';
 import { ReleaseAssetChoice } from './ReleaseAssetChoice';
@@ -25,10 +27,10 @@ import {createPythonSourceUpload,isPythonSourceUpload} from './pythonSourceUploa
 import { packagingFilesMetadata, packagingReferenceSource, type PackagingSourceMode } from './packagingDraft';
 import {skillPackagingSource} from './skillPackagingSource';
 import type { PackagingFilesResult } from './sourceFiles';
-import type { NpmPackageMetadata, PackagingKind, RepositoryRelease } from './types';
+import type { NpmPackageMetadata, PackagingKind, RepositoryRelease, ToolPackagingStart } from './types';
 import './ToolPackaging.less';
 
-interface Props { open: boolean; start?: {source:'files'}; scope: string; projectId?: string; onClose: () => void; onPublished: (id: string, current: () => boolean, kind?: PackagingKind) => Promise<void> }
+interface Props { open: boolean; start?: ToolPackagingStart; scope: string; projectId?: string; onClose: () => void; onPublished: (id: string, current: () => boolean, kind?: PackagingKind) => Promise<void> }
 const { Paragraph } = Typography;
 
 /** Упаковка и публикация выполняются одной серверной операцией, с возобновляемым прогрессом. */
@@ -63,6 +65,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const release = repositoryRelease?.url === repositoryUrl.trim() ? repositoryRelease.value : undefined;
     const repository = useRepositoryMetadata({ url: repositoryUrl, ref: repositoryRef, subdirectory, entrypoint: repositoryEntrypoint, release });
     const build = useToolBuild(scope);
+    const publication = usePackagingPublication(scope,captureOwner);
     const upload = useSourceUpload(scope, captureOwner);
     const appliedStart = useRef<typeof start>();
     const view = useMemo(() => ({}), [open, scope, projectId, captureOwner]);
@@ -94,30 +97,31 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     const filesMetadata = useMemo(() => packagingFilesMetadata(uploaded?.files ?? []), [uploaded]);
     const skillMetadata=useMemo(()=>skillPackagingSource(uploaded?.files??[],{...(name.trim()?{name:name.trim()}:{}),...(description.trim()?{description:description.trim()}:{}),...(entrypoint?{entrypoint}:{})}),[uploaded,name,description,entrypoint]);
     const recommended=useMemo(()=>source==='files'?{recommendedKind:skillMetadata?'skill' as const:'mcp' as const}:metadata,[source,skillMetadata,metadata]);
-    const effectiveKind = source === 'upload' ? 'mcp' : source==='npm'&&kind==='skill'?'mcp':packagingKind(kind, recommended, explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity);
+    const effectiveKind = publication.selection?.kind ?? (source === 'upload' ? 'mcp' : source==='npm'&&kind==='skill'?'mcp':packagingKind(kind, recommended, explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity));
     const candidates = useMemo(() => packagingEntrypoints(uploaded?.files ?? [], effectiveKind), [uploaded, effectiveKind]);
     const fileMetadata=effectiveKind==='skill'?skillMetadata:filesMetadata;
     const suggestedName = source === 'npm' ? defaultPackagingTitle(npm.metadata?.package ?? specifier.trim()) : source === 'repository' ? defaultPackagingTitle(repository.metadata?.name || repositoryName(repositoryUrl)) : defaultPackagingTitle(source === 'upload' ? upload.upload?.metadata?.name || (upload.upload?.name || upload.intent?.name || '').replace(/\.(?:zip|tar|tar\.gz|tgz|exe)$/i,'') : fileMetadata?.name || uploaded?.rootName || archiveName.replace(/\.(?:zip|tar|tar\.gz|tgz)$/i, '')) || 'Мой инструмент';
     const suggestedDescription = metadata?.description || (source === 'files' ? fileMetadata?.description : source === 'upload' ? upload.upload?.metadata?.description : '') || '';
     const fileError=source==='files'&&effectiveKind!=='skill'&&uploaded?.files.some(file=>file.encoding)?'Бинарные ресурсы поддерживаются в скиллах. Выберите тип «Скилл» или текстовые исходники инструмента.':'';
     const skillError=source==='files'&&effectiveKind==='skill'?(candidates.length>1&&!entrypoint?'':skillMetadata?.error||(!skillMetadata?'Добавьте SKILL.md и ресурсы скилла.':'')):fileError;
-    const sourceReady = source === 'upload' ? upload.upload?.state === 'READY' && !!selectedUploadEntry&&!upload.error&&!upload.blocked : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
+    const sourceReady = source === 'upload' ? effectiveKind==='mcp' && upload.upload?.state === 'READY' && !!selectedUploadEntry&&!upload.error&&!upload.blocked : source === 'files' ? !!uploaded?.files.length && !!entrypoint&&!skillError : !!metadata
         && (!metadata.runnableKinds || metadata.runnableKinds.includes(effectiveKind)) && (source === 'npm' ? !!selectedNpmEntry : !repository.metadata?.requiresReleaseChoice && !!selectedRepositoryEntry);
     const hasSource = source === 'npm' ? !!specifier.trim() : source === 'repository' ? !!repositoryUrl.trim() : source === 'upload' ? !!upload.upload : !!uploaded?.files.length;
     const sourceBlocked = (!!metadata || source === 'upload' && upload.upload?.state === 'READY') && !sourceReady;
-    const sourceAction = metadata?.runnableKinds?.length === 0 ? 'Нет команды запуска' : source === 'repository' && repository.metadata?.requiresReleaseChoice ? 'Выберите файл релиза' : effectiveKind==='skill'&&candidates.length>1&&!entrypoint?'Выберите скилл':sourceBlocked ? 'Выберите команду запуска' : sourceReady ? 'Упаковать и добавить' : 'Проверить источник';
+    const sourceAction = metadata?.runnableKinds?.length === 0 ? 'Нет команды запуска' : source === 'repository' && repository.metadata?.requiresReleaseChoice ? 'Выберите файл релиза' : effectiveKind==='skill'&&candidates.length>1&&!entrypoint?'Выберите скилл':sourceBlocked ? 'Выберите команду запуска' : sourceReady ? publication.selection?'Упаковать новую версию':'Упаковать и добавить' : 'Проверить источник';
     const progressStep = build.job || build.active ? 2 : sourceReady ? 1 : 0;
 
     useEffect(() => { alive.current = true; return () => { alive.current = false; readRequest.current++; archiveRequest.current?.abort(); }; }, []);
     useEffect(()=>{readRequest.current++;archiveRequest.current?.abort();setReading(false);},[view,source]);
     useEffect(() => {
         // A handoff selects the archive picker after recovery, without replacing an existing request.
-        if (!open || !start || appliedStart.current===start || build.active || build.draft || build.job || build.unresolved || build.recoveryBlocked || upload.intent) return;
-        appliedStart.current=start; setSource(start.source);
-    }, [open,start,build.active,build.draft,build.job,build.unresolved,build.recoveryBlocked,upload.intent]);
+        if (!open || !start || appliedStart.current===start || build.active || build.draft || build.job || build.unresolved || build.recoveryBlocked || build.recovering || upload.intent) return;
+        appliedStart.current=start; if('source'in start)setSource(start.source);else void publication.select(start.publication);
+    }, [open,start,build.active,build.draft,build.job,build.unresolved,build.recoveryBlocked,build.recovering,upload.intent]);
     useEffect(() => {
         const request = build.draft?.request;
         if (!request) return;
+        publication.restore(request);
         const restored = request.source;
         setSource(restored.type); setKind(request.kind); setName(request.name); setDescription(request.description);
         if (restored.type === 'npm') {
@@ -133,7 +137,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         }
     }, [build.draft]);
     useEffect(() => { if (upload.intent && !build.draft) setSource('upload'); }, [upload.intent, build.draft]);
-    useEffect(() => { preparation.current++; setPreparing(false); }, [open, scope, projectId, captureOwner, sourceKey]);
+    useEffect(() => { preparation.current++; setPreparing(false); }, [open, scope, projectId, captureOwner, sourceKey,publication.target,publication.selection]);
     useEffect(() => {
         if (!manualEntrypoint.current || !candidates.includes(entrypoint)) {
             manualEntrypoint.current = false;
@@ -141,15 +145,15 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         }
     }, [candidates, entrypoint]);
     useEffect(() => {
-        if (!recommended) return;
+        if (!recommended || publication.selection) return;
         const explicit = explicitKind.current?.source === sourceKey || !!metadataIdentity && explicitKind.current?.package === metadataIdentity;
         setKind(current => packagingKind(current, recommended, explicit));
-    }, [sourceKey, recommended, metadataIdentity]);
+    }, [sourceKey, recommended, metadataIdentity,publication.selection]);
     useEffect(() => {
         if (source === 'repository' && release && open && !build.unresolved && !build.active) void repository.resolve().catch(() => {});
     }, [sourceKey, open, build.unresolved, build.active]);
 
-    const availability = useFeatureAvailability('tool_builds');
+    const availability = useFeatureAvailability('tool_builds','tool_catalog');
     const available = useRef(availability.enabled); available.current = availability.enabled;
     const readFiles = async (input: readonly File[], fromArchive = false): Promise<void> => {
         if (!available.current || !input?.length || busy || build.unresolved || build.recoveryBlocked) return;
@@ -181,7 +185,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         finally { if (current()) setReading(false); }
     };
     const submit = async (): Promise<void> => {
-        if (!availability.enabled || build.cancelPending || build.cancelled) return;
+        if (!availability.enabled || build.cancelPending || build.cancelled || publication.blocked) return;
         if (busy) return;
         if (build.unresolved) { await build.retrySaved(); return; }
         const request = ++preparation.current;
@@ -194,14 +198,14 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
             const npmMetadata = source === 'npm' ? await npm.resolve().catch(() => undefined) : undefined;
             const repositoryMetadata = source === 'repository' ? await repository.resolve().catch(() => undefined) : undefined;
             if (source === 'npm' && !npmMetadata || source === 'repository' && !repositoryMetadata) return;
-            if (!current()) return;
+            if (!current() || !available.current) return;
             // Первый шаг проверяет источник и показывает карточку до отправки тяжёлой сборки.
             if (!checked && !build.unresolved) return;
             const resolved = npmMetadata || repositoryMetadata;
             const npmSelected = npmMetadata ? npmEntrypoint(npmMetadata) : '';
-            if (resolved?.runnableKinds?.length === 0 || repositoryMetadata?.requiresReleaseChoice) return;
+            if (resolved?.runnableKinds?.length === 0 || resolved?.runnableKinds&&!resolved.runnableKinds.includes(effectiveKind) || repositoryMetadata?.requiresReleaseChoice || source==='upload'&&effectiveKind!=='mcp') return;
             if (npmMetadata && !npmSelected) throw new Error('Выберите команду запуска npm-пакета.');
-            const title = packagingTitle(name, npmMetadata?.package || repositoryMetadata?.name || suggestedName);
+            const title = publication.selection?.name || packagingTitle(name, npmMetadata?.package || repositoryMetadata?.name || suggestedName);
             const summary = description.trim() || resolved?.description?.trim() || (source === 'files' ? fileMetadata?.description : source === 'upload' ? upload.upload?.metadata?.description?.trim() : '') || `Инструмент ${title} для OpenCode.`;
             if (summary.length > 2000) throw new Error('Описание — до 2000 символов.');
             if(skillError)throw new Error(skillError);
@@ -209,7 +213,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
             const identity = npmMetadata ? `npm:${npmMetadata.package}` : repositoryMetadata ? `repository:${repositoryMetadata.url}:${repositoryMetadata.subdirectory ?? ''}` : undefined;
             const explicit = explicitKind.current?.source === sourceKey || !!identity && explicitKind.current?.package === identity;
             // POST принадлежит хуку; поздний ответ не удерживает подготовку следующей формы.
-            void build.submit({ name: title, description: summary, kind: source === 'upload' ? 'mcp' : source==='files'?effectiveKind:packagingKind(source==='npm'&&kind==='skill'?'mcp':kind, resolved, explicit),
+            void build.submit({ name: title, description: summary, ...(publication.selection?{publication:{catalogId:publication.selection.catalogId,expectedVersion:publication.selection.expectedVersion,expectedSourceHash:publication.selection.expectedSourceHash}}:{}), kind: publication.selection?.kind ?? (source === 'upload' ? 'mcp' : source==='files'?effectiveKind:packagingKind(source==='npm'&&kind==='skill'?'mcp':kind, resolved, explicit)),
                 source: source === 'upload' ? uploadedBuildSource(upload.upload!,selectedUploadEntry) : npmMetadata ? { type: 'npm', specifier: npmMetadata.specifier, entrypoint: npmSelected } : repositoryMetadata ? repositoryBuildSource(repositoryMetadata, repositoryEntry?.revision === revision(repositoryMetadata) ? repositoryEntry.value : repositoryMetadata.entrypoint) : { type: 'files', files: uploaded!.files, entrypoint } });
         } catch (cause) { if (current()) setError(errorMessage(cause, 'Не удалось начать упаковку.')); }
         finally { if (current()) setPreparing(false); }
@@ -242,7 +246,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
                 // Forgetting our upload changes sourceKey; the view fence still protects close/owner/project changes.
                 if (!await upload.forget() || !current()) return;
                 setSpecifier(''); setNpmEntry(undefined); setRepositoryUrl(''); setRepositoryRef(''); setSubdirectory(''); setRepositoryEntrypoint(''); setRepositoryEntry(undefined); setRepositoryRelease(undefined); setUploadEntry(undefined);
-                setName(''); setDescription(''); setUploaded(undefined); setArchiveName(''); setEntrypoint(''); setKind('mcp'); setSource('npm'); explicitKind.current = undefined;
+                publication.clear(); setName(''); setDescription(''); setUploaded(undefined); setArchiveName(''); setEntrypoint(''); setKind('mcp'); setSource('npm'); explicitKind.current = undefined;
             }
         } finally {
             if (resetRequest.current === flight) { resetRequest.current = undefined; setResettingRequest(undefined); }
@@ -264,11 +268,13 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
             {build.canDetach && <Button loading={build.archiving} onClick={() => { void build.detach(); }}>К новой сборке</Button>}
             {build.job?.state === 'SUCCEEDED' && <Button type="primary" loading={opening} onClick={() => { void openPublished(); }}>Открыть в каталоге</Button>}
             {(build.job || build.cancelled) && !build.active && <Button disabled={build.submitting || resetting} loading={build.submitting || resetting} onClick={() => { void reset(); }}>{build.job?.state === 'FAILED' || build.cancelled ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
-        </> : <FeatureButton features={['tool_builds']} type="primary" onClick={() => { void submit(); }} loading={preparing || build.submitting} disabled={busy || build.recoveryBlocked || (build.unresolved ? !build.draft : !hasSource || sourceBlocked || (source === 'files' || source === 'upload') && !sourceReady)}>{build.unresolved ? 'Повторить сохранённый запрос' : sourceAction}</FeatureButton>}
+        </> : <FeatureButton features={['tool_builds','tool_catalog']} type="primary" onClick={() => { void submit(); }} loading={preparing || build.submitting} disabled={busy || build.recovering || publication.blocked || build.recoveryBlocked || (build.unresolved ? !build.draft : !hasSource || sourceBlocked || (source === 'files' || source === 'upload') && !sourceReady)}>{build.unresolved ? 'Повторить сохранённый запрос' : sourceAction}</FeatureButton>}
     </Space>;
 
-    return <Modal open={open} title="Упаковать инструмент" width={680} footer={actions} onCancel={close} className="tool-packaging" style={{ top: 32 }}>
-        <FeatureAvailabilityNotice features={['tool_builds']}/>
+    return <Modal open={open} title={publication.selection?`Новая версия «${publication.selection.name}»`:"Упаковать инструмент"} width={680} footer={actions} onCancel={close} className="tool-packaging" style={{ top: 32 }}>
+        <FeatureAvailabilityNotice features={['tool_builds','tool_catalog']}/>
+        <PackagingPublicationPanel publication={publication} disabled={!availability.enabled||busy||!!build.draft||build.unresolved||build.recoveryBlocked||build.recovering||!!upload.intent} onConfirm={()=>{const target=publication.confirm();if(target){setName(target.name);setDescription(current=>current||target.description);setKind(target.kind);}}}/>
+        {start&&'publication'in start&&appliedStart.current!==start&&(build.active||build.draft||build.unresolved||build.recoveryBlocked||build.recovering||upload.intent)&&<Alert type="info" showIcon message="Сначала завершите сохранённый запрос" description={upload.intent?"Проверьте или отмените сохранённую загрузку в разделе «Архив MCP». Затем откроется новая цель; её подтверждение не меняет выбранный источник.":"Новая цель не заменяет его исходники. Вернитесь к форме после завершения или отмены текущего запроса."}/>}
         <ol className="tool-packaging__steps" aria-label="Этапы упаковки">{['Источник', 'Проверка', 'Добавление'].map((label, index) => <li key={label} aria-current={progressStep === index ? 'step' : undefined} className={progressStep >= index ? 'is-current' : ''}><span aria-hidden="true">{index + 1}</span>{label}</li>)}</ol>
         {build.unresolved && !build.cancelPending && <Alert className="tool-packaging__error" type="warning" showIcon message="Результат первого запроса ещё неизвестен"
             description={<>
@@ -277,9 +283,9 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
             </>} />}
         {build.recoveryBlocked && <Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>}
         {build.canDetach && <Alert type="info" showIcon message="Можно начать другую сборку" description={<>Отмена принята сервером и продолжится в <a href="/operations">операциях</a>. Точные исходники этого запроса сохранятся ниже.</>} />}
-        {showingProgress ? <PackagingBuildStatus active={open} job={build.job} cancelPending={build.cancelPending} cancelled={build.cancelled} name={name || suggestedName || 'Сборка инструмента'} /> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy || build.unresolved || build.recoveryBlocked}>
-            <Paragraph type="secondary">Добавьте MCP, плагин или скилл. Мы определим тип и данные карточки по источнику. SKILL.md найдётся и во вложенной папке архива; если скиллов несколько, выберите нужный.</Paragraph>
-            <Form.Item label="Откуда добавить инструмент"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value);if(event.target.value==='npm'||event.target.value==='upload'){setKind('mcp');}setError(''); }} options={[{ label: 'npm', value: 'npm' }, { label: 'GitHub', value: 'repository' }, { label: 'Архив и файлы', value: 'files' }, {label:'Архив MCP',value:'upload'}]} optionType="button" className="tool-packaging__sources" /></Form.Item>
+        {showingProgress ? <PackagingBuildStatus active={open} job={build.job} cancelPending={build.cancelPending} cancelled={build.cancelled} name={name || suggestedName || 'Сборка инструмента'} /> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy || build.unresolved || build.recoveryBlocked || build.recovering}>
+            <Paragraph type="secondary">{publication.selection?"Выберите новый источник для выбранного инструмента. Название и тип закреплены его карточкой.":"Добавьте MCP, плагин или скилл. Мы определим тип и данные карточки по источнику. SKILL.md найдётся и во вложенной папке архива; если скиллов несколько, выберите нужный."}</Paragraph>
+            <Form.Item label="Откуда добавить инструмент"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value);if(event.target.value==='npm'||event.target.value==='upload'){setKind('mcp');}setError(''); }} options={[{ label: 'npm', value: 'npm' }, { label: 'GitHub', value: 'repository' }, { label: 'Архив и файлы', value: 'files' }, {label:'Архив MCP',value:'upload',disabled:!!publication.selection&&publication.selection.kind!=='mcp'}]} optionType="button" className="tool-packaging__sources" /></Form.Item>
             {source === 'npm' ? <>
                 <Form.Item label="Пакет или ссылка npm" extra="Версия закрепится перед сборкой. Можно указать package@version.">
                     <Input.Search aria-label="npm-пакет или ссылка" value={specifier} onChange={event => setSpecifier(event.target.value)} placeholder="Например, opencode-snip" loading={npm.loading} enterButton="Проверить"
@@ -317,10 +323,10 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
                 {skillError&&<Alert type="error" role="alert" showIcon message={skillError}/>}
                 {uploaded && !candidates.length&&!skillError && <Alert type="warning" showIcon message="В исходниках нет SKILL.md или файла запуска JS / TypeScript" description="Выберите папку одного скилла или исходники инструмента. Для Python MCP или готовой программы используйте GitHub или «Архив MCP»." />}
             </>}
-            {sourceReady && <PackagingSummary name={name.trim() || suggestedName} description={description.trim() || suggestedDescription} kind={effectiveKind} entrypoint={source === 'files' && (candidates.length === 1||effectiveKind==='skill') ? entrypoint : undefined} />}
+            {sourceReady && <PackagingSummary name={name.trim() || suggestedName} description={description.trim() || suggestedDescription} kind={effectiveKind} publicationVersion={publication.selection?.expectedVersion} entrypoint={source === 'files' && (candidates.length === 1||effectiveKind==='skill') ? entrypoint : undefined} />}
             <Collapse ghost className="tool-packaging__details"><Collapse.Panel header="Настроить карточку и тип инструмента" key="details">
-                <Form.Item label="Тип инструмента" extra={recommended?.recommendedKind ? 'Тип определён по источнику. Можно изменить вручную.' : 'MCP предоставляет инструменты; плагин расширяет OpenCode; скилл содержит инструкции и ресурсы.'}><Radio.Group aria-label="Тип инструмента" value={effectiveKind} onChange={event => { explicitKind.current = { source: sourceKey, package: metadataIdentity }; setKind(event.target.value); }} options={[{ label: 'MCP', value: 'mcp', disabled: !!metadata?.runnableKinds && !metadata.runnableKinds.includes('mcp') }, { label: 'Плагин OpenCode', value: 'plugin', disabled: repositoryRuntime || source === 'upload' || !!metadata?.runnableKinds && !metadata.runnableKinds.includes('plugin') },{label:'Скилл',value:'skill',disabled:source==='npm'||source==='upload'||repositoryRuntime||!!metadata?.runnableKinds&&!metadata.runnableKinds.includes('skill')}]} /></Form.Item>
-                <Form.Item label="Название в каталоге"><Input aria-label="Название в каталоге" value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={suggestedName || 'Название из пакета'} /></Form.Item>
+                <Form.Item label="Тип инструмента" extra={publication.selection?'Тип закреплён выбранным инструментом.':recommended?.recommendedKind ? 'Тип определён по источнику. Можно изменить вручную.' : 'MCP предоставляет инструменты; плагин расширяет OpenCode; скилл содержит инструкции и ресурсы.'}><Radio.Group aria-label="Тип инструмента" disabled={!!publication.selection} value={effectiveKind} onChange={event => { explicitKind.current = { source: sourceKey, package: metadataIdentity }; setKind(event.target.value); }} options={[{ label: 'MCP', value: 'mcp', disabled: !!metadata?.runnableKinds && !metadata.runnableKinds.includes('mcp') }, { label: 'Плагин OpenCode', value: 'plugin', disabled: repositoryRuntime || source === 'upload' || !!metadata?.runnableKinds && !metadata.runnableKinds.includes('plugin') },{label:'Скилл',value:'skill',disabled:source==='npm'||source==='upload'||repositoryRuntime||!!metadata?.runnableKinds&&!metadata.runnableKinds.includes('skill')}]} /></Form.Item>
+                <Form.Item label="Название в каталоге"><Input aria-label="Название в каталоге" disabled={!!publication.selection} value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={suggestedName || 'Название из пакета'} /></Form.Item>
                 <Form.Item label="Описание"><Input.TextArea aria-label="Описание инструмента" rows={2} value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} placeholder={suggestedDescription || 'Кратко опишите инструмент'} /></Form.Item>
             </Collapse.Panel></Collapse>
         </Form>}
