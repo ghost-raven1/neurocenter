@@ -9,7 +9,7 @@ import { configuredBlockers, featureGroups } from './types';
 import './FeatureFlags.less';
 
 function AccountFeatureFlags(): JSX.Element {
-    const { items, rows, loading, readError, refresh, save, useCurrent } = useFeatureFlags();
+    const { items, rows, loading, readError, refresh, save, useCurrent: applyCurrent } = useFeatureFlags();
     const saving = Object.values(rows).some(row => row.saving);
     return <Card className="feature-flags" title={<Space><ControlOutlined /><span>Функции платформы</span></Space>}
         extra={<Button loading={loading} disabled={saving} onClick={() => { void refresh(); }}>Обновить функции</Button>}>
@@ -21,7 +21,7 @@ function AccountFeatureFlags(): JSX.Element {
         {items && featureGroups.filter(group => items.some(flag => flag.group === group.key)).map(group => <section key={group.key} className="feature-flags__group" aria-label={group.name}>
             <Typography.Title level={4}>{group.name}</Typography.Title>
             {items.filter(flag => flag.group === group.key).map(flag => <FeatureFlagRow key={flag.key} flag={flag} state={rows[flag.key]} disabled={loading || !!readError}
-                blockedBy={configuredBlockers(flag.key, items)} onChange={enabled => { void save(flag.key, enabled); }} onRefresh={() => { void refresh(); }} onUseCurrent={() => useCurrent(flag.key)} />)}
+                blockedBy={configuredBlockers(flag.key, items)} onChange={enabled => { void save(flag.key, enabled); }} onRefresh={() => { void refresh(); }} onUseCurrent={() => applyCurrent(flag.key)} />)}
         </section>)}
     </Card>;
 }

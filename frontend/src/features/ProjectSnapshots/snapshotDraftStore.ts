@@ -31,7 +31,7 @@ function transaction<T>(mode:IDBTransactionMode,work:(store:IDBObjectStore,done:
     return new Promise((resolve,reject)=>{
         let db:IDBDatabase|undefined,tx:IDBTransaction|undefined,settled=false,value:T,cause:Error|undefined;
         const close=()=>{settled=true;clearTimeout(timer);db?.close();};
-        const fail=(error:Error)=>{cause=error;try{tx?.abort();}catch{}if(!settled){close();reject(error);}};
+        const fail=(error:Error)=>{cause=error;try{tx?.abort();}catch{/* Завершённую транзакцию нельзя отменить; сохраняем исходную ошибку. */}if(!settled){close();reject(error);}};
         const timer=setTimeout(()=>fail(failure()),5000);let request:IDBOpenDBRequest;
         try{request=indexedDB.open(database,1);}catch{fail(failure());return;}
         request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(storeName))request.result.createObjectStore(storeName,{keyPath:'scope'});};

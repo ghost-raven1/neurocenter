@@ -28,7 +28,7 @@ export async function waitForComputer(fingerprint:string,read:(signal?:AbortSign
             if(signal.aborted){throw cancelled();}
             const connected=devices.find(device=>device.fingerprint===fingerprint&&device.online);
             if(connected){return connected;}
-        }catch(error){if(signal.aborted){throw cancelled();}}
+        }catch{if(signal.aborted){throw cancelled();}}
         await pause(signal);
     }
     throw new Error('Компьютер ещё не ответил. Оставьте его включённым и проверьте соединение. Затем нажмите «Проверить снова».');

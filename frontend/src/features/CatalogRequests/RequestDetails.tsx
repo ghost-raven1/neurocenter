@@ -32,7 +32,7 @@ export function RequestDetails({id,projects,onClose,onChanged}:IProps):JSX.Eleme
     },[captureOwner,id]);
     useEffect(()=>{setRequest(null);setEditing(null);setEditingOpen(false);void refresh();return()=>{sequence.current++;};},[refresh]);
     useSectionUpdates(['requests'],()=>{void refresh();});
-    let source:string|null=null;try{source=requestSourceUrl(request?.sourceUrl);}catch{}
+    let source:string|null=null;try{source=requestSourceUrl(request?.sourceUrl);}catch{/* Недопустимый адрес источника не показывается ссылкой. */}
     const target=request?.target;
     const denied=():void=>{setRequest(null);setEditing(null);setEditingOpen(false);void refresh();};
     const saved=():void=>{setEditing(null);setEditingOpen(false);void refresh();onChanged();};

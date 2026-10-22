@@ -12,10 +12,8 @@ export async function hashSourceUpload(file:Pick<File,'name'|'size'|'arrayBuffer
  if(!Number.isSafeInteger(file.size)||file.size<1||file.size>sourceUploadLimit)throw new Error('Выберите непустой готовый архив или исполняемый файл до 256 МиБ.');
  if(!file.name||file.name.length>240||/[\\/\x00-\x1f\x7f]/.test(file.name))throw new Error('У файла должно быть переносимое имя без папок.');
  if(!globalThis.crypto?.subtle)throw new Error('Проверка SHA-256 недоступна. Откройте сайт по HTTPS или localhost.');
- let bytes:ArrayBuffer|undefined;
- try{bytes=await file.arrayBuffer();if(bytes.byteLength!==file.size)throw new Error();const digest=await crypto.subtle.digest('SHA-256',bytes);return {name:file.name,bytes:file.size,sha256:[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('')};}
+ try{const bytes=await file.arrayBuffer();if(bytes.byteLength!==file.size)throw new Error();const digest=await crypto.subtle.digest('SHA-256',bytes);return {name:file.name,bytes:file.size,sha256:[...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('')};}
  catch{throw new Error('Не удалось прочитать и проверить файл. Загрузка ещё не создана. Выберите файл повторно.');}
- finally{bytes=undefined;}
 }
 
 /** Actor/scope epochs fence hashing, durable writes, raw transfers, lookup and cancellation across A → B → A. */
