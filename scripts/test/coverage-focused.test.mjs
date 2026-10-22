@@ -77,6 +77,11 @@ test('Repeated test-file options run only those files once',async t=>{
  const f=await fixture(t),result=f.run(['--package','feature-flags-service','--test-file',selected,'--test-file',second]);assert.equal(result.status,0,result.stdout+result.stderr);
  const manifest=await f.manifest();assert.deepEqual(manifest.requestedTestFiles,[selected,second]);assert.equal(manifest.packages[0].passed,2);assert.equal(manifest.packages[0].testFileInventory.expectedFileCount,2);
 });
+test('A mixed focused batch names the rejected infrastructure file before creating output or starting a worker',async t=>{
+ const f=await fixture(t),result=f.run(['--package','feature-flags-service','--test-file',selected,'--test-file',second,'--test-file',external]);
+ assert.equal(result.status,1);assert.match(result.stderr,/cannot select infrastructure suites in unit-safe coverage/);assert.ok(result.stderr.includes(external),'The diagnostic must identify the offending canonical relative test file');
+ await assert.rejects(fs.stat(f.output),{code:'ENOENT'});await assert.rejects(fs.stat(f.calls),{code:'ENOENT'});
+});
 test('The 32-file boundary admits distinct ordinary tests instead of silently truncating the request',async t=>{
  const f=await fixture(t),files=Array.from({length:32},(_,index)=>'test/bounded-'+index+'.test.ts');for(const file of files)await fs.writeFile(path.join(f.pkg,file),'// owned bounded selection\n');
  const result=f.run(['--package','feature-flags-service',...files.flatMap(file=>['--test-file',file])]);assert.equal(result.status,0,result.stdout+result.stderr);

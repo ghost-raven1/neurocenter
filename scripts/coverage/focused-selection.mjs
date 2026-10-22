@@ -29,7 +29,7 @@ export async function focusedSelection({root,packages,chosen,testFiles,unit,nati
    current=path.join(current,part);const entry=await lstat(current);
    if(entry.isSymbolicLink()||(index===parts.length-1?!entry.isFile():!entry.isDirectory()))throw Error('--test-file requires ordinary files and directories without symlinks.');
   }
-  if(await externalSuite(current,true))throw Error('--test-file cannot select infrastructure suites in unit-safe coverage.');
+  if(await externalSuite(current,true))throw Error('--test-file cannot select infrastructure suites in unit-safe coverage: '+file);
   absoluteFiles.push(current);
  }
  return{package:name,cwd,files:[...testFiles],absoluteFiles:absoluteFiles.sort()};
