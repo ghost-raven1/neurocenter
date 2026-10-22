@@ -118,6 +118,7 @@ Production запускает сервисы и миграции, а импор�
 ## Документация
 
 - [Актуальный бэклог и незакрытая приёмка](docs/backlog-2026-10-22.md), [аудит возможностей агента](docs/agent-capability-audit-2026-10-22.md).
+- [Одобренные знания в чате агентов](docs/agent-chat-learning.md), [диагностическое испытание агента](docs/agent-readiness.md).
 - [API и Swagger](docs/api.md).
 - [Заявки по каталогу](docs/catalog-requests.md).
 - [Архитектура](docs/architecture.md) и [редактируемая схема](docs/architecture.drawio).
