@@ -90,6 +90,11 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, NO_COLOR: '1', NODE_ENV: 'production',
         ...(process.env.NPM_CLI_JS ? {NPM_CLI_JS: process.env.NPM_CLI_JS} : {}),
         ...(process.env.NODE_EXTRA_CA_CERTS ? {NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS} : {})};
+    // Keep the configured network route without inheriting service credentials or caller npm configuration.
+    for (const key of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy']) {
+        if (process.env[key] !== undefined) { env[key] = process.env[key]; }
+    }
+    if (process.env.NODE_USE_ENV_PROXY === '1') { env.NODE_USE_ENV_PROXY = '1'; }
     await new Promise<void>((resolve, reject) => {
         const child = spawn(process.execPath, ['--require', path.join(__dirname, 'build-guardian.js'), builderScript(), '--recipe', recipePath, '--output', output, '--progress'], {cwd: stage, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe', 'ipc']});
         observe(child);
