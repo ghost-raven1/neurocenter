@@ -51,7 +51,7 @@ case "$1" in
             fi
             if [ -n "\${TEST_UPGRADE_RESULT:-}" ]; then printf '%s' "$TEST_UPGRADE_RESULT";
             elif [ -n "\${TEST_UPGRADE_PAUSED:-}" ]; then printf '{"ok":true,"paused":%s}' "$TEST_UPGRADE_PAUSED";
-            else printf '%s' '{"ok":true}'; fi
+            else printf '%s' '{"ok":true,"paused":true}'; fi
         elif [ "$2" = --finish-upgrade ]; then
             if [ "\${TEST_FAIL_FINISH:-0}" = 1 ]; then
                 printf '%s' '{"ok":false,"error":"Подключение не настроено"}'
@@ -90,7 +90,7 @@ esac
         await fs.writeFile(path.join(root, 'package.sha256'), createHash('sha256').update(await fs.readFile(path.join(root, 'package.tgz'))).digest('hex') + '\n');
     };
     await pack();
-    const env = { ...process.env, PATH: path.join(root, 'fake-bin') + ':/usr/bin:/bin:/usr/sbin:/sbin', HOME: root,
+    const env = { ...process.env, PATH: path.join(root, 'fake-bin') + ':/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, XDG_CONFIG_HOME: path.join(root,'.config'),
         BASE_URL: 'https://platform.example/api/bridge', INSTALL_DIR: path.join(root, 'installed'), TEST_ROOT: root,
         TEST_OS: platform, TEST_ARCH: arch, TEST_LIBC: libc, TEST_FORMATTER_NODE: process.execPath,
         TEST_NODE_PLATFORM: platform === 'Darwin' ? 'darwin' : 'linux', TEST_NODE_ARCH: ['arm64', 'aarch64'].includes(arch) ? 'arm64' : 'x64' };
@@ -202,7 +202,8 @@ for (const upgrade of [{ ok: false, error: 'Обновление отклоне�
         assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR, 'previous'), 'utf8'), 'сохранить');
         const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
         assert.match(attempts, /--prepare-upgrade/);
-        assert.doesNotMatch(attempts, /--init|--finish-upgrade|--connect-open/);
+        assert.doesNotMatch(attempts, /--init|--connect-open/);
+        assert.equal(attempts.split('--finish-upgrade').length-1,1,'Отказ CLI не подтверждает снятие возможной паузы');
     });
 }
 for (const field of ['version', 'buildId']) {

@@ -83,13 +83,14 @@ INSTALL_LOCK="$INSTALL_DIR.install-lock"
 mkdir "$INSTALL_LOCK" 2>/dev/null || fail "Другая установка моста уже выполняется. Дождитесь её завершения. Если она была прервана, проверьте PID в $INSTALL_LOCK/owner.pid и удалите только эту блокировку после завершения процесса."
 STAGING_DIR=''
 UPGRADE_PREPARED='0'
+UPGRADE_ATTEMPTED='0'
 PREVIOUS_DIR=''
 PREVIOUS_COMPATIBLE='0'
 PUBLISHED='0'
 REGISTRATION_OK='0'
 finish_upgrade() {
     if [ "$UPGRADE_PREPARED" = '1' ]; then
-        "$UPGRADE_NODE" "$UPGRADE_ENTRY" --finish-upgrade > "$STAGING_DIR/finish-upgrade.json" || return 1
+        runtime_command "$UPGRADE_NODE" "$UPGRADE_ENTRY" --finish-upgrade > "$STAGING_DIR/finish-upgrade.json" || return 1
         "$UPGRADE_NODE" -e 'try{const fs=require("node:fs");if(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).ok!==true)process.exit(1)}catch{process.exit(1)}' "$STAGING_DIR/finish-upgrade.json" || return 1
         UPGRADE_PREPARED='0'
     fi
@@ -99,11 +100,16 @@ cleanup() {
     trap - EXIT
     if [ "$PUBLISHED" = '1' ] && [ "$REGISTRATION_OK" = '0' ] && [ "$PREVIOUS_COMPATIBLE" = '1' ] && [ -d "$PREVIOUS_DIR" ]; then
         if mv "$INSTALL_DIR" "$STAGING_DIR/failed-cancelled" && mv "$PREVIOUS_DIR" "$INSTALL_DIR"; then
-            UPGRADE_NODE="$STAGING_DIR/failed-cancelled/bin/node"; UPGRADE_ENTRY="$STAGING_DIR/failed-cancelled/dist/index.js"
+            UPGRADE_NODE="$STAGING_DIR/failed-cancelled/bin/node"; UPGRADE_ENTRY="$STAGING_DIR/failed-cancelled/dist/index.js"; CONTEXT_NODE="$UPGRADE_NODE"
+            PUBLISHED='0'
             printf '  Прежняя версия восстановлена после прерванной регистрации.\n' >&2
         fi
     fi
-    finish_upgrade || printf '  Не удалось снять паузу очереди; повторите установку после восстановления связи.\n' >&2
+    local resumed='0'
+    if finish_upgrade; then resumed='1'; else printf '  Не удалось снять паузу очереди; повторите установку после восстановления связи.\n' >&2; fi
+    if [ "$status" != '0' ] && [ "$UPGRADE_ATTEMPTED" = '1' ] && [ "$PUBLISHED" = '0' ] && [ "$resumed" = '1' ] && [ -f "$STAGING_DIR/context.json" ]; then
+        context restart || printf '  Запуск прежнего worker не подтверждён. Перезапустите OpenCode.\n' >&2
+    fi
     if [ -n "$STAGING_DIR" ]; then rm -rf "$STAGING_DIR"; fi
     rm -rf "$INSTALL_LOCK"
     exit "$status"
@@ -153,6 +159,114 @@ case "$("$NODE" --version)" in v24.*) ;; *) fail 'Runtime MCP не запуск�
 "$NODE" -e 'const fs=require("node:fs"),p=process.argv[1],v=process.argv[2],t=process.argv[3];const read=f=>JSON.parse(fs.readFileSync(p+"/"+f,"utf8"));const m=read("package.json"),r=read("runtime.json"),b=read("dist/build.json");if(m.name!=="neurocenter-asset-sync"||m.version!==v||r.version!==v||b.version!==v||r.target!==t||r.buildId!==b.buildId||!/^[a-f0-9]{64}$/.test(b.buildId))process.exit(1)' "$STAGING_DIR/package" "$VERSION" "$PLATFORM-$ARCH$SUFFIX" || fail 'Версия или отпечаток пакета MCP не совпадает с установщиком. Файлы не заменены.'
 NEUROCENTER_URL="$SITE_URL"; export NEUROCENTER_URL
 NEUROCENTER_API_URL="${BASE_URL%/api/bridge}"; export NEUROCENTER_API_URL
+# Этот адаптер использует только Node/jsonc-parser из проверенной поставки, включая 0.9.17.
+# Существующая exact same-site регистрация не требует записи: меняется runtime по прежнему пути.
+CONTEXT_NODE="$NODE"
+CONTEXT_HELPER="$STAGING_DIR/context.cjs"
+cat > "$CONTEXT_HELPER" <<'JS'
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+const {createHash}=require('node:crypto'),{spawnSync,spawn}=require('node:child_process');
+const limit=8*1024*1024,name='neurocenter-asset-sync';
+const changed=()=>Error('Конфигурация OpenCode изменилась. Файлы не заменены; повторите установку.');
+const stamp=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.ctimeNs,s.mode,s.nlink].join(':');
+function snapshot(file){
+    let before;try{before=fs.lstatSync(file,{bigint:true});}catch(e){if(e.code==='ENOENT')return null;throw e;}
+    if(!before.isFile()||before.nlink!==1n||before.size>BigInt(limit))throw Error('Небезопасный файл конфигурации OpenCode.');
+    const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0)|(fs.constants.O_NONBLOCK||0));
+    try{
+        const opened=fs.fstatSync(fd,{bigint:true});if(stamp(opened)!==stamp(before))throw changed();
+        const bytes=Buffer.alloc(Number(opened.size)+1);let length=0;
+        while(length<bytes.length){const read=fs.readSync(fd,bytes,length,bytes.length-length,null);if(!read)break;length+=read;}
+        if(BigInt(length)!==opened.size||stamp(fs.fstatSync(fd,{bigint:true}))!==stamp(opened)||stamp(fs.lstatSync(file,{bigint:true}))!==stamp(opened))throw changed();
+        const text=bytes.subarray(0,length).toString('utf8');if(!Buffer.from(text).equals(bytes.subarray(0,length)))throw Error('Некорректная кодировка конфигурации OpenCode.');
+        return{stamp:stamp(opened),sha:createHash('sha256').update(text).digest('hex'),text};
+    }finally{fs.closeSync(fd);}
+}
+function selected(){
+    const dir=path.join(process.env.XDG_CONFIG_HOME||path.join(os.homedir(),'.config'),'opencode');
+    for(const basename of ['opencode.jsonc','opencode.json']){
+        const logical=path.join(dir,basename);let info;try{info=fs.lstatSync(logical);}catch(e){if(e.code!=='ENOENT')throw e;}
+        if(info){const file=fs.realpathSync(logical),found=snapshot(file);if(!found)throw changed();return{logical,file,snapshot:found};}
+    }
+    const logical=path.join(dir,'opencode.json');return{logical,file:logical,snapshot:null};
+}
+function origin(value){
+    if(typeof value!=='string'||/[\x00-\x20\x7f]/.test(value))throw Error('Некорректный адрес сохранённого моста.');
+    const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.origin!==value||url.username||url.password)throw Error('Некорректный адрес сохранённого моста.');return value;
+}
+const alive=pid=>{try{process.kill(pid,0);return true;}catch(e){if(e.code==='ESRCH')return false;throw e;}};
+function workerProof(install,saved){
+    try{
+        const environment={...process.env,...saved},home=environment.HOME||os.homedir(),state=path.join(environment.NEUROCENTER_BRIDGE_HOME||path.join(home,'.config/neurocenter/bridge'),createHash('sha256').update(environment.NEUROCENTER_URL).digest('hex').slice(0,20));
+        const lock=snapshot(path.join(state,'worker.lock')),marker=snapshot(path.join(state,'worker-version.json')),manifest=snapshot(path.join(install,'package.json')),build=snapshot(path.join(install,'dist/build.json'));
+        const pid=Number(lock?.text.trim()),version=JSON.parse(manifest.text),identity=JSON.parse(marker.text),artifact=JSON.parse(build.text),directory=fs.lstatSync(install);
+        if(!Number.isSafeInteger(pid)||pid<2||pid===process.pid||!alive(pid)||!directory.isDirectory()||directory.isSymbolicLink()||fs.realpathSync(install)!==install||identity.pid!==pid||identity.version!==version.version||identity.buildId!==artifact.buildId||version.name!==name||!/^[a-f0-9]{64}$/.test(artifact.buildId))return;
+        const entry=path.join(install,'dist/index.js'),program=snapshot(entry),node=fs.lstatSync(path.join(install,'bin/node'),{bigint:true});if(!program||!node.isFile()||node.nlink!==1n)return;let owned=false;
+        if(process.platform==='linux'){
+            const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').replace(/\0$/,'').split('\0');
+            owned=fs.statSync('/proc/'+pid).uid===process.getuid()&&argv.at(-2)===entry&&argv.at(-1)==='--worker'&&!argv.slice(1,-2).some(v=>/^(?:--(?:eval|print)(?:=|$)|-[^-]*[ep])/.test(v));
+        }else{
+            const command=spawnSync('ps',['-p',String(pid),'-o','uid=','-o','args='],{encoding:'utf8',timeout:3000}),match=/^(\d+)\s+([\s\S]*)$/.exec(command.stdout.trim()),escaped=entry.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+            owned=command.status===0&&Number(match?.[1])===process.getuid()&&new RegExp('(?:^|\\s)(?:"'+escaped+'"|'+escaped+')\\s+--worker$').test(match[2]);
+        }
+        if(!owned)return;
+        delete manifest.text;delete build.text;delete program.text;return{install,state,pid,directory:{dev:directory.dev,ino:directory.ino},manifest,build,program,node:stamp(node)};
+    }catch{return;}// Без доказательства прежнего владельца автоматического запуска нет.
+}
+exports.main=async([receipt,mode,...args])=>{
+    if(mode==='capture'){
+        const [packageRoot,install,site,api]=args,current=selected();let saved={};let keep=false;
+        if(current.snapshot){
+            const {parse,parseTree}=require(require.resolve('jsonc-parser',{paths:[packageRoot]})),errors=[],value=parse(current.snapshot.text,errors,{allowTrailingComma:true});
+            if(errors.length||!value||typeof value!=='object'||Array.isArray(value)||value.mcp!==undefined&&(!value.mcp||typeof value.mcp!=='object'||Array.isArray(value.mcp)))throw Error('Повреждена конфигурация OpenCode.');
+            const tree=parseTree(current.snapshot.text),properties=(tree,key)=>tree?.children?.filter(p=>p.children?.[0]?.value===key)??[];
+            const rootMcp=properties(tree,'mcp'),ownProperties=properties(rootMcp[0]?.children?.[1],name),ownTree=ownProperties[0]?.children?.[1];
+            const duplicated=tree=>tree?.type==='object'&&new Set(tree.children.map(p=>p.children[0].value)).size!==tree.children.length;
+            if(rootMcp.length>1||ownProperties.length>1||duplicated(ownTree)||duplicated(properties(ownTree,'environment')[0]?.children?.[1]))throw Error('Неоднозначная регистрация моста в OpenCode. Удалите повторяющиеся поля.');
+            const own=value.mcp?.[name];
+            if(own!==undefined){
+                if(!own||own.type!=='local'||!Array.isArray(own.command)||JSON.stringify(own.command)!==JSON.stringify([path.join(install,'bin/node'),path.join(install,'dist/index.js')])||own.enabled!==undefined&&typeof own.enabled!=='boolean')throw Error('Существующая регистрация моста несовместима с этой папкой установки.');
+                saved=own.environment??{};
+                if(!saved||typeof saved!=='object'||Array.isArray(saved)||Object.values(saved).some(v=>typeof v!=='string'))throw Error('Повреждены сохранённые переменные моста.');
+                if(origin(saved.NEUROCENTER_URL)!==site||origin(saved.NEUROCENTER_API_URL??saved.NEUROCENTER_URL)!==api)throw Error('Существующий мост подключён к другой площадке. Автоматическая смена подключения запрещена.');
+                for(const key of ['HOME','USERPROFILE','NEUROCENTER_BRIDGE_HOME'])if(Object.hasOwn(saved,key)&&!saved[key])throw Error('Пустая переменная '+key+' в окружении моста.');
+                keep=true;
+            }
+        }
+        if(current.snapshot){delete current.snapshot.text;}
+        fs.writeFileSync(receipt,JSON.stringify({current,saved,keep,original:workerProof(install,saved)}),{flag:'wx',mode:0o600});process.stdout.write(keep?'1':'0');return;
+    }
+    const value=JSON.parse(fs.readFileSync(receipt,'utf8'));
+    if(mode==='assert'){
+        const current=selected();if(current.snapshot)delete current.snapshot.text;
+        if(JSON.stringify(current)!==JSON.stringify(value.current))throw changed();return;
+    }
+    if(mode==='restart'){
+        const original=value.original;if(!original||alive(original.pid))return;
+        const directory=fs.lstatSync(original.install);
+        if(directory.dev!==original.directory.dev||directory.ino!==original.directory.ino||!directory.isDirectory()||directory.isSymbolicLink())throw Error('Прежняя папка runtime изменилась; автоматический запуск запрещён.');
+        for(const [file,expected] of [[path.join(original.install,'package.json'),original.manifest],[path.join(original.install,'dist/build.json'),original.build],[path.join(original.install,'dist/index.js'),original.program]]){
+            const current=snapshot(file);if(current)delete current.text;if(JSON.stringify(current)!==JSON.stringify(expected))throw Error('Прежний runtime изменился; автоматический запуск запрещён.');
+        }
+        if(stamp(fs.lstatSync(path.join(original.install,'bin/node'),{bigint:true}))!==original.node)throw Error('Прежний Node runtime изменился; автоматический запуск запрещён.');
+        try{fs.lstatSync(path.join(original.state,'worker.lock'));return;}catch(e){if(e.code!=='ENOENT')throw e;}
+        const child=spawn(path.join(original.install,'bin/node'),[path.join(original.install,'dist/index.js'),'--worker'],{env:{...process.env,...value.saved},detached:true,stdio:'ignore'});
+        await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();return;
+    }
+    if(mode==='run'){
+        const [node,...cli]=args,result=spawnSync(node,cli,{env:{...process.env,...value.saved},stdio:'inherit'});
+        if(result.error)throw result.error;if(result.signal)throw Error('Команда моста прервана сигналом '+result.signal);process.exitCode=result.status??1;return;
+    }
+    throw Error('Неизвестная команда контекста установщика.');
+};
+JS
+context() {
+    "$CONTEXT_NODE" - "$CONTEXT_HELPER" "$STAGING_DIR/context.json" "$@" <<'JS'
+require(process.argv[2]).main(process.argv.slice(3)).catch(error=>{console.error(error.message);process.exitCode=1;});
+JS
+}
+runtime_command() { context run "$@"; }
+KEEP_REGISTRATION="$(context capture "$STAGING_DIR/package" "$INSTALL_DIR" "$SITE_URL" "$NEUROCENTER_API_URL")" || fail 'Не удалось проверить существующую регистрацию MCP. Файлы не заменены.'
 if [ -e "$INSTALL_DIR" ]; then
     "$NODE" -e 'const fs=require("node:fs");if(JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8")).name!=="neurocenter-asset-sync")process.exit(1)' "$INSTALL_DIR" || fail 'Папка установки занята посторонними файлами. Укажите отдельную папку MCP.'
     "$NODE" -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1]+"/package.json","utf8")).version;const a=String(v).match(/^(\d+)\.(\d+)\.(\d+)$/);const b=process.argv[2].split(".").map(Number);if(!a)process.exit(1);const x=a.slice(1).map(Number);for(let i=0;i<3;i++){if(x[i]>b[i])process.exit(1);if(x[i]<b[i])break}' "$INSTALL_DIR" "$VERSION" || fail 'Автоматическое понижение версии MCP запрещено. Предыдущая установка сохранена.'
@@ -160,12 +274,18 @@ if [ -e "$INSTALL_DIR" ]; then
     printf '  Проверяем, что предыдущий мост завершил задания…\n'
     UPGRADE_NODE="$NODE"
     UPGRADE_ENTRY="$STAGING_DIR/package/dist/index.js"
-    if ! "$NODE" "$STAGING_DIR/package/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js" > "$STAGING_DIR/upgrade.json"; then
+    context assert || fail 'Конфигурация OpenCode изменилась до подготовки обновления.'
+    UPGRADE_PREPARED='1'
+    UPGRADE_ATTEMPTED='1'
+    if ! runtime_command "$NODE" "$STAGING_DIR/package/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js" > "$STAGING_DIR/upgrade.json"; then
         show_result error "$STAGING_DIR/upgrade.json" || true
         fail 'Обновление не выполнено. Файлы предыдущего моста сохранены. Причина указана выше.'
     fi
-    UPGRADE_PREPARED="$("$NODE" -e 'try{const fs=require("node:fs");const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(result.ok!==true)process.exit(1);process.stdout.write(result.paused===false?"0":"1")}catch{process.exit(1)}' "$STAGING_DIR/upgrade.json")" || fail 'Мост не подтвердил подготовку обновления. Файлы не заменены.'
+    UPGRADE_RESULT_PAUSED="$("$NODE" -e 'try{const fs=require("node:fs");const result=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(result.ok!==true||typeof result.paused!=="boolean")process.exit(1);process.stdout.write(result.paused?"1":"0")}catch{process.exit(1)}' "$STAGING_DIR/upgrade.json")" || fail 'Мост не подтвердил подготовку обновления. Файлы не заменены.'
+    UPGRADE_PREPARED="$UPGRADE_RESULT_PAUSED"
+    if [ "$UPGRADE_RESULT_PAUSED" = '0' ]; then UPGRADE_ATTEMPTED='0'; fi
 fi
+context assert || fail 'Конфигурация OpenCode изменилась до замены MCP.'
 if [ -e "$INSTALL_DIR" ]; then
     PREVIOUS_DIR="$(mktemp -d "$INSTALL_PARENT/.neurocenter-previous.XXXXXX")"; rmdir "$PREVIOUS_DIR"
     mv "$INSTALL_DIR" "$PREVIOUS_DIR"
@@ -176,13 +296,18 @@ if ! mv "$STAGING_DIR/package" "$INSTALL_DIR"; then
 fi
 PUBLISHED='1'
 NODE="$INSTALL_DIR/bin/node"
+CONTEXT_NODE="$NODE"
 UPGRADE_NODE="$NODE"
 UPGRADE_ENTRY="$INSTALL_DIR/dist/index.js"
 success 'Автономный пакет установлен, системные Node.js и npm не нужны'
 printf '  Установлено: %s\n' "$INSTALL_DIR"
 step 3 'Регистрируем MCP в OpenCode'
 INIT_OK='0'
-if "$NODE" "$INSTALL_DIR/dist/index.js" --init > "$STAGING_DIR/init.json"; then
+if [ "$KEEP_REGISTRATION" = '1' ]; then
+    context assert || fail 'Конфигурация OpenCode изменилась во время обновления.'
+    INIT_OK='1'
+    success 'Существующая регистрация и настройки MCP сохранены'
+elif "$NODE" "$INSTALL_DIR/dist/index.js" --init > "$STAGING_DIR/init.json"; then
     if show_result init "$STAGING_DIR/init.json"; then INIT_OK='1'; fi
 else
     show_result error "$STAGING_DIR/init.json" || true
@@ -192,6 +317,7 @@ if [ "$INIT_OK" != '1' ]; then
         mv "$INSTALL_DIR" "$STAGING_DIR/failed"
         UPGRADE_NODE="$STAGING_DIR/failed/bin/node"
         UPGRADE_ENTRY="$STAGING_DIR/failed/dist/index.js"
+        CONTEXT_NODE="$UPGRADE_NODE"
         mv "$PREVIOUS_DIR" "$INSTALL_DIR"
         PUBLISHED='0'
         fail 'Регистрация MCP не удалась. Совместимая предыдущая версия восстановлена. Повторите установку или перезапустите OpenCode для восстановления подключения.'
@@ -208,7 +334,7 @@ if [ -n "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\
 step 4 'Проверяем подключение к Нейроцентру'
 CONNECT='--connect-open'
 if [ "$RECONNECT" = '1' ]; then CONNECT='--reconnect-open'; fi
-if ! "$NODE" "$INSTALL_DIR/dist/index.js" "$CONNECT" > "$STAGING_DIR/connect.json"; then
+if ! runtime_command "$NODE" "$INSTALL_DIR/dist/index.js" "$CONNECT" > "$STAGING_DIR/connect.json"; then
     fail 'MCP установлен, но подключение не завершено. Причина указана выше; после её устранения повторите установку.'
 fi
 show_result connect "$STAGING_DIR/connect.json"
