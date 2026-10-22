@@ -179,6 +179,16 @@ try {
         assert.deepEqual(await fs.readFile(path.join(profile,'credentials.json')),beforeCredentials);assert.equal(await fs.readFile(config,'utf8'),installedConfig);
         await fs.access(path.join(temporary,'.local/bin/neurocenter-bridge'));assert.equal(paused,false);
     });
+    await check('Managed launcher восстанавливает нестандартный root без INSTALL_DIR и повторного скачивания архива',async()=>{
+        const beforeArchive=archiveRequests,beforeProgram=await fs.stat(entry),beforeCredentials=await fs.readFile(path.join(profile,'credentials.json'));
+        assert.ok((await fs.readFile(path.join(temporary,'.local/bin/neurocenter-bridge'),'utf8')).includes('Neurocenter bridge command v1'));
+        const connectScript=path.join(temporary,'connect-custom-root.sh');
+        await fs.writeFile(connectScript,(await readBridgeTemplate(path.join(root,'bridge-dist/connect.sh'))).replaceAll('__BASE_URL__',env.BASE_URL).replaceAll('__SITE_URL__',siteOrigin).replaceAll('__RECONNECT__','0'));
+        const result=await installer({...env,INSTALL_DIR:undefined},connectScript);assert.equal(result.code,0,result.output);
+        assert.match(result.output,/Существующее подключение сохранено/);assert.equal(archiveRequests,beforeArchive);assert.equal(pairStarts,1);
+        assert.equal((await fs.stat(entry)).ino,beforeProgram.ino);assert.equal((await fs.stat(entry)).mtimeMs,beforeProgram.mtimeMs);
+        assert.deepEqual(await fs.readFile(path.join(profile,'credentials.json')),beforeCredentials);assert.equal(await fs.readFile(config,'utf8'),installedConfig);assert.equal(paused,false);
+    });
     await check('Короткая команда использует bundled Node, сохранённый Gateway и существующее подключение', async () => {
         const command = path.join(temporary, '.local/bin/neurocenter-bridge');
         const result = await new Promise((resolve, reject) => {

@@ -20,18 +20,52 @@ install_bridge(){
     curl -fsSL "$url" --connect-timeout 20 --max-time 60 -o "$STAGE/install.sh"
     INSTALL_DIR="$INSTALL_DIR" bash "$STAGE/install.sh"
 }
+# Read the exact launcher emitted by installBridgeCommand as data; never source or execute it.
+managed_root(){
+    local LC_ALL=C source='' rest value chunk candidate_node candidate_entry candidate_root qnode qentry expected escaped
+    [ -f "$LAUNCHER" ] && [ ! -L "$LAUNCHER" ] || return 1
+    if IFS= read -r -d '' -n 65537 source < "$LAUNCHER"; then return 1; fi
+    [ "${#source}" -gt 0 ] && [ "${#source}" -le 65536 ] || return 1
+    rest="${source##*$'\nexec '}"
+    [ "$rest" != "$source" ] || return 1
+    launcher_literal(){
+        value=''
+        [ "${rest:0:1}" = "'" ] || return 1
+        rest="${rest:1}"
+        while :; do
+            case "$rest" in *"'"*) ;; *) return 1 ;; esac
+            chunk="${rest%%"'"*}"; value="$value$chunk"; rest="${rest#*"'"}"
+            if [ "${rest:0:4}" = "\"'\"'" ]; then value="$value'"; rest="${rest:4}"; else break; fi
+        done
+    }
+    launcher_literal || return 1; candidate_node="$value"
+    [ "${rest:0:1}" = ' ' ] || return 1; rest="${rest:1}"
+    launcher_literal || return 1; candidate_entry="$value"
+    [ "$rest" = ' "$@"'$'\n' ] || return 1
+    case "$candidate_node" in /*/bin/node) candidate_root="${candidate_node%/bin/node}" ;; *) return 1 ;; esac
+    [ -n "$candidate_root" ] && [ "$candidate_entry" = "$candidate_root/dist/bridge-cli.js" ] || return 1
+    [[ ! "$candidate_root" =~ [[:cntrl:]] ]] || return 1
+    escaped="'\"'\"'"
+    qnode="'${candidate_node//\'/$escaped}'"; qentry="'${candidate_entry//\'/$escaped}'"
+    expected="#!/bin/sh
+# Neurocenter bridge command v1
+if [ ! -x $qnode ] || [ ! -f $qentry ]; then
+  printf '%s\n' 'Мост не найден или повреждён. Повторите установку на странице «Начало работы».' >&2
+  exit 1
+fi
+exec $qnode $qentry \"\$@\"
+"
+    [ "$source" = "$expected" ] || return 1
+    INSTALL_DIR="$candidate_root"
+}
 NODE="$INSTALL_DIR/bin/node"
 if [ ! -x "$NODE" ] || [ ! -f "$INSTALL_DIR/dist/index.js" ]; then
     LAUNCHER="$HOME/.local/bin/neurocenter-bridge"
-    if [ -z "$EXPLICIT_INSTALL_DIR" ] && [ -x "$LAUNCHER" ] && grep -Fq 'Neurocenter bridge command v1' "$LAUNCHER"; then
-        if [ "$RECONNECT" = '1' ]; then
-            NEUROCENTER_URL="$SITE_URL" NEUROCENTER_API_URL="$API_URL" "$LAUNCHER" connect --open --reconnect
-        else
-            NEUROCENTER_URL="$SITE_URL" NEUROCENTER_API_URL="$API_URL" "$LAUNCHER" connect --open
-        fi
-        exit $?
+    if [ -z "$EXPLICIT_INSTALL_DIR" ] && { [ -e "$LAUNCHER" ] || [ -L "$LAUNCHER" ]; }; then
+        managed_root || { printf '%s\n' 'Не удалось проверить каталог короткой команды. Укажите INSTALL_DIR установленного моста.' >&2; exit 1; }
+        NODE="$INSTALL_DIR/bin/node"
     fi
-    install_bridge; exit $?
+    if [ ! -x "$NODE" ] || [ ! -f "$INSTALL_DIR/dist/index.js" ]; then install_bridge; exit $?; fi
 fi
 INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd -P)"
 NODE="$INSTALL_DIR/bin/node"

@@ -24,17 +24,41 @@ function Install-Bridge {
     & ([ScriptBlock]::Create([IO.File]::ReadAllText($Script)))
     if ($LASTEXITCODE -ne 0) { throw 'Установка моста не завершена.' }
 }
+# Decode only the complete generated .cmd grammar; never execute a candidate launcher.
+function Get-ManagedRoot([string]$Launcher) {
+    $Item = Get-Item -LiteralPath $Launcher -Force
+    if ($Item.PSIsContainer -or ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $Item.Length -le 0 -or $Item.Length -gt 65536) { throw 'Небезопасный файл короткой команды. Укажите INSTALL_DIR.' }
+    $Stream = [IO.File]::Open($Launcher,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $Bytes = New-Object byte[] 65537
+        $Count = 0
+        while ($Count -lt $Bytes.Length) { $Read = $Stream.Read($Bytes,$Count,$Bytes.Length-$Count); if ($Read -eq 0) { break }; $Count += $Read }
+        if ($Count -ne $Item.Length) { throw 'Короткая команда изменилась. Укажите INSTALL_DIR.' }
+        $Text = (New-Object System.Text.UTF8Encoding($false,$true)).GetString($Bytes,0,$Count)
+    } finally { $Stream.Dispose() }
+    $Matches = [regex]::Matches($Text,'(?m)^"([^"\r\n]+)" "([^"\r\n]+)" %\*\r?$')
+    if ($Matches.Count -ne 1) { throw 'Неизвестный формат короткой команды. Укажите INSTALL_DIR.' }
+    $Program = $Matches[0].Groups[1].Value.Replace('%%','%')
+    $Entry = $Matches[0].Groups[2].Value.Replace('%%','%')
+    if (-not $Program.EndsWith('\bin\node.exe',[StringComparison]::Ordinal)) { throw 'Неизвестный путь runtime. Укажите INSTALL_DIR.' }
+    $Root = $Program.Substring(0,$Program.Length-'\bin\node.exe'.Length)
+    if ($Root -notmatch '^(?:[A-Za-z]:\\|\\\\[^\\]+\\[^\\]+(?:\\|$))' -or $Root -match '[\x00-\x1f\x7f]' -or $Entry -cne ($Root+'\dist\bridge-cli.js')) { throw 'Несогласованные пути короткой команды. Укажите INSTALL_DIR.' }
+    $NodeLiteral = $Program.Replace('%','%%'); $EntryLiteral = $Entry.Replace('%','%%')
+    $Expected = (@('@echo off','setlocal DisableDelayedExpansion','rem Neurocenter bridge command v1',
+        ('if not exist "'+$NodeLiteral+'" goto missing'),('if not exist "'+$EntryLiteral+'" goto missing'),
+        ('"'+$NodeLiteral+'" "'+$EntryLiteral+'" %*'),'exit /b %errorlevel%',':missing',
+        'echo Bridge missing. Reinstall from Neurocenter Start page. 1>&2','exit /b 1') -join "`r`n")+"`r`n"
+    if ($Text -cne $Expected) { throw 'Короткая команда не соответствует установленному формату. Укажите INSTALL_DIR.' }
+    return $Root
+}
 try {
     $Node = Join-Path $InstallDir 'bin/node.exe'
     if (-not (Test-Path -LiteralPath $Node -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $InstallDir 'dist/index.js') -PathType Leaf)) {
         $Launcher = Join-Path $env:USERPROFILE '.local/bin/neurocenter-bridge.cmd'
-        if (-not $ExplicitInstall -and (Test-Path -LiteralPath $Launcher -PathType Leaf) -and ([IO.File]::ReadAllText($Launcher).Contains('Neurocenter bridge command v1'))) {
-            $env:NEUROCENTER_URL = $SiteUrl; $env:NEUROCENTER_API_URL = $ApiUrl
-            $Arguments = @('connect','--open'); if ($Reconnect) { $Arguments += '--reconnect' }
-            & $Launcher @Arguments
-            if ($LASTEXITCODE -ne 0) { throw 'Подключение установленного моста не завершено.' }
-        } else { Install-Bridge }
-    } else {
+        if (-not $ExplicitInstall -and (Test-Path -LiteralPath $Launcher)) { $InstallDir = Get-ManagedRoot $Launcher; $Node = Join-Path $InstallDir 'bin/node.exe' }
+    }
+    if (-not (Test-Path -LiteralPath $Node -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $InstallDir 'dist/index.js') -PathType Leaf)) { Install-Bridge }
+    else {
         $InstallDir = (Get-Item -LiteralPath $InstallDir).FullName
         $Context = @'
 __BRIDGE_CONTEXT__
