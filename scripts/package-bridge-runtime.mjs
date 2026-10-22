@@ -9,6 +9,7 @@ import { packageWindowsJobHelper } from './bridge-windows-job.mjs';
 import { verifyBridgeBuild } from './bridge-build-integrity.mjs';
 import {npmCli} from './workspace/node-runtime.mjs';
 import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
+import {packageBridgeOpenCodeSdk, verifyBridgeSdkArchive, SdkUnavailableError, SDK_UNAVAILABLE_EXIT_CODE} from './bridge-runtime-sdk.mjs';
 
 // Собирать на целевой ОС и архитектуре: нативные модули не переносятся между платформами.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -33,6 +34,7 @@ try {
     const copiedManifest = JSON.parse(await fs.readFile(path.join(content, 'package.json'), 'utf8'));
     const copiedBuild = await verifyBridgeBuild(path.join(content, 'dist'), manifest.version);
     if (copiedManifest.version !== manifest.version || copiedBuild.buildId !== build.buildId) throw new Error('Сборка изменилась во время упаковки. Повторите упаковку неизменяемого кандидата.');
+    await packageBridgeOpenCodeSdk({root, content, stage, target});
     const npm=npmCli();
     await withNpmBuildEnvironment(process.env, async ({env, args}) => {
         execFileSync(process.execPath, [npm, 'ci', '--omit=dev', '--include=optional', '--no-audit', '--no-fund', ...args], {
@@ -63,10 +65,14 @@ try {
         if ((await fs.lstat(path.join(content, file))).isSymbolicLink()) throw new Error('В runtime осталась ссылка: ' + file);
     }
     execFileSync('tar', ['-czf', archive, '-C', content, 'bin', 'dist', 'node_modules', 'package.json', 'package-lock.json', 'runtime.json'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
+    await verifyBridgeSdkArchive(archive, target);
     const digest = createHash('sha256'); for await (const chunk of createReadStream(archive)) digest.update(chunk);
     const sha256 = digest.digest('hex');
     await fs.rename(archive, path.join(output, name));
     await fs.writeFile(path.join(output, name + '.sha256'), sha256 + '\n');
     await fs.writeFile(path.join(output, name + '.json'), JSON.stringify({ ...metadata, sha256, bytes: (await fs.stat(path.join(output, name))).size }, null, 2) + '\n');
     console.log(JSON.stringify({ file: path.join(output, name), ...metadata, sha256 }));
+} catch (error) {
+    if (!(error instanceof SdkUnavailableError)) throw error;
+    console.error(error.message); process.exitCode = SDK_UNAVAILABLE_EXIT_CODE;
 } finally { await fs.rm(stage, { recursive: true, force: true }); }

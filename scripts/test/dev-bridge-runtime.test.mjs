@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import {test, mock} from 'node:test';
 import {prepareDevBridge, devBridgeTarget} from '../workspace/dev-bridge-runtime.mjs';
 import {opencodeVersion} from '../opencode-platforms.mjs';
+import {bridgeSdkFixture} from './bridge-runtime-sdk.fixture.mjs';
 
 /** Real filesystem publication, with build/download subprocesses replaced before any network or home access. */
 async function fixture(t) {
@@ -29,7 +30,8 @@ async function fixture(t) {
             await fs.writeFile(path.join(bridge, 'dist/index.js'), index);
             await fs.writeFile(path.join(bridge, 'dist/build.json'), JSON.stringify({version: '0.9.18', buildId}));
         } else if (script === 'package-bridge-runtime.mjs') {
-            const name = `neurocenter-asset-sync-${devBridgeTarget()}-0.9.18.tgz`, bytes = Buffer.from('fresh production dependencies and bundled Node');
+            const name = `neurocenter-asset-sync-${devBridgeTarget()}-0.9.18.tgz`, {bytes} = await bridgeSdkFixture(devBridgeTarget());
+            state.archiveBytes = bytes;
             const sha256 = createHash('sha256').update(bytes).digest('hex'), archive = path.join(options.env.BRIDGE_RUNTIME_OUTPUT_DIR, name);
             await fs.writeFile(archive, state.corrupt ? Buffer.from('corrupt') : bytes);
             await fs.writeFile(archive + '.sha256', sha256 + '\n');
@@ -52,7 +54,7 @@ test('install builds current sources, packages only the host, then publishes a v
     const pointer = JSON.parse(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'));
     assert.deepEqual(pointer, {version: '0.9.18', target: devBridgeTarget(), buildId: f.buildId, sourceCommit: '1'.repeat(40), directory: path.basename(path.dirname(f.state.updateOptions.archive))});
     assert.match(pointer.directory, /^generation-[\w-]+$/);
-    assert.equal(await fs.readFile(f.state.updateOptions.archive, 'utf8'), 'fresh production dependencies and bundled Node');
+    assert.deepEqual(await fs.readFile(f.state.updateOptions.archive), f.state.archiveBytes);
     assert.deepEqual(output.map(event => event[0]), ['info', 'success']);
     assert.match(output[1][1], new RegExp(`0\\.9\\.18.*${f.buildId.slice(0, 12)}`));
     await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
@@ -221,7 +223,7 @@ test('default build subprocesses receive the host-only environment and verified 
         await fs.writeFile(${JSON.stringify(path.join(f.bridge, 'dist/build.json'))},JSON.stringify({version:'0.9.18',buildId:${JSON.stringify(f.buildId)}}));`);
     await fs.writeFile(path.join(f.root, 'scripts/prepare-opencode.mjs'), trace);
     await fs.writeFile(path.join(f.root, 'scripts/package-bridge-runtime.mjs'), trace + `
-        const bytes=Buffer.from('real child archive fixture'),sha256=createHash('sha256').update(bytes).digest('hex');
+        const bytes=Buffer.from(${JSON.stringify((await bridgeSdkFixture(devBridgeTarget())).bytes.toString('base64'))},'base64'),sha256=createHash('sha256').update(bytes).digest('hex');
         const file=path.join(process.env.BRIDGE_RUNTIME_OUTPUT_DIR,${JSON.stringify(`neurocenter-asset-sync-${devBridgeTarget()}-0.9.18.tgz`)});
         await fs.writeFile(file,bytes);await fs.writeFile(file+'.sha256',sha256+'\\n');
         await fs.writeFile(file+'.json',JSON.stringify({version:'0.9.18',target:${JSON.stringify(devBridgeTarget())},buildId:${JSON.stringify(f.buildId)},nodeVersion:process.versions.node,probeEngine:{version:${JSON.stringify(opencodeVersion)}},bytes:bytes.length,sha256}));`);
@@ -266,3 +268,37 @@ test('a build child terminated by a signal reports that signal and leaves no can
     assert.deepEqual(await fs.readdir(f.runtime), []); assert.equal(f.state.updates, 0);
     await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
 });
+
+test('SDK unavailable from a real packager child defers only the dev update and preserves the previous generation/profile', async t => {
+    const f = await fixture(t); await f.execute(); f.state.updates = 0;
+    const previous = await fs.readFile(path.join(f.runtime, 'current.json')), files = await fs.readdir(f.runtime);
+    const home = path.join(f.root, 'private-home'); await fs.mkdir(home);
+    await fs.writeFile(path.join(home, 'manual-profile'), 'manual model and agent settings');
+    await fs.mkdir(path.join(f.bridge, 'scripts')); await fs.mkdir(path.join(f.root, 'scripts'));
+    await fs.writeFile(path.join(f.bridge, 'scripts/build.mjs'), '');
+    await fs.writeFile(path.join(f.root, 'scripts/prepare-opencode.mjs'), '');
+    await fs.writeFile(path.join(f.root, 'scripts/package-bridge-runtime.mjs'), 'process.exit(75);\n');
+    const warnings = [];
+    const result = await f.execute({run: undefined, environment: {HOME: home, PATH: process.env.PATH}, output: {info() {}, warning: text => warnings.push(text)}});
+    assert.equal(result.prepared, false); assert.equal(result.deferred, true); assert.equal(result.reason, 'SDK_UNAVAILABLE');
+    assert.equal(result.installed.updated, false); assert.equal(f.state.updates, 0);
+    assert.deepEqual(await fs.readFile(path.join(f.runtime, 'current.json')), previous);
+    assert.deepEqual(await fs.readdir(f.runtime), files);
+    assert.equal(await fs.readFile(path.join(home, 'manual-profile'), 'utf8'), 'manual model and agent settings');
+    assert.equal(warnings.length, 1); assert.match(warnings[0], /SDK/);
+    await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
+});
+
+for (const [script, source] of [['package-bridge-runtime.mjs', 'process.exit(1);'], ['package-bridge-runtime.mjs', 'process.kill(process.pid,"SIGTERM");'],
+    ['build.mjs', 'process.exit(75);'], ['prepare-opencode.mjs', 'process.exit(75);']]) {
+    test('A real fatal child is never an optional SDK deferral: ' + script + ' ' + source, async t => {
+        const f = await fixture(t); await f.execute(); f.state.updates = 0;
+        const before = await fs.readFile(path.join(f.runtime, 'current.json')), files = await fs.readdir(f.runtime);
+        await fs.mkdir(path.join(f.bridge, 'scripts')); await fs.mkdir(path.join(f.root, 'scripts'));
+        for (const name of ['build.mjs', 'prepare-opencode.mjs', 'package-bridge-runtime.mjs']) await fs.writeFile(path.join(name === 'build.mjs' ? f.bridge : f.root, 'scripts', name), name === script ? source : '');
+        const warnings = [];
+        await assert.rejects(f.execute({run: undefined, output: {info() {}, warning: text => warnings.push(text)}}));
+        assert.deepEqual(warnings, []); assert.equal(f.state.updates, 0);
+        assert.deepEqual(await fs.readFile(path.join(f.runtime, 'current.json')), before); assert.deepEqual(await fs.readdir(f.runtime), files);
+    });
+}

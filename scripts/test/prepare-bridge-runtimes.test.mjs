@@ -7,6 +7,7 @@ import path from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {opencodeVersion} from '../opencode-platforms.mjs';
+import {bridgeSdkFixture} from './bridge-runtime-sdk.fixture.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const version = '9.8.7';
@@ -15,7 +16,7 @@ const distSource = 'console.log("isolated bridge runtime");\n';
 const buildId = hash('index.js\0' + distSource);
 const archiveName = target => `neurocenter-asset-sync-${target}-${version}.tgz`;
 const contextScripts = ['package-bridge-runtime.mjs', 'bridge-build-integrity.mjs', 'bridge-runtime-probe.mjs',
-    'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs'];
+    'bridge-windows-job.mjs', 'bridge-runtime-sdk.mjs', 'bridge-opencode-sdk-lock.json', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs'];
 
 /** Отдельный checkout и фальшивые сборщики: настоящий Docker, npm и сеть не используются. */
 async function fixture(t) {
@@ -34,6 +35,8 @@ async function fixture(t) {
     });
     const calls = path.join(root, 'calls.jsonl'), bin = path.join(root, 'fake-bin');
     const runtime = path.join(root, 'bridge-dist/runtime');
+    const archives = Object.fromEntries(await Promise.all(['darwin-arm64', 'linux-x64', 'linux-arm64'].map(async target => [target, (await bridgeSdkFixture(target)).bytes.toString('base64')])));
+    await fs.writeFile(path.join(root, 'fixture-archives.json'), JSON.stringify(archives));
     const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
     await fs.mkdir(path.join(root, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(bridge, 'dist'), {recursive: true});
@@ -72,10 +75,11 @@ async function fixture(t) {
         const root=process.env.RUNTIME_FIXTURE_ROOT,output=process.env.BRIDGE_RUNTIME_OUTPUT_DIR;
         if(!output?.startsWith(path.join(root,'.run')+path.sep))throw Error('Native builder received live output');
         await fs.appendFile(process.env.RUNTIME_FIXTURE_CALLS,JSON.stringify({kind:'native-build',output})+'\\n');
+        if(process.env.RUNTIME_FIXTURE_MODE==='sdk-unavailable')process.exit(75);
         const manifest=JSON.parse(await fs.readFile(path.join(root,'mcp/neurocenter-asset-sync/package.json'),'utf8'));
         const build=JSON.parse(await fs.readFile(path.join(root,'mcp/neurocenter-asset-sync/dist/build.json'),'utf8'));
         const target=process.platform+'-'+process.arch,file=path.join(output,'neurocenter-asset-sync-'+target+'-'+manifest.version+'.tgz');
-        const bytes=Buffer.from('isolated native runtime'),digest=createHash('sha256').update(bytes).digest('hex');
+        const bytes=Buffer.from(JSON.parse(await fs.readFile(path.join(root,'fixture-archives.json'),'utf8'))[target],'base64'),digest=createHash('sha256').update(bytes).digest('hex');
         await fs.mkdir(output,{recursive:true});await fs.writeFile(file,bytes);
         if(process.env.RUNTIME_FIXTURE_MODE==='fail-after-archive')process.exit(61);
         const metadata={version:manifest.version,target,buildId:build.buildId,nodeVersion:'24.22.0',ragSupported:true,
@@ -93,6 +97,7 @@ async function fixture(t) {
         if(!workspace||!output)throw Error('Unknown Docker mount contract');
         const files=fs.readdirSync(workspace,{recursive:true}).filter(file=>fs.statSync(path.join(workspace,file)).isFile()).sort();
         fs.appendFileSync(process.env.RUNTIME_FIXTURE_CALLS,JSON.stringify({kind:'docker',args,mounts,files})+'\\n');
+        if(process.env.RUNTIME_FIXTURE_MODE==='sdk-unavailable')process.exit(75);
         if(process.env.RUNTIME_FIXTURE_MODE==='wait-builder'){
             fs.writeFileSync(path.join(process.env.RUNTIME_FIXTURE_ROOT,'builder-started'),'ready');
             const until=Date.now()+10000,waiting=new Int32Array(new SharedArrayBuffer(4));
@@ -104,7 +109,7 @@ async function fixture(t) {
         const build=JSON.parse(fs.readFileSync(path.join(workspace,'mcp/neurocenter-asset-sync/dist/build.json'),'utf8'));
         const name='neurocenter-asset-sync-'+target+'-'+manifest.version+'.tgz';
         fs.mkdirSync(output,{recursive:true});
-        const bytes=Buffer.from(process.env.RUNTIME_FIXTURE_MODE==='fail-after-archive'?'incomplete replaced archive':'built isolated runtime '+target);
+        const bytes=Buffer.from(JSON.parse(fs.readFileSync(path.join(process.env.RUNTIME_FIXTURE_ROOT,'fixture-archives.json'),'utf8'))[target],'base64');
         fs.writeFileSync(path.join(output,name),bytes);
         if(process.env.RUNTIME_FIXTURE_MODE==='fail-after-archive')process.exit(61);
         const digest=createHash('sha256').update(bytes).digest('hex');
@@ -157,7 +162,7 @@ async function fixture(t) {
     }
     async function seed(target, overrides = {}) {
         await fs.mkdir(runtime, {recursive: true});
-        const bytes = Buffer.from('previous isolated runtime ' + target), digest = hash(bytes);
+        const {bytes} = await bridgeSdkFixture(target), digest = hash(bytes);
         const metadata = {version, target, buildId, nodeVersion: '24.22.0', ragSupported: true,
             probeEngine: {version: opencodeVersion, file: 'bin/opencode-probe', sha256: 'a'.repeat(64)},
             bytes: bytes.length, sha256: digest, ...overrides};
@@ -423,8 +428,29 @@ test('Corrupt exported bytes are reported without silently publishing a replacem
     assert.equal((await f.run(['--targets=linux-x64'])).status, 0);
     await fs.writeFile(archive, 'corrupt');
     const result = await f.run(['--targets=linux-x64']);
-    assert.notEqual(result.status, 0); assert.match(result.stderr, /повреждены/);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /не прошла проверку/);
     assert.deepEqual(result.events, []); assert.equal(await fs.readFile(archive, 'utf8'), 'corrupt');
+});
+
+test('Strict release refuses unavailable SDK before exporting or changing the previous archive', async t => {
+    const f = await fixture(t), archive = await f.seed('linux-x64', {buildId: 'f'.repeat(64)});
+    const before = await Promise.all(['', '.json', '.sha256'].map(suffix => fs.readFile(archive + suffix)));
+    const result = await f.run(['--targets=linux-x64'], {RUNTIME_FIXTURE_MODE: 'sdk-unavailable'});
+    assert.notEqual(result.status, 0); assert.deepEqual(await Promise.all(['', '.json', '.sha256'].map(suffix => fs.readFile(archive + suffix))), before);
+    await assert.rejects(fs.access(path.join(f.runtime, `neurocenter-bridge-${version}.asset.json`)), {code: 'ENOENT'});
+});
+
+test('A valid immutable legacy export without SDK is preserved and requires a new version without a builder', async t => {
+    const f = await fixture(t), archive = await f.seed('linux-x64'); assert.equal((await f.run(['--targets=linux-x64'])).status, 0);
+    const filename = path.join(f.runtime, `neurocenter-bridge-${version}.asset.json`), asset = JSON.parse(await fs.readFile(filename, 'utf8'));
+    const {bytes} = await bridgeSdkFixture('linux-x64', {seed: false}), metadata = {...asset.delivery.release.artifacts[0].metadata, sha256: hash(bytes), bytes: bytes.length};
+    asset.delivery.release.artifacts[0].metadata = metadata;
+    await fs.writeFile(archive, bytes); await fs.writeFile(archive + '.json', JSON.stringify(metadata)); await fs.writeFile(archive + '.sha256', metadata.sha256 + '\n');
+    await fs.chmod(filename, 0o600); await fs.writeFile(filename, JSON.stringify(asset));
+    const before = await Promise.all([archive, archive + '.json', archive + '.sha256', filename].map(file => fs.readFile(file)));
+    const result = await f.run(['--targets=linux-x64']);
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /новую версию/); assert.deepEqual(result.events, []);
+    assert.deepEqual(await Promise.all([archive, archive + '.json', archive + '.sha256', filename].map(file => fs.readFile(file))), before);
 });
 
 test('Параллельная подготовка отказывает до сборщика, пока первый процесс удерживает блокировку', async t => {

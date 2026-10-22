@@ -39,7 +39,7 @@ export function validateBridgeRuntimeRelease(value) {
 }
 
 /** Кеш подтверждается потоковой SHA; при поставке дополнительно сравниваются все закреплённые метаданные. */
-export async function bridgeRuntimeCached({directory, target, version, buildId, metadata: pinned}) {
+export async function bridgeRuntimeCached({directory, target, version, buildId, metadata: pinned, requireSdk = false}) {
     const archive = path.join(directory, archiveName(target, version));
     try {
         const stats = await Promise.all(triplet(archive).map(file => fs.lstat(file)));
@@ -53,7 +53,9 @@ export async function bridgeRuntimeCached({directory, target, version, buildId, 
         for await (const chunk of createReadStream(archive)) {
             bytes += chunk.length; if (bytes > metadata.bytes) { return false; } digest.update(chunk);
         }
-        return bytes === metadata.bytes && digest.digest('hex') === metadata.sha256;
+        if (bytes !== metadata.bytes || digest.digest('hex') !== metadata.sha256) return false;
+        if (requireSdk) { const {verifyBridgeSdkArchive} = await import('./bridge-runtime-sdk.mjs'); await verifyBridgeSdkArchive(archive, target, metadata); }
+        return true;
     } catch { return false; }
 }
 

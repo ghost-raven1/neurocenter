@@ -20,7 +20,7 @@ const nativeNodeSupported = Number(process.versions.node.split('.')[0]) === 24;
 
 /** Принимаем только согласованный комплект текущей сборки и закреплённого движка. */
 function cached(target, version, buildId, directory = output, metadata) {
-    return bridgeRuntimeCached({directory, target, version, buildId, metadata});
+    return bridgeRuntimeCached({directory, target, version, buildId, metadata, requireSdk: true});
 }
 
 /** Предыдущий комплект сохраняется до публикации; ошибка любого rename откатывает всю тройку. */
@@ -42,7 +42,7 @@ async function dockerBuild(target, archiveName, candidate) {
             await fs.mkdir(path.join(workspace, directory), {recursive: true});
         }
         for (const name of ['package-bridge-runtime.mjs', 'bridge-build-integrity.mjs', 'bridge-runtime-probe.mjs',
-            'bridge-windows-job.mjs', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs']) {
+            'bridge-windows-job.mjs', 'bridge-runtime-sdk.mjs', 'bridge-opencode-sdk-lock.json', 'opencode-platforms.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', name), path.join(workspace, 'scripts', name));
         }
         for (const name of ['dist', 'package.json', 'package-lock.json']) {
@@ -160,7 +160,7 @@ async function exportedAsset(targets, version, buildId) {
     }
     for (const artifact of release.artifacts) {
         if (!await cached(artifact.metadata.target, version, buildId, output, artifact.metadata)) {
-            throw new Error('Файлы экспортированной версии моста повреждены. Восстановите закреплённые байты или подготовьте новую версию.');
+            throw new Error('Экспортированная версия моста не прошла проверку полного SDK и закреплённых байтов. Прежняя поставка не изменена; для новой SDK-поставки подготовьте новую версию моста.');
         }
     }
     console.log(`Ассет моста ${version}: descriptor и архивы проверены.`);

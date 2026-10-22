@@ -17,6 +17,9 @@ function execute(command, args, options) {
     const result = spawnSync(command, args, {...options, stdio: 'inherit', timeout: 20 * 60_000});
     if (result.error) throw result.error;
     if (result.status !== 0) {
+        if (!result.signal && result.status === 75 && args[0] === path.join(options.cwd, 'scripts/package-bridge-runtime.mjs')) {
+            throw Object.assign(new Error('OpenCode SDK недоступен.'), {code: 'SDK_UNAVAILABLE'});
+        }
         const reason = result.signal ? `остановлен сигналом ${result.signal}` : `завершился с кодом ${result.status}`;
         throw new Error(`Подготовка моста: ${path.basename(args[0])} ${reason}.`);
     }
@@ -48,7 +51,7 @@ export async function prepareDevBridge({root, node = process.execPath, environme
             OPENCODE_TARGETS: opencodePackageName(process.platform, process.arch, target.endsWith('-musl')).slice('opencode-'.length)}});
         generation = await fs.mkdtemp(path.join(directory, 'generation-'));
         await run(node, [path.join(root, 'scripts/package-bridge-runtime.mjs')], {cwd: root, env: {...env, BRIDGE_RUNTIME_OUTPUT_DIR: generation}});
-        if (!await bridgeRuntimeCached({directory: generation, target, version, buildId})) throw new Error('Автономный dev-мост не прошёл проверку версии, сборки и SHA-256. Прежняя поставка сохранена.');
+        if (!await bridgeRuntimeCached({directory: generation, target, version, buildId, requireSdk: true})) throw new Error('Автономный dev-мост не прошёл проверку версии, сборки, полного SDK и SHA-256. Прежняя поставка сохранена.');
         const archive = path.join(generation, `neurocenter-asset-sync-${target}-${version}.tgz`);
         pointer = path.join(directory, `.current-${process.pid}.json`);
         const file = await fs.open(pointer, 'wx', 0o600); pointerCreated = true;
@@ -63,8 +66,12 @@ export async function prepareDevBridge({root, node = process.execPath, environme
             ? await updateInstalled({root, archive, version, buildId, target, environment: env, node, output})
             : {updated: false, reason: 'server-start-pending'};
         if (!updateInstalled) output?.info('Установленный мост', 'Установленный мост обновится после запуска сервера: scripts/dev.sh up');
-        return {version, buildId, target, directory, installed};
+        return {prepared: true, version, buildId, target, directory, installed};
     } catch (error) {
+        if (error.code === 'SDK_UNAVAILABLE') {
+            output?.warning?.('OpenCode SDK недоступен: обновление dev-моста отложено. Прежняя поставка и установленный мост сохранены; повторите scripts/dev.sh install после восстановления доступа.');
+            return {prepared: false, deferred: true, reason: 'SDK_UNAVAILABLE', target, directory, installed: {updated: false, reason: 'SDK_UNAVAILABLE'}};
+        }
         failure = error;
         throw error;
     } finally {
