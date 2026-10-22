@@ -59,8 +59,10 @@ export async function prepareDevBridge({root, node = process.execPath, environme
         await fs.rename(pointer, path.join(directory, 'current.json'));
         published = true;
         output?.success(`Dev-поставка моста ${version} · ${buildId.slice(0, 12)} готова`);
-        const update = updateInstalled ?? (await import('./dev-bridge-install.mjs')).updateInstalledDevBridge;
-        const installed = await update({root, archive, version, buildId, target, environment: env, node, output});
+        const installed = updateInstalled
+            ? await updateInstalled({root, archive, version, buildId, target, environment: env, node, output})
+            : {updated: false, reason: 'server-start-pending'};
+        if (!updateInstalled) output?.info('Установленный мост', 'Установленный мост обновится после запуска сервера: scripts/dev.sh up');
         return {version, buildId, target, directory, installed};
     } catch (error) {
         failure = error;

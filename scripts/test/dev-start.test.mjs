@@ -3,10 +3,12 @@ import {spawn, spawnSync} from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {test} from 'node:test';
+import {test,after} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+const nativeStartupEvidence=[];
+after(async()=>{if(process.env.DEV_START_TEST_EVIDENCE)await fs.writeFile(process.env.DEV_START_TEST_EVIDENCE,JSON.stringify(nativeStartupEvidence,null,2)+'\n',{mode:0o600});});
 const services = [
     ['bridge', 'services/oauth2-bridge'],
     ['catalog', 'services/catalog-service'],
@@ -45,6 +47,14 @@ async function fixture(t, mode) {
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
+    await fs.writeFile(path.join(checkout,'scripts/workspace/dev-bridge-startup.mjs'),`
+        import fs from 'node:fs';
+        export async function applyPublishedDevBridge({output}){
+            fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'installed-bridge-update'})+'\\n');
+            if(process.env.DEV_START_MODE==='profile-ready-bridge-deferred')throw Error('owned optional migration refused');
+            return{updated:false,reason:'update-deferred'};
+        };
+    `);
     for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     await fs.mkdir(path.join(checkout,'scripts/assets'));
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
@@ -52,6 +62,7 @@ async function fixture(t, mode) {
     await fs.writeFile(path.join(checkout,'scripts/assets/cli.mjs'), `
         import {appendFileSync} from 'node:fs';
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'assets-sync',args:process.argv.slice(2)})+'\\n');
+        if(process.env.DEV_START_MODE==='profile-ready-assets-unavailable'){console.log(JSON.stringify({ok:false,error:{code:'UNAVAILABLE',message:'owned catalog unavailable'}}));process.exit(1);}
         if(process.env.DEV_START_MODE==='assets-error'){console.error('fixture assets failed');process.exit(37);}
         console.log(JSON.stringify({ok:true,mode:'prefetch',verifyOnly:false,revision:'a'.repeat(64),
             ...(process.argv.includes('--without-models')?{withoutModels:true}:{})}));`);
@@ -231,6 +242,7 @@ async function fixture(t, mode) {
             cli.once('close', (code, signal) => resolve({code, signal}));
         }).finally(() => {clearTimeout(timer);clearInterval(cancel);});
         if(status.code===0) {
+            await fs.appendFile(calls,JSON.stringify({kind:'test-stops-healthy-stack'})+'\n');
             const stopped=spawnSync(process.execPath,[path.join(checkout,'scripts/dev.mjs'),'down'],{cwd:checkout,env,encoding:'utf8',timeout:20000});
             assert.equal(stopped.status,0,stopped.stdout+stopped.stderr);
         }
@@ -243,6 +255,7 @@ async function fixture(t, mode) {
             const command = spawnSync('ps', ['-ww', '-p', String(child.pid), '-o', 'command='], {encoding: 'utf8'});
             assert.ok(command.status !== 0 || !command.stdout.includes(child.entry), 'CLI оставил процесс ' + child.entry);
         }
+        nativeStartupEvidence.push({mode,code:status.code,temporary:directory,children:events.filter(event=>['child-spawn','model-child-spawn'].includes(event.kind)).map(event=>({pid:event.pid,entry:event.entry})),allRecordedChildrenExited:true,unexpectedNetwork:events.some(event=>['unexpected-network','unexpected-probe'].includes(event.kind))});
         return {...status, stdout, stderr, events};
     }
     return {run, checkout};
@@ -413,4 +426,22 @@ test('Ошибка standard-поставки сохраняет прежний �
     const result=await f.run('--profile=standard');assert.equal(result.code,1,result.stdout+result.stderr);
     assert.match(result.stderr,/--without-models.*Прежние сервисы не остановлены/);assert.equal(await fs.readFile(filename,'utf8'),state);
     assert.equal(result.events.filter(event=>['runtime-prepare','catalog-sync','child-spawn','model-bundle'].includes(event.kind)).length,0);
+});
+
+test('Установленный мост обновляется только после всех health ACK серверов',async t=>{
+    const f=await fixture(t,'profile-ready'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);
+    const migration=result.events.findIndex(event=>event.kind==='installed-bridge-update'),health=result.events.map((event,index)=>event.kind==='health-end'?index:-1).filter(index=>index>=0);
+    assert.equal(health.length,8);assert.ok(migration>Math.max(...health),JSON.stringify(result.events));assert.equal(result.events.filter(event=>event.kind==='installed-bridge-update').length,1);
+});
+test('Отказ необязательного обновления моста сохраняет уже готовый стек до явной команды down',async t=>{
+    const f=await fixture(t,'profile-ready-bridge-deferred'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stderr,/Обновление установленного моста отложено/);assert.match(result.stderr,/Сервисы продолжают работать/);
+    const manualDown=result.events.findIndex(event=>event.kind==='test-stops-healthy-stack'),update=result.events.findIndex(event=>event.kind==='installed-bridge-update');assert.ok(update>=0&&manualDown>update);assert.equal(result.events.slice(0,manualDown).filter(event=>event.kind==='child-stop').length,0);
+    assert.equal(result.events.filter(event=>event.kind==='child-stop').length,8);
+});
+
+test('Недоступная поставка ассетов не блокирует готовность приложений и отложенное обновление моста',async t=>{
+    const f=await fixture(t,'profile-ready-assets-unavailable'),result=await f.run('--profile=standard');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stderr,/Ассеты.*недоступн|[Пп]оставка.*недоступн/i);
+    assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,1);assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
+    const manualDown=result.events.findIndex(event=>event.kind==='test-stops-healthy-stack'),migration=result.events.findIndex(event=>event.kind==='installed-bridge-update'),health=result.events.map((event,index)=>event.kind==='health-end'?index:-1).filter(index=>index>=0);
+    assert.equal(health.length,8);assert.ok(migration>Math.max(...health));assert.equal(result.events.slice(0,manualDown).filter(event=>event.kind==='child-stop').length,0);
 });

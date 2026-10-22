@@ -26,7 +26,7 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             output.info('Использование', 'scripts/dev.sh <команда> [--profile fast|standard|full]');
             line('');
             for (const [command, description] of [
-                ['install', 'Подготовить Compose, зависимости и обновить поставку и установленный мост'],
+                ['install', 'Подготовить Compose, зависимости и поставку моста; установленный мост обновится при up'],
                 ['build', 'Собрать сервисы, интерфейс и пакет моста'],
                 ['check', 'Выполнить проверки проекта'],
                 ['up', 'Собрать и запустить проект'],

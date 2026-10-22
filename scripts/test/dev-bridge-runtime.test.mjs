@@ -247,11 +247,11 @@ test('lock access denial aborts before build and preserves the previous source g
     } finally { stub.mock.restore(); }
 });
 
-test('the actual updater is skipped for an absent isolated installation without creating a profile or pairing', async t => {
+test('default install defers migration without creating a profile or pairing in an isolated home', async t => {
     const f = await fixture(t), home = path.join(f.root, 'uninstalled-home');
     await fs.mkdir(home);
     const result = await f.execute({updateInstalled: undefined, environment: {HOME: home, PATH: process.env.PATH}});
-    assert.equal(result.installed.updated, false); assert.equal(result.installed.reason, 'not-installed');
+    assert.equal(result.installed.updated, false); assert.equal(result.installed.reason, 'server-start-pending');
     assert.deepEqual(await fs.readdir(home), []);
     const current = JSON.parse(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'));
     await fs.access(path.join(f.runtime, current.directory));

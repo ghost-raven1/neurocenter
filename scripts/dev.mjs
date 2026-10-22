@@ -288,6 +288,12 @@ async function start(profile) {
             assertServicesRunning(children);
             if (results.every(service => service.ok)) {
                 for (const service of results) { output.service(service); }
+                try {
+                    const {applyPublishedDevBridge} = await import('./workspace/dev-bridge-startup.mjs');
+                    await applyPublishedDevBridge({root, node, environment: process.env, output});
+                } catch (error) { output.warning('Обновление установленного моста отложено: '+error.message+' Сервисы продолжают работать; повторите scripts/dev.sh up.'); }
+                cancellation.signal.throwIfAborted();
+                assertServicesRunning(children);
                 output.heading('Готов к работе');
                 output.info('Интерфейс', 'http://localhost:5173');
                 output.info('Логи', logDir);
@@ -361,7 +367,7 @@ async function main() {
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
         await forPackages(command, next);
-        next('Обновление поставки и установленного моста');
+        next('Подготовка dev-поставки моста');
         const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
         await prepareDevBridge({root, node, environment: process.env, output});
         output.success('Зависимости установлены');

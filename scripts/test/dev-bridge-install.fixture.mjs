@@ -14,7 +14,7 @@ import {opencodeVersion} from '../opencode-platforms.mjs';
 const exec=promisify(execFile),root=fileURLToPath(new URL('../../',import.meta.url)),bridge=path.join(root,'mcp/neurocenter-asset-sync');
 const jsonc=createRequire(path.join(bridge,'package.json'))('jsonc-parser'),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const version='0.9.18',target=`${process.platform==='win32'?'windows':process.platform}-${process.arch}${process.platform==='linux'&&!process.report.getReport().header.glibcVersionRuntime?'-musl':''}`;
-const modules=['lib/install.js','lib/global-config-lock.js','bridge/state.js','bridge/read-bounded.js','bridge/atomic-file.js','bridge/cli.js','bridge/protocol.js','bridge-cli.js'];
+const modules=['lib/install.js','lib/global-config-lock.js','bridge/state.js','bridge/read-bounded.js','bridge/atomic-file.js','bridge/cli.js','bridge/protocol.js','bridge/worker-upgrade.js','bridge-cli.js'];
 async function fixture(action,{paired=true,legacy=false}={}){
     const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-dev-bridge-update-')));
     try{
@@ -27,8 +27,9 @@ async function fixture(action,{paired=true,legacy=false}={}){
         await fs.writeFile(path.join(content,'dist/index.js'),`import fs from 'node:fs/promises';import path from 'node:path';import {fileURLToPath} from 'node:url';
 import {installBridgeGlobal} from './lib/install.js';import {stateDir,writeState} from './bridge/state.js';
 process.execPath=fileURLToPath(new URL('../bin/node',import.meta.url));
-globalThis.fetch=()=>{throw Error('NETWORK_FORBIDDEN_IN_FIXTURE');};
-if(process.argv[2]==='--init')console.log(JSON.stringify({ok:true,...await installBridgeGlobal()}));
+if(!process.env.BRIDGE_FIXTURE_OWN_NETWORK)globalThis.fetch=()=>{throw Error('NETWORK_FORBIDDEN_IN_FIXTURE');};
+if(['--prepare-upgrade','--finish-upgrade'].includes(process.argv[2])){try{const {prepareWorkerUpgrade,finishWorkerUpgrade}=await import('./bridge/worker-upgrade.js');const result=process.argv[2]==='--prepare-upgrade'?await prepareWorkerUpgrade(process.argv[3]):await finishWorkerUpgrade();console.log(JSON.stringify({ok:true,...result}));}catch(error){console.log(JSON.stringify({ok:false,error:error.message}));process.exit(1);}}
+else if(process.argv[2]==='--init')console.log(JSON.stringify({ok:true,...await installBridgeGlobal()}));
 else if(process.argv[2]==='--worker'){
  const build=JSON.parse(await fs.readFile(new URL('./build.json',import.meta.url),'utf8'));
  if(process.env.BRIDGE_FIXTURE_EXIT_BUILD===build.buildId)process.exit(7);
