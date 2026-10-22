@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Request, Response } from 'express';
 import {panelOrigin,publicApiOrigin} from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
+import type { IBridgeConfiguration } from './bridge-supply.types';
 
 /**
  * Установщики используют проверенную поставку и доверенный адрес Gateway.
@@ -26,8 +27,17 @@ export class BridgeController {
     /** Runtime-настройка для готового frontend: внешний адрес раздачи не зависит от адреса UI. */
     @Get('config')
     @Header('Cache-Control','no-store')
-    public configuration():{origin:string} {
-        return {origin:publicApiOrigin()};
+    public async configuration(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await bridgeRequest(req, res, async signal => {
+            const origin = publicApiOrigin(), local = await this.supply.developmentSupply(signal);
+            if (signal.aborted) { return; }
+            const configuration: IBridgeConfiguration = { origin };
+            if (local) {
+                configuration.devSupply = { version: local.version, buildId: local.buildId, targets: local.artifacts.map(artifact => artifact.target) };
+            }
+            res.setHeader('cache-control', 'no-store');
+            res.json(configuration);
+        });
     }
 
     /**

@@ -47,6 +47,7 @@ class Response extends Writable {
     removeHeader(key){delete this.headers[key.toLowerCase()];}
     status(value){this.statusCode=value;return this;}
     send(value){this.end(value);return this;}
+    json(value){this.setHeader('content-type','application/json; charset=utf-8');this.end(JSON.stringify(value));return this;}
     get body(){return Buffer.concat(this.parts);}
 }
 const request=()=>Object.assign(new EventEmitter(),{params:{},query:{},aborted:false,headers:{host:'untrusted.example','x-forwarded-host':'untrusted.example'}});
@@ -91,7 +92,7 @@ test('Runtime-конфигурация и OpenCode используют тот �
     environment(t,'BRIDGE_TEMPLATES_DIR',path.resolve('bridge-dist'));environment(t,'API_PUBLIC_URL','https://gateway.fixture.example:8443');
     environment(t,'VITE_API_PROXY_TARGET','http://api-gateway:4000');
     const f=await fixture(t),controller=new BridgeController(f.service);
-    assert.deepEqual(controller.configuration(),{origin:'https://gateway.fixture.example:8443'});
+    const configuration=new Response();await controller.configuration(request(),configuration);assert.deepEqual(JSON.parse(configuration.body),{origin:'https://gateway.fixture.example:8443'});
     for(const method of ['installOpenCodeScript','installOpenCodeWindows']){
         const req=request(),res=new Response();req.headers.forwarded='host=spoofed.example;proto=http';
         await controller[method](req,res);const text=res.body.toString();
@@ -107,9 +108,9 @@ for(const [mode,expected]of [['development','http://localhost:4000'],['productio
     });
 }
 for(const value of ['not a URL','file:///tmp','ftp://host.test','https://owner:secret@host.test','https://host.test/path','https://host.test?x=1','https://host.test#fragment',' https://host.test','https://ho\nst.test']){
-    test('Некорректный API_PUBLIC_URL не маскируется fallback: '+JSON.stringify(value),t=>{
+    test('Некорректный API_PUBLIC_URL не маскируется fallback: '+JSON.stringify(value),async t=>{
         environment(t,'API_PUBLIC_URL',value);assert.throws(()=>publicApiOrigin());
-        assert.throws(()=>new BridgeController({}).configuration());
+        await assert.rejects(new BridgeController({}).configuration(request(),new Response()));
     });
 }
 test('Исторический runtime остаётся exact: запрос old version не может получить новый head',async t=>{

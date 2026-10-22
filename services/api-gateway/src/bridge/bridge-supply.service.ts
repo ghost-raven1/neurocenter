@@ -26,15 +26,22 @@ export class BridgeSupplyService {
         }
     }
 
+    /** Проверенная локальная dev-поставка доступна без каталога; открытый архив всегда закрывается здесь. */
+    public async developmentSupply(signal: AbortSignal): Promise<IBridgeSupply | undefined> {
+        const local = this.devRuntimeDirectory ? await readDevBridgeRuntime(this.devRuntimeDirectory, signal) : undefined;
+        if (local) {
+            try { return local.supply; } finally { await local.archive.close(); }
+        }
+        return undefined;
+    }
+
     /** Историческая версия выбирается явно, чтобы обновление head не обрывало уже начатую установку. */
     public async supply(signal: AbortSignal, version?: string): Promise<IBridgeSupply> {
         if (version !== undefined && !VERSION.test(version)) { throw new NotFoundException('Версия моста не найдена.'); }
-        const local = this.devRuntimeDirectory ? await readDevBridgeRuntime(this.devRuntimeDirectory, signal) : undefined;
+        const local = await this.developmentSupply(signal);
         if (local) {
-            try {
-                if (version !== undefined && version !== local.supply.version) { throw new NotFoundException('Dev-версия моста не найдена.'); }
-                return local.supply;
-            } finally { await local.archive.close(); }
+            if (version !== undefined && version !== local.version) { throw new NotFoundException('Dev-версия моста не найдена.'); }
+            return local;
         }
         return this.importedSupply(signal, version);
     }
