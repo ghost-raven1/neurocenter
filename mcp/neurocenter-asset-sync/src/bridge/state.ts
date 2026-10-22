@@ -57,9 +57,21 @@ export async function writeState(name: string, value: unknown): Promise<void> {
     const target = path.join(stateDir(), name + '.json');
     await atomicText(target, JSON.stringify(value, null, 2), 0o600);
 }
+const transportCodes = new Set(['ECONNREFUSED','ECONNRESET','ENOTFOUND','EAI_AGAIN','ETIMEDOUT','ENETUNREACH','EHOSTUNREACH',
+    'UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET',
+    'DEPTH_ZERO_SELF_SIGNED_CERT','SELF_SIGNED_CERT_IN_CHAIN','UNABLE_TO_VERIFY_LEAF_SIGNATURE','UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'CERT_HAS_EXPIRED','CERT_NOT_YET_VALID','ERR_TLS_CERT_ALTNAME_INVALID']);
+/** Only the API origin and known transport codes enter CLI output; the original error remains private. */
+function apiTransportError(origin: string, cause: unknown): Error {
+    const error = cause as {name?: unknown;code?: unknown;cause?: {code?: unknown}} | null;
+    const code = error?.name === 'TimeoutError' ? 'TIMEOUT'
+        : [error?.code,error?.cause?.code].find(value => typeof value === 'string' && transportCodes.has(value));
+    return new Error(`Не удалось связаться с API ${origin}${code ? ' (' + code + ')' : ''}. Проверьте доступность сервера и настройки сети.`, {cause});
+}
 export async function api<T>(route: string, input?: unknown, tokenOverride?: string): Promise<T> {
     const credentials = await readState<Credentials>('credentials');
-    const response = await fetch(apiHub() + '/api/device-channel/' + route, {
+    const origin = apiHub();
+    const options = {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -69,7 +81,10 @@ export async function api<T>(route: string, input?: unknown, tokenOverride?: str
         },
         body: JSON.stringify(input ?? {}),
         signal: AbortSignal.timeout(20000),
-    });
+    };
+    let response: Response;
+    try { response = await fetch(origin + '/api/device-channel/' + route, options); }
+    catch (cause) { throw apiTransportError(origin, cause); }
     const data = (await response.json()) as { message?: unknown };
     if (!response.ok) {
         throw Object.assign(new Error(
