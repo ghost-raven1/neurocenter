@@ -57,9 +57,12 @@ describe('Профиль проверяется до изменения данн
         expect(withProject).not.toHaveBeenCalled();
     });
     it('SHA текста сохраняется независимо от полного fingerprint',async()=>{
-        const applyDelta=vi.fn(async()=>({upserted:1,deleted:0}));const withProject=vi.fn(async(key,action)=>action({applyDelta},key));
+        const applyDelta=vi.fn(async()=>({upserted:1,deleted:0})),completedWrite=vi.fn(async()=>null);const withProject=vi.fn(async(key,action)=>action({applyDelta,completedWrite},key));
         const service=new RagService({withProject} as unknown as ProjectDatabases);
-        await service.applyDelta(write([{...row,embedding:Array(2560).fill(0.1),content:'hel\0lo',contentHash:'client'}],[],profile,{hash,rowCount:1,complete:false}));
+        const request=write([{...row,embedding:Array(2560).fill(0.1),content:'hel\0lo',contentHash:'client'}],[],profile,{hash,rowCount:1,complete:false});
+        await service.applyDelta(request);
+        expect(completedWrite).toHaveBeenCalledExactlyOnceWith(request.context.projectId,request.context.generation,{id:request.id,payloadHash:request.payloadHash});
+        expect(applyDelta).toHaveBeenCalledOnce();
         const saved=applyDelta.mock.calls[0][2][0];
         expect(saved.contentHash).toBe(createHash('sha256').update('hello').digest('hex'));
         expect(saved.syncHash).toBe(rowFingerprint(saved));

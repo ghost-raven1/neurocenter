@@ -49,9 +49,13 @@ describe('Bounded private OpenCode observations',()=>{
     });
     it('keeps stable immutable UUID payloads across a lost ACK, then removes only the acknowledged item',async()=>{
         const input=observation();await enqueueLearningObservation(target,input);const before=await fs.readFile(path.join(directory(),input.requestKey+'.json'),'utf8');
-        const fetcher=vi.fn().mockRejectedValueOnce(Error('lost ACK')).mockResolvedValueOnce(new Response(JSON.stringify({schemaVersion:1,projectId:target.projectId,requestKey:input.requestKey,revision:9,
+        const lostAck=Error('lost ACK');
+        const fetcher=vi.fn().mockRejectedValueOnce(lostAck).mockResolvedValueOnce(new Response(JSON.stringify({schemaVersion:1,projectId:target.projectId,requestKey:input.requestKey,revision:9,
             result:{experience:{projectId:target.projectId,origin:'device',device:{deviceId,bindingId:target.bindingId,instanceId:target.instanceId}}}}),{status:200}));vi.stubGlobal('fetch',fetcher);
-        await expect(flushLearningObservations(target)).rejects.toThrow('lost ACK');expect(await fs.readFile(path.join(directory(),input.requestKey+'.json'),'utf8')).toBe(before);
+        const failure=await flushLearningObservations(target).catch((error:unknown)=>error);
+        expect(failure).toBeInstanceOf(Error);expect((failure as Error).cause).toBe(lostAck);
+        expect((failure as Error).message).toBe('Не удалось связаться с API http://localhost:5173. Проверьте доступность сервера и настройки сети.');
+        expect(await fs.readFile(path.join(directory(),input.requestKey+'.json'),'utf8')).toBe(before);
         expect(await flushLearningObservations(target)).toBe(1);expect(await files()).toEqual([]);expect(fetcher.mock.calls[1]![1].body).toBe(fetcher.mock.calls[0]![1].body);
         const body=JSON.parse(fetcher.mock.calls[0]![1].body);expect(body.input.expectedRevision).toBeUndefined();expect(body.input.requestKey).toBe(input.requestKey);
     });

@@ -2,8 +2,16 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Start from '../src/modules/Start/Start';
+import type { IUserBlockState } from '../src/features/UserBlock/interfaces';
 
-const fixture = vi.hoisted(() => ({
+const fixture = vi.hoisted(() => {
+    const userBlock: IUserBlockState = {isAuth:true,processing:false,error:'',request:null,policies:{},user:{
+        id:'admin-navigation',principalName:'admin',email:'admin@example.test',displayName:'Администратор',
+        activeRole:'Главный админ',userRoles:['Главный админ'],routePermissions:[],projectRoles:[],
+    }};
+    const state = {userBlock};
+    return {
+    state, store: {getState: () => state},
     location: { pathname: '/start', search: '?step=2&p=dossier-ko', hash: '#setup' },
     projects: [{ id: 'prj-dossier-ko', name: 'dossier-ko' }, { id: 'prj-example', name: 'example' }],
     ready: true, loading: false, error: '',
@@ -12,11 +20,12 @@ const fixture = vi.hoisted(() => ({
     bridgeProject: undefined as string | undefined,
     push: vi.fn(), replace: vi.fn(), refresh: vi.fn(),
     readBridge:vi.fn(),
-}));
+    };
+});
 vi.mock('react-router-dom', () => ({ useLocation: () => fixture.location,
     useHistory: () => ({ push: fixture.push, replace: fixture.replace }) }));
 vi.mock('../src/modules/Projects/useAvailableProjects', () => ({ useAvailableProjects: () => fixture }));
-vi.mock('react-redux',()=>({useSelector:(selector:(state:unknown)=>unknown)=>selector({userBlock:{user:{activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]}}})}));
+vi.mock('react-redux',()=>({useSelector:(selector:(state:typeof fixture.state)=>unknown)=>selector(fixture.state),useStore:()=>fixture.store}));
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>{fixture.readBridge();return {devices:[],device:undefined,devicesReady:false,errors:{devices:'',jobs:'',installations:''},loading:false,reload:vi.fn()};}}));
 vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
 vi.mock('../src/modules/Start/BridgeSetup', () => ({ BridgeSetup: ({ projectId }: { projectId?: string }) => {
