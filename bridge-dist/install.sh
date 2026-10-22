@@ -17,6 +17,20 @@ fi
 fail() { printf '\n%s✗ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
 step() { printf '\n%s[%s/4]%s %s\n' "$BLUE" "$1" "$RESET" "$2"; }
 success() { printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
+LOCAL_ARCHIVE='' LOCAL_SHA_FILE='' LOCAL_MODE='0'
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --archive) [ -z "$LOCAL_ARCHIVE" ] && [ "$#" -ge 2 ] && [ -n "$2" ] || fail 'Укажите один путь после --archive.'; LOCAL_ARCHIVE="$2"; shift 2 ;;
+        --sha256-file) [ -z "$LOCAL_SHA_FILE" ] && [ "$#" -ge 2 ] && [ -n "$2" ] || fail 'Укажите один путь после --sha256-file.'; LOCAL_SHA_FILE="$2"; shift 2 ;;
+        --help|-h) printf '%s\n' 'Установка с площадки: bash install.sh' 'Из локального архива: bash install.sh --archive файл.tgz [--sha256-file файл.sha256]' 'По умолчанию используется файл.tgz.sha256. Подключение запускается отдельно на странице «Начало работы».'; exit 0 ;;
+        *) fail 'Неизвестный параметр установщика. Используйте --help.' ;;
+    esac
+done
+if [ -n "$LOCAL_ARCHIVE" ]; then
+    LOCAL_MODE='1'
+    LOCAL_SHA_FILE="${LOCAL_SHA_FILE:-$LOCAL_ARCHIVE.sha256}"
+    [ -f "$LOCAL_ARCHIVE" ] && [ -f "$LOCAL_SHA_FILE" ] || fail 'Нужны локальный архив и файл его SHA-256. Файлы не заменены.'
+elif [ -n "$LOCAL_SHA_FILE" ]; then fail '--sha256-file применяется только вместе с --archive.'; fi
 
 # CLI остаётся машинным JSON; установщик выводит только полезные человеку поля.
 show_result() {
@@ -74,7 +88,8 @@ if [ "$PLATFORM" = linux ] && command -v ldd >/dev/null 2>&1; then
     LIBC_VERSION="$(ldd --version 2>&1 || true)"
     if printf '%s' "$LIBC_VERSION" | grep -qi musl; then SUFFIX='-musl'; fi
 fi
-for REQUIRED in curl tar; do command -v "$REQUIRED" >/dev/null 2>&1 || fail "Нужна системная программа $REQUIRED."; done
+for REQUIRED in tar; do command -v "$REQUIRED" >/dev/null 2>&1 || fail "Нужна системная программа $REQUIRED."; done
+if [ "$LOCAL_MODE" = '0' ]; then command -v curl >/dev/null 2>&1 || fail 'Нужна системная программа curl.'; fi
 INSTALL_PARENT="$(dirname "$INSTALL_DIR")"
 mkdir -p "$INSTALL_PARENT"
 INSTALL_PARENT="$(cd "$INSTALL_PARENT" && pwd)"
@@ -129,7 +144,7 @@ STAGING_DIR="$(mktemp -d "$INSTALL_PARENT/.neurocenter-install.XXXXXX")"
 ARCHIVE="neurocenter-asset-sync-$PLATFORM-$ARCH$SUFFIX-$VERSION.tgz"
 printf '\n%sНейроцентр%s · установка MCP\n' "$BOLD" "$RESET"
 printf 'Версия %s · %s / %s%s\n' "$VERSION" "$PLATFORM" "$ARCH" "$SUFFIX"
-step 1 'Скачиваем автономный пакет'
+if [ "$LOCAL_MODE" = '1' ]; then step 1 'Готовим локальный архив'; else step 1 'Скачиваем автономный пакет'; fi
 download() {
     local status=0
     curl -fsSL "$1" -o "$2" --connect-timeout 20 --max-time 600 --retry 2 --retry-delay 1 || status=$?
@@ -140,8 +155,13 @@ download() {
         *) fail 'Не удалось скачать пакет MCP с площадки. Проверьте соединение и наличие подготовленного пакета. Предыдущая установка сохранена.' ;;
     esac
 }
-download "$BASE_URL/runtime/$ARCHIVE" "$STAGING_DIR/bridge.tgz"
-download "$BASE_URL/runtime/$ARCHIVE.sha256" "$STAGING_DIR/expected.sha256"
+if [ "$LOCAL_MODE" = '1' ]; then
+    cat < "$LOCAL_ARCHIVE" > "$STAGING_DIR/bridge.tgz" || fail 'Не удалось прочитать локальный архив. Файлы не заменены.'
+    cat < "$LOCAL_SHA_FILE" > "$STAGING_DIR/expected.sha256" || fail 'Не удалось прочитать файл SHA-256. Файлы не заменены.'
+else
+    download "$BASE_URL/runtime/$ARCHIVE" "$STAGING_DIR/bridge.tgz"
+    download "$BASE_URL/runtime/$ARCHIVE.sha256" "$STAGING_DIR/expected.sha256"
+fi
 step 2 'Проверяем и устанавливаем пакет'
 EXPECTED="$(awk '{print $1}' "$STAGING_DIR/expected.sha256")"
 if command -v sha256sum >/dev/null 2>&1; then ACTUAL="$(sha256sum "$STAGING_DIR/bridge.tgz" | awk '{print $1}')";
@@ -421,6 +441,10 @@ if ! "$NODE" "$INSTALL_DIR/dist/bridge-cli.js" --install-command > "$STAGING_DIR
 fi
 success 'Команда подключения готова: ~/.local/bin/neurocenter-bridge connect --open'
 if [ -n "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\n' "$PREVIOUS_DIR"; fi
+if [ "$LOCAL_MODE" = '1' ]; then
+    success 'Мост установлен из локального архива. Подключение выполните отдельно на странице «Начало работы».'
+    exit 0
+fi
 step 4 'Проверяем подключение к Нейроцентру'
 CONNECT='--connect-open'
 if [ "$RECONNECT" = '1' ]; then CONNECT='--reconnect-open'; fi
