@@ -65,4 +65,9 @@ describe('Persistent context projection', () => {
     it('Stops safely when the declared model capacity cannot fit summary instructions', () => {
         expect(() => compactionBatch(null, chatSources([turn(1, 'old', 'answer')], null), { contextWindowTokens: 128 }, 'pending')).toThrow('безопасного сжатия');
     });
+    it.each([undefined, 4096])('Honors the configured 64-token response cap for summaries with capacity %s', contextWindowTokens => {
+        const batch = compactionBatch(null, chatSources([turn(1, 'old'.repeat(100), 'answer')], null), { contextWindowTokens, reservedOutputTokens: 64 }, 'pending');
+        expect(batch.maxOutputTokens).toBe(64);
+        expect(chatContext(batch.messages, { contextWindowTokens, reservedOutputTokens: batch.maxOutputTokens }).exceeded).toBe(false);
+    });
 });

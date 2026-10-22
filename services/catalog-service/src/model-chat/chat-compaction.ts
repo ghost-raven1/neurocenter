@@ -53,7 +53,7 @@ export function compactionBatch(checkpoint: ChatCheckpoint | null, sources: Chat
     const capacity = settings.contextWindowTokens && Number.isSafeInteger(settings.contextWindowTokens) ? settings.contextWindowTokens : null;
     const pendingTokens = chatContext([...overhead, ...projection(null, sources.filter(source => source.turnId === pendingTurnId))], settings).estimatedInputTokens;
     const spare = capacity === null ? 1024 : Math.floor((capacity - (settings.reservedOutputTokens ?? 0) - pendingTokens) / 2);
-    const maxOutputTokens = capacity === null ? 1024 : Math.max(32, Math.min(1024, Math.floor(capacity * 0.15), spare));
+    const maxOutputTokens = Math.min(settings.reservedOutputTokens ?? 1024, capacity === null ? 1024 : Math.max(32, Math.min(1024, Math.floor(capacity * 0.15), spare)));
     const reserved = { ...settings, reservedOutputTokens: maxOutputTokens };
     const base: ChatMessage[] = [{ role: 'user', content: COMPACTION_INSTRUCTION }, ...(checkpoint ? [{ role: 'user' as const, content: 'Ранее сохранённое резюме:\n' + checkpoint.summary }] : [])];
     const consumed: ChatSource[] = [], messages = [...base];

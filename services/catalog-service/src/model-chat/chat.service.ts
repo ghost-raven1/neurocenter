@@ -7,7 +7,7 @@ import type { IModel } from '../models/model.types';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { modelInferenceBody } from '../models/inference.controller';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { withModelUsage } from '../model-usage/model-usage.context';
+import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { extractChatDocument } from './chat-document-extractor';
 import { chatContext, chatUsage, managedChatContextWindow, type IChatContextSettings, type IChatContext } from './chat-context';
@@ -15,7 +15,8 @@ import { canCompact, chatSources, compactionBatch, COMPACTION_CALL_LIMIT, needsC
 import { ChatAttachmentStorage } from './chat-attachment-storage';
 import { ChatGroup, chatAgentIds } from './chat-group';
 import { unknownGroupUsage, type ChatRoundBudget } from './chat-group.types';
-import { executeChatRound } from './chat-round';
+import { executeChatRound, finishChatRound } from './chat-round';
+import { prepareChatRound } from './chat-round-preflight';
 import { ModelChatProjectContext } from './chat-project-context';
 import { ChatResearchExecutor } from './chat-research';
 import { ChatResearchRepository } from './chat-research.repository';
@@ -312,15 +313,18 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if (!active) return this.read(req, scope.row.id);
             await requireFeaturesEnabled([scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])]);
             const research = new ChatResearchExecutor(this.repository, this.runtime, this.researchTools, this.projectContext);
-            const model = await scope.authorize(true), project = await withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
+            const model = await scope.authorize(true), prepareProject = () => withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
             if (scope.row.mode === 'group') {
+                const prepared = await prepareChatRound(req, scope, turn, combined, this.groups, this.repository, model => this.settings(this.pool, model), research);
+                if (!prepared.size) { await finishChatRound(scope, turn, combined, this.groups, this.repository); return this.read(req, scope.row.id); }
+                const project = await prepareProject();
                 await executeChatRound(req, scope, turn, combined, project, this.groups, this.repository, this.runtime, {
-                    compact: (model, overhead, assertCurrent, budget, responseId) => this.compact(scope, turn, combined, model, overhead, assertCurrent, budget, responseId),
-                    settings: model => this.settings(this.pool, model), localContextWindow: this.localContextWindow, research,
-                    researchBudget: { externalCalls: 0 },
+                    compact: (model, overhead, assertCurrent, budget, responseId, beforeInference) => this.compact(scope, turn, combined, model, overhead, assertCurrent, budget, responseId, beforeInference),
+                    localContextWindow: this.localContextWindow, research,
+                    researchBudget: { externalCalls: 0 }, prepared,
                 }); return this.read(req, scope.row.id);
             }
-            const settings = await this.settings(this.pool, model), minimal = project.fit([{ role: 'user', content: turn.input_text }], settings);
+            const project = await prepareProject(), settings = await this.settings(this.pool, model), minimal = project.fit([{ role: 'user', content: turn.input_text }], settings);
             const overhead = [...minimal.messages.slice(0, -1), ...research.overhead(turn.research_request)], history = await this.compact(scope, turn, combined, undefined, overhead, project.assertCurrent);
             const fitted = project.fit(history, settings), researched = await research.run({ req, owner: scope.owner, row: scope.row, turn, model,
                 messages: fitted.messages, initialProjectSources: fitted.evidence.sources, settings, signal: combined, options: model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {},
@@ -347,7 +351,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     private requireResolved(turns: TurnRow[]): void { if (turns.some(turn => turn.status !== 'done')) throw new ConflictException('Повторите, измените или остановите последнее сообщение.'); }
     /** Summarization and answer share the pending request lease; each paid batch has an immutable receipt. */
     private async compact(scope: Awaited<ReturnType<ModelChatService['scope']>>, turn: TurnRow, signal: AbortSignal, selectedModel?: IModel,
-        overhead: ChatMessage[] = [], assertCurrent: (db?: ChatDb) => Promise<void> = async () => undefined, budget: ChatRoundBudget = { summaries: 0 }, responseId?: string): Promise<ChatMessage[]> {
+        overhead: ChatMessage[] = [], assertCurrent: (db?: ChatDb) => Promise<void> = async () => undefined, budget: ChatRoundBudget = { summaries: 0 }, responseId?: string, beforeInference?: () => Promise<void>): Promise<ChatMessage[]> {
         for (;;) {
             signal.throwIfAborted();
             const state = await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async (db, row) => {
@@ -363,7 +367,8 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if (budget.summaries >= COMPACTION_CALL_LIMIT) throw new BadRequestException('Сохранён прогресс сжатия. Для большого диалога достигнут лимит восьми обработок за запрос; нажмите «Повторить», чтобы продолжить. Исходная история сохранена.');
             const batch = compactionBatch(state.checkpoint, state.sources, state.settings, turn.id, overhead);
             await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await scope.authorize(true); await assertCurrent(); const model = selectedModel ?? await scope.authorize(true); signal.throwIfAborted(); budget.summaries++;
-            const result = await withModelUsage({ purpose: 'compaction', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages: batch.messages, options: { num_predict: batch.maxOutputTokens,
+            await beforeInference?.();
+            const result = await withModelUsage({ purpose: 'compaction', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [...(currentModelUsage().requiredFeatures ?? []), scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages: batch.messages, options: { num_predict: batch.maxOutputTokens,
                 ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) }, stream: false }), signal));
             signal.throwIfAborted(); await scope.authorize(true); await assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;

@@ -3,6 +3,7 @@ import { responseView, type ChatAgentResponse, type ChatParticipant, type ChatRe
 import type { ChatProjectEvidence } from './chat-project-context.types';
 import type { ChatResearchRequest, ChatResearchStepSummary } from './chat-research.types';
 import type { ResearchExternalSource } from './chat-research-client';
+import type { ChatLearningReceipt } from './chat-learning-context.types';
 
 export interface ChatConversation {
     id: string; modelId: string; projectId: string | null; title: string; modelPin: string;
@@ -14,7 +15,7 @@ export interface ChatTurn {
     status: 'pending' | 'done' | 'failed' | 'cancelled';
     processingStage: 'compacting' | 'responding' | 'researching';
     research?: ChatResearchRequest; researchSteps?: ChatResearchStepSummary[];
-    answer?: { content: string; finishReason: 'stop' | 'length'; usage: ChatUsage; evidence?: ChatProjectEvidence; researchSources?: ResearchExternalSource[]; researchLimited?: boolean };
+    answer?: { content: string; finishReason: 'stop' | 'length'; usage: ChatUsage; evidence?: ChatProjectEvidence; learning?: ChatLearningReceipt; researchSources?: ResearchExternalSource[]; researchLimited?: boolean };
     targetAgentIds?: string[]; responses?: ChatAgentResponse[];
     error?: string; createdAt: string;
 }

@@ -9,6 +9,9 @@ import type { ChatDb } from './chat.repository';
 import type { ConversationRow, TurnRow, ChatTurn } from './chat.types';
 import { chatHash } from './chat-validation';
 import type { ChatAgentSnapshot, ChatParticipant, ChatResolvedAgent, ChatResponseRow } from './chat-group.types';
+import { LearningRepository } from '../learning/learning.repository';
+import { ModelChatLearningContext } from './chat-learning-context';
+import { resolveAgentChatModel } from '../models/resolve-agent-chat-model';
 
 /** Stable IDs are mandatory; display names and OpenCode provider strings never select an ambiguous model. */
 export function chatAgentIds(raw: unknown, allowEmpty = false): string[] {
@@ -16,7 +19,8 @@ export function chatAgentIds(raw: unknown, allowEmpty = false): string[] {
     return [...raw];
 }
 export class ChatGroup {
-    constructor(private readonly models: ModelsService, private readonly agents: ProjectAgentRepository) {}
+    readonly learning: ModelChatLearningContext;
+    constructor(private readonly models: ModelsService, private readonly agents: ProjectAgentRepository) { this.learning = new ModelChatLearningContext(models, new LearningRepository(agents.pool)); }
     async roster(req: Request, projectId: string, fallback: IModel, db: ChatDb = this.agents.pool): Promise<{ items: ChatParticipant[]; resolved: ChatResolvedAgent[] }> {
         await this.models.resolveProject(req, projectId, 2);
         const assignments = await this.agents.assignments(projectId, db), catalog = await this.models.list(req, projectId), items: ChatParticipant[] = [], resolved: ChatResolvedAgent[] = [];
@@ -25,20 +29,7 @@ export class ChatGroup {
                 status: assignment.removed ? 'removed' : assignment.enabled ? 'active' : 'disabled' };
             if (item.status !== 'active') { item.reason = assignment.removed ? 'Агент удалён из проекта.' : 'Агент выключен в настройках проекта.'; items.push(item); continue; }
             try {
-                const selector = assignment.effective.model, catalogId = selector?.startsWith('neurocenter/') ? selector.slice('neurocenter/'.length) : selector;
-                let candidates = catalog.items.filter(model => catalog.assignedModelIds.includes(model.id) && (model.id === catalogId || model.model === selector));
-                if (selector && !candidates.length) {
-                    const linked = (await db.query<{ model_id: string }>("SELECT DISTINCT model_id FROM opencode_model_sources WHERE project_id=$1 AND state='present' AND provider||'/'||config_key=$2 AND model_id IS NOT NULL", [projectId, selector])).rows.map(row => row.model_id);
-                    candidates = catalog.items.filter(model => catalog.assignedModelIds.includes(model.id) && linked.includes(model.id));
-                }
-                let model = fallback;
-                if (selector) {
-                    const exact = candidates.find(candidate => candidate.id === catalogId);
-                    if (!exact && candidates.length !== 1) throw new ConflictException('Модель агента не связана с единственной моделью каталога проекта. Укажите neurocenter/<ID карточки модели> в настройках агента.');
-                    model = exact ?? candidates[0];
-                }
-                model = await this.models.getUsable(model.id, req, projectId);
-                if (model.capability === 'embedding' || (model.runtime === 'ollama' ? !model.manifestSha256 : !model.verificationSha256)) throw new ConflictException('Выберите проверенную модель диалога для агента.');
+                const model = await resolveAgentChatModel(this.models, req, projectId, assignment.effective.model, fallback, catalog, db);
                 const body = { agentId: item.agentId, name: item.name, slug: item.slug, version: assignment.version, manifest: assignment.manifest,
                     definition: assignment.effective, modelId: model.id, modelName: model.name, modelPin: projectEmbeddingPin(model) };
                 resolved.push({ snapshot: { ...body, sha256: chatHash(body) }, model }); item.modelId = model.id; item.modelName = model.name;

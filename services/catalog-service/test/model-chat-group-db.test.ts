@@ -61,6 +61,8 @@ describe.skipIf(!connection)('Private project agent rounds — disposable Postgr
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 }); database = 'nc_chat_group_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database);
         url.pathname = '/' + database; db = new Pool({ connectionString: url.href, max: 4 }); await ensureCatalogSchema(db);
         await db.query('INSERT INTO projects(id,name) VALUES($1,\'Group project\')', [projectId]);
+        await db.query("INSERT INTO platform_users(email) VALUES('owner@localhost')");
+        await db.query("INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES($1,'owner@localhost','owner@localhost','Owner','Разработчик')", [projectId]);
         for (const card of [local(), remote()]) { cards.set(card.id, card); assigned.add(card.id); await db.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,\'{}\')', [card.id, card.name]); }
         await db.query("INSERT INTO model_remote_connections(model_id,revision,base_url,request_dimensions,credential_kind,semantic_sha,options) VALUES($1,1,'http://127.0.0.1:1',false,'none',$2,$3::jsonb)", [remote().id, remote().verificationSha256, JSON.stringify({ contextWindow: 8192, maxOutputTokens: 128 })]);
         oldUrl = process.env.CATALOG_PG_URL; oldWindow = process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS; process.env.CATALOG_PG_URL = url.href; process.env.MODEL_CHAT_CONTEXT_WINDOW_TOKENS = '4096'; models.pool = db;
