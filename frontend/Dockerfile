@@ -3,7 +3,8 @@ FROM ${NODE_IMAGE} AS build
 
 # Public corporate CA is optional; a stale staged file never enables trust by itself.
 ARG NEUROCENTER_BUILD_CA_SHA256
-COPY docker/build-ca/ /usr/local/share/neurocenter/build-ca/
+ARG NEUROCENTER_BUILD_CA_NAME=.gitkeep
+COPY docker/build-ca/${NEUROCENTER_BUILD_CA_NAME} /usr/local/share/neurocenter/build-ca/extra.pem
 RUN if [ -n "$NEUROCENTER_BUILD_CA_SHA256" ]; then \
       printf '%s  %s\n' "$NEUROCENTER_BUILD_CA_SHA256" /usr/local/share/neurocenter/build-ca/extra.pem | sha256sum --check --status; \
     else \

@@ -92,7 +92,7 @@ services:
   database-init:
     <<: *service
     image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/catalog-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/catalog-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     restart: 'no'
     profiles: [setup]
     command: [node, dist/database/production-init.cli.js]
@@ -120,7 +120,7 @@ services:
   catalog-service:
     <<: *service
     image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/catalog-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/catalog-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 512m
     cpus: 1
     environment:
@@ -162,7 +162,7 @@ services:
   feature-flags-service:
     <<: *service
     image: neurocenter/feature-flags-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/feature-flags-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/feature-flags-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 128
@@ -185,7 +185,7 @@ services:
   skills-service:
     <<: *service
     image: neurocenter/skills-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/skills-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/skills-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 512m
     cpus: 1
     environment:
@@ -209,7 +209,7 @@ services:
   rag-sync-service:
     <<: *service
     image: neurocenter/rag-sync-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/rag-sync-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/rag-sync-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 2g
     cpus: 2
     environment:
@@ -243,7 +243,7 @@ services:
   oauth2-bridge:
     <<: *service
     image: neurocenter/oauth2-bridge:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/oauth2-bridge/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/oauth2-bridge/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 256m
     cpus: 1
     environment:
@@ -269,7 +269,7 @@ services:
   api-gateway:
     <<: *service
     image: neurocenter/api-gateway:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: services/api-gateway/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: services/api-gateway/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 512m
     cpus: 1
     environment:
@@ -302,7 +302,7 @@ services:
   frontend:
     <<: *service
     image: neurocenter/frontend:${NEUROCENTER_RELEASE:?Заполните метку релиза}
-    build: {context: ., dockerfile: frontend/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}"}}
+    build: {context: ., dockerfile: frontend/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 128m
     cpus: 1
     environment:

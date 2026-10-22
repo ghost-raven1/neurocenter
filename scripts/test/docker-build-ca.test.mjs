@@ -25,13 +25,13 @@ async function fixture(t){
 }
 
 async function noStagedFiles(directory){
-    for(const context of contexts){await assert.rejects(fs.stat(path.join(directory,context,'extra.pem')),{code:'ENOENT'});}
+    for(const context of contexts)assert.deepEqual((await fs.readdir(path.join(directory,context))).filter(name=>/^ca-.*\.pem$/.test(name)),[]);
 }
 
 test('No configured CA needs no generated files and clears inherited build hash',async t=>{
     const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc no ca '));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
-    await withDockerBuildCa(directory,{NEUROCENTER_BUILD_CA_SHA256:'a'.repeat(64)},async({environment,args})=>{
-        assert.equal(environment.NEUROCENTER_BUILD_CA_SHA256,'');assert.deepEqual(args,[]);
+    await withDockerBuildCa(directory,{NEUROCENTER_BUILD_CA_SHA256:'a'.repeat(64),NEUROCENTER_BUILD_CA_NAME:'foreign.pem'},async({environment,args})=>{
+        assert.equal(environment.NEUROCENTER_BUILD_CA_SHA256,'');assert.equal(environment.NEUROCENTER_BUILD_CA_NAME,'.gitkeep');assert.deepEqual(args,[]);
     });
     assert.deepEqual(await fs.readdir(directory),[]);
 });
@@ -40,11 +40,12 @@ test('Only public certificates are staged in both contexts; Docker receives SHA,
     const {directory,ca,environment}=await fixture(t);
     const result=await withDockerBuildCa(directory,{...environment,NPM_TOKEN:'fixture-secret'},async({environment:env,args})=>{
         for(const context of contexts){
-            const bytes=await fs.readFile(path.join(directory,context,'extra.pem'),'utf8');
+            const bytes=await fs.readFile(path.join(directory,context,env.NEUROCENTER_BUILD_CA_NAME),'utf8');
             assert.deepEqual(new X509Certificate(bytes).raw,new X509Certificate(publicCa).raw);assert.equal(createHash('sha256').update(bytes).digest('hex'),env.NEUROCENTER_BUILD_CA_SHA256);
         }
         assert.match(env.NEUROCENTER_BUILD_CA_SHA256,/^[a-f0-9]{64}$/);
-        assert.deepEqual(args,['--build-arg','NEUROCENTER_BUILD_CA_SHA256='+env.NEUROCENTER_BUILD_CA_SHA256]);
+        assert.match(env.NEUROCENTER_BUILD_CA_NAME,/^ca-[a-f0-9-]{36}\.pem$/);
+        assert.deepEqual(args,['--build-arg','NEUROCENTER_BUILD_CA_SHA256='+env.NEUROCENTER_BUILD_CA_SHA256,'--build-arg','NEUROCENTER_BUILD_CA_NAME='+env.NEUROCENTER_BUILD_CA_NAME]);
         assert.ok(!args.join(' ').includes('CERTIFICATE'));assert.ok(!args.join(' ').includes('fixture-secret'));return 17;
     });
     assert.equal(result,17);await noStagedFiles(directory);assert.equal(await fs.readFile(ca,'utf8'),publicCa);
@@ -59,7 +60,7 @@ test('A failed Docker action removes its staged CA, preserving source',async t=>
 test('NODE_EXTRA_CA_CERTS is an explicit fallback and dedicated setting takes priority',async t=>{
     const {directory,ca}=await fixture(t);
     for(const env of [{NODE_EXTRA_CA_CERTS:ca},{NEUROCENTER_BUILD_CA_FILE:ca,NODE_EXTRA_CA_CERTS:'/missing'}]){
-        await withDockerBuildCa(directory,env,({args})=>assert.equal(args.length,2));await noStagedFiles(directory);
+        await withDockerBuildCa(directory,env,({args})=>assert.equal(args.length,4));await noStagedFiles(directory);
     }
 });
 
@@ -76,8 +77,8 @@ test('Private keys, garbage, malformed, empty and oversized files fail before Do
 test('PEM bundles are supported and the certificate count is bounded',async t=>{
     const {directory,ca}=await fixture(t);
     await fs.writeFile(ca,publicCa.replaceAll('\n','\r\n')+'\r\n'+rootCertificates[1]);
-    await withDockerBuildCa(directory,{NEUROCENTER_BUILD_CA_FILE:ca},async()=>{
-        const text=await fs.readFile(path.join(directory,contexts[0],'extra.pem'),'utf8');
+    await withDockerBuildCa(directory,{NEUROCENTER_BUILD_CA_FILE:ca},async({environment})=>{
+        const text=await fs.readFile(path.join(directory,contexts[0],environment.NEUROCENTER_BUILD_CA_NAME),'utf8');
         assert.equal([...text.matchAll(/BEGIN CERTIFICATE/g)].length,2);
     });
     await fs.writeFile(ca,Array(257).fill(publicCa).join('\n'));
@@ -112,24 +113,25 @@ test('A FIFO cannot hang CA preparation before its file type is checked',{skip:p
     await noStagedFiles(directory);
 });
 
-test('A stale or concurrent staged file is never overwritten or removed',async t=>{
+test('A stale legacy file cannot block a fresh uniquely selected CA and is never overwritten or removed',async t=>{
     const {directory,environment}=await fixture(t),stale=path.join(directory,contexts[1],'extra.pem');
     await fs.writeFile(stale,'foreign file');
-    await assert.rejects(withDockerBuildCa(directory,environment,()=>assert.fail('Docker must not run')),/уже есть extra.pem/);
+    await withDockerBuildCa(directory,environment,async({environment:env})=>assert.equal(new X509Certificate(await fs.readFile(path.join(directory,contexts[1],env.NEUROCENTER_BUILD_CA_NAME))).ca,true));
     assert.equal(await fs.readFile(stale,'utf8'),'foreign file');
-    await assert.rejects(fs.stat(path.join(directory,contexts[0],'extra.pem')),{code:'ENOENT'});
+    await noStagedFiles(directory);
 });
 
 test('Cleanup preserves a file replaced during a Docker build',async t=>{
-    const {directory,environment}=await fixture(t),filename=path.join(directory,contexts[0],'extra.pem');
-    await withDockerBuildCa(directory,environment,async()=>{await fs.rm(filename);await fs.writeFile(filename,'foreign replacement');});
+    const {directory,environment}=await fixture(t);let filename,name;
+    await withDockerBuildCa(directory,environment,async({environment:env})=>{name=env.NEUROCENTER_BUILD_CA_NAME;filename=path.join(directory,contexts[0],name);await fs.rm(filename);await fs.writeFile(filename,'foreign replacement');});
     assert.equal(await fs.readFile(filename,'utf8'),'foreign replacement');
-    await assert.rejects(fs.stat(path.join(directory,contexts[1],'extra.pem')),{code:'ENOENT'});
+    await assert.rejects(fs.stat(path.join(directory,contexts[1],name)),{code:'ENOENT'});
 });
 
 test('A FIFO replacing a staged file cannot hang cleanup',{skip:process.platform==='win32',timeout:5000},async t=>{
-    const {directory,environment}=await fixture(t),filename=path.join(directory,contexts[0],'extra.pem');
-    await withDockerBuildCa(directory,environment,async()=>{
+    const {directory,environment}=await fixture(t);let filename;
+    await withDockerBuildCa(directory,environment,async({environment:env})=>{
+        filename=path.join(directory,contexts[0],env.NEUROCENTER_BUILD_CA_NAME);
         await fs.rm(filename);assert.equal(spawnSync('mkfifo',[filename],{timeout:1000}).status,0);
     });
     assert.equal((await fs.lstat(filename)).isFIFO(),true);
@@ -144,9 +146,9 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
     const calls=path.join(directory,'calls.jsonl');
     await fs.writeFile(path.join(bin,'docker'),`#!${process.execPath}
         const fs=require('fs'),crypto=require('crypto');
-        const bytes=fs.readFileSync('docker/build-ca/extra.pem');
+        const bytes=fs.readFileSync('docker/build-ca/'+process.env.NEUROCENTER_BUILD_CA_NAME);
         if(crypto.createHash('sha256').update(bytes).digest('hex')!==process.env.NEUROCENTER_BUILD_CA_SHA256)process.exit(29);
-        fs.appendFileSync(process.env.CA_CALLS,JSON.stringify({args:process.argv.slice(2),sha:process.env.NEUROCENTER_BUILD_CA_SHA256})+'\\n');
+        fs.appendFileSync(process.env.CA_CALLS,JSON.stringify({args:process.argv.slice(2),sha:process.env.NEUROCENTER_BUILD_CA_SHA256,name:process.env.NEUROCENTER_BUILD_CA_NAME})+'\\n');
         process.exit(Number(process.env.CA_EXIT));
     `,{mode:0o755});
     for(const code of [0,31]){
@@ -156,14 +158,15 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
     }
     const records=(await fs.readFile(calls,'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(records.length,2);
-    for(const record of records){assert.deepEqual(record.args,['compose','build','frontend']);assert.match(record.sha,/^[a-f0-9]{64}$/);}
+    for(const record of records){assert.deepEqual(record.args,['compose','build','frontend']);assert.match(record.sha,/^[a-f0-9]{64}$/);assert.match(record.name,/^ca-[a-f0-9-]{36}\.pem$/);}
 });
 
 test('All Node Dockerfiles verify optional CA before npm and preserve explicit gateway and snapshot npm TLS exceptions',async()=>{
     for(const file of sourceFiles){
         const source=await fs.readFile(path.join(root,file),'utf8');
         assert.match(source,/ARG NEUROCENTER_BUILD_CA_SHA256/,file);
-        assert.match(source,/COPY docker\/build-ca\/ \/usr\/local\/share\/neurocenter\/build-ca\//,file);
+        assert.match(source,/ARG NEUROCENTER_BUILD_CA_NAME=\.gitkeep/,file);
+        assert.match(source,/COPY docker\/build-ca\/\$\{NEUROCENTER_BUILD_CA_NAME\} \/usr\/local\/share\/neurocenter\/build-ca\/extra\.pem/,file);
         assert.match(source,/sha256sum --check --status/,file);assert.match(source,/chmod 0444/,file);
         assert.match(source,/: > \/usr\/local\/share\/neurocenter\/build-ca\/extra.pem/,file);
         assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=')<source.indexOf('RUN npm ci'),file);
@@ -179,6 +182,11 @@ test('All Node Dockerfiles verify optional CA before npm and preserve explicit g
     for(const file of ['docker-compose.yml','compose.production.yml']){
         const source=await fs.readFile(path.join(root,file),'utf8');
         assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_SHA256: /g)].length,file==='docker-compose.yml'?7:8,file);
+        assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_NAME: /g)].length,file==='docker-compose.yml'?7:8,file);
+    }
+    for(const file of ['.dockerignore','frontend/.dockerignore']){
+        const source=await fs.readFile(path.join(root,file),'utf8');
+        assert.ok(source.includes('docker/build-ca/*'));assert.ok(source.includes('!docker/build-ca/.gitkeep'));assert.ok(source.includes('!docker/build-ca/ca-*.pem'));assert.ok(!source.includes('!docker/build-ca/extra.pem'));
     }
 });
 
@@ -198,7 +206,10 @@ test('Real legacy and BuildKit Docker builds accept CA, reject mismatched SHA an
         const {directory,environment}=await fixture(t);
         const source=await fs.readFile(path.join(root,'services/catalog-service/snapshot-verifier.Dockerfile'),'utf8');
         const preamble=source.split('# Ignore user/global npm settings;')[0];
-        const probe=preamble+"USER node\nRUN node -e \"const assert=require('assert/strict'),tls=require('tls'); assert.equal(tls.getCACertificates('extra').length, Number(process.env.EXPECT_EXTRA));console.log('CA_PROBE_OK')\"\n";
+        await fs.copyFile(path.join(root,'.dockerignore'),path.join(directory,'.dockerignore'));
+        const stale=contexts.map(context=>path.join(directory,context,'extra.pem')),old=['-----BEGIN PRIVATE KEY-----\nnever-send-private-material\n-----END PRIVATE KEY-----\n',''];
+        for(let index=0;index<stale.length;index++)await fs.writeFile(stale[index],old[index]);
+        const probe=preamble+"COPY . /context-probe/\nUSER node\nRUN node -e \"const assert=require('assert/strict'),tls=require('tls'),fs=require('fs'); assert.equal(tls.getCACertificates('extra').length, Number(process.env.EXPECT_EXTRA)); for(const context of ['docker/build-ca','frontend/docker/build-ca'])assert.equal(fs.existsSync('/context-probe/'+context+'/extra.pem'),false);console.log('CA_PROBE_OK')\"\n";
         const images=[];t.after(()=>{for(const image of images){spawnSync('docker',['image','rm',image],{stdio:'ignore'});}});
         for(const builder of ['0','1']){
             const image='neurocenter-ca-probe:'+process.pid+'-'+builder;images.push(image);
@@ -207,8 +218,9 @@ test('Real legacy and BuildKit Docker builds accept CA, reject mismatched SHA an
             await setProbe(0);let result=build([]);assert.equal(result.status,0,result.stdout+result.stderr);
             await withDockerBuildCa(directory,environment,async({args})=>{
                 await setProbe(1);result=build(args);assert.equal(result.status,0,result.stdout+result.stderr);
-                result=build(['--build-arg','NEUROCENTER_BUILD_CA_SHA256='+'0'.repeat(64)]);assert.notEqual(result.status,0);
+                result=build(args.map(value=>value.startsWith('NEUROCENTER_BUILD_CA_SHA256=')?'NEUROCENTER_BUILD_CA_SHA256='+'0'.repeat(64):value));assert.notEqual(result.status,0);
                 await setProbe(0);result=build([]);assert.equal(result.status,0,result.stdout+result.stderr);
             });
+            for(let index=0;index<stale.length;index++)assert.equal(await fs.readFile(stale[index],'utf8'),old[index]);await noStagedFiles(directory);
         }
     });

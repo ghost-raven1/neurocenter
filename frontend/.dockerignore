@@ -7,3 +7,8 @@ dist
 **/.npmrc
 **/.yarnrc
 **/.yarnrc.yml
+
+# Build CA inputs are per invocation; legacy extra.pem never enters the Docker context.
+docker/build-ca/*
+!docker/build-ca/.gitkeep
+!docker/build-ca/ca-*.pem

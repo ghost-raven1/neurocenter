@@ -29,6 +29,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     ports:
       - "127.0.0.1:${NEUROCENTER_PORT:-5173}:8080"
     depends_on:
@@ -49,6 +50,7 @@ services:
       dockerfile: services/oauth2-bridge/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
@@ -71,6 +73,7 @@ services:
       dockerfile: services/api-gateway/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
@@ -110,6 +113,7 @@ services:
       dockerfile: services/catalog-service/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
@@ -154,6 +158,7 @@ services:
       dockerfile: services/feature-flags-service/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
@@ -182,6 +187,7 @@ services:
       dockerfile: services/skills-service/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
@@ -228,6 +234,7 @@ services:
       dockerfile: services/rag-sync-service/Dockerfile
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
     env_file:
       - .env
       - path: .env.local
