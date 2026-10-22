@@ -16,7 +16,7 @@ const hooks = vi.hoisted(() => {
         effect(effect: () => void | (() => void), deps: unknown[]) {
             const index = cursor++, previous = slots[index];
             if (previous?.deps && deps.length === previous.deps.length && deps.every((value, i) => Object.is(value, previous.deps![i]))) return;
-            const slot = slots[index] = {deps}; effects.push(() => {previous?.cleanup?.(); slot.cleanup = effect() || undefined;});
+            const slot: (typeof slots)[number] = slots[index] = {deps}; effects.push(() => {previous?.cleanup?.(); slot.cleanup = effect() || undefined;});
         },
     };
 });
@@ -193,6 +193,45 @@ describe('Отмена, переключение и владелец', () => {
         vi.mocked(modelChatApi.list).mockResolvedValue([detail().conversation]); vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({turns: [turn({status: 'pending', answer: undefined})]}));
         const chat = await ready(); vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({turns: [turn({status: 'pending', answer: undefined})]})).mockResolvedValueOnce(detail({turns: [turn()]}));
         vi.mocked(modelChatApi.cancel).mockRejectedValueOnce(new Error('Запрос уже завершён')); await chat.stop(); expect(render().turns[0].status).toBe('done'); expect(render().error).toBe('');
+    });
+    it('Stop своей отправки A не отменяет новый B из другого окна после ожидания GET', async () => {
+        const send = deferred<IModelChatDetail>(), read = deferred<IModelChatDetail>();
+        vi.mocked(modelChatApi.send).mockReturnValueOnce(send.promise);
+        (await ready()).send('Свой запрос A'); await flush();
+        const call = vi.mocked(modelChatApi.send).mock.calls[0], requestId = call[2];
+        vi.mocked(modelChatApi.read).mockReturnValueOnce(read.promise);
+        const stopping = render().stop();
+        expect(call[5].aborted).toBe(true); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+        const completed = turn({id: 'saved-a', requestId, prompt: 'Свой запрос A'});
+        const next = turn({id: 'saved-b', requestId: 'other-window-b', prompt: 'Запрос другого окна', status: 'pending', answer: undefined});
+        const saved = detail({turns: [completed, next]}); read.resolve(saved); await stopping;
+        expect(modelChatApi.cancel).not.toHaveBeenCalled();
+        expect(render().turns).toEqual(saved.turns); expect(render().busy).toBe(true); expect(render().error).toBe('');
+        send.resolve(detail({turns: [completed]})); await flush();
+        expect(render().turns).toEqual(saved.turns); expect(modelChatApi.send).toHaveBeenCalledOnce();
+    });
+    it('Stop сохранённого pending A не отменяет B, появившийся после завершения A', async () => {
+        const pending = turn({id: 'saved-a', requestId: 'persisted-a', status: 'pending', answer: undefined});
+        vi.mocked(modelChatApi.list).mockResolvedValue([detail().conversation]);
+        vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({turns: [pending]}));
+        const chat = await ready(), read = deferred<IModelChatDetail>();
+        vi.mocked(modelChatApi.read).mockReturnValueOnce(read.promise); const stopping = chat.stop();
+        const saved = detail({turns: [{...pending, status: 'done', answer: turn().answer}, turn({id: 'saved-b', requestId: 'other-window-b', status: 'pending', answer: undefined})]});
+        read.resolve(saved); await stopping;
+        expect(modelChatApi.cancel).not.toHaveBeenCalled(); expect(render().turns).toEqual(saved.turns); expect(render().busy).toBe(true);
+        expect(modelChatApi.send).not.toHaveBeenCalled();
+    });
+    it('Потерянный ACK своей отмены перечитывает A и сохраняет новый pending B без повторной отмены', async () => {
+        const pending = turn({id: 'saved-a', requestId: 'persisted-a', status: 'pending', answer: undefined});
+        const initial = detail({turns: [pending]});
+        vi.mocked(modelChatApi.list).mockResolvedValue([initial.conversation]); vi.mocked(modelChatApi.read).mockResolvedValueOnce(initial);
+        const chat = await ready();
+        const saved = detail({turns: [{...pending, status: 'cancelled'}, turn({id: 'saved-b', requestId: 'other-window-b', status: 'pending', answer: undefined})]});
+        vi.mocked(modelChatApi.read).mockResolvedValueOnce(initial).mockResolvedValueOnce(saved);
+        vi.mocked(modelChatApi.cancel).mockRejectedValueOnce(new Error('Cancellation ACK lost'));
+        await chat.stop();
+        expect(modelChatApi.cancel).toHaveBeenCalledExactlyOnceWith(initial, 'saved-a', expect.any(AbortSignal));
+        expect(modelChatApi.read).toHaveBeenCalledTimes(3); expect(render().turns).toEqual(saved.turns); expect(render().busy).toBe(true); expect(render().error).toBe('');
     });
     it('Смена диалога отменяет прежний запрос и не подмешивает его ответ', async () => {
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);

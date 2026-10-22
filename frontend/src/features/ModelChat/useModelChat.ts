@@ -168,11 +168,12 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const stop = async (): Promise<void> => {
         if (!mounted.current || !captureOwner()()) return;
         const previous = pending.current, selected = current.current;
+        const requestId = previous?.requestId ?? selected?.turns[selected.turns.length - 1]?.requestId;
         if (!stopOwn()) abortActive();
         if (!selected) return;
         await run('saving', async (signal, owns) => {
             const saved = await modelChatApi.read(selected.conversation.id, signal); if (!owns()) return;
-            const tail = saved.turns[saved.turns.length - 1];
+            const tail = saved.turns.find(turn => turn.requestId === requestId);
             let result = saved;
             if (tail?.status === 'pending') {
                 try {result = await modelChatApi.cancel(saved, tail.id, signal);}
