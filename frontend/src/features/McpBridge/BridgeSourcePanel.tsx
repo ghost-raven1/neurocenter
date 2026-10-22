@@ -8,6 +8,7 @@ import type { IBridgeInstaller } from './useBridgeInstaller';
 import { activeImport } from '../AssetSources/types';
 import './BridgeSourcePanel.less';
 import {bridgeInstallerEligibility} from './bridgeInstallerEligibility';
+import {BridgeArchiveInstall} from './BridgeArchiveInstall';
 
 /** Новая опись ещё не меняет работающий установщик; одинаковая версия с иным комплектом — конфликт. */
 export function bridgeSupplyStatus(available?: IBridgeSourceRelease, imported?: IBridgeSourceRelease) {
@@ -21,12 +22,15 @@ export function bridgeSupplyStatus(available?: IBridgeSourceRelease, imported?: 
 }
 
 /** Отдельно показывает найденную, подготовленную на сервере и сообщённую компьютером версии. */
-export function BridgeSourcePanel({ installer, device, verified, windows, canManage, onInstall }: {
+export function BridgeSourcePanel({ installer, device, verified, windows, canManage, onInstall, archiveOpen, onArchiveChange, onCopy }: {
     installer: IBridgeInstaller; device?: IBridgeDevice; verified: boolean; windows: boolean; canManage: boolean; onInstall: () => void;
+    archiveOpen?:boolean;onArchiveChange?:(open:boolean)=>void;onCopy?:(text:string)=>void;
 }) {
     const source = useBridgeSource();
     const imports = useBridgeSourceImport(() => { void source.reload(); });
     const [url, setUrl] = useState('');
+    const [localArchiveOpen,setLocalArchiveOpen]=useState(false);
+    const setArchiveOpen=onArchiveChange??setLocalArchiveOpen;
     const [resolving, setResolving] = useState<{jobId: string; digest: string; revision: number}>();
     const data = source.data;
     const offline = data?.sourceMode === 'offline';
@@ -62,12 +66,14 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
             {data?.checkedAt && Number.isFinite(Date.parse(data.checkedAt)) && <Typography.Text type="secondary">Проверено: {new Date(data.checkedAt).toLocaleString('ru-RU')}</Typography.Text>}
         </div>
         <Space wrap className="bridge-source__actions">
+            <Button onClick={()=>setArchiveOpen(true)}>Из локального архива</Button>
             <Button loading={installer.loading || (source.loading && !source.checking)} disabled={source.checking || source.saving || imports.blocked} onClick={() => { installer.reload(); void source.reload(); }}>Обновить локальную поставку</Button>
             {!offline && <Button loading={source.checking} disabled={(source.loading && !source.checking) || source.saving || imports.blocked} onClick={() => { void source.check(); }}>Проверить новые версии в GitHub</Button>}
             {installerUrl && installSupply && (!devSupply || targetSupported) && <Typography.Link href={installerUrl} target="_blank" rel="noopener noreferrer">Установщик моста ({windows ? 'PowerShell' : 'macOS / Linux'})</Typography.Link>}
             {canInstall && installer.origin && <Button onClick={onInstall}>{device ? devUpdate ? 'Обновить dev-мост' : installedComparison === -1 ? 'Обновить мост' : 'Показать команду установки' : devSupply ? 'Установить dev-мост' : 'Установить мост'}</Button>}
             {canManage && fresh && !data?.importedError && status === 'available' && <Button type="primary" loading={imports.busy} disabled={sourceBusy} onClick={() => { if (data) void imports.start(data); }}>Подготовить {data?.available?.version} к установке</Button>}
         </Space>
+        {(archiveOpen??localArchiveOpen)&&<BridgeArchiveInstall installer={installer} supply={installSupply} windows={windows} onClose={()=>setArchiveOpen(false)} onCopy={onCopy} onRefresh={()=>{installer.reload();void source.reload();}}/>}
         {devSupply && <Typography.Paragraph type="secondary">Установщик использует dev-поставку этого сервера. Каталожный источник и его импорт показаны отдельно.</Typography.Paragraph>}
         {devSupply && eligibility.supported && !eligibility.confirmed && <Typography.Text type="secondary">Архитектуру компьютера проверит установщик.</Typography.Text>}
         {offline && <Typography.Paragraph type="secondary">Автономная поставка. Новые версии станут доступны после загрузки обновлённой поставки на сервер. GitHub не запрашивается.</Typography.Paragraph>}

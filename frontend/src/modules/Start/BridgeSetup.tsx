@@ -23,6 +23,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
     const [action,setAction]=useState<ConnectionAction>();
     const [platform,setPlatform]=useState<'windows'|'posix'>();
+    const [archiveOpen,setArchiveOpen]=useState(false);
     const {device}=bridge;
     const windows=platform?platform==='windows':device?.report.platform?device.report.platform==='win32':browserWindows;
     const needsReconnect=!!device&&(!!device.requiresReconnect||roleLevel(device.role)<2);
@@ -39,6 +40,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
     const installation=<>
         <Typography.Paragraph>{preservesConnection?'Выполните команду в терминале этого компьютера. Установщик установит доступную на этой площадке сборку моста.':'Выполните команду на компьютере, где будете работать. Установщик сам откроет страницу подтверждения в браузере.'}</Typography.Paragraph>
         <BridgeInstallerCommand installer={installer} windows={windows} target={bridgeDeviceTarget(device)} reconnect={needsReconnect} onCopy={onCopy}/>
+        <Button onClick={()=>setArchiveOpen(true)}>Из локального архива</Button>
         <Alert type="info" showIcon message={preservesConnection?'Перезапустите OpenCode после обновления':'Следующий шаг — подтвердить компьютер'}
             description={preservesConnection?'Сохранённое подключение будет использовано повторно. Файлы и история установок сохраняются. Затем нажмите «Проверить подключение», чтобы увидеть версию работающего моста.':'На открывшейся странице проверьте имя компьютера и нажмите «Подключить компьютер». Затем дождитесь статуса «На связи». Вводить код обычно не требуется.'}/>
         <Typography.Paragraph type="secondary" style={{marginTop:12}}>Готовый пакет содержит Node.js и зависимости моста. Устанавливать npm не требуется. Существующие настройки OpenCode сохраняются.</Typography.Paragraph>
@@ -57,7 +59,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
     const options=<Collapse ghost className="start__computer-options" activeKey={installerPanels??(connectionRequested||needsUpdate||needsReconnect||!device?.online?['another']:[])} onChange={keys=>setInstallerPanels(Array.isArray(keys)?keys:[keys])}>
         {bridge.devices.length>0&&<Collapse.Panel key="another" header={needsUpdate&&!needsReconnect?'Обновить или подключить мост':'Подключить другой компьютер или обновить мост'}>{connection}</Collapse.Panel>}
         <Collapse.Panel key="versions" forceRender header="Источник и версии моста">
-            <BridgeSourcePanel installer={installer} device={device} verified={bridge.devicesReady&&!bridge.errors.devices} windows={windows} canManage={canManageSource}
+            <BridgeSourcePanel installer={installer} device={device} verified={bridge.devicesReady&&!bridge.errors.devices} windows={windows} canManage={canManageSource} archiveOpen={archiveOpen} onArchiveChange={setArchiveOpen} onCopy={onCopy}
                 onInstall={()=>{setAction('install');setInstallerPanels(['another']);}}/>
         </Collapse.Panel>
     </Collapse>;
