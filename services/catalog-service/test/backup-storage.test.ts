@@ -31,6 +31,15 @@ describe('Границы хранилища и единая блокировка
     it('Два процесса не получают один корень одновременно, повтор после cleanup допустим',async()=>{
         const release=await backupLock(root);await expect(backupLock(root)).rejects.toMatchObject({status:409,response:{code:'BACKUP_BUSY'}});await release();await(await backupLock(root))();
     });
+    it('Изменившийся владелец lock сохраняет чужую блокировку и продолжает запрещать запись',async()=>{
+        const release=await backupLock(root);await writeFile(path.join(root,'.neurocenter-backup.lock','owner'),'another-owner');
+        await expect(release()).rejects.toThrow('Владелец блокировки');expect(await readFile(path.join(root,'.neurocenter-backup.lock','owner'),'utf8')).toBe('another-owner');
+        await expect(backupLock(root)).rejects.toMatchObject({status:409});
+    });
+    it('Корневой симлинк не создаёт каталог резервной копии в чужой папке',async()=>{
+        const target=path.join(root,'foreign'),alias=path.join(root,'alias');await mkdir(target);await symlink(target,alias);
+        await expect(backupDirectories(alias,path.join(alias,'child'))).rejects.toThrow('обычный каталог');await expect(readFile(path.join(target,'child'))).rejects.toMatchObject({code:'ENOENT'});
+    });
     it('Старая блокировка не удаляется автоматически и не разрешает второго писателя',async()=>{
         await mkdir(path.join(root,'.neurocenter-backup.lock'));await expect(backupLock(root)).rejects.toMatchObject({status:409});
     });

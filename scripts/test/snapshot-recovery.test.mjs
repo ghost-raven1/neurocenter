@@ -99,6 +99,8 @@ test('Backup refuses S3 SQL refs without matching configured source, and incompl
 test('Actual MinIO HTTP partial/truncated/wrong bytes fail without retaining partial objects or deleting an existing file',async()=>temporary(async root=>{
  const payload=Buffer.from('the exact bytes of a snapshot object'),sha256=hash(payload);let mode='partial',reads=0;
  const server=createServer((request,response)=>{
+  if(request.url.includes('?policy')){response.writeHead(404,{'content-type':'application/xml'});response.end('<Error><Code>NoSuchBucketPolicy</Code></Error>');return;}
+  if(request.url.includes('?acl')){response.writeHead(200,{'content-type':'application/xml'});response.end('<AccessControlPolicy><Owner><ID>owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser"><ID>owner</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>');return;}
   if(request.url.includes('versioning')){response.writeHead(200,{'content-type':'application/xml'});response.end('<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Status>Enabled</Status></VersioningConfiguration>');return;}
   if(mode==='retryable'){reads++;response.writeHead(503,{'content-type':'application/xml'});response.end('<Error><Code>SlowDown</Code><Message>Own bounded retry fixture</Message></Error>');return;}
   reads++;response.writeHead(200,{'content-length':String(payload.length),'content-type':'application/octet-stream'});

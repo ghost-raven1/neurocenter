@@ -9,6 +9,7 @@ import https from 'node:https';
 import type {Pool,PoolClient} from 'pg';
 import {runtimeArtifactDirectory} from '../runtime-artifacts/runtime-artifacts';
 import {SNAPSHOT_CHUNK_BYTES} from '../../../shared/project-snapshot.cjs';
+import {assertPrivateS3Bucket} from '../../../shared/s3-bucket-privacy.cjs';
 
 const digest=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 export interface SnapshotBlob {bytes:string;storage_id:string;version_id:string|null;state:'LIVE'|'DELETING'}
@@ -62,14 +63,18 @@ export class SnapshotStorage {
         }finally{await handle.close();}
     }
     private async remoteRead(project:string,sha:string,size:number,versionId:string):Promise<Buffer>{
+        if(typeof versionId!=='string'||!versionId||versionId==='null'||versionId.length>1024||/[\x00-\x1f\x7f]/.test(versionId))throw new ServiceUnavailableException('Нет точной S3-версии блока снимка.');
         const stream=await this.client!.getObject(this.bucket!,this.key(project,sha),{versionId});const chunks:Buffer[]=[];let received=0;
         const timer=setTimeout(()=>stream.destroy(new Error('Истёк срок чтения блока снимка.')),120000);timer.unref();
         try{for await(const part of stream){const bytes=Buffer.from(part);received+=bytes.length;if(received>size)throw new ConflictException('Блок снимка превышает опись.');chunks.push(bytes);}
             const bytes=Buffer.concat(chunks);if(received!==size||digest(bytes)!==sha)throw new ConflictException('SHA или размер блока снимка не совпал.');return bytes;
         }finally{clearTimeout(timer);stream.destroy();}
     }
+    private async privateBucket():Promise<void>{
+        if(this.client)try{await assertPrivateS3Bucket(this.client,this.bucket!);}catch{throw new ServiceUnavailableException('Закрытый доступ к хранилищу снимков не подтверждён.');}
+    }
     async read(project:string,sha:string):Promise<Buffer>{
-        this.key(project,sha);
+        this.key(project,sha);await this.privateBucket();
         const row=(await this.pool.query<SnapshotBlob>('SELECT bytes,storage_id,version_id,state FROM project_snapshot_blobs WHERE project_id=$1 AND sha256=$2',[project,sha])).rows[0];
         if(!row||row.state!=='LIVE'||row.storage_id!==this.storageId)throw new ServiceUnavailableException('Проверенный блок снимка недоступен в выбранном хранилище.');
         return this.client?this.remoteRead(project,sha,Number(row.bytes),row.version_id!):this.localRead(project,sha,Number(row.bytes));
@@ -84,9 +89,11 @@ export class SnapshotStorage {
             if(existing){
                 if(existing.state!=='LIVE')throw new ConflictException('Предыдущая версия блока очищается. Повторите загрузку после завершения очистки.');
                 if(Number(existing.bytes)!==bytes.length||existing.storage_id!==this.storageId)throw new ConflictException('Сохранённая опись блока отличается.');
+                await this.privateBucket();
                 if(this.client)await this.remoteRead(project,sha,bytes.length,existing.version_id!);else await this.localRead(project,sha,bytes.length);
                 return;
             }
+            await this.privateBucket();
             let intent=(await connection.query<WriteIntent>('SELECT * FROM project_snapshot_blob_writes WHERE project_id=$1 AND sha256=$2',[project,sha])).rows[0];
             if(intent){this.assertIntent(intent,bytes.length);const recovered=await this.settleWrite(connection,intent);if(recovered==='complete')return;if(recovered==='pending')throw new ServiceUnavailableException('Устраняются лишние версии предыдущей передачи блока. Повторите позже.');}
             const total=Number((await connection.query('SELECT (SELECT COALESCE(sum(bytes),0) FROM project_snapshot_blobs)+(SELECT COALESCE(sum(bytes)*2,0) FROM project_snapshot_blob_writes) AS bytes')).rows[0].bytes);
@@ -151,6 +158,7 @@ export class SnapshotStorage {
         const client=await this.pool.connect();let locked=false;
         try{locked=(await client.query("SELECT pg_try_advisory_lock(hashtextextended('neurocenter:snapshot-storage',0)) AS locked")).rows[0].locked;if(!locked)return false;
             const intent=(await client.query<WriteIntent>('SELECT * FROM project_snapshot_blob_writes ORDER BY created_at LIMIT 1')).rows[0];if(!intent)return false;
+            await this.privateBucket();
             if(await this.settleWrite(client,intent)==='missing')await client.query('DELETE FROM project_snapshot_blob_writes WHERE project_id=$1 AND sha256=$2 AND write_id=$3',[intent.project_id,intent.sha256,intent.write_id]);return true;
         }finally{if(locked)await client.query("SELECT pg_advisory_unlock(hashtextextended('neurocenter:snapshot-storage',0))").catch(()=>undefined);client.release();}
     }

@@ -10,6 +10,7 @@ import {snapshotRecoveryConfiguration,privateRecoveryFile} from './snapshot-reco
 import {snapshotObjectKey,snapshotObjectFile,snapshotLocalFile,readSnapshotBlobs,snapshotBlobs} from './snapshot-recovery-metadata.mjs';
 import {exportSnapshotKeys,readSnapshotSignatures,verifyBundleSnapshotKeys} from './snapshot-recovery-keys.mjs';
 import {digestFile} from './recovery-files.mjs';
+import {assertPrivateS3Bucket} from '../../services/shared/s3-bucket-privacy.cjs';
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const quote=value=>"'"+value.replace(/'/g,"''")+"'";
@@ -34,7 +35,7 @@ async function assertTargetObjects(store,target,expected){
 /** Must run while the full-backup lifecycle lock is held and applications are quiesced. */
 export async function exportSnapshotRecovery({directory,destination,sql,checkDeadline=()=>120000,storeFactory=snapshotRecoveryStore}){
  const configuration=await snapshotRecoveryConfiguration(directory),rows=await readSnapshotBlobs(sql),signatures=await readSnapshotSignatures(sql),keyFiles=await exportSnapshotKeys(destination,configuration,signatures);let store;
- if(rows.some(row=>row.storageId.startsWith('s3:'))){if(!configuration.source)throw new Error('S3 снимки требуют source в закрытой snapshot-recovery.json.');store=storeFactory(configuration.source,{checkDeadline});if((await store.getBucketVersioning(configuration.source.bucket)).Status!=='Enabled')throw new Error('Source bucket снимков требует включённый versioning.');}
+ if(rows.some(row=>row.storageId.startsWith('s3:'))){if(!configuration.source)throw new Error('S3 снимки требуют source в закрытой snapshot-recovery.json.');store=storeFactory(configuration.source,{checkDeadline});await assertPrivateS3Bucket(store,configuration.source.bucket);if((await store.getBucketVersioning(configuration.source.bucket)).Status!=='Enabled')throw new Error('Source bucket снимков требует включённый versioning.');}
  const blobs=[];for(const row of rows){checkDeadline();const remote=row.storageId.startsWith('s3:'),file=remote?snapshotObjectFile(row.projectId,row.sha256):snapshotLocalFile(row.projectId,row.sha256),filename=path.join(destination,file);
   if(remote){if(row.storageId!==configuration.source.storageId)throw new Error('S3 storage identity в SQL не соответствует source конфигурации.');await mkdir(path.dirname(filename),{recursive:true,mode:0o700});await verifyStream(await store.getObject(configuration.source.bucket,snapshotObjectKey(row.projectId,row.sha256),{versionId:row.versionId}),row,{destination:filename,checkDeadline});}
   else await checkLocal(filename,row);blobs.push({...row,file});
@@ -55,15 +56,15 @@ export async function previewSnapshotRecovery({directory,source,manifest,metadat
 export async function restoreSnapshotRecovery({source,preview,sql,beforeMutation=async()=>{},storeFactory=snapshotRecoveryStore}){
  const target=preview.configuration.target,blobs=preview.blobs;if(!target)return {objects:0};
  const store=storeFactory(target);if(await store.bucketExists(target.bucket))throw new Error('Target bucket восстановления уже существует.');await beforeMutation();await store.makeBucket(target.bucket,target.region);await beforeMutation();await store.setBucketVersioning(target.bucket,{Status:'Enabled'});
- if((await store.getBucketVersioning(target.bucket)).Status!=='Enabled')throw new Error('Target bucket не подтвердил versioning.');const remapped=[];
+ if((await store.getBucketVersioning(target.bucket)).Status!=='Enabled')throw new Error('Target bucket не подтвердил versioning.');await assertPrivateS3Bucket(store,target.bucket);const remapped=[];
  await assertTargetObjects(store,target,[]);
- for(const row of blobs){await beforeMutation();const filename=path.join(source,row.file);await checkLocal(filename,row);const input=createReadStream(filename);let result;
+ for(const row of blobs){await beforeMutation();await assertPrivateS3Bucket(store,target.bucket);const filename=path.join(source,row.file);await checkLocal(filename,row);const input=createReadStream(filename);let result;
   try{result=await store.putObject(target.bucket,snapshotObjectKey(row.projectId,row.sha256),input,row.bytes,{'Content-Type':'application/octet-stream'});}finally{input.destroy();}
   const versionId=result.versionId;if(typeof versionId!=='string'||!versionId||versionId==='null'||/[\x00-\x1f\x7f]/.test(versionId))throw new Error('S3 не подтвердил точную target version.');
   await verifyStream(await store.getObject(target.bucket,snapshotObjectKey(row.projectId,row.sha256),{versionId}),row);await checkLocal(filename,row);remapped.push({...row,storageId:target.storageId,versionId});
  }
- await assertTargetObjects(store,target,remapped);
- await beforeMutation();const statements=['BEGIN;'];for(let index=0;index<blobs.length;index++){const old=blobs[index],next=remapped[index];statements.push(`WITH updated AS (UPDATE project_snapshot_blobs SET storage_id=${quote(next.storageId)},version_id=${quote(next.versionId)} WHERE project_id=${quote(old.projectId)} AND sha256=${quote(old.sha256)} AND bytes=${old.bytes} AND storage_id=${quote(old.storageId)} AND version_id IS NOT DISTINCT FROM ${old.versionId===null?'NULL':quote(old.versionId)} RETURNING 1) SELECT 1/count(*) FROM updated;`);}statements.push('COMMIT;');await sql('catalog',statements.join('\n'));
+ await assertPrivateS3Bucket(store,target.bucket);await assertTargetObjects(store,target,remapped);
+ await beforeMutation();await assertPrivateS3Bucket(store,target.bucket);const statements=['BEGIN;'];for(let index=0;index<blobs.length;index++){const old=blobs[index],next=remapped[index];statements.push(`WITH updated AS (UPDATE project_snapshot_blobs SET storage_id=${quote(next.storageId)},version_id=${quote(next.versionId)} WHERE project_id=${quote(old.projectId)} AND sha256=${quote(old.sha256)} AND bytes=${old.bytes} AND storage_id=${quote(old.storageId)} AND version_id IS NOT DISTINCT FROM ${old.versionId===null?'NULL':quote(old.versionId)} RETURNING 1) SELECT 1/count(*) FROM updated;`);}statements.push('COMMIT;');await sql('catalog',statements.join('\n'));
  const actual=await readSnapshotBlobs(sql);if(!isDeepStrictEqual(actual,snapshotBlobs(remapped.map(({file,...row})=>row))))throw new Error('Опись восстановленных S3 объектов не соответствует target SQL.');
  return {objects:remapped.length,storageId:target.storageId,versions:remapped.map(({file,...row})=>row)};
 }
