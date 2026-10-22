@@ -70,5 +70,6 @@ JSON-результат указывает квитанцию в `.run/`. Отк
 ```sh
 node --test scripts/test/tool-build-cancellation-admission.test.mjs \
   scripts/test/tool-build-cancellation-lease.test.mjs \
-  scripts/test/tool-build-cancellation-worker-guard.test.mjs
+  scripts/test/tool-build-cancellation-worker-guard.test.mjs \
+  scripts/test/tool-build-cancellation-barrier.test.mjs
 ```
