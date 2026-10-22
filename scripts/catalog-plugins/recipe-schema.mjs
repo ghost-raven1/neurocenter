@@ -2,6 +2,7 @@ import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { additionalSourceTargets, validateAdditionalSource } from './source-adapters.mjs';
 import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
+import codexSource from '../../services/shared/codex-connector-source.cjs';
 
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) => object(value) && Object.keys(value).every(key => keys.includes(key));
@@ -53,6 +54,7 @@ export function validateRecipe(input) {
         }
         javascriptEntrypoint(source.entrypoint);
     } else { normalizedSource = validateAdditionalSource(source) ?? source; }
+    if(input.kind!=='plugin'&&(normalizedSource.type==='prepared'&&normalizedSource.adapter==='opencode-codex-bridge'||normalizedSource.type==='repository'&&codexSource.isPreparedCodexRepository(normalizedSource)))throw new Error('Коннектор Codex подключается как plugin.');
     if (input.kind !== 'plugin' && (normalizedSource.type === 'prepared' && normalizedSource.adapter === 'opencode-rag-plugin'
         || normalizedSource.type === 'repository' && ragSource.isPreparedRagRepository(normalizedSource))) {
         throw new Error('Совместимый OpenCodeRAG из GitHub подключается как plugin. Для MCP используйте отдельный адаптер opencode-rag.');

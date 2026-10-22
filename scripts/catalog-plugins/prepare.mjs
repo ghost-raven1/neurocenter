@@ -10,12 +10,14 @@ import { validateRecipe } from './recipe-schema.mjs';
 import { RAG_REVISION } from './recipes/opencode-rag.mjs';
 import { RAG_PLUGIN_REVISION } from './recipes/opencode-rag-plugin.mjs';
 import { SNIP_VERSION, SNIP_PLUGIN_VERSION } from './recipes/opencode-snip.mjs';
+import {CODEX_REVISION} from './recipes/codex-bridge.mjs';
 
 /** Встроенный каталог задаёт только рецепты; упаковка совпадает с любым пользовательским расширением. */
 export function builtinRecipes() {
     const tools = [
         ...npmTools.map(tool => ({ key: tool.key, name: tool.name, kind: 'mcp', description: tool.description, tags: tool.tags, revision: `${tool.version}-pack.1` })),
         ...filePlugins.map(tool => ({ key: tool.key, name: tool.name, kind: 'plugin', description: tool.description, tags: tool.tags, revision: `${tool.revision ?? '1.0.0'}-pack.1` })),
+        {key:'opencode-codex-bridge',name:'Codex — локальное подключение моделей',kind:'plugin',revision:CODEX_REVISION,tags:['Модели','ChatGPT','Локальный вход'],description:'Подключение моделей ChatGPT в OpenCode через официальный локальный Codex. Настройка и вход из интерфейса проекта; без ручного npm и изменения JSON. Ключи остаются на компьютере.'},
         { key: 'opencode-rag', name: 'OpenCodeRAG', kind: 'mcp', revision: RAG_REVISION, tags: ['RAG', 'npm', 'Локальная настройка'],
             description: 'Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.' },
         { key: 'opencode-rag-plugin', name: 'OpenCodeRAG (плагин)', kind: 'plugin', revision: RAG_PLUGIN_REVISION, tags: ['RAG', 'GitHub', 'Автоиндексация'],

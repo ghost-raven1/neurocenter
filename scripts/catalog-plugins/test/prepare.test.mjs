@@ -16,8 +16,8 @@ async function fixture() { const root = await fs.realpath(await fs.mkdtemp(path.
 
 test('Все встроенные инструменты являются рецептами единого builder с новой ревизией упаковки', () => {
     const recipes = builtinRecipes();
-    assert.equal(recipes.length, 8);
-    assert.equal(new Set(recipes.map(recipe => recipe.key)).size, 8);
+    assert.equal(recipes.length, 9);
+    assert.equal(new Set(recipes.map(recipe => recipe.key)).size, 9);
     for (const recipe of recipes) {
         assert.equal(validateRecipe(recipe).source.type, 'prepared');
         assert.match(recipe.revision, /pack\.\d+$/);
@@ -35,14 +35,14 @@ test('Все встроенные инструменты являются рец
     assert.throws(() => validateRecipe({ ...ragPlugin, kind: 'mcp' }), /подключается как plugin/);
 });
 
-test('Общий dry-run проверяет восемь рецептов и не создаёт output или сетевую сессию', async () => {
+test('Общий dry-run проверяет девять рецептов и не создаёт output или сетевую сессию', async () => {
     const f = await fixture();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => { throw new Error('Dry-run обратился к сети'); };
     try {
         const result = await prepareCatalog({ output: f.output, dryRun: true });
         assert.equal(result.dryRun, true);
-        assert.equal(result.plans.length, 8);
+        assert.equal(result.plans.length, 9);
         assert.ok(result.plans.every(tool => tool.dryRun));
         await assert.rejects(fs.access(f.output), { code: 'ENOENT' });
     } finally { globalThis.fetch = originalFetch; }
