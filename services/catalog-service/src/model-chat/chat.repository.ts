@@ -139,7 +139,9 @@ export class ChatRepository {
     }
     private async transaction<T>(action: (db: ChatDb) => Promise<T>): Promise<T> {
         const db = await this.pool.connect();
+        let discard = false;
         try { await db.query('BEGIN'); const result = await action(db); await db.query('COMMIT'); return result; }
-        catch (error) { await db.query('ROLLBACK'); throw error; } finally { db.release(); }
+        catch (error) { try { await db.query('ROLLBACK'); } catch { discard = true; } throw error; }
+        finally { db.release(discard); }
     }
 }

@@ -10,7 +10,7 @@ const services: ModelChatService[] = [];
 afterEach(async () => { for (const service of services.splice(0)) await service.pool.end(); });
 function fixture() {
     const actor = { email: 'owner@localhost', activeRole: 'Разработчик', claims: { projects: [{ projectId: 'prj-a', role: 'Разработчик' }] } };
-    const models = { actor: vi.fn(async () => structuredClone(actor)), resolveProject: vi.fn(async () => ({ id: 'prj-a' })), getUsable: vi.fn(async () => ({})) };
+    const models = { actor: vi.fn(async () => structuredClone(actor)), resolveProject: vi.fn(async () => ({ id: 'prj-a' })), getUsable: vi.fn(async (_id: string) => ({})) };
     const service = new ModelChatService(models as unknown as ModelsService, {} as ModelRuntime); services.push(service);
     const row = (id: string, modelId = id): ConversationRow => ({ id, model_id: modelId, owner_email: actor.email, project_id: 'prj-a', title: id, model_pin: 'a'.repeat(64), revision: 1, mode: 'model', agent_ids: [], created_at: new Date(), updated_at: new Date() });
     const list = vi.spyOn(service.repository, 'list').mockResolvedValue([row('model-a'), row('model-b'), row('model-c')]);
