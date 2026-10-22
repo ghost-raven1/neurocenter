@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
 import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
 
 const SHA = /^[a-f0-9]{64}$/;
@@ -105,11 +106,15 @@ export async function readDevBridgeRuntime(directory: string, signal: AbortSigna
         if ((await text(path.join(generation, name + '.sha256'), 128)).trim() !== selected.sha256) { throw new Error('Development bridge checksum sidecar differs.'); }
         archive = await ordinary(path.join(generation, name), 1024 ** 3);
         const before = await archive.stat(), hash = createHash('sha256'); let received = 0;
-        for await (const part of archive.createReadStream({ start: 0, autoClose: false, signal })) {
-            received += part.length;
-            if (received > selected.bytes) { throw new Error('Development bridge archive exceeds metadata.'); }
-            hash.update(part);
-        }
+        signal.throwIfAborted();
+        // Pipeline attaches error listeners before it owns cancellation of the stream.
+        await pipeline(archive.createReadStream({ start: 0, autoClose: false }), async parts => {
+            for await (const part of parts) {
+                received += part.length;
+                if (received > selected.bytes) { throw new Error('Development bridge archive exceeds metadata.'); }
+                hash.update(part);
+            }
+        }, { signal });
         const after = await archive.stat();
         if (before.size !== selected.bytes || received !== selected.bytes || hash.digest('hex') !== selected.sha256
             || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) { throw new Error('Development bridge archive changed or failed its checksum.'); }
