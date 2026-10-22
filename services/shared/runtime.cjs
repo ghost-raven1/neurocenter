@@ -49,7 +49,7 @@ function validateProduction(env, service) {
     for (const flag of ['SSO_DISABLE', 'RAG_AUTH_DISABLED']) {
         if (env[flag] !== undefined && env[flag] !== 'false') { throw new Error(flag + '=false обязателен в production'); }
     }
-    if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0') { throw new Error('Запрещено отключать проверку TLS'); }
+    if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0' && service !== 'api-gateway') { throw new Error('Запрещено отключать проверку TLS'); }
     const panel = service==='bootstrap-admin'?null:httpsUrl(required(env, 'PANEL_URL'), 'PANEL_URL', true);
     if (service!=='bootstrap-admin'&&!/^[a-f0-9]{64,128}$/.test(required(env, 'NEUROCENTER_INTERNAL_TOKEN'))) { throw new Error('NEUROCENTER_INTERNAL_TOKEN: нужны 32 или более случайных байта в hex'); }
     for (const name of service === 'catalog-service' ? ['CATALOG_PG_URL', 'RAG_PG_URL'] : ['bootstrap-admin','feature-flags-service'].includes(service)?['CATALOG_PG_URL']:service === 'rag-sync-service' ? ['RAG_PG_URL','RAG_PROVISION_PG_URL'] : []) {

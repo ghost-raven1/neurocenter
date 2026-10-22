@@ -28,6 +28,11 @@ test('Чужой callback и отключённый TLS отклоняются',
     assert.throws(()=>validateProduction({...auth(),REDIRECT_URI:'https://other.example.test/auth/callback'},'oauth2-bridge'));
     assert.throws(()=>validateProduction({...auth(),NODE_TLS_REJECT_UNAUTHORIZED:'0'},'oauth2-bridge'));
 });
+test('Gateway accepts its requested TLS setting while other services still reject it',()=>{
+    const env={...auth(),NODE_TLS_REJECT_UNAUTHORIZED:'0',CATALOG_SERVICE_URL:'http://catalog-service:4100',SKILLS_SERVICE_URL:'http://skills-service:4200',RAG_SERVICE_URL:'http://rag-sync-service:4300',AUTH_SERVICE_URL:'http://oauth2-bridge:22222',FEATURE_FLAGS_SERVICE_URL:'http://feature-flags-service:4400'};
+    assert.doesNotThrow(()=>validateProduction(env,'api-gateway'));
+    for(const service of ['catalog-service','skills-service','rag-sync-service','oauth2-bridge','feature-flags-service','bootstrap-admin'])assert.throws(()=>validateProduction(env,service),/TLS/);
+});
 for(const value of ['http://panel.example.test','https://user:secret@panel.example.test','https://panel.example.test/subpath']){
     test('Неподходящий публичный URL отклонён без раскрытия значения',()=>assert.throws(()=>validateProduction({...auth(),PANEL_URL:value},'oauth2-bridge'),error=>!error.message.includes('user:secret')));
 }

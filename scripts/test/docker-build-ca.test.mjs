@@ -159,7 +159,7 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
     for(const record of records){assert.deepEqual(record.args,['compose','build','frontend']);assert.match(record.sha,/^[a-f0-9]{64}$/);}
 });
 
-test('All Node Dockerfiles verify optional CA before npm and keep it readable for runtime users',async()=>{
+test('All Node Dockerfiles verify optional CA before npm and preserve the explicit gateway TLS exception',async()=>{
     for(const file of sourceFiles){
         const source=await fs.readFile(path.join(root,file),'utf8');
         assert.match(source,/ARG NEUROCENTER_BUILD_CA_SHA256/,file);
@@ -167,7 +167,11 @@ test('All Node Dockerfiles verify optional CA before npm and keep it readable fo
         assert.match(source,/sha256sum --check --status/,file);assert.match(source,/chmod 0444/,file);
         assert.match(source,/: > \/usr\/local\/share\/neurocenter\/build-ca\/extra.pem/,file);
         assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=')<source.indexOf('RUN npm ci'),file);
-        assert.doesNotMatch(source,/strict-ssl=false|NODE_TLS_REJECT_UNAUTHORIZED/,file);
+        if(file==='services/api-gateway/Dockerfile'){
+            assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
+            assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);assert.match(source,/--strict-ssl=false/,file);
+            assert.doesNotMatch(source,/strict-ssl=true/,file);
+        }else assert.doesNotMatch(source,/strict-ssl=false|NODE_TLS_REJECT_UNAUTHORIZED/,file);
     }
     for(const file of ['docker-compose.yml','compose.production.yml']){
         const source=await fs.readFile(path.join(root,file),'utf8');

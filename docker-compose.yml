@@ -76,6 +76,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
       - PORT=4000
       - BIND_HOST=0.0.0.0
       - BRIDGE_TEMPLATES_DIR=/app/bridge-dist

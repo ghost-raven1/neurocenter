@@ -44,7 +44,9 @@ function progress(total) {
 
 /** Выполняет команду с передачей её ошибки вызывающему процессу. */
 function run(command, args, cwd = root, env = process.env) {
-    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env });
+    const gateway = path.resolve(cwd) === path.join(root, 'services/api-gateway');
+    const childEnvironment = gateway ? {...env, NODE_TLS_REJECT_UNAUTHORIZED: '0', NPM_CONFIG_STRICT_SSL: 'false'} : env;
+    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: childEnvironment });
     if (result.error) { throw result.error; }
     if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
 }
@@ -52,7 +54,8 @@ function run(command, args, cwd = root, env = process.env) {
 /** Общий source contract устанавливается по HTTPS и integrity корневого lock-файла. */
 async function installDependencies(cwd = root, extra = []) {
     const npm = npmCli(process.env);
-    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args], cwd, env));
+    const gateway = path.resolve(cwd) === path.join(root, 'services/api-gateway');
+    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args.map(arg => gateway && arg === '--strict-ssl=true' ? '--strict-ssl=false' : arg)], cwd, env));
 }
 async function prepareWorkspaceDependencies() {
     await installDependencies(root, ['--ignore-scripts']);

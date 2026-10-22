@@ -1,3 +1,6 @@
+// Apply the gateway TLS setting before bootstrap, including direct node dist/main.js launches.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import {snapshotContentRoute} from '../../shared/snapshot-content-route.cjs';
 import {sourceUploadContentRoute} from '../../shared/source-upload-route.cjs';
 import {assetSourceArchiveRoute} from '../../shared/asset-source-archive-route.cjs';

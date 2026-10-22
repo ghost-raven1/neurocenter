@@ -274,6 +274,7 @@ services:
     cpus: 1
     environment:
       <<: *runtime
+      NODE_TLS_REJECT_UNAUTHORIZED: '0'
       PORT: 4000
       API_PUBLIC_URL: ${API_PUBLIC_URL:-}
       NEUROCENTER_TLS_PROXY_ADDRESSES: ${NEUROCENTER_TLS_PROXY_ADDRESSES:-}
