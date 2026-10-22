@@ -7,6 +7,7 @@ import {syncAssets} from './sync.mjs';
 import {assetProgressReporter} from './progress.mjs';
 import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from './environment.mjs';
+import {assetRetrievalFetch} from './retrieval.mjs';
 
 const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--offline-ready] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>]';
 
@@ -69,7 +70,7 @@ export async function runAssetsCli(args=process.argv.slice(2)) {
     const interrupt=()=>cancellation.abort(Object.assign(new Error('Подготовка поставки прервана. Проверенный кэш сохранён; повторите команду.'),{code:'ECANCELED'}));
     process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
     try {
-        const report=await syncAssets({...options,root,environment,signal:cancellation.signal,onProgress:assetProgressReporter()});
+        const report=await syncAssets({...options,root,environment,signal:cancellation.signal,onProgress:assetProgressReporter(),fetch:assetRetrievalFetch()});
         console.log(JSON.stringify(report));return report;
     } finally {process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);}
 }
