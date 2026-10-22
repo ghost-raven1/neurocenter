@@ -99,7 +99,8 @@ export class BridgeController {
     /** Проверенная imported версия либо явная локальная host-сборка в development. */
     @Get('runtime/:file')
     public async runtime(@Req() req: Request, @Res() res: Response): Promise<void> {
-        await bridgeRequest(req, res, signal => this.supply.runtime(req.params.file, signal, res));
+        await bridgeRequest(req, res, signal => req.query.download === '1'
+            ? this.supply.runtime(req.params.file, signal, res, true) : this.supply.runtime(req.params.file, signal, res));
     }
 
     private async read(file: string): Promise<Buffer> {
@@ -113,7 +114,12 @@ export class BridgeController {
     /** Разделяет адрес скачивания и идентичность площадки, сохраняя существующее подключение моста. */
     private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
         await bridgeRequest(req, res, async signal => {
-            const version = bridge ? (await this.supply.supply(signal)).version : undefined;
+            const selected = bridge ? req.query.version : undefined;
+            if (selected !== undefined && (typeof selected !== 'string' || !/^\d+\.\d+\.\d+$/.test(selected))) {
+                throw new NotFoundException('Версия установщика моста не найдена.');
+            }
+            // An archive carried to another computer keeps its matching installer after the head changes.
+            const version = bridge ? (await (selected === undefined ? this.supply.supply(signal) : this.supply.supply(signal, selected))).version : undefined;
             if (signal.aborted || res.destroyed) { return; }
             let script = (await this.read(file)).toString('utf8');
             if (signal.aborted || res.destroyed) { return; }
@@ -139,6 +145,7 @@ export class BridgeController {
             if (/__(?:BRIDGE_[A-Z_]+|BASE_URL|SITE_URL|RECONNECT)__/.test(script)) { throw new NotFoundException('Шаблон подключения моста недоступен.'); }
             res.setHeader('cache-control', 'no-store');
             res.setHeader('content-type', file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8');
+            if (req.query.download === '1') { res.setHeader('content-disposition', `attachment; filename="${file}"`); }
             res.send(script);
         });
     }

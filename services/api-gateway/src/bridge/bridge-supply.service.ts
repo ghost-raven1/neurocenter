@@ -65,7 +65,7 @@ export class BridgeSupplyService {
     }
 
     /** Метаданные и checksum берутся из того же неизменяемого descriptor, что и архив. */
-    public async runtime(file: string, signal: AbortSignal, res: Response): Promise<void> {
+    public async runtime(file: string, signal: AbortSignal, res: Response, download = false): Promise<void> {
         const match = /^neurocenter-asset-sync-((?:darwin|linux|windows)-(?:x64|arm64)(?:-musl)?)-(\d+\.\d+\.\d+)\.tgz(\.sha256|\.json)?$/.exec(file);
         if (!match) { throw new NotFoundException('Пакет для этой платформы не найден.'); }
         const local = this.devRuntimeDirectory ? await readDevBridgeRuntime(this.devRuntimeDirectory, signal) : undefined;
@@ -74,6 +74,7 @@ export class BridgeSupplyService {
                 if (local.artifact.file !== file.replace(/\.(?:sha256|json)$/, '') || local.artifact.target !== match[1]) { throw new NotFoundException('Dev-пакет для этой платформы не собран.'); }
                 if (signal.aborted) { return; }
                 res.setHeader('cache-control', 'no-store');
+                if (download) { res.setHeader('content-disposition', `attachment; filename="${file}"`); }
                 if (match[3]) {
                     res.setHeader('content-type', match[3] === '.json' ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8');
                     res.send(match[3] === '.json' ? JSON.stringify(local.artifact.metadata) + '\n' : local.artifact.sha256 + '\n');
@@ -82,7 +83,7 @@ export class BridgeSupplyService {
                     catch {
                         if (signal.aborted || res.destroyed) { return; }
                         if (res.headersSent) { res.destroy(); return; }
-                        res.removeHeader('content-length'); res.removeHeader('content-type');
+                        res.removeHeader('content-length'); res.removeHeader('content-type'); res.removeHeader('content-disposition');
                         throw new ServiceUnavailableException('Передача dev-пакета моста прервана. Повторите установку.');
                     }
                 }
@@ -94,6 +95,7 @@ export class BridgeSupplyService {
         const artifact = supply.artifacts.find(item => item.file === file.replace(/\.(?:sha256|json)$/, '') && item.target === match[1]);
         if (!artifact) { throw new NotFoundException('Пакет для этой платформы ещё не импортирован.'); }
         res.setHeader('cache-control', 'no-store');
+        if (download) { res.setHeader('content-disposition', `attachment; filename="${file}"`); }
         if (match[3]) {
             res.setHeader('content-type', match[3] === '.json' ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8');
             res.send(match[3] === '.json' ? JSON.stringify(artifact.metadata) + '\n' : artifact.sha256 + '\n');
@@ -123,6 +125,7 @@ export class BridgeSupplyService {
             if (res.headersSent) { res.destroy(); return; }
             res.removeHeader('content-length');
             res.removeHeader('content-type');
+            res.removeHeader('content-disposition');
             throw new ServiceUnavailableException('Передача пакета моста прервана. Повторите установку.');
         }
     }
