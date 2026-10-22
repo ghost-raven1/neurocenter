@@ -22,6 +22,7 @@ import { workspaceFailureMessage } from './workspace-failure';
 import {completeHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, assertHostedRagResult } from './hosted-rag-jobs';
 import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
+import {OPENCODE_PROVIDER_JOBS,normalizeProviderReport} from '../../../shared/opencode-providers.cjs';
 
 export interface DeviceCompletion {
     lease: string;
@@ -68,6 +69,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         assertAgentConfigurationResult(job,input.result,input.state==='failed');
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
+        if(OPENCODE_PROVIDER_JOBS.includes(job.kind as never)){
+            try{normalizeProviderReport(job.kind,input.result,job.payload.descriptor,input.state==='failed',job.payload.preparationId as string|undefined);}
+            catch{throw new ConflictException('Отчёт провайдера содержит неподдерживаемые данные или другой контекст.');}
+        }
         if(job.kind==='scan-opencode-models'&&(input.state==='failed'?Object.keys(input.result).length>0:!validModelScan(input.result,job.payload.scope==='global'?{scope:'global',deviceId:job.device_id}:{scope:'project',projectId:job.project_id,bindingId:job.payload.bindingId,instanceId:job.payload.instanceId})))throw new ConflictException('Отчёт моделей содержит неподдерживаемые данные или относится к другому источнику.');
         if (![...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
             throw new BadRequestException('Результат задания превышает допустимый размер.');
@@ -132,10 +137,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                 }
             }
         }
-        const known = [PROJECT_AGENTS_JOB,SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
+        const known = [PROJECT_AGENTS_JOB,SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...OPENCODE_PROVIDER_JOBS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
         const matching = job.kind === 'scan-opencode-models' ? job.payload.scope==='global'?job.project_id===null&&input.result.scope==='global'&&input.result.deviceId===job.device_id:input.result.scope==='project'&&input.result.projectId===job.project_id : job.kind === PROJECT_AGENTS_JOB ? input.result.readiness==='configured' : job.kind === SNAPSHOT_JOB_KIND ? input.result.status==='UPLOADED' : job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
             ? typeof input.result.root === 'string' && input.result.root.length > 0 && input.result.root.length <= 4096
-            : input.result.projectId === job.project_id && ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','inspect-installation'].includes(job.kind) || input.result.ok === true);
+            : input.result.projectId === job.project_id && ([...CONFIGURATION_KINDS,...OPENCODE_PROVIDER_JOBS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','inspect-installation'].includes(job.kind) || input.result.ok === true);
         // Действующая аренда подтверждает исполнителя, но не принадлежность результата исходному проекту.
         if (known && input.state === 'succeeded' && !matching) {
             throw new ConflictException('Результат не соответствует исходному заданию выбора папки или действия с проектом.');
@@ -192,7 +197,11 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         const hostedMessage=job.kind===HOSTED_RAG_KIND?(input.state==='failed'?'Подключение модели не подтверждено. Прежний локальный индекс сохранён; проверьте состояние на компьютере.':job.payload.reindex?'Модель подключена, локальный индекс перестроен и синхронизирован с сервером.':'Модель подключена к установленному OpenCodeRAG.'):undefined;
         const snapshotMessage=job.kind===SNAPSHOT_JOB_KIND?(input.state==='succeeded'?'Все блоки снимка приняты сервером. Проверка LanceDB выполняется отдельно.':'Передача снимка прервалась. Создайте новый снимок; локальная база не изменялась.'):undefined;
         const agentMessage=job.kind===PROJECT_AGENTS_JOB?(input.state==='succeeded'?PROJECT_AGENTS_NOTE:input.result.code==='OPENCODE_AGENT_MODEL_SETUP_REQUIRED'?'Настройте модель в OpenCode выбранного компьютера и повторите применение. Прежние агенты сохранены.':'Настройка агентов не применена. Проверьте компьютер, папку и локальные изменения.'):undefined;
-        const message = agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
+        const providerMessage=OPENCODE_PROVIDER_JOBS.includes(job.kind as never)?input.state==='failed'?'Настройка провайдера не подтверждена. Проверьте компьютер и доступ к проекту.'
+            :job.kind==='prepare-opencode-provider'?'Настройка подготовлена. Откройте мастер на выбранном компьютере.'
+            :job.kind==='open-opencode-provider'?'Мастер открыт на компьютере. После сохранения обновите статус.'
+            :input.result.ready?'Локальный провайдер настроен; запрос к модели не проверялся.':'Локальному провайдеру требуется настройка.':undefined;
+        const message = providerMessage ?? agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'

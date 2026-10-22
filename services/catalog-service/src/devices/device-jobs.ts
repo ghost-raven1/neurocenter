@@ -32,6 +32,9 @@ import { projectLocalJobPayload, assertProjectLocalJob } from './project-local-j
 import { CONFIGURATION_KINDS } from './mcp-config-reports';
 import { mcpConfigurationJobPayload, assertMcpConfigurationJob } from './mcp-config-jobs';
 import { authorizeMcpConfigurationSave } from './mcp-config-permit';
+import {OPENCODE_PROVIDER_JOBS} from '../../../shared/opencode-providers.cjs';
+import {providerJobPayload,assertProviderJob} from './opencode-provider-jobs';
+import {authorizeProviderAction} from './opencode-provider-permit';
 import {reconcileSnapshotJobs} from './project-snapshot-completion';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
@@ -45,14 +48,16 @@ import {requiredJobFeatures} from '../../../shared/feature-policy.cjs';
 import { ProjectEmbeddingService } from '../models/project-embedding.service';
 import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
-const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId"`;
+const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
+    payload->'descriptor'->>'providerKind' AS "providerKind",payload->'descriptor'->>'providerId' AS "providerId",payload->'descriptor'->>'schemaDigest' AS "providerSchemaDigest",
+    payload->'descriptor'->'expectations'->>'catalogModelId' AS "catalogModelId",payload->'descriptor'->'expectations'->>'modelPin' AS "expectedModelPin"`;
 
 /** Очередь с арендой: потеря worker не превращается в успех или повторную запись без проверки. */
 @Injectable()
 export class DeviceJobs {
     constructor(
         private readonly store: DeviceStore,
-        _artifacts: DeviceArtifacts,
+        private readonly artifacts: DeviceArtifacts,
         private readonly installations:DeviceInstallations,
         private readonly plans: InstallPlans,
         private readonly embedding: ProjectEmbeddingService,
@@ -114,6 +119,7 @@ export class DeviceJobs {
                 PROJECT_AGENTS_JOB,
                 ...PROJECT_LOCAL_KINDS,
                 ...CONFIGURATION_KINDS,
+                ...OPENCODE_PROVIDER_JOBS,
                 'bind-project',
                 'prepare-bind-project',
                 'prepare-local-change',
@@ -170,8 +176,10 @@ export class DeviceJobs {
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
         const configuration=await mcpConfigurationJobPayload(this.store,this.installations,this.plans,device,input);
+        const provider=await providerJobPayload(this.store,this.artifacts,device,input,actor.activeRole);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(agentConfiguration){payload={...agentConfiguration};}
+        if(provider){payload=provider;}
+        else if(agentConfiguration){payload={...agentConfiguration};}
         else if(snapshot){payload=snapshot;}
         else if(hostedRag){payload=hostedRag;}
         else if(ragUi){payload=ragUi;}
@@ -303,6 +311,7 @@ export class DeviceJobs {
             if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
+            await assertProviderJob(this.store,this.artifacts,device,job);
             await assertAgentConfigurationJob(this.store,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
             await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
@@ -386,12 +395,28 @@ export class DeviceJobs {
             throw new ConflictException('Привязка папки изменилась после отправки задания. Повторите действие для актуальной папки.');
         }
         await registerHostedRagGrant(this.store.pool,device,job,lease,()=>assertHostedRagJob(this.embedding,this.installations,this.plans,device,job));
+        if(OPENCODE_PROVIDER_JOBS.includes(job.kind as never)){
+            await assertProviderJob(this.store,this.artifacts,device,job);
+            await this.permission(device,job.role,job.project_id??undefined,2);
+            const current=await this.store.pool.query(`SELECT job.id FROM bridge_jobs job JOIN bridge_devices device ON device.id=job.device_id
+                WHERE job.id=$1 AND job.device_id=$2 AND job.email=$3 AND job.role=$4 AND job.lease=$5
+                AND job.state='running' AND job.lease_until>clock_timestamp() AND job.payload->'descriptor'=$6::jsonb
+                AND device.email=$3 AND device.role=$7 AND NOT device.revoked AND device.expires_at>clock_timestamp()
+                AND EXISTS(SELECT 1 FROM jsonb_array_elements(device.report->'bindings') binding WHERE binding->>'projectId'=job.project_id
+                    AND binding->>'bindingId'=job.payload->>'bindingId' AND binding->>'instanceId'=job.payload->>'instanceId' AND binding->>'valid' IS DISTINCT FROM 'false')`,
+            [job.id,device.id,device.email,job.role,lease,JSON.stringify(job.payload.descriptor),device.role]);
+            if(!current.rows.length)throw new ConflictException('Задание или привязка провайдера изменились во время проверки.');
+            await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
+        }
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
     async compileAgents(device:Device,input:unknown){return compileAgentJob(this.store,device,input,(id,lease)=>this.authorize(device,id,lease));}
     async authorizeConfiguration(device:Device,input:unknown){
         return authorizeMcpConfigurationSave(this.store,this.installations,this.plans,device,input,
             async(role,projectId)=>{await this.permission(device,role,projectId,2);await requireFeaturesEnabled(requiredJobFeatures('open-mcp-configuration'));});
+    }
+    async authorizeProvider(device:Device,input:unknown){
+        return authorizeProviderAction(this.store,this.artifacts,device,input,(role,projectId)=>this.permission(device,role,projectId,2));
     }
     /** Общие инструменты требуют выбора админа; собственные проектные скиллы доступны по роли. */
     private async assertCatalogAsset(projectId: unknown, kind: unknown, id: unknown): Promise<void> {

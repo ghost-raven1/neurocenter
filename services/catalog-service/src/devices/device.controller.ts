@@ -133,6 +133,9 @@ export class DeviceController {
     @Post('internal/device-channel/configuration-authorize') async configurationAuthorize(@Req() req:Request,@Body() input:unknown){
         return this.jobs.authorizeConfiguration(await this.device(req),input);
     }
+    @Post('internal/device-channel/opencode-provider/authorize') async providerAuthorize(@Req() req:Request,@Body() input:unknown){
+        return this.jobs.authorizeProvider(await this.device(req),input);
+    }
     @Post('internal/device-channel/embedding/context') async embeddingContext(@Req() req:Request,@Body() input:unknown){
         return this.embedding.context(await this.device(req),input);
     }

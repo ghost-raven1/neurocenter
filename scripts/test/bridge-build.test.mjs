@@ -14,6 +14,7 @@ const ragUiContract = fileURLToPath(new URL('../../services/shared/rag-ui-contra
 const snapshotContract = fileURLToPath(new URL('../../services/shared/project-snapshot.cjs', import.meta.url));
 const agentsContract = fileURLToPath(new URL('../../services/shared/project-agents.cjs', import.meta.url));
 const learningContract = fileURLToPath(new URL('../../services/shared/project-learning.cjs', import.meta.url));
+const providerContract = fileURLToPath(new URL('../../services/shared/opencode-providers.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 test('RAG Dockerfile передаёт MCP все реальные shared build inputs до компиляции',async()=>{
@@ -40,6 +41,7 @@ async function fixture(source) {
     await fs.copyFile(snapshotContract, path.join(workspace, 'services/shared/project-snapshot.cjs'));
     await fs.copyFile(agentsContract, path.join(workspace, 'services/shared/project-agents.cjs'));
     await fs.copyFile(learningContract, path.join(workspace, 'services/shared/project-learning.cjs'));
+    await fs.copyFile(providerContract, path.join(workspace, 'services/shared/opencode-providers.cjs'));
     await fs.copyFile(path.join(bridge, '../../services/shared/opencode-model-scan.cjs'), path.join(workspace, 'services/shared/opencode-model-scan.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
@@ -61,6 +63,7 @@ test('Чистая сборка убирает удалённый инструм
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-snapshot.cjs'), 'utf8'), await fs.readFile(snapshotContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-agents.cjs'), 'utf8'), await fs.readFile(agentsContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-learning.cjs'), 'utf8'), await fs.readFile(learningContract, 'utf8'));
+    assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/opencode-providers.cjs'), 'utf8'), await fs.readFile(providerContract, 'utf8'));
 });
 test('Ошибка компиляции сохраняет предыдущую рабочую сборку', async () => {
     const f = await fixture('export const value: number = "ошибка";'); assert.notEqual(f.run().status, 0);

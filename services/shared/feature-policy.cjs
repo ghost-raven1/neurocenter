@@ -6,7 +6,8 @@ const unique=keys=>[...new Set(keys)];
 /** Recovery/removal jobs remain usable when every business capability is disabled. */
 function requiredJobFeatures(kind,payload={},trustedPayload=false){
     const input=record(payload);
-    if(['uninstall','restore-rag','inspect-installation','list-local-variants','prepare-local-restore','apply-local-restore','open-local-change-report','open-local-recovery-folder','get-mcp-configuration-status'].includes(kind))return [];
+    if(['uninstall','restore-rag','inspect-installation','list-local-variants','prepare-local-restore','apply-local-restore','open-local-change-report','open-local-recovery-folder','get-mcp-configuration-status','get-opencode-provider-status'].includes(kind))return [];
+    if(['prepare-opencode-provider','open-opencode-provider'].includes(kind))return (trustedPayload?record(input.descriptor).providerKind:input.providerKind)==='codex-bridge'?['opencode_providers','codex_connector']:['opencode_providers'];
     if(['choose-root','prepare-bind-project','bind-project'].includes(kind))return (input.bindingMode==='resume'||input.mode==='resume')?[]:['computer_connections'];
     if(kind==='scan-opencode-models')return ['opencode_model_sync'];
     if(kind==='configure-project-agents')return trustedPayload&&Array.isArray(input.agents)&&input.agents.every(agent=>record(agent).enabled===false)?[]:['agents','computer_connections'];
@@ -74,6 +75,7 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/api\/projects\/[^/]+\/agents\/[^/]+\/readiness-trials(?:\/[^/]+(?:\/cancel)?)?$/.test(route))return [];
     if(/^\/api\/projects\/[^/]+\/agents\/connect$/.test(route))return [];
     if(/^\/api\/agents(?:\/|$)/.test(route)||/^\/api\/projects\/[^/]+\/agents(?:\/|$)/.test(route))return verb==='DELETE'||input.enabled===false?[]:['agents'];
+    if(verb==='GET'&&route==='/api/tool-builds/connectors/codex')return [];
     if(/^\/api\/tool-builds(?:\/|$)/.test(route))return verb==='DELETE'?[]:unique(['tool_builds',...(route==='/api/tool-builds'||route==='/api/tool-builds/imports'?requiredAssetFeatures(input.kind??record(input.asset).kind):[])]);
     if(/^\/api\/(?:asset-sources|asset-imports|bridge-source)(?:\/|$)/.test(route))return /\/cancel$/.test(route)?[]:['asset_sources'];
     if(/^\/api\/device-install-plans(?:\/|$)/.test(route))return /\/(revoke|cancel)$/.test(route)?[]:['tool_installation'];

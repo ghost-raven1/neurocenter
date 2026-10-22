@@ -84,6 +84,22 @@
     "defaultEnabled": true
   },
   {
+    "key": "opencode_providers",
+    "name": "Провайдеры OpenCode",
+    "description": "Управляемая локальная настройка провайдеров моделей через мост. Ключи остаются на компьютере.",
+    "group": "models",
+    "dependsOn": ["computer_connections", "model_catalog"],
+    "defaultEnabled": false
+  },
+  {
+    "key": "codex_connector",
+    "name": "Коннектор Codex",
+    "description": "Локальное подключение Codex и новые обращения через управляемый коннектор.",
+    "group": "models",
+    "dependsOn": ["opencode_providers"],
+    "defaultEnabled": false
+  },
+  {
     "key": "agents",
     "name": "Управление агентами",
     "description": "Новые шаблоны, изменения промптов и подключение агентов проекта.",

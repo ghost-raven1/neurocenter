@@ -1,5 +1,9 @@
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
+import {buildFeatures,assertCodexBuildKind,assertCodexBuildPublication,publishedCodexConnectors} from './codex-connector-build';
+import {CODEX_PLUGIN_SOURCE,isPreparedCodexRepository} from '../../../shared/codex-connector-source.cjs';
+import {verifyPackage} from '../catalog/bundle-package';
+import {normalizeRuntimeArtifacts} from '../../../shared/runtime-artifacts.cjs';
 import {SourceUploadService} from '../source-upload/source-upload.service';
 import { inspectGithubReleaseAsset, inspectGithubRepository } from '../../../shared/release-inspection.cjs';
 import { ConflictException, ForbiddenException, Injectable, Optional, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
@@ -155,6 +159,30 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await this.requireMain(actor); await requireFeaturesEnabled(['tool_builds']);
         return resolveNpmSource(specifier, entrypoint);
     }
+    /** Main-admin read-only supply status avoids rebuilding an already published fixed connector. */
+    async codexConnector(actor:IAccessActor):Promise<{state:'ready'|'missing'|'building'|'conflict';buildId?:string;targets?:string[]}>{
+        await this.requireMain(actor);
+        const pin=require('../../../shared/codex-connector-pin.json') as {sourceCommit:string;version:string;sdkVersion:string;repository:string};
+        const rows=await publishedCodexConnectors(this.pool,pin);
+        let result:{state:'ready'|'missing'|'building'|'conflict';buildId?:string;targets?:string[]};
+        if(rows.length>1)result={state:'conflict'};
+        else if(rows.length===1){
+            const pkg=await this.catalog.getAiPluginPackage(rows[0].id,Number(rows[0].version));
+            try{
+                assertCodexBuildPublication({kind:'plugin',source:{type:'repository',...CODEX_PLUGIN_SOURCE}},
+                    {name:pkg.plugin.name,kind:'plugin',description:'',config:pkg.config});
+                if(!verifyPackage(pkg)||pkg.plugin.kind!=='plugin')throw new ConflictException();
+                result={state:'ready',targets:normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts).map(item=>item.target)};
+            }catch{result={state:'conflict'};}
+        }else{
+            const pending=await this.pool.query<{id:string;targets:string[]}>(`SELECT id,config->'targets' AS targets FROM tool_build_jobs WHERE state IN ('QUEUED','RUNNING')
+                AND config->>'kind'='plugin' AND config#>>'{source,type}'='repository' AND config#>>'{source,url}'=$1
+                AND config#>>'{source,commit}'=$2 AND config#>>'{source,subdirectory}'=$3 AND config#>>'{source,entrypoint}'=$4 ORDER BY created_at,id`,
+            [CODEX_PLUGIN_SOURCE.url,CODEX_PLUGIN_SOURCE.commit,CODEX_PLUGIN_SOURCE.subdirectory,CODEX_PLUGIN_SOURCE.entrypoint]);
+            result=pending.rows.length>1?{state:'conflict'}:pending.rows.length?{state:'building',buildId:pending.rows[0].id,targets:pending.rows[0].targets}:{state:'missing'};
+        }
+        await this.requireMain(actor);return result;
+    }
     async archiveSource(actor: IAccessActor, input: unknown) {
         await this.requireMain(actor); await requireFeaturesEnabled(['tool_builds']);
         return readSourceArchive(input);
@@ -218,7 +246,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
         const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
         if (previous) { return buildView(previous); }
-        await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(input.kind)]);
+        await requireFeaturesEnabled(buildFeatures(input));
         if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
         let source: BuildConfiguration['source'];
         if (input.source.type === 'npm') {
@@ -240,6 +268,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         } else {source = input.source;}
         const {requestKey: _requestKey, ...configuration} = input;
         const config: BuildConfiguration = {...configuration, source};
+        assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...source.supportedTargets];}
@@ -271,6 +300,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             try {
                 releaseDb = await reserveCapacity({resource: 'postgres', bytes: Buffer.byteLength(JSON.stringify(config)) + 131072});
                 await this.requireMain(actor);
+                if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
                 this.currentLease(lease);
                 const row = source.type==='upload'
                     ? await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,client=>this.uploads!.retain(client,actor.email,source))
@@ -341,7 +371,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         const stage = path.join(root, row.id);
         let releaseDisk: () => void = () => undefined;
         try {
-            await this.requireMain({email: row.actor, activeRole: 'Главный админ'}); await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(row.config.kind)]);
+            await this.requireMain({email: row.actor, activeRole: 'Главный админ'}); await requireFeaturesEnabled(buildFeatures(row.config));
             if (!this.lease || this.stopping) { throw new Error('Сборщик останавливается.'); }
             releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: row.config.kind==='skill'&&row.config.source.type==='files'?64*1024**2:stagingLimit, path: root});
             await fs.mkdir(stage, {mode: 0o700});
@@ -360,7 +390,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const {readyManifest} = createRequire(__filename)(path.join(path.dirname(builderScript()), 'manifest.mjs')) as {readyManifest: (file: string) => Promise<PreparedTool[]>};
             const tools = await readyManifest(manifest);
             if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
-            for (const artifact of tools[0].artifacts) { await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
+            assertCodexBuildPublication(row.config,tools[0].publication);
+            for (const artifact of tools[0].artifacts) { if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
             const sourcePath=tools[0].sourceSnapshotPath;
             if(tools[0].asset.source.type==='archive'&&!sourcePath)throw new Error('Сборщик не вернул путь проверенного исходника.');
             const prepared=await this.sources.prepareLocal(tools[0].asset,tools[0].artifacts.map(({archivePath,descriptor})=>{const item=descriptor as {sha256:string;compressedBytes:number;target:string};return {archivePath,sha256:item.sha256,bytes:item.compressedBytes,filename:item.sha256+'.tar.gz',target:item.target};}),row.request_key,undefined,sourcePath?{archivePath:sourcePath,stagingRoot:path.dirname(sourcePath)}:undefined);
@@ -371,8 +402,10 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await this.withLease(lease, async () => {
                 await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
                 if(row.config.source.type==='upload')await this.uploads!.assertRetained(row.actor,row.config.source);
+                if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                 this.currentLease(lease);
                 await new PluginRepository(this.pool).create(tools[0].publication,row.actor,async(client,published)=>{
+                    if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                     const source=await this.sources.recordLocal(client,prepared,published,row.actor);
                     await this.repository.completeWithPublication(client,row.id,{catalogId:published.id,name:published.name,version:published.version,...source});
                 },lease);

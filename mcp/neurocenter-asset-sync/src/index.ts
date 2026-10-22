@@ -15,6 +15,7 @@ import {z} from 'zod';
 import {projectLearningContext,projectLearningRecord,projectLearningPropose,projectLearningContextSchema,projectLearningRecordSchema,projectLearningProposeSchema,
     type ProjectLearningContextInput,type ProjectLearningRecordInput,type ProjectLearningProposeInput} from './features/project-learning/tools.js';
 import { ok, fail, errMsg, type TToolResult } from './lib/stdio.js';
+import {authorizeInstalledProviderProfile} from './bridge/cli-provider-profile.js';
 import {
     detectProjectTool,
     detectProjectInputSchema,
@@ -126,6 +127,10 @@ if (process.argv[2] === '--run') {
         }
     }
     try {
+        if(tool==='authorize_opencode_provider'){
+            process.stdout.write(JSON.stringify(await authorizeInstalledProviderProfile(args))+'\n');
+            process.exit(0);
+        }
         if (tool === 'restore_rag_db') {
             const out = await restoreRagDb(restoreRagDbInputSchema.parse(args), cwd);
             process.stdout.write(out);

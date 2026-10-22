@@ -1,3 +1,5 @@
+import {OPENCODE_PROVIDER_JOBS,runProviderJob,type ProviderPayload} from '../features/opencode-providers/worker.js';
+import {closeProviderSessions} from '../features/opencode-providers/server.js';
 import {reindexHostedRag} from '../features/rag-hosted/reindex.js';
 import {publishProjectSnapshot} from '../features/project-snapshot/publish.js';
 import {projectAgentsFailureResult} from '../features/project-agents/model-compiler.js';
@@ -64,7 +66,7 @@ interface Job {
     kind: string;
     project_id?: string;
     lease: string;
-    payload: ProjectLocalPayload & ConfigurationPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
+    payload: ProjectLocalPayload & ConfigurationPayload & ProviderPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;snapshotId?:string;snapshotProtocol?:string;
         changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
@@ -181,7 +183,9 @@ export async function runWorker(): Promise<void> {
                 try {
                     await authorize();
                     let result: unknown;
-                    if(current.kind===PROJECT_AGENTS_JOB){
+                    if((OPENCODE_PROVIDER_JOBS as readonly string[]).includes(current.kind)){
+                        result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runProviderJob(current,authorize,()=>api('opencode-provider/authorize',{jobId:current.id})));
+                    }else if(current.kind===PROJECT_AGENTS_JOB){
                         if(current.payload.projectId!==current.project_id)throw new Error('Задание настройки агентов не соответствует проекту.');
                         result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>configureProjectAgents(current.payload,authorize,update,mappings=>api('agents/compile',{jobId:current.id,lease:current.lease,payloadManifest:current.payload.manifestSha256,mappings})));
                     }else if(current.kind==='publish-project-snapshot'){
@@ -344,7 +348,7 @@ export async function runWorker(): Promise<void> {
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
                         } : current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureResult(error):workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
-                            state: 'failed', result, message: current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
+                            state: 'failed', result, message: current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [...OPENCODE_PROVIDER_JOBS,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });
                     }
                     await deliverCompletions();
@@ -375,7 +379,7 @@ export async function runWorker(): Promise<void> {
         stopped = true;
         clearInterval(timer);
         socket.disconnect();
-        void Promise.all([closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
+        void Promise.all([closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })

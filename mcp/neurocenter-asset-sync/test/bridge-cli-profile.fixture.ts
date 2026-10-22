@@ -36,6 +36,8 @@ export async function bridgeCliProfileFixture(kind:'http'|'https'|'proxy'='http'
     }
     await compile('bridge-cli.ts');
     await fs.writeFile(path.join(install,'dist/index.js'),"throw Error('Worker fixture must never execute.');\n");
+    await fs.mkdir(path.join(install,'dist/shared'),{recursive:true});
+    await fs.copyFile(fileURLToPath(new URL('../../../services/shared/opencode-providers.cjs',import.meta.url)),path.join(install,'dist/shared/opencode-providers.cjs'));
     await fs.writeFile(path.join(install,'package.json'),JSON.stringify({type:'module',version:'0.9.18'}));
     await fs.mkdir(path.join(install,'bin'));await fs.symlink(process.execPath,path.join(install,'bin/node'));
     await fs.mkdir(path.join(install,'node_modules'),{recursive:true});

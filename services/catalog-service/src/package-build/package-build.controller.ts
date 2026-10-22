@@ -16,6 +16,7 @@ export class PackageBuildController {
         return JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || 'null'))) as IAccessActor;
     }
     @Get('npm') npm(@Req() req: Request, @Query('specifier') specifier: string, @Query('entrypoint') entrypoint?: string) { return this.builds.npm(this.actor(req), specifier, entrypoint); }
+    @Get('connectors/codex') codexConnector(@Req() req:Request){return this.builds.codexConnector(this.actor(req));}
     @Get('repository') repository(@Req() req: Request, @Query('url') url: string, @Query('ref') ref?: string,
         @Query('subdirectory') subdirectory?: string, @Query('entrypoint') entrypoint?: string, @Query('release') release?: string) {
         let parsed: unknown;

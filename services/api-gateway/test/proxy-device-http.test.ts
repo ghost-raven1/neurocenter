@@ -17,6 +17,15 @@ describe.sequential('Device channel source allowlist, fresh identity and event b
  it('does not turn a browser session into a device identity',async()=>{
   expect((await f.send('/api/device-channel/heartbeat',{method:'POST',body:{}})).status).toBe(401);expect(f.calls.filter(call=>call.path==='/internal/device-channel/heartbeat')).toEqual([]);
  });
+ it('forwards the exact managed provider permit with current device authority',async()=>{
+  const body={jobId,phase:'request',providerId:'neurocenter-codex-0123456789abcdef',schemaDigest:'b'.repeat(64)};
+  const result=await f.send('/api/device-channel/opencode-provider/authorize',{method:'POST',headers:deviceHeaders,body});
+  expect(result.status).toBe(200);const call=f.calls.find(call=>call.path==='/internal/device-channel/opencode-provider/authorize')!;
+  expect(call.body).toEqual(body);expect(call.headers.authorization).toBe(deviceHeaders.authorization);expect(f.live.sections).not.toHaveBeenCalled();
+ });
+ it.each(['opencode-provider/authorize/extra','opencode-provider/status','opencode-providers/authorize'])('rejects nearby provider channel paths: %s',async suffix=>{
+  const result=await f.send('/api/device-channel/'+suffix,{method:'POST',headers:deviceHeaders,body:{}});expect(result.status).toBe(404);expect(f.calls).toEqual([]);
+ });
  it('keeps credential transfer disabled on plaintext, including spoofed forwarded TLS',async()=>{
   const value=await f.send('/api/device-channel/opencode-models/sync',{method:'POST',headers:{...deviceHeaders,'x-forwarded-proto':'https'},body:{credentials:{candidate:'qa-synthetic-key'}}});expect(value.status).toBe(403);expect(f.calls).toEqual([]);
  });

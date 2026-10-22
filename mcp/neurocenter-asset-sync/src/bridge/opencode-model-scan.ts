@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath,pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { parse, parseTree, type Node, type ParseError } from 'jsonc-parser';
 import { projectBindingId, projectFolder, projectInstanceId } from './workspace.js';
@@ -94,7 +94,7 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
 }
 
 /** Читает документированные конфиги выбранного проекта и пользователя, без рекурсивного сканирования home. */
-export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeModelSource,options:{home?:string;environment?:NodeJS.ProcessEnv;authorize?:()=>Promise<unknown>;managedDirectory?:string;credentialTarget?:Record<string,string>;readAuth?:boolean;requestedSelectors?:readonly string[];agentNamespaceTarget?:{names:Set<string>;directories:Set<string>}}={}):Promise<IOpenCodeModelScan> {
+export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeModelSource,options:{home?:string;environment?:NodeJS.ProcessEnv;authorize?:()=>Promise<unknown>;managedDirectory?:string;credentialTarget?:Record<string,string>;allowManagedCredentialRead?:boolean;readAuth?:boolean;providerNamespaceTarget?:Set<string>;providerPluginTarget?:Array<{identity:string;plain:boolean}>;requestedSelectors?:readonly string[];agentNamespaceTarget?:{names:Set<string>;directories:Set<string>}}={}):Promise<IOpenCodeModelScan> {
     const home=options.home??os.homedir(),env=options.environment??process.env,authorize=options.authorize??(async()=>{});
     const warnings=new Set<string>([...(context.scope==='project'?['ancestor-config-not-scanned']:[]),'organization-config-not-scanned',...(process.platform==='darwin'?['managed-preferences-not-scanned']:[])]);
     const snapshots:Array<{file:string;fingerprint:string}>=[];
@@ -113,6 +113,8 @@ export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeMod
     };
     let config:Json={};const keyDirectories:Record<string,string>={};
     const apply=(value:Json,directory:string):void=>{
+        if(object(value.provider)&&options.providerNamespaceTarget)for(const id of Object.keys(value.provider))options.providerNamespaceTarget.add(id);
+        if(Array.isArray(value.plugin)&&options.providerPluginTarget)for(const spec of value.plugin){const id=Array.isArray(spec)?spec[0]:spec;if(typeof id!=='string')continue;let identity=id;try{if(id.startsWith('file://'))identity=pathToFileURL(path.resolve(fileURLToPath(id))).href;else if(path.isAbsolute(id)||/^\.\.?[\\/]/.test(id))identity=pathToFileURL(path.resolve(directory,id)).href;}catch{warnings.add('invalid-json');}options.providerPluginTarget.push({identity,plain:typeof spec==='string'});}
         if(object(value.provider))for(const [provider,entry]of Object.entries(value.provider))if(object(entry)&&object(entry.options)&&Object.hasOwn(entry.options,'apiKey'))keyDirectories[provider]=directory;
         if(options.agentNamespaceTarget)for(const kind of ['agent','mode'])if(value[kind]!==undefined){if(!object(value[kind]))warnings.add('invalid-json');else for(const name of Object.keys(value[kind]))options.agentNamespaceTarget.names.add(name);}
         config=merge(config,value);
@@ -155,6 +157,8 @@ export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeMod
     if(warnings.has('source-changed')||warnings.has('ambiguous-config')||warnings.has('invalid-json')||warnings.has('unsafe-path')||warnings.has('read-failed'))candidates=[];
     if(options.credentialTarget){
         for(const candidate of candidates){
+            // Managed wizard keys never enter export payloads, even under the manual-provider transfer opt-in.
+            if(!options.allowManagedCredentialRead&&/^neurocenter-(?:openai|codex)-[a-f0-9]{16}$/.test(candidate.provider))continue;
             if(candidate.blocker||!candidate.hasKey)continue;await authorize();
             const providers=object(config.provider)?config.provider:{},provider=providers[candidate.provider];
             const providerOptions=object(provider)&&object(provider.options)?provider.options:{};

@@ -180,7 +180,7 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|embedding(?:\/context)?|opencode-models\/(context|sync)|agents\/compile|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|opencode-provider\/authorize|embedding(?:\/context)?|opencode-models\/(context|sync)|agents\/compile|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
         if(suffix==='opencode-models/sync'&&req.body?.credentials&&Object.keys(req.body.credentials).length&&!deviceCredentialTransport(req)){
             res.status(403).json({message:'Перенос ключей OpenCode требует HTTPS. Для TLS-прокси настройте доверенные адреса на API Gateway.'});return;
         }

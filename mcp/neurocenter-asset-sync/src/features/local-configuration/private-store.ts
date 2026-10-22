@@ -9,7 +9,7 @@ const exec = promisify(execFile);
 const safeName = /^[a-f0-9]{64}$/;
 const privateBudget = 1024*1024*1024;
 let writes:Promise<void>=Promise.resolve();
-async function assertPrivateWindowsAcl(file: string): Promise<void> {
+export async function assertPrivateWindowsAcl(file: string): Promise<void> {
     if (process.platform !== 'win32') {return;}
     const script = '$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value;'
         + '$acl=Get-Acl -LiteralPath $env:NEUROCENTER_PRIVATE_ACL_PATH;if(-not $acl.AreAccessRulesProtected){exit 2};'
