@@ -1,5 +1,5 @@
 import type { IProjectAsset } from '../../core/api/interfaces';
-import type { IStoreApp } from './AppCard';
+import type { IStoreApp } from '../../features/Catalog/types';
 import { isToolInProject, skillProject } from './storeHelpers';
 
 /** Ссылки без доступной карточки остаются видимыми и могут быть явно убраны из проекта. */

@@ -6,8 +6,8 @@ import StoreCreateModal from '../src/modules/Store/StoreCreateModal';
 
 const ui = vi.hoisted(() => ({ modes: [] as string[], kind: 'mcp', pack: undefined as (() => void) | undefined }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ captureOwner: () => () => true }) }));
-vi.mock('../src/modules/Store/publication/SkillResourceEditor', () => ({ SkillResources: () => null }));
-vi.mock('../src/modules/Store/publication/DependencyPinsEditor', () => ({ DependencyPinsEditor: () => null }));
+vi.mock('../src/features/Catalog/publication/SkillResourceEditor', () => ({ SkillResources: () => null }));
+vi.mock('../src/features/Catalog/publication/DependencyPinsEditor', () => ({ DependencyPinsEditor: () => null }));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     return {

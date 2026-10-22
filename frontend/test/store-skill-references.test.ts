@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { IProjectAsset, ISkillListSummary } from '../src/core/api/interfaces';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
-import { fromSkill, isToolInProject, projectAssetForTool, resolveStoreSkillReference } from '../src/modules/Store/storeHelpers';
+import type { IStoreApp } from '../src/features/Catalog/types';
+import { isToolInProject, projectAssetForTool, resolveStoreSkillReference } from '../src/modules/Store/storeHelpers';
+import { fromSkill } from '../src/features/Catalog/catalogCards';
 import { unavailableProjectAssets } from '../src/modules/Store/selectUnavailableProjectAssets';
 
 const skill = (path: string, skillSlug = path.split('/').at(-1)!): IStoreApp => ({ id: path, path, skillSlug, name: 'Новое название',

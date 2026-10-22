@@ -1,6 +1,6 @@
 import type { IAiPlugin, IProjectAsset, ISkillFile } from '../../core/api/interfaces';
-import type { IStoreApp } from './AppCard';
-import { fromPlugin, fromSkill } from './storeHelpers';
+import type { IStoreApp } from '../../features/Catalog/types';
+import { fromPlugin, fromSkill } from '../../features/Catalog/catalogCards';
 
 /** В выбранном проекте pinned snapshot заменяет общий head, включая архивные карточки. */
 export function mergeProjectCatalog(common:readonly IStoreApp[],assets:readonly IProjectAsset[]):IStoreApp[]{

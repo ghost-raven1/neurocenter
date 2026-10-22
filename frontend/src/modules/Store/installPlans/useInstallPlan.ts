@@ -3,7 +3,7 @@ import { message } from 'antd';
 import { bridgeApi, type IInstallPlan } from '../../../features/McpBridge/api';
 import { errorMessage } from '../../../common/utils/errorMessage';
 import { useSectionUpdates } from '../../../core/socket/useSectionUpdates';
-import type { IStoreApp } from '../AppCard';
+import type { IStoreApp } from '../../../features/Catalog/types';
 import { approveInstallation, prepareInstallation, refreshInstallationPlan, revokeInstallationPlan, type IPlanExecution } from './installPlanFlow';
 import { parseInstallPlanFailure, type IInstallPlanFailure } from './installPlanFailure';
 

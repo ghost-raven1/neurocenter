@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IAiPlugin, IProjectAsset, ISkillFile } from '../src/core/api/interfaces';
 import { mergeProjectCatalog } from '../src/modules/Store/projectCatalogSnapshots';
-import { fromPlugin } from '../src/modules/Store/storeHelpers';
+import { fromPlugin } from '../src/features/Catalog/catalogCards';
 import { loadStoreDetail } from '../src/modules/Store/storeDetails';
 const plugin=(version:number):IAiPlugin=>({id:'ai-plug-fixture',name:'Fixture',kind:'plugin',description:'Version '+version,version,tags:[],origin:'upload',config:{entrypoint:'index.mjs'},files:[{path:'index.mjs',content:'Version '+version}],createdAt:'2026-01-01',updatedAt:'2026-01-01',compatibility:null,revision:null});
 const ref=(card=plugin(1)):IProjectAsset=>({assetId:card.id,assetKind:card.kind,addedBy:'admin',addedAt:'2026-01-01',version:card.version,manifest:'a'.repeat(64),pinOrigin:'assigned',card});

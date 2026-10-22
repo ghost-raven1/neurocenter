@@ -1,6 +1,6 @@
 import type { IProjectSummary } from '../../core/api/interfaces';
 import { projectRoleLevel } from '../../features/UserBlock/roles';
-import type { IStoreApp, TStoreKind } from './AppCard';
+import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
 
 /** Выбранный проект и его права вычисляются вместе, чтобы имя не подменяло идентификатор. */
 export function selectStoreTarget(projects: readonly IProjectSummary[], requested: string | null,

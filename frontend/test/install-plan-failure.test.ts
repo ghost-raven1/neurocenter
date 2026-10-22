@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 import { installPlanFailureExplanation, parseInstallPlanFailure } from '../src/modules/Store/installPlans/installPlanFailure';
 
 const app: IStoreApp = { id: 'root', kind: 'plugin', name: 'Помощник', version: 3, description: '', tags: [], origin: 'catalog' };

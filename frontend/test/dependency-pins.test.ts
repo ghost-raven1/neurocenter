@@ -2,10 +2,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { IAiPlugin, IBundlePackage, IDependencyPin, ISkillFile } from '../src/core/api/interfaces';
-import { appendDependencyPin, checkDependencyPins, readDependencyPin } from '../src/modules/Store/publication/dependencyPins';
-import { DependencyPinsEditor } from '../src/modules/Store/publication/DependencyPinsEditor';
-import { publicationPayload } from '../src/modules/Store/publication/publicationDraft';
-import { pluginEditPayload, skillEditPayload, storeEditValuesChanged } from '../src/modules/Store/storeEditHelpers';
+import { appendDependencyPin, checkDependencyPins, readDependencyPin } from '../src/features/Catalog/publication/dependencyPins';
+import { DependencyPinsEditor } from '../src/features/Catalog/publication/DependencyPinsEditor';
+import { publicationPayload } from '../src/features/Catalog/publication/publicationDraft';
+import { pluginEditPayload, skillEditPayload, storeEditValuesChanged } from '../src/features/Catalog/storeEditHelpers';
 
 const pin: IDependencyPin = {kind: 'mcp', id: 'ai-plug-search', version: 2, manifest: 'a'.repeat(64)};
 const values = {name: 'Помощник', description: 'Описание', tags: '', body: 'Инструкция', config: '{"transport":"remote","url":"https://example.org/mcp"}'};

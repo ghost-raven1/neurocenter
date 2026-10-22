@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IAiPlugin } from '../src/core/api/interfaces';
-import { editMcpConfig, pluginEditPayload } from '../src/modules/Store/storeEditHelpers';
+import { editMcpConfig, pluginEditPayload } from '../src/features/Catalog/storeEditHelpers';
 
 const artifact={target:'darwin-arm64',sha256:'a'.repeat(64),compressedBytes:100,unpackedBytes:200,filesCount:2,entrypoint:'runtime/index.mjs'};
 const field={id:'token',label:'Ключ доступа',type:'string',required:true,secret:true,target:{kind:'env',name:'SERVICE_TOKEN'}};

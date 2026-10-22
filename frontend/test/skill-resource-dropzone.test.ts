@@ -1,7 +1,7 @@
 import {createElement, type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {SkillResources} from '../src/modules/Store/publication/SkillResourceEditor';
+import {SkillResources} from '../src/features/Catalog/publication/SkillResourceEditor';
 import type {ISkillResource} from '../src/core/api/interfaces';
 
 type DropProps = {multiple?:boolean;disabled?:boolean;busy?:boolean;onFiles:(files:File[])=>void;onReject:(reason:string)=>void};

@@ -6,12 +6,10 @@ import {
 } from '@ant-design/icons';
 import { Button, Card, Tag, Typography } from 'antd';
 import { FC, ReactNode } from 'react';
+import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
 import {storeCardPlatforms,storeCardRevision,storeCardSource} from './storeCardPresentation';
 
 const { Text, Paragraph } = Typography;
-
-/** Разновидности «приложений» в магазине. */
-export type TStoreKind = 'mcp' | 'plugin' | 'skill';
 
 /** Визуал типа приложения (иконка + цвет акцента). */
 const KIND: Record<TStoreKind, { label: string; icon: ReactNode; color: string; bg: string }> = {
@@ -49,36 +47,6 @@ export const KindBadge: FC<{ kind: TStoreKind; icon?:boolean }> = ({ kind,icon=t
         </span>
     );
 };
-
-/**
- * Унифицированное «приложение» витрины (скилл/MCP/плагин в одном виде).
- */
-export interface IStoreApp {
-    /** Идентификатор: для скилла — path, для mcp/plugin — id каталога. */
-    id: string;
-    name: string;
-    kind: TStoreKind;
-    description: string;
-    version: number;
-    tags: string[];
-    origin: string;
-    /** Закреплённая ревизия поставки отличается от номера редакции карточки. */
-    revision?: string|null;
-    /** Путь скилла в каталоге (для резолва content). */
-    path?: string;
-    /** Техническое имя скилла; отображаемое название не определяет проектное назначение. */
-    skillSlug?: string;
-    /** Конфиг MCP (из каталога). */
-    config?: Record<string, unknown>;
-    /** Файлы плагина (из каталога) — для one-click установки дерева. */
-    files?: { path: string; content?: string }[];
-    /** Exact project snapshot не подменяется изменившимся head при открытии деталей. */
-    projectCard?: import('./storeDetails').TStoreDetail;
-    projectManifest?: string;
-    pinError?: string;
-    /** Кол-во файлов (для бандлов). */
-    filesCount?: number;
-}
 
 interface IAppCardProps {
     app: IStoreApp;

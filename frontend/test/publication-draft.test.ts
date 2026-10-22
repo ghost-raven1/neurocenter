@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {checkPublicationMcpField,publicationPayload} from '../src/modules/Store/publication/publicationDraft';
+import {checkPublicationMcpField,publicationPayload} from '../src/features/Catalog/publication/publicationDraft';
 import type {IAiPluginCreate,ISkillCreateRequest} from '../src/core/api/interfaces';
 const common={name:'Помощник',description:'Проверка кода',tags:'код, код, команда'};
 describe('Форма добавления в общий магазин',()=>{

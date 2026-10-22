@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StoreArchiveAction, storeArchiveTarget } from '../src/modules/Store/StoreArchiveAction';
 import type { ArchiveAssetButton } from '../src/features/AssetManagement/ArchiveAssetButton';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 const ui = vi.hoisted(() => ({ props: undefined as ComponentProps<typeof ArchiveAssetButton> | undefined }));
 vi.mock('../src/features/AssetManagement/ArchiveAssetButton', () => ({ ArchiveAssetButton: (props: ComponentProps<typeof ArchiveAssetButton>) => { ui.props = props; return props.children; } }));
 const app = (kind: IStoreApp['kind'], id = kind === 'skill' ? 'common/reviewer' : 'opencode-rag'): IStoreApp => ({ kind, id, name: 'OpenCodeRAG', description: '', origin: '', version: 1, tags: [] });

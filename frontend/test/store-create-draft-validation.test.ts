@@ -4,7 +4,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import StoreCreateModal from '../src/modules/Store/StoreCreateModal';
 import bffApi from '../src/core/api/bff';
-import type {IPublicationDraft} from '../src/modules/Store/publication/publicationDraft';
+import type {IPublicationDraft} from '../src/features/Catalog/publication/publicationDraft';
 
 interface Control {value?: unknown; options?: Array<{value: string}>; onChange?: (value: unknown) => void;}
 const ui = vi.hoisted(() => ({
@@ -23,8 +23,8 @@ vi.mock('react', async original => ({...await original<typeof import('react')>()
 }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({captureOwner: () => () => true})}));
 vi.mock('../src/core/api/bff', () => ({default: {createSkill: vi.fn(), createAiPlugin: vi.fn()}}));
-vi.mock('../src/modules/Store/publication/SkillResourceEditor', () => ({SkillResources: () => null}));
-vi.mock('../src/modules/Store/publication/DependencyPinsEditor', () => ({DependencyPinsEditor: () => null}));
+vi.mock('../src/features/Catalog/publication/SkillResourceEditor', () => ({SkillResources: () => null}));
+vi.mock('../src/features/Catalog/publication/DependencyPinsEditor', () => ({DependencyPinsEditor: () => null}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children;
     const control = (props: Control & {'data-field'?: string; 'aria-label'?: string}) => {

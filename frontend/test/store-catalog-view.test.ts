@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IProjectSummary } from '../src/core/api/interfaces';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from '../src/modules/Store/storeCatalogView';
 import { addToProjectCatalogs } from '../src/modules/Store/projectCatalogBatch';
 

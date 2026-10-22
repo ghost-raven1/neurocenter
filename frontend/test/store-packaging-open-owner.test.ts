@@ -76,7 +76,7 @@ vi.mock('../src/modules/Store/ProjectKnowledgeLink', () => ({ProjectKnowledgeLin
 vi.mock('../src/modules/Store/CatalogTabs', () => ({CatalogTabs: ({tools}: {tools: ReactNode}) => tools}));
 vi.mock('../src/modules/Store/UnavailableProjectAssets', () => ({default: () => null}));
 vi.mock('../src/modules/Store/StoreCreateModal', () => ({default: () => null}));
-vi.mock('../src/modules/Store/StoreEditModal', () => ({default: () => null}));
+vi.mock('../src/features/Catalog/StoreEditModal', () => ({default: () => null}));
 vi.mock('../src/modules/Store/StoreDetailsModal', () => ({default: ({viewApp, onChooseProjectFolder}: {viewApp: typeof ui.view; onChooseProjectFolder?: () => void}) => {
     ui.view = viewApp; ui.chooseFolder = onChooseProjectFolder; return null;
 }}));

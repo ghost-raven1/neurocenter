@@ -15,7 +15,7 @@ import SkillEditorModal from './components/SkillEditorModal';
 import SkillListTable from './components/SkillListTable';
 import { createSkillDirectory, fetchSkillList, fetchSkillTree } from './redux/actions';
 import { openEditor, setSelectedPath, setQuery } from './redux/reducers';
-import { notifySkillMutation } from './skillMutationFeedback';
+import { notifySkillMutation } from '../../features/Catalog/skillMutationFeedback';
 
 const { Title } = Typography;
 

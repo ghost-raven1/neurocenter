@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IAiPlugin, IPage } from '../src/core/api/interfaces';
 import { loadCompletePluginCatalog } from '../src/modules/Store/loadCompletePluginCatalog';
 import { unavailableProjectAssets } from '../src/modules/Store/selectUnavailableProjectAssets';
-import { fromPlugin } from '../src/modules/Store/storeHelpers';
+import { fromPlugin } from '../src/features/Catalog/catalogCards';
 
 const plugin = (index: number): IAiPlugin => ({ id: `ai-plug-${index}`, name: `Инструмент ${index}`, kind: 'mcp',
     description: '', version: 1, tags: [], origin: 'fixture', files: [], createdAt: '', updatedAt: '' });

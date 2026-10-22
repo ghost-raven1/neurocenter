@@ -13,12 +13,14 @@ import './Store.less';
 import { isMainAdminRole, roleLevel, projectRoleLevel } from '../../features/UserBlock/roles';
 import { RootState } from '../../store';
 
-import AppCard, { type IStoreApp, type TStoreKind } from './AppCard';
-import { fromPlugin, fromSkill, pluralProjects, skillProject, canEditTool, projectSkillReferenceBlocker, isToolInProject, projectAssetForTool } from './storeHelpers';
+import AppCard from './AppCard';
+import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
+import { pluralProjects, skillProject, canEditTool, projectSkillReferenceBlocker, isToolInProject, projectAssetForTool } from './storeHelpers';
+import { fromPlugin, fromSkill } from '../../features/Catalog/catalogCards';
 import StoreCreateModal from './StoreCreateModal';
 import StoreDetailsModal from './StoreDetailsModal';
 import { StoreArchiveAction } from './StoreArchiveAction';
-import StoreEditModal from './StoreEditModal';
+import StoreEditModal from '../../features/Catalog/StoreEditModal';
 import {useBridge} from '../../features/McpBridge/useBridge';
 import {BridgeConnection} from '../../features/McpBridge/BridgeConnection';
 import {bridgeApi} from '../../features/McpBridge/api';

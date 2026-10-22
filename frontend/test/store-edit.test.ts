@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ISkillFile } from '../src/core/api/interfaces';
-import { editMcpConfig, editTags, skillEditPayload, storeEditFailure } from '../src/modules/Store/storeEditHelpers';
+import { editMcpConfig, editTags, skillEditPayload, storeEditFailure } from '../src/features/Catalog/storeEditHelpers';
 
 describe('Редактирование карточки магазина', () => {
     it('Сохраняет русское название, точное тело и версию открытой копии без служебных полей', () => {

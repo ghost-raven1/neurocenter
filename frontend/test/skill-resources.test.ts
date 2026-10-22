@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkSkillResources, readSkillResources } from '../src/modules/Store/publication/skillResourceFiles';
-import { publicationPayload } from '../src/modules/Store/publication/publicationDraft';
-import { skillEditPayload } from '../src/modules/Store/storeEditHelpers';
+import { checkSkillResources, readSkillResources } from '../src/features/Catalog/publication/skillResourceFiles';
+import { publicationPayload } from '../src/features/Catalog/publication/publicationDraft';
+import { skillEditPayload } from '../src/features/Catalog/storeEditHelpers';
 import type { ISkillFile } from '../src/core/api/interfaces';
 
 describe('Ресурсы в формах скилла', () => {

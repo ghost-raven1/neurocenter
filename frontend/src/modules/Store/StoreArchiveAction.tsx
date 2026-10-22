@@ -1,5 +1,5 @@
 import { ArchiveAssetButton } from '../../features/AssetManagement/ArchiveAssetButton';
-import type { IStoreApp } from './AppCard';
+import type { IStoreApp } from '../../features/Catalog/types';
 
 /** A project pin alone never grants an action against an absent common catalog head. */
 export function storeArchiveTarget(app: IStoreApp, common: readonly IStoreApp[], isMain: boolean): IStoreApp | undefined {

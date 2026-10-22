@@ -1,7 +1,8 @@
 import {createElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-import AppCard,{type IStoreApp} from '../src/modules/Store/AppCard';
+import AppCard from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 
 const buttons=vi.hoisted(()=>new Map<string,()=>void>());
 vi.mock('antd',()=>({

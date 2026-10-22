@@ -13,7 +13,7 @@ import { RootState } from '../../../store';
 
 import { deleteSkill, fetchSkill, fetchSkillList, fetchSkillTree } from '../redux/actions';
 import { openEditor } from '../redux/reducers';
-import { notifySkillMutation } from '../skillMutationFeedback';
+import { notifySkillMutation } from '../../../features/Catalog/skillMutationFeedback';
 
 interface ISkillListTableProps {
     /** Путь каталога, для которого показан список (для перезагрузки после изменений). */

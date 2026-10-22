@@ -1,10 +1,7 @@
 import type { IAiPlugin, ISkillFile, ISkillHistoryEntry } from '../../core/api/interfaces';
 import { isAxiosError } from 'axios';
-import type { IStoreApp } from './AppCard';
-
-export type TStoreDetail =
-    | { kind: 'skill'; skill: ISkillFile }
-    | { kind: 'bundle'; plugin: IAiPlugin };
+import type { IStoreApp, TStoreDetail } from '../../features/Catalog/types';
+export type { TStoreDetail } from '../../features/Catalog/types';
 
 /** Подтверждённое состояние задания приходит из Store, а не вычисляется по файлам. */
 export interface IStoreInstallStatus {

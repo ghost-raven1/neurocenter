@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 import type { ISkillFile } from '../src/core/api/interfaces';
 import { formatDetailDate, hasConfigSecrets, instructionUrl, keepDetailAfterRefreshError, loadStoreDetail, previewConfig, sortSkillHistory } from '../src/modules/Store/storeDetails';
 import StoreInstruction from '../src/modules/Store/StoreInstruction';

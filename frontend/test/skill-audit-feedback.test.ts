@@ -9,7 +9,7 @@ import { useAppDispatch } from '../src/core/hooks';
 import SkillEditorModal from '../src/modules/Skills/components/SkillEditorModal';
 import SkillListTable from '../src/modules/Skills/components/SkillListTable';
 import reducer, { openEditor } from '../src/modules/Skills/redux/reducers';
-import { notifySkillMutation } from '../src/modules/Skills/skillMutationFeedback';
+import { notifySkillMutation } from '../src/features/Catalog/skillMutationFeedback';
 
 const ui = vi.hoisted(() => ({
     state: (): unknown => ({}), save: undefined as (() => void) | undefined,

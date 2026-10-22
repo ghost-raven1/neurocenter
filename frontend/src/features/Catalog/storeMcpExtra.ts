@@ -1,4 +1,4 @@
-import { invalidArtifactMetadata, packageRuntimeArtifacts } from '../../features/McpBridge/runtimeArtifacts';
+import { invalidArtifactMetadata, packageRuntimeArtifacts } from '../McpBridge/runtimeArtifacts';
 
 const object = (value: unknown): value is Record<string,unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: Record<string,unknown>, keys: string[]) => Object.keys(value).every(key=>keys.includes(key));

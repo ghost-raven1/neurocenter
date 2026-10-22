@@ -31,9 +31,9 @@ vi.mock('../src/features/AssetSources/useAssetImports',()=>({useAssetImports:()=
 vi.mock('../src/features/AssetSources/AssetArchiveModal',()=>({AssetArchiveModal:(props:ArchiveModalProps)=>{archiveUi.modal=props;return null;}}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:(_sections:string[],refresh:()=>void)=>{ui.live=refresh;}}));
 vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetButton:(props:typeof ui.archives[number])=>{ui.archives.push(props);return null;}}));
-vi.mock('../src/modules/Store/StoreEditModal',()=>({default:()=>null}));
+vi.mock('../src/features/Catalog/StoreEditModal',()=>({default:()=>null}));
 vi.mock('../src/features/ModelCatalog/ModelEditModal',()=>({ModelEditModal:()=>null}));
-vi.mock('../src/modules/Store/storeHelpers',()=>({fromPlugin:vi.fn(),fromSkill:vi.fn()}));
+vi.mock('../src/features/Catalog/catalogCards',()=>({fromPlugin:vi.fn(),fromSkill:vi.fn()}));
 vi.mock('../src/features/AgentCatalog/AgentEditModal',()=>({AgentEditModal:(props:NonNullable<typeof ui.editor>)=>{if(ui.editorId!==props.agent.id){ui.editorId=props.agent.id;ui.draft='';}ui.editor=props;return createElement('div',null,props.agent.name,ui.draft);}}));
 vi.mock('antd',()=>{
     const content=({children}:{children?:ReactNode})=>children;const input=()=>null;

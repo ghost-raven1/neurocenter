@@ -1,5 +1,5 @@
 import { isAxiosError } from 'axios';
-import type { IStoreApp, TStoreKind } from '../AppCard';
+import type { IStoreApp, TStoreKind } from '../../../features/Catalog/types';
 
 export interface IInstallPackageIdentity { kind: TStoreKind; id: string; name: string; version: number }
 export interface IPackageInstallFailure {

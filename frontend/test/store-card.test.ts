@@ -1,8 +1,9 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe,expect,it} from 'vitest';
-import AppCard,{type IStoreApp} from '../src/modules/Store/AppCard';
-import {fromPlugin} from '../src/modules/Store/storeHelpers';
+import AppCard from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
+import { fromPlugin } from '../src/features/Catalog/catalogCards';
 import type {IAiPlugin} from '../src/core/api/interfaces';
 
 const app:IStoreApp={id:'packaged-tool',name:'Упакованный инструмент',kind:'mcp',description:'Описание инструмента.',version:3,tags:[],origin:'https://www.npmjs.com/package/@team/tool'};

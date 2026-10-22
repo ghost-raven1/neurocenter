@@ -4,15 +4,15 @@ import { FC, useRef, useState } from 'react';
 import bffApi from '../../core/api/bff';
 import { errorMessage } from '../../common/utils/errorMessage';
 import type { IAiPluginCreate, ISkillCreateRequest } from '../../core/api/interfaces';
-import { SkillResources } from './publication/SkillResourceEditor';
-import { checkSkillResources } from './publication/skillResourceFiles';
-import { PublicationFiles } from './publication/PublicationFiles';
-import { checkPublicationMcpField, newPublicationKey, publicationPayload } from './publication/publicationDraft';
-import type { IPublicationDraft, IPublicationFile, TPublicationMcpField } from './publication/publicationDraft';
-import { DependencyPinsEditor } from './publication/DependencyPinsEditor';
-import { checkDependencyPins } from './publication/dependencyPins';
+import { SkillResources } from '../../features/Catalog/publication/SkillResourceEditor';
+import { checkSkillResources } from '../../features/Catalog/publication/skillResourceFiles';
+import { PublicationFiles } from '../../features/Catalog/publication/PublicationFiles';
+import { checkPublicationMcpField, newPublicationKey, publicationPayload } from '../../features/Catalog/publication/publicationDraft';
+import type { IPublicationDraft, IPublicationFile, TPublicationMcpField } from '../../features/Catalog/publication/publicationDraft';
+import { DependencyPinsEditor } from '../../features/Catalog/publication/DependencyPinsEditor';
+import { checkDependencyPins } from '../../features/Catalog/publication/dependencyPins';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
-import { notifySkillMutation } from '../Skills/skillMutationFeedback';
+import { notifySkillMutation } from '../../features/Catalog/skillMutationFeedback';
 import type { ISkillMutationReceipt } from '../../core/api/interfaces';
 
 interface IProps { open: boolean; onClose: () => void; onCreated: () => void; onPackage: (source?: 'files') => void; }

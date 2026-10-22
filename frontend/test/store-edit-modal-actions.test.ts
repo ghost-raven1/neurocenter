@@ -9,12 +9,12 @@ vi.mock('../src/core/api/bff',()=>({default:{getSkill:vi.fn(),getAiPlugin:vi.fn(
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({captureOwner:h.capture})}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:(_sections:unknown,fn:()=>void)=>{h.live=fn;}}));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability',async()=>({useFeatureAvailability:()=>({enabled:h.enabled}),FeatureButton:(props:any)=>createElement('button',props,props.children)}));
-vi.mock('../src/modules/Store/publication/SkillResourceEditor',()=>({SkillResources:(props:any)=>{h.ui.nodes.push({kind:'Resources',props,text:''});return null;}}));
-vi.mock('../src/modules/Store/publication/DependencyPinsEditor',()=>({DependencyPinsEditor:(props:any)=>{h.ui.nodes.push({kind:'Dependencies',props,text:''});return null;}}));
-vi.mock('../src/modules/Skills/skillMutationFeedback',()=>({notifySkillMutation:vi.fn()}));
-import StoreEditModal from '../src/modules/Store/StoreEditModal';
+vi.mock('../src/features/Catalog/publication/SkillResourceEditor',()=>({SkillResources:(props:any)=>{h.ui.nodes.push({kind:'Resources',props,text:''});return null;}}));
+vi.mock('../src/features/Catalog/publication/DependencyPinsEditor',()=>({DependencyPinsEditor:(props:any)=>{h.ui.nodes.push({kind:'Dependencies',props,text:''});return null;}}));
+vi.mock('../src/features/Catalog/skillMutationFeedback',()=>({notifySkillMutation:vi.fn()}));
+import StoreEditModal from '../src/features/Catalog/StoreEditModal';
 import bff from '../src/core/api/bff';
-import {notifySkillMutation} from '../src/modules/Skills/skillMutationFeedback';
+import {notifySkillMutation} from '../src/features/Catalog/skillMutationFeedback';
 import {message} from 'antd';
 const plugin={id:'tool',kind:'mcp',name:'Tool',description:'Original',tags:['one'],version:7,config:{transport:'stdio',command:'node',args:['server.js']},dependencies:[]} as any;
 const skill={path:'common/tool',body:'# Original',resources:[],meta:{name:'Skill',description:'Original',tags:[],version:3,mcp:['old-mcp'],plugins:[],dependencies:[]}} as any;

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { message } from 'antd';
 import { bridgeApi, type IInstallPlan } from '../src/features/McpBridge/api';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 import { useInstallPlan } from '../src/modules/Store/installPlans/useInstallPlan';
 
 const hooks = vi.hoisted(() => ({

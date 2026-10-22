@@ -1,19 +1,19 @@
-import { FeatureButton, useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
+import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Form, Input, Modal, Space, Spin, Tabs, Tag, Typography, message } from 'antd';
 import { FC, useEffect, useRef, useState } from 'react';
 
 import bffApi from '../../core/api/bff';
 import type { IAiPlugin, ISkillFile, ISkillMutationReceipt } from '../../core/api/interfaces';
 import { useSectionUpdates } from '../../core/socket/useSectionUpdates';
-import type { IStoreApp } from './AppCard';
+import type { IStoreApp } from './types';
 import { editMcpConfig, editTags, pluginEditPayload, skillEditPayload, storeEditFailure, storeEditValuesChanged } from './storeEditHelpers';
 import type { IStoreEditFailure, IStoreEditValues } from './storeEditHelpers';
 import { SkillResources } from './publication/SkillResourceEditor';
 import { checkSkillResources } from './publication/skillResourceFiles';
 import { DependencyPinsEditor } from './publication/DependencyPinsEditor';
 import { checkDependencyPins } from './publication/dependencyPins';
-import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
-import { notifySkillMutation } from '../Skills/skillMutationFeedback';
+import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
+import { notifySkillMutation } from './skillMutationFeedback';
 import './StoreEditModal.less';
 
 interface IProps { editApp: IStoreApp | null; onClose: () => void; onSaved: () => void; }

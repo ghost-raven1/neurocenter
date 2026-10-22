@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IProjectAsset } from '../src/core/api/interfaces';
-import type { IStoreApp } from '../src/modules/Store/AppCard';
+import type { IStoreApp } from '../src/features/Catalog/types';
 import { unavailableProjectAssets } from '../src/modules/Store/selectUnavailableProjectAssets';
 const asset = (assetId: string, assetKind: IProjectAsset['assetKind'] = 'skill'): IProjectAsset => ({ assetId, assetKind, addedBy: 'admin@example.test', addedAt: '2026-10-18T00:00:00Z' });
 const skill = { id: 'common/helper', path: 'common/helper', name: 'Helper', kind: 'skill' } as IStoreApp;

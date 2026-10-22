@@ -8,7 +8,7 @@ import { RootState } from '../../../store';
 
 import { createSkill, fetchSkillList, fetchSkillTree, updateSkill } from '../redux/actions';
 import { closeEditor } from '../redux/reducers';
-import { notifySkillMutation } from '../skillMutationFeedback';
+import { notifySkillMutation } from '../../../features/Catalog/skillMutationFeedback';
 
 interface ISkillEditorModalProps {
     /** Каталог для создания скилла (selectedPath). */
