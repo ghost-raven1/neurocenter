@@ -43,7 +43,7 @@ export async function platformQuotaPolicy(pool:Pool,update?:IPlatformQuotaUpdate
     if(!update)return read(pool);
     validatePlatformQuotaUpdate(update);
     if(typeof actor!=='string'||!actor.trim()||actor.length>254)throw new BadRequestException('Не подтверждён автор изменения настроек.');
-    const db=await pool.connect();
+    const db=await pool.connect();let discard=false;
     try {
         await db.query('BEGIN');await db.query("SET LOCAL lock_timeout='10s'");
         const before=await read(db,true);
@@ -53,12 +53,12 @@ export async function platformQuotaPolicy(pool:Pool,update?:IPlatformQuotaUpdate
             revision=revision+1,updated_at=now(),updated_by=$3 WHERE singleton RETURNING *`,[update.defaultBytes,update.maximumBytes,actor])).rows[0]);
         await db.query('INSERT INTO rag_platform_quota_events(actor,before_policy,after_policy) VALUES($1,$2,$3)',[actor,JSON.stringify(before),JSON.stringify(after)]);
         await db.query('COMMIT');return after;
-    }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+    }catch(error){await db.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{db.release(discard);}
 }
 
 /** Refresh only defaults/cap under the existing write lock; established budgets are never rewritten. */
 export async function applyPlatformQuotaPolicy(pool:Pool,input:IPlatformQuotaPolicy|(()=>Promise<IPlatformQuotaPolicy>)):Promise<void> {
-    const db=await pool.connect();
+    const db=await pool.connect();let discard=false;
     try {
         await db.query('BEGIN');await db.query("SET LOCAL lock_timeout='10s'");
         await db.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
@@ -72,5 +72,5 @@ export async function applyPlatformQuotaPolicy(pool:Pool,input:IPlatformQuotaPol
         await db.query(`UPDATE rag_storage_settings SET default_bytes=$1,maximum_bytes=$2 WHERE singleton
             AND (default_bytes IS DISTINCT FROM $1 OR maximum_bytes IS DISTINCT FROM $2)`,[policy.defaultBytes,policy.maximumBytes]);
         await db.query('COMMIT');
-    }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+    }catch(error){await db.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{db.release(discard);}
 }
