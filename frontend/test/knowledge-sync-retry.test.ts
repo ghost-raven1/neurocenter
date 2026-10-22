@@ -5,6 +5,11 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {KnowledgeSync} from '../src/features/McpBridge/KnowledgeSync';
 import {bridgeApi, type IBridgeJob} from '../src/features/McpBridge/api';
 
+interface RestoreDialog {
+    title: ReactNode; content: ReactNode; okText: string; onOk: () => Promise<void>; onCancel: () => void;
+    destroyed: boolean; destroy: ReturnType<typeof vi.fn>;
+}
+
 const hooks = vi.hoisted(() => {
     let cursor = 0, mounted = true, lateWrites = 0;
     const slots: Array<{value?: unknown; dependencies?: unknown[]; cleanup?: () => void}> = [];
@@ -22,19 +27,19 @@ const hooks = vi.hoisted(() => {
         useEffect: (effect: () => void | (() => void), dependencies: unknown[]) => {
             const index = cursor++, previous = slots[index];
             if (previous?.dependencies?.length === dependencies.length && dependencies.every((value, item) => Object.is(value, previous.dependencies![item]))) return;
-            const slot = slots[index] = {dependencies};
+            const slot: (typeof slots)[number] = slots[index] = {dependencies};
             effects.push(() => {previous?.cleanup?.(); slot.cleanup = effect() || undefined;});
         },
     };
 });
 const ui = vi.hoisted(() => ({
-    projectId: 'project-a', owner: 'owner-a', owners: new Map<string, () => () => boolean>(),
+    projectId: 'project-a', owner: 'owner-a', canWrite: true, serverReady: true as boolean | undefined, owners: new Map<string, () => () => boolean>(), dialogs: [] as RestoreDialog[],
     buttons: new Map<string, {disabled?: boolean; onClick: () => void}>(), errors: [] as string[], warnings: [] as string[],
     bridge: {device: {id: 'device-a', name: 'Компьютер', role: 'Разработчик', online: true, report: {
         root: '/fixture/root', protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-generations-v1'],
-        bindings: [{projectId: 'project-a', bindingId: 'a'.repeat(64), instanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', valid: true}, {projectId: 'project-b', bindingId: 'b'.repeat(64), instanceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', valid: true}],
+        bindings: [{projectId: 'project-a', folderName: 'Локальный проект A', bindingId: 'a'.repeat(64), instanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', valid: true}, {projectId: 'project-b', folderName: 'Локальный проект B', bindingId: 'b'.repeat(64), instanceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', valid: true}],
     }}, devicesReady: true, jobsReady: true, installationsReady: true, loading: false, jobs: [] as IBridgeJob[],
-        errors: {devices: '', jobs: '', installations: ''}, reload: vi.fn(async () => undefined)},
+        errors: {devices: '', jobs: '', installations: ''}, reload: vi.fn(async (): Promise<void> => undefined)},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(),
     useState: hooks.useState, useRef: hooks.useRef, useEffect: hooks.useEffect,
@@ -52,14 +57,18 @@ vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children;
     return {Space: content, Typography: {Text: content}, Alert: ({type, message, description}: {type: string; message: string; description?: string}) => {
         if (type === 'error') ui.errors.push(message); if (type === 'warning') ui.warnings.push(message + ' ' + (description || '')); return null;},
+        Modal: {confirm: (options: Omit<RestoreDialog, 'destroyed' | 'destroy'>) => {
+            const dialog: RestoreDialog = {...options, destroyed: false, destroy: vi.fn()};
+            dialog.destroy.mockImplementation(() => {dialog.destroyed = true;}); ui.dialogs.push(dialog); return dialog;
+        }},
         Button: (props: {children: ReactNode; disabled?: boolean; onClick: () => void}) => {ui.buttons.set(String(props.children), props); return null;}};
 });
 const sync = 'Синхронизировать с сервером', restore = 'Скачать в проект через мост';
 const job = (id: string, state: IBridgeJob['state'] = 'queued') => ({id, state, deviceId: ui.bridge.device.id, projectId: ui.projectId,
     kind: 'sync-rag', bindingId: ui.bridge.device.report.bindings.find(item => item.projectId === ui.projectId)!.bindingId,
     message: 'Ожидает моста', createdAt: '', updatedAt: ''}) as IBridgeJob;
-function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: true, serverReady: true})); hooks.commit();}
-function click(label = sync) {const button = ui.buttons.get(label)!; expect(button.disabled).toBe(false); button.onClick();}
+function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: ui.canWrite, serverReady: ui.serverReady})); hooks.commit();}
+function click(label = sync, confirm = true) {const button = ui.buttons.get(label)!; expect(button.disabled).toBe(false); button.onClick(); if (label === restore && confirm) void ui.dialogs[ui.dialogs.length - 1]?.onOk();}
 async function flush() {for (let index = 0; index < 12; index++) await Promise.resolve();}
 function deferred() {
     let resolve!: (value: IBridgeJob) => void, reject!: (error: Error) => void;
@@ -67,13 +76,90 @@ function deferred() {
     return {promise, resolve, reject};
 }
 beforeEach(() => {
-    vi.resetAllMocks(); ui.projectId = 'project-a'; ui.owner = 'owner-a'; ui.owners.clear();
+    vi.resetAllMocks(); ui.projectId = 'project-a'; ui.owner = 'owner-a'; ui.canWrite = true; ui.serverReady = true; ui.owners.clear(); ui.dialogs = [];
     ui.bridge.device.id = 'device-a'; ui.bridge.device.report.bindings[0].bindingId = 'a'.repeat(64);
     ui.bridge.device.report.root = '/fixture/root'; ui.bridge.device.report.bindings[0].instanceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     ui.bridge.jobs = []; ui.bridge.devicesReady = true; ui.bridge.jobsReady = true; ui.bridge.loading = false; ui.bridge.errors.jobs = '';
     ui.bridge.reload.mockResolvedValue(undefined);
 });
 afterEach(() => {hooks.dispose(); vi.unstubAllGlobals();});
+
+describe('Явное подтверждение замены локального RAG', () => {
+    it('Восстановление не отправляется до явного подтверждения замены', async () => {
+        vi.mocked(bridgeApi.create).mockResolvedValue({...job('accepted'), kind: 'restore-rag'});
+        render(); click(restore, false); await flush();
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+        const dialog = ui.dialogs[ui.dialogs.length - 1]!;
+        expect(dialog.title).toBe('Заменить локальный индекс?'); expect(dialog.okText).toBe('Заменить локальный индекс');
+        const text = renderToStaticMarkup(createElement('div', null, dialog.content));
+        expect(text).toContain('project-a'); expect(text).toContain('Компьютер'); expect(text).toContain('Локальный проект A');
+        expect(text).toContain('заменён серверной копией'); expect(text).toContain('Несинхронизированные локальные данные не объединяются');
+        expect(text).toContain('закройте OpenCode');
+    });
+
+    it('Отмена не создаёт задание и оставляет возможность осознанно повторить', async () => {
+        vi.mocked(bridgeApi.create).mockResolvedValue({...job('accepted'), kind: 'restore-rag'});
+        render(); click(restore, false); ui.dialogs[ui.dialogs.length - 1]!.onCancel(); await flush(); render();
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+        click(restore); await flush();
+        expect(bridgeApi.create).toHaveBeenCalledExactlyOnceWith({deviceId: 'device-a', projectId: 'project-a',
+            kind: 'restore-rag', expectedBindingId: 'a'.repeat(64), requestKey: expect.any(String)});
+    });
+
+    it('Отказ отправки виден, а новый confirm повторяет исходный неопределённый запрос', async () => {
+        vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Сервер недоступен')).mockResolvedValue({...job('accepted'), kind: 'restore-rag'});
+        render(); click(restore); await flush(); render(); expect(ui.errors.join()).toContain('Сервер недоступен');
+        click(restore, false); expect(bridgeApi.create).toHaveBeenCalledOnce(); await ui.dialogs[ui.dialogs.length - 1]!.onOk(); render();
+        expect(ui.errors).toEqual([]); expect(bridgeApi.create).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toEqual(vi.mocked(bridgeApi.create).mock.calls[0][0]);
+        expect(ui.buttons.get(restore)!.disabled).toBe(true);
+    });
+
+    it('Повтор click и confirm до render не создаёт второй диалог или второй POST', async () => {
+        const pending = deferred(); vi.mocked(bridgeApi.create).mockReturnValue(pending.promise);
+        render(); click(restore, false); click(restore, false); expect(ui.dialogs).toHaveLength(1);
+        const dialog = ui.dialogs[0]; void dialog.onOk(); void dialog.onOk(); expect(bridgeApi.create).toHaveBeenCalledOnce();
+        pending.resolve({...job('accepted'), kind: 'restore-rag'}); await flush(); render();
+        expect(ui.buttons.get(restore)!.disabled).toBe(true);
+    });
+
+    it.each(['project', 'device', 'binding', 'instance', 'root', 'owner', 'role'])('Смена %s закрывает диалог и запрещает старый confirm', async change => {
+        render(); click(restore, false); const dialog = ui.dialogs[0];
+        if (change === 'project') ui.projectId = 'project-b';
+        if (change === 'device') ui.bridge.device.id = 'device-b';
+        if (change === 'binding') ui.bridge.device.report.bindings[0].bindingId = 'c'.repeat(64);
+        if (change === 'instance') ui.bridge.device.report.bindings[0].instanceId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+        if (change === 'root') ui.bridge.device.report.root = '/fixture/other';
+        if (change === 'owner') ui.owner = 'owner-b';
+        if (change === 'role') ui.canWrite = false;
+        render(); await dialog.onOk(); await flush();
+        expect(dialog.destroyed).toBe(true); expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+    });
+
+    it('Отзыв владельца до render не разрешает старое подтверждение', async () => {
+        render(); click(restore, false); const dialog = ui.dialogs[0]; ui.owner = 'owner-b'; await dialog.onOk(); await flush();
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+    });
+
+    it('Закрытие компонента уничтожает диалог и не разрешает сохранённый callback', async () => {
+        render(); click(restore, false); const dialog = ui.dialogs[0]; hooks.dispose(); await dialog.onOk(); await flush();
+        expect(dialog.destroyed).toBe(true); expect(bridgeApi.create).not.toHaveBeenCalled(); expect(hooks.lateWrites()).toBe(0);
+    });
+
+    it('Принятое параллельное действие сохраняет pending барьер до подтверждения', async () => {
+        vi.mocked(bridgeApi.create).mockResolvedValue(job('sync-accepted'));
+        render(); click(restore, false); const dialog = ui.dialogs[0]; click(sync); await flush(); await dialog.onOk(); await flush();
+        expect(bridgeApi.create).toHaveBeenCalledOnce(); expect(vi.mocked(bridgeApi.create).mock.calls[0][0].kind).toBe('sync-rag');
+    });
+
+    it('Свежий запрет серверной копии за время диалога запрещает restore, сохраняя sync', async () => {
+        vi.mocked(bridgeApi.create).mockResolvedValue(job('sync-accepted'));
+        render(); click(restore, false); const dialog = ui.dialogs[0]; ui.serverReady = false; render(); await dialog.onOk(); await flush();
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.buttons.get(restore)!.disabled).toBe(true);
+        click(sync); await flush(); expect(bridgeApi.create).toHaveBeenCalledOnce();
+        expect(vi.mocked(bridgeApi.create).mock.calls[0][0].kind).toBe('sync-rag');
+    });
+});
 
 describe('Повтор синхронизации сохраняет неопределённый запрос текущей папки', () => {
     it.each([sync, restore])('%s: принятый POST с потерянным ответом повторяется даже после завершения job', async label => {

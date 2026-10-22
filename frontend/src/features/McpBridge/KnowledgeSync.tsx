@@ -1,5 +1,5 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
-import { Alert, Button, Space, Typography } from 'antd';
+import { Alert, Button, Modal, Space, Typography } from 'antd';
 import { useEffect, useRef, useState, type FC } from 'react';
 import { Link } from 'react-router-dom';
 import { bridgeApi, type IBridgeJob } from './api';
@@ -31,6 +31,7 @@ export const KnowledgeSync: FC<{
     const [busy, setBusy] = useState(false);
     const [submitted, setSubmitted] = useState<{scope: string; epoch: number; job: IBridgeJob}>();
     const lock = useRef(false);
+    const confirmation = useRef<ReturnType<typeof Modal.confirm>>();
     const binding = bridge.device?.report.bindings?.find(
         (item) => item.projectId === projectId && item.valid !== false && /^[a-f0-9]{64}$/.test(item.bindingId || ''),
     );
@@ -47,7 +48,7 @@ export const KnowledgeSync: FC<{
     const sequence = useRef(0);
     useEffect(() => {
         sequence.current++; lock.current = false; setBusy(false); setError(''); setSubmitted(undefined);
-        return () => { sequence.current++; };
+        return () => { sequence.current++; confirmation.current?.destroy(); confirmation.current = undefined; };
     },[scope]);
     useEffect(() => {
         // Свежий итог заменяет локальный queued ACK и переживает следующий отказ чтения.
@@ -98,6 +99,32 @@ export const KnowledgeSync: FC<{
             if (current()) { lock.current = false; setBusy(false); }
         }
     };
+    const currentCreate = useRef(create);
+    currentCreate.current = create;
+    const confirmRestore = (): void => {
+        const owns = captureOwner();
+        if (!owns() || currentScope.current.scope !== scope || currentScope.current.epoch !== epoch || confirmation.current
+            || !bridge.device || !binding || !canWrite || restoreError || bridgeError || !bridge.devicesReady || !bridge.jobsReady || pending || busy || lock.current) { return; }
+        const dialog = Modal.confirm({
+            title: 'Заменить локальный индекс?',
+            content: <Space direction="vertical">
+                <Typography.Text>Проект: <Typography.Text code>{projectId}</Typography.Text></Typography.Text>
+                <Typography.Text>Компьютер: {bridge.device.name}</Typography.Text>
+                <Typography.Text>Папка: {binding.folderName || projectId}</Typography.Text>
+                <Typography.Text>Локальный индекс LanceDB будет заменён серверной копией. Несинхронизированные локальные данные не объединяются и могут быть потеряны. Перед заменой закройте OpenCode.</Typography.Text>
+            </Space>,
+            okText: 'Заменить локальный индекс',
+            cancelText: 'Вернуться',
+            okButtonProps: { danger: true },
+            onCancel: () => { if (confirmation.current === dialog) { confirmation.current = undefined; } },
+            onOk: async () => {
+                if (confirmation.current !== dialog) { return; }
+                confirmation.current = undefined;
+                if (owns() && currentScope.current.scope === scope && currentScope.current.epoch === epoch) { await currentCreate.current('restore-rag'); }
+            },
+        });
+        confirmation.current = dialog;
+    };
     const refresh = async (): Promise<void> => {
         const owns = captureOwner();
         if (!owns() || lock.current || currentScope.current.scope !== scope || currentScope.current.epoch !== epoch) { return; }
@@ -141,9 +168,7 @@ export const KnowledgeSync: FC<{
                     disabled={!!restoreError || !!bridgeError || !canWrite || !bridge.devicesReady || !bridge.jobsReady || !binding || pending || busy}
                     title={bridgeError || restoreError || undefined}
                     loading={busy}
-                    onClick={() => {
-                        void create('restore-rag');
-                    }}
+                    onClick={confirmRestore}
                 >
                     Скачать в проект через мост
                 </Button>
