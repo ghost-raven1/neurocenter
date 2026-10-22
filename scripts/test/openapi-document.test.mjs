@@ -133,13 +133,22 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 211);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 260);
+    assert.equal(Object.keys(actual.paths).length, 229);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 280);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
     assert.equal(actual.paths['/api/feature-flags'].get['x-neurocenter-service'], 'feature-flags-service');
+});
+
+test('Agent diagnostics document their exact browser-only routes and asynchronous admission',()=>{
+    const base='/api/projects/{projectId}/agents', trial=base+'/{agentId}/readiness-trials';
+    for(const [pathname,method,status]of [[base+'/readiness','get','200'],[trial,'post','202'],[trial+'/{trialId}','get','200'],[trial+'/{trialId}/cancel','post','201']]){
+        const operations=actual.paths[pathname];assert.deepEqual(Object.keys(operations),[method]);
+        assert.deepEqual(operations[method].security,[{sessionCookie:[]}]);assert.ok(operations[method].responses[status]);
+        assert.equal(operations[method]['x-neurocenter-service'],'catalog-service');
+    }
 });
 
 test('Personal chat contracts expose bounded document inputs and CAS only to browser sessions',()=>{
