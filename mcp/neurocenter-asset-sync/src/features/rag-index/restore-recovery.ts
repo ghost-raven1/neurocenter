@@ -24,7 +24,7 @@ const resultSchema = z.object({ ok: z.literal(true), applied: z.literal(true), c
     fingerprintVersion: z.literal(1), snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
     indexProfile: z.object({ provider: z.string().min(1).max(512), model: z.string().min(1).max(512), dimension: z.number().int().positive() }).strict(),
     written: z.number().int().nonnegative(), sourceCount: z.number().int().nonnegative(), dimension: z.number().int().positive() }).strict();
-const schema = z.object({ version: z.literal(1), pid: z.number().int().positive(), state: z.enum(['prepared', 'committed']),
+const schema = z.object({ version: z.literal(1), pid: z.number().int().positive(), state: z.enum(['prepared', 'committed', 'aborted']),
     root: z.string(), store: z.string(), stage: z.string(), backup: z.string(), lock: z.string().max(1024),
     identity: identitySchema, before: proofSchema, after: proofSchema, result: resultSchema,
     deferCompletion:z.literal(true).optional(),
@@ -80,16 +80,23 @@ async function finish(intent: RestoreIntent,recovery=false,final=false): Promise
         await fs.rm(target, { recursive: true }); await syncDirectory(path.dirname(target));
     };
     let store = await proof(intent.store), stage = await proof(intent.stage), backup = await proof(intent.backup);
-    if (intent.state === 'prepared') {
-        if (matchesRestoreProof(store, intent.after) && matchesRestoreProof(backup, intent.before) && !stage) {
-            await fs.rename(intent.store, intent.stage); await syncDirectory(path.dirname(intent.store));
-            store = undefined; stage = await proof(intent.stage);
+    if (intent.state === 'aborted') {
+        if (backup) { throw new Error('Отменённое восстановление содержит резервную папку. Файлы сохранены.'); }
+        // До первого rename рабочая папка ещё принадлежит пользователю, включая его поздние изменения.
+        await remove(intent.stage, intent.after);
+    } else if (intent.state === 'prepared') {
+        // Исходный inode без backup означает, что переключение не началось; поздние правки сохраняются.
+        if (store?.physical !== intent.before.physical || backup) {
+            if (matchesRestoreProof(store, intent.after) && matchesRestoreProof(backup, intent.before) && !stage) {
+                await fs.rename(intent.store, intent.stage); await syncDirectory(path.dirname(intent.store));
+                store = undefined; stage = await proof(intent.stage);
+            }
+            if (!store && matchesRestoreProof(backup, intent.before) && matchesRestoreProof(stage, intent.after)) {
+                await fs.rename(intent.backup, intent.store); await syncDirectory(path.dirname(intent.store));
+                store = await proof(intent.store); backup = undefined;
+            }
+            if (!matchesRestoreProof(store, intent.before) || backup) { throw new Error('Положение исходного индекса неоднозначно. Резервные файлы сохранены.'); }
         }
-        if (!store && matchesRestoreProof(backup, intent.before) && matchesRestoreProof(stage, intent.after)) {
-            await fs.rename(intent.backup, intent.store); await syncDirectory(path.dirname(intent.store));
-            store = await proof(intent.store); backup = undefined;
-        }
-        if (!matchesRestoreProof(store, intent.before) || backup) { throw new Error('Положение исходного индекса неоднозначно. Резервные файлы сохранены.'); }
         await remove(intent.stage, intent.after);
     } else {
         if (!matchesRestoreProof(store, intent.after) || stage) { throw new Error('Восстановленный индекс изменился. Резервные файлы сохранены.'); }
@@ -126,7 +133,7 @@ async function finish(intent: RestoreIntent,recovery=false,final=false): Promise
     await fs.unlink(journalPath(intent.root)); await syncDirectory(directory());
 }
 
-/** Под identity-lock запись intent предшествует обоим rename; prepared откатывается, committed завершает свою очистку. */
+/** Prepared откатывает переключение, committed завершает его; aborted очищает staging без изменения рабочей папки. */
 export async function commitRagRestore(input: { root: string; store: string; stage: string; lock: string; overrides: string | null; identity: IRagProjectIdentity; result: Record<string, unknown>; privateConfiguration?:{key:string;before:unknown|null;after:unknown};deferCompletion?:true;admit?:()=>Promise<void> }): Promise<void> {
     await recoveryDirectory(directory());
     if (await readIntent(input.root)) { throw new Error('Предыдущее восстановление индекса ещё не завершено.'); }
@@ -144,7 +151,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
     const encoded = JSON.stringify(intent);
     if (Buffer.byteLength(encoded) > 16 * 1024 * 1024) { throw new Error('Журнал восстановления индекса превышает 16 МиБ. Исходный индекс сохранён.'); }
     const file = journalPath(input.root), temporary = path.join(directory(), '.' + randomUUID() + '.tmp');
-    let published = false;
+    let published = false, switching = false;
     inFlight.add(input.root);
     try {
         await atomicText(temporary, encoded, 0o600);
@@ -155,13 +162,26 @@ export async function commitRagRestore(input: { root: string; store: string; sta
         }
         if(intent.privateConfiguration){const change=intent.privateConfiguration;await writePrivateConfiguration(change.key,change.after,change.before===null?undefined:change.before);}
         await input.admit?.(); // Fresh lease/actor admission after durable preparation, before switching the working index.
+        if (!matchesRestoreProof(await restoreDirectoryProof(intent.stage, intent.lock), after)
+            || !matchesRestoreProof(await restoreDirectoryProof(intent.store, intent.lock), before)) {
+            throw new Error('Индекс изменился перед переключением. Файлы сохранены.');
+        }
+        switching = true;
         await fs.rename(intent.store, intent.backup); await syncDirectory(path.dirname(intent.store));
         await fs.rename(intent.stage, intent.store); await syncDirectory(path.dirname(intent.store));
         intent.state = 'committed'; await atomicText(file, JSON.stringify(intent), 0o600);
         await finish(intent);
     } catch (error) {
         if (published) {
-            try { const saved = await readIntent(input.root); if (saved) { await finish(saved); } }
+            try {
+                const saved = await readIntent(input.root);
+                if (saved) {
+                    if (!switching && saved.state === 'prepared') {
+                        saved.state = 'aborted'; await atomicText(file, JSON.stringify(saved), 0o600);
+                    }
+                    await finish(saved);
+                }
+            }
             catch (failure) { throw Object.assign(uncertain(error), {recoveryCause:failure}); }
         }
         throw error;

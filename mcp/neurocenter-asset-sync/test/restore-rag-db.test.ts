@@ -248,14 +248,92 @@ describe('Атомарное восстановление RAG в подтвер�
         expect(admissions).toBe(1);expect(result).toMatchObject({complete:true,written:1});expect(await ids()).toEqual(['server-row']);
         await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});
     });
-    it('Отказ очистки prepared intent сохраняет исходную причину и восстанавливается без повторного скачивания',async()=>{
+    it.each([false,true])('Ручные настройки, изменённые во время финального допуска (отзыв: %s), сохраняются без переключения и блокирующего журнала',async revoked=>{
+        const settings=path.join(store,'runtime-overrides.json'),initial=JSON.stringify({retrieval:{topK:17}}),manual=JSON.stringify({retrieval:{topK:23}});
+        await fs.writeFile(settings,initial);
+        const link=fs.link;let journal:string|undefined,reached!:()=>void,release!:()=>void;
+        const pending=new Promise<void>(resolve=>{reached=resolve;}),continueAdmission=new Promise<void>(resolve=>{release=resolve;});
+        vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores')journal=String(args[1]);return result;});
+        const denied=new Error('late authorization revoked after manual edit');
+        const operation=restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{
+            if(journal){reached();await continueAdmission;if(revoked)throw denied;}
+        }).then(result=>({result,error:undefined}),error=>({result:undefined,error: error as Error}));
+        await pending;
+        try{await fs.writeFile(settings,manual);}finally{release();}
+        const outcome=await operation;
+        expect(await ids()).toEqual(['local-original']);
+        expect(await fs.readFile(settings,'utf8')).toBe(manual);
+        if(revoked)expect(outcome.error).toBe(denied);else expect(outcome.error?.message).toContain('Индекс изменился перед переключением');
+        expect(outcome.result).toBeUndefined();
+        await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});
+        await expect(fs.stat(path.join(store,'index.lock'))).rejects.toMatchObject({code:'ENOENT'});
+        expect((await fs.readdir(path.dirname(store))).filter(name=>name.startsWith('.neurocenter-rag-restore-'))).toEqual([]);
+        await locateStore(fixture.root,fixture.root);
+        expect(JSON.parse(await run())).toMatchObject({complete:true,written:1});
+        expect(await ids()).toEqual(['server-row']);expect(await fs.readFile(settings,'utf8')).toBe(manual);
+    });
+    it('Recovery aborted журнала после отказа очистки сохраняет позднюю ручную правку без повторного скачивания',async()=>{
+        const settings=path.join(store,'runtime-overrides.json'),manual=JSON.stringify({retrieval:{topK:29}});
+        await fs.writeFile(settings,JSON.stringify({retrieval:{topK:17}}));
+        const link=fs.link,remove=fs.rm,cleanup=new Error('staging cleanup temporarily unavailable');
+        let journal:string|undefined,stage:string|undefined;
+        vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores'){journal=String(args[1]);stage=JSON.parse(await fs.readFile(journal,'utf8')).stage;}return result;});
+        const failure=vi.spyOn(fs,'rm').mockImplementation(async(...args)=>{if(args[0]===stage)throw cleanup;return remove(...args);});
+        await expect(restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{
+            if(journal)await fs.writeFile(settings,manual);
+        })).rejects.toSatisfy((error:unknown)=>error instanceof Error&&error.cause instanceof Error&&error.cause.message.includes('Индекс изменился перед переключением')&&'recoveryCause'in error&&error.recoveryCause===cleanup&&'restoreRecoveryPending'in error&&error.restoreRecoveryPending===true);
+        expect(await ids()).toEqual(['local-original']);expect(await fs.readFile(settings,'utf8')).toBe(manual);
+        expect(JSON.parse(await fs.readFile(journal!,'utf8')).state).toBe('aborted');
+        failure.mockRestore();transport.fetch.mockClear();
+        await locateStore(fixture.root,fixture.root);await locateStore(fixture.root,fixture.root);
+        expect(transport.fetch).not.toHaveBeenCalled();expect(await ids()).toEqual(['local-original']);expect(await fs.readFile(settings,'utf8')).toBe(manual);
+        await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});await expect(fs.stat(stage!)).rejects.toMatchObject({code:'ENOENT'});
+        expect(JSON.parse(await run())).toMatchObject({complete:true,written:1});expect(await fs.readFile(settings,'utf8')).toBe(manual);
+    });
+    it('Отказ очистки aborted intent сохраняет исходную причину и восстанавливается без повторного скачивания',async()=>{
         const primary=Error('revoked before switch'),cleanup=Object.assign(Error('staging cleanup unavailable'),{code:'EACCES'}),link=fs.link,remove=fs.rm;
         let journal:string|undefined,stage:string|undefined;
         vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores'){journal=String(args[1]);stage=JSON.parse(await fs.readFile(journal,'utf8')).stage;}return result;});
         const failure=vi.spyOn(fs,'rm').mockImplementation(async(...args)=>{if(args[0]===stage)throw cleanup;return remove(...args);});
         await expect(restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{if(journal)throw primary;})).rejects.toSatisfy((error:unknown)=>error instanceof Error&&error.cause===primary&&'recoveryCause'in error&&error.recoveryCause===cleanup&&'restoreRecoveryPending'in error&&error.restoreRecoveryPending===true);
-        expect(await ids()).toEqual(['local-original']);expect(JSON.parse(await fs.readFile(journal!,'utf8')).state).toBe('prepared');await fs.stat(stage!);
+        expect(await ids()).toEqual(['local-original']);expect(JSON.parse(await fs.readFile(journal!,'utf8')).state).toBe('aborted');await fs.stat(stage!);
         failure.mockRestore();transport.fetch.mockClear();await locateStore(fixture.root,fixture.root);
         expect(await ids()).toEqual(['local-original']);expect(transport.fetch).not.toHaveBeenCalled();await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});await expect(fs.stat(stage!)).rejects.toMatchObject({code:'ENOENT'});
+    });
+    it.each(['исходная папка','резервная папка появилась','исходная папка заменена','staging изменён'])('Recovery prepared после поздней ручной правки: %s',async scenario=>{
+        const settings=path.join(store,'runtime-overrides.json'),manual=JSON.stringify({retrieval:{topK:37}});
+        await fs.writeFile(settings,JSON.stringify({retrieval:{topK:17}}));
+        const link=fs.link,rename=fs.rename;let journal:string|undefined,stage:string|undefined,backup:string|undefined;
+        vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores'){journal=String(args[1]);const intent=JSON.parse(await fs.readFile(journal,'utf8'));stage=intent.stage;backup=intent.backup;}return result;});
+        const failedAbort=new Error('interrupted before aborted state became durable');
+        const failure=vi.spyOn(fs,'rename').mockImplementation(async(from,to)=>{
+            if(to===journal&&JSON.parse(await fs.readFile(from,'utf8')).state==='aborted')throw failedAbort;
+            return rename(from,to);
+        });
+        await expect(restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{
+            if(journal){await fs.writeFile(settings,manual);await fs.writeFile(path.join(store,'manual.txt'),'Сохранить ручной файл');}
+        })).rejects.toMatchObject({restoreRecoveryPending:true,recoveryCause:failedAbort});
+        failure.mockRestore();
+        expect(JSON.parse(await fs.readFile(journal!,'utf8')).state).toBe('prepared');
+        if(scenario==='резервная папка появилась'){await fs.mkdir(backup!);await fs.writeFile(path.join(backup!,'manual.txt'),'Чужая резервная папка');}
+        if(scenario==='исходная папка заменена'){const previous=store+'-manual';await fs.rename(store,previous);await fs.cp(previous,store,{recursive:true});}
+        if(scenario==='staging изменён')await fs.writeFile(path.join(stage!,'manual.txt'),'Чужой файл staging');
+        transport.fetch.mockClear();
+        if(scenario==='исходная папка'){
+            await locateStore(fixture.root,fixture.root);await locateStore(fixture.root,fixture.root);
+            await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});await expect(fs.stat(stage!)).rejects.toMatchObject({code:'ENOENT'});
+            expect(await ids()).toEqual(['local-original']);expect(await fs.readFile(path.join(store,'manual.txt'),'utf8')).toBe('Сохранить ручной файл');
+            expect(await fs.readFile(settings,'utf8')).toBe(manual);expect(transport.fetch).not.toHaveBeenCalled();
+            expect(JSON.parse(await run())).toMatchObject({complete:true,written:1});
+        }else{
+            await expect(locateStore(fixture.root,fixture.root)).rejects.toThrow(scenario==='staging изменён'?'Файлы резервной папки изменились':'Положение исходного индекса неоднозначно');
+            await fs.stat(journal!);await fs.stat(stage!);
+            if(scenario==='резервная папка появилась')expect(await fs.readFile(path.join(backup!,'manual.txt'),'utf8')).toBe('Чужая резервная папка');
+            if(scenario==='staging изменён')expect(await fs.readFile(path.join(stage!,'manual.txt'),'utf8')).toBe('Чужой файл staging');
+            expect(transport.fetch).not.toHaveBeenCalled();
+        }
+        expect(await ids()).toEqual([scenario==='исходная папка'?'server-row':'local-original']);
+        expect(await fs.readFile(settings,'utf8')).toBe(manual);
+        if(scenario!=='исходная папка')expect(await fs.readFile(path.join(store,'manual.txt'),'utf8')).toBe('Сохранить ручной файл');
     });
 });
