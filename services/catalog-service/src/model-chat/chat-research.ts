@@ -114,7 +114,7 @@ export class ChatResearchExecutor {
                     if(scope.budget.externalCalls>=RESEARCH_LIMITS.externalCallsPerRound)throw new BadRequestException('Достигнут предел 16 обращений к внешним инструментам за раунд.');
                     const pkg=await this.tools.resolve(scope.req,scope.row,request.external);
                     if(scope.budget.validatedManifest!==pkg.manifest.sha256){await this.client.list(pkg,scope.signal);scope.budget.validatedManifest=pkg.manifest.sha256;}
-                    await active();await requireFeaturesEnabled(flags('tool_catalog'),process.env,globalThis.fetch,scope.signal);scope.budget.externalCalls++;
+                    await active();await requireFeaturesEnabled(flags('tool_catalog'),process.env,globalThis.fetch,scope.signal);await active();scope.budget.externalCalls++;
                     const result=await this.client.call(pkg,command.kind==='external_search'?'web_search_exa':'web_fetch_exa',args!,scope.signal);
                     output=result.text;sources=result.sources;for(const source of result.sources)externalSources.set(source.url,source);
                 }else if(command.kind==='project_search'){

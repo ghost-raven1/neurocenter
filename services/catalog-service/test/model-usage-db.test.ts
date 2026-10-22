@@ -6,6 +6,7 @@ import type { Request } from 'express';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureCatalogSchema, checkCatalogSchema } from '../src/database/catalog-schema';
+import { CATALOG_MIGRATIONS } from '../src/database/catalog-migrations';
 import { ModelUsageService } from '../src/model-usage/model-usage.service';
 import {assertChatResearchSchema} from '../src/model-chat/chat-research.schema-verification';
 import { withModelUsage, currentModelUsage } from '../src/model-usage/model-usage.context';
@@ -41,7 +42,7 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
     const report = (request = req(), query = {}) => service.report(request, query);
     const rows = () => db.query('SELECT * FROM model_usage_calls ORDER BY started_at,id').then(result => result.rows);
     beforeAll(async () => {
-        const url = new URL(connection!); if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.port === '5432') throw new Error('Use a disposable localhost PostgreSQL port other than 5432');
+        const url = new URL(connection!); if (!['postgres:', 'postgresql:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.port === '5432' || url.pathname !== '/postgres' || url.search || url.hash) throw new Error('Use a disposable localhost PostgreSQL admin URL without query or fragment');
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 }); database = 'nc_usage_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database);
         url.pathname = '/' + database; db = new Pool({ connectionString: url.href, max: 4 }); await ensureCatalogSchema(db);
         oldUrl = process.env.CATALOG_PG_URL; process.env.CATALOG_PG_URL = url.href; service = new ModelUsageService(models as unknown as ModelsService); await service.onModuleInit();
@@ -49,7 +50,7 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
     afterEach(async () => { vi.restoreAllMocks(); revoked = false; await db?.query('TRUNCATE model_usage_calls'); });
     afterAll(async () => { await service?.onApplicationShutdown(); await db?.end(); if (admin) { await admin.query('DROP DATABASE ' + database); await admin.end(); } if (oldUrl === undefined) delete process.env.CATALOG_PG_URL; else process.env.CATALOG_PG_URL = oldUrl; });
     it('is migration-owned and writes the pending UUID before actual inference', async () => {
-        expect((await checkCatalogSchema(db, true)).applied.at(-1)).toBe(19);
+        expect((await checkCatalogSchema(db, true)).applied.at(-1)).toBe(CATALOG_MIGRATIONS.at(-1)!.version);
         await service.observe(model, 'chat', async () => { const pending = await rows(); expect(pending).toHaveLength(1); expect(pending[0]).toMatchObject({ status: 'pending', input_tokens: null, output_tokens: null }); expect(pending[0].id).toMatch(/^[a-f0-9-]{36}$/); return output(); });
         expect((await rows())[0]).toMatchObject({ status: 'success', input_tokens: null, output_tokens: null, lease_until: null });
     });

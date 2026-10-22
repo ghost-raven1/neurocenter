@@ -17,8 +17,13 @@ export interface IModelInferenceRuntime {
 export class ModelRuntime implements IModelInferenceRuntime {
     constructor(private readonly local: OllamaClient, private readonly remote: RemoteConnectionService, private readonly usage?: ModelUsageService) {}
     async infer(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
-        const context=currentModelUsage();await requireFeaturesEnabled([...requiredInferenceFeatures(context.purpose,context.agentId),...(context.requiredFeatures??[])],process.env,globalThis.fetch,signal);signal?.throwIfAborted();
-        if (this.usage) return this.usage.observe(model, endpoint, signal => this.dispatch(model, endpoint, body, signal), signal);
+        const context=currentModelUsage(),features=[...requiredInferenceFeatures(context.purpose,context.agentId),...(context.requiredFeatures??[])];
+        await requireFeaturesEnabled(features,process.env,globalThis.fetch,signal);signal?.throwIfAborted();
+        if (this.usage) return this.usage.observe(model, endpoint, async signal => {
+            // The durable usage reservation may wait on SQL; admit paid work again after that wait.
+            await requireFeaturesEnabled(features,process.env,globalThis.fetch,signal);signal.throwIfAborted();
+            return this.dispatch(model, endpoint, body, signal);
+        }, signal);
         return this.dispatch(model, endpoint, body, signal);
     }
     private dispatch(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
