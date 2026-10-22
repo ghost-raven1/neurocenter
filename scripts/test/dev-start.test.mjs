@@ -71,7 +71,7 @@ async function fixture(t, mode) {
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
-        else if(args[0]==='volume'&&args[1]==='inspect')process.exitCode=1;
+        else if(args[0]==='volume'&&args[1]==='ls')process.stdout.write('');
         else if(args.some(arg=>arg.endsWith('/compose.chat-storage.dev.yml')))console.log('fixture chat storage ready');
         else if(args.some(arg=>arg.endsWith('/compose.embedding.yml'))&&args.at(-1)==='embedding'){
             if(process.env.DEV_START_MODE==='model-runtime-error'){

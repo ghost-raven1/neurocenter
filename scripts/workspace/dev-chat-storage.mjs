@@ -40,8 +40,12 @@ export async function prepareDevChatStorage(root, environment = process.env, dep
     const run = dependencies.run || spawnSync;
     const present = await Promise.all([access, secret].map(async file => {try {await fs.lstat(file); return true;} catch (error) {if (error.code === 'ENOENT') return false; throw error;}}));
     if (!present.every(Boolean)) {
-        const volume = run('docker', ['volume', 'inspect', project + '_chat-files'], {cwd: root, env: environment, stdio: 'ignore', timeout: 15000});
-        if (present.some(Boolean) || volume.status === 0) throw new Error('Ключи существующего хранилища чата потеряны. Восстановите исходные файлы; новые ключи не создаются.');
+        const name = project + '_chat-files';
+        const volume = run('docker', ['volume', 'ls', '--filter', 'name=' + name, '--format', '{{.Name}}'], {cwd: root, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, maxBuffer: 65536});
+        if (volume.error || volume.signal || volume.status !== 0 || typeof volume.stdout !== 'string') throw new Error('Не удалось проверить хранилище чата в Docker. Прежние ключи не изменены; повторите после восстановления Docker.');
+        const matches = volume.stdout.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+        if (matches.some(value => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value))) throw new Error('Не удалось проверить список хранилищ Docker. Прежние ключи не изменены.');
+        if (present.some(Boolean) || matches.includes(name)) throw new Error('Ключи существующего хранилища чата потеряны. Восстановите исходные файлы; новые ключи не создаются.');
     }
     for (const [file, value] of [[access, 'neurocenter-' + randomBytes(8).toString('hex')], [secret, randomBytes(32).toString('hex')]]) {
         try {await fs.writeFile(file, value + '\n', {flag: 'wx', mode: 0o600});} catch (error) {if (error.code !== 'EEXIST') throw error;}
