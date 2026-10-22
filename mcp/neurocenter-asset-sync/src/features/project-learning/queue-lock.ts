@@ -51,8 +51,14 @@ export async function withLearningQueueLock<T>(directory:string,action:()=>Promi
             db.exec('PRAGMA busy_timeout=0');
             try{db.exec('BEGIN IMMEDIATE');acquired=true;}catch(error){if(!busy(error))throw error;}
             if(acquired){
-                try{const result=await action();db.exec('COMMIT');acquired=false;return result;}
-                finally{if(acquired)db.exec('ROLLBACK');}
+                try{
+                    const result=await action();
+                    // A BUSY COMMIT retains the transaction: retry it, never the filesystem action.
+                    while(true){
+                        try{db.exec('COMMIT');acquired=false;return result;}
+                        catch(error){if(!busy(error)||Date.now()>=deadline)throw error;await pause();}
+                    }
+                }finally{if(acquired){try{db.exec('ROLLBACK');}catch{/* Closing releases the lock without hiding the primary failure. */}}}
             }
         }finally{db.close();}
         if(Date.now()>=deadline)throw damaged();await pause();
