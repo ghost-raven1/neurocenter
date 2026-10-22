@@ -49,6 +49,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     catalogReady():Promise<void>{return this.catalog.ensureSchema();}
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
+        await this.sources.bootstrap(()=>requireFeaturesEnabled(['asset_sources']));
         this.worker=new AssetImportWorker(this.pool,this.jobs,this.sources,this.blobs,this.runtime);this.worker.kick();
         this.timer=setInterval(()=>this.worker.kick(),5000);this.timer.unref();
     }
