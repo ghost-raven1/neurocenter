@@ -2,6 +2,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connectStore, ROW_COLUMNS, mapRow } from '../../lib/lancedb.js';
 
+type NativeHandle = { close(): void };
+
+/** Both acquired handles are released; a table-close error has priority over connection cleanup. */
+function closeHandles(db: NativeHandle, table?: NativeHandle): void {
+    let failure: { error: unknown } | undefined;
+    try { table?.close(); } catch (error) { failure = { error }; }
+    try { db.close(); } catch (error) { failure ??= { error }; }
+    if (failure) { throw failure.error; }
+}
+
+function failSnapshot(error: unknown, db: NativeHandle, table?: NativeHandle): never {
+    try { closeHandles(db, table); } catch { /* The original native operation remains the primary error. */ }
+    throw error;
+}
+
 /** Один checkout используется и для полного fingerprint, и для передаваемых строк. */
 export async function openIndexSnapshot(storePath: string) {
     const identity = async () => {
@@ -11,20 +26,25 @@ export async function openIndexSnapshot(storePath: string) {
     };
     const physical = await identity();
     const db = await connectStore(storePath);
-    const table = await db.openTable('chunks');
-    const version = await table.version();
-    await table.checkout(version);
-    const rowCount = await table.countRows();
-    const schema = await table.schema();
-    const dimension = (schema.fields.find(field => field.name === 'embedding')?.type as { listSize?: number })?.listSize ?? 0;
+    const table = await db.openTable('chunks').catch(error => failSnapshot(error, db));
+    let version: number, rowCount: number, dimension: number;
+    try {
+        version = await table.version();
+        await table.checkout(version);
+        rowCount = await table.countRows();
+        const schema = await table.schema();
+        dimension = (schema.fields.find(field => field.name === 'embedding')?.type as { listSize?: number })?.listSize ?? 0;
+    } catch (error) { failSnapshot(error, db, table); }
     const assertCurrent = async () => {
         const currentDb = await connectStore(storePath);
-        const current = await currentDb.openTable('chunks');
+        let current: Awaited<ReturnType<typeof currentDb.openTable>> | undefined;
         try {
+            current = await currentDb.openTable('chunks');
             if (await identity() !== physical || await current.version() !== version) {
                 throw new Error('Локальный индекс изменился во время передачи. Дождитесь индексации и повторите операцию.');
             }
-        } finally { current.close(); currentDb.close(); }
+        } catch (error) { failSnapshot(error, currentDb, current); }
+        closeHandles(currentDb, current);
     };
     async function* rows(limit = Infinity) {
         let offset = 0;
@@ -47,5 +67,5 @@ export async function openIndexSnapshot(storePath: string) {
         }
         return result;
     }
-    return { rowCount, dimension, version, rows, selected, assertCurrent, close: () => { table.close(); db.close(); } };
+    return { rowCount, dimension, version, rows, selected, assertCurrent, close: () => closeHandles(db, table) };
 }
