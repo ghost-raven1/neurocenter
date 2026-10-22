@@ -82,7 +82,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
         </>:<>
             {bridge.loading?<Typography.Text role="status">Проверяем подключения в вашем профиле…</Typography.Text>:null}
             {bridge.errors.devices&&<Alert type="warning" showIcon message={bridge.errors.devices} action={<Button onClick={()=>{void bridge.reload();}}>Повторить</Button>}/>}
-            {bridge.devicesReady&&<>{connection}<Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button></>}
+            {(bridge.devicesReady||!!bridge.errors.devices)&&<>{connection}<Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button></>}
         </>}
         {options}
     </div>;

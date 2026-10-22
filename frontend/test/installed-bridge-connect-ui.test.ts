@@ -204,7 +204,10 @@ describe('Подключение компьютера с уже установл
         const html = setup();
         expect(html).toContain('Не удалось загрузить компьютеры');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
-        expect(html).not.toContain('/api/bridge/connect.');
+        expect(html).toContain(installerOrigin+'/api/bridge/connect.sh');
+        expect(html).not.toContain('?reconnect=1');
+        expect(html).not.toContain('Компьютер готов');
+        fixture.buttons.get('Повторить')?.onClick?.();expect(fixture.bridge.reload).toHaveBeenCalledOnce();
     });
 
     it('Устаревшие возможности требуют обновления и показывают действующий установщик', () => {
