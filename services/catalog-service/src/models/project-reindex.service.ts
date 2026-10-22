@@ -209,6 +209,8 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
     async cancel(request:Request,projectId:string,id:string):Promise<IProjectReindexPlan>{
         const row=await this.owned(request,projectId,id,3),db=await this.models.pool.connect();
         try{await db.query('BEGIN');await db.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE',[row.project_id]);
+            const saved=await db.query<{state:string}>('SELECT state FROM project_reindex_plans WHERE id=$1 FOR UPDATE',[id]);
+            if(saved.rows[0]?.state==='applied')throw new ConflictException('Применённый план переиндексации нельзя отменить.');
             const current=await this.coordinator.context(row.project_id,db);if(current.generation===row.id)throw new ConflictException('Активное поколение нельзя удалить отменой плана.');
             await db.query("UPDATE project_reindex_plans SET state='cancelling',message='Останавливаем переиндексацию. Действующий индекс сохранён.',updated_at=now() WHERE id=$1 AND state NOT IN ('applied','cancelled')",[id]);await db.query('COMMIT');
         }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
