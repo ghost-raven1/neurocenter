@@ -26,7 +26,7 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             output.info('Использование', 'scripts/dev.sh <команда> [--profile fast|standard|full]');
             line('');
             for (const [command, description] of [
-                ['install', 'Подготовить Docker Compose и установить зависимости'],
+                ['install', 'Подготовить Compose, зависимости и обновить поставку и установленный мост'],
                 ['build', 'Собрать сервисы, интерфейс и пакет моста'],
                 ['check', 'Выполнить проверки проекта'],
                 ['up', 'Собрать и запустить проект'],
@@ -44,7 +44,7 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             line('  Кэш и уже работающий хостинг моделей сохраняются при выборе лёгкого профиля.');
             line('  Подготовка файлов не добавляет карточки: состав общего каталога выбирается в «Ассетах».');
             line('');
-            output.info('Требования', 'Node.js 24, npm и Docker; Compose подготовит install');
+            output.info('Требования', 'Node.js 24, npm, Git и Docker; Compose подготовит install');
             line('\n  Первый запуск:');
             line('    scripts/dev.sh install');
             line('    scripts/dev.sh up --profile standard');

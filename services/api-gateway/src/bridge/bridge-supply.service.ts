@@ -5,30 +5,41 @@ import type { Request, Response } from 'express';
 import { createHash } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-
-interface IBridgeArtifact {
-    file: string; target: string; sha256: string; bytes: number;
-    metadata: { version: string; buildId: string; target: string; sha256: string; bytes: number; [key: string]: unknown };
-}
-interface IBridgeSupply { assetId: string; version: string; buildId: string; sourceCommit: string; artifacts: IBridgeArtifact[]; }
+import { readDevBridgeRuntime } from './dev-bridge-runtime';
+import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const TARGET = /^(darwin|linux|windows)-(x64|arm64)(-musl)?$/;
 
-/** Gateway раздаёт только явно импортированные версии нового источника ассетов. */
+/** Gateway раздаёт imported supply; явный development override выбирает только локальную host-сборку. */
 @Injectable()
 export class BridgeSupplyService {
     private readonly catalogUrl: string;
     private readonly http: AxiosInstance;
+    private readonly devRuntimeDirectory?: string;
 
     constructor(config: ConfigService) {
         this.catalogUrl = (config.get<string>('CATALOG_SERVICE_URL') || 'http://localhost:4100').replace(/\/+$/, '');
         this.http = axios.create({ timeout: 15000, maxRedirects: 0, maxContentLength: 128 * 1024, validateStatus: () => true });
+        if ((config.get<string>('NODE_ENV') || process.env.NODE_ENV) === 'development') {
+            this.devRuntimeDirectory = config.get<string>('DEV_BRIDGE_RUNTIME_DIR') || undefined;
+        }
     }
 
     /** Историческая версия выбирается явно, чтобы обновление head не обрывало уже начатую установку. */
     public async supply(signal: AbortSignal, version?: string): Promise<IBridgeSupply> {
         if (version !== undefined && !VERSION.test(version)) { throw new NotFoundException('Версия моста не найдена.'); }
+        const local = this.devRuntimeDirectory ? await readDevBridgeRuntime(this.devRuntimeDirectory, signal) : undefined;
+        if (local) {
+            try {
+                if (version !== undefined && version !== local.supply.version) { throw new NotFoundException('Dev-версия моста не найдена.'); }
+                return local.supply;
+            } finally { await local.archive.close(); }
+        }
+        return this.importedSupply(signal, version);
+    }
+
+    private async importedSupply(signal: AbortSignal, version?: string): Promise<IBridgeSupply> {
         let result;
         try {
             result = await this.http.get(`${this.catalogUrl}/internal/asset-sources/bridge`, {
@@ -50,7 +61,28 @@ export class BridgeSupplyService {
     public async runtime(file: string, signal: AbortSignal, res: Response): Promise<void> {
         const match = /^neurocenter-asset-sync-((?:darwin|linux|windows)-(?:x64|arm64)(?:-musl)?)-(\d+\.\d+\.\d+)\.tgz(\.sha256|\.json)?$/.exec(file);
         if (!match) { throw new NotFoundException('Пакет для этой платформы не найден.'); }
-        const supply = await this.supply(signal, match[2]);
+        const local = this.devRuntimeDirectory ? await readDevBridgeRuntime(this.devRuntimeDirectory, signal) : undefined;
+        if (local) {
+            try {
+                if (local.artifact.file !== file.replace(/\.(?:sha256|json)$/, '') || local.artifact.target !== match[1]) { throw new NotFoundException('Dev-пакет для этой платформы не собран.'); }
+                if (signal.aborted) { return; }
+                res.setHeader('cache-control', 'no-store');
+                if (match[3]) {
+                    res.setHeader('content-type', match[3] === '.json' ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8');
+                    res.send(match[3] === '.json' ? JSON.stringify(local.artifact.metadata) + '\n' : local.artifact.sha256 + '\n');
+                } else {
+                    try { await this.transfer(local.archive.createReadStream({ start: 0, autoClose: false, signal }), local.artifact, signal, res); }
+                    catch {
+                        if (signal.aborted || res.destroyed) { return; }
+                        if (res.headersSent) { res.destroy(); return; }
+                        res.removeHeader('content-length'); res.removeHeader('content-type');
+                        throw new ServiceUnavailableException('Передача dev-пакета моста прервана. Повторите установку.');
+                    }
+                }
+            } finally { await local.archive.close(); }
+            return;
+        }
+        const supply = await this.importedSupply(signal, match[2]);
         if (signal.aborted) { return; }
         const artifact = supply.artifacts.find(item => item.file === file.replace(/\.(?:sha256|json)$/, '') && item.target === match[1]);
         if (!artifact) { throw new NotFoundException('Пакет для этой платформы ещё не импортирован.'); }
@@ -77,18 +109,7 @@ export class BridgeSupplyService {
                 upstream.data.destroy();
                 throw new Error('Импортированные байты недоступны.');
             }
-            let received = 0;
-            const hash = createHash('sha256');
-            res.setHeader('content-type', 'application/gzip');
-            res.setHeader('content-length', String(artifact.bytes));
-            await pipeline(upstream.data, new Transform({
-                transform(chunk: Buffer, _encoding, done) {
-                    received += chunk.length;
-                    if (received > artifact.bytes) { done(new Error('Размер архива изменился.')); return; }
-                    hash.update(chunk); done(null, chunk);
-                },
-                flush(done) { done(received === artifact.bytes && hash.digest('hex') === artifact.sha256 ? undefined : new Error('Архив не совпал с импортированной версией.')); },
-            }), res, { signal });
+            await this.transfer(upstream.data, artifact, signal, res);
         } catch {
             upstream?.data.destroy();
             if (signal.aborted || res.destroyed) { return; }
@@ -97,6 +118,21 @@ export class BridgeSupplyService {
             res.removeHeader('content-type');
             throw new ServiceUnavailableException('Передача пакета моста прервана. Повторите установку.');
         }
+    }
+
+    private async transfer(input: NodeJS.ReadableStream, artifact: IBridgeArtifact, signal: AbortSignal, res: Response): Promise<void> {
+        let received = 0;
+        const hash = createHash('sha256');
+        res.setHeader('content-type', 'application/gzip');
+        res.setHeader('content-length', String(artifact.bytes));
+        await pipeline(input, new Transform({
+            transform(chunk: Buffer, _encoding, done) {
+                received += chunk.length;
+                if (received > artifact.bytes) { done(new Error('Размер архива изменился.')); return; }
+                hash.update(chunk); done(null, chunk);
+            },
+            flush(done) { done(received === artifact.bytes && hash.digest('hex') === artifact.sha256 ? undefined : new Error('Архив не совпал с импортированной версией.')); },
+        }), res, { signal });
     }
 }
 

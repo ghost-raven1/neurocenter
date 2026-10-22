@@ -17,7 +17,7 @@ async function fixture(t, mode = 'ready') {
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -39,9 +39,15 @@ async function fixture(t, mode = 'ready') {
         else if(command==='compose up --help')console.log('--wait --wait-timeout');
         else if(command==='info --format {{.ServerVersion}}') {if(mode==='daemon-down')process.exitCode=1;else console.log('27.5.1');}
         else {record({kind:'unexpected-command',args});process.exitCode=91;}`, {mode: 0o700});
+    // Only the copied fixture supplies this hook; no real runtime, installer or home is reached.
+    await fs.writeFile(path.join(checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `export async function prepareDevBridge({root,node,environment}) {
+        const fs=await import('node:fs');fs.appendFileSync(environment.COMPOSE_TEST_RECORD,JSON.stringify({kind:'bridge-pipeline',root,node,home:environment.HOME})+'\\n');
+        if(environment.COMPOSE_TEST_MODE==='bridge-pipeline-failure')throw Error('OWN_BRIDGE_PIPELINE_FAILURE');
+        return {installed:{updated:true}};
+    }`);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `${record}
-        record({kind:'npm',node:process.versions.node,args:process.argv.slice(2),cwd:process.cwd()});`);
+        record({kind:'npm',node:process.versions.node,args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME});`);
     const hook = path.join(directory, 'network-tripwire.mjs');
     await fs.writeFile(hook, `import {appendFileSync} from 'node:fs';
         import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
@@ -54,6 +60,7 @@ async function fixture(t, mode = 'ready') {
         };
         http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;syncBuiltinESMExports();`);
     const env = {PATH: bin, NODE_BIN: process.execPath, NPM_CLI_JS: npm, DOCKER_CONFIG: dockerConfig,
+        HOME: directory, USERPROFILE: directory, XDG_CONFIG_HOME: path.join(directory, 'config'),
         NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`, COMPOSE_TEST_MODE: mode, COMPOSE_TEST_RECORD: records};
     async function run(command = 'install') {
         const result = spawnSync(process.execPath, [path.join(checkout, 'scripts/dev.mjs'), command], {
@@ -68,7 +75,7 @@ async function fixture(t, mode = 'ready') {
         for (const event of events.filter(event => event.kind === 'docker')) assert.equal(event.dockerConfig, dockerConfig);
         return {...result, events};
     }
-    return {checkout, dockerConfig, run};
+    return {directory, checkout, dockerConfig, run};
 }
 
 test('dev install проверяет готовый Compose до установки всех пакетов', async t => {
@@ -77,15 +84,26 @@ test('dev install проверяет готовый Compose до установ�
     assert.deepEqual(result.events.slice(0, 3).map(event => event.args), [
         ['--version'], ['compose', 'version', '--short'], ['compose', 'up', '--help'],
     ]);
-    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm')]);
+    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm'), 'bridge-pipeline']);
     const npm = result.events.filter(event => event.kind === 'npm');
     assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), ['',...workspacePackages].sort());
     for (const event of npm) {
         assert.equal(event.node, process.versions.node);
-        assert.deepEqual(event.args, event.cwd===f.checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);
+        const base = event.cwd===f.checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund'];
+        const strict = path.relative(f.checkout,event.cwd)==='services/api-gateway'?'false':'true';
+        assert.deepEqual(event.args,[...base,'--registry=https://registry.npmjs.org/','--strict-ssl='+strict,'--userconfig='+path.join(event.home,'user.npmrc'),'--globalconfig='+path.join(event.home,'global.npmrc')]);
+        assert.match(path.basename(event.home),/^neurocenter-npm-build-/);
+        await assert.rejects(fs.access(event.home),{code:'ENOENT'});
     }
+    assert.deepEqual(result.events.at(-1),{kind:'bridge-pipeline',root:f.checkout+path.sep,node:process.execPath,home:f.directory});
     assert.match(result.stdout, /Compose 2\.40\.3 уже установлен/);
     assert.deepEqual(await fs.readdir(f.dockerConfig), ['config.json']);
+});
+
+test('dev install reports bridge pipeline failure after all npm and does not claim completion',async t=>{
+    const f=await fixture(t,'bridge-pipeline-failure'),result=await f.run();
+    assert.equal(result.status,1);assert.match(result.stderr,/OWN_BRIDGE_PIPELINE_FAILURE/);assert.doesNotMatch(result.stdout,/Зависимости установлены/);
+    assert.deepEqual(result.events.map(event=>event.kind),[...Array(3).fill('docker'),...Array(workspacePackages.length+1).fill('npm'),'bridge-pipeline']);
 });
 
 test('dev install останавливается при недоступном Docker CLI до первого npm', async t => {

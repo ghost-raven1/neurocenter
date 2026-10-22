@@ -127,13 +127,18 @@ test('Dev-команда соблюдает явный npm CLI и запуска
     const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter dev runtime ')));
     try {
         const cli = path.join(temporary, 'npm-cli.js'), records = path.join(temporary, 'calls.jsonl');
-        await fs.writeFile(cli, `require('node:fs').appendFileSync(${JSON.stringify(records)},JSON.stringify({node:process.versions.node,cwd:process.cwd(),args:process.argv.slice(2)})+'\\n');`);
+        await fs.writeFile(cli, `require('node:fs').appendFileSync(${JSON.stringify(records)},JSON.stringify({kind:'npm',node:process.versions.node,cwd:process.cwd(),args:process.argv.slice(2),home:process.env.HOME})+'\\n');`);
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
+        // This copied hook records the dev integration boundary without installing a real bridge.
+        await fs.writeFile(path.join(checkout,'scripts/workspace/dev-bridge-runtime.mjs'),`export async function prepareDevBridge({root,node,environment}){
+            const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({kind:'bridge-pipeline',root,node,home:environment.HOME})+'\\n');
+            return {installed:{updated:true}};
+        }`);
         for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
         await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
         await fs.mkdir(path.join(checkout,'scripts/assets'));
@@ -153,12 +158,22 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny; syncBuiltinESMExports();`);
         const result = spawnSync(process.execPath, [path.join(checkout, 'scripts/dev.mjs'), 'install'], {
             cwd: checkout, env: {PATH: bin, NODE_BIN: process.execPath, NPM_CLI_JS: cli, DOCKER_CONFIG: dockerConfig,
+                HOME: temporary, USERPROFILE: temporary, XDG_CONFIG_HOME: path.join(temporary,'config'),
                 NODE_OPTIONS: `--import=${pathToFileURL(tripwire).href}`}, encoding: 'utf8', timeout: 10000,
         });
         assert.equal(result.status, 0, result.stderr);
-        const calls = (await fs.readFile(records, 'utf8')).trim().split('\n').map(value => JSON.parse(value));
+        const events = (await fs.readFile(records, 'utf8')).trim().split('\n').map(value => JSON.parse(value));
+        assert.deepEqual(events.map(event=>event.kind),[...Array(workspacePackages.length+1).fill('npm'),'bridge-pipeline']);
+        assert.deepEqual(events.at(-1),{kind:'bridge-pipeline',root:checkout+path.sep,node:process.execPath,home:temporary});
+        const calls=events.filter(event=>event.kind==='npm');
         assert.deepEqual(calls.map(call => path.relative(checkout, call.cwd)).sort(), ['',...workspacePackages].sort());
-        for (const call of calls) {assert.equal(Number(call.node.split('.')[0]),24); assert.deepEqual(call.args,call.cwd===checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund']);}
+        for (const call of calls) {
+            assert.equal(Number(call.node.split('.')[0]),24);
+            const base=call.cwd===checkout?['ci','--ignore-scripts','--no-audit','--no-fund']:['ci','--no-audit','--no-fund'];
+            const strict=path.relative(checkout,call.cwd)==='services/api-gateway'?'false':'true';
+            assert.deepEqual(call.args,[...base,'--registry=https://registry.npmjs.org/','--strict-ssl='+strict,'--userconfig='+path.join(call.home,'user.npmrc'),'--globalconfig='+path.join(call.home,'global.npmrc')]);
+            assert.match(path.basename(call.home),/^neurocenter-npm-build-/);await assert.rejects(fs.access(call.home),{code:'ENOENT'});
+        }
         assert.doesNotMatch(result.stderr, /REAL_NETWORK_FORBIDDEN/);
         await assert.rejects(fs.access(networkCalls), {code: 'ENOENT'});
         assert.deepEqual(await fs.readdir(dockerConfig), []);

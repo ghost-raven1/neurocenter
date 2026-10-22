@@ -6,7 +6,7 @@ import {panelOrigin,publicApiOrigin} from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
 
 /**
- * Установщики используют импортированный neurocenter-assets и доверенный адрес Gateway.
+ * Установщики используют проверенную поставку и доверенный адрес Gateway.
  */
 @Controller(['bridge', 'api/bridge'])
 export class BridgeController {
@@ -74,7 +74,7 @@ export class BridgeController {
         res.send(await this.read(`opencode/${file}`));
     }
 
-    /** Только импортированная неизменяемая версия; локального архива или внешнего fallback нет. */
+    /** Проверенная imported версия либо явная локальная host-сборка в development. */
     @Get('runtime/:file')
     public async runtime(@Req() req: Request, @Res() res: Response): Promise<void> {
         await bridgeRequest(req, res, signal => this.supply.runtime(req.params.file, signal, res));

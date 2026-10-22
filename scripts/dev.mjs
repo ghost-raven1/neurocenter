@@ -259,7 +259,8 @@ async function start(profile) {
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
-                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}), PORT: String(service.port) },
+                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
+                    ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT: String(service.port) },
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });
@@ -350,16 +351,19 @@ async function main() {
     process.env.NODE_BIN = node;
     logDir = process.env.LOGDIR || path.join(stateDir, 'logs');
 
-    const titles = {install:'Установка зависимостей',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
+    const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
     output.heading(titles[command]);
     if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); output.success('Проверки проекта завершены'); }
     else if (command === 'install') {
-        const next = progress(packages.length + 2);
+        const next = progress(packages.length + 3);
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
         await forPackages(command, next);
+        next('Обновление поставки и установленного моста');
+        const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
+        await prepareDevBridge({root, node, environment: process.env, output});
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }
