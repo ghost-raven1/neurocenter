@@ -65,3 +65,33 @@ Production TypeScript Catalog и строгие проверки затрону�
 Полный workspace/unit-safe/owned-PG повтор, остальные transaction owners, агентские испытания целиком, полная UI-матрица, настоящий IdP/OpenCode/provider, Ceph, cross-host DR, CI и production этим проходом не приняты. При текущей нагрузке на swap выполнялись ограниченные последовательные SQL-наборы. B01–B06 остаются открытыми. Новые изменения прошли авторское, root и независимое перекрёстное ревью; коммиты разделены по областям.
 
 Локальные raw RED/GREEN, exact hashes, collection inventories, AST-карты, browser receipt и cleanup: `.run/functional-audit-next-20261022/{devices,learning,chat,frontend,tooling,candidate}/`. Эти evidence-файлы не включены в публичный Git. [Методика покрытия](coverage.md) · [Флаги](feature-flags-coverage-plan.md) · [Бэклог](backlog-2026-10-22.md).
+
+## Продолжение после локального Ceph — `776b747`
+
+Проверены ещё две области на настоящем отдельном PostgreSQL `59616`: общий transaction helper чата и два владельца транзакций платформенных квот RAG. В старом `ChatRepository` неотправленный ROLLBACK оставлял отклонённый INSERT/UPDATE в соединении: следующий заёмщик фиксировал его своим COMMIT. Ошибка отката также заменяла первоначальный отказ. В двух путях платформенных квот RAG исходная ошибка уже сохранялась, но неопределённая сессия возвращалась в пул и позволяла аналогичную фиксацию UPDATE без завершённого журнала.
+
+`8e36140` и `04d7654` уничтожают соединение только при неподтверждённом откате. Подтверждённый ROLLBACK сохраняет повторное использование сессии, потерянный ACK COMMIT не отменяет уже зафиксированные данные. Проверки используют пул max1, независимого наблюдателя и следующий настоящий COMMIT; SQL настоящий, инъекции моделируют отказ операции, потерю ACK и неотправленный откат. Source/test изменения прошли независимые взаимные ревью и strict TypeScript.
+
+| Набор | Результат и граница |
+| --- | --- |
+| Чат | 27/27: 12 новых actual-PG сценариев `create`/`owned` и 15 прежних регрессий. Причинный RED — два ghost commit. Покрыты потерянные BEGIN/COMMIT/ROLLBACK ACK, неотправленный откат, настоящий SQL constraint, успешный commit и безопасное повторное использование. После всех стадий 38 собственных UUID-БД удалены обычным DROP; осталось 0 их БД/сессий |
+| Платформенные квоты RAG | 35/35: 8 новых actual-PG transaction сценариев, один URL guard и 26 прежних проверок, включая 7 actual-PG. Причинный RED — 4 отказа из 9 выбранных. Новая fixture проверяет только собственные UUID-БД/сессии, сохраняя совместимость с параллельными QA; финальный независимый inventory — 0 БД/сессий |
+| Подготовка файлового хранилища | 76/76 native, 5/5 файлов: 35 config/SDK, 21 bootstrap и 20 CLI start. Семь новых случаев проверяют настоящий SDK с независимо проверенной SigV4, реальное отклонение public policy и внешнего отказа, неизвестный Docker inventory. Класс компилируется из текущего TS в собственный каталог, рабочий dist не используется. Docker/Ceph команды управляются fixture; новый live Ceph в этом проходе не запускался |
+| Стенд проектных снимков | 33/33 unit и четыре отдельных setup-контроля actual spec. PG URL query overrides, порты S3 `0/19010/19011` и пустые настройки отклоняются без внешнего TCP/Docker. Порт 0 раньше превращался SDK в 80. Для внешнего Ceph проверяется подписанный HEAD без MinIO health URL и создания бакета. Отсутствующая конфигурация видимо пропускает 8 opt-in тестов; пустая настроенная конфигурация даёт ошибку. Исправлен прежний table oracle: `[]` теперь действительно передаётся как вход. Live PG/S3 assertions этого fixture здесь не выполнялись |
+| Общий unit-safe | Чистый `776b747`, 8 пакетов, 7416 pass / 0 fail / 53 skip; expected 545 = reported 545, исключены 115 инфраструктурных файлов. Node24.22.0, один worker, sourceBefore=sourceAfter, все пакеты exit0. `complete:false` сохранён из-за skips; этот профиль не заменяет полный owned-PG/S3 |
+
+Количества пересекающихся запусков не складываются. Проценты относятся к разным знаменателям:
+
+| Источник / метод | Lines | Functions | Branches | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `platform-quota.ts`, 35 scoped / Vitest AST | 97.29 | 100 | 95 | 96.72 |
+| `dev-chat-storage.mjs`, 35 scoped / native Node V8 | 100 | 100 | 94.25 | не измерено |
+| Восемь пакетов / unit-safe Vitest AST | 64.80 | 58.92 | 62.18 | 60.68 |
+
+Native карта не объединена с AST; непокрытые ветви RAG сохранены в scoped отчёте. Общая цель около 100%, полный owned-PG/S3, live snapshot/Ceph restore, CI и production остаются открыты. Рабочие сервисы, основной PostgreSQL `5432`, хранилища `19010/19011` и установленный мост не менялись. Все 127 дочерних процессов двадцати CLI start fixtures завершены, временные каталоги удалены.
+
+Отдельный TypeScript emit по production `tsconfig.build.json` завершился exit0 для Catalog и RAG: 388 и 36 JS-файлов в собственных каталогах. SHA исходников, shared, manifests/config и рабочих dist до/после совпали; приложения из этих сборок не запускались. Квитанция: `.run/continuation-audit-20261022/isolated-build/receipt.json`.
+
+Локальные свидетельства: `.run/chat-rollback-20261022/final-receipt.json`, `.run/rag-quota-rollback-20261022/final-receipt.json`, `.run/snapshot-s3-readiness-20261022/final-receipt.json`, `.run/continuation-audit-20261022/reviewed-final-receipt.json`, `.run/coverage/frozen-unit-safe-audit-776b747/manifest.json`.
+
+Следующий разбор: `FlagsRepository.patch`, `AgentTrialRepository.transaction` и `ragQuota` имеют похожие неподтверждённые rollback/release границы. Это кандидаты по чтению исходников; их ghost commit пока не воспроизведён и исправление не заявляется. Требуется отдельный actual-PG RED с независимым наблюдателем до изменения кода.
