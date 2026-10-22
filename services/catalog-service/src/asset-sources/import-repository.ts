@@ -16,6 +16,7 @@ export class AssetImportRepository {
     async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number,cacheOnly=false): Promise<IImportJob> {
         const fingerprint=(offline:boolean)=>publicationHash({source,ids:[...ids].sort(),...(bridgeSourceRevision!==undefined?{bridgeSourceRevision}:{}),...(offline?{cacheOnly:true}:{})});
         const client = await this.pool.connect();
+        let discard=false;
         try {
             await client.query('BEGIN');
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-request:'+actor+':'+requestKey]);
@@ -39,8 +40,8 @@ export class AssetImportRepository {
             await securityEvent(client,{actor,action:'asset.import.request',resourceId:rows[0].id,before:null,
                 after:{repository:source.repository,commit:source.commit,ids}});
             await client.query('COMMIT'); return rows[0];
-        } catch (error) { await client.query('ROLLBACK').catch(()=>undefined); throw error; }
-        finally { client.release(); }
+        } catch (error) { try{await client.query('ROLLBACK');}catch{discard=true;} throw error; }
+        finally { client.release(discard); }
     }
 
     async get(id: string, actor?: string, client: Pick<PoolClient,'query'> = this.pool): Promise<IImportJob> {
@@ -129,6 +130,7 @@ export class AssetImportRepository {
     /** Explicit replace сохраняет exact current hash; worker повторно проверяет его до native write. */
     async resolve(id:string,actor:string,digest:string):Promise<IImportJob> {
         const client=await this.pool.connect();
+        let discard=false;
         try{
             await client.query('BEGIN');const {rows}=await client.query<IImportJob>('SELECT * FROM asset_source_jobs WHERE id=$1 AND actor=$2 FOR UPDATE',[id,actor]);
             const job=rows[0];if(!job){throw new NotFoundException('Импорт недоступен текущему пользователю.');}
@@ -140,7 +142,7 @@ export class AssetImportRepository {
             const updated=await client.query<IImportJob>("UPDATE asset_source_jobs SET state='QUEUED',replacement_hashes=$2::jsonb,replacement_origins=$3::jsonb,items='[]'::jsonb,cancel_requested=false,message='Применяем явно выбранную замену локальных карточек',updated_at=now() WHERE id=$1 RETURNING *",[id,JSON.stringify(hashes),JSON.stringify(origins)]);
             await securityEvent(client,{actor,action:'asset.import.replace',resourceId:id,before:{digest,conflicts:conflicts.map(item=>({id:item.expected!.id,version:item.expected!.version,hash:item.expected!.hash}))},after:{source:job.source.commit}});
             await client.query('COMMIT');return updated.rows[0];
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        }catch(error){try{await client.query('ROLLBACK');}catch{discard=true;}throw error;}finally{client.release(discard);}
     }
 
     async retry(id: string, actor: string): Promise<IImportJob> {
