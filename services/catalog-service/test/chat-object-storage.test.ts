@@ -45,9 +45,11 @@ describe('Chat S3 configuration boundary', () => {
         { owner: '', grantee: '<Type>CanonicalUser</Type>', allowed: true },
     ])('Checks Ceph owner grants and the exact MinIO private ACL representation %#', async ({ owner, grantee, allowed }) => {
         const objects = new ChatObjectStorage(synthetic);
-        vi.spyOn(objects.client, 'bucketExists').mockResolvedValue(true); vi.spyOn(objects.client, 'getBucketPolicy').mockResolvedValue('');
-        const xml = '<AccessControlPolicy><Owner><ID>' + owner + '</ID></Owner><AccessControlList><Grant><Grantee>' + grantee + '</Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>';
-        vi.spyOn(objects.client, 'makeRequestAsync').mockImplementation(async () => Readable.from([xml]) as unknown as IncomingMessage);
+        vi.spyOn(objects.client, 'bucketExists').mockResolvedValue(true);
+        const xml = '<AccessControlPolicy><Owner><ID>' + owner + '</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">' + grantee + '</Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>';
+        vi.spyOn(objects.client, 'makeRequestAsync').mockImplementation(async options => {
+            return Object.assign(Readable.from([options.query === 'policy' ? '<Error><Code>NoSuchBucketPolicy</Code></Error>' : xml]), { statusCode: options.query === 'policy' ? 404 : 200 }) as unknown as IncomingMessage;
+        });
         if (allowed) await expect(objects.initialize()).resolves.toBeUndefined(); else await expect(objects.initialize()).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
 });
@@ -55,7 +57,7 @@ describe('Chat S3 configuration boundary', () => {
 describe.skipIf(!configFile || !pgUrl).sequential('Chat files — real isolated S3-compatible MinIO and PostgreSQL', () => {
     let admin: Pool, db: Pool, database: string, objects: ChatObjectStorage, storage: ChatAttachmentStorage, config: ChatS3Configuration;
     const upgrades: Array<{ name: string; db: Pool; storage?: ChatAttachmentStorage }> = [];
-    const newDatabase = async (legacy = false): Promise<{ name: string; db: Pool }> => {
+    const newDatabase = async (legacy = false): Promise<{ name: string; db: Pool; storage?: ChatAttachmentStorage }> => {
         const name = 'nc_chat_s3_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + name);
         const url = new URL(pgUrl!); url.pathname = '/' + name;
         const pool = new Pool({ connectionString: url.href, max: 5 });

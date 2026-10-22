@@ -30,7 +30,8 @@ export class ChatAttachmentStorage {
         this.timer.unref();
     }
     async close(): Promise<void> { if (this.timer) clearInterval(this.timer); this.timer = undefined; await this.collecting?.catch(() => undefined); }
-    async stage(input: StageInput, signal?: AbortSignal): Promise<ChatStagedObject> {
+    /** Transfer recovery reuses its held session; the durable intent still precedes the attachment activation transaction. */
+    async stage(input: StageInput, signal?: AbortSignal, db: Db = this.pool): Promise<ChatStagedObject> {
         if (!this.objects) throw unavailable();
         if (!input.ownerEmail || !/^[a-f0-9-]{36}$/i.test(input.conversationId) || !Buffer.isBuffer(input.bytes) || !input.bytes.length || input.bytes.length > 10 * 1024 ** 2) throw new ConflictException('Некорректная область или размер файла.');
         signal?.throwIfAborted();
@@ -39,13 +40,13 @@ export class ChatAttachmentStorage {
             object_key: (input.projectId ? 'projects/' + chatObjectDigest(input.projectId) + '/' : '') + 'owners/' + chatObjectDigest(input.ownerEmail)
                 + '/chats/' + input.conversationId.toLowerCase() + '/' + id,
             version_id: null, sha256: chatObjectDigest(input.bytes), bytes: input.bytes.length, state: 'STAGING', attempts: 0 };
-        await this.pool.query(`INSERT INTO model_chat_objects(id,storage_id,bucket,object_key,sha256,bytes,state,lease_until)
+        await db.query(`INSERT INTO model_chat_objects(id,storage_id,bucket,object_key,sha256,bytes,state,lease_until)
             VALUES($1,$2,$3,$4,$5,$6,'STAGING',now()+interval '20 minutes')`, [id, row.storage_id, row.bucket, row.object_key, row.sha256, row.bytes]);
         try {
             row.version_id = await this.objects.put(row, input.bytes, signal);
-            await this.pool.query("UPDATE model_chat_objects SET version_id=$2 WHERE id=$1 AND state='STAGING'", [id, row.version_id]);
+            await db.query("UPDATE model_chat_objects SET version_id=$2 WHERE id=$1 AND state='STAGING'", [id, row.version_id]);
             await this.objects.read(row, signal); await this.objects.assertPrivate(row, signal); signal?.throwIfAborted(); return { id };
-        } catch (error) { await this.abandon({ id }).catch(() => undefined); throw error; }
+        } catch (error) { await this.abandon({ id }, db).catch(() => undefined); throw error; }
     }
     /** Called after attachment INSERT in its transaction, so a rolled-back DB commit leaves a collectible intent. */
     async activate(db: Db, object: ChatStagedObject): Promise<void> {
@@ -55,8 +56,8 @@ export class ChatAttachmentStorage {
             RETURNING id`, [object.id, this.objects.storageId]);
         if (!result.rowCount) throw new ConflictException('Передача файла истекла или была отменена. Загрузите файл повторно.');
     }
-    async abandon(object: ChatStagedObject): Promise<void> {
-        await this.pool.query("UPDATE model_chat_objects SET state='DELETE',lease_until=NULL,next_attempt_at=now() WHERE id=$1 AND state='STAGING' AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=$1)", [object.id]);
+    async abandon(object: ChatStagedObject, db: Db = this.pool): Promise<void> {
+        await db.query("UPDATE model_chat_objects SET state='DELETE',lease_until=NULL,next_attempt_at=now() WHERE id=$1 AND state='STAGING' AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=$1)", [object.id]);
     }
     async read(objectId: string, signal?: AbortSignal): Promise<Buffer> {
         if (!this.objects) throw unavailable();
@@ -107,14 +108,14 @@ export class ChatAttachmentStorage {
                     JOIN model_chat_conversations c ON c.id=a.conversation_id ORDER BY t.attachment_id LIMIT 1`)).rows[0];
                 if (!source) return;
                 if (source.content.length !== source.bytes || chatObjectDigest(source.content) !== source.sha256) throw new ServiceUnavailableException('Контрольная сумма переносимого файла не совпала. Исходные данные сохранены.');
-                const object = await this.stage({ ownerEmail: source.owner_email, projectId: source.project_id, conversationId: source.conversation_id, bytes: source.content, mediaType: source.media_type });
+                const object = await this.stage({ ownerEmail: source.owner_email, projectId: source.project_id, conversationId: source.conversation_id, bytes: source.content, mediaType: source.media_type }, undefined, db);
                 try {
                     await db.query('BEGIN');
                     const current = await db.query("SELECT id FROM model_chat_attachments WHERE id=$1 AND storage_state='TRANSFER' AND deleted_at IS NULL FOR UPDATE", [source.attachment_id]);
-                    if (!current.rowCount) { await db.query('ROLLBACK'); await this.abandon(object); continue; }
+                    if (!current.rowCount) { await db.query('ROLLBACK'); await this.abandon(object, db); continue; }
                     await db.query("UPDATE model_chat_attachments SET object_id=$2,storage_state='S3' WHERE id=$1", [source.attachment_id, object.id]);
                     await this.activate(db, object); await db.query('DELETE FROM model_chat_attachment_transfers WHERE attachment_id=$1', [source.attachment_id]); await db.query('COMMIT');
-                } catch (error) { await db.query('ROLLBACK').catch(() => undefined); await this.abandon(object).catch(() => undefined); throw error; }
+                } catch (error) { await db.query('ROLLBACK').catch(() => undefined); await this.abandon(object, db).catch(() => undefined); throw error; }
             }
         } finally { if (locked) await db.query("SELECT pg_advisory_unlock(hashtextextended('model-chat-attachment-transfer',0))").catch(() => undefined); db.release(); }
     }

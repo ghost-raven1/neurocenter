@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
+import { assertPrivateS3Bucket } from '../../../shared/s3-bucket-privacy.cjs';
 
 export interface ChatS3Configuration { endpoint: string; region: string; accessKey: string; secretKey: string; projectBucket: string; personalBucket: string }
 export interface ChatObjectReference { storage_id: string; bucket: string; object_key: string; version_id: string | null; sha256: string; bytes: number }
@@ -58,28 +59,7 @@ export class ChatObjectStorage {
                     try { await this.client.makeBucket(bucket, this.config.region); }
                     catch (error) { if (code(error) !== 'BucketAlreadyOwnedByYou') throw error; }
                 }
-                let policy = '';
-                try { policy = await this.client.getBucketPolicy(bucket); }
-                catch (error) { if (!['NoSuchBucketPolicy', 'NoSuchPolicy'].includes(code(error))) throw error; }
-                if (policy) {
-                    const parsed = JSON.parse(policy) as { Statement?: Array<{ Effect?: string; Principal?: unknown; NotPrincipal?: unknown }> };
-                    if (!Array.isArray(parsed.Statement) || parsed.Statement.some(statement => statement.Effect === 'Allow'
-                        && (statement.NotPrincipal !== undefined || statement.Principal === undefined || JSON.stringify(statement.Principal).includes('*')))) {
-                        throw new Error('public-bucket-policy');
-                    }
-                }
-                const response = await this.client.makeRequestAsync({ method: 'GET', bucketName: bucket, query: 'acl' }, '', [200]);
-                const chunks: Buffer[] = []; let size = 0;
-                try { for await (const part of response) { const bytes = Buffer.from(part); size += bytes.length; if (size > 65536) throw new Error('large-acl'); chunks.push(bytes); } }
-                finally { response.destroy(); }
-                const acl = Buffer.concat(chunks).toString('utf8');
-                const owner = /<(?:\w+:)?Owner(?:\s[^>]*)?>[\s\S]*?<(?:\w+:)?ID(?:\s[^>]*)?>([^<]*)<\/(?:\w+:)?ID>/.exec(acl)?.[1];
-                const grants = [...acl.matchAll(/<(?:\w+:)?Grant(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?Grant>/g)];
-                // MinIO represents its policy-controlled private ACL with one empty-owner canonical grant.
-                const minioPrivate = owner === '' && grants.length === 1 && grants[0][1].includes('CanonicalUser') && grants[0][1].includes('FULL_CONTROL')
-                    && !/<(?:\w+:)?ID(?:\s|>)/.test(grants[0][1]);
-                if (owner === undefined || !grants.length || /<(?:\w+:)?URI(?:\s|>)/i.test(acl)
-                    || !minioPrivate && grants.some(grant => /<(?:\w+:)?ID(?:\s[^>]*)?>([^<]+)<\/(?:\w+:)?ID>/.exec(grant[1])?.[1] !== owner)) throw new Error('public-bucket-acl');
+                await assertPrivateS3Bucket(this.client, bucket);
             }
         } catch { throw unavailable(); }
     }
@@ -123,6 +103,8 @@ export class ChatObjectStorage {
     async assertPrivate(reference: ChatObjectReference, signal?: AbortSignal): Promise<void> {
         this.reference(reference);
         try {
+            signal?.throwIfAborted();
+            await this.abortContext.run(signal, () => assertPrivateS3Bucket(this.client, reference.bucket));
             const url = new URL('/' + reference.bucket + '/' + reference.object_key, this.config.endpoint);
             const response = await fetch(url, { method: 'HEAD', redirect: 'error', signal: AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]) });
             await response.body?.cancel(); if (![401, 403, 404].includes(response.status)) throw new Error('public-object');
