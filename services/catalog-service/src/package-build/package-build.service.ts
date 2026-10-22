@@ -21,6 +21,9 @@ import type { IAccessActor } from '../access/access.model';
 import { createPool } from '../database/pool';
 import { notifyDeviceOperations } from '../devices/device-operations';
 import { PluginRepository } from '../publication/plugin-repository';
+import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview} from './publication-target';
+import {publishBuiltTool} from './publish-built-tool';
+import {importBuiltSkill} from './import-skill-publication';
 import type { IAiPluginCreate } from '../catalog/dto';
 import { CatalogService } from '../catalog/catalog.service';
 import { RuntimeArtifacts, runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
@@ -152,8 +155,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private withLease<T>(expected: PoolClient, work: () => Promise<T>): Promise<T> {
         const pending = this.leaseUse.then(async () => {
             this.currentLease(expected);
-            try {return await work();}
-            catch (error) {this.currentLease(expected); throw error;}
+            return work();
         });
         this.leaseUse = pending.then(() => undefined, () => undefined);
         return pending;
@@ -263,11 +265,14 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         return result||{catalogId:saved.id,name:saved.name,version:saved.version};
     }
 
+    async publicationTarget(actor:IAccessActor,kind:unknown,catalogId:unknown){await this.requireMain(actor);const result=await publicationTargetPreview(this.pool,kind,catalogId);await this.requireMain(actor);return result;}
     async create(actor: IAccessActor, raw: unknown) {
         await this.requireMain(actor);
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
         const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
         if (previous) { return buildView(previous); }
+        await assertBuildCreateName(this.pool,input);
+        const publication=await pinBuildPublication(this.pool,input);
         await requireFeaturesEnabled(buildFeatures(input));
         if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
         let source: BuildConfiguration['source'];
@@ -288,8 +293,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                     ...(resolved.runtimeSource ? {runtimeSource: resolved.runtimeSource, ...(resolved.manifestSha256 ? {manifestSha256: resolved.manifestSha256} : {})} : {}), ...(resolved.release ? {release: resolved.release} : {}), ...(resolved.snapshotSha256 ? {snapshotSha256: resolved.snapshotSha256} : {})});
             } catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось закрепить репозиторий GitHub.');}
         } else {source = input.source;}
-        const {requestKey: _requestKey, ...configuration} = input;
-        const config: BuildConfiguration = {...configuration, source};
+        const {requestKey: _requestKey, publication:_publication, ...configuration} = input;
+        const config: BuildConfiguration = {...configuration, source,...(publication?{publication}:{})};
         assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
@@ -324,9 +329,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 await this.requireMain(actor);
                 if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
                 this.currentLease(lease);
-                const row = source.type==='upload'
-                    ? await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,client=>this.uploads!.retain(client,actor.email,source))
-                    : await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease);
+                const retain=source.type==='upload'||publication?async(client:PoolClient)=>{
+                    if(publication){await lockBuildPublication(client,publication);await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures(config));this.currentLease(lease);}
+                    if(source.type==='upload')await this.uploads!.retain(client,actor.email,source);
+                }:undefined;
+                const row=retain?await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,retain):await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease);
                 this.currentLease(lease);
                 if (row.state === 'QUEUED') {this.startWorker(root);}
                 void notifyDeviceOperations();
@@ -421,11 +428,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                 this.currentLease(lease);
                 await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
-                await new PluginRepository(this.pool).create(tools[0].publication,row.actor,async(client,published)=>{
-                    if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
-                    const source=await this.sources.recordLocal(client,prepared,published,row.actor);
-                    await this.repository.completeWithPublication(client,row.id,{catalogId:published.id,name:published.name,version:published.version,...source});
-                },lease);
+                await publishBuiltTool({pool:this.pool,lease,sources:this.sources,repository:this.repository,row,publication:tools[0].publication,prepared,
+                    guard:async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);},discard:client=>this.discardLease(client)});
             });
             await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
                 method: 'POST', headers: {'Content-Type': 'application/json', 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || ''},
@@ -459,7 +463,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private async executeSkill(row:BuildRow,stage:string):Promise<void>{
         const built=await buildSkillAsset(row.config,stage);
         await this.progress(row.id,60,'Проверка SKILL.md, ресурсов и связанной версии ассета');
-        const prepared=await this.sources.prepareLocalSkill(built.asset,row.request_key,built.sourceFile),lease=this.currentLease();
+        const prepared=await this.sources.prepareLocalSkill(built.asset,row.request_key,built.sourceFile,{createOnly:true}),lease=this.currentLease();
         await this.withLease(lease,async()=>{
             await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
             await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
@@ -471,21 +475,12 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 const source=await this.sources.recordLocalSkill(lease,prepared,native,row.actor);
                 await this.repository.completeWithPublication(lease,row.id,{catalogId:native.id,name:built.asset.card.name,version:native.version,kind:'skill',...source});
                 this.currentLease(lease);await lease.query('COMMIT');
-            }catch(error){await lease.query('ROLLBACK').catch(()=>undefined);throw error;}
+            }catch(error){try{await lease.query('ROLLBACK');}catch{this.discardLease(lease);}throw error;}
         });
         await this.notifySkillPublication();
     }
     private async importSkillAsset(actor:IAccessActor,asset:SkillAsset,requestKey:string){
-        const prepared=await this.sources.prepareLocalSkill(asset,requestKey);
-        await this.requireMain(actor);
-        const client=await this.pool.connect();
-        try{
-            await client.query('BEGIN');await this.requireMain(actor);
-            await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+asset.card.slug]);
-            const native=await this.sources.publishLocalSkill(prepared,actor.email);await this.requireMain(actor);
-            const source=await this.sources.recordLocalSkill(client,prepared,native,actor.email);await client.query('COMMIT');
-            await this.notifySkillPublication();return {catalogId:native.id,name:asset.card.name,version:native.version,kind:'skill' as const,...source};
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        return importBuiltSkill(this.pool,this.sources,asset,requestKey,actor.email,()=>this.requireMain(actor),()=>this.notifySkillPublication());
     }
     private async notifySkillPublication(){
         await fetch((process.env.API_GATEWAY_URL||'http://localhost:4000')+'/internal/events',{

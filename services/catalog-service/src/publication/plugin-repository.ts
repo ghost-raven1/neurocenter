@@ -9,9 +9,14 @@ import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import { securityEvent } from '../access/security-events';
 import { assertPublicationDependencies } from './publication-dependencies';
 
+/** Only pre-effect target discovery may retry after a positively confirmed owned rollback. */
+class PublicationLockTargetChanged extends ConflictException {
+    constructor(){super('Публикация появилась параллельно. Повторите тот же запрос — сохранённая версия не изменена.');}
+}
+
 /** SQL публикаций отделён от каталога проектов; карточка и её версия меняются одной транзакцией. */
 export class PluginRepository {
-    constructor(private readonly pool: Pool) {}
+    constructor(private readonly pool: Pool,private readonly discardBorrowed?:(client:PoolClient)=>void) {}
 
     async list(page: number, size: number, query: string, allowedIds?: string[]): Promise<IPage<IAiPlugin>> {
         const params: unknown[] = [];
@@ -39,7 +44,10 @@ export class PluginRepository {
         }
         const body = validatePublication(raw);
         const fingerprint = publicationHash(body);
-        return this.transaction(async client => {
+        const freshId=plannedId??`ai-plug-${randomUUID()}`;
+        for(let attempt=0;;attempt++){
+        let lockedId=freshId,rolledBack=false;
+        try{return await this.transaction(async client => {
             await assertPublicationDependencies(client, body.dependencies, { files: body.files });
             if (body.publicationKey) {
                 await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`publication:${body.publicationKey}`]);
@@ -48,6 +56,7 @@ export class PluginRepository {
                     if (previous.rows[0].publication_hash !== fingerprint) { throw new ConflictException('Этот запрос уже опубликован с другим содержимым. Начните новую публикацию.'); }
                     const plugin = toPlugin(previous.rows[0]);
                     if (plannedId && plugin.id !== plannedId) { throw new ConflictException('План публикации уже связан с другой карточкой. Обновите предварительный просмотр.'); }
+                    if(plugin.id!==lockedId)throw new PublicationLockTargetChanged();
                     await afterCreate?.(client, plugin);
                     return plugin;
                 }
@@ -61,7 +70,7 @@ export class PluginRepository {
             const result = await client.query(
                 `INSERT INTO ai_plugins (id,name,kind,description,version,compatibility,tags,origin,revision,config,files,publication_key,publication_hash,dependencies)
                  VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13::jsonb) RETURNING *`,
-                [plannedId ?? `ai-plug-${randomUUID()}`, body.name, body.kind, body.description, body.compatibility ?? null, body.tags,
+                [freshId, body.name, body.kind, body.description, body.compatibility ?? null, body.tags,
                     body.origin, body.revision, JSON.stringify(body.config), JSON.stringify(body.files), body.publicationKey ?? null, fingerprint, JSON.stringify(body.dependencies ?? [])],
             );
             const plugin = toPlugin(result.rows[0]);
@@ -69,7 +78,14 @@ export class PluginRepository {
             await securityEvent(client, { actor: author, action: 'plugin.create', resourceId: plugin.id, before: null, after: auditSummary(plugin) });
             await afterCreate?.(client, plugin);
             return plugin;
-        }, borrowedClient, alreadyInTransaction);
+        }, borrowedClient, alreadyInTransaction,{beforeGraph:async client=>{
+            const previous=body.publicationKey?(await client.query<{id:string;kind:string}>('SELECT id,kind FROM ai_plugins WHERE publication_key=$1',[body.publicationKey])).rows[0]:undefined;
+            if(previous&&plannedId&&previous.id!==plannedId)throw new ConflictException('План публикации уже связан с другой карточкой. Обновите предварительный просмотр.');
+            lockedId=previous?.id??freshId;
+            await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:'+(previous?.kind??body.kind)+':'+lockedId]);
+        },rolledBack:()=>{rolledBack=true;}});
+        }catch(error){if(error instanceof PublicationLockTargetChanged&&rolledBack&&!alreadyInTransaction&&attempt===0)continue;throw error;}
+        }
     }
 
     async update(idOrName: string, raw: IAiPluginUpdate, author: string, afterUpdate?: (client: PoolClient, plugin: IAiPlugin) => Promise<void>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<IAiPlugin | null> {
@@ -190,19 +206,21 @@ export class PluginRepository {
             [plugin.id, plugin.version, JSON.stringify(plugin.files), JSON.stringify(plugin.config), author, note, JSON.stringify(metadata(plugin))]);
     }
 
-    private async transaction<T>(work: (client: PoolClient) => Promise<T>, borrowedClient?: PoolClient, alreadyInTransaction = false): Promise<T> {
+    private async transaction<T>(work: (client: PoolClient) => Promise<T>, borrowedClient?: PoolClient, alreadyInTransaction = false,control?:{beforeGraph:(client:PoolClient)=>Promise<void>;rolledBack:()=>void}): Promise<T> {
         if (alreadyInTransaction && !borrowedClient) { throw new Error('Внешней транзакции нужен её клиент.'); }
         const client = borrowedClient ?? await this.pool.connect();
+        let tainted=false;
         try {
             if (!alreadyInTransaction) { await client.query('BEGIN'); }
+            await control?.beforeGraph(client);
             // Единый порядок блокировок исключает гонку publish/delete и взаимную блокировку A→B/B→A.
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['publication:dependency-graph']);
             const result = await work(client);
             if (!alreadyInTransaction) { await client.query('COMMIT'); }
             return result;
         }
-        catch (error) { if (!alreadyInTransaction) { await client.query('ROLLBACK'); } throw error; }
-        finally { if (!borrowedClient) {client.release();} }
+        catch (error) { if (!alreadyInTransaction) { try{await client.query('ROLLBACK');control?.rolledBack();}catch{tainted=true;if(borrowedClient){if(this.discardBorrowed)this.discardBorrowed(client);else client.release(true);}} } throw error; }
+        finally { if (!borrowedClient) {if(tainted)client.release(true);else client.release();} }
     }
 }
 

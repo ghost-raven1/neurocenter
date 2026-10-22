@@ -7,7 +7,7 @@ import type {RuntimeArtifacts} from '../src/runtime-artifacts/runtime-artifacts'
 import type {CatalogService} from '../src/catalog/catalog.service';
 import type {BuildConfiguration} from '../src/package-build/package-build.model';
 
-vi.mock('../src/database/pool', () => ({createPool: () => ({})}));
+vi.mock('../src/database/pool', () => ({createPool: () => ({query:vi.fn(async()=>({rows:[]}))})}));
 vi.mock('../../shared/capacity.cjs', () => ({reserveCapacity: async () => () => undefined}));
 vi.mock('../src/devices/device-operations', () => ({notifyDeviceOperations: vi.fn()}));
 import {PackageBuildService} from '../src/package-build/package-build.service';

@@ -46,8 +46,11 @@ describe('Целостность закреплённых зависимосте
 
     it.each(['create', 'update', 'activate'])('%s повторно проверяет точную версию и SHA в транзакции', async action => {
         await write(repository, action);
-        expect(query.mock.calls[1]).toEqual(['SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['publication:dependency-graph']]);
+        const graph=query.mock.calls.findIndex(call=>call[0]==='SELECT pg_advisory_xact_lock(hashtextextended($1,0))'&&(call[1] as string[])?.[0]==='publication:dependency-graph');
+        expect(graph).toBeGreaterThan(0);
+        if(action==='create')expect(String((query.mock.calls[graph-1][1] as string[])?.[0])).toMatch(/^asset-management:mcp:/);
         const read = query.mock.calls.find(([sql]) => sql.includes('JOIN ai_plugin_versions'));
+        expect(query.mock.calls.findIndex(([sql])=>sql.includes('JOIN ai_plugin_versions'))).toBeGreaterThan(graph);
         expect(read?.[1]).toEqual([pin.id, pin.version]);
         expect(query.mock.calls.at(-1)).toEqual(['COMMIT']);
     });

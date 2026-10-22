@@ -64,14 +64,14 @@ export class LocalAssetIngest {
         return {archivePath,sha256:recipe.sha256,bytes,filename:recipe.path};
     }
     /** Caller owns the publication transaction and its durable build receipt. */
-    async record(client:PoolClient,prepared:IPreparedLocalAsset,card:IAiPlugin,actor:string){
+    async record(client:PoolClient,prepared:IPreparedLocalAsset,card:IAiPlugin,actor:string,replacement?:{replaceOrigins:Array<{repository:string;externalId:string;revision:number}>}){
         if(assetDigest(serializeAsset(validateAsset(prepared.asset)))!==prepared.sha256)throw new ConflictException('Prepared local envelope changed.');
         const actual=toolPublication(card),expected={...prepared.publication};delete actual.publicationKey;delete expected.publicationKey;
         if(publicationHash(actual)!==publicationHash(expected))throw new ConflictException('Native publication differs from its checked envelope.');
         for(const blob of prepared.blobs)await this.blobs.checkedPath(blob.sha256,blob.bytes);
         const native=toolNativePin(card.id,card.version,actual,nativeCardHash(card));
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:'+card.kind+':'+card.id]);
-        await new AssetImportRepository(this.pool).recordLocal(client,actor,{resolved:{asset:prepared.asset,sha256:prepared.sha256,path:'assets/'+prepared.asset.id+'/'+prepared.asset.version+'/asset.json',current:true},requestKey:prepared.requestKey,name:card.name,action:'create',state:'SUCCEEDED',native},prepared.blobs);
+        await new AssetImportRepository(this.pool).recordLocal(client,actor,{resolved:{asset:prepared.asset,sha256:prepared.sha256,path:'assets/'+prepared.asset.id+'/'+prepared.asset.version+'/asset.json',current:true},requestKey:prepared.requestKey,name:card.name,action:replacement?'update':'create',state:'SUCCEEDED',native,...(replacement?{replacesLocal:true,originReceipts:replacement.replaceOrigins}:{})},prepared.blobs);
         return {assetId:prepared.asset.id,sourceVersion:prepared.asset.version,sourceSha256:prepared.sha256};
     }
 }

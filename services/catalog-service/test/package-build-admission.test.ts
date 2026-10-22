@@ -26,7 +26,7 @@ describe('Приём сборки не переживает владельца �
     let destroyed:boolean;
     let repository:{existing:ReturnType<typeof vi.fn>;enqueue:ReturnType<typeof vi.fn>;takeQueued:ReturnType<typeof vi.fn>};
     beforeEach(()=>{
-        vi.clearAllMocks();mocks.reserve.mockResolvedValue(vi.fn());
+        vi.clearAllMocks();mocks.pool.query.mockResolvedValue({rows:[]});mocks.reserve.mockResolvedValue(vi.fn());
         lease={query:vi.fn().mockResolvedValue({rows:[]})} as unknown as PoolClient;
         worker=deferred();unblock=()=>{};destroyed=false;
         service=new PackageBuildService({claims:vi.fn().mockResolvedValue({userRoles:['Главный админ']})} as unknown as AccessDb,

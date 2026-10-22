@@ -16,13 +16,13 @@ const roots:string[]=[];
 afterEach(async()=>{for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});vi.clearAllMocks();});
 
 /** Child output is untrusted; only an allowlisted machine code becomes a user-facing failure. */
-async function fixture(stdout:string,code:number,stderr=''){
+async function fixture(stdout:string,code:number,stderr='',configuration=config){
     const stage=await fs.mkdtemp(path.join(os.tmpdir(),'nc-build-protocol-'));roots.push(stage);
     const child=Object.assign(new EventEmitter(),{stdout:new PassThrough(),stderr:new PassThrough(),kill:vi.fn()});
     mocks.spawn.mockImplementation(()=>{queueMicrotask(()=>{
         child.stdout.write(stdout.slice(0,17));child.stdout.end(stdout.slice(17));child.stderr.end(stderr);child.emit('close',code);
     });return child;});
-    return {stage,run:(progress=vi.fn())=>runPackageBuilder(config,stage,vi.fn(),progress)};
+    return {stage,run:(progress=vi.fn())=>runPackageBuilder(configuration,stage,vi.fn(),progress)};
 }
 
 describe('Builder progress and failure protocol',()=>{
@@ -52,5 +52,11 @@ describe('Builder progress and failure protocol',()=>{
         const f=await fixture(JSON.stringify(event)+'\n',0),progress=vi.fn().mockResolvedValue(undefined);
         await expect(f.run(progress)).resolves.toBe(path.join(f.stage,'output/asset.json'));
         expect(progress).toHaveBeenCalledExactlyOnceWith(event);
+    });
+    it('Publication CAS control never changes recipe/source identity or enters the builder declaration',async()=>{
+        const first=await fixture('',0);await first.run();const old=JSON.parse(await fs.readFile(path.join(first.stage,'recipe.json'),'utf8'));
+        const publication={catalogId:'ai-plug-11111111-1111-4111-8111-111111111111',kind:'plugin' as const,name:config.name,expectedVersion:2,expectedSourceHash:'a'.repeat(64),nativeHash:'b'.repeat(64),origins:[]};
+        const second=await fixture('',0,'',{...config,publication});await second.run();
+        expect(JSON.parse(await fs.readFile(path.join(second.stage,'recipe.json'),'utf8'))).toEqual(old);
     });
 });

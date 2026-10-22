@@ -19,7 +19,7 @@ export function skillPublicationKey(asset:Pick<SkillAsset,'id'|'version'>):strin
 /** Uses the existing skill publication guard and the same immutable source receipt as tool builds. */
 export class LocalSkillIngest {
     constructor(private readonly pool:Pool,private readonly blobs:AssetBlobStore,private readonly adapter=new SkillAssetAdapter()){}
-    async prepare(raw:SkillAsset,requestKey:string,sourceFile?:{archivePath:string}):Promise<IPreparedLocalSkill>{
+    async prepare(raw:SkillAsset,requestKey:string,sourceFile?:{archivePath:string},options?:{createOnly?:boolean}):Promise<IPreparedLocalSkill>{
         const asset=validateAsset(JSON.parse(JSON.stringify(raw))) as SkillAsset;
         if(asset.kind!=='skill'||asset.dependencies?.length||asset.recipe)throw new ConflictException('Нужен самостоятельный inline skill asset без зависимостей или внешнего рецепта.');
         try{validateSkillLinks(asset.card.body,['SKILL.md',...(asset.card.resources as Array<{path:string}>??[]).map(file=>file.path)]);}catch(error){throw new ConflictException(error instanceof Error?error.message:'Скилл содержит повреждённые ссылки.');}
@@ -36,6 +36,7 @@ export class LocalSkillIngest {
         const item=await this.adapter.preview({asset,sha256,path:'assets/'+asset.id+'/'+asset.version+'/asset.json',current:true},key,[],recovered?undefined:receipt,version);
         if(item.action==='conflict')throw new ConflictException(item.reason);
         if(current&&recovered){item.expected=current;item.native=current;item.action='unchanged';}
+        if(options?.createOnly&&item.action==='update')throw new ConflictException('Новая версия существующего скилла требует явного подтверждения. Обновление через упаковщик пока недоступно; используйте редактирование скилла в каталоге.');
         const files:Array<IAssetBlob&{archivePath:string}>=[];
         if(asset.source.type==='archive'){
             let archivePath=sourceFile?.archivePath;

@@ -24,6 +24,7 @@ export class PackageBuildController {
         return this.builds.repositorySource(this.actor(req), {url, ref, subdirectory, entrypoint, ...(parsed !== undefined ? {release: parsed as RepositoryRelease} : {})});
     }
     @Get('requests/:requestKey') request(@Req() req: Request, @Param('requestKey') key: string) {return this.builds.request(this.actor(req), key);}
+    @Get('publication-target') publicationTarget(@Req() req:Request,@Query('kind') kind:string,@Query('catalogId') id:string){return this.builds.publicationTarget(this.actor(req),kind,id);}
     @Delete('requests/:requestKey') cancelRequest(@Req() req:Request,@Param('requestKey') key:string){return this.builds.cancelRequest(this.actor(req),key);}
     @Post('archive') archive(@Req() req: Request, @Body() input: unknown) {return this.builds.archiveSource(this.actor(req), input);}
     @Post('imports') importAsset(@Req() req:Request,@Body() input:unknown){return this.builds.importAsset(this.actor(req),input);}
