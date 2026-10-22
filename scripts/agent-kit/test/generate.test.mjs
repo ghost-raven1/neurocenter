@@ -9,7 +9,7 @@ import {generateKit,repositoryRoot} from '../generate.mjs';
 const core='.opencode/skills/neurocenter-task-flow';
 const firstSkill='.opencode/skills/neurocenter-task-orchestrator/SKILL.md';
 const lastAdapter='scripts/agent-kit/codex/neurocenter-cleanup-refactor.toml';
-const common=['SKILL.md','agents/openai.yaml','references/interface.md','references/roles.md','references/verification.md','references/neurocenter.md','references/codex.md','references/opencode.md'];
+const common=['SKILL.md','agents/openai.yaml','references/interface.md','references/roles.md','references/verification.md','references/neurocenter.md','references/development-debugging.md','references/codex.md','references/opencode.md'];
 const hash=value=>createHash('sha256').update(value).digest('hex');
 
 async function put(root,relative,content){
@@ -51,7 +51,7 @@ test('check reports all absent outputs without creating any project file',async 
     assert.equal(result.roles,64);
     assert.equal(result.skills,65);
     assert.equal(result.generatedFiles,193);
-    assert.equal(result.checkedFiles,202);
+    assert.equal(result.checkedFiles,203);
     assert.equal(result.changed.length,194);
     assert.deepEqual(await snapshot(root),before);
 });
