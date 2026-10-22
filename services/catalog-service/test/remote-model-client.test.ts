@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RemoteModelClient } from '../src/models/remote-model-client';
+import { RemoteModelClient, RemoteModelError } from '../src/models/remote-model-client';
 import type { IModel } from '../src/models/model.types';
 import type { IRemoteModelConnection } from '../src/models/remote-model.types';
 
@@ -44,7 +44,9 @@ describe('Настоящий HTTP-транспорт удалённой моде
     });
     it.each([401, 403, 429, 500])('HTTP %i возвращает безопасную ошибку без тела провайдера и ключа', async status => {
         handler = (_req, res) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end('{"error":"fixture-secret https://private.example.test"}'); };
-        const error = await infer().catch(cause => cause as Error);
+        const error = await infer().catch((cause: unknown) => cause);
+        expect(error).toBeInstanceOf(RemoteModelError);
+        if (!(error instanceof RemoteModelError)) throw new Error('Expected the safe provider error.');
         expect(error.message).not.toContain('fixture-secret'); expect(error.message).not.toContain('private.example');
         expect(error.kind).toBe(status === 429 ? 'rate-limit' : status < 500 ? 'authorization' : 'unavailable');
         expect(received).toHaveLength(1);

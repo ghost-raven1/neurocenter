@@ -27,7 +27,7 @@ export function remoteConnectionInput(value: unknown): IRemoteConnectionInput {
     if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision', 'baseUrl', 'requestDimensions', 'credential', 'apiKey', 'credentialEnv', 'options', 'timeoutMs'].includes(key))
         || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
         || !Number.isSafeInteger(body.expectedModelRevision) || Number(body.expectedModelRevision) < 1
-        || typeof body.requestDimensions !== 'boolean' || !['none', 'stored', 'environment'].includes(String(body.credential))) {
+        || typeof body.requestDimensions !== 'boolean' || typeof body.credential !== 'string' || !['none', 'stored', 'environment'].includes(body.credential)) {
         throw new BadRequestException('Проверьте ревизию, способ авторизации и размерность подключения.');
     }
     if (body.apiKey !== undefined && (body.credential !== 'stored' || typeof body.apiKey !== 'string' || !body.apiKey.trim()

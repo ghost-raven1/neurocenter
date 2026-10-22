@@ -56,12 +56,18 @@ export class RemoteConnectionService {
         if (!row || row.revoked_at) throw new ConflictException('Сначала настройте подключение удалённого API.');
         const connection = this.repository.connection(row);
         try {
-            const infer = async (signal?: AbortSignal) => model.capability === 'embedding'
-                ? await this.client.infer(model, connection, 'embed', { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] }, signal)
-                : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
-                    ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
-                    ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
-                    options: { num_predict: Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
+            const infer = async (signal?: AbortSignal) => {
+                // The usage reservation can wait; admit this new paid probe after that wait.
+                signal?.throwIfAborted(); await authorize(); signal?.throwIfAborted();
+                await requireFeaturesEnabled(['model_hosting'], process.env, globalThis.fetch, signal); signal?.throwIfAborted();
+                return model.capability === 'embedding'
+                    ? await this.client.infer(model, connection, 'embed', { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] }, signal)
+                    : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
+                        ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
+                        ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
+                        options: { num_predict: connection.options?.tokenLimitParameter === 'max_completion_tokens'
+                            ? connection.options.maxOutputTokens ?? 64 : Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
+            };
             await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
             const result = await withModelUsage({ purpose: 'verification', actorEmail: actor }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
             if (model.capability === 'vision') {

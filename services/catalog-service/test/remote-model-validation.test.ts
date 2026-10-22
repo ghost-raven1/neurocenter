@@ -51,6 +51,23 @@ describe('Контракт удалённой модели без адреса �
 });
 
 describe('Приватная настройка удалённого API', () => {
+    const connection = { expectedRevision: 0, expectedModelRevision: 1, baseUrl: 'https://api.example.test/v1', requestDimensions: false };
+    it.each([
+        { name: 'массив none', credential: ['none'] }, { name: 'массив stored', credential: ['stored'] },
+        { name: 'массив environment', credential: ['environment'] }, { name: 'null', credential: null },
+        { name: 'undefined', credential: undefined }, { name: 'число', credential: 42 }, { name: 'boolean', credential: true },
+        { name: 'объект String', credential: new String('none') },
+        { name: 'объект с опасным coercion', credential: { toString: () => { throw new Error('Credential must not be coerced'); } } },
+    ])('Возвращает 400 для способа авторизации другого типа: $name', ({ credential }) => {
+        const result = (() => { try { remoteConnectionInput({ ...connection, credential }); } catch (error) { return error; } })();
+        expect(result).toMatchObject({ status: 400 });
+    });
+    it.each([
+        { credential: 'none' }, { credential: 'stored', apiKey: 'fixture-key' },
+        { credential: 'environment', credentialEnv: 'NEUROCENTER_REMOTE_MODEL_PROVIDER' },
+    ])('Сохраняет явный строковый режим авторизации $credential', value => {
+        expect(remoteConnectionInput({ ...connection, ...value })).toMatchObject(value);
+    });
     it('Разрешает явно выбранные self-hosted адреса и префикс API', () => {
         expect(remoteModelBaseUrl('http://127.0.0.1:11434/')).toBe('http://127.0.0.1:11434');
         expect(remoteModelBaseUrl('https://models.example.test/openai/v1/')).toBe('https://models.example.test/openai/v1');

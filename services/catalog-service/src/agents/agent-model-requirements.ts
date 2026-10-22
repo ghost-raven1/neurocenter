@@ -28,7 +28,11 @@ export async function agentModelRequirements(db:Db,projectId:string,agents:Proje
             const connection=(await db.query<Pick<IRemoteConnectionRow,'base_url'|'options'>>(`SELECT base_url,options FROM model_remote_connections
                 WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1 FOR SHARE`,[id,model.verificationSha256])).rows[0];
             if(!connection)throw agentModelSetupRequired(agent.id,id);
-            baseUrl=remoteModelBaseUrl(connection.base_url);options={...remoteModelOptions(connection.options)};
+            baseUrl=remoteModelBaseUrl(connection.base_url);
+            // Native OpenCode receives generation defaults; API wire compatibility stays on the server.
+            const saved=remoteModelOptions(connection.options);
+            options={...(saved.temperature===undefined?{}:{temperature:saved.temperature}),...(saved.topP===undefined?{}:{topP:saved.topP}),
+                ...(saved.maxOutputTokens===undefined?{}:{maxOutputTokens:saved.maxOutputTokens}),...(saved.contextWindow===undefined?{}:{contextWindow:saved.contextWindow})};
         }else if(!model.manifestSha256)throw agentModelSetupRequired(agent.id,id);
         requirements.push({kind:'catalog',agentId:agent.id,catalogModelId:id,modelPin:model.modelPin!,runtime:model.runtime,runtimeModel:model.model,baseUrl,options,capability:model.capability as 'chat'|'vision'});
     }

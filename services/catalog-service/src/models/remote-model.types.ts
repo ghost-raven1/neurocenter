@@ -2,6 +2,10 @@ import type { IModel } from './model.types';
 
 /** Optional generation defaults; absent values are chosen by the provider. */
 export interface IRemoteModelOptions {
+    /** OpenAI only: exact response identity when the requested name is an alias. */
+    responseModel?: string;
+    /** OpenAI chat/vision only; omitted values retain the legacy max_tokens wire format. */
+    tokenLimitParameter?: 'max_tokens' | 'max_completion_tokens';
     /** Optional number from 0 to 2; omitted values use the provider default. */
     temperature?: number;
     /** Optional nucleus sampling probability from 0 to 1. */

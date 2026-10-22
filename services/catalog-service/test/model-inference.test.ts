@@ -7,6 +7,7 @@ import { ModelInferenceController, modelInferenceBody } from '../src/models/infe
 import type { ModelsService } from '../src/models/models.service';
 import type { OllamaClient } from '../src/models/ollama-client';
 import type { IModel } from '../src/models/model.types';
+import type { IModelInferenceRuntime } from '../src/models/model-runtime';
 import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
 
 const png = Buffer.from('89504e470d0a1a0a0000', 'hex').toString('base64');
@@ -17,7 +18,7 @@ const model = (capability: IModel['capability'] = 'embedding'): IModel => ({
 function harness(capability: IModel['capability'] = 'embedding') {
     const card = model(capability);
     const models = { getUsable: vi.fn(async () => card), actor: vi.fn(async () => ({ email: 'developer@localhost' })), resolveProject: vi.fn(async (_req: Request, id: string) => ({ id })) };
-    const runtime = { infer: vi.fn(async () => ({ model: card.model, embeddings: [[1, 0, -1]], prompt_eval_count: 7 })) };
+    const runtime = { infer: vi.fn<IModelInferenceRuntime['infer']>(async () => ({ model: card.model, embeddings: [[1, 0, -1]], prompt_eval_count: 7 })) };
     const request = new EventEmitter() as EventEmitter & { res: EventEmitter & { writableEnded: boolean } };
     request.res = Object.assign(new EventEmitter(), { writableEnded: false });
     return { models, runtime, request, controller: new ModelInferenceController(models as unknown as ModelsService, runtime as unknown as OllamaClient) };
@@ -133,8 +134,8 @@ describe('Права и совместимость inference API', () => {
     });
     it('При разрыве клиента отменяет runtime и удаляет слушатели после отказа', async () => {
         const { controller, runtime, request } = harness();
-        runtime.infer.mockImplementation(async (_model, _endpoint, _body, signal: AbortSignal) => {
-            await new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Клиент отключился')), { once: true }));
+        runtime.infer.mockImplementation(async (_model, _endpoint, _body, signal) => {
+            await new Promise((_, reject) => signal!.addEventListener('abort', () => reject(new Error('Клиент отключился')), { once: true }));
             return {} as never;
         });
         const response = controller.embed('model-one', request as unknown as Request, { input: 'Текст' });

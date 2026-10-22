@@ -35,7 +35,9 @@ export class RemoteModelClient {
             : this.chatBody(model, body, openai, connection.options);
         const route = openai ? endpoint === 'embed' ? '/embeddings' : '/chat/completions' : '/api/' + endpoint;
         const value = await this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
-        if (value.model !== model.model) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'); }
+        const responseModel = connection.options?.responseModel ?? model.model;
+        if (value.model !== responseModel) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'
+            + (openai ? ' Укажите точный идентификатор ответа в параметрах подключения, если провайдер использует алиас.' : '')); }
         if (endpoint === 'embed') {
             const vectors = openai ? this.openaiVectors(value, texts.length) : value.embeddings;
             if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => validVector(vector, model.dimension))
@@ -46,7 +48,7 @@ export class RemoteModelClient {
         }
         if (openai) {
             const choice = Array.isArray(value.choices) && value.choices.length === 1 ? value.choices[0] : undefined;
-            if (!object(choice) || choice.index !== 0 || !['stop', 'length'].includes(String(choice.finish_reason)) || !object(choice.message)
+            if (!object(choice) || choice.index !== 0 || typeof choice.finish_reason !== 'string' || !['stop', 'length'].includes(choice.finish_reason) || !object(choice.message)
                 || typeof choice.message.content !== 'string' || !choice.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
             const usage = object(value.usage) ? value.usage : {};
             const inputTokens = this.tokens(usage.prompt_tokens), outputTokens = this.tokens(usage.completion_tokens);
@@ -85,7 +87,7 @@ export class RemoteModelClient {
             ...(options.maxOutputTokens === undefined ? {} : { num_predict: options.maxOutputTokens }),
             ...(options.contextWindow === undefined ? {} : { num_ctx: options.contextWindow }) } }; }
         const messages = body.messages.map(message => {
-            if (!object(message) || typeof message.content !== 'string' || !['system', 'user', 'assistant'].includes(String(message.role))) { throw new RemoteModelError('response', 'Некорректные сообщения модели.'); }
+            if (!object(message) || typeof message.content !== 'string' || typeof message.role !== 'string' || !['system', 'user', 'assistant'].includes(message.role)) { throw new RemoteModelError('response', 'Некорректные сообщения модели.'); }
             if (!Array.isArray(message.images) || !message.images.length) { return { role: message.role, content: message.content }; }
             if (model.capability !== 'vision') { throw new RemoteModelError('response', 'Эта модель не принимает изображения.'); }
             return { role: message.role, content: [{ type: 'text', text: message.content }, ...message.images.map(image => {
@@ -97,7 +99,7 @@ export class RemoteModelClient {
         return { model: model.model, messages, stream: false,
             ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
             ...(options.topP === undefined ? {} : { top_p: options.topP }),
-            ...(options.maxOutputTokens === undefined ? {} : { max_tokens: options.maxOutputTokens }) };
+            ...(options.maxOutputTokens === undefined ? {} : { [options.tokenLimitParameter ?? 'max_tokens']: options.maxOutputTokens }) };
     }
 
     private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal, timeoutMs?: number): Promise<Json> {
