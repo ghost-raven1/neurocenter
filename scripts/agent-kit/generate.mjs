@@ -3,7 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 
-export const KIT_VERSION='0.1.1';
+export const KIT_VERSION='0.1.2';
 export const repositoryRoot=fileURLToPath(new URL('../../',import.meta.url));
 const groups={product:'Задача и продукт',frontend:'Фронтенд',backend:'Бэкенд',models:'Модели и агенты',knowledge:'Знания и хранение',delivery:'Сборка и поставка',quality:'Качество',operations:'Эксплуатация'};
 const core='.opencode/skills/neurocenter-task-flow';
