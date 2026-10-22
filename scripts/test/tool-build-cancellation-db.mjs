@@ -4,6 +4,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {cancellationFixture,deferred,settled,until} from './tool-build-cancellation.fixture.mjs';
 import {cancellationOperations} from './tool-build-cancellation-operations.mjs';
+import {waitForCancellationBarrier} from './tool-build-cancellation-barrier.mjs';
 
 let fixture,fatal;
 try{
@@ -47,7 +48,7 @@ try{
                 cancelPid=Number((await pool.query("SELECT pid FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=72465396 AND granted AND database=(SELECT oid FROM pg_database WHERE datname=current_database())")).rows[0].pid);
                 entered.resolve();await release.promise;
             }));
-            await entered.promise;
+            await waitForCancellationBarrier(entered,cancelled,'cancellation advisory lock');
             enqueued=settled(repository.enqueue(actor.email,key,'late-concurrent-post',configuration));
             blocked=await until(async()=>{const rows=await fixture.blockedBy(cancelPid);return rows.length?rows:null;},'late POST waits for the actual cancellation tombstone transaction');
         }finally{release.resolve();}
@@ -64,7 +65,7 @@ try{
             enqueued=settled(repository.enqueue(actor.email,key,'queued-before-cancel',configuration,undefined,async client=>{
                 enqueuePid=Number((await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);entered.resolve();await release.promise;
             }));
-            await entered.promise;
+            await waitForCancellationBarrier(entered,enqueued,'enqueue advisory lock');
             cancelled=settled(service.cancelRequest(actor,key));
             blocked=await until(async()=>{const rows=await fixture.blockedBy(enqueuePid);return rows.length?rows:null;},'cancellation waits for the actual enqueue transaction');
         }finally{release.resolve();}
@@ -80,7 +81,7 @@ try{
         let publication,cancellation;const pids=[];
         try{
             cancellation=settled(repository.cancel(actor.email,job.id,async()=>{await service.requireMain(actor);entered.resolve();await release.promise;}));
-            await entered.promise;
+            await waitForCancellationBarrier(entered,cancellation,'cancellation row lock');
             publication=settled(repository.beginPublication(job.id,lease,()=>service.requireMain(actor)).then(()=>writeFile(native,'must not publish')));
             const blocking=await until(async()=>{const values=(await pool.query('SELECT pg_blocking_pids($1) AS blockers',[leasePid])).rows[0].blockers;return values.length?values:null;},'publication blocked by the cancellation row lock');
             pids.push(leasePid,...blocking);assert.ok(blocking.every(pid=>pid!==leasePid));
@@ -98,7 +99,7 @@ try{
         const job=await running(),entered=deferred(),release=deferred();let fence,cancellation,blocked;
         try{
             fence=settled(repository.beginPublication(job.id,lease,async()=>{await service.requireMain(actor);entered.resolve();await release.promise;}));
-            await entered.promise;
+            await waitForCancellationBarrier(entered,fence,'publication row lock');
             cancellation=settled(repository.cancel(actor.email,job.id,()=>service.requireMain(actor)));
             blocked=await until(async()=>{const rows=await fixture.blockedBy(leasePid);return rows.length?rows:null;},'cancellation blocked by the publication row lock');
             assert.ok(blocked.every(value=>value.pid!==leasePid));
