@@ -20,8 +20,21 @@
     &__description { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
     &__identity { margin-bottom: 4px; .ant-tag { margin-bottom: 4px; white-space: normal; } }
     &__status { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 0; border-top: 1px solid #edf1f5; font-size: 12px; overflow-wrap: anywhere; }
+    &__trial { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 0; font-size: 12px; overflow-wrap: anywhere; .ant-tag { white-space: normal; } }
     &__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
     &__update { display: flex; align-items: flex-start; flex-direction: column; gap: 8px; border-top: 1px solid #edf1f5; margin-top: 16px; padding-top: 12px; font-size: 12px; }
+}
+.agent-trial {
+    max-width: calc(100vw - 24px);
+    .ant-modal-body { max-height: calc(100vh - 160px); overflow-y: auto; }
+    .ant-alert { margin: 12px 0; overflow-wrap: anywhere; }
+    &__result { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 16px; overflow-wrap: anywhere; }
+    &__setup { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin: 20px 0; }
+    &__checks { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; > .ant-typography:last-child { flex-basis: 100%; } } }
+    &__actions { display: flex; justify-content: flex-end; margin-top: 20px; }
+    summary { cursor: pointer; padding: 8px 0; }
+    code { overflow-wrap: anywhere; }
+    .ant-radio-wrapper { white-space: normal; }
 }
 .agent-editor {
     max-width: calc(100vw - 24px);

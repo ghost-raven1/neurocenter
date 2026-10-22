@@ -5,16 +5,19 @@ import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { agentModeLabels } from './model';
 import type { IAgentStatus } from './model';
 import type { ICatalogAgent, IProjectAgent } from './types';
+import { AgentTrialStatus } from './AgentTrialStatus';
+import type { IAgentReadinessItem } from './readinessTypes';
 
 interface IProps {
     agent: ICatalogAgent; assignment?: IProjectAgent; status?: IAgentStatus;
     projectSelected: boolean; isMain: boolean; canManage: boolean; busy: boolean; unavailable: boolean;
     onView: () => void; onEdit: () => void; onArchived: () => void; onAssign: () => void;
     onConfigure: () => void; onToggle: () => void; onRemove: () => void; onUpdate: () => void;
+    readiness?: IAgentReadinessItem; trialDisabled?: boolean; trialChecking?: boolean; onTrial?: () => void;
 }
 const colors: Record<IAgentStatus['key'], string | undefined> = { pending: 'blue', error: 'red', enabled: 'green', disabled: undefined, removed: undefined, unapplied: 'orange' };
 
-export function AgentCard({ agent, assignment, status, projectSelected, isMain, canManage, busy, unavailable, onView, onEdit, onArchived, onAssign, onConfigure, onToggle, onRemove, onUpdate }: IProps): JSX.Element {
+export function AgentCard({ agent, assignment, status, projectSelected, isMain, canManage, busy, unavailable, onView, onEdit, onArchived, onAssign, onConfigure, onToggle, onRemove, onUpdate, readiness, trialDisabled, trialChecking, onTrial }: IProps): JSX.Element {
     const active = assignment && !assignment.removed;
     const effective = active ? assignment.effective : agent.definition;
     return <article className={`agent-card${active ? ' agent-card_assigned' : ''}`} aria-label={agent.name}>
@@ -28,7 +31,9 @@ export function AgentCard({ agent, assignment, status, projectSelected, isMain, 
         <Typography.Paragraph type="secondary" className="agent-card__description">{effective.description}</Typography.Paragraph>
         <div className="agent-card__identity"><Tag>Шаблон v{active ? assignment.version : agent.version}</Tag>{active && <Tag color="blue">В проекте</Tag>}{agent.archivedAt && <Tag>Убран из общего каталога</Tag>}{active && Object.keys(assignment.overrides).length > 0 && <Tag>Настроен для проекта</Tag>}</div>
         {status && assignment && <div className="agent-card__status" role="status" aria-live="polite"><Tag color={colors[status.key]}>{status.label}</Tag><Typography.Text type={status.key === 'error' ? 'danger' : 'secondary'}>{status.detail}</Typography.Text></div>}
+        {active && readiness && <AgentTrialStatus item={readiness} checking={trialChecking} />}
         <div className="agent-card__actions"><Button type="text" onClick={onView}>Промпт</Button>
+            {active && onTrial && <Button disabled={trialDisabled} onClick={onTrial}>{readiness?.latestTrial ? 'Испытание в чате' : 'Испытать в чате'}</Button>}
             {projectSelected && canManage ? active ? <>
                 <FeatureButton features={['agents']} disabled={busy || unavailable} onClick={onConfigure}>Настроить</FeatureButton>
                 <FeatureButton features={assignment?.enabled ? [] : ['agents']} type={assignment.enabled ? 'default' : 'primary'} disabled={busy || unavailable} onClick={onToggle}>{assignment.enabled ? 'Отключить' : 'Включить'}</FeatureButton>

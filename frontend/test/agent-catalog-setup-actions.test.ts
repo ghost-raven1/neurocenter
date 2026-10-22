@@ -9,6 +9,9 @@ import type {AgentCard} from '../src/features/AgentCatalog/AgentCard';
 import type {AgentDetails} from '../src/features/AgentCatalog/AgentDetails';
 import type {AgentEditModal} from '../src/features/AgentCatalog/AgentEditModal';
 import type {ProjectAgentEditor} from '../src/features/AgentCatalog/ProjectAgentEditor';
+import type {AgentTrialModal} from '../src/features/AgentCatalog/AgentTrialModal';
+import {readinessItem, trial} from './agent-readiness.fixture';
+import type {IAgentReadinessItem} from '../src/features/AgentCatalog/readinessTypes';
 import type {IEvaluatedFeatureFlags} from '../src/features/FeatureFlags/types';
 type Card = Parameters<typeof AgentCard>[0];
 type Details = Parameters<typeof AgentDetails>[0];
@@ -21,6 +24,8 @@ const h = await vi.hoisted(async () => {
         user: {activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: [] as Array<{projectId: string; projectName: string; role: string}>},
         catalog: null as IAgentCatalog | null, loading: false, error: '', refresh: vi.fn(), navigate: vi.fn(), chat: vi.fn(), cards: [] as Card[],
         detail: undefined as Details | undefined, editor: undefined as Editor | undefined, projectEditor: undefined as ProjectEditor | undefined,
+        trialModal: undefined as Parameters<typeof AgentTrialModal>[0] | undefined,
+        readiness: {items: [] as IAgentReadinessItem[], loading: false, error: '', busy: false, uncertain: false, refresh: vi.fn(), replay: vi.fn(), start: vi.fn(), cancel: vi.fn()},
         confirmations: [] as Confirmation[], actions: {busy: false, error: '', notice: '', unconfirmed: false, mutate: vi.fn(), apply: vi.fn(), repeat: vi.fn(), recheck: vi.fn()}};
 });
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: h.hooks.state, useRef: h.hooks.ref, useMemo: h.hooks.memo, useEffect: h.hooks.effect}));
@@ -29,6 +34,8 @@ vi.mock('react-router-dom', () => ({useHistory: () => ({push: h.navigate})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.scope, captureOwner: () => () => true})}));
 vi.mock('../src/features/AgentCatalog/useAgentCatalog', () => ({useAgentCatalog: () => ({catalog: h.catalog, loading: h.loading, error: h.error, refresh: h.refresh})}));
 vi.mock('../src/features/AgentCatalog/useAgentActions', () => ({useAgentActions: () => h.actions}));
+vi.mock('../src/features/AgentCatalog/useAgentReadiness', () => ({useAgentReadiness: () => h.readiness}));
+vi.mock('../src/features/AgentCatalog/AgentTrialModal', () => ({AgentTrialModal: (props: Parameters<typeof AgentTrialModal>[0]) => {h.trialModal = props; return 'Испытание агента';}}));
 vi.mock('../src/features/ModelChat/chatNavigation', () => ({openModelChat: h.chat}));
 vi.mock('../src/features/McpBridge/BridgeConnection', () => ({BridgeConnection: () => null}));
 vi.mock('../src/features/AgentCatalog/AgentCard', () => ({AgentCard: (props: Card) => { h.cards.push(props); return props.agent.name; }}));
@@ -49,7 +56,7 @@ let props: IAgentCatalogProps;
 const data = (): IEvaluatedFeatureFlags => ({flags: Object.fromEntries(featureFlagKeys.map(key => [key, h.flagsEnabled])),
     configured: Object.fromEntries(featureFlagKeys.map(key => [key, h.flagsEnabled])), blockedBy: Object.fromEntries(featureFlagKeys.map(key => [key, []]))}) as IEvaluatedFeatureFlags;
 function render() {
-    h.hooks.begin(); h.ui.nodes = []; h.cards = []; h.detail = undefined; h.editor = undefined; h.projectEditor = undefined;
+    h.hooks.begin(); h.ui.nodes = []; h.cards = []; h.detail = undefined; h.editor = undefined; h.projectEditor = undefined; h.trialModal = undefined;
     const html = renderToStaticMarkup(createElement(FeatureAvailabilityContext.Provider, {value: {data: data(), loading: false, error: null, refresh: async () => undefined}}, createElement(AgentCatalog, props)));
     h.hooks.commit(); return html;
 }
@@ -59,12 +66,37 @@ const card = () => h.cards[0];
 beforeEach(() => {
     h.hooks.dispose(); vi.clearAllMocks(); h.scope = 'alice'; h.flagsEnabled = true; h.user = {activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: []};
     h.catalog = catalog(); h.loading = false; h.error = ''; h.confirmations = []; h.actions.busy = false; h.actions.error = ''; h.actions.notice = ''; h.actions.unconfirmed = false;
+    h.readiness.items = []; h.readiness.loading = false; h.readiness.error = ''; h.readiness.busy = false; h.readiness.uncertain = false;
     h.refresh.mockResolvedValue(true); h.actions.mutate.mockResolvedValue(undefined); h.actions.apply.mockResolvedValue(undefined); h.actions.repeat.mockResolvedValue(undefined); h.actions.recheck.mockResolvedValue(undefined);
     props = {projectId: 'project-one', projectName: 'Alpha', embedded: false, isMain: true, canManage: true, bridge: bridge()};
 });
 afterEach(() => h.hooks.dispose());
 
 describe('Agent setup: actual toolbar, pinned configuration and recovery actions', () => {
+    it('server-chat trial is separate from native delivery and available before enabling with project level two', () => {
+        props.canManage = false; props.bridge = {...bridge(), devicesReady: false}; h.readiness.items = [readinessItem({agentId: agent().id})]; start();
+        expect(card().trialDisabled).toBe(false); expect(card().assignment?.enabled).toBe(false); card().onTrial?.(); render();
+        expect(h.trialModal?.name).toBe('Ревьюер'); expect(h.actions.apply).not.toHaveBeenCalled(); expect(h.readiness.start).not.toHaveBeenCalled();
+        h.trialModal!.onStart('model-one', 'project_search', true); expect(h.readiness.start).toHaveBeenCalledExactlyOnceWith(h.readiness.items[0], 'model-one', 'project_search', true);
+        h.trialModal!.onCancel(trial()); expect(h.readiness.cancel).toHaveBeenCalledExactlyOnceWith(agent().id, trial());
+        h.trialModal!.onRefresh(); h.trialModal!.onReplay(); expect(h.readiness.refresh).toHaveBeenCalledOnce(); expect(h.readiness.replay).toHaveBeenCalledOnce();
+        h.trialModal!.onClose(); render(); expect(h.trialModal).toBeUndefined();
+    });
+    it('unconfirmed metadata disables the entrypoint, and project observers or removed assignments have no trial action', () => {
+        start(); expect(card().trialDisabled).toBe(true); h.readiness.items = [readinessItem({agentId: agent().id})]; props.isMain = false;
+        h.user = {activeRole: 'Наблюдатель', userRoles: ['Наблюдатель'], projectRoles: [{projectId: 'project-one', projectName: 'Alpha', role: 'Наблюдатель'}]}; render(); expect(card().onTrial).toBeUndefined();
+        h.catalog = catalog({assignments: [assignment({removed: true})]}); props.isMain = true; h.user.activeRole = 'Главный админ'; h.user.userRoles = ['Главный админ']; render(); expect(card().onTrial).toBeUndefined();
+    });
+    it('details opens a single trial panel and owner changes close it; read errors remain recoverable', () => {
+        h.readiness.items = [readinessItem({agentId: agent().id})]; start(); card().onView(); render(); h.detail!.onTrial?.(); render();
+        expect(h.detail).toBeUndefined(); expect(h.trialModal).toBeDefined(); h.scope = 'bob'; render(); render(); expect(h.trialModal).toBeUndefined();
+        h.readiness.error = 'Trials offline'; expect(render()).toContain('Состояние испытаний не обновилось'); button('Перечитать испытания').onClick(); expect(h.readiness.refresh).toHaveBeenCalledOnce();
+    });
+    it('out-of-order catalog/readiness refresh checks proof neutrally until unrelated revision is confirmed', () => {
+        h.readiness.items = [readinessItem({agentId: agent().id, latestTrial: trial()})]; start(); expect(card().trialChecking).toBe(false);
+        h.catalog = catalog({revision: 4}); render(); expect(card().trialChecking).toBe(true); card().onTrial?.(); render(); expect(h.trialModal?.checking).toBe(true);
+        h.readiness.items = [{...h.readiness.items[0], projectRevision: 4}]; render(); expect(card().trialChecking).toBe(false); expect(h.trialModal?.checking).toBe(false); expect(h.trialModal?.item.latestTrial?.current).toBe(true);
+    });
     it('offers an explicit retry during initial load failure and keeps stale data visibly unconfirmed', async () => {
         h.catalog = null; h.loading = true; expect(start()).toContain('role="status"'); expect(h.cards).toEqual([]); h.loading = false; h.error = 'Сервер недоступен';
         expect(render()).toContain('Агенты не загружены'); button('Повторить').onClick(); expect(h.refresh).toHaveBeenCalledOnce();

@@ -1,9 +1,11 @@
-import { Descriptions, Modal, Tag, Typography } from 'antd';
+import { Button, Descriptions, Modal, Tag, Typography } from 'antd';
 import { agentModeLabels } from './model';
 import type { ICatalogAgent, IProjectAgent } from './types';
+import { AgentTrialStatus } from './AgentTrialStatus';
+import type { IAgentReadinessItem } from './readinessTypes';
 
 /** Read-only preview always identifies whether the prompt comes from the pinned project or common card. */
-export function AgentDetails({ agent, assignment, onClose }: {agent: ICatalogAgent; assignment?: IProjectAgent; onClose: () => void}): JSX.Element {
+export function AgentDetails({ agent, assignment, onClose, readiness, trialChecking, onTrial }: {agent: ICatalogAgent; assignment?: IProjectAgent; onClose: () => void; readiness?: IAgentReadinessItem; trialChecking?: boolean; onTrial?: () => void}): JSX.Element {
     const pinned = assignment && !assignment.removed ? assignment : undefined;
     const definition = pinned?.effective ?? agent.definition;
     return <Modal open title={pinned?.card.name ?? agent.name} className="agent-editor" width={780} footer={null} onCancel={onClose}>
@@ -14,5 +16,7 @@ export function AgentDetails({ agent, assignment, onClose }: {agent: ICatalogAge
         <Typography.Title level={5}>{pinned ? 'Промпт проекта' : 'Промпт шаблона'}</Typography.Title>
         <pre className="agent-editor__comparison">{definition.prompt}</pre>
         <Typography.Paragraph type="secondary">Настройки применяются к новому запуску OpenCode. Вызов модели и доступность провайдера здесь не проверяются.</Typography.Paragraph>
+        {readiness && <AgentTrialStatus item={readiness} checking={trialChecking} />}
+        {onTrial && <Button onClick={onTrial}>Испытание в чате</Button>}
     </Modal>;
 }

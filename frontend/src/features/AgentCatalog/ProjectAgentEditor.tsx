@@ -66,6 +66,7 @@ export function ProjectAgentEditor({ projectId, assignment, revision, onClose, o
                 description={conflict.assignment && <><Collapse ghost><Collapse.Panel header={`Актуальный промпт проекта · шаблон v${conflict.assignment.version}`} key="current"><pre className="agent-editor__comparison">{conflict.assignment.effective.prompt}</pre></Collapse.Panel></Collapse>
                     <FeatureButton features={['agents']} danger disabled={busy} onClick={() => { reference.current = { assignment: conflict.assignment!, revision: conflict.revision }; setConflict(undefined); form.submit(); }}>Применить мой вариант к актуальным настройкам</FeatureButton></>} />}
             <AgentDefinitionFields form={form} disabled={busy} />
+            {dirty && <Typography.Paragraph type="secondary">Несохранённые настройки ещё не испытывались в чате. Испытание запускается отдельно после сохранения.</Typography.Paragraph>}
             <div className="agent-editor__actions"><Button disabled={busy} onClick={reset}>Вернуть закреплённый шаблон</Button><Space wrap><Button disabled={busy} onClick={close}>Отмена</Button><FeatureButton features={['agents']} type="primary" htmlType="submit" loading={busy}>Сохранить и применить</FeatureButton></Space></div>
         </Form>
     </Modal>;

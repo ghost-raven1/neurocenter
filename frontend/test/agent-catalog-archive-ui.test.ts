@@ -17,6 +17,7 @@ vi.mock('react-redux',()=>({useSelector:()=>({activeRole:'Главный адм�
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({scope:'admin',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/AgentCatalog/useAgentCatalog',()=>({useAgentCatalog:()=>({catalog:ui.catalog,loading:false,error:'',refresh:ui.refresh})}));
 vi.mock('../src/features/AgentCatalog/useAgentActions',()=>({useAgentActions:()=>({busy:false,error:'',notice:'',unconfirmed:false})}));
+vi.mock('../src/features/AgentCatalog/useAgentReadiness',()=>({useAgentReadiness:()=>({items:[],loading:false,error:'',busy:false,uncertain:false})}));
 vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
 vi.mock('../src/features/AgentCatalog/AgentEditModal',()=>({AgentEditModal:()=>null}));
 vi.mock('../src/features/AgentCatalog/ProjectAgentEditor',()=>({ProjectAgentEditor:()=>null}));

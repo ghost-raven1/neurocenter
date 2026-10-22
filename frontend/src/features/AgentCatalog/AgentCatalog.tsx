@@ -17,6 +17,8 @@ import {openModelChat} from '../ModelChat/chatNavigation';
 import {projectRoleLevel} from '../UserBlock/roles';
 import {useSelector} from 'react-redux';
 import type {RootState} from '../../store';
+import { useAgentReadiness } from './useAgentReadiness';
+import { AgentTrialModal } from './AgentTrialModal';
 
 /** Common templates, immutable project pins and actual bridge delivery share one visible flow. */
 export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
@@ -24,13 +26,16 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const user=useSelector((state:RootState)=>state.userBlock.user);
     const { scope } = useAuthRequestOwner(), history = useHistory();
     const { catalog, loading, error, refresh } = useAgentCatalog(projectId);
+    const canReadTrials = !!projectId && projectRoleLevel(user, projectId) >= 2;
+    const readiness = useAgentReadiness(projectId, canReadTrials, catalog?.revision ?? null);
     const actions = useAgentActions({ ...props, catalog, refresh });
     const [query, setQuery] = useState(''), [projectOnly, setProjectOnly] = useState(!!embedded);
     const [showArchive, setShowArchive] = useState(false);
     const [editing, setEditing] = useState<ICatalogAgent | 'new'>(), [viewId, setViewId] = useState<string>();
     const [projectEditing, setProjectEditing] = useState<{assignment: IProjectAgent; revision: number}>();
+    const [trialAgentId, setTrialAgentId] = useState<string>();
     const confirmation = useRef<{destroy(): void}>();
-    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
+    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setTrialAgentId(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
     const assignments = useMemo(() => new Map(catalog?.assignments.map(item => [item.agentId, item]) ?? []), [catalog]);
     const shown = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly, isMain && showArchive) : [], [catalog, query, projectId, projectOnly, isMain, showArchive]);
     const connection = agentConnection(props);
@@ -40,6 +45,10 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         && item.bindingId === connection.target.expectedBindingId && item.instanceId === connection.target.expectedInstanceId
         && item.revision === catalog.revision && ['queued', 'running', 'reconciling'].includes(item.state));
     const viewing = catalog && (catalog.items.find(item => item.id === viewId) ?? assignments.get(viewId ?? '')?.card);
+    const trialItem = readiness.items.find(item => item.agentId === trialAgentId);
+    const trialAssignment = assignments.get(trialAgentId ?? '');
+    const checkingTrial = (agentId: string): boolean => !catalog || catalog.revision === null
+        || readiness.items.find(item => item.agentId === agentId)?.projectRevision !== catalog.revision;
     const cleanup = catalog?.assignments.filter(item => item.removed && projectAgentStatus(catalog, item, target).key !== 'removed') ?? [];
     const perform = (kind: 'assign' | 'configure' | 'remove', agent: ICatalogAgent, patch?: Parameters<typeof actions.mutate>[0]['patch']): void => {
         if (unavailable || !catalog || catalog.revision === null) return;
@@ -75,6 +84,8 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         {error && <Alert showIcon type={catalog ? 'warning' : 'error'} className="agent-catalog__notice" message={catalog ? 'Не удалось обновить агентов — показаны предыдущие данные' : 'Агенты не загружены'} description={error} action={<Button onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {actions.error && <Alert showIcon type="error" className="agent-catalog__notice" message={actions.error} action={actions.unconfirmed && <Space wrap><Button disabled={actions.busy} onClick={() => { void actions.repeat(); }}>Повторить запрос</Button><Button disabled={actions.busy} onClick={() => { void actions.recheck(); }}>Перечитать состояние</Button></Space>} />}
         {actions.notice && <Alert showIcon type="info" className="agent-catalog__notice" message={actions.notice} />}
+        {canReadTrials && readiness.error && !trialAgentId && <Alert type="warning" showIcon className="agent-catalog__notice" message="Состояние испытаний не обновилось" description={readiness.error}
+            action={<Button loading={readiness.loading} onClick={() => { void readiness.refresh(); }}>Перечитать испытания</Button>} />}
         {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} compact showReadinessNotice={false} />
             <div className="agent-catalog__apply"><div><Typography.Text strong>Настройки OpenCode</Typography.Text><Typography.Paragraph type="secondary">{connection.reason || 'Применяем только управляемые файлы агентов. Изменения появятся при следующем запуске OpenCode.'}</Typography.Paragraph></div>
                 {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
@@ -83,7 +94,9 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
             description="Удаление сохранено в проекте. Нажмите «Применить настройки» для выбранного компьютера. В других связанных папках также потребуется применение." />}
         {!catalog && loading ? <div className="agent-catalog__loading" role="status"><Spin tip="Загружаем агентов…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">{shown.map(agent => {
             const assignment = assignments.get(agent.id), status = assignment ? projectAgentStatus(catalog, assignment, target) : undefined;
+            const trial = readiness.items.find(item => item.agentId === agent.id);
             return <Col xs={24} xl={12} key={agent.id}><AgentCard agent={agent} assignment={assignment} status={status} isMain={isMain} canManage={canManage} projectSelected={!!projectId}
+                readiness={trial} trialChecking={checkingTrial(agent.id)} trialDisabled={!trial || actions.busy} onTrial={canReadTrials && assignment && !assignment.removed ? () => setTrialAgentId(agent.id) : undefined}
                 busy={actions.busy} unavailable={unavailable} onView={() => setViewId(agent.id)} onEdit={() => setEditing(agent)} onArchived={() => { void refresh(); }}
                 onAssign={() => perform('assign', assignment?.removed ? assignment.card : agent)}
                 onConfigure={() => { if (assignment && catalog.revision !== null) setProjectEditing({ assignment, revision: catalog.revision }); }}
@@ -92,9 +105,15 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         })}</Row> : <Empty description={query ? 'По этому запросу агенты не найдены' : projectOnly && projectId ? 'В проект пока не добавлены агенты' : 'В каталоге пока нет агентов'}>
             {(query || projectOnly) && <Button onClick={() => { setQuery(''); setProjectOnly(false); }}>Показать все агенты</Button>}
         </Empty>)}
-        {viewing && <AgentDetails agent={viewing} assignment={assignments.get(viewing.id)} onClose={() => setViewId(undefined)} />}
+        {viewing && <AgentDetails agent={viewing} assignment={assignments.get(viewing.id)} onClose={() => setViewId(undefined)}
+            readiness={readiness.items.find(item => item.agentId === viewing.id)} trialChecking={checkingTrial(viewing.id)} onTrial={canReadTrials && readiness.items.some(item => item.agentId === viewing.id)
+                ? () => { setViewId(undefined); setTrialAgentId(viewing.id); } : undefined} />}
         {isMain && editing && <AgentEditModal key={editing === 'new' ? 'new' : editing.id + ':' + editing.version} agent={editing === 'new' ? undefined : editing} onClose={() => setEditing(undefined)} onSaved={saved} />}
         {canManage && projectId && projectEditing && <ProjectAgentEditor key={projectEditing.assignment.agentId + ':' + projectEditing.revision} projectId={projectId} {...projectEditing} onClose={() => setProjectEditing(undefined)}
             onSave={(agent, patch, revision) => actions.mutate({ kind: 'configure', agent, patch, revision })} />}
+        {canReadTrials && projectId && trialItem && trialAssignment && <AgentTrialModal key={scope + ':' + projectId + ':' + trialItem.agentId} projectId={projectId} name={trialAssignment.card.name} item={trialItem}
+            busy={readiness.busy} loading={readiness.loading} checking={checkingTrial(trialItem.agentId)} error={readiness.error} uncertain={readiness.uncertain} onClose={() => setTrialAgentId(undefined)}
+            onRefresh={() => { void readiness.refresh(); }} onReplay={() => { void readiness.replay(); }} onStart={(modelId, tool, consent) => { void readiness.start(trialItem, modelId, tool, consent); }}
+            onCancel={trial => { void readiness.cancel(trialItem.agentId, trial); }} />}
     </section>;
 }
