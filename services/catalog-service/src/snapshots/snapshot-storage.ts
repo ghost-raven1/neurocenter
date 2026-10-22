@@ -20,6 +20,8 @@ export class SnapshotStorage {
     readonly storageId:string;
     private readonly client?:Client;
     private readonly bucket?:string;
+    /** A lost rollback acknowledgement makes this owned session unsafe for subsequent pool borrowers. */
+    private readonly failedRollbacks=new WeakSet<PoolClient>();
     readonly directory:string;
     constructor(private readonly pool:Pool,options:SnapshotStorageOptions={}){
         this.directory=path.resolve(options.directory||process.env.SNAPSHOT_STORAGE_DIR||path.join(runtimeArtifactDirectory(),'.project-snapshots'));
@@ -118,7 +120,10 @@ export class SnapshotStorage {
                 const directory=await fs.open(folder,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);try{await directory.sync();}finally{await directory.close();}
             }
             await this.registerWrite(connection,intent,version);
-        }finally{await connection.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['neurocenter:snapshot-storage']).catch(()=>undefined);connection.release();}
+        }finally{
+            let discard=this.failedRollbacks.delete(connection);if(!discard)try{await connection.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['neurocenter:snapshot-storage']);}catch{discard=true;}
+            connection.release(discard);
+        }
     }
     private assertIntent(intent:WriteIntent,size:number):void{
         if(intent.storage_id!==this.storageId||Number(intent.bytes)!==size)throw new ConflictException('Незавершённая запись относится к другой конфигурации хранилища.');
@@ -126,7 +131,7 @@ export class SnapshotStorage {
     private async registerWrite(client:PoolClient,intent:WriteIntent,version:string|null):Promise<void>{
         try{await client.query('BEGIN');await client.query('INSERT INTO project_snapshot_blobs(project_id,sha256,bytes,storage_id,version_id) VALUES($1,$2,$3,$4,$5)',[intent.project_id,intent.sha256,intent.bytes,this.storageId,version]);
             await client.query('DELETE FROM project_snapshot_blob_writes WHERE project_id=$1 AND sha256=$2 AND write_id=$3',[intent.project_id,intent.sha256,intent.write_id]);await client.query('COMMIT');
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}
+        }catch(error){await client.query('ROLLBACK').catch(()=>{this.failedRollbacks.add(client);});throw error;}
     }
     /** The nonce is durable before PUT/link; a lost response never creates an unaccounted object. */
     private async settleWrite(client:PoolClient,intent:WriteIntent,confirmedVersion?:string):Promise<'missing'|'pending'|'complete'>{
@@ -155,12 +160,17 @@ export class SnapshotStorage {
     }
     /** One abandoned write per tick is settled or discarded under the same global fence as all PUTs. */
     async recoverWrite():Promise<boolean>{
-        const client=await this.pool.connect();let locked=false;
-        try{locked=(await client.query("SELECT pg_try_advisory_lock(hashtextextended('neurocenter:snapshot-storage',0)) AS locked")).rows[0].locked;if(!locked)return false;
+        const client=await this.pool.connect();let locked=false,discard=false;
+        try{
+            try{locked=(await client.query("SELECT pg_try_advisory_lock(hashtextextended('neurocenter:snapshot-storage',0)) AS locked")).rows[0].locked;}catch(error){discard=true;throw error;}
+            if(!locked)return false;
             const intent=(await client.query<WriteIntent>('SELECT * FROM project_snapshot_blob_writes ORDER BY created_at LIMIT 1')).rows[0];if(!intent)return false;
             await this.privateBucket();
             if(await this.settleWrite(client,intent)==='missing')await client.query('DELETE FROM project_snapshot_blob_writes WHERE project_id=$1 AND sha256=$2 AND write_id=$3',[intent.project_id,intent.sha256,intent.write_id]);return true;
-        }finally{if(locked)await client.query("SELECT pg_advisory_unlock(hashtextextended('neurocenter:snapshot-storage',0))").catch(()=>undefined);client.release();}
+        }finally{
+            discard=this.failedRollbacks.delete(client)||discard;if(locked&&!discard)try{await client.query("SELECT pg_advisory_unlock(hashtextextended('neurocenter:snapshot-storage',0))");}catch{discard=true;}
+            client.release(discard);
+        }
     }
     /** Caller holds the global storage fence and has durably marked this exact version DELETING. */
     async remove(project:string,sha:string,row:SnapshotBlob):Promise<void>{
