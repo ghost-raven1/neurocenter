@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { connectBridge } from './connect.js';
+import { connectInstalledProfile } from './cli-profile.js';
 import { atomicText } from './atomic-file.js';
 import { apiHub, hub } from './state.js';
 import { BRIDGE_VERSION } from './protocol.js';
@@ -33,7 +33,7 @@ export async function installBridgeCommand(options: { directory?: string; binDir
     await atomicText(target, source, 0o755); return target;
 }
 /** Connection output is intended for a person; the existing index CLI keeps its machine JSON contract. */
-export async function runBridgeCli(args: string[], dependencies = { connect: connectBridge, write: (text: string) => process.stdout.write(text), settingsPath: path.join(directory, 'installation.json') }): Promise<void> {
+export async function runBridgeCli(args: string[], dependencies = { connect: connectInstalledProfile, write: (text: string) => process.stdout.write(text), settingsPath: path.join(directory, 'installation.json') }): Promise<void> {
     const command = args[0] ?? '--help';
     if (command === '--version') { dependencies.write(BRIDGE_VERSION + '\n'); return; }
     if (['--help', '-h', 'help'].includes(command)) {
@@ -47,7 +47,8 @@ export async function runBridgeCli(args: string[], dependencies = { connect: con
         catch { throw Error('Адрес площадки не настроен. Повторите установку моста на странице «Начало работы».'); }
         if (settings.schemaVersion !== 1) throw Error('Настройка команды устарела. Обновите мост.');
         process.env.NEUROCENTER_URL = origin(settings.siteUrl);
-        process.env.NEUROCENTER_API_URL = origin(settings.apiUrl);
+        const savedApi=origin(settings.apiUrl);
+        process.env.NEUROCENTER_API_URL = process.env.NEUROCENTER_API_URL ? origin(apiHub()) : savedApi;
     } else { origin(hub()); origin(apiHub()); }
     const result = await dependencies.connect(args.includes('--open'), args.includes('--reconnect'));
     if ('connected' in result && result.connected === true) {
