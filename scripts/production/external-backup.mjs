@@ -9,6 +9,7 @@ import {createHash,createHmac} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {verifyBackup,validateManifest,manifestDigest} from './recovery-manifest.mjs';
+import {assertPrivateS3Bucket} from '../../services/shared/s3-bucket-privacy.cjs';
 
 export const EXTERNAL_CHUNK_BYTES=32*1024*1024;
 const MANIFEST_LIMIT=64*1024*1024;
@@ -45,14 +46,16 @@ export function externalBackupConfiguration(env=process.env){
 }
 
 /** Подписывает конкретное тело SigV4; секреты не попадают в URL или квитанцию. */
-export function signedS3Request(config,method,key,body=Buffer.alloc(0),at=new Date()){
+export function signedS3Request(config,method,key,body=Buffer.alloc(0),at=new Date(),subresource){
+    if(subresource!==undefined&&!['policy','acl'].includes(subresource)){throw new Error('Неизвестная операция проверки S3');}
     const date=at.toISOString().replace(/[:-]|\.\d{3}/g,'');const day=date.slice(0,8);
     const url=new URL(config.endpoint);url.pathname='/'+[config.bucket,...key.split('/')].map(encoded).join('/');
+    if(subresource)url.search=subresource+'=';
     const headers={host:url.host,'x-amz-content-sha256':digest(body),'x-amz-date':date};
     if(config.sessionToken){headers['x-amz-security-token']=config.sessionToken;}
     if(method==='PUT'){headers['if-none-match']='*';}
     const names=Object.keys(headers).sort(),signedHeaders=names.join(';');
-    const canonical=[method,url.pathname,'',names.map(name=>name+':'+headers[name]+'\n').join(''),signedHeaders,headers['x-amz-content-sha256']].join('\n');
+    const canonical=[method,url.pathname,subresource?subresource+'=':'',names.map(name=>name+':'+headers[name]+'\n').join(''),signedHeaders,headers['x-amz-content-sha256']].join('\n');
     const scope=day+'/'+config.region+'/s3/aws4_request';
     const signingKey=hmac(hmac(hmac(hmac('AWS4'+config.secretAccessKey,day),config.region),'s3'),'aws4_request');
     headers.authorization='AWS4-HMAC-SHA256 Credential='+config.accessKeyId+'/'+scope+', SignedHeaders='+signedHeaders+', Signature='+createHmac('sha256',signingKey).update('AWS4-HMAC-SHA256\n'+date+'\n'+scope+'\n'+digest(canonical)).digest('hex');
@@ -86,10 +89,12 @@ function externalLookup(host,options,callback){
 
 /** HTTPS без redirect и ослабления TLS; ответ ограничен размером одного блока. */
 export function createExternalS3Store(config){
-    const request=(method,key,body=Buffer.alloc(0),limit=EXTERNAL_CHUNK_BYTES)=>retryExternalOperation(()=>new Promise((resolve,reject)=>{
-        const {url,headers}=signedS3Request(config,method,key,body);
+    const request=(method,key,body=Buffer.alloc(0),limit=EXTERNAL_CHUNK_BYTES,subresource)=>retryExternalOperation(()=>new Promise((resolve,reject)=>{
+        const {url,headers}=signedS3Request(config,method,key,body,undefined,subresource);
         const child=https.request(url,{method,headers,lookup:externalLookup,rejectUnauthorized:true,agent:false},response=>{
             response.on('error',reject);response.on('aborted',()=>reject(new StorageError('Ответ внешнего S3 прерван',{code:'ECONNRESET'})));
+            // The common checker consumes raw status/body with its own strict size and time bounds.
+            if(subresource){resolve(response);return;}
             if(response.statusCode<200||response.statusCode>=300){
                 reject(new StorageError('Внешний S3 отклонил '+method+' (HTTP '+response.statusCode+')',{status:response.statusCode}));response.destroy();return;
             }
@@ -101,7 +106,12 @@ export function createExternalS3Store(config){
         child.setTimeout(30000,()=>child.destroy(new StorageError('Внешний S3 не отвечает',{code:'ETIMEDOUT'})));
         child.on('error',reject);child.on('close',()=>clearTimeout(timer));child.end(body);
     }));
+    const privacyClient={makeRequestAsync:async({method,bucketName,query})=>{
+        if(method!=='GET'||bucketName!==config.bucket||!['policy','acl'].includes(query))throw new Error('Некорректная проверка бакета S3');
+        return request('GET','',undefined,65536,query);
+    }};
     return {
+        assertPrivate:()=>assertPrivateS3Bucket(privacyClient,config.bucket),
         put:async(key,body)=>{try{await request('PUT',key,body,64*1024);}catch(error){if(error.status!==412){throw error;}}},
         get:(key,limit)=>request('GET',key,undefined,limit),
     };
@@ -116,6 +126,12 @@ async function checkedGet(store,key,size,sha256){
     const bytes=await store.get(key,size);
     if(bytes.length!==size||digest(bytes)!==sha256){throw new Error('SHA256 или размер внешнего объекта не совпадает с исходной копией');}
     return bytes;
+}
+
+/** A custom transport must support the same privacy gate as the real S3 peer. */
+async function requirePrivateStore(store){
+    if(typeof store.assertPrivate!=='function')throw new Error('Транспорт не поддерживает подтверждение приватности S3');
+    await store.assertPrivate();
 }
 
 /** Публикует опись последней, только после чтения и SHA-проверки каждого блока. */
@@ -134,7 +150,7 @@ export async function uploadExternalBackup({source,expectedHash,backupId,config=
             while(offset<entry.size){
                 const chunk=Buffer.alloc(Math.min(EXTERNAL_CHUNK_BYTES,entry.size-offset));let used=0;
                 while(used<chunk.length){const read=await handle.read(chunk,used,chunk.length-used,offset+used);if(!read.bytesRead){throw new Error('Исходный файл усечён');}used+=read.bytesRead;}
-                const key=objectKey(backupId,entry,index++);await store.put(key,chunk);
+                const key=objectKey(backupId,entry,index++);await requirePrivateStore(store);await store.put(key,chunk);
                 full.update(await checkedGet(store,key,chunk.length,digest(chunk)));offset+=chunk.length;
             }
             const after=await handle.stat();
@@ -144,7 +160,8 @@ export async function uploadExternalBackup({source,expectedHash,backupId,config=
     }
     // Повторная полная проверка не даёт опубликовать изменённое дерево или новый посторонний файл.
     await verifyBackup(source,expectedHash);
-    await store.put(manifestKey(backupId),raw);await checkedGet(store,manifestKey(backupId),raw.length,expectedHash);
+    await requirePrivateStore(store);await store.put(manifestKey(backupId),raw);await checkedGet(store,manifestKey(backupId),raw.length,expectedHash);
+    await requirePrivateStore(store);
     return {ok:true,backupId,storageId:config.storageId,manifestSha256:expectedHash,createdAt:manifest.createdAt,verifiedAt:new Date().toISOString(),
         files,bytes,transportFormat:REMOTE_FORMAT,verification:'sha256-readback',independence:'operator-declared',crossHostRestoreVerified:false};
 }
@@ -173,6 +190,7 @@ export async function downloadExternalBackup({destination,expectedHash,backupId,
     const parent=await realpath(path.dirname(path.resolve(destination)));const info=await lstat(parent);
     if(!info.isDirectory()||info.mode&0o077){throw new Error('Родитель назначения должен иметь права 700');}
     destination=path.join(parent,path.basename(path.resolve(destination)));await absent(destination);
+    await requirePrivateStore(store);
     const raw=await store.get(manifestKey(backupId),MANIFEST_LIMIT);const manifest=safeRemoteManifest(raw,expectedHash);
     const temporary=await mkdtemp(path.join(parent,'.neurocenter-external-'));
     try{
@@ -197,7 +215,7 @@ export async function downloadExternalBackup({destination,expectedHash,backupId,
             const handle=await open(directoryPath,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
             try{await handle.sync();}finally{await handle.close();}
         }
-        await absent(destination);await rename(temporary,destination);
+        await requirePrivateStore(store);await absent(destination);await rename(temporary,destination);
         const directory=await open(parent,'r');try{await directory.sync();}finally{await directory.close();}
         return {ok:true,backupId,destination,manifestSha256:expectedHash,verifiedAt:new Date().toISOString(),crossHostRestoreVerified:false};
     }finally{await rm(temporary,{recursive:true,force:true});}

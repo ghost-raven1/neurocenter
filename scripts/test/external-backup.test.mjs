@@ -24,7 +24,7 @@ const manifestKey='neurocenter-external-v1/'+backupId+'/manifest.json';
 
 function memoryStore(){
     const objects=new Map(),puts=[],gets=[];
-    return {objects,puts,gets,async put(key,bytes){puts.push(key);if(!objects.has(key)){objects.set(key,Buffer.from(bytes));}},
+    return {objects,puts,gets,async assertPrivate(){},async put(key,bytes){puts.push(key);if(!objects.has(key)){objects.set(key,Buffer.from(bytes));}},
         async get(key,limit){gets.push(key);if(!objects.has(key)){throw Object.assign(new Error('Отсутствует объект'),{status:404});}const bytes=objects.get(key);if(bytes.length>limit){throw new Error('Превышен размер ответа');}return Buffer.from(bytes);}};
 }
 async function fixture(action,{large=false,snapshots=false}={}){
@@ -65,6 +65,42 @@ test('SigV4 подписывает SHA тела, условную запись �
     assert.notEqual(request.headers.authorization,signedS3Request({...config,sessionToken:'fixture-session'},'PUT','copy/русский файл!*',Buffer.from('другие данные'),new Date('2026-10-18T12:34:56Z')).headers.authorization);
 });
 
+test('Bucket control queries are included in the actual SigV4 canonical request',()=>{
+    const at=new Date('2026-10-22T00:00:00Z');
+    const acl=signedS3Request(config,'GET','',undefined,at,'acl'),policy=signedS3Request(config,'GET','',undefined,at,'policy');
+    assert.equal(acl.url.search,'?acl=');assert.equal(policy.url.search,'?policy=');
+    assert.notEqual(acl.headers.authorization,policy.headers.authorization);
+    assert.notEqual(acl.headers.authorization,signedS3Request(config,'GET','',undefined,at).headers.authorization);
+    assert.throws(()=>signedS3Request(config,'GET','',undefined,at,'unknown'));
+});
+
+test('Signed privacy adapter accepts only a bounded explicit missing-policy response and a private ACL',async()=>{
+    const acl='<AccessControlPolicy><Owner><ID>ceph-owner</ID></Owner><AccessControlList><Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser"><ID>ceph-owner</ID></Grantee><Permission>FULL_CONTROL</Permission></Grant></AccessControlList></AccessControlPolicy>';
+    for(const missing of ['NoSuchBucketPolicy','NoSuchPolicy','NoSuchBucket','AccessDenied','oversized','403-code','wrong-root','duplicate-code','200-code']){
+        const calls=[];
+        const requestMock=mock.method(https,'request',(url,options,callback)=>{
+            calls.push(url.search);assert.equal(options.rejectUnauthorized,true);assert.ok(options.headers.authorization.startsWith('AWS4-HMAC-SHA256'));
+            const request=new EventEmitter();request.setTimeout=()=>request;request.destroy=error=>request.emit('error',error);
+            request.end=()=>queueMicrotask(()=>{
+                const response=new PassThrough(),policy=url.search==='?policy=';response.statusCode=policy?(missing==='403-code'?403:missing==='200-code'?200:404):200;
+                const body=missing==='oversized'?'x'.repeat(65537):missing==='wrong-root'?'<Unexpected><Code>NoSuchPolicy</Code></Unexpected>'
+                    :missing==='duplicate-code'?'<Error><Code>NoSuchPolicy</Code><Code>AccessDenied</Code></Error>'
+                    :'<Error><Code>'+(['403-code','200-code'].includes(missing)?'NoSuchPolicy':missing)+'</Code></Error>';
+                callback(response);response.end(policy?body:acl);
+                queueMicrotask(()=>request.emit('close'));
+            });
+            return request;
+        });
+        try{
+            if(['NoSuchBucketPolicy','NoSuchPolicy'].includes(missing)){
+                await createExternalS3Store(config).assertPrivate();assert.deepEqual(calls,['?policy=','?acl=']);
+            }else{
+                await assert.rejects(createExternalS3Store(config).assertPrivate(),/S3_BUCKET_PRIVACY_UNCONFIRMED/);assert.deepEqual(calls,['?policy=']);
+            }
+        }finally{requestMock.mock.restore();}
+    }
+});
+
 test('Временный сбой повторяется ограниченно; TLS и 403 сразу останавливают операцию',async()=>{
     const waits=[];let attempts=0;
     assert.equal(await retryExternalOperation(async()=>{attempts++;if(attempts<3){throw Object.assign(new Error('temporary'),{status:503});}return 'ok';},{wait:async ms=>waits.push(ms)}),'ok');
@@ -86,6 +122,33 @@ test('HTTP redirect не выполняется, TLS-проверка остаё
     try{await assert.rejects(createExternalS3Store(config).get('object',1024),/HTTP 302/);assert.equal(calls,1);}
     finally{requestMock.mock.restore();}
 });
+
+test('External privacy gate rejects a public backup destination before the first PUT',async()=>fixture(async({store,values})=>{
+    store.assertPrivate=async()=>{throw new Error('private-bucket-required');};
+    await assert.rejects(uploadExternalBackup(values),/private-bucket-required/);
+    assert.equal(store.puts.length,0);assert.equal(store.objects.size,0);
+}));
+
+test('Missing privacy attestation rejects an unverified custom backup transport',async()=>fixture(async({store,values})=>{
+    delete store.assertPrivate;
+    await assert.rejects(uploadExternalBackup(values),/приватност/);
+    assert.equal(store.puts.length,0);
+}));
+
+test('Policy drift blocks later PUTs and manifest publication',async()=>fixture(async({store,values})=>{
+    store.assertPrivate=async()=>{if(store.puts.length)throw new Error('private-bucket-changed');};
+    await assert.rejects(uploadExternalBackup(values),/private-bucket-changed/);
+    assert.equal(store.puts.length,1);assert.ok(!store.objects.has(manifestKey));
+}));
+
+test('External download privacy gate rejects before reading a manifest or creating staging',async()=>fixture(async({root,store,values})=>{
+    await uploadExternalBackup(values);store.gets.length=0;
+    store.assertPrivate=async()=>{throw new Error('private-bucket-required');};
+    const destination=path.join(root,'private-download');
+    await assert.rejects(downloadExternalBackup({...values,destination}),/private-bucket-required/);
+    assert.equal(store.gets.length,0);assert.ok(!(await readdir(root)).includes('private-download'));
+    assert.ok(!(await readdir(root)).some(name=>name.startsWith('.neurocenter-external-')));
+}));
 
 test('Полный recovery-v3 комплект проходит внешний readback и восстанавливается в новый каталог',async()=>fixture(async({root,manifest,sha256,store,values})=>{
     const receipt=await uploadExternalBackup(values);
