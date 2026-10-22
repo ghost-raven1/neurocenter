@@ -1,4 +1,5 @@
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {notifyAssetSourceChange} from './asset-source-events';
 import { LocalAssetIngest } from './local-asset-ingest';
 import {LocalSkillIngest} from './local-skill-ingest';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
@@ -31,6 +32,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     readonly sources=new AssetSourceSnapshots(this.pool,require('../../../shared/asset-source.lock.json'));
     readonly archives=new AssetSourceArchiveUploads(this.pool,this.sources,path.dirname(this.blobs.directory));
     private worker:AssetImportWorker;private timer?:ReturnType<typeof setInterval>;
+    private sourcesSettled=false;private stopping=false;private sourceCheck?:Promise<void>;private readonly sourceAbort=new AbortController();
     constructor(private readonly catalog:CatalogService,private readonly access:AccessDb,private readonly runtime:RuntimeArtifacts) {}
     prepareLocal(...args:Parameters<LocalAssetIngest['prepare']>){return new LocalAssetIngest(this.pool,this.blobs).prepare(...args);}
     prepareLocalSkill(...args:Parameters<LocalSkillIngest['prepare']>){return new LocalSkillIngest(this.pool,this.blobs).prepare(...args);}
@@ -47,13 +49,20 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
     async exportLocal(input:{assetId:string;sourceVersion:string;sourceSha256:string}){return (await this.exportLocalReceipt(input)).descriptor;}
     recordLocal(...args:Parameters<LocalAssetIngest['record']>){return new LocalAssetIngest(this.pool,this.blobs).record(...args);}
     catalogReady():Promise<void>{return this.catalog.ensureSchema();}
+    /** One lifecycle attempt at a time; verified, absent and invalid metadata stop automatic polling. */
+    private prepareSources():Promise<void>{
+        if(this.stopping||this.sourcesSettled)return Promise.resolve();
+        return this.sourceCheck??=this.sources.bootstrap(()=>requireFeaturesEnabled(['asset_sources'],undefined,undefined,this.sourceAbort.signal),this.sourceAbort.signal)
+            .then(async({retry,published})=>{this.sourcesSettled=!retry;if(published&&!this.stopping)await notifyAssetSourceChange(this.sourceAbort.signal);}).finally(()=>{this.sourceCheck=undefined;});
+    }
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
-        await this.sources.bootstrap(()=>requireFeaturesEnabled(['asset_sources']));
+        await this.prepareSources();
+        if(this.stopping)return;
         this.worker=new AssetImportWorker(this.pool,this.jobs,this.sources,this.blobs,this.runtime);this.worker.kick();
-        this.timer=setInterval(()=>this.worker.kick(),5000);this.timer.unref();
+        this.timer=setInterval(()=>{void this.prepareSources().finally(()=>{if(!this.stopping)this.worker.kick();}).catch(()=>undefined);},5000);this.timer.unref();
     }
-    async onApplicationShutdown():Promise<void>{if(this.timer){clearInterval(this.timer);}await this.worker?.stop();await this.pool.end();}
+    async onApplicationShutdown():Promise<void>{this.stopping=true;this.sourceAbort.abort();if(this.timer){clearInterval(this.timer);}await this.worker?.stop();await this.sourceCheck?.catch(()=>undefined);await this.pool.end();}
     async actor(req:Request):Promise<string>{const actor=await readModelActor(req,this.access);if(actor.activeRole!=='Главный админ'){throw new ForbiddenException('Управлять источниками и общим каталогом может главный администратор.');}return actor.email;}
     async view(){
         const {snapshot,last}=await this.sources.status();

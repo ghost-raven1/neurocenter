@@ -29,13 +29,13 @@ export async function sourceAvailabilityFixture(){
     const adminUrl=ownedTestPostgresAdmin(connection),disk=await fs.statfs(process.cwd(),{bigint:true});
     if(disk.bavail*disk.bsize<4n*1024n**3n)throw Error('Source availability fixture requires 4GiB free space.');
     const admin=new Pool({connectionString:adminUrl.href,max:1}),name='nc_source_availability_'+randomUUID().replaceAll('-','');
-    let root:string|undefined,pool:Pool|undefined,observer:Pool|undefined,created=false,started=false,service:AssetSourcesService|undefined;
+    let root:string|undefined,pool:Pool|undefined,observer:Pool|undefined,created=false,started=false,stopped=false,service:AssetSourcesService|undefined;
     const workers:AssetImportWorker[]=[],extraPools:Pool[]=[];
     const before=(await admin.query<{datname:string}>('SELECT datname FROM pg_database ORDER BY datname')).rows.map(row=>row.datname);
     async function close(){
         const errors:unknown[]=[];
         for(const worker of workers){try{await worker.stop();}catch(error){errors.push(error);}}
-        try{if(started)await service!.onApplicationShutdown();else await pool?.end();}catch(error){errors.push(error);}
+        try{if(started)await stop();else await pool?.end();}catch(error){errors.push(error);}
         for(const extra of extraPools){try{await extra.end();}catch(error){errors.push(error);}}
         try{await observer?.end();}catch(error){errors.push(error);}
         try{
@@ -46,17 +46,25 @@ export async function sourceAvailabilityFixture(){
         }finally{await admin.end();if(root)await fs.rm(root,{recursive:true,force:true});}
         if(errors.length)throw errors[0];
     }
+    async function stop(){if(started&&!stopped){stopped=true;await service!.onApplicationShutdown();}}
     try{
         await admin.query('CREATE DATABASE '+name);created=true;
         const url=new URL(adminUrl);url.pathname='/'+name;
         pool=new Pool({connectionString:url.href,max:4});observer=new Pool({connectionString:url.href,max:1});
         root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-source-availability-'));
         vi.stubEnv('RUNTIME_ARTIFACT_DIR',root);vi.stubEnv('ASSET_SOURCE_MODE','online');
-        vi.stubEnv('FEATURE_FLAGS_SERVICE_URL','https://flags.owned.invalid');vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',randomUUID());
-        const flags={off:false,unavailable:false,calls:0};
+        vi.stubEnv('FEATURE_FLAGS_SERVICE_URL','https://flags.owned.invalid');vi.stubEnv('API_GATEWAY_URL','https://gateway.owned.invalid');vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',randomUUID());
+        const flags={off:false,unavailable:false,calls:0,pending:undefined as Promise<void>|undefined,started:undefined as (()=>void)|undefined};
+        const events={unavailable:false,cancelled:0,calls:[] as Array<{url:string;method:string|undefined;sections:string[];durableSnapshots:number;signal:boolean}>};
         vi.stubGlobal('fetch',vi.fn(async(input:string|URL|Request,init?:RequestInit)=>{
+            if(String(input)==='https://gateway.owned.invalid/internal/events'){
+                expectHeader(init);const durableSnapshots=Number((await observer!.query('SELECT count(*) AS count FROM asset_source_snapshots')).rows[0].count);
+                events.calls.push({url:String(input),method:init?.method,sections:JSON.parse(String(init?.body)).sections,durableSnapshots,signal:init?.signal instanceof AbortSignal});
+                if(events.unavailable)throw Error('Owned Gateway unavailable');
+                return new Response(new ReadableStream({start(controller){controller.enqueue(Buffer.from('{"ok":true}'));},cancel(){events.cancelled++;}}));
+            }
             if(String(input)!=='https://flags.owned.invalid/internal/feature-flags/evaluated')throw Error('Unexpected network request in owned source fixture');
-            expectHeader(init);flags.calls++;
+            expectHeader(init);flags.calls++;flags.started?.();await flags.pending;
             return Response.json(evaluateFeatureFlags(Object.fromEntries(FEATURE_FLAG_KEYS.map(key=>[key,!(flags.off&&key==='asset_sources')]))),{status:flags.unavailable?503:200});
         }));
         function expectHeader(init?:RequestInit){if(new Headers(init?.headers).get('x-neurocenter-internal')!==process.env.NEUROCENTER_INTERNAL_TOKEN)throw Error('Missing internal fixture credential');}
@@ -70,11 +78,11 @@ export async function sourceAvailabilityFixture(){
         const request=vi.fn(async()=>{throw Error('GitHub unavailable in owned fixture');}),sources=new AssetSourceSnapshots(pool,pin,request),jobs=new AssetImportRepository(pool),blobs=new AssetBlobStore(pool);
         const runtime={importArchive:vi.fn(async()=>{throw Error('Inline tool does not need a runtime archive');})} as unknown as RuntimeArtifacts;
         const access=Object.assign(Object.create(AccessDb.prototype),{pool}) as AccessDb;
-        service=Object.assign(Object.create(AssetSourcesService.prototype),{pool,sources,jobs,blobs,runtime,access,catalog:{ensureSchema:()=>ensureCatalogSchema(pool!)},worker:{kick:vi.fn()}}) as AssetSourcesService;
+        service=Object.assign(Object.create(AssetSourcesService.prototype),{pool,sources,jobs,blobs,runtime,access,catalog:{ensureSchema:()=>ensureCatalogSchema(pool!)},sourceAbort:new AbortController(),sourcesSettled:false,stopping:false}) as AssetSourcesService;
         const controller=new AssetSourcesController(service),req={headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN,'x-bridge-actor':encodeURIComponent(JSON.stringify({email:actor,activeRole:'Главный админ'}))}} as unknown as Request;
         const directory=path.join(root,'.asset-source-metadata');
         async function prepare(){await fs.mkdir(directory,{recursive:true});for(const bytes of [indexBytes,serializeAsset(asset)])await fs.writeFile(path.join(directory,assetDigest(bytes)+'.json'),bytes,{mode:0o400});}
-        return{pool,observer,root,name,pin,index,record,indexBytes,request,sources,jobs,blobs,service,controller,req,flags,prepare,close,
+        return{pool,observer,root,name,pin,index,record,indexBytes,request,sources,jobs,blobs,service,controller,req,flags,events,prepare,close,stop,
             startup:async()=>{started=true;await service!.onModuleInit();},
             flush:()=> (service as unknown as {worker:AssetImportWorker}).worker.flush(),
             worker:()=>{const worker=new AssetImportWorker(pool!,jobs,sources,blobs,runtime);workers.push(worker);return worker;},

@@ -5,6 +5,7 @@ import { AssetSourceClient, validateSourcePin, type IAssetSourcePin, type AssetS
 import {assetSourceTransport} from './source-cache';
 
 export interface ISourceSnapshot {pin:IAssetSourcePin;index:AssetIndex;assets:ResolvedAsset[];checked_at:string|Date;archive_sha256?:string|null}
+interface IBootstrapAdmission {admit:()=>Promise<void>;signal?:AbortSignal;published?:true}
 /** Metadata refresh не скачивает binaries и не меняет каталог; каждый intent сохраняет выбранный commit. */
 export class AssetSourceSnapshots {
     constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch,private readonly transport:AssetSourceTransport=assetSourceTransport()) {}
@@ -15,15 +16,24 @@ export class AssetSourceSnapshots {
         const snapshot=await this.latest(),last=(await this.pool.query<{attempted_at:Date;message:string}>('SELECT attempted_at,message FROM asset_source_refresh WHERE id=true')).rows[0];
         return {snapshot,last};
     }
-    /** Startup accepts only prepared bytes of the trusted pin; GET never loads or publishes metadata. */
-    async bootstrap(admit:()=>Promise<void>):Promise<void>{
+    /** Only unavailable admission retries; absent or invalid local bytes settle without any source network fallback. */
+    async bootstrap(admit:()=>Promise<void>,signal?:AbortSignal):Promise<{retry:boolean;published?:true}>{
+        let retry=false;
+        const admission:IBootstrapAdmission={signal,admit:async()=>{
+            signal?.throwIfAborted();
+            try{await admit();}catch(error){retry=!signal?.aborted;throw error;}
+            signal?.throwIfAborted();
+        }};
         try{
-            if(await this.latest()||!this.initialPin||!this.transport.cache)return;
+            signal?.throwIfAborted();
+            if(await this.latest()||!this.initialPin||!this.transport.cache)return{retry:false};
             const pin=validateSourcePin(this.initialPin);
-            if(await this.transport.cache.read(pin.index.sha256,512*1024)===undefined)return;
-            await admit();await this.load(pin,undefined,admit);
+            if(await this.transport.cache.read(pin.index.sha256,512*1024)===undefined)return{retry:false};
+            await admission.admit();await this.load(pin,undefined,admission);return admission.published?{retry:false,published:true}:{retry:false};
         }catch(error){
+            if(signal?.aborted)return{retry:false};
             await this.pool.query('INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),$1) ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=EXCLUDED.message',[error instanceof Error?error.message:'Не удалось проверить локальную поставку.']).catch(()=>undefined);
+            return{retry};
         }
     }
     async get(commit:string,repository='ghost-raven1/neurocenter-assets'):Promise<ISourceSnapshot> {
@@ -75,9 +85,9 @@ export class AssetSourceSnapshots {
             await this.pool.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");return saved;
         }catch(error){await this.pool.query('INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),$1) ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=EXCLUDED.message',[error instanceof Error?error.message:'Не удалось проверить источник.']).catch(()=>undefined);throw error;}
     }
-    private async load(pin:IAssetSourcePin,index?:AssetIndex,bootstrap?:()=>Promise<void>):Promise<ISourceSnapshot> {
+    private async load(pin:IAssetSourcePin,index?:AssetIndex,bootstrap?:IBootstrapAdmission):Promise<ISourceSnapshot> {
         const transport=bootstrap?{cache:this.transport.cache,offline:true}:this.transport;
-        const source=new AssetSourceClient(pin,this.request,undefined,transport),checked=index??await source.index();
+        const source=new AssetSourceClient(pin,this.request,bootstrap?.signal,transport),checked=index??await source.index();
         if(checked.assets.length>300){throw new ConflictException('Источник содержит более 300 описей; импорт этой версии не поддерживается.');}
         const records:ResolvedAsset[]=[];let bytes=0;
         for(const entry of checked.assets){const record=await source.descriptor(entry);bytes+=Buffer.byteLength(JSON.stringify(record.asset));if(bytes>32*1024*1024){throw new ConflictException('Metadata источника превышает 32 МиБ.');}records.push(record);}
@@ -90,7 +100,7 @@ export class AssetSourceSnapshots {
         if(!/^[a-f0-9]{64}$/.test(sha))throw new ConflictException('Некорректный SHA архива источника.');
         return this.save(pin,index,records,sha,publish);
     }
-    private async save(pin:IAssetSourcePin,checked:AssetIndex,records:ResolvedAsset[],archiveSha?:string|null,publish?:(client:PoolClient)=>Promise<void>,bootstrap?:()=>Promise<void>):Promise<ISourceSnapshot>{
+    private async save(pin:IAssetSourcePin,checked:AssetIndex,records:ResolvedAsset[],archiveSha?:string|null,publish?:(client:PoolClient)=>Promise<void>,bootstrap?:IBootstrapAdmission):Promise<ISourceSnapshot>{
         const client=await this.pool.connect();
         let discard=false;
         try{
@@ -103,12 +113,12 @@ export class AssetSourceSnapshots {
             const previous=await client.query<{index:AssetIndex;pin:IAssetSourcePin}>('SELECT index,pin FROM asset_source_snapshots');
             if(previous.rows.some(row=>row.pin.commit===pin.commit&&row.pin.index.sha256!==pin.index.sha256)){throw new ConflictException('Байты описи ранее проверенного commit изменились.');}
             try{for(const row of previous.rows){assertIndexEvolution(row.index,checked);}}catch{throw new ConflictException('Источник переписал или удалил уже опубликованную версию ассета. Обновление отклонено.');}
-            await bootstrap?.();
+            await bootstrap?.admit();bootstrap?.signal?.throwIfAborted();
             await publish?.(client);
             const {rows}=await client.query<ISourceSnapshot>(`INSERT INTO asset_source_snapshots(commit,pin,index,assets,archive_sha256) VALUES($1,$2::jsonb,$3::jsonb,$4::jsonb,$5)
                 ON CONFLICT(commit) DO UPDATE SET checked_at=now(),archive_sha256=CASE WHEN $6::boolean THEN EXCLUDED.archive_sha256 ELSE asset_source_snapshots.archive_sha256 END RETURNING *`,[pin.commit,JSON.stringify(pin),JSON.stringify(checked),JSON.stringify(records),archiveSha??null,archiveSha!==undefined]);
             await client.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");
-            await client.query('COMMIT');return rows[0];
+            await client.query('COMMIT');if(bootstrap)bootstrap.published=true;return rows[0];
         }catch(error){try{await client.query('ROLLBACK');}catch{discard=true;}throw error;}finally{client.release(discard);}
     }
 }
