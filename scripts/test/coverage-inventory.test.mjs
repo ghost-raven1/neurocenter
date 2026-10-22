@@ -70,6 +70,7 @@ test('The inventory safety tests participate in the normal npm check discovery',
 
 const syntheticVitest=String.raw`
 import fs from 'node:fs/promises';import path from 'node:path';
+if(!process.argv.includes('--maxWorkers='+process.env.EXPECTED_MAX_WORKERS))throw Error('Actual worker limit differs from the requested limit.');
 const scenario=process.env.SYNTHETIC_COVERAGE_CASE,cwd=process.cwd(),selected=path.join(cwd,'test/selected.test.ts'),missing=path.join(cwd,'test/workspace-bounds.test.ts');
 const moduleIds=scenario==='success'?[selected]:[selected,missing];
 await fs.writeFile(process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE,JSON.stringify({schemaVersion:1,phase:'before-collection',cwd,moduleIds}),{mode:0o600});
@@ -99,9 +100,11 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  await fs.mkdir(path.join(root,'scripts/production'),{recursive:true});await fs.writeFile(path.join(root,'scripts/production/cli.mjs'),'throw Error("Must never execute an inventoried production CLI");\n');
  await fs.mkdir(path.join(root,'bridge-dist'),{recursive:true});await fs.writeFile(path.join(root,'bridge-dist/install.sh'),'#!/bin/bash\nexit 99\n');
  assert.equal(spawnSync('git',['init','--quiet'],{cwd:root}).status,0);
- const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service','--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,SYNTHETIC_COVERAGE_CASE:scenario},encoding:'utf8',timeout:15000});
+ const workers=scenario==='success'?1:2;
+ const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service',...(workers===1?['--max-workers','1']:[]),'--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,SYNTHETIC_COVERAGE_CASE:scenario,EXPECTED_MAX_WORKERS:String(workers)},encoding:'utf8',timeout:15000});
  assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,scenario==='success'?0:1,result.stdout+'\n'+result.stderr);
  const manifest=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8')),item=manifest.packages[0];
+ assert.equal(manifest.limits.maxWorkers,workers);assert.ok(item.command.includes('--maxWorkers='+workers));
  assert.equal(item.exitCode,0);assert.equal(manifest.complete,scenario==='success');assert.equal(manifest.suiteCompletion,scenario==='success');
  assert.equal(manifest.denominator.allWorkspaceSourcesIncluded,false);
  const sources=manifest.sourceInventory.files;
@@ -116,4 +119,14 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  assert.equal(rawReport.numFailedTests,0);assert.equal(rawReport.numFailedTestSuites,scenario==='suite-failed'?1:0);
  assert.equal(rawReport.testResults.length,scenario==='suite-failed'?2:1);
  assert.equal(JSON.parse(await fs.readFile(path.join(output,'feature-flags-service/test-file-inventory.json'),'utf8')).phase,'before-collection');
+});
+
+test('Invalid worker limits fail before creating a report or starting any test worker',async t=>{
+ const root=fileURLToPath(new URL('../../',import.meta.url)),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-workers-'));
+ t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+ for(const [index,value]of [undefined,'0','3','-1','01','1.5','many'].entries()){
+  const output=path.join(directory,'output-'+index),args=[path.join(root,'scripts/coverage/run.mjs'),'--output',output,'--max-workers',...(value===undefined?[]:[value])];
+  const result=spawnSync(process.execPath,args,{cwd:root,encoding:'utf8',timeout:15000});
+  assert.equal(result.status,1);assert.match(result.stderr,/--max-workers must be 1 or 2/);await assert.rejects(fs.stat(output),{code:'ENOENT'});
+ }
 });
