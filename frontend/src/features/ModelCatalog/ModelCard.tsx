@@ -13,10 +13,11 @@ interface IProps {
     disabled?: boolean; onEdit?: () => void; onRemove?: () => void; onConfigure?: () => void;
     assignmentUnavailableReason?: string;onConnect?:()=>void;connectionUnavailableReason?:string;
     onChat?: () => void; chatUnavailableReason?: string;
+    onSetupProvider?: () => void;
 }
 
 /** В карточке видны назначение, подключение и главное действие; технические сведения открываются отдельно. */
-export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,onChat,chatUnavailableReason }: IProps): JSX.Element {
+export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,onChat,chatUnavailableReason,onSetupProvider }: IProps): JSX.Element {
     const remote = model.runtime !== 'ollama';
     return <article className={`model-card${assigned ? ' model-card_assigned' : ''}`} aria-label={model.name}>
         <div className="model-card__heading">
@@ -43,6 +44,8 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             </span></Tooltip>}
             {remote && canHost && !model.archivedAt && onConfigure && <FeatureButton features={['model_catalog']} disabled={busy || disabled}
                 aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</FeatureButton>}
+            {model.runtime === 'remote-openai' && model.capability !== 'embedding' && projectSelected && canAssign && assigned && onSetupProvider && !model.archivedAt
+                && <Button disabled={busy || disabled} onClick={onSetupProvider}>Настроить в OpenCode</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>
                 <FeatureButton features={['model_catalog','rag_sync','model_hosting']} type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</FeatureButton>
             </span></Tooltip>}

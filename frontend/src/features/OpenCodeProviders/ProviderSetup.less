@@ -1,0 +1,11 @@
+.provider-setup {
+    max-width: calc(100vw - 24px);
+    .ant-modal-body { max-height: calc(100vh - 160px); overflow-y: auto; }
+    &__content { width: 100%; min-width: 0; label { display: flex; flex-direction: column; gap: 6px; } .ant-select { width: 100%; } }
+    .ant-alert, .ant-typography { overflow-wrap: anywhere; }
+    summary { cursor: pointer; padding: 8px 0; }
+}
+@media (max-width: 600px) {
+    .provider-setup .ant-modal-body { padding: 16px; }
+    .provider-setup .ant-btn { height: auto; min-height: 32px; white-space: normal; }
+}

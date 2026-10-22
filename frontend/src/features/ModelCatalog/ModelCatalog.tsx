@@ -1,3 +1,5 @@
+import {ProviderSetupModal} from '../OpenCodeProviders/ProviderSetupModal';
+import {providerModelEligible} from '../OpenCodeProviders/model';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {useEmbeddingTarget,EmbeddingTargetFields} from '../ProjectEmbedding/EmbeddingTarget';
 import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, Typography } from 'antd';
@@ -41,6 +43,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [editing, setEditing] = useState<ICatalogModel | 'new' | 'api' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
+    const [providerSetup, setProviderSetup] = useState<{scope: string; modelId?: string}>();
     const [chatId, setChatId] = useState<string | null>(null);
     const [connectionHint, setConnectionHint] = useState<IRemoteConnectionHint>();
     const [busy, setBusy] = useState<string | null>(null);
@@ -49,8 +52,11 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     useEffect(() => {
         if (previousScope.current === formScope) return;
         previousScope.current = formScope;
-        setViewId(null); setEditing(null); setConnection(null); setImporting(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
+        setProviderSetup(undefined); setViewId(null); setEditing(null); setConnection(null); setImporting(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
     }, [formScope]);
+    const openProvider = (modelId?: string): void => {
+        if (captureOwner()() && previousScope.current === formScope && projectId && canManage) setProviderSetup({scope: formScope, modelId});
+    };
     const lock = useRef(false);
     const assigned = useMemo(() => new Set(catalog?.assignedModelIds ?? []), [catalog]);
     const shown = useMemo(() => catalog ? filterCatalogModels(catalog, query, !!projectId && assignedOnly) : [], [catalog, query, projectId, assignedOnly]);
@@ -106,9 +112,11 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         <div className="model-catalog__heading">
             <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
                 <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере и подключённые API.'}</Typography.Text></div>
-            {isMain && <Space wrap><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
+            {(isMain || projectId && canManage) && <Space wrap>
+                {projectId && canManage && <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>}
+                {isMain && <><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
                 <FeatureButton features={['model_catalog']} onClick={() => setEditing('api')}>Подключить API</FeatureButton>
-                <FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></Space>}
+                <FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></>}</Space>}
         </div>
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
@@ -126,6 +134,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                     canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
                     onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
                     onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)}
+                    onSetupProvider={providerModelEligible(model) ? () => openProvider(model.id) : undefined}
                     onChat={() => setChatId(model.id)} chatUnavailableReason={modelChatUnavailableReason(model, canChat, !!projectId, assigned.has(model.id))} />
             </Col>)}
         </Row> : <Empty description={query ? 'По этому запросу модели не найдены' : assignedOnly && projectId ? 'В проект пока не добавлены модели' : 'Пока нет доступных моделей'}>
@@ -144,6 +153,9 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {chatting && canChat && (!projectId || assigned.has(chatting.id)) && <ModelChatModal key={JSON.stringify([scope, projectId, chatting.id])} model={chatting} projectId={projectId} projectName={projectName}
             unavailableReason={loading ? 'Дождитесь обновления каталога перед следующим запросом.' : loadError ? 'Обновите каталог перед следующим запросом.'
                 : modelChatUnavailableReason(chatting, canChat, !!projectId, assigned.has(chatting.id))} onClose={() => setChatId(null)} />}
+        {projectId && canManage && providerSetup?.scope === formScope && <ProviderSetupModal key={formScope} bridge={embeddingTarget.bridge} projectId={projectId} projectName={projectName}
+            models={catalog?.items.filter(model => assigned.has(model.id)) ?? []} initialModelId={providerSetup.modelId} canManage={canManage} canPrepareConnector={isMain}
+            catalogReady={!!catalog && !loading && !loadError} catalogError={loadError} onReloadModels={() => {void refresh();}} onClose={() => {if (captureOwner()()) setProviderSetup(current => current === providerSetup ? undefined : current);}} />}
         {isMain && importing && <OpenCodeImportModal key={`${scope}:${projectId||'common'}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
             const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}

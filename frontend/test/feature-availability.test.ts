@@ -9,8 +9,17 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 21 ключ общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(21); expect(requireEvaluatedFeatureFlags(evaluated())).toEqual(evaluated());
+    it('Проверяет все 23 ключа общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(featureFlagKeys).toHaveLength(23); expect(new Set(featureFlagKeys).size).toBe(23);
+        expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
+        expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
+        expect(requireEvaluatedFeatureFlags(evaluated())).toEqual(evaluated());
+        for (const key of ['opencode_providers', 'codex_connector'] as const) {
+            for (const field of ['flags', 'configured', 'blockedBy'] as const) {
+                const data = evaluated(), incomplete = { ...data, [field]: Object.fromEntries(Object.entries(data[field]).filter(([item]) => item !== key)) };
+                expect(() => requireEvaluatedFeatureFlags(incomplete)).toThrow('полный список');
+            }
+        }
         expect(() => requireEvaluatedFeatureFlags({ flags: { model_hosting: true, tool_builds: true, rag_sync: true } })).toThrow('полный список');
         const broken = evaluated(); broken.blockedBy.group_chat = ['unknown' as never]; expect(() => requireEvaluatedFeatureFlags(broken)).toThrow('полный список');
         const conflict = evaluated(); conflict.configured.model_chat = false; expect(() => requireEvaluatedFeatureFlags(conflict)).toThrow('полный список');
@@ -27,6 +36,9 @@ describe('Единая доступность функций', () => {
         const items = featureDefinitions.map(item => ({ ...item, enabled: item.key !== 'model_hosting', revision: 1, updatedAt: null, updatedBy: null }));
         expect(configuredBlockers('group_chat', items)).toEqual(['model_hosting']);
         expect(items.find(item => item.key === 'group_chat')?.enabled).toBe(true);
+        const withoutModels = items.map(item => ({ ...item, enabled: item.key !== 'model_catalog' }));
+        expect(configuredBlockers('opencode_providers', withoutModels)).toEqual(['model_catalog']);
+        expect(configuredBlockers('codex_connector', withoutModels)).toEqual(['model_catalog']);
     });
     it('Ошибка обновления снимает прежнее разрешение; восстановление требует нового полного ответа', async () => {
         let state = emptyAvailability(); const read = vi.fn(async (): Promise<unknown> => evaluated());

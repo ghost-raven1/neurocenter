@@ -1,3 +1,4 @@
+import {ProjectProviderSetup} from '../OpenCodeProviders/ProjectProviderSetup';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Col, Empty, Input, Modal, Row, Space, Spin, Tooltip, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -24,7 +25,7 @@ import { AgentTrialModal } from './AgentTrialModal';
 export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const { projectId, projectName, embedded, canManage, isMain, bridge } = props;
     const user=useSelector((state:RootState)=>state.userBlock.user);
-    const { scope } = useAuthRequestOwner(), history = useHistory();
+    const { scope, captureOwner } = useAuthRequestOwner(), history = useHistory();
     const { catalog, loading, error, refresh } = useAgentCatalog(projectId);
     const canReadTrials = !!projectId && projectRoleLevel(user, projectId) >= 2;
     const readiness = useAgentReadiness(projectId, canReadTrials, catalog?.revision ?? null);
@@ -34,8 +35,10 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const [editing, setEditing] = useState<ICatalogAgent | 'new'>(), [viewId, setViewId] = useState<string>();
     const [projectEditing, setProjectEditing] = useState<{assignment: IProjectAgent; revision: number}>();
     const [trialAgentId, setTrialAgentId] = useState<string>();
+    const providerScope = JSON.stringify([scope, projectId]);
+    const [providerSetup, setProviderSetup] = useState<{scope: string}>();
     const confirmation = useRef<{destroy(): void}>();
-    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setTrialAgentId(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
+    useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setTrialAgentId(undefined); setProviderSetup(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
     const assignments = useMemo(() => new Map(catalog?.assignments.map(item => [item.agentId, item]) ?? []), [catalog]);
     const shown = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly, isMain && showArchive) : [], [catalog, query, projectId, projectOnly, isMain, showArchive]);
     const connection = agentConnection(props);
@@ -88,6 +91,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
             action={<Button loading={readiness.loading} onClick={() => { void readiness.refresh(); }}>Перечитать испытания</Button>} />}
         {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} compact showReadinessNotice={false} />
             <div className="agent-catalog__apply"><div><Typography.Text strong>Настройки OpenCode</Typography.Text><Typography.Paragraph type="secondary">{connection.reason || 'Применяем только управляемые файлы агентов. Изменения появятся при следующем запуске OpenCode.'}</Typography.Paragraph></div>
+                {canManage && <Button onClick={() => {if (captureOwner()()) setProviderSetup({scope: providerScope});}}>Настроить провайдера</Button>}
                 {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
             </div></div>}
         {!!cleanup.length && <Alert className="agent-catalog__notice" type="warning" showIcon message={`Ожидают удаления из OpenCode: ${cleanup.map(item => item.card.name).join(', ')}`}
@@ -108,6 +112,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         {viewing && <AgentDetails agent={viewing} assignment={assignments.get(viewing.id)} onClose={() => setViewId(undefined)}
             readiness={readiness.items.find(item => item.agentId === viewing.id)} trialChecking={checkingTrial(viewing.id)} onTrial={canReadTrials && readiness.items.some(item => item.agentId === viewing.id)
                 ? () => { setViewId(undefined); setTrialAgentId(viewing.id); } : undefined} />}
+        {projectId && canManage && providerSetup?.scope === providerScope && <ProjectProviderSetup key={JSON.stringify([scope, projectId])} projectId={projectId} projectName={projectName} bridge={bridge} canManage={canManage} canPrepareConnector={isMain} onClose={() => {if (captureOwner()()) setProviderSetup(current => current === providerSetup ? undefined : current);}} />}
         {isMain && editing && <AgentEditModal key={editing === 'new' ? 'new' : editing.id + ':' + editing.version} agent={editing === 'new' ? undefined : editing} onClose={() => setEditing(undefined)} onSaved={saved} />}
         {canManage && projectId && projectEditing && <ProjectAgentEditor key={projectEditing.assignment.agentId + ':' + projectEditing.revision} projectId={projectId} {...projectEditing} onClose={() => setProjectEditing(undefined)}
             onSave={(agent, patch, revision) => actions.mutate({ kind: 'configure', agent, patch, revision })} />}

@@ -27,7 +27,7 @@ export function adminSetupHooks() {
         effect(effect: () => void | (() => void), deps: readonly unknown[]) {
             const index = cursor++, old = slots[index];
             if (old && same(old.deps, deps)) return;
-            const slot = slots[index] = {deps, effect};
+            const slot: Slot = slots[index] = {deps, effect};
             pending.push(() => { old?.cleanup?.(); slot.cleanup = effect() || undefined; });
         },
     };

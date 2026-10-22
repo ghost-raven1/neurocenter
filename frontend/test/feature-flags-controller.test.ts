@@ -25,7 +25,7 @@ describe('Состояние функций платформы', () => {
         expect(h.state.items).toBeNull(); expect(h.state.readError).toBe('Нет связи');
         await h.controller.save('model_hosting', false); expect(h.write).not.toHaveBeenCalled();
     });
-    it('Требует все 21 уникальную функций и корректное булево состояние', () => {
+    it('Требует полный набор уникальных функций и корректное булево состояние', () => {
         expect(requireFeatureFlagList({ items: [...list().items].reverse() }).map(item => item.key)).toEqual(featureFlagKeys);
         expect(() => requireFeatureFlagList({ items: [flag('model_hosting')] })).toThrow('неполный');
         expect(() => requireFeatureFlagList({ items: Array(featureFlagKeys.length).fill(flag('model_hosting')) })).toThrow('повторяющиеся');
