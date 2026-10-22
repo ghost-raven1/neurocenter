@@ -19,7 +19,7 @@
 
 Коллекции сериализуются и между экземплярами хранилища в одном процессе. Ревью выявило и закрыло гонку: фоновая доставка старого commit могла переместить новый prepared по тому же пути. Архивизация теперь блокирует коллекцию и повторно читает журнал, доставка работает со стабильным именем outbox. Добавлен детерминированный regression test. Положительные pins, история поколений и полный сканер зависимостей сохранены; сканер видит также ссылки из outbox.
 
-Ключевые исходники: [журнал](../services/skills-service/src/storage/skill-journal.ts), [outbox](../services/skills-service/src/storage/skill-audit-outbox.ts), [сводки и HTTP-клиент](../services/skills-service/src/storage/skill-audit.ts), [общий контракт](../services/shared/skill-audit.cjs), [SQL-квитанции](../services/catalog-service/src/publication/skill-audit-repository.ts), [сообщения интерфейса](../frontend/src/modules/Skills/skillMutationFeedback.ts).
+Ключевые исходники: [журнал](../services/skills-service/src/storage/skill-journal.ts), [outbox](../services/skills-service/src/storage/skill-audit-outbox.ts), [сводки и HTTP-клиент](../services/skills-service/src/storage/skill-audit.ts), [общий контракт](../services/shared/skill-audit.cjs), [SQL-квитанции](../services/catalog-service/src/publication/skill-audit-repository.ts), [сообщения интерфейса](../frontend/src/features/Catalog/skillMutationFeedback.ts).
 
 ## Проверки кода и сборок
 
