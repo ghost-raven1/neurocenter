@@ -25,7 +25,7 @@ async function fixture(t, {report = valid, raw, code = 0, signal, missing = fals
             await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
         }
     }
-    for (const name of ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test']) {
+    for (const name of ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test']) {
         await fs.mkdir(path.join(checkout, name), {recursive: true});
     }
     for (const [index, name] of workspacePackages.entries()) {

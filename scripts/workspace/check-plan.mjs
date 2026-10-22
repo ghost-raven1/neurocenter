@@ -6,7 +6,7 @@ export const workspacePackages = ['services/oauth2-bridge', 'services/catalog-se
 
 /** Общие контракты и builder входят в приёмку вместе с сервисами, каждый файл ровно один раз. */
 export function nodeTestFiles(root) {
-    return ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test'].flatMap(directory =>
+    return ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test'].flatMap(directory =>
         fs.readdirSync(path.join(root, directory)).filter(file => /\.(?:mjs|cjs)$/.test(file)
             && /(?:from\s*['"]node:test['"]|require\(['"]node:test['"]\))/.test(fs.readFileSync(path.join(root, directory, file), 'utf8')))
             .map(file => path.join(directory, file))).sort();

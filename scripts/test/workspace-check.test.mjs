@@ -184,7 +184,7 @@ test('Общий check проверяет свежий dist, новые конт
     const files = nodeTestFiles(root), plan = checkPlan(root);
     for (const file of ['scripts/test/auth-security.mjs', 'scripts/test/blitz-flow.test.mjs', 'scripts/test/tool-runtime-source.test.mjs',
         'scripts/test/repository-source.test.mjs', 'scripts/catalog-plugins/test/runtime-source.test.mjs', 'scripts/test/workspace-check.test.mjs',
-        'scripts/test/compose-install-integration.test.mjs',
+        'scripts/test/compose-install-integration.test.mjs', 'scripts/agent-kit/test/generate.test.mjs', 'scripts/agent-kit/test/install-codex.test.mjs',
         'scripts/test/assets-sync.test.mjs', 'scripts/test/assets-startup.test.mjs', 'scripts/test/model-runtime-topology.test.mjs',
         'scripts/test/model-startup.test.mjs', 'scripts/test/dev-model-credentials.test.mjs', 'scripts/test/production-model-credentials.test.mjs']) assert.ok(files.includes(file), file);
     assert.equal(files.length, new Set(files).size);

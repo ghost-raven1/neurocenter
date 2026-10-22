@@ -1,0 +1,4 @@
+interface:
+  display_name: "Задача до результата"
+  short_description: "Реализация, регресс и независимая проверка задачи"
+  default_prompt: "Используй $neurocenter-task-flow: доведи текущую задачу до проверенного результата."
