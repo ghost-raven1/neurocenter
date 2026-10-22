@@ -8,14 +8,15 @@ import { modelCapabilityLabels } from './modelCatalogState';
 import type { ICatalogModel, IModelCreate } from './types';
 import { createBridgeRequestKey } from '../McpBridge/bridgeRequestKey';
 
-interface IProps { model?: ICatalogModel; onClose: () => void; onSaved: (saved?: ICatalogModel) => Promise<void>; }
+interface IProps { model?: ICatalogModel; connectApi?: boolean; onClose: () => void; onSaved: (saved?: ICatalogModel) => Promise<void>; }
 export const ollamaModelPattern = /^(?:[a-z0-9_-]+\/)?[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$/i;
 
 /** Редактор API и метаданных; локальные веса поступают только из проверенного ассета. */
-export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element {
+export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: IProps): JSX.Element {
     const { captureOwner } = useAuthRequestOwner();
     const [form] = Form.useForm<IModelCreate>();
-    const capability = Form.useWatch('capability', form) ?? model?.capability ?? 'embedding';
+    const defaultCapability = connectApi ? 'chat' : 'embedding';
+    const capability = Form.useWatch('capability', form) ?? model?.capability ?? defaultCapability;
     const runtime = Form.useWatch('runtime', form) ?? model?.runtime ?? 'remote-openai';
     const remote = runtime !== 'ollama';
     const [busy, setBusy] = useState(false);
@@ -47,13 +48,13 @@ export function ModelEditModal({ model, onClose, onSaved }: IProps): JSX.Element
             if (owns()) setBusy(false);
         }
     };
-    return <Modal open centered className="model-details" title={model ? 'Изменить модель' : 'Добавить модель в каталог'} footer={null} width={600}
+    return <Modal open centered className="model-details" title={model ? 'Изменить модель' : connectApi ? 'Подключить API' : 'Добавить модель в каталог'} footer={null} width={600}
         onCancel={() => { if (!lock.current) onClose(); }} closable={!busy} maskClosable={!busy} keyboard={!busy}>
         <Form form={form} name="model-catalog-edit" layout="vertical" disabled={busy}
-            initialValues={model ?? { capability: 'embedding', runtime: 'remote-openai' }} onFinish={values => { void submit(values); }}>
+            initialValues={model ?? { capability: defaultCapability, runtime: 'remote-openai' }} onFinish={values => { void submit(values); }}>
             {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" />}
             {!model && remote && <Alert type="info" showIcon message="Шаг 1 из 2 — карточка модели"
-                description="После сохранения укажите адрес API и API-ключ, затем проверьте подключение." className="model-catalog__notice" />}
+                description="Карточка и API-подключение общие для команды. После сохранения укажите адрес и ключ, затем проверьте подключение. Добавьте модель в проект отдельно." className="model-catalog__notice" />}
             <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Введите название' }, { max: 128, message: 'До 128 символов' }]}>
                 <Input placeholder="Например, Модель для поиска по проекту" autoFocus />
             </Form.Item>

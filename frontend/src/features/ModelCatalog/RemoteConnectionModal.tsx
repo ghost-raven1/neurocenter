@@ -94,7 +94,7 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
         {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" action={!view ? <Button onClick={() => { void read(); }}>Повторить</Button> : undefined} />}
         {loading ? <div role="status" aria-live="polite"><Spin tip="Читаем настройки…" /></div> : view && <Form form={form} layout="vertical" disabled={busy}
             onValuesChange={() => setPendingCheck(false)} onFinish={values => { void submit(values); }}>
-            <Typography.Paragraph type="secondary">Нейроцентр проверит модель и сохранит её подключение. Компьютеры проекта обращаются к ней через API Gateway.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">API-подключение общее для команды. «Сохранить и подключить» сохранит адрес и авторизацию и выполнит тестовый запрос к внешней модели. Добавьте модель в проект отдельно.</Typography.Paragraph>
             {hint?.hasKey && !view.baseUrl && <Alert type="info" showIcon message="Ключ OpenCode остался на компьютере" description="Введите API-ключ для Нейроцентра или выберите ключ из окружения сервера." className="model-catalog__notice" />}
             {hint && view.baseUrl && <Alert type="info" showIcon message="Сохранённое подключение уже настроено" description="Повторный импорт не заменяет адрес, авторизацию и параметры. Их можно изменить в этой форме." className="model-catalog__notice" />}
             <Form.Item name="baseUrl" label="Адрес API" extra={model.runtime === 'remote-openai' ? 'Базовый адрес OpenAI API с префиксом, например https://provider.example/v1.' : 'Адрес Ollama без /api/embed.'}

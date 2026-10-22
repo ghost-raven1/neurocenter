@@ -36,6 +36,8 @@ export interface IModelCreate {
 /** Приватные значения по умолчанию; пустые параметры оставляют выбор провайдеру. */
 export interface IRemoteModelOptions {
     temperature?: number; topP?: number; maxOutputTokens?: number; contextWindow?: number;
+    responseModel?: string;
+    tokenLimitParameter?: 'max_tokens' | 'max_completion_tokens';
 }
 export interface IRemoteConnectionHint { baseUrl: string; hasKey: boolean; options?: IRemoteModelOptions; timeoutMs?: number; }
 export interface IRemoteConnection {

@@ -38,7 +38,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [query, setQuery] = useState('');
     const [assignedOnly, setAssignedOnly] = useState(!!embedded);
     const [viewId, setViewId] = useState<string | null>(null);
-    const [editing, setEditing] = useState<ICatalogModel | 'new' | null>(null);
+    const [editing, setEditing] = useState<ICatalogModel | 'new' | 'api' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
     const [chatId, setChatId] = useState<string | null>(null);
@@ -106,7 +106,9 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         <div className="model-catalog__heading">
             <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
                 <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере и подключённые API.'}</Typography.Text></div>
-            {isMain && <Space wrap><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip><FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></Space>}
+            {isMain && <Space wrap><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
+                <FeatureButton features={['model_catalog']} onClick={() => setEditing('api')}>Подключить API</FeatureButton>
+                <FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></Space>}
         </div>
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
@@ -131,10 +133,10 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         </Empty>)}
         {viewing && <ModelDetails model={viewing} canManage={isMain && !loadError && !loading} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
             onEdit={() => { setEditing(viewing); setViewId(null); }} onRemove={archived} onConfigure={() => { setConnection(viewing); setViewId(null); }} />}
-        {isMain && editing && <ModelEditModal key={editing === 'new' ? 'new' : editing.id + ':' + editing.revision} model={editing === 'new' ? undefined : editing}
+        {isMain && editing && <ModelEditModal key={typeof editing === 'string' ? editing : editing.id + ':' + editing.revision} model={typeof editing === 'string' ? undefined : editing} connectApi={editing === 'api'}
             onClose={() => setEditing(null)} onSaved={async saved => {
                 const owns = captureOwner(); if (!owns()) return;
-                if (editing === 'new') { setQuery(''); setAssignedOnly(false); }
+                if (typeof editing === 'string') { setQuery(''); setAssignedOnly(false); }
                 await refresh(); if (!owns()) return;
                 if (saved && saved.runtime !== 'ollama' && !saved.verificationSha256) setConnection(saved);
             }} />}

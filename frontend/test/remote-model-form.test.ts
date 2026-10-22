@@ -16,6 +16,16 @@ describe('Удалённая модель в форме и RAG выборе',()=
   expect(remoteModelOptions({contextWindow:null},{runtime:'remote-openai',capability})).toEqual({});
   expect(remoteModelOptions({contextWindow:undefined},{runtime:'remote-openai',capability})).toEqual({});
  });
+ it.each(['chat','vision'] as const)('OpenAI %s сохраняет явно выбранные canonical model и параметр лимита без изменения числовых нулей',capability=>{
+  expect(remoteModelOptions({responseModel:' canonical/model:v1 ',tokenLimitParameter:'max_completion_tokens',temperature:0,maxOutputTokens:64},{runtime:'remote-openai',capability})).toEqual({responseModel:'canonical/model:v1',tokenLimitParameter:'max_completion_tokens',temperature:0,maxOutputTokens:64});
+ });
+ it('Embedding OpenAI сохраняет только responseModel, без генерационных параметров',()=>{
+  expect(remoteModelOptions({responseModel:' canonical-embedding ',tokenLimitParameter:'max_tokens',temperature:1,maxOutputTokens:64},{runtime:'remote-openai',capability:'embedding'})).toEqual({responseModel:'canonical-embedding'});
+ });
+ it('Ollama не получает OpenAI compatibility поля, очищенные OpenAI поля не меняют legacy options',()=>{
+  expect(remoteModelOptions({responseModel:'canonical',tokenLimitParameter:'max_completion_tokens',temperature:0},{runtime:'remote-ollama',capability:'chat'})).toEqual({temperature:0});
+  expect(remoteModelOptions({responseModel:' ',tokenLimitParameter:null},{runtime:'remote-openai',capability:'chat'})).toEqual({});
+ });
  it.each(['http://localhost:11434','http://127.0.0.1:11434','http://10.0.0.2:11434','http://models.internal:8080/v1','https://provider.example/v1'])('Разрешает явный private/self-hosted API %s',value=>{expect(isRemoteApiUrl(value)).toBe(true);});
  it.each(['','localhost:11434','file:///private/key','https://user:secret@example.test','https://example.test/v1?key=secret','https://example.test/#secret','https://example.test/\n'])('Не прячет секрет в адресе %s',value=>{expect(isRemoteApiUrl(value)).toBe(false);});
  it('RAG принимает verified remote pin и блокирует непроверенную, чужую размерность и chat',()=>{

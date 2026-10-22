@@ -17,13 +17,13 @@ const hooks = vi.hoisted(() => {
         effect(effect: () => void | (() => void), deps: unknown[]) {
             const index = cursor++, previous = slots[index];
             if (previous?.deps && deps.length === previous.deps.length && deps.every((value, i) => Object.is(value, previous.deps![i]))) return;
-            const slot = slots[index] = { deps }; effects.push(() => { previous?.cleanup?.(); slot.cleanup = effect() || undefined; });
+            const slot: (typeof slots)[number] = slots[index] = { deps }; effects.push(() => { previous?.cleanup?.(); slot.cleanup = effect() || undefined; });
         },
     };
 });
 type Values = Record<string, unknown>;
 const ui = vi.hoisted(() => ({
-    owner: 'admin-a', values: {} as Values, fields: new Map<string, { rules?: Array<{ required?: boolean }>; extra?: string }>(),
+    owner: 'admin-a', values: {} as Values, fields: new Map<string, { rules?: Array<{ required?: boolean; pattern?:RegExp; validator?:(_rule:unknown,value:unknown)=>Promise<void> }>; extra?: string }>(),
     finish: undefined as ((values: Values) => void) | undefined, change: undefined as (() => void) | undefined,
     saved: vi.fn(), close: vi.fn(),
 }));
@@ -36,7 +36,7 @@ vi.mock('antd', () => {
     const form = { setFieldsValue: (values: Values) => { Object.assign(ui.values, values); }, setFieldValue: (name: string, value: unknown) => { ui.values[name] = value; } };
     const Form = Object.assign(({ children, onFinish, onValuesChange }: { children?: ReactNode; onFinish: typeof ui.finish; onValuesChange: typeof ui.change }) => {
         ui.finish = onFinish; ui.change = onValuesChange; return children;
-    }, { useForm: () => [form], useWatch: (name: string) => ui.values[name], Item: ({ name, label, rules, extra, children }: { name: string | string[]; label?: string; rules?: Array<{ required?: boolean }>; extra?: string; children?: ReactNode }) => {
+    }, { useForm: () => [form], useWatch: (name: string) => ui.values[name], Item: ({ name, label, rules, extra, children }: { name: string | string[]; label?: string; rules?: Array<{ required?: boolean;pattern?:RegExp;validator?:(_rule:unknown,value:unknown)=>Promise<void> }>; extra?: string; children?: ReactNode }) => {
         ui.fields.set(Array.isArray(name) ? name.join('.') : name, { rules, extra }); return createElement('label', null, label, children, extra);
     } });
     return { Form, Modal: content, Space: content, Spin: input, Checkbox: content, Select: input, InputNumber: input,
@@ -64,6 +64,22 @@ beforeEach(() => {
 afterEach(() => hooks.dispose());
 
 describe('API-ключ и параметры подключения', () => {
+    it('Явно объясняет общий scope и тестовый запрос до сохранения, без автоматической проверки при открытии',async()=>{
+        const html=await open(stored);expect(html).toContain('общее для команды');expect(html).toContain('тестовый запрос');expect(html).toContain('проект отдельно');expect(modelCatalogApi.operate).not.toHaveBeenCalled();
+    });
+    it.each(['embedding','chat','vision'] as const)('OpenAI compatibility поля %s принадлежат подключению; Ollama их не показывает',async capability=>{
+        selected={...model,capability};await open();expect(ui.fields.has('options.responseModel')).toBe(true);expect(ui.fields.has('options.tokenLimitParameter')).toBe(capability!=='embedding');
+        if(capability!=='embedding')expect(ui.fields.get('options.maxOutputTokens')?.extra).toBe('Для max_completion_tokens лимит включает рассуждения и применяется также к проверке подключения. Без лимита проверка запрашивает 64 токена.');
+        expect(ui.fields.get('options.responseModel')?.rules?.[0].pattern?.source).toBe('^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$');
+        const validate=ui.fields.get('options.responseModel')?.rules?.find(rule=>rule.validator)?.validator;expect(validate).toBeDefined();await expect(validate!({},'https://provider.test/model')).rejects.toThrow('идентификатор');
+        await expect(validate!({},'namespace/model:canonical-v1')).resolves.toBeUndefined();await expect(validate!({},undefined)).resolves.toBeUndefined();
+        selected={...selected,runtime:'remote-ollama'};render();expect(ui.fields.has('options.responseModel')).toBe(false);expect(ui.fields.has('options.tokenLimitParameter')).toBe(false);expect(ui.fields.get('options.maxOutputTokens')?.extra).toBeUndefined();
+    });
+    it('Сохраняет ручные OpenAI compatibility настройки только в приватном подключении и запускает одну явную проверку',async()=>{
+        await open(stored);submit({options:{responseModel:' canonical-v1 ',tokenLimitParameter:'max_completion_tokens',maxOutputTokens:128}});await flush();
+        expect(modelCatalogApi.configure).toHaveBeenCalledExactlyOnceWith(model.id,expect.objectContaining({expectedRevision:1,expectedModelRevision:3,options:{responseModel:'canonical-v1',tokenLimitParameter:'max_completion_tokens',maxOutputTokens:128}}));
+        expect(modelCatalogApi.operate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({revision:4}),'check');
+    });
     it('Новое подключение показывает поле ключа и причину недоступного хранения вместо скрытого перехода на env', async () => {
         const html = await open({ ...view, canStoreKey: false });
         expect(ui.values.credential).toBe('stored'); expect(html).toContain('API-ключ'); expect(html).toContain('Хранилище ключей не настроено');

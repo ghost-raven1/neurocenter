@@ -1,14 +1,20 @@
 import type { ICatalogModel, IRemoteModelOptions } from './types';
 
-export type TRemoteModelOptionValues = { [Key in keyof IRemoteModelOptions]?: number | null };
+export type TRemoteModelOptionValues = { [Key in keyof IRemoteModelOptions]?: IRemoteModelOptions[Key] | null };
 
-/** Очищенные числовые поля исчезают из запроса; нулевые значения сохраняются. */
+/** Очищенные поля исчезают из запроса; совместимость OpenAI задаётся только в подключении. */
 export function remoteModelOptions(values: TRemoteModelOptionValues | undefined, model: Pick<ICatalogModel, 'runtime' | 'capability'>): IRemoteModelOptions {
-    if (model.capability === 'embedding') return {};
     const options: IRemoteModelOptions = {};
-    const keys: Array<keyof IRemoteModelOptions> = ['temperature', 'topP', 'maxOutputTokens'];
-    if (model.runtime === 'remote-ollama' || model.runtime === 'remote-openai') keys.push('contextWindow');
-    for (const key of keys) if (values?.[key] != null) options[key] = values[key];
+    if (model.capability !== 'embedding') {
+        const keys: Array<'temperature' | 'topP' | 'maxOutputTokens' | 'contextWindow'> = ['temperature', 'topP', 'maxOutputTokens'];
+        if (model.runtime === 'remote-ollama' || model.runtime === 'remote-openai') keys.push('contextWindow');
+        for (const key of keys) if (values?.[key] != null) options[key] = values[key];
+    }
+    if (model.runtime === 'remote-openai') {
+        const responseModel = values?.responseModel?.trim();
+        if (responseModel) options.responseModel = responseModel;
+        if (model.capability !== 'embedding' && values?.tokenLimitParameter != null) options.tokenLimitParameter = values.tokenLimitParameter;
+    }
     return options;
 }
 
