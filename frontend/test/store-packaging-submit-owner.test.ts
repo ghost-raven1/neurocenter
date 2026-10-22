@@ -192,6 +192,19 @@ describe('Отмена durable запроса упаковщика',()=>{
         io.get.mockResolvedValue({...queued,state:'CANCELLED'});await vi.advanceTimersByTimeAsync(1000);render();
         expect(current.cancelled).toBe(true);expect(current.active).toBe(false);expect(await current.reset()).toBe(true);expect(cancellations.has(scope)).toBe(false);
     });
+    it('FAILED после fence сохраняет exact источник/CAS и разрешает только ручной новый UUID после reset',async()=>{
+        await ready();const original={...body(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        const fence='2026-10-23T00:00:00Z',reason='Не удалось дождаться освобождения каталога. Публикация откачена; повторите сборку.';
+        io.create.mockImplementation(async(request:ToolBuildRequest)=>({...queued,id:request.requestKey,requestKey:request.requestKey,state:'RUNNING',percent:95,publicationStartedAt:fence}));
+        await current.submit(original);render();const exact=records.get(scope)!.request;
+        expect(current.active).toBe(true);expect(current.canCancel).toBe(false);expect(await current.reset()).toBe(false);
+        io.get.mockResolvedValueOnce({...current.job!,state:'FAILED',message:'Публикация остановлена',error:reason});
+        await vi.advanceTimersByTimeAsync(1000);render();
+        expect(current.job).toMatchObject({state:'FAILED',publicationStartedAt:fence,error:reason});expect(current.active).toBe(false);expect(current.draft?.request).toEqual(exact);expect(records.get(scope)!.request).toEqual(exact);expect(io.create).toHaveBeenCalledOnce();
+        expect(await current.reset()).toBe(true);render();expect(current.job).toBeUndefined();expect(current.draft).toBeUndefined();expect(io.create).toHaveBeenCalledOnce();
+        await current.submit(original);render();const next=io.create.mock.calls[1][0] as ToolBuildRequest;
+        expect(next.requestKey).not.toBe(exact.requestKey);expect(next).toEqual({...exact,requestKey:next.requestKey});expect(next.source).toEqual(original.source);expect(next.publication).toEqual(original.publication);
+    });
     it('Граница публикации отклоняет отмену честно и продолжает получать итог',async()=>{
         await ready();await current.submit(body());render();const publishing={...queued,state:'RUNNING' as const,publicationStartedAt:'2026-10-23T00:00:00Z'};
         io.cancelRequest.mockResolvedValueOnce({requestKey:records.get(scope)!.request.requestKey,state:'RUNNING',build:publishing});

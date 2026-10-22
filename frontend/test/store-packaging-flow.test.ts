@@ -432,6 +432,16 @@ describe('Отмена сборки отличается от скрытия о�
         const html=render();expect(html).toContain(ui.job.message);expect(html).not.toContain('Отмена подтверждена сервером');
         expect(ui.buttons.has('Повторить отмену')).toBe(true);ui.buttons.get('Скрыть')!.onClick!();expect(ui.open).toBe(false);expect(ui.reset).not.toHaveBeenCalled();
     });
+    it('FAILED после fence показывает причину, возвращает source/CAS при OFF и требует явный новый POST',async()=>{
+        const reason='Не удалось дождаться освобождения каталога. Публикация откачена; повторите сборку.';
+        const exact={requestKey:'11111111-1111-4111-8111-111111111111',kind:'plugin' as const,name:'Ручная карточка',description:'Сохранённое описание',publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)},source:{type:'files' as const,entrypoint:'src/main.ts',files:[{path:'src/main.ts',content:'export default "original bytes 日本語";\n'}]}};
+        ui.draft={request:exact};ui.job={id:'existing',operationId:'operation',requestKey:exact.requestKey,state:'FAILED',percent:95,publicationStartedAt:'2026-10-23T00:00:00Z',message:'Публикация остановлена',error:reason};ui.flags=false;ui.catalogFlag=false;
+        render();let html=render();expect(html).toContain(reason);expect(html).not.toContain('Публикация уже началась');expect(html).not.toContain('дождитесь результата');expect(ui.buttons.get('Вернуться к исходникам')?.disabled).not.toBe(true);expect(ui.submit).not.toHaveBeenCalled();
+        ui.reset.mockImplementation(()=>{ui.job=undefined;ui.draft=undefined;return true;});ui.buttons.get('Вернуться к исходникам')!.onClick!();await flush();html=render();
+        expect(ui.source).toBe('files');expect(ui.inputs.get('Название в каталоге')?.value).toBe(exact.name);expect(ui.inputs.get('Описание инструмента')?.value).toBe(exact.description);expect(html).toContain('Новая редакция после 7');expect(ui.buttons.get('Упаковать новую версию')?.disabled).toBe(true);
+        ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();ui.flags=true;ui.catalogFlag=true;render();expect(ui.submit).not.toHaveBeenCalled();
+        ui.finish!();await flush();const {requestKey:_,...body}=exact;expect(ui.submit).toHaveBeenCalledExactlyOnceWith(body);
+    });
     it('После границы публикации показывает продолжение без ложного обещания отмены',()=>{
         ui.active=true;ui.job={id:'existing',operationId:'operation',state:'RUNNING',percent:90,message:'Публикуем',publicationStartedAt:'2026-10-23T00:00:00.000Z'};
         const html=render();expect(ui.buttons.has('Отменить сборку')).toBe(false);expect(html).toContain('Публикация уже началась');expect(html).toContain('дождитесь результата');
