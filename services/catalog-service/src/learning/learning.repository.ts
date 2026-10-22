@@ -7,6 +7,7 @@ import {publicationHash} from '../publication/publication-validation';
 import {createLearningContext} from '../../../shared/project-learning.cjs';
 import type {LearningCandidate,LearningCandidateInput,LearningCheck,LearningCheckInput,LearningContext,LearningExperience,LearningExperienceInput,LearningHypothesisDraft,LearningHypothesis,LearningMutationInput,LearningMutationResult,LearningDeviceContext,LearningModelProvenance,LearningObservedExperienceInput,LearningPage} from '../../../shared/project-learning.cjs';
 import {authorizeLearning} from './learning-access';
+import {rollbackLearningTransaction} from './learning-transaction';
 import {candidateRow,checkRow,experienceRow,historyRow,hypothesisRow,type LearningDbRow} from './learning-rows';
 type Db=Pick<PoolClient,'query'>;
 export type LearningDeviceAuthorization=(db:PoolClient)=>Promise<void>;
@@ -20,12 +21,12 @@ export class LearningRepository {
     constructor(readonly pool:Pool){}
     async revision(projectId:string,db:Db=this.pool):Promise<number>{return Number((await db.query<{revision:string}>('SELECT revision FROM project_learning_state WHERE project_id=$1',[projectId])).rows[0]?.revision??0);}
     async read<T>(actor:IAccessActor,projectId:string,work:(db:PoolClient)=>Promise<T>,authorizeDevice?:LearningDeviceAuthorization):Promise<T>{
-        const db=await this.pool.connect();try{await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await authorizeLearning(db,actor,projectId,1);await authorizeDevice?.(db);
+        const db=await this.pool.connect();let discard=false;try{await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await authorizeLearning(db,actor,projectId,1);await authorizeDevice?.(db);
             const result=await work(db);await db.query('COMMIT');return result;
-        }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+        }catch(error){discard=await rollbackLearningTransaction(db);throw error;}finally{db.release(discard);}
     }
     async mutation<T>(actor:IAccessActor,projectId:string,input:{requestKey:string;expectedRevision?:number;hypothesisId?:string;id?:string},action:string,minimum:number,work:(db:PoolClient,revision:number)=>Promise<MutationWork<T>>,authorizeDevice?:LearningDeviceAuthorization,append=false):Promise<LearningMutationResult<T>>{
-        const requestHash=publicationHash({projectId,role:actor.activeRole,action,input}),db=await this.pool.connect();
+        const requestHash=publicationHash({projectId,role:actor.activeRole,action,input}),db=await this.pool.connect();let discard=false;
         try{
             await db.query('BEGIN');await authorizeLearning(db,actor,projectId,minimum);await authorizeDevice?.(db);
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['learning-request:'+actor.email+':'+input.requestKey]);
@@ -41,7 +42,7 @@ export class LearningRepository {
             await securityEvent(db,{actor:actor.email,action:'learning.'+action,resourceId:change.resourceId,before:{projectId,revision:current},after:{projectId,revision:next,...change.details}});
             await db.query('INSERT INTO project_learning_requests(actor,request_key,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5::jsonb)',[actor.email,input.requestKey,projectId,requestHash,JSON.stringify(result)]);
             await db.query('COMMIT');return result;
-        }catch(error){await db.query('ROLLBACK').catch(()=>undefined);if((error as {code?:string}).code==='23505')throw new ConflictException('Версия опыта уже существует. Обновите данные проекта.');throw error;}finally{db.release();}
+        }catch(error){discard=await rollbackLearningTransaction(db);if((error as {code?:string}).code==='23505')throw new ConflictException('Версия опыта уже существует. Обновите данные проекта.');throw error;}finally{db.release(discard);}
     }
     async experiences(db:Db,projectId:string,ids?:string[]){
         const rows=(await db.query<LearningDbRow>('SELECT * FROM project_learning_experiences WHERE project_id=$1'+(ids?' AND id=ANY($2::uuid[])':'')+' ORDER BY created_at DESC,id',ids?[projectId,ids]:[projectId])).rows;

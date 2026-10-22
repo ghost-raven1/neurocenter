@@ -3,11 +3,13 @@ import {ForbiddenException} from '@nestjs/common';
 import {randomUUID} from 'node:crypto';
 import type {Request} from 'express';
 import type {Pool} from 'pg';
-import {database,reset,main,connection} from './agent-postgres.fixture';
+import {database,connection} from './learning-postgres.fixture';
+import {reset,main} from './agent-postgres.fixture';
 import {LearningService} from '../src/learning/learning.service';
 import {LearningAnalysisService} from '../src/learning/learning-analysis.service';
 import {LearningAnalysisRepository} from '../src/learning/learning-analysis.repository';
 import {ModelsService} from '../src/models/models.service';
+import type {IModelInferenceRuntime} from '../src/models/model-runtime';
 import {projectEmbeddingPin} from '../src/models/project-embedding.validation';
 import type {IModel} from '../src/models/model.types';
 import {assertLearningAnalysisSchema} from '../src/learning/learning-analysis-schema-verification';
@@ -25,7 +27,7 @@ type InternalWorker={work:()=>Promise<void>;pending:Promise<void>|undefined};
 const deferred=<T>()=>{let resolve!:(value:T)=>void;const promise=new Promise<T>(done=>resolve=done);return {promise,resolve};};
 describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',()=>{
  let fixture:Awaited<ReturnType<typeof database>>,pool:Pool,learning:LearningService,service:LearningAnalysisService,repository:LearningAnalysisRepository;
- let model:IModel,available:boolean,modelCalls:number,infer:ReturnType<typeof vi.fn>;
+ let model:IModel,available:boolean,modelCalls:number,infer:ReturnType<typeof vi.fn<IModelInferenceRuntime['infer']>>;
  const worker=()=>service as unknown as InternalWorker;
  const count=async(table:string)=>Number((await pool.query('SELECT count(*) AS n FROM '+table)).rows[0].n);
  const revision=()=>learning.repository.revision(projectId);
@@ -46,7 +48,7 @@ describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',(
   const models={ready:async()=>{},actor:async()=>({...main,claims:{email:main.email,userRoles:['Главный админ'],projects:[],pluginIds:[],skillPaths:[]}}),
    resolveProject:async(_req:Request,id:string)=>{const row=(await pool.query('SELECT id FROM projects WHERE id=$1',[id])).rows[0];if(!row)throw new ForbiddenException();return row;},
    getUsable:async()=>{if(!available)throw new ForbiddenException();return {...model};}} as unknown as ModelsService;
-  infer=vi.fn(async()=>{modelCalls++;return resultFor();});
+  infer=vi.fn<IModelInferenceRuntime['infer']>(async()=>{modelCalls++;return resultFor();});
   const original=process.env.CATALOG_PG_URL;process.env.CATALOG_PG_URL=String(pool.options.connectionString);
   try{learning=new LearningService(models);service=new LearningAnalysisService(learning,models,{infer:(...args)=>infer(...args)});}finally{if(original===undefined)delete process.env.CATALOG_PG_URL;else process.env.CATALOG_PG_URL=original;}
   repository=service.repository;
@@ -78,7 +80,7 @@ describe.skipIf(!connection)('Durable analysis jobs — disposable PostgreSQL',(
    providerBody=JSON.parse(String(init?.body));const answer=await resultFor();
    return new Response(JSON.stringify({model:model.model,choices:[{index:0,finish_reason:'stop',message:answer.message}]}),{headers:{'content-type':'application/json'}});
   }) as typeof fetch});
-  infer.mockImplementationOnce(async(card:IModel,endpoint:'chat',body:Record<string,unknown>,signal:AbortSignal)=>{
+  infer.mockImplementationOnce(async(card:IModel,endpoint:'chat'|'embed',body:Record<string,unknown>,signal?:AbortSignal)=>{
    modelCalls++;expect(body.options).toEqual({});
    return client.infer(card,{modelId:card.id,revision:1,baseUrl:'http://127.0.0.1:1/v1',requestDimensions:false,options},endpoint,body,signal);
   });

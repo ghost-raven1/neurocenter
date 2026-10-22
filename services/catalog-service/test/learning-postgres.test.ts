@@ -5,7 +5,8 @@ import {LearningRepository} from '../src/learning/learning.repository';
 import {requireLearningHuman} from '../src/learning/learning-access';
 import {assertLearningSchema} from '../src/learning/learning-schema-verification';
 import type {LearningCandidateInput,LearningExperienceInput,LearningHypothesisDraft} from '../../shared/project-learning.cjs';
-import {connection,database,reset,admin,developer,main} from './agent-postgres.fixture';
+import {connection,database} from './learning-postgres.fixture';
+import {reset,admin,developer,main} from './agent-postgres.fixture';
 const projectId='prj-agents',origin={origin:'human' as const,device:null};
 const evidence={kind:'test' as const,status:'failed' as const,summary:'Одинаковые значения дают различный результат.'};
 describe.skipIf(!connection)('Project learning — actual canonical PostgreSQL',()=>{

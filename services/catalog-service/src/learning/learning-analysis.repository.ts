@@ -4,6 +4,7 @@ import type {Pool,PoolClient} from 'pg';
 import {publicationHash} from '../publication/publication-validation';
 import type {LearningAnalysisInput} from '../../../shared/project-learning.cjs';
 import {authorizeLearning} from './learning-access';
+import {rollbackLearningTransaction} from './learning-transaction';
 import {modelFromRow,type IModelRow} from '../models/model-history';
 import {projectEmbeddingPin} from '../models/project-embedding.validation';
 import type {AnalysisRow,AnalysisSnapshot} from './learning-analysis.types';
@@ -21,7 +22,7 @@ export class LearningAnalysisRepository {
   if(!row)throw new NotFoundException('Анализ не найден в этом проекте.');return row;
  }
  async enqueue(snapshot:AnalysisSnapshot,input:LearningAnalysisInput,modelPin:string):Promise<AnalysisRow>{
-  const db=await this.pool.connect(),hash=analysisRequestHash(snapshot.projectId,input);
+  const db=await this.pool.connect(),hash=analysisRequestHash(snapshot.projectId,input);let discard=false;
   try{
    await db.query('BEGIN');await authorizeLearning(db,snapshot.actor,snapshot.projectId,2);
    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['learning-analysis:'+snapshot.actor.email+':'+input.requestKey]);
@@ -37,17 +38,17 @@ export class LearningAnalysisRepository {
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb) RETURNING *`,
     [identity(),snapshot.projectId,snapshot.actor.email,snapshot.actor.activeRole,input.requestKey,identity(),hash,input.modelId,modelPin,epoch,snapshot.revision,JSON.stringify(input),JSON.stringify(snapshot.experiences)])).rows[0];
    await db.query('COMMIT');return row;
-  }catch(error){await db.query('ROLLBACK').catch(()=>undefined);if((error as {code?:string}).code==='23505')throw new ConflictException('Анализ уже создан. Проверьте состояние запроса.');throw error;}finally{db.release();}
+  }catch(error){discard=await rollbackLearningTransaction(db);if((error as {code?:string}).code==='23505')throw new ConflictException('Анализ уже создан. Проверьте состояние запроса.');throw error;}finally{db.release(discard);}
  }
  /** SKIP LOCKED never races a live hypothesis transaction holding the same job FOR SHARE. */
  async recoverExpired():Promise<void>{
-  const db=await this.pool.connect();try{await db.query('BEGIN');
+  const db=await this.pool.connect();let discard=false;try{await db.query('BEGIN');
    const rows=(await db.query<AnalysisRow>("SELECT * FROM project_learning_analyses WHERE state='running' AND lease_until<clock_timestamp() ORDER BY lease_until,id LIMIT 10 FOR UPDATE SKIP LOCKED")).rows;
    for(const row of rows){if(await this.reconcileReceipt(db,row))continue;
     await db.query(`UPDATE project_learning_analyses SET state='unknown',worker_id=NULL,lease_until=NULL,finished_at=clock_timestamp(),updated_at=clock_timestamp(),
      error_code='ANALYSIS_INTERRUPTED',error_message='Исполнитель анализа прервался. Модель автоматически не запускается повторно.' WHERE id=$1`,[row.id]);
    }await db.query('COMMIT');
-  }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+  }catch(error){discard=await rollbackLearningTransaction(db);throw error;}finally{db.release(discard);}
  }
  async claim(workerId:string):Promise<AnalysisRow|null>{
   const {rows}=await this.pool.query<AnalysisRow>(`WITH next AS (SELECT id FROM project_learning_analyses WHERE state='queued' ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
@@ -64,11 +65,11 @@ export class LearningAnalysisRepository {
    WHERE id=$1 AND state='running' AND worker_id=$2`,[row.id,row.worker_id,state,code,message]);
  }
  async current(row:AnalysisRow):Promise<void>{
-  const db=await this.pool.connect();try{await db.query('BEGIN');
+  const db=await this.pool.connect();let discard=false;try{await db.query('BEGIN');
    await authorizeLearning(db,{email:row.actor_email,activeRole:row.actor_role},row.project_id,2);
    await this.authorizeModel(db,row.project_id,row.model_id,row.model_pin,row.model_epoch);await this.authorizeLease(db,row);
    await db.query('COMMIT');
-  }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+  }catch(error){discard=await rollbackLearningTransaction(db);throw error;}finally{db.release(discard);}
  }
  async authorizeLease(db:Pick<PoolClient,'query'>,row:AnalysisRow):Promise<void>{
   const live=(await db.query("SELECT id FROM project_learning_analyses WHERE id=$1 AND state='running' AND worker_id=$2 AND lease_until>clock_timestamp() FOR SHARE",[row.id,row.worker_id])).rows[0];
@@ -100,12 +101,12 @@ export class LearningAnalysisRepository {
  }
  /** Wait for the original transaction's share lock before deciding a failed write has no receipt. */
  async reconcile(row:AnalysisRow):Promise<boolean>{
-  const db=await this.pool.connect();try{await db.query('BEGIN');
+  const db=await this.pool.connect();let discard=false;try{await db.query('BEGIN');
    const current=(await db.query<AnalysisRow>("SELECT * FROM project_learning_analyses WHERE id=$1 FOR UPDATE",[row.id])).rows[0];
    if(!current){await db.query('COMMIT');return false;}
    const done=current.state==='completed'||current.state==='running'&&current.worker_id===row.worker_id&&await this.reconcileReceipt(db,current);
    await db.query('COMMIT');return done;
-  }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+  }catch(error){discard=await rollbackLearningTransaction(db);throw error;}finally{db.release(discard);}
  }
 }
 
