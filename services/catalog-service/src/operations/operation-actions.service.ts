@@ -10,6 +10,8 @@ import {DeviceJobs} from '../devices/device-jobs';
 import {deviceJobRetryPolicy} from '../devices/device-job-retry';
 import {projectLevel} from '../access/access.model';
 import {publicationHash} from '../publication/publication-validation';
+import {PackageBuildService} from '../package-build/package-build.service';
+import type {BuildRow} from '../package-build/package-build.model';
 
 type Action='retry'|'cancel';
 type Capabilities=NonNullable<IOperation['actions']>;
@@ -21,7 +23,7 @@ const no=(reason:string)=>({supported:false,reason});
 /** Журнал передаёт команды реальным очередям. Изменение строки operations никогда не заменяет исполнение. */
 @Injectable()
 export class OperationActionsService implements OnModuleInit {
-    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService){}
+    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService,private readonly builds:PackageBuildService){}
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
     }
@@ -62,7 +64,16 @@ export class OperationActionsService implements OnModuleInit {
         }else if(operation.resourceType==='model'){
             executor='model-hosting';retry=no('Откройте карточку модели и повторите действие с её актуальной ревизией.');cancel=no('Исполнитель хостинга не поддерживает отмену из журнала.');
         }else if(operation.resourceType==='tool-build'){
-            executor='tool-build';retry=no('Откройте упаковщик и создайте новый запрос с проверенным источником.');cancel=no('Исполнитель сборки не поддерживает отмену из журнала.');
+            executor='tool-build';retry=no('Откройте упаковщик и создайте новый запрос с проверенным источником.');
+            const job=uuid(operation.resourceId)?(await this.models.pool.query<Pick<BuildRow,'id'|'state'|'actor'|'request_key'|'publication_started_at'>>(
+                'SELECT id,state,actor,request_key,publication_started_at FROM tool_build_jobs WHERE id=$1',[operation.resourceId])).rows[0]:undefined;
+            if(job&&job.actor===operation.actor){
+                target={id:job.id,state:job.state,actor:job.actor,requestKey:job.request_key,publicationStartedAt:job.publication_started_at?new Date(job.publication_started_at).toISOString():null};
+                cancel=!own?no('Отменить можно только собственную сборку.'):
+                    actor.activeRole!=='Главный админ'||!actor.claims.userRoles.includes('Главный админ')?no('Отмена требует действующей роли главного администратора.'):
+                    job.publication_started_at?no('Публикация уже началась. Дождитесь сохранённого результата сборки.'):
+                    ['QUEUED','RUNNING','CANCELLING'].includes(job.state)?{supported:true}:no('Сборка уже завершена.');
+            }
         }
         const digest=publicationHash({operationId:operation.operationId,resourceType:operation.resourceType,resourceId:operation.resourceId,projectId:operation.projectId,actor:operation.actor,executor,target});
         return {capabilities:{executor,digest,retry,cancel},target};
@@ -87,6 +98,8 @@ export class OperationActionsService implements OnModuleInit {
             // Scope and role are re-read even for a completed idempotent response.
             const freshActor=await this.models.actor(request),operation=await this.catalog.getOperation(id,this.scope(freshActor));
             if(operation.actor!==freshActor.email)throw new ForbiddenException('Из журнала можно управлять только собственным заданием.');
+            if(operation.resourceType==='tool-build'&&action==='cancel'&&(freshActor.activeRole!=='Главный админ'||!freshActor.claims.userRoles.includes('Главный админ')))
+                throw new ForbiddenException('Отмена сборки требует действующей роли главного администратора.');
             const keyed=(await lease.query<IReceipt>('SELECT * FROM operation_action_requests WHERE actor=$1 AND request_key=$2',[actor.email,input.requestKey])).rows[0];
             if(keyed&&(keyed.operation_id!==id||keyed.action!==action||keyed.digest!==input.expectedDigest))throw new ConflictException('Ключ запроса уже использован для другого действия.');
             // Two tabs with different request keys still dispatch one action for the same source CAS.
@@ -122,6 +135,13 @@ export class OperationActionsService implements OnModuleInit {
             const plan=action==='cancel'?await this.reindex.cancel(request,operation.projectId!,operation.resourceId):target.retryLocal?
                 await this.reindex.retryLocal(request,operation.projectId!,operation.resourceId):await this.reindex.retry(request,operation.projectId!,operation.resourceId);
             return {operationId:operation.operationId,state:plan.state==='cancelled'?'CANCELLED':plan.state==='failed'?'FAILED':plan.state==='applied'&&!plan.local?'SUCCEEDED':'RUNNING',message:plan.local?.message??plan.message};
+        }
+        if(executor==='tool-build'&&action==='cancel'){
+            const build=await this.builds.cancel(actor,operation.resourceId);
+            if(build.id!==operation.resourceId||build.requestKey!==target.requestKey||!['QUEUED','RUNNING','CANCELLING','CANCELLED','SUCCEEDED','FAILED'].includes(build.state)||typeof build.message!=='string')
+                throw new ServiceUnavailableException('Исполнитель не подтвердил сохранённую сборку. Повторите тот же запрос.');
+            // CANCELLING confirms intent; only the executor can confirm that its worker has stopped.
+            return {operationId:operation.operationId,state:build.state==='CANCELLING'?'RUNNING':build.state,message:build.message};
         }
         throw new ConflictException('Эта запись не поддерживает управление исполнителем.');
     }

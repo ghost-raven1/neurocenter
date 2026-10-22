@@ -53,7 +53,7 @@ describe.skipIf(!connection)('Generic journal dispatch — actual HTTP/PostgreSQ
         const dispatchPool={query:pool.query.bind(pool),connect:async()=>{const client=await pool.connect();return {query:async(sql:string,values?:unknown[])=>{
             if(loseAck&&sql.startsWith('UPDATE operation_action_requests SET result')){loseAck=false;throw Error('fixture lost receipt ACK');}return client.query(sql,values);
         },release:(discard?:boolean)=>client.release(discard)};}};
-        actions=new OperationActionsService(catalog as never,{...models,pool:dispatchPool} as never,jobs,reindex);await actions.onModuleInit();
+        actions=new OperationActionsService(catalog as never,{...models,pool:dispatchPool} as never,jobs,reindex,{} as never);await actions.onModuleInit();
         Reflect.defineMetadata('design:paramtypes',[OperationActionsService],OperationActionsController);class FixtureModule{}
         app=await NestFactory.create({module:FixtureModule,controllers:[OperationActionsController],providers:[{provide:OperationActionsService,useValue:actions}]},{logger:false});await app.listen(0,'127.0.0.1');base=await app.getUrl();
     },30000);

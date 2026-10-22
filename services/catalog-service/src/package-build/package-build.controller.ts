@@ -1,5 +1,5 @@
 import type {RepositoryRelease} from '../../../shared/github-release-source.cjs';
-import { BadRequestException, Body, Controller, Get, Head, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Head, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request,Response } from 'express';
 import { assertInternal } from '../access/access.controller';
 import type { IAccessActor } from '../access/access.model';
@@ -24,6 +24,7 @@ export class PackageBuildController {
         return this.builds.repositorySource(this.actor(req), {url, ref, subdirectory, entrypoint, ...(parsed !== undefined ? {release: parsed as RepositoryRelease} : {})});
     }
     @Get('requests/:requestKey') request(@Req() req: Request, @Param('requestKey') key: string) {return this.builds.request(this.actor(req), key);}
+    @Delete('requests/:requestKey') cancelRequest(@Req() req:Request,@Param('requestKey') key:string){return this.builds.cancelRequest(this.actor(req),key);}
     @Post('archive') archive(@Req() req: Request, @Body() input: unknown) {return this.builds.archiveSource(this.actor(req), input);}
     @Post('imports') importAsset(@Req() req:Request,@Body() input:unknown){return this.builds.importAsset(this.actor(req),input);}
     @Get(':id/asset') async asset(@Req() req:Request,@Param('id') id:string,@Res() res:Response){const asset=await this.builds.exportAsset(this.actor(req),id);res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.send(serializeAsset(asset));}
@@ -31,4 +32,5 @@ export class PackageBuildController {
     @Get(':id/supply') async supply(@Req() req:Request,@Param('id') id:string,@Res() res:Response){const actor=this.actor(req);await sendToolSupply(req,res,()=>this.builds.requireMain(actor),signal=>this.builds.exportSupply(actor,id,signal));}
     @Post() create(@Req() req: Request, @Body() input: unknown) { return this.builds.create(this.actor(req), input); }
     @Get(':id') get(@Req() req: Request, @Param('id') id: string) { return this.builds.get(this.actor(req), id); }
+    @Delete(':id') cancel(@Req() req:Request,@Param('id') id:string){return this.builds.cancel(this.actor(req),id);}
 }

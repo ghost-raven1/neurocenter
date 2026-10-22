@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BuildConfiguration } from './package-build.model';
+import {hasBuildReapProof} from './build-cleanup';
 
 export const builderScript = (): string => path.resolve(process.env.TOOL_BUILD_SCRIPT || path.join(__dirname, '../../../../scripts/catalog-plugins/build.mjs'));
 export const stagingLimit = 4 * 1024 ** 3;
@@ -14,6 +15,7 @@ const buildFailures: Record<string, string> = {
     PYTHON_RUNTIME_UNAVAILABLE: 'Не удалось подготовить встроенный Python. Проверьте доступ к источнику runtime и повторите сборку. Поставка с непроверенным или отсутствующим интерпретатором не опубликована.',
     PYTHON_SOURCE_INVALID: 'Не удалось проверить исходники Python. Проверьте файл запуска и статические зависимости в pyproject.toml или requirements.txt, затем заново выберите источник.',
 };
+export class BuildProcessUnreapedError extends Error{constructor(){super('Остановка дочернего сборщика ещё не подтверждена. Временные файлы сохранены. Можно продолжить работу с другими сборками.');}}
 
 /** Лимит включает npm-cache, промежуточные файлы и готовые архивы одного задания. */
 export async function stagingBytes(root: string): Promise<number> {
@@ -53,13 +55,20 @@ export async function stagingBytes(root: string): Promise<number> {
 }
 
 export function stopBuildProcess(child: ChildProcess): void {
+    if(supervised.has(child)){
+        if(typeof child.exitCode==='number'||typeof child.signalCode==='string')return;
+        if(child.connected){child.send({type:'cancel'},error=>{if(error)child.kill('SIGTERM');});}else child.kill('SIGTERM');
+        return;
+    }
     try { if (process.platform !== 'win32' && child.pid) { process.kill(-child.pid, 'SIGKILL'); } else { child.kill('SIGKILL'); } }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') { throw error; } }
 }
+const supervised=new WeakSet<ChildProcess>();
 
 /** Исполняется только наш builder; исходники задают декларацию, а не shell-команду. */
 export async function runPackageBuilder(config: BuildConfiguration, stage: string, observe: (child: ChildProcess | undefined) => void,
-    onProgress?: (event: BuildProgress) => Promise<void>): Promise<string> {
+    onProgress?: (event: BuildProgress) => Promise<void>,signal?:AbortSignal,execution?:{nonce:string;markStarted:()=>Promise<void>;reaped?:()=>void}): Promise<string> {
+    signal?.throwIfAborted();
     const source = path.join(stage, 'source');
     await fs.mkdir(source, {mode: 0o700});
     const identity=config.source.type==='upload'?{...config,source:{...config.source,uploadId:undefined}}:config;
@@ -96,11 +105,24 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     }
     if (process.env.NODE_USE_ENV_PROXY === '1') { env.NODE_USE_ENV_PROXY = '1'; }
     await new Promise<void>((resolve, reject) => {
-        const child = spawn(process.execPath, ['--require', path.join(__dirname, 'build-guardian.js'), builderScript(), '--recipe', recipePath, '--output', output, '--progress'], {cwd: stage, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe', 'ipc']});
+        signal?.throwIfAborted();
+        const args=['--recipe',recipePath,'--output',output,'--progress'];
+        const child = spawn(process.execPath, execution?[path.join(__dirname,'build-supervisor.js'),builderScript(),execution.nonce,...args]:['--require', path.join(__dirname, 'build-guardian.js'), builderScript(),...args], {cwd: stage, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe', 'ipc']});
+        if(execution)supervised.add(child);
         observe(child);
-        let reason = '', checking = false, finished = false, pending = '', stdoutBytes = 0, completed = 0;
+        let reason = '', checking = false, finished = false, pending = '', stdoutBytes = 0, completed = 0,ready=false;
+        let startupFailure:unknown,startAdmitted=false,reaped=false;
         let progressChain = Promise.resolve();
         const fail = (message: string) => {if (finished) {return;} reason ||= message; stopBuildProcess(child); };
+        const abort=()=>fail('Сборка отменена.');
+        signal?.addEventListener('abort',abort,{once:true});
+        if(signal?.aborted)abort();
+        if(execution)child.on('message',message=>{
+            if(message&&typeof message==='object'&&(message as {type?:unknown}).type==='reaped'&&(message as {nonce?:unknown}).nonce===execution.nonce){reaped=true;execution.reaped?.();return;}
+            if(ready||!message||typeof message!=='object'||(message as {type?:unknown}).type!=='ready')return;ready=true;
+            void execution.markStarted().then(()=>{startAdmitted=true;if(!finished&&!reason&&!signal?.aborted&&child.connected)child.send({type:'start'});else stopBuildProcess(child);})
+                .catch(error=>{startupFailure=error;fail('Не удалось подтвердить запуск сборки.');});
+        });
         const timeout = setTimeout(() => fail('Сборка превысила лимит времени 20 минут.'), 20 * 60 * 1000);
         const monitor = setInterval(() => {
             if (checking) { return; }
@@ -131,9 +153,13 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
             }
         });
         child.stderr?.resume();
-        const cleanup = () => {finished = true; clearTimeout(timeout); clearInterval(monitor); observe(undefined);};
+        const cleanup = () => {finished = true; clearTimeout(timeout); clearInterval(monitor);signal?.removeEventListener('abort',abort); observe(undefined);};
         child.once('error', () => {cleanup(); reject(new Error('Не удалось запустить серверный сборщик.'));});
-        child.once('close', code => {void progressChain.then(() => {cleanup(); code === 0 && !reason ? resolve() : reject(new Error(reason || 'Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.'));});});
+        child.once('close', code => {void progressChain.then(async() => {
+            if(execution&&startAdmitted&&!reaped){reaped=await hasBuildReapProof(stage,execution.nonce);if(reaped)execution.reaped?.();
+                if(!reaped&&!(process.platform==='win32'&&code===0&&!reason)){cleanup();reject(new BuildProcessUnreapedError());return;}}
+            cleanup();code===0&&!reason?resolve():reject(startupFailure??new Error(reason||'Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.'));
+        }).catch(()=>{cleanup();reject(new BuildProcessUnreapedError());});});
     });
     await stagingBytes(stage);
     return path.join(output, 'asset.json');

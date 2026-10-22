@@ -28,7 +28,7 @@ import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { resolveRepositorySource, validateRepositorySource, type RepositoryInput } from '../../../shared/repository-source.cjs';
 import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
 import { RAG_PLUGIN_SOURCE, isPreparedRagRepository } from '../../../shared/opencode-rag-source.cjs';
-import { builderScript, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
+import { builderScript, BuildProcessUnreapedError, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
 import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
 import { PackageBuildRepository } from './package-build.repository';
@@ -36,6 +36,8 @@ import { buildView, requestHash, validId, validateBuildInput, type BuildConfigur
 import {createToolSupply,toolSupplyPlan} from './supply-export';
 import {inspectSkillSource} from './skill-source';
 import {buildSkillAsset} from './build-skill';
+import {BuildCancellation,BuildCancelledError,cleanupBuildStages} from './build-cancellation';
+import {acknowledgeBuildCleanup,forgetBuildCleanup} from './build-cleanup';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -43,7 +45,7 @@ interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts:
 @Injectable()
 export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private readonly pool = createPool({connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 3}, 'package-build');
-    private readonly repository = new PackageBuildRepository(this.pool);
+    private readonly repository = new PackageBuildRepository(this.pool,client=>this.discardLease(client));
     private readonly logger = new Logger('PackageBuildService');
     private lease?: PoolClient;
     private releaseLease?: (destroy?: boolean) => void;
@@ -54,6 +56,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private worker?: Promise<void>;
     private queueRequested = false;
     private child?: ChildProcess;
+    private activeBuild?:{id:string;cancellation:BuildCancellation};
+    private readonly stoppedWorkers=new Set<string>();
     private stopping = false;
 
     constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService,private readonly sources:AssetSourcesService,@Optional() private readonly uploads?:SourceUploadService) {}
@@ -138,6 +142,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         if (!expected || this.lease !== expected || this.stopping) {throw new ServiceUnavailableException('Сборщик восстанавливает подключение. Повторите запрос позже.');}
         return expected;
     }
+    private discardLease(client:PoolClient):void{
+        if(this.lease!==client){client.release(true);return;}
+        const release=this.releaseLease;this.lease=undefined;this.releaseLease=undefined;
+        release?.(true);if(this.child)stopBuildProcess(this.child);this.scheduleOwnershipRetry();
+    }
 
     /** На lease-сессии не пересекаются BEGIN приёма и публикации; gate включает передачу worker. */
     private withLease<T>(expected: PoolClient, work: () => Promise<T>): Promise<T> {
@@ -202,6 +211,19 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await this.requireMain(actor);
         if (!validId(key)) {throw new BadRequestException('Некорректный ключ запроса сборки.');}
         return buildView(await this.repository.findByRequest(actor.email, key));
+    }
+    /** Cancellation remains available on standby and with creation disabled. */
+    async cancel(actor:IAccessActor,id:string){
+        await this.requireMain(actor);if(!validId(id))throw new BadRequestException('Некорректный ID сборки.');
+        const row=await this.repository.cancel(actor.email,id,()=>this.requireMain(actor));
+        if(row.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
+        void notifyDeviceOperations();return buildView(row);
+    }
+    async cancelRequest(actor:IAccessActor,key:string){
+        await this.requireMain(actor);if(!validId(key))throw new BadRequestException('Некорректный ключ запроса сборки.');
+        const row=await this.repository.cancelRequest(actor.email,key,()=>this.requireMain(actor));
+        if(row?.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
+        void notifyDeviceOperations();return {requestKey:key,state:row?.state??'CANCELLED' as const,build:row?buildView(row):null};
     }
 
     /** Экспорт читает immutable source history, переживая cleanup staging и reload. */
@@ -339,7 +361,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         while (this.lease && !this.stopping) {
             const lease = this.currentLease();
             const row = await this.withLease(lease, () => this.repository.takeQueued(lease));
-            if (!row) {return;}
+            if (!row) {if(await this.cleanupStages()){await new Promise(resolve=>setTimeout(resolve,500));continue;}return;}
             await this.execute(row, root);
         }
     }
@@ -353,22 +375,14 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     }
 
     /** Удаляются только каталоги известных завершённых UUID; ссылки не разыменовываются. */
-    private async cleanupStages(): Promise<void> {
-        const root = path.join(runtimeArtifactDirectory(), '.build-staging');
-        let entries: import('node:fs').Dirent[];
-        try {
-            const info = await fs.lstat(root);
-            if (!info.isDirectory() || info.isSymbolicLink()) {throw new Error('Небезопасный каталог серверной сборки.');}
-            entries = await fs.readdir(root, {withFileTypes: true});
-        } catch (error) {if ((error as NodeJS.ErrnoException).code === 'ENOENT') {return;} throw error;}
-        const ids = entries.filter(entry => validId(entry.name)).map(entry => entry.name);
-        if (!ids.length) {return;}
-        const {rows} = await this.pool.query<{id: string}>("SELECT id FROM tool_build_jobs WHERE id=ANY($1::uuid[]) AND state IN ('FAILED','SUCCEEDED')", [ids]);
-        for (const row of rows) {await fs.rm(path.join(root, row.id), {recursive: true, force: true});}
+    private async cleanupStages(): Promise<boolean> {
+        return cleanupBuildStages(this.repository,path.join(runtimeArtifactDirectory(),'.build-staging'),this.stoppedWorkers);
     }
 
     private async execute(row: BuildRow, root: string): Promise<void> {
         const stage = path.join(root, row.id);
+        const cancellation=new BuildCancellation(()=>this.repository.get(row.id));
+        this.activeBuild={id:row.id,cancellation};let cancelled=false,unreaped=false,started=false,reaped=false;
         let releaseDisk: () => void = () => undefined;
         try {
             await this.requireMain({email: row.actor, activeRole: 'Главный админ'}); await requireFeaturesEnabled(buildFeatures(row.config));
@@ -381,9 +395,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             if(row.config.source.type==='upload'){if(!this.uploads)throw new Error('Сервис сохранённых исходников недоступен.');await this.uploads.assertRetained(row.actor,row.config.source);}
             const manifest = await runPackageBuilder(row.config, stage, child => {
                 this.child = child;
+                cancellation.observe(child);
                 if (child && (this.stopping || !this.lease)) {stopBuildProcess(child);}
             }, event =>
-                this.progress(row.id, 30 + Math.floor(30 * event.completed / event.total), `Собрано ${event.completed}/${event.total}: ${event.target}`));
+                this.progress(row.id, 30 + Math.floor(30 * event.completed / event.total), `Собрано ${event.completed}/${event.total}: ${event.target}`),cancellation.controller.signal,row.execution_nonce?{nonce:row.execution_nonce,reaped:()=>{reaped=true;},markStarted:async()=>{const lease=this.currentLease();await this.withLease(lease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,lease));started=true;}}:undefined);
+            cancellation.assertActive();
             if (!this.lease || this.stopping) { throw new Error('Сборщик остановлен.'); }
             await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
             await this.progress(row.id, 70, 'Импорт проверенных готовых комплектов');
@@ -404,6 +420,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 if(row.config.source.type==='upload')await this.uploads!.assertRetained(row.actor,row.config.source);
                 if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                 this.currentLease(lease);
+                await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
                 await new PluginRepository(this.pool).create(tools[0].publication,row.actor,async(client,published)=>{
                     if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                     const source=await this.sources.recordLocal(client,prepared,published,row.actor);
@@ -415,13 +432,19 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 body: JSON.stringify({sections: ['catalog', 'operations', 'audit']}), signal: AbortSignal.timeout(1500),
             }).catch(() => undefined);
         } catch (error) {
+            unreaped=error instanceof BuildProcessUnreapedError;
             const message = error instanceof ForbiddenException ? (error.message.startsWith('Функция «')?error.message:'Права главного администратора отозваны. Публикация остановлена.')
                 : error instanceof Error && !/postgres|password|token|secret|connection|https?:\/\//i.test(error.message) ? error.message.slice(0, 500)
                 : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.';
-            await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);
+            cancelled=error instanceof BuildCancelledError||cancellation.controller.signal.reason instanceof BuildCancelledError;
+            if(!cancelled)try{await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);}
+            catch(failure){if(failure instanceof BuildCancelledError)cancelled=true;else throw failure;}
+            if(cancelled&&started&&!reaped)unreaped=true;
         } finally {
             this.child = undefined;
-            try {await fs.rm(stage, {recursive: true, force: true});}
+            cancellation.dispose();if(this.activeBuild?.id===row.id)this.activeBuild=undefined;
+            try {if(unreaped){if(cancelled)await this.repository.cancellationAwaitingOwner(row.id);}else{if(row.execution_nonce)this.stoppedWorkers.add(row.execution_nonce);await fs.rm(stage, {recursive: true, force: true});if(cancelled){await acknowledgeBuildCleanup(root,row);await this.repository.completeCancellation(row.id);}await forgetBuildCleanup(root,row);if(row.execution_nonce)this.stoppedWorkers.delete(row.execution_nonce);}}
+            catch(error){if(cancelled)await this.repository.cancellationCleanupFailed(row.id);throw error;}
             finally {releaseDisk();}
             void notifyDeviceOperations();
         }
@@ -439,6 +462,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         const prepared=await this.sources.prepareLocalSkill(built.asset,row.request_key,built.sourceFile),lease=this.currentLease();
         await this.withLease(lease,async()=>{
             await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
+            await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
             await lease.query('BEGIN');
             try{
                 await lease.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+built.asset.card.slug]);

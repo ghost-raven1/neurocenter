@@ -7,14 +7,14 @@ import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
 import {inspectSkillSource} from './skill-source';
 import type {SkillSourceFile} from '../../../shared/skill-source.cjs';
 
-export type BuildState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type BuildState = 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
 export interface BuildSourceNpm { type: 'npm'; specifier: string; entrypoint?: string }
 export interface BuildSourceFiles { type: 'files'; files: SkillSourceFile[]; entrypoint: string; args?: string[] }
 export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin' | 'skill'; name: string; description: string; tags?: string[]; targets?: string[]; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource}
 export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source'> {targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
 export interface BuildResult {catalogId: string; name: string; version: number; kind?:'skill';assetId?:string;sourceVersion?:string;sourceSha256?:string}
-export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string}
-export const buildView = (row: BuildRow) => ({id: row.id, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
+export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string; publication_started_at?: string | null;execution_nonce?:string|null;execution_host?:string|null;execution_pid?:number|null;execution_started?:boolean}
+export const buildView = (row: BuildRow) => ({id: row.id, requestKey:row.request_key, publicationStartedAt:row.publication_started_at??null, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
     message: row.message, result: row.result, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at});
 export const requestHash = (input: BuildInput) => publicationHash({...input, requestKey: undefined});
 export const validId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
