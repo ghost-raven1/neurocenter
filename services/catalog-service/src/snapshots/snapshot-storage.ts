@@ -106,7 +106,7 @@ export class SnapshotStorage {
             if(this.client){
                 const configuration=await this.client.getBucketVersioning(this.bucket!);
                 if(configuration.Status!=='Enabled')throw new ServiceUnavailableException('Для bucket снимков нужно включить S3 versioning.');
-                const result=await this.client.putObject(this.bucket!,this.key(project,sha),bytes,bytes.length,{'Content-Type':'application/octet-stream','X-Amz-Meta-Neurocenter-Snapshot-Write':intent.write_id});
+                const result=await this.client.putObject(this.bucket!,this.key(project,sha),bytes,bytes.length,{'X-Amz-Meta-Neurocenter-Snapshot-Write':intent.write_id});
                 version=result.versionId??null;if(!version||version==='null')throw new ServiceUnavailableException('S3 не подтвердил неизменяемую версию блока.');
                 const settled=await this.settleWrite(connection,intent,version);if(settled!=='complete')throw new ServiceUnavailableException('Запись блока ещё не подтверждена. Повторите позже.');return;
             }else{

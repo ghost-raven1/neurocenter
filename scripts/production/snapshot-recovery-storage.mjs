@@ -59,7 +59,7 @@ export async function restoreSnapshotRecovery({source,preview,sql,beforeMutation
  if((await store.getBucketVersioning(target.bucket)).Status!=='Enabled')throw new Error('Target bucket не подтвердил versioning.');await assertPrivateS3Bucket(store,target.bucket);const remapped=[];
  await assertTargetObjects(store,target,[]);
  for(const row of blobs){await beforeMutation();await assertPrivateS3Bucket(store,target.bucket);const filename=path.join(source,row.file);await checkLocal(filename,row);const input=createReadStream(filename);let result;
-  try{result=await store.putObject(target.bucket,snapshotObjectKey(row.projectId,row.sha256),input,row.bytes,{'Content-Type':'application/octet-stream'});}finally{input.destroy();}
+  try{result=await store.putObject(target.bucket,snapshotObjectKey(row.projectId,row.sha256),input,row.bytes);}finally{input.destroy();}
   const versionId=result.versionId;if(typeof versionId!=='string'||!versionId||versionId==='null'||/[\x00-\x1f\x7f]/.test(versionId))throw new Error('S3 не подтвердил точную target version.');
   await verifyStream(await store.getObject(target.bucket,snapshotObjectKey(row.projectId,row.sha256),{versionId}),row);await checkLocal(filename,row);remapped.push({...row,storageId:target.storageId,versionId});
  }

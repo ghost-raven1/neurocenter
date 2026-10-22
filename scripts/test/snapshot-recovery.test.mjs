@@ -10,7 +10,8 @@ import {snapshotBlob,snapshotBlobs,snapshotObjectFile,assertSnapshotReferences,r
 import {readSnapshotCopy} from '../production/snapshot-recovery-dump.mjs';
 import {snapshotRecoveryConfiguration,snapshotRecoveryFingerprint} from '../production/snapshot-recovery-config.mjs';
 import {exportSnapshotKeys,snapshotKeyMaterial,verifyBundleSnapshotKeys} from '../production/snapshot-recovery-keys.mjs';
-import {previewSnapshotRecovery,exportSnapshotRecovery} from '../production/snapshot-recovery-storage.mjs';
+import {previewSnapshotRecovery,exportSnapshotRecovery,restoreSnapshotRecovery} from '../production/snapshot-recovery-storage.mjs';
+import {s3Fixture} from './chat-recovery.fixture.mjs';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 const sha='a'.repeat(64),image='sha256:'+sha;
@@ -122,3 +123,10 @@ test('A signed historical bundle without private signing identity fails even whe
  const pair=generateKeyPairSync('ed25519'),pem=pair.publicKey.export({type:'spki',format:'pem'}).toString(),signature={algorithm:'Ed25519',keyId:hash(pem),publicKey:pem,value:sign(null,Buffer.from('metadata'),pair.privateKey).toString('base64')};
  await assert.rejects(previewSnapshotRecovery({directory:root,source:root,manifest:{format:'neurocenter-recovery-v2'},metadata:{blobs:[],signatures:[signature]}}),/закрытый ключ/);
 }));
+test('Strict Ceph signed HTTP snapshot restore verifies streamed bytes and version before the SQL admission boundary',async()=>temporary(root=>s3Fixture(async s3=>{
+ const payload=Buffer.from('Exact private snapshot original 日本語'),sha256=hash(payload),projectId='prj-operator-ceph',file=snapshotObjectFile(projectId,sha256),target={endpoint:s3.endpoint,bucket:'snapshot-target-private',region:'us-east-1',accessKey:'test-access',secretKey:'test-secret',storageId:'s3:'+'c'.repeat(32)};
+ await mkdir(path.dirname(path.join(root,file)),{recursive:true,mode:0o700});await writeFile(path.join(root,file),payload,{mode:0o600});const blob={projectId,sha256,bytes:payload.length,storageId:'s3:'+'b'.repeat(32),versionId:'source-version',file};let guards=0,publications=0;
+ await assert.rejects(restoreSnapshotRecovery({source:root,preview:{configuration:{target},blobs:[blob]},sql:async()=>{publications++;throw Error('Unexpected SQL publication');},beforeMutation:async()=>{if(++guards===4)throw Error('operator-revoked-before-SQL');}}),/operator-revoked-before-SQL/);
+ const writes=s3.events.filter(e=>e.method==='PUT'&&e.key);assert.equal(writes.length,1);assert.equal(writes[0].signed,true);assert.equal(writes[0].contentType,undefined);assert.equal(publications,0);
+ const object=s3.buckets.get(target.bucket).objects.values().next().value[0];assert.deepEqual(object.bytes,payload);assert.equal(hash(object.bytes),sha256);assert.ok(s3.events.some(e=>e.method==='GET'&&e.signed&&e.version===object.version));assert.deepEqual(await readFile(path.join(root,file)),payload);
+})));

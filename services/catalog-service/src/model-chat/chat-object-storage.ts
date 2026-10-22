@@ -77,7 +77,7 @@ export class ChatObjectStorage {
             return await this.abortContext.run(signal, async () => {
                 signal?.throwIfAborted();
                 const result = await this.client.putObject(reference.bucket, reference.object_key, bytes, bytes.length,
-                    { 'Content-Type': 'application/octet-stream', 'X-Amz-Meta-Neurocenter-Sha256': reference.sha256 });
+                    { 'X-Amz-Meta-Neurocenter-Sha256': reference.sha256 });
                 return result.versionId && result.versionId !== 'null' ? result.versionId : null;
             });
         } catch { signal?.throwIfAborted(); throw unavailable(); }

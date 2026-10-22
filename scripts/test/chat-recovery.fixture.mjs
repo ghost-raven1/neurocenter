@@ -35,6 +35,8 @@ const hmac=(key,text)=>createHmac('sha256',key).update(text).digest();
 const encode=value=>encodeURIComponent(value).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
 function authenticated(request){
  const match=/^AWS4-HMAC-SHA256 Credential=test-access\/([^,]+), SignedHeaders=([^,]+), Signature=([a-f0-9]{64})$/.exec(request.headers.authorization||'');if(!match)return false;
+ const signedHeaders=new Set(match[2].split(';'));
+ if(request.method==='PUT'&&Object.keys(request.headers).some(name=>(name==='content-type'||name.startsWith('x-amz-'))&&!signedHeaders.has(name)))return false;
  const url=new URL(request.url,'http://fixture'),headers=match[2].split(';').map(key=>key+':'+String(request.headers[key]||'').trim().replace(/\s+/g,' ')+'\n').join(''),query=[...url.searchParams].map(([key,value])=>[encode(key),encode(value)]).sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1])).map(row=>row.join('=')).join('&');
  const canonical=[request.method,url.pathname,query,headers,match[2],request.headers['x-amz-content-sha256']].join('\n'),scope=match[1].split('/');
  let key=hmac('AWS4test-secret',scope[0]);for(const part of scope.slice(1))key=hmac(key,part);
@@ -46,7 +48,7 @@ export async function s3Fixture(action){
  const xml=(response,status,body,headers={})=>{response.writeHead(status,{'content-type':'application/xml',...headers});response.end(body);};
  const error=(response,code,status=404)=>xml(response,status,'<Error><Code>'+code+'</Code><Message>Owned fixture</Message></Error>');
  const server=createServer(async(request,response)=>{try{
-  const url=new URL(request.url,'http://fixture'),parts=url.pathname.slice(1).split('/'),bucket=parts.shift(),key=parts.join('/'),signed=authenticated(request);events.push({method:request.method,bucket,key,version:url.searchParams.get('versionId'),signed,query:url.search});await hook({request,response,url,bucket,key,signed});if(response.writableEnded)return;
+  const url=new URL(request.url,'http://fixture'),parts=url.pathname.slice(1).split('/'),bucket=parts.shift(),key=parts.join('/'),signed=authenticated(request),signedHeaders=/SignedHeaders=([^,]+)/.exec(request.headers.authorization||'')?.[1].split(';')||[];events.push({method:request.method,bucket,key,version:url.searchParams.get('versionId'),signed,query:url.search,signedHeaders,contentType:request.headers['content-type'],metadataSha256:request.headers['x-amz-meta-neurocenter-sha256']});await hook({request,response,url,bucket,key,signed});if(response.writableEnded)return;
   if(!signed){if(request.headers.authorization)return error(response,'SignatureDoesNotMatch',403);if(mode==='stall-head')return;response.writeHead(publicVersions.has(bucket+'\0'+key+'\0'+url.searchParams.get('versionId'))?200:403);response.end();return;}
   const data=buckets.get(bucket);
   if(url.searchParams.has('policy'))return error(response,'NoSuchBucketPolicy');
