@@ -19,11 +19,8 @@ export class ChatAttachmentStorage {
         this.objects = options.objectStorage ?? (config ? new ChatObjectStorage(config) : null);
     }
     async initialize(): Promise<void> {
-        if (!this.objects) {
-            const pending = await this.pool.query('SELECT 1 FROM model_chat_attachment_transfers LIMIT 1');
-            if (pending.rowCount) throw new ServiceUnavailableException('Подключите Ceph/S3, чтобы завершить перенос существующих файлов чата. Исходные данные сохранены.');
-            return;
-        }
+        // Leave transfer recovery pending until storage is configured; text chat remains available.
+        if (!this.objects) return;
         await this.objects.initialize(); await this.migrateTransfers(); await this.collect();
         if (this.timer) clearInterval(this.timer);
         this.timer = setInterval(() => { if (!this.collecting) void this.collect().catch(() => undefined); }, 30000);

@@ -109,6 +109,16 @@ describe('Chat cleanup lifecycle without private state access', () => {
         await expect(storage.stage({ ownerEmail: 'owner', projectId: null, conversationId: randomUUID(), bytes: Buffer.from('file'), mediaType: 'text/plain' })).rejects.toBeInstanceOf(ServiceUnavailableException);
         await expect(storage.read(randomUUID())).rejects.toBeInstanceOf(ServiceUnavailableException);
         await expect(storage.activate({ query } as unknown as Pick<PoolClient, 'query'>, { id: randomUUID() })).rejects.toBeInstanceOf(ServiceUnavailableException);
-        expect(query).toHaveBeenCalledOnce(); await storage.close(); expect(vi.getTimerCount()).toBe(0);
+        expect(query).not.toHaveBeenCalled(); await storage.close(); expect(vi.getTimerCount()).toBe(0);
+    });
+    it('keeps text startup available while legacy transfer bytes wait for an explicitly configured store', async () => {
+        for (const key of ['CHAT_S3_ENDPOINT', 'CHAT_S3_ACCESS_KEY', 'CHAT_S3_SECRET_KEY', 'CHAT_S3_PROJECT_BUCKET', 'CHAT_S3_PERSONAL_BUCKET']) vi.stubEnv(key, undefined);
+        const content = Buffer.from('Original transfer bytes must remain untouched.'), before = Buffer.from(content);
+        const query = vi.fn(async () => ({ rows: [{ content }], rowCount: 1 })), storage = new ChatAttachmentStorage({ query } as unknown as Pool);
+        await expect(storage.initialize()).resolves.toBeUndefined(); expect(await storage.collect()).toBe(0);
+        await expect(storage.stage({ ownerEmail: 'owner', projectId: null, conversationId: randomUUID(), bytes: content, mediaType: 'text/plain' })).rejects.toBeInstanceOf(ServiceUnavailableException);
+        await expect(storage.read(randomUUID())).rejects.toBeInstanceOf(ServiceUnavailableException);
+        await expect(storage.activate({ query } as unknown as Pick<PoolClient, 'query'>, { id: randomUUID() })).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(query).not.toHaveBeenCalled(); expect(content).toEqual(before); await storage.close(); expect(vi.getTimerCount()).toBe(0);
     });
 });

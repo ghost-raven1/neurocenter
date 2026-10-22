@@ -211,7 +211,9 @@ describe.skipIf(!configFile || !pgUrl).sequential('Chat files — real isolated 
         try {
             for (const key of Object.keys(saved)) delete process.env[key]; missing = new ChatAttachmentStorage(upgrade.db);
         } finally { for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value; }
-        await expect(missing!.initialize()).rejects.toThrow('Исходные данные сохранены');
+        await expect(missing!.initialize()).resolves.toBeUndefined();
+        expect((await upgrade.db.query('SELECT content FROM model_chat_attachment_transfers WHERE attachment_id=$1', [aid])).rows[0].content).toEqual(bytes);
+        expect((await upgrade.db.query('SELECT storage_state,object_id FROM model_chat_attachments WHERE id=$1', [aid])).rows[0]).toEqual({ storage_state: 'TRANSFER', object_id: null });
         await upgrade.db.query("UPDATE model_chat_attachment_transfers SET sha256=$2 WHERE attachment_id=$1", [aid, '0'.repeat(64)]);
         const migrated = new ChatAttachmentStorage(upgrade.db, { objectStorage: objects });
         await expect(migrated.initialize()).rejects.toThrow('Контрольная сумма');
