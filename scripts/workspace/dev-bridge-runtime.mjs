@@ -16,7 +16,10 @@ export function devBridgeTarget(platform = process.platform, arch = process.arch
 function execute(command, args, options) {
     const result = spawnSync(command, args, {...options, stdio: 'inherit', timeout: 20 * 60_000});
     if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`Подготовка моста: ${path.basename(args[0])} завершился с кодом ${result.status}${result.signal ? ` (${result.signal})` : ''}.`);
+    if (result.status !== 0) {
+        const reason = result.signal ? `остановлен сигналом ${result.signal}` : `завершился с кодом ${result.status}`;
+        throw new Error(`Подготовка моста: ${path.basename(args[0])} ${reason}.`);
+    }
 }
 
 /** Publish one verified generation with a single rename; requests already using the previous one remain valid. */
@@ -30,7 +33,7 @@ export async function prepareDevBridge({root, node = process.execPath, environme
         if (error.code === 'EEXIST') throw new Error(`Обновление dev-моста уже выполняется. Проверьте PID в ${lock}/owner.pid перед удалением оставшейся блокировки.`);
         throw error;
     }
-    let generation, pointer, pointerCreated = false, published = false;
+    let generation, pointer, pointerCreated = false, published = false, failure;
     try {
         await fs.writeFile(path.join(lock, 'owner.pid'), `${process.pid}\n`, {mode: 0o600});
         const env = {...environment, NODE_BIN: node, PATH: path.dirname(node) + path.delimiter + (environment.PATH || '')};
@@ -59,9 +62,20 @@ export async function prepareDevBridge({root, node = process.execPath, environme
         const update = updateInstalled ?? (await import('./dev-bridge-install.mjs')).updateInstalledDevBridge;
         const installed = await update({root, archive, version, buildId, target, environment: env, node, output});
         return {version, buildId, target, directory, installed};
+    } catch (error) {
+        failure = error;
+        throw error;
     } finally {
-        if (pointerCreated) await fs.rm(pointer, {force: true});
-        if (generation && !published) await fs.rm(generation, {recursive: true, force: true});
-        await fs.rm(lock, {recursive: true, force: true});
+        // Cleanup is best effort for every owned path; one failure must not strand the install lock.
+        const cleanup = [pointerCreated && pointer, generation && !published && generation, lock].filter(Boolean), errors = [];
+        for (const file of cleanup) {
+            try { await fs.rm(file, {recursive: file !== pointer, force: true}); }
+            catch (error) { errors.push(`${file}: ${error.message}`); }
+        }
+        if (errors.length) {
+            const message = 'Не удалось очистить временные файлы dev-моста: ' + errors.join('; ');
+            if (failure) failure.message += ' ' + message;
+            else throw new Error(message);
+        }
     }
 }

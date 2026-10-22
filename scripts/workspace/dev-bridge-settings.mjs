@@ -1,24 +1,38 @@
 import fs from 'node:fs/promises';
+import {constants} from 'node:fs';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const missing=error=>error.code==='ENOENT';
+const fingerprint=info=>[info.dev,info.ino,info.size,info.mtimeNs,info.ctimeNs,info.mode,info.nlink].join(':');
 export const bridgeEntryName='neurocenter-asset-sync';
 
 /** Snapshots are also rollback receipts: a later user edit must never be overwritten. */
 export async function bridgeFileSnapshot(file){
+    const info=await fs.lstat(file,{bigint:true}).catch(error=>{if(!missing(error))throw error;});
+    if(!info)return{file,bytes:null};
+    const maximum=8*1024**2,changed=()=>Error('Настройки изменились при чтении: '+file);
+    if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1n||info.size>BigInt(maximum))throw Error('Небезопасный файл настроек моста: '+file);
+    const handle=await fs.open(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0));
     try{
-        const info=await fs.lstat(file);
-        if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>8*1024**2)throw Error('Небезопасный файл настроек моста: '+file);
-        const bytes=await fs.readFile(file),after=await fs.lstat(file);
-        if(info.ino!==after.ino||info.dev!==after.dev||info.mtimeMs!==after.mtimeMs||info.size!==after.size)throw Error('Настройки изменились при чтении: '+file);
-        return{file,bytes,mode:info.mode&0o777,ino:info.ino,dev:info.dev,sha256:digest(bytes)};
-    }catch(error){if(missing(error))return{file,bytes:null};throw error;}
+        const opened=await handle.stat({bigint:true});
+        if(!opened.isFile()||fingerprint(opened)!==fingerprint(info))throw changed();
+        const buffer=Buffer.alloc(Math.min(maximum+1,Number(opened.size)+1));let length=0;
+        while(length<buffer.length){
+            const {bytesRead}=await handle.read(buffer,length,buffer.length-length,null);
+            if(!bytesRead)break;
+            length+=bytesRead;
+        }
+        const after=await handle.stat({bigint:true}),located=await fs.lstat(file,{bigint:true});
+        if(BigInt(length)!==opened.size||fingerprint(after)!==fingerprint(opened)||fingerprint(located)!==fingerprint(opened))throw changed();
+        const bytes=buffer.subarray(0,length);
+        return{file,bytes,mode:Number(opened.mode&0o777n),ino:Number(opened.ino),dev:Number(opened.dev),sha256:digest(bytes)};
+    }finally{await handle.close();}
 }
 export async function assertBridgeSnapshot(snapshot){
     const current=await bridgeFileSnapshot(snapshot.file);
-    if(current.sha256!==snapshot.sha256||current.ino!==snapshot.ino||current.dev!==snapshot.dev)throw Error('Настройки изменены другим процессом: '+snapshot.file);
+    if(current.sha256!==snapshot.sha256||current.ino!==snapshot.ino||current.dev!==snapshot.dev||current.mode!==snapshot.mode)throw Error('Настройки изменены другим процессом: '+snapshot.file);
 }
 export async function writeBridgeFile(file,bytes,mode=0o600,expected){
     const temporary=path.join(path.dirname(file),'.neurocenter-dev-'+randomUUID()+'.tmp');
@@ -41,7 +55,9 @@ export function bridgeOrigin(value){
     return value;
 }
 function parseConfiguration(bytes,jsonc){
-    const errors=[],value=jsonc.parse(bytes.toString('utf8'),errors,{allowTrailingComma:true});
+    const text=bytes.toString('utf8');
+    if(!Buffer.from(text).equals(bytes))throw Error('Некорректная кодировка UTF-8 конфигурации OpenCode.');
+    const errors=[],value=jsonc.parse(text,errors,{allowTrailingComma:true});
     if(errors.length||!value||typeof value!=='object'||Array.isArray(value)||value.mcp!==undefined&&(!value.mcp||typeof value.mcp!=='object'||Array.isArray(value.mcp)))throw Error('Повреждён JSON/JSONC конфигурации OpenCode.');
     return value;
 }
@@ -49,8 +65,12 @@ export async function selectedBridgeConfig(home,environment){
     const directory=path.join(environment.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode');
     for(const name of ['opencode.jsonc','opencode.json']){
         const file=path.join(directory,name);
-        try{return{logical:file,snapshot:await bridgeFileSnapshot(await fs.realpath(file))};}
-        catch(error){if(!missing(error))throw error;}
+        const found=await fs.lstat(file).catch(error=>{if(!missing(error))throw error;});
+        if(found){
+            const snapshot=await bridgeFileSnapshot(await fs.realpath(file));
+            if(snapshot.bytes===null)throw Error('Конфигурация OpenCode исчезла при выборе.');
+            return{logical:file,snapshot};
+        }
     }
     const logical=path.join(directory,'opencode.json');return{logical,snapshot:await bridgeFileSnapshot(logical)};
 }
@@ -59,15 +79,16 @@ export async function installedBridgeSettings({install,home,environment,jsonc}){
     const config=await selectedBridgeConfig(home,environment),original=config.snapshot;
     const own=original.bytes===null?undefined:parseConfiguration(original.bytes,jsonc).mcp?.[bridgeEntryName];
     if(own!==undefined&&(!own||typeof own!=='object'||Array.isArray(own)))throw Error('Повреждена запись моста в OpenCode.');
-    const savedEnvironment=own?.environment??{};
+    const savedEnvironment=own?.environment===undefined?{}:own.environment;
     if(!savedEnvironment||typeof savedEnvironment!=='object'||Array.isArray(savedEnvironment)||Object.values(savedEnvironment).some(value=>typeof value!=='string'))throw Error('Повреждены переменные моста в OpenCode.');
+    const savedSite=savedEnvironment.NEUROCENTER_URL===undefined?undefined:bridgeOrigin(savedEnvironment.NEUROCENTER_URL),savedApi=savedEnvironment.NEUROCENTER_API_URL===undefined?undefined:bridgeOrigin(savedEnvironment.NEUROCENTER_API_URL);
     const marker=await bridgeFileSnapshot(path.join(install,'installation.json'));let siteUrl,apiUrl;
     if(marker.bytes!==null){
         const saved=JSON.parse(marker.bytes);if(saved.schemaVersion!==1)throw Error('Неизвестная версия installation.json.');
         siteUrl=bridgeOrigin(saved.siteUrl);apiUrl=bridgeOrigin(saved.apiUrl);
-        if(savedEnvironment.NEUROCENTER_URL&&bridgeOrigin(savedEnvironment.NEUROCENTER_URL)!==siteUrl||savedEnvironment.NEUROCENTER_API_URL&&bridgeOrigin(savedEnvironment.NEUROCENTER_API_URL)!==apiUrl)throw Error('Сохранённые адреса моста и OpenCode расходятся; автоматическая смена площадки запрещена.');
+        if(savedSite!==undefined&&savedSite!==siteUrl||savedApi!==undefined&&savedApi!==apiUrl)throw Error('Сохранённые адреса моста и OpenCode расходятся; автоматическая смена площадки запрещена.');
     }else{
-        siteUrl=bridgeOrigin(savedEnvironment.NEUROCENTER_URL);apiUrl=bridgeOrigin(savedEnvironment.NEUROCENTER_API_URL||siteUrl);
+        siteUrl=bridgeOrigin(savedSite);apiUrl=savedApi??siteUrl;
     }
     return{config,own,marker,siteUrl,apiUrl,environment:{...environment,...savedEnvironment,NEUROCENTER_URL:siteUrl,NEUROCENTER_API_URL:apiUrl}};
 }

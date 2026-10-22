@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {test} from 'node:test';
+import {test, mock} from 'node:test';
 import {prepareDevBridge, devBridgeTarget} from '../workspace/dev-bridge-runtime.mjs';
 import {opencodeVersion} from '../opencode-platforms.mjs';
 
@@ -39,11 +39,12 @@ async function fixture(t) {
     };
     const updateInstalled = async options => { state.updates++; state.updateOptions = options; if (state.fail === 'update') throw new Error('offline paired bridge'); return {updated: true}; };
     const execute = (options = {}) => prepareDevBridge({root, run, environment: {PATH: process.env.PATH, OPENCODE_TARGETS: 'all', OPENCODE_VERSION: 'wrong'}, updateInstalled, ...options});
-    return {root, bridge, runtime, calls, state, buildId, execute};
+    return {root, bridge, runtime, calls, state, buildId, index, execute};
 }
 
 test('install builds current sources, packages only the host, then publishes a verified generation and updates installed bridge', async t => {
-    const f = await fixture(t), result = await f.execute();
+    const f = await fixture(t), output = [];
+    const result = await f.execute({output: {info: (...args) => output.push(['info', ...args]), success: text => output.push(['success', text])}});
     assert.deepEqual(f.calls.map(call => call.script), ['build.mjs', 'prepare-opencode.mjs', 'package-bridge-runtime.mjs']);
     assert.equal(f.calls[1].env.OPENCODE_TARGETS, `${process.platform}-${process.arch}${process.arch === 'x64' ? '-baseline' : ''}${devBridgeTarget().endsWith('-musl') ? '-musl' : ''}`);
     assert.equal(f.calls[1].env.OPENCODE_VERSION, undefined);
@@ -52,6 +53,8 @@ test('install builds current sources, packages only the host, then publishes a v
     assert.deepEqual(pointer, {version: '0.9.18', target: devBridgeTarget(), buildId: f.buildId, sourceCommit: '1'.repeat(40), directory: path.basename(path.dirname(f.state.updateOptions.archive))});
     assert.match(pointer.directory, /^generation-[\w-]+$/);
     assert.equal(await fs.readFile(f.state.updateOptions.archive, 'utf8'), 'fresh production dependencies and bundled Node');
+    assert.deepEqual(output.map(event => event[0]), ['info', 'success']);
+    assert.match(output[1][1], new RegExp(`0\\.9\\.18.*${f.buildId.slice(0, 12)}`));
     await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
 });
 
@@ -146,6 +149,120 @@ test('a real failing build child returns a visible error before any archive or i
 test('a missing build runtime fails before publication and releases the install lock', async t => {
     const f = await fixture(t);
     await assert.rejects(f.execute({run: undefined, node: path.join(f.root, 'missing-node')}), {code: 'ENOENT'});
+    assert.deepEqual(await fs.readdir(f.runtime), []); assert.equal(f.state.updates, 0);
+    await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
+});
+
+test('failed candidate cleanup retains the primary checksum error and still releases the install lock', async t => {
+    const f = await fixture(t); await f.execute(); f.state.corrupt = true; f.state.updates = 0;
+    const previous = await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), remove = fs.rm;
+    const stub = mock.method(fs, 'rm', async (file, options) => {
+        if (path.dirname(file) === f.runtime && path.basename(file).startsWith('generation-')) {
+            throw Object.assign(new Error('candidate cleanup failed'), {code: 'EACCES'});
+        }
+        return remove(file, options);
+    });
+    try {
+        await assert.rejects(f.execute(), error => {
+            assert.match(error.message, /не прошёл проверку/);
+            assert.match(error.message, /candidate cleanup failed/);
+            return true;
+        });
+        await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
+        assert.equal(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), previous);
+        assert.equal(f.state.updates, 0);
+    } finally { stub.mock.restore(); }
+});
+
+for (const method of ['writeFile', 'sync']) {
+    test(`a pointer ${method} failure leaves the previous supply unchanged and removes partial staging files`, async t => {
+        const f = await fixture(t); await f.execute(); f.state.updates = 0;
+        const previous = await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), files = await fs.readdir(f.runtime), open = fs.open;
+        const stub = mock.method(fs, 'open', async (file, ...args) => {
+            const handle = await open(file, ...args);
+            if (file === path.join(f.runtime, `.current-${process.pid}.json`)) {
+                const original = handle[method].bind(handle);
+                handle[method] = async (...parameters) => {
+                    if (method === 'writeFile') await original(...parameters);
+                    throw Object.assign(new Error(`pointer ${method} failed`), {code: 'EIO'});
+                };
+            }
+            return handle;
+        });
+        try {
+            await assert.rejects(f.execute(), {code: 'EIO'});
+            assert.equal(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), previous);
+            assert.deepEqual(await fs.readdir(f.runtime), files); assert.equal(f.state.updates, 0);
+            await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
+        } finally { stub.mock.restore(); }
+    });
+}
+
+test('a cleanup failure after success remains visible while the published generation is kept and the lock released', async t => {
+    const f = await fixture(t), remove = fs.rm;
+    const stub = mock.method(fs, 'rm', async (file, options) => {
+        if (file === path.join(f.runtime, `.current-${process.pid}.json`)) throw new Error('pointer cleanup failed');
+        return remove(file, options);
+    });
+    try {
+        await assert.rejects(f.execute(), /Не удалось очистить.*pointer cleanup failed/);
+        const current = JSON.parse(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'));
+        await fs.access(path.join(f.runtime, current.directory)); assert.equal(f.state.updates, 1);
+        await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
+    } finally { stub.mock.restore(); }
+});
+
+test('default build subprocesses receive the host-only environment and verified archive destination', async t => {
+    const f = await fixture(t), events = path.join(f.root, 'child-events.jsonl');
+    await fs.mkdir(path.join(f.bridge, 'scripts')); await fs.mkdir(path.join(f.root, 'scripts'));
+    const trace = `import fs from 'node:fs/promises';import path from 'node:path';import {createHash} from 'node:crypto';
+        await fs.appendFile(${JSON.stringify(events)},JSON.stringify({script:path.basename(process.argv[1]),node:process.versions.node,cwd:process.cwd(),targets:process.env.OPENCODE_TARGETS,output:process.env.BRIDGE_RUNTIME_OUTPUT_DIR})+'\\n');\n`;
+    await fs.writeFile(path.join(f.bridge, 'scripts/build.mjs'), trace + `await fs.writeFile(${JSON.stringify(path.join(f.bridge, 'dist/index.js'))},${JSON.stringify(f.index)});
+        await fs.writeFile(${JSON.stringify(path.join(f.bridge, 'dist/build.json'))},JSON.stringify({version:'0.9.18',buildId:${JSON.stringify(f.buildId)}}));`);
+    await fs.writeFile(path.join(f.root, 'scripts/prepare-opencode.mjs'), trace);
+    await fs.writeFile(path.join(f.root, 'scripts/package-bridge-runtime.mjs'), trace + `
+        const bytes=Buffer.from('real child archive fixture'),sha256=createHash('sha256').update(bytes).digest('hex');
+        const file=path.join(process.env.BRIDGE_RUNTIME_OUTPUT_DIR,${JSON.stringify(`neurocenter-asset-sync-${devBridgeTarget()}-0.9.18.tgz`)});
+        await fs.writeFile(file,bytes);await fs.writeFile(file+'.sha256',sha256+'\\n');
+        await fs.writeFile(file+'.json',JSON.stringify({version:'0.9.18',target:${JSON.stringify(devBridgeTarget())},buildId:${JSON.stringify(f.buildId)},nodeVersion:process.versions.node,probeEngine:{version:${JSON.stringify(opencodeVersion)}},bytes:bytes.length,sha256}));`);
+    await f.execute({run: undefined, environment: {PATH: process.env.PATH}});
+    const calls = (await fs.readFile(events, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(calls.map(call => call.script), ['build.mjs', 'prepare-opencode.mjs', 'package-bridge-runtime.mjs']);
+    assert.ok(calls.every(call => call.cwd === f.root && call.node === process.versions.node));
+    assert.equal(calls[1].targets, `${process.platform}-${process.arch}${process.arch === 'x64' ? '-baseline' : ''}${devBridgeTarget().endsWith('-musl') ? '-musl' : ''}`);
+    assert.equal(path.dirname(calls[2].output), f.runtime); assert.equal(f.state.updates, 1);
+});
+
+test('lock access denial aborts before build and preserves the previous source generation', async t => {
+    const f = await fixture(t); await f.execute(); f.state.updates = 0; f.calls.length = 0;
+    const previous = await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), mkdir = fs.mkdir;
+    const stub = mock.method(fs, 'mkdir', async (file, options) => {
+        if (file === path.join(f.root, '.run/dev-bridge/install.lock')) throw Object.assign(new Error('lock access denied'), {code: 'EACCES'});
+        return mkdir(file, options);
+    });
+    try {
+        await assert.rejects(f.execute(), {code: 'EACCES'});
+        assert.deepEqual(f.calls, []); assert.equal(f.state.updates, 0);
+        assert.equal(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'), previous);
+    } finally { stub.mock.restore(); }
+});
+
+test('the actual updater is skipped for an absent isolated installation without creating a profile or pairing', async t => {
+    const f = await fixture(t), home = path.join(f.root, 'uninstalled-home');
+    await fs.mkdir(home);
+    const result = await f.execute({updateInstalled: undefined, environment: {HOME: home, PATH: process.env.PATH}});
+    assert.equal(result.installed.updated, false); assert.equal(result.installed.reason, 'not-installed');
+    assert.deepEqual(await fs.readdir(home), []);
+    const current = JSON.parse(await fs.readFile(path.join(f.runtime, 'current.json'), 'utf8'));
+    await fs.access(path.join(f.runtime, current.directory));
+});
+
+test('a build child terminated by a signal reports that signal and leaves no candidate or install lock', async t => {
+    const f = await fixture(t); await fs.mkdir(path.join(f.bridge, 'scripts'));
+    await fs.writeFile(path.join(f.bridge, 'scripts/build.mjs'), 'process.kill(process.pid, "SIGTERM");\n');
+    await assert.rejects(f.execute({run: undefined}), error => {
+        assert.match(error.message, /сигналом SIGTERM/); assert.doesNotMatch(error.message, /кодом null/); return true;
+    });
     assert.deepEqual(await fs.readdir(f.runtime), []); assert.equal(f.state.updates, 0);
     await assert.rejects(fs.access(path.join(f.root, '.run/dev-bridge/install.lock')), {code: 'ENOENT'});
 });

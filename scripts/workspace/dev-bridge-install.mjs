@@ -19,6 +19,13 @@ async function json(file){const info=await regular(file);if(info.size>65536)thro
 const bundledNode=install=>path.join(install,'bin',process.platform==='win32'?'node.exe':'node');
 const installedEntry=install=>path.join(install,'dist/index.js');
 const hostTarget=()=>`${process.platform==='win32'?'windows':process.platform}-${process.arch}${process.platform==='linux'&&!process.report.getReport().header.glibcVersionRuntime?'-musl':''}`;
+/** Runtime HOME belongs to the MCP entry; management writes belong to the selected caller configuration. */
+function managementEnvironment(runtime,environment,home){
+    const control={...runtime,HOME:home,USERPROFILE:home};
+    if(environment.XDG_CONFIG_HOME===undefined)delete control.XDG_CONFIG_HOME;
+    else control.XDG_CONFIG_HOME=environment.XDG_CONFIG_HOME;
+    return control;
+}
 
 /** Every CLI command has a deadline; JSON success is required in addition to exit status. */
 async function runCommand(command,args,environment,timeout=20000){
@@ -75,12 +82,13 @@ async function workerReady(worker,state,version,buildId){
 }
 async function takeLock(lock){
     await fs.mkdir(lock,{mode:0o700});
-    try{await fs.writeFile(path.join(lock,'owner.pid'),String(process.pid)+'\n',{flag:'wx',mode:0o600});}
+    const file=path.join(lock,'owner.pid');let handle,owned;
+    try{handle=await fs.open(file,'wx',0o600);owned=await handle.stat();await handle.writeFile(String(process.pid)+'\n');await handle.sync();}
     catch(error){
-        try{await fs.unlink(path.join(lock,'owner.pid'));}catch(cleanup){if(!missing(cleanup))error.message+=' Не удалось убрать собственный owner.pid: '+lock;}
+        if(owned)try{const current=await fs.lstat(file);if(current.dev===owned.dev&&current.ino===owned.ino)await fs.unlink(file);else error.message+=' Файл owner.pid уже заменён: '+lock;}catch(cleanup){if(!missing(cleanup))error.message+=' Не удалось убрать собственный owner.pid: '+lock;}
         try{await fs.rmdir(lock);}catch{error.message+=' Не удалось убрать собственную блокировку: '+lock;}
         throw error;
-    }
+    }finally{await handle?.close();}
 }
 async function releaseLock(lock){await fs.unlink(path.join(lock,'owner.pid'));await fs.rmdir(lock);}
 async function assertPublished(install,published,version,buildId){
@@ -93,6 +101,14 @@ async function saveRecoveryOriginals(temporary,config,launcher){
     for(const[name,snapshot]of[['original-opencode.jsonc',config],['original-launcher',launcher]])if(snapshot.bytes!==null)await fs.writeFile(path.join(temporary,name),snapshot.bytes,{flag:'wx',mode:0o600,flush:true});
     await fs.writeFile(path.join(temporary,'recovery.json'),JSON.stringify({config:{path:config.file,existed:config.bytes!==null,mode:config.mode},launcher:{path:launcher.file,existed:launcher.bytes!==null,mode:launcher.mode}},null,2)+'\n',{flag:'wx',mode:0o600,flush:true});
 }
+/** A lost ACK permits restart only after resume, with the original runtime and a proven exited owner. */
+async function stoppedOriginalWorker(install,state,original){
+    if(!original?.worker)return false;
+    const current=await fs.lstat(install);
+    if(current.dev!==original.directory.dev||current.ino!==original.directory.ino||await exists(path.join(state,'worker.lock')))return false;
+    await assertBridgeSnapshot(original.package);await assertBridgeSnapshot(original.build);
+    try{process.kill(original.worker,0);return false;}catch(error){if(error.code==='ESRCH')return true;throw error;}
+}
 
 /** Update an existing installation only; saved pairing stays outside the replaceable runtime tree. */
 export async function updateInstalledDevBridge({root,archive,version,buildId,target,environment=process.env,output},dependencies={}){
@@ -103,9 +119,9 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
     const repository=await fs.realpath(root),protectedPaths=[path.join(repository,'mcp/neurocenter-asset-sync'),path.join(repository,'bridge-dist'),path.join(repository,'.run/dev-bridge'),path.dirname(path.resolve(archive))];
     if(protectedPaths.some(file=>file===install||file.startsWith(install+path.sep)||install.startsWith(file+path.sep)))throw Error('INSTALL_DIR пересекается с исходниками или поставкой dev-моста; их замена запрещена.');
     const temporary=await fs.mkdtemp(path.join(path.dirname(install),'.neurocenter-dev-install-')),lock=install+'.install-lock';
-    let locked=false,prepared=false,prepareAttempted=false,prepareConfirmed=false,published=false,publication,previous,settings,launcherBefore,configAfter,launcherAfter,staged,resumeInstall,restart=false,state,rollbackNeeded=false,keepTemporary=false,withConfigLock;
+    let locked=false,prepared=false,prepareAttempted=false,prepareConfirmed=false,resumed=false,restartUnknown=false,published=false,publication,original,previous,settings,launcherBefore,configAfter,launcherAfter,staged,resumeInstall,restart=false,state,rollbackNeeded=false,keepTemporary=false,withConfigLock;
     const prepare=async location=>{
-        prepareAttempted=true;
+        prepareAttempted=true;resumed=false;
         try{
             const result=await cli(run,location,['--prepare-upgrade',installedEntry(install)],settings.environment);
             if(typeof result.paused!=='boolean')throw Error('Мост не подтвердил состояние паузы обновления.');
@@ -122,19 +138,25 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
         await takeLock(lock);locked=true;
         const old=await json(path.join(install,'package.json'));
         if(old.name!=='neurocenter-asset-sync'||!/^0\.(?:9|[1-9]\d)\.\d+$/.test(old.version)||old.version.split('.').map(Number).some((part,i,all)=>all.slice(0,i).every((n,j)=>n===Number(version.split('.')[j]))&&part>Number(version.split('.')[i])))throw Error('Установленный мост несовместим или новее локальной сборки.');
-        settings=await installedBridgeSettings({install,home,environment,jsonc});
+        settings=await installedBridgeSettings({install,home,environment,jsonc});const controlEnvironment=managementEnvironment(settings.environment,environment,home);
+        const runtimeHomeVariable=process.platform==='win32'?'USERPROFILE':'HOME';
+        if(settings.environment[runtimeHomeVariable]==='')throw Error('Пустой runtime '+runtimeHomeVariable+' не поддерживается: сохранённые настройки не изменены.');
         const launcher=path.join(home,'.local/bin','neurocenter-bridge'+(process.platform==='win32'?'.cmd':''));launcherBefore=await bridgeFileSnapshot(launcher);
         if(launcherBefore.bytes&&!launcherBefore.bytes.toString('utf8').includes('Neurocenter bridge command v1'))throw Error('Команда neurocenter-bridge занята другой программой.');
         await saveRecoveryOriginals(temporary,settings.config.snapshot,launcherBefore);
-        state=path.join(settings.environment.NEUROCENTER_BRIDGE_HOME||path.join(home,'.config/neurocenter/bridge'),createHash('sha256').update(settings.siteUrl).digest('hex').slice(0,20));
+        const runtimeHome=(process.platform==='win32'?settings.environment.USERPROFILE:settings.environment.HOME)||home;
+        state=path.join(settings.environment.NEUROCENTER_BRIDGE_HOME||path.join(runtimeHome,'.config/neurocenter/bridge'),createHash('sha256').update(settings.siteUrl).digest('hex').slice(0,20));
         restart=(await bridgeFileSnapshot(path.join(state,'credentials.json'))).bytes!==null;
+        original={directory:await fs.lstat(install),package:await bridgeFileSnapshot(path.join(install,'package.json')),build:await bridgeFileSnapshot(path.join(install,'dist/build.json'))};
+        try{const raw=Number((await bridgeFileSnapshot(path.join(state,'worker.lock'))).bytes?.toString('utf8').trim()),marker=await json(path.join(state,'worker-version.json'));if(Number.isSafeInteger(raw)&&raw>1&&raw!==process.pid&&marker.pid===raw&&marker.version===old.version&&marker.buildId===JSON.parse(original.build.bytes).buildId)original.worker=raw;}catch{/* Optional proof cannot be inferred from an absent or damaged worker marker. */}
         prepared=await prepare(staged);prepareConfirmed=true;
         await assertBridgeSnapshot(settings.config.snapshot);await assertBridgeSnapshot(launcherBefore);await assertBridgeSnapshot(settings.marker);
-        previous=path.join(temporary,'previous');await fs.rename(install,previous);
+        publication=await fs.lstat(staged);const previousPath=path.join(temporary,'previous');await fs.rename(install,previousPath);previous=previousPath;
         try{await fs.rename(staged,install);}catch(error){await fs.rename(previous,install);previous=undefined;throw error;}
-        published=true;publication=await fs.lstat(install);rollbackNeeded=true;resumeInstall=install;
+        published=true;rollbackNeeded=true;resumeInstall=install;const located=await fs.lstat(install);
+        if(located.dev!==publication.dev||located.ino!==publication.ino)throw Error('Установленный runtime заменён во время публикации.');
         const expectedConfig=expectedBridgeRegistration(settings,jsonc,install);
-        try{await cli(run,install,['--init'],settings.environment);}
+        try{await cli(run,install,['--init'],controlEnvironment);}
         finally{
             const after=await selectedAfter(settings,home,environment);
             if(after.bytes?.toString('utf8')===expectedConfig)configAfter=after;
@@ -142,14 +164,14 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
         }
         if(!configAfter)throw Error('OpenCode не подтвердил ожидаемую регистрацию моста.');
         configAfter=await retainBridgeSettings({settings,home,environment,jsonc,withConfigLock,install,expected:configAfter});
-        try{await run(bundledNode(install),[path.join(install,'dist/bridge-cli.js'),'--install-command'],settings.environment,25000);}
+        try{await run(bundledNode(install),[path.join(install,'dist/bridge-cli.js'),'--install-command'],controlEnvironment,25000);}
         finally{
             const after=await bridgeFileSnapshot(launcherBefore.file);
             if(after.bytes?.toString('utf8')===expectedBridgeLauncher(install))launcherAfter=after;
             else await assertBridgeSnapshot(launcherBefore);
         }
         if(!launcherAfter?.bytes)throw Error('Короткая команда моста не зарегистрирована.');
-        await cli(run,install,['--finish-upgrade'],settings.environment);prepared=false;
+        await cli(run,install,['--finish-upgrade'],settings.environment);prepared=false;resumed=true;
         await releaseLock(lock);locked=false;
         if(restart)await ready(start(install,settings.environment),state,version,buildId);
         rollbackNeeded=false;
@@ -169,9 +191,10 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
                 try{resumeInstall=path.join(temporary,'failed');await fs.rename(install,resumeInstall);await fs.rename(previous,install);previous=undefined;published=false;}catch(error){problems.push('Откат файлов не завершён: '+error.message);}
             }
         }
-        if((prepared||prepareAttempted)&&settings){try{await cli(run,await exists(resumeInstall)?resumeInstall:install,['--finish-upgrade'],settings.environment);prepared=false;}catch(error){problems.push('Снятие паузы не подтверждено: '+error.message);}}
+        if((prepared||prepareAttempted)&&settings){try{await cli(run,await exists(resumeInstall)?resumeInstall:install,['--finish-upgrade'],settings.environment);prepared=false;resumed=true;}catch(error){problems.push('Снятие паузы не подтверждено: '+error.message);}}
+        if(restart&&!published&&!prepareConfirmed&&prepareAttempted&&resumed)try{restartUnknown=await stoppedOriginalWorker(install,state,original);}catch(error){problems.push('Остановка прежнего worker не подтверждена: '+error.message);}
         if(locked){try{await releaseLock(lock);locked=false;}catch(error){problems.push('Блокировка сохранена: '+error.message);}}
-        if(restart&&prepareConfirmed&&!published&&!prepared){try{const old=await json(path.join(install,'package.json')),build=await json(path.join(install,'dist/build.json'));await ready(start(install,settings.environment),state,old.version,build.buildId);}catch(error){problems.push('Запуск прежнего worker не подтверждён: '+error.message);}}
+        if(restart&&(prepareConfirmed||restartUnknown)&&!published&&!prepared){try{const old=await json(path.join(install,'package.json')),build=await json(path.join(install,'dist/build.json'));await ready(start(install,settings.environment),state,old.version,build.buildId);}catch(error){problems.push('Запуск прежнего worker не подтверждён: '+error.message);}}
         if(previous||problems.length){keepTemporary=true;Object.assign(cause,{recoveryDirectory:temporary});}
         if(problems.length)cause.message+=' '+problems.join('; ');
         if(keepTemporary)cause.message+=' Каталог восстановления: '+temporary;

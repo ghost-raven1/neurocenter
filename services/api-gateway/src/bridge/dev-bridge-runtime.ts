@@ -35,9 +35,30 @@ async function ordinary(filename: string, maximum: number): Promise<FileHandle> 
     } catch (error) { await file.close(); throw error; }
 }
 
-async function text(filename: string, maximum: number): Promise<string> {
+async function text(filename: string, maximum: number, replaceablePointer = false): Promise<string> {
     const file = await ordinary(filename, maximum);
-    try { return await file.readFile('utf8'); } finally { await file.close(); }
+    try {
+        const before = await file.stat();
+        if (before.size > maximum) { throw new Error('Development bridge metadata exceeds its limit.'); }
+        const bytes = Buffer.allocUnsafe(maximum + 1); let received = 0;
+        while (received < bytes.length) {
+            const read = await file.read(bytes, received, bytes.length - received, received);
+            if (!read.bytesRead) { break; }
+            received += read.bytesRead;
+        }
+        const after = await file.stat();
+        if (received > maximum || received !== before.size || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+            throw new Error('Development bridge metadata changed while reading.');
+        }
+        if (before.ctimeMs !== after.ctimeMs) {
+            // Atomic pointer replacement unlinks the old FD; in-place writes must still fail.
+            const current = replaceablePointer && after.nlink === 0 ? await lstat(filename) : undefined;
+            if (!current?.isFile() || current.isSymbolicLink() || current.nlink !== 1 || current.dev === before.dev && current.ino === before.ino) {
+                throw new Error('Development bridge metadata identity changed while reading.');
+            }
+        }
+        return bytes.subarray(0, received).toString('utf8');
+    } finally { await file.close(); }
 }
 
 function pointer(value: unknown): IDevPointer {
@@ -76,7 +97,7 @@ export async function readDevBridgeRuntime(directory: string, signal: AbortSigna
         try { currentInfo = await lstat(pointerFile); }
         catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') { return undefined; } throw error; }
         if (!currentInfo.isFile() || currentInfo.isSymbolicLink()) { throw new Error('Invalid development bridge pointer file.'); }
-        const raw = await text(pointerFile, 8192);
+        const raw = await text(pointerFile, 8192, true);
         signal.throwIfAborted();
         const current = pointer(JSON.parse(raw)), generation = await canonical(path.join(directory, current.directory));
         const name = `neurocenter-asset-sync-${current.target}-${current.version}.tgz`;
