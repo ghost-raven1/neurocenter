@@ -20,7 +20,8 @@ function fixture(){
     const query=vi.fn(async(sql:string)=>{
         events.push(sql);
         if(sql==='ROLLBACK'&&rollbackFails)throw Error('Rollback failed');
-        return {rows:sql.startsWith('SELECT * FROM ai_plugins')?[native]:sql.startsWith('SELECT repository,external_id')?owners.map(value=>({repository:value.repository,external_id:value.externalId,revision:value.revision,asset_version:value.assetVersion,descriptor_sha256:value.descriptorSha256,native_version:value.nativeVersion,native_hash:value.nativeHash})):sql.startsWith('SELECT is_main_admin')?[{is_main_admin:true,enabled:true}]:[]};
+        if(sql.includes('EXTRACT(EPOCH'))return {rows:[{lock_ms:'0',statement_ms:'0'}]};
+        return {rows:sql.startsWith('SELECT * FROM ai_plugins')||sql.startsWith('INSERT INTO ai_plugins')?[native]:sql.startsWith('SELECT repository,external_id')?owners.map(value=>({repository:value.repository,external_id:value.externalId,revision:value.revision,asset_version:value.assetVersion,descriptor_sha256:value.descriptorSha256,native_version:value.nativeVersion,native_hash:value.nativeHash})):sql.startsWith('SELECT is_main_admin')?[{is_main_admin:true,enabled:true}]:[]};
     });
     const lease={query} as unknown as PoolClient,pool={} as Pool,recordLocal=vi.fn(async()=>({assetId:'tool-new',sourceVersion:'build-new',sourceSha256:'c'.repeat(64)})),completeWithPublication=vi.fn(async()=>{events.push('build success');}),guard=vi.fn(async()=>{events.push('fresh guard');}),discard=vi.fn();
     const row={id:'22222222-2222-4222-8222-222222222222',actor:'main@example.test',config:{publication:target}} as BuildRow;
@@ -38,6 +39,7 @@ describe('Explicit build update commits the existing native identity and source 
         expect(f.recordLocal).toHaveBeenCalledWith(f.lease,expect.anything(),expect.objectContaining({id:native.id,version:3}),'main@example.test',{replaceOrigins:[{repository:'local-archive',externalId:'tool-old',revision:3}]});
         expect(f.completeWithPublication).toHaveBeenCalledWith(f.lease,expect.any(String),expect.objectContaining({catalogId:native.id,version:3,assetId:'tool-new'}));
         expect(f.events.indexOf('fresh guard')).toBeLessThan(f.events.indexOf('native update'));expect(f.events.at(-1)).toBe('COMMIT');expect(f.discard).not.toHaveBeenCalled();
+        expect(f.events.findIndex(sql=>sql.includes('set_config'))).toBeLessThan(f.events.findIndex(sql=>sql.includes('pg_advisory_xact_lock')));
     });
     it('Source-only drift after build prevents every native/source/result mutation',async()=>{
         const f=fixture();f.setOwners([{...origin,revision:4}]);await expect(f.run()).rejects.toMatchObject({status:409});
@@ -50,5 +52,13 @@ describe('Explicit build update commits the existing native identity and source 
     it('A failed final receipt never commits the new head and the primary result failure remains visible',async()=>{
         const f=fixture(),primary=Error('Receipt ACK lost');f.completeWithPublication.mockRejectedValue(primary);await expect(f.run()).rejects.toBe(primary);
         expect(f.events).not.toContain('COMMIT');expect(f.events.at(-1)).toBe('ROLLBACK');expect(f.discard).not.toHaveBeenCalled();
+    });
+    it('A new tool passes the owned-transaction deadline callback to the real repository create path',async()=>{
+        const f=fixture();
+        const row={id:'22222222-2222-4222-8222-222222222222',actor:'main@example.test',config:{}} as BuildRow;
+        await publishBuiltTool({pool:{} as Pool,lease:f.lease,sources:{recordLocal:f.recordLocal} as unknown as AssetSourcesService,repository:{completeWithPublication:f.completeWithPublication} as unknown as PackageBuildRepository,row,publication:{name:native.name,kind:'mcp',description:'New source',config:{transport:'remote',url:'https://example.test/mcp'}},prepared:{asset:{id:'tool-new'}} as IPreparedLocalAsset,guard:f.guard,discard:f.discard});
+        expect(f.create).toHaveBeenCalledOnce();expect(f.events.findIndex(sql=>sql.includes('set_config'))).toBeGreaterThan(f.events.indexOf('BEGIN'));
+        expect(f.events.findIndex(sql=>sql.includes('set_config'))).toBeLessThan(f.events.findIndex(sql=>sql.includes('pg_advisory_xact_lock')));
+        expect(f.completeWithPublication).toHaveBeenCalledOnce();expect(f.events.at(-1)).toBe('COMMIT');
     });
 });

@@ -23,6 +23,7 @@ import { notifyDeviceOperations } from '../devices/device-operations';
 import { PluginRepository } from '../publication/plugin-repository';
 import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview} from './publication-target';
 import {publishBuiltTool} from './publish-built-tool';
+import {configureBuildPublicationTransaction,publicationDeadlineMessage} from './publication-deadline';
 import {importBuiltSkill} from './import-skill-publication';
 import type { IAiPluginCreate } from '../catalog/dto';
 import { CatalogService } from '../catalog/catalog.service';
@@ -437,9 +438,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             }).catch(() => undefined);
         } catch (error) {
             unreaped=error instanceof BuildProcessUnreapedError;
-            const message = error instanceof ForbiddenException ? (error.message.startsWith('Функция «')?error.message:'Права главного администратора отозваны. Публикация остановлена.')
+            const message = publicationDeadlineMessage(error) ?? (error instanceof ForbiddenException ? (error.message.startsWith('Функция «')?error.message:'Права главного администратора отозваны. Публикация остановлена.')
                 : error instanceof Error && !/postgres|password|token|secret|connection|https?:\/\//i.test(error.message) ? error.message.slice(0, 500)
-                : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.';
+                : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.');
             cancelled=error instanceof BuildCancelledError||cancellation.controller.signal.reason instanceof BuildCancelledError;
             if(!cancelled)try{await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);}
             catch(failure){if(failure instanceof BuildCancelledError)cancelled=true;else throw failure;}
@@ -469,6 +470,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
             await lease.query('BEGIN');
             try{
+                await configureBuildPublicationTransaction(lease);
                 await lease.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+built.asset.card.slug]);
                 const native=await this.sources.publishLocalSkill(prepared,row.actor);
                 await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);

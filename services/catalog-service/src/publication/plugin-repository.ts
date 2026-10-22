@@ -16,7 +16,7 @@ class PublicationLockTargetChanged extends ConflictException {
 
 /** SQL публикаций отделён от каталога проектов; карточка и её версия меняются одной транзакцией. */
 export class PluginRepository {
-    constructor(private readonly pool: Pool,private readonly discardBorrowed?:(client:PoolClient)=>void) {}
+    constructor(private readonly pool: Pool,private readonly discardBorrowed?:(client:PoolClient)=>void,private readonly configureOwnedTransaction?:(client:PoolClient)=>Promise<void>) {}
 
     async list(page: number, size: number, query: string, allowedIds?: string[]): Promise<IPage<IAiPlugin>> {
         const params: unknown[] = [];
@@ -211,7 +211,7 @@ export class PluginRepository {
         const client = borrowedClient ?? await this.pool.connect();
         let tainted=false;
         try {
-            if (!alreadyInTransaction) { await client.query('BEGIN'); }
+            if (!alreadyInTransaction) { await client.query('BEGIN'); await this.configureOwnedTransaction?.(client); }
             await control?.beforeGraph(client);
             // Единый порядок блокировок исключает гонку publish/delete и взаимную блокировку A→B/B→A.
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['publication:dependency-graph']);
