@@ -35,12 +35,13 @@ export class AssetImportWorker {
     private async drain():Promise<void>{
         const client=await this.pool.connect(),abort=new AbortController();this.abort=abort;
         const failed=()=>abort.abort(new Error('Соединение владельца импорта потеряно'));client.on('error',failed);
-        let locked=false;
+        let locked=false,discard=true;
         try{
             locked=!!(await client.query<{locked:boolean}>("SELECT pg_try_advisory_lock(hashtextextended('neurocenter:asset-import-worker:'||current_schema(),0)) AS locked")).rows[0]?.locked;
+            discard=false;
             if(!locked){return;}
             while(!this.stopped&&!abort.signal.aborted){const job=await this.jobs.next(client);if(!job){break;}await this.process(job,client,abort.signal);}
-        }finally{client.removeListener('error',failed);if(locked&&!abort.signal.aborted){await client.query("SELECT pg_advisory_unlock(hashtextextended('neurocenter:asset-import-worker:'||current_schema(),0))").catch(()=>undefined);}client.release(abort.signal.aborted);this.abort=undefined;}
+        }finally{client.removeListener('error',failed);if(locked&&!abort.signal.aborted){await client.query("SELECT pg_advisory_unlock(hashtextextended('neurocenter:asset-import-worker:'||current_schema(),0))").catch(()=>{discard=true;});}client.release(discard||abort.signal.aborted);this.abort=undefined;}
     }
     private async check(job:IImportJob,client:PoolClient,signal:AbortSignal):Promise<void>{
         signal.throwIfAborted();await authorizeImportActor(client,job.actor);
@@ -100,13 +101,14 @@ export class AssetImportWorker {
                 job=await this.jobs.save(client,job,'RUNNING','Обрабатываем «'+item.name+'»');
                 const blobs=await this.blobs.importAsset(item.resolved.asset,item.requestKey,signal,job.cache_only===true);
                 if(item.resolved.asset.kind==='mcp'||item.resolved.asset.kind==='plugin'){
-                    for(const entry of item.resolved.asset.delivery.artifacts){await this.check(job,client,signal);await this.runtime.importArchive(await this.blobs.checkedPath(entry.descriptor.sha256,entry.descriptor.compressedBytes),entry.descriptor);}
+                    for(const entry of item.resolved.asset.delivery.artifacts){await this.check(job,client,signal);const archive=await this.blobs.checkedPath(entry.descriptor.sha256,entry.descriptor.compressedBytes);await requireFeaturesEnabled(['asset_sources',...requiredAssetFeatures(item.resolved.asset.kind)],undefined,undefined,signal);signal.throwIfAborted();await this.runtime.importArchive(archive,entry.descriptor);}
                 }
                 // Скилл сохраняется отдельным durable FS commit. Потеря ACK возобновляется по тому же requestKey.
                 await client.query('BEGIN');
                 try{
                     await authorizeImportActor(client,job.actor,true);await this.check(job,client,signal);
                     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:'+item.resolved.asset.kind+':'+(item.expected?.id??item.native!.id)]);
+                    await requireFeaturesEnabled(['asset_sources',...requiredAssetFeatures(item.resolved.asset.kind)],undefined,undefined,signal);signal.throwIfAborted();
                     let skillPin;if(item.resolved.asset.kind==='skill'){skillPin=await this.skills.publish(item,job.actor);}
                     const finish=async(native:NonNullable<IImportItem['native']>)=>{
                         if(['mcp','plugin','model','agent'].includes(native.kind)&&item.native&&(native.id!==item.native.id||native.version!==item.native.version||native.manifest!==item.native.manifest||native.hash!==item.native.hash)){
@@ -121,7 +123,11 @@ export class AssetImportWorker {
                     else if(item.resolved.asset.kind==='model'){await finish(await this.models.publish(item,job.actor,client));}
                     else{await finish(skillPin??item.native!);}
                     await client.query('COMMIT');
-                }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}
+                }catch(error){
+                    try{await client.query('ROLLBACK');}catch{this.abort?.abort(error);}
+                    // Unknown transaction state must not be used to publish failure receipts or returned to the pool.
+                    throw error;
+                }
             }
             await this.jobs.save(client,job,'SUCCEEDED','Выбранные ассеты и точные зависимости добавлены.');
         }catch(error){
