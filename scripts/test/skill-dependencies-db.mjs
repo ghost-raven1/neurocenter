@@ -6,6 +6,9 @@ import {mkdtemp,mkdir,writeFile,readFile,rm,readdir} from 'node:fs/promises';
 import {hostname,tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -21,7 +24,7 @@ const {SkillsService}=require(path.join(skillsDist,'skills/skills.service.js'));
 const {versionRelative}=require(path.join(skillsDist,'storage/skill-versions.js'));
 const {scanSkillDependencyUsage}=require(path.join(skillsDist,'storage/skill-dependency-usage.js'));
 const {serializeSkillFile}=require(path.join(skillsDist,'storage/frontmatter.js'));
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const reportPath=process.env.SKILL_DEPENDENCIES_TEST_REPORT||fileURLToPath(new URL('../../.run/skill-dependencies-db-smoke.json',import.meta.url));
 const database='nc_skill_refs_test_'+randomBytes(8).toString('hex');
 const directory=await mkdtemp(path.join(tmpdir(),'nc-skill-ref-protocol-'));

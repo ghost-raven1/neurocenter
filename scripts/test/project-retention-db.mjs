@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PROJECT_RETENTION_TEST_PG_URL||process.env.PUBLICATION_TEST_PG_URL).href;
 
 // Все проекты, триггеры и HTTP-записи создаются только в собственной временной БД.
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
@@ -13,7 +16,7 @@ const {Module}=require('@nestjs/common');
 const {NestFactory}=require('@nestjs/core');
 const dist=path.resolve(process.env.PROJECT_RETENTION_TEST_DIST||path.join(workspace,'services/catalog-service/.retention-audit-dist'));
 const reportPath=process.env.PROJECT_RETENTION_TEST_REPORT||path.join(workspace,'output/retention-audit-20261019/integration/postgres.json');
-const adminUrl=process.env.PROJECT_RETENTION_TEST_PG_URL||process.env.PUBLICATION_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const database='nc_project_retention_test_'+randomBytes(8).toString('hex');
 const admin=new Pool({connectionString:adminUrl,max:2});
 const originalEnv=new Map(['NODE_ENV','CATALOG_PG_URL','SSO_DISABLE','PROJECTS_ROOT','RAG_SERVICE_URL','API_GATEWAY_URL','NEUROCENTER_INTERNAL_TOKEN'].map(key=>[key,process.env[key]]));

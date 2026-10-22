@@ -3,6 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.RAG_RECOVERY_TEST_PG_URL).href;
 
 // Настоящие SQL-права: отказ, исправление и повтор на том же объекте без перезапуска сервиса.
 for(const file of ['.env.local','.env'])try{process.loadEnvFile(file);}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -13,7 +16,7 @@ const {RagDb}=require(path.join(dist,'rag/rag-db.js')),{RagController}=require(p
     {RagService}=require(path.join(dist,'rag/rag.service.js'));
 const suffix=randomUUID().replaceAll('-','').slice(0,16),database='nc_rag_recovery_'+suffix;
 const writer='nc_rw_'+suffix,reader='nc_ro_'+suffix,password=randomBytes(24).toString('hex');
-const adminUrl=new URL(process.env.CATALOG_PG_URL||'postgresql://rag:rag@localhost:5432/postgres');
+const adminUrl=new URL(adminConnection);
 adminUrl.pathname='/postgres';
 const admin=new Pool({connectionString:adminUrl.href,max:1,application_name:'nc-edge-rag-recovery'});
 const before=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows;

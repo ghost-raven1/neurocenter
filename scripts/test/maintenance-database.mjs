@@ -5,15 +5,18 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createMaintenanceStore} from '../production/maintenance.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.TEST_ADMIN_PG_URL).href;
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 require('ts-node').register({project:path.join(root,'services/catalog-service/tsconfig.json'),transpileOnly:true});
 const {Pool}=require('pg');
 const {MaintenanceService}=require(path.join(root,'services/catalog-service/src/maintenance/maintenance.service.ts'));
 const {listAuditHistory}=require(path.join(root,'services/catalog-service/src/catalog/audit-history.ts'));
-const administration=new Pool({connectionString:process.env.TEST_ADMIN_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres'});
+const administration=new Pool({connectionString:adminConnection});
 const database='nc_verify_maintenance_'+randomUUID().replaceAll('-','');
-const url=new URL(process.env.TEST_ADMIN_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres');url.pathname='/'+database;
+const url=new URL(adminConnection);url.pathname='/'+database;
 let created=false,pool,service;const cases=[];const check=async(name,action)=>{await action();cases.push({name,passed:true});};
 const old=process.env.CATALOG_PG_URL;
 try{

@@ -6,8 +6,11 @@ import path from 'node:path';
 import os from 'node:os';
 import {prepareDevModelCredentials} from '../workspace/dev-model-credentials.mjs';
 import {modelCredentialEnvironmentIdentity} from '../workspace/model-credentials.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.CATALOG_TEST_PG_URL).href;
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url)),{Pool,Client}=require('pg');
-const url=new URL(process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog'),name='nc_dev_key_'+randomUUID().replaceAll('-','');
+const url=new URL(adminConnection),name='nc_dev_key_'+randomUUID().replaceAll('-','');
 const admin=new Pool({connectionString:url.href,max:1,connectionTimeoutMillis:1500}),query=Client.prototype.query,cases=[];
 let database,created=false,temporary,readOnlyTransactions=0;
 const check=async(name,action)=>{await action();cases.push({name,passed:true});};

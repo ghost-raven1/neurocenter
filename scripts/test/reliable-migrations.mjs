@@ -3,6 +3,9 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
 import {captureMigrationState,assertMigrationStatePreserved} from './production-migration-state.fixture.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.TEST_ADMIN_PG_URL).href;
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 require('ts-node').register({transpileOnly:true,project:fileURLToPath(new URL('../../services/catalog-service/tsconfig.json',import.meta.url))});
@@ -11,14 +14,14 @@ const { migrateCatalog } = require('./src/database/migrations.ts');
 const { CATALOG_MIGRATIONS } = require('./src/database/catalog-migrations.ts');
 const { CURRENT_CATALOG_SCHEMA_CONTRACT, assertCurrentCatalogSchema } = require('./src/database/current-schema-verification.ts');
 const database = 'nc_install_test_reliable_migrations_' + process.pid;
-const admin = new Pool({ connectionString: process.env.TEST_ADMIN_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres' });
+const admin = new Pool({ connectionString: adminConnection });
 let pool;
 let created = false;
 const cases = [];
 const check = async (name, action) => { await action(); cases.push({ name, passed: true }); };
 try {
     await admin.query('CREATE DATABASE ' + database); created = true;
-    const url = new URL(process.env.TEST_ADMIN_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres'); url.pathname = '/' + database;
+    const url = new URL(adminConnection); url.pathname = '/' + database;
     pool = new Pool({ connectionString: url.href, max: 4 });
     await check('Обновление с первой схемы сохраняет прежний план и задаёт его назначение', async () => {
         await migrateCatalog(pool,CATALOG_MIGRATIONS.slice(0,2));

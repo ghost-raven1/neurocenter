@@ -10,13 +10,16 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.INSTALLATION_TEST_PG_URL).href;
 
 // Только собственная временная база, HTTP-порт и файловый профиль; реальные проекты не изменяются.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(path.join(root, 'services/catalog-service/package.json'));
 const { Pool } = require('pg');
 const load = relative => import(pathToFileURL(path.join(root, relative)).href);
-const adminUrl = process.env.INSTALLATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl = adminConnection;
 const admin = new Pool({ connectionString: adminUrl });
 const database = 'nc_install_test_' + randomBytes(8).toString('hex');
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-install-reliability-'));

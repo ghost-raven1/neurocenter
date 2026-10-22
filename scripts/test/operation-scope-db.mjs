@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.OPERATION_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -17,7 +20,7 @@ const {OperationRepository}=require(path.join(dist,'operations/operation-reposit
 const {DeviceStore}=require(path.join(dist,'devices/device-store.js'));
 const {DeviceJobs}=require(path.join(dist,'devices/device-jobs.js'));
 const {completeDeviceJob}=require(path.join(dist,'devices/device-completion.js'));
-const adminUrl=process.env.OPERATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const admin=new Pool({connectionString:adminUrl,max:2});
 const database='nc_operation_scope_test_'+randomBytes(8).toString('hex');
 const reportPath=process.env.OPERATION_TEST_REPORT || fileURLToPath(new URL('../../output/gap-audit-20261018/operation-scope-db.json',import.meta.url));

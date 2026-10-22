@@ -3,6 +3,9 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.DEVICE_QUEUE_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -11,7 +14,7 @@ const {CatalogService}=require(path.join(dist,'catalog/catalog.service.js'));
 const {AccessDb}=require(path.join(dist,'access/access-db.js'));
 const {DeviceStore}=require(path.join(dist,'devices/device-store.js'));
 const {DeviceController}=require(path.join(dist,'devices/device.controller.js'));
-const admin=new Pool({connectionString:process.env.DEVICE_QUEUE_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres',max:1});
+const admin=new Pool({connectionString:adminConnection,max:1});
 const database='nc_completion_scope_'+randomBytes(8).toString('hex');
 const report=path.resolve(process.env.DEVICE_QUEUE_TEST_REPORT||'output/edge-audit-20261019/access-queue/completion-postgres.json');
 const scenarios=[],owner='owner@example.test',project='prj-own',token=randomBytes(32).toString('hex'),deviceId=randomUUID();
@@ -19,7 +22,7 @@ const sha=value=>createHash('sha256').update(value).digest('hex');
 let pool,catalog,access,store,created=false,dropped=false,fatal,cleanupErrors=[];
 try{
     await admin.query(`CREATE DATABASE "${database}"`);created=true;
-    const url=new URL(process.env.DEVICE_QUEUE_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres');url.pathname='/'+database;
+    const url=new URL(adminConnection);url.pathname='/'+database;
     process.env.CATALOG_PG_URL=url.href;process.env.NODE_ENV='production';process.env.SSO_DISABLE='false';
     process.env.NEUROCENTER_INTERNAL_TOKEN=randomBytes(32).toString('hex');process.env.API_GATEWAY_URL='http://127.0.0.1:9';
     pool=new Pool({connectionString:url.href,max:2});catalog=new CatalogService();await catalog.ensureSchema();

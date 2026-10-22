@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {writeFile} from 'node:fs/promises';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.DEVICE_REQUEST_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -12,7 +15,7 @@ const {DeviceStore}=require(path.join(dist,'devices/device-store.js'));
 const {enqueueDeviceJob}=require(path.join(dist,'devices/device-enqueue.js'));
 const {recordDeviceOperation}=require(path.join(dist,'devices/device-operations.js'));
 const {OperationRepository}=require(path.join(dist,'operations/operation-repository.js'));
-const adminUrl=process.env.DEVICE_REQUEST_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const admin=new Pool({connectionString:adminUrl,max:1});
 const database='nc_bridge_requests_test_'+randomBytes(8).toString('hex');
 const email='owner@example.test',role='Разработчик',projectId='request-project';

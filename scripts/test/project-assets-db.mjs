@@ -6,6 +6,9 @@ import {mkdir,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -21,7 +24,7 @@ const {SkillsService}=require(path.join(skillsDist,'skills/skills.service.js'));
 const {SkillAssetImportController}=require(path.join(skillsDist,'skills/asset-import.controller.js'));
 const originalSkillsUrl=process.env.SKILLS_SERVICE_URL,originalInternalToken=process.env.NEUROCENTER_INTERNAL_TOKEN;
 const token=randomBytes(24).toString('hex');
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const reportPath=process.env.PROJECT_ASSETS_TEST_REPORT || fileURLToPath(new URL('../../.run/project-assets-db-smoke.json',import.meta.url));
 const database='nc_project_assets_test_'+randomBytes(8).toString('hex');
 const admin=new Pool({connectionString:adminUrl,max:2});

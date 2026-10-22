@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -15,7 +18,7 @@ const {ensureCatalogSchema}=require(path.join(dist,'database/catalog-schema.js')
 const {listAuditHistory}=require(path.join(dist,'catalog/audit-history.js'));
 const root=new URL('../../',import.meta.url);
 // Сценарии публикации создают собственную БД, не добавляя даже временных строк в рабочий каталог.
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const admin=new Pool({connectionString:adminUrl,max:2});
 const database='nc_publication_test_'+randomBytes(8).toString('hex');
 const reportPath=process.env.PUBLICATION_TEST_REPORT || fileURLToPath(new URL('.run/publication-db-smoke.json',root));

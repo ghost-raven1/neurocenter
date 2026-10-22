@@ -5,13 +5,16 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.INSTALLATION_TEST_PG_URL).href;
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const { Pool } = require('pg');
 const { InstallPlans } = require('../../services/catalog-service/dist/devices/install-plans.js');
 const { ensureCatalogSchema } = require('../../services/catalog-service/dist/database/catalog-schema.js');
 const { buildPackage } = require('../../services/catalog-service/dist/catalog/bundle-package.js');
-const url = process.env.INSTALLATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const url = adminConnection;
 const admin = new Pool({ connectionString: url });
 const database = 'nc_install_test_' + randomBytes(8).toString('hex');
 const actor = { email: 'fixture@example.test', activeRole: 'Главный админ' };

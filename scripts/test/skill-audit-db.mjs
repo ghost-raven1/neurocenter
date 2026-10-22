@@ -7,6 +7,9 @@ import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,lstat} from 'node:fs/promise
 import {hostname,tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -19,7 +22,7 @@ const {FsSkillsStorage}=require(path.join(skillsDist,'storage/fs-skills-storage.
 const {deliverSkillAudit}=require(path.join(skillsDist,'storage/skill-audit.js'));
 const {SkillsService}=require(path.join(skillsDist,'skills/skills.service.js'));
 const {serializeSkillFile}=require(path.join(skillsDist,'storage/frontmatter.js'));
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const reportPath=process.env.SKILL_AUDIT_TEST_REPORT||fileURLToPath(new URL('../../.run/skill-audit-db-smoke.json',import.meta.url));
 const database='nc_skill_audit_test_'+randomBytes(8).toString('hex');
 const directory=await mkdtemp(path.join(tmpdir(),'nc-skill-audit-'));

@@ -4,6 +4,9 @@ import {createRequire} from 'node:module';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_SCENARIO_PG_URL).href;
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const {Pool} = require('pg');
@@ -15,7 +18,7 @@ const {ensureCatalogSchema} = require(path.join(dist, 'database/catalog-schema.j
 const {InstallPlans} = require(path.join(dist, 'devices/install-plans.js'));
 const {resolveInstallationSet} = require(path.join(dist, 'devices/installation-set.js'));
 const historical = process.env.PUBLICATION_SCENARIO_MODE === 'historical-red';
-const adminUrl = process.env.PUBLICATION_SCENARIO_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl = adminConnection;
 const admin = new Pool({connectionString: adminUrl, max: 2});
 const poolErrors = [];
 admin.on('error', error => poolErrors.push(error.code || error.message));

@@ -8,6 +8,9 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.REMOTE_MODEL_TEST_PG_URL).href;
 
 // Только собственная БД и локальный HTTP provider: реальные ключи и модели не используются.
 const root=fileURLToPath(new URL('../../',import.meta.url));
@@ -29,7 +32,7 @@ const {ModelBundleRuntime}=require(path.join(root,'services/catalog-service/src/
 const {OpenCodeModelImport}=require(path.join(root,'services/catalog-service/src/models/opencode-model-import.ts'));
 const {modelScanDigest}=require(path.join(root,'services/shared/opencode-model-scan.cjs'));
 const {ModelRuntime}=require(path.join(root,'services/catalog-service/src/models/model-runtime.ts'));
-const adminUrl=process.env.REMOTE_MODEL_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const admin=new Pool({connectionString:adminUrl,max:2});
 const database='nc_remote_models_test_'+randomBytes(8).toString('hex');
 const before=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate')).rows.map(row=>row.datname);

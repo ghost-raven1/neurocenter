@@ -5,6 +5,9 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {startFlagsFixture} from './feature-flags.fixture.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.DEVICE_QUEUE_TEST_PG_URL).href;
 
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
@@ -15,7 +18,7 @@ const {AccessController}=require(path.join(dist,'access/access.controller.js'));
 const {DeviceStore}=require(path.join(dist,'devices/device-store.js'));
 const {DeviceJobs}=require(path.join(dist,'devices/device-jobs.js'));
 const {DeviceController}=require(path.join(dist,'devices/device.controller.js'));
-const adminUrl=process.env.DEVICE_QUEUE_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=adminConnection;
 const admin=new Pool({connectionString:adminUrl,max:2});
 const database='nc_device_queue_test_'+randomBytes(8).toString('hex');
 const reportPath=process.env.DEVICE_QUEUE_TEST_REPORT || fileURLToPath(new URL('../../output/continuation-20261018/catalog/device-queue-db.json',import.meta.url));

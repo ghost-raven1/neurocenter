@@ -7,8 +7,11 @@ import os from 'node:os';
 import {ensureModelCredentialKey,modelCredentialIdentity} from '../workspace/model-credentials.mjs';
 import {assertProductionModelKey} from '../production/model-credentials.mjs';
 import {storedModelKeyIds} from '../workspace/model-credential-store.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.CATALOG_TEST_PG_URL).href;
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url)),{Pool}=require('pg');
-const adminUrl=new URL(process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog'),name='nc_credential_test_'+randomUUID().replaceAll('-','');
+const adminUrl=new URL(adminConnection),name='nc_credential_test_'+randomUUID().replaceAll('-','');
 const admin=new Pool({connectionString:adminUrl.href,max:1,connectionTimeoutMillis:1500});let database,created=false,temporary;
 const cases=[];
 const check=async(name,action)=>{await action();cases.push({name,passed:true});};

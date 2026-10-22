@@ -7,6 +7,9 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, stat } from 'node:fs/
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL).href;
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const { Pool } = require('pg');
@@ -22,7 +25,7 @@ const { deliverSkillAudit } = require(path.join(skillsDist, 'storage/skill-audit
 const reportPath = process.env.SKILL_DIRECTORY_AUDIT_REPORT || path.join(root, 'output/continuation-20261018/folder-audit/postgres.json');
 const directory = await mkdtemp(path.join(tmpdir(), 'nc-directory-audit-'));
 const database = 'nc_directory_test_' + randomBytes(8).toString('hex');
-const adminUrl = process.env.PUBLICATION_TEST_PG_URL || 'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl = adminConnection;
 const admin = new Pool({ connectionString: adminUrl, max: 1 });
 const token = randomBytes(24).toString('hex'), actor = 'folder-qa@localhost';
 const stores = [], scenarios = [], deliveries = [];

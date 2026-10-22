@@ -5,8 +5,11 @@ import os from 'node:os';
 import {createRequire} from 'node:module';
 import {createHash,createPublicKey,generateKeyPairSync,randomUUID} from 'node:crypto';
 import {prepareDevSnapshots} from '../workspace/dev-snapshots.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.CATALOG_TEST_PG_URL).href;
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url)),{Pool,Client}=require('pg');
-const source=new URL(process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog'),databaseName='nc_snapshot_keys_'+randomUUID().replaceAll('-','');
+const source=new URL(adminConnection),databaseName='nc_snapshot_keys_'+randomUUID().replaceAll('-','');
 const admin=new Pool({connectionString:source.href,max:1,connectionTimeoutMillis:1500}),cases=[];
 let created=false,database,temporary,writer;
 const check=async(name,action)=>{await action();cases.push({name,passed:true});};

@@ -5,6 +5,9 @@ import {readFileSync} from 'node:fs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.REMOTE_MODEL_TEST_PG_URL).href;
 const root=fileURLToPath(new URL('../../',import.meta.url)),require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url)),ts=require('typescript');
 require.extensions['.ts']=(module,file)=>module._compile(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021,experimentalDecorators:true,emitDecoratorMetadata:true,esModuleInterop:true}}).outputText,file);
 const source=file=>require(path.join(root,'services/catalog-service/src',file+'.ts'));
@@ -12,7 +15,7 @@ const {Pool}=require('pg'),{AccessDb}=source('access/access-db'),{DeviceStore}=s
 const {ensureCatalogSchema}=source('database/catalog-schema');
 const {backfillHostedRagGrants}=source('devices/hosted-rag-grant-backfill'),{registerHostedRagGrant,completeHostedRagGrant,readHostedRagGrant}=source('devices/hosted-rag-grants');
 const {HostedRagGrantService}=source('models/hosted-rag-grant.service'),{DeviceEmbeddingService}=source('models/device-embedding.service'),{saveModelVersion,modelFromRow}=source('models/model-history'),{projectEmbeddingPin}=source('models/project-embedding.validation'),{buildPackage}=source('catalog/bundle-package');
-const adminUrl=process.env.REMOTE_MODEL_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres',admin=new Pool({connectionString:adminUrl,max:1}),database='nc_hosted_grants_'+randomUUID().replaceAll('-','');
+const adminUrl=adminConnection,admin=new Pool({connectionString:adminUrl,max:1}),database='nc_hosted_grants_'+randomUUID().replaceAll('-','');
 const before=(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate')).rows.map(row=>row.datname),originalPg=process.env.CATALOG_PG_URL,originalFetch=globalThis.fetch;
 let created=false,pool,access,store,fatal;const checks=[];
 const check=async(name,action)=>{try{await action();checks.push({name,ok:true});}catch(error){checks.push({name,ok:false,error:error.message});throw error;}};

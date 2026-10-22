@@ -6,6 +6,9 @@ import {spawn} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+
+const adminConnection=ownedTestPostgresAdmin(process.env.TOOL_BUILD_TEST_PG_URL).href;
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
 const {Pool} = require('pg');
@@ -16,7 +19,7 @@ const {CatalogDb} = require(path.join(dist, 'catalog/catalog-db.js'));
 const {PackageBuildService} = require(path.join(dist, 'package-build/package-build.service.js'));
 const {RuntimeArtifacts} = require(path.join(dist, 'runtime-artifacts/runtime-artifacts.js'));
 const {AssetSourcesService}=require(path.join(dist,'asset-sources/asset-sources.service.js'));
-const adminUrl = process.env.TOOL_BUILD_TEST_PG_URL || 'postgresql://rag:rag@localhost:5432/postgres';
+const adminUrl = adminConnection;
 const admin = new Pool({connectionString: adminUrl, max: 2});
 admin.on('error', error => {console.error('Тестовый административный пул: ' + error.code);});
 const database = 'nc_tool_build_test_' + randomBytes(8).toString('hex');
