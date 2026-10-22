@@ -37,8 +37,8 @@ describe('Dev-установщик независим от доступност�
     it('Чужая платформа не становится готовой установкой из-за подходящего пакета в каталоге',()=>{
         io.data=structuredClone(catalog);const html=render({device:{...device,report:{...device.report,platform:'linux',arch:'x64'}}});expect(html).toContain('нет пакета');expect(io.buttons.has('Обновить dev-мост')).toBe(false);expect(html).not.toContain('href="https://gateway.test/api/bridge/install.sh"');
     });
-    it('Без выбранного компьютера сохраняет существующий выбор системы и предлагает dev-установку',()=>{
-        const html=render({device:undefined,windows:true});expect(html).toContain('Компьютер ещё не выбран');expect(html).toContain('Установить dev-мост');expect(html).toContain('/api/bridge/install.ps1');
+    it('Без выбранного компьютера разрешает совпадающее семейство, не обещая известную архитектуру',()=>{
+        const html=render({device:undefined,windows:false});expect(html).toContain('Компьютер ещё не выбран');expect(html).toContain('Установить dev-мост');expect(html).toContain('/api/bridge/install.sh');expect(html).toContain('Архитектуру компьютера проверит установщик');expect(html).not.toContain('Готово к установке: 0.9.18');
     });
     it('Не меняет каталог, его найденную версию или provenance на данные dev-поставки',()=>{
         io.data=structuredClone(catalog);const before=structuredClone(io.data);const html=render();expect(html).toContain('Последняя проверка источника: 0.10.0');expect(html).toContain('В каталоге подготовлено: 0.9.10');expect(html).toContain('Готово к установке: 0.9.18');expect(io.data).toEqual(before);expect(io.start).not.toHaveBeenCalled();

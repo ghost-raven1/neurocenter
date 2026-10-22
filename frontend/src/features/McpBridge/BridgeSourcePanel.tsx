@@ -7,6 +7,7 @@ import { useBridgeSourceImport } from './useBridgeSourceImport';
 import type { IBridgeInstaller } from './useBridgeInstaller';
 import { activeImport } from '../AssetSources/types';
 import './BridgeSourcePanel.less';
+import {bridgeInstallerEligibility} from './bridgeInstallerEligibility';
 
 /** Новая опись ещё не меняет работающий установщик; одинаковая версия с иным комплектом — конфликт. */
 export function bridgeSupplyStatus(available?: IBridgeSourceRelease, imported?: IBridgeSourceRelease) {
@@ -35,7 +36,8 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
     const devSupply = installer.devSupply;
     const installSupply = devSupply ?? data?.imported;
     const target = bridgeDeviceTarget(device);
-    const targetSupported = !target || !!installSupply?.targets.includes(target);
+    const eligibility = bridgeInstallerEligibility(devSupply,windows,target);
+    const targetSupported = devSupply ? eligibility.supported : !target || !!installSupply?.targets.includes(target);
     const installedVersion = device?.report.bridgeVersion;
     const installedComparison = installSupply ? compareBridgeVersions(installedVersion, installSupply.version) : undefined;
     const differentBuild = installedComparison === 0 && !!device?.report.buildId && device.report.buildId !== installSupply?.buildId;
@@ -55,7 +57,7 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
             <Typography.Text>{device ? `${verified && device.online ? 'Установлено' : 'Последний отчёт'}: ${installedVersion || 'версия пока неизвестна'}` : 'Компьютер ещё не выбран'}</Typography.Text>
             {(!offline || data?.available) && <Typography.Text type="secondary">{offline ? 'Сохранённая опись источника' : 'Последняя проверка источника'}: {data?.available?.version || (source.loading ? 'проверяем…' : 'нет проверенной версии')}{data?.available && !fresh ? ' · сохранённые данные' : ''}</Typography.Text>}
             {devSupply && <Typography.Text>Dev-поставка: {devSupply.version}</Typography.Text>}
-            <Typography.Text type="secondary">Готово к установке: {installSupply?.version || 'поставка ещё не подготовлена'}</Typography.Text>
+            <Typography.Text type="secondary">{devSupply&&!eligibility.confirmed?'Поставка сервера':'Готово к установке'}: {installSupply?.version || 'поставка ещё не подготовлена'}</Typography.Text>
             {devSupply && data?.imported && <Typography.Text type="secondary">В каталоге подготовлено: {data.imported.version}</Typography.Text>}
             {data?.checkedAt && Number.isFinite(Date.parse(data.checkedAt)) && <Typography.Text type="secondary">Проверено: {new Date(data.checkedAt).toLocaleString('ru-RU')}</Typography.Text>}
         </div>
@@ -67,6 +69,7 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
             {canManage && fresh && !data?.importedError && status === 'available' && <Button type="primary" loading={imports.busy} disabled={sourceBusy} onClick={() => { if (data) void imports.start(data); }}>Подготовить {data?.available?.version} к установке</Button>}
         </Space>
         {devSupply && <Typography.Paragraph type="secondary">Установщик использует dev-поставку этого сервера. Каталожный источник и его импорт показаны отдельно.</Typography.Paragraph>}
+        {devSupply && eligibility.supported && !eligibility.confirmed && <Typography.Text type="secondary">Архитектуру компьютера проверит установщик.</Typography.Text>}
         {offline && <Typography.Paragraph type="secondary">Автономная поставка. Новые версии станут доступны после загрузки обновлённой поставки на сервер. GitHub не запрашивается.</Typography.Paragraph>}
         {installer.loading && <Typography.Text type="secondary">Получаем адрес установщика…</Typography.Text>}
         {!installer.loading && !installer.origin && <Alert type="warning" showIcon message={installer.error} action={<Button onClick={installer.reload}>Повторить загрузку адреса</Button>} />}

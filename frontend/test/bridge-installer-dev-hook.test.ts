@@ -39,6 +39,12 @@ describe('Локальная поставка и владение runtime-кон
         const pending=deferred<{data:typeof config}>();vi.mocked(api.get).mockReturnValueOnce(pending.promise);render().reload();render();const signal=vi.mocked(api.get).mock.calls[1][1]!.signal as AbortSignal;
         expect(render(false).origin).toBeUndefined();expect(signal.aborted).toBe(true);pending.resolve({data:config});await flush();expect(render(false).origin).toBeUndefined();
     });
+    it('Повторное включение не показывает готовую сборку прошлого входа до нового GET',async()=>{
+        render();await flush();expect(render()).toMatchObject(config);render(false);
+        const pending=deferred<{data:typeof config}>();vi.mocked(api.get).mockReturnValueOnce(pending.promise);
+        const reopened=render();expect(reopened.origin).toBeUndefined();expect(reopened.devSupply).toBeUndefined();
+        const next={...config,devSupply:{...supply,buildId:'f'.repeat(64)}};pending.resolve({data:next});await flush();expect(render()).toMatchObject(next);
+    });
     it('Malformed dev после успешного чтения убирает старый origin/dev и позволяет явный повтор',async()=>{
         render();await flush();vi.mocked(api.get).mockResolvedValueOnce({data:{...config,devSupply:{...supply,targets:[]}}});render().reload();expect(render().origin).toBeUndefined();await flush();
         expect(render()).toMatchObject({loading:false});expect(render().origin).toBeUndefined();expect(render().error).not.toBe('');expect(render()).not.toHaveProperty('devSupply');

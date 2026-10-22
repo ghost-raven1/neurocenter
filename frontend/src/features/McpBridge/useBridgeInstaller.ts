@@ -28,7 +28,7 @@ export function useBridgeInstaller(enabled=true):IBridgeInstaller {
     const [state,setState]=useState<Omit<IBridgeInstaller,'reload'>&{scope:string}>({scope,loading:true,error:''});
     const [revision,setRevision]=useState(0);
     useEffect(()=>{
-        if(!enabled){return;}
+        if(!enabled){setState({scope,loading:false,error:''});return;}
         const owns=captureOwner();
         if(!owns())return;
         const controller=new AbortController();

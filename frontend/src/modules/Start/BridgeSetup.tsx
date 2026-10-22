@@ -12,6 +12,7 @@ import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCo
 import type {IBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {projectBindingUrl} from '../Projects/projectNavigation';
 import {BridgeSourcePanel} from '../../features/McpBridge/BridgeSourcePanel';
+import {bridgeDeviceTarget} from '../../features/McpBridge/bridgeSource';
 
 type ConnectionAction = 'connect'|'install';
 
@@ -37,7 +38,7 @@ export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projec
     },[connectionRequested,history.location]);
     const installation=<>
         <Typography.Paragraph>{preservesConnection?'Выполните команду в терминале этого компьютера. Установщик установит доступную на этой площадке сборку моста.':'Выполните команду на компьютере, где будете работать. Установщик сам откроет страницу подтверждения в браузере.'}</Typography.Paragraph>
-        <BridgeInstallerCommand installer={installer} windows={windows} reconnect={needsReconnect} onCopy={onCopy}/>
+        <BridgeInstallerCommand installer={installer} windows={windows} target={bridgeDeviceTarget(device)} reconnect={needsReconnect} onCopy={onCopy}/>
         <Alert type="info" showIcon message={preservesConnection?'Перезапустите OpenCode после обновления':'Следующий шаг — подтвердить компьютер'}
             description={preservesConnection?'Сохранённое подключение будет использовано повторно. Файлы и история установок сохраняются. Затем нажмите «Проверить подключение», чтобы увидеть версию работающего моста.':'На открывшейся странице проверьте имя компьютера и нажмите «Подключить компьютер». Затем дождитесь статуса «На связи». Вводить код обычно не требуется.'}/>
         <Typography.Paragraph type="secondary" style={{marginTop:12}}>Готовый пакет содержит Node.js и зависимости моста. Устанавливать npm не требуется. Существующие настройки OpenCode сохраняются.</Typography.Paragraph>
