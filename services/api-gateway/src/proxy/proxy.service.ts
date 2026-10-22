@@ -83,9 +83,10 @@ export class ProxyService {
         const canonicalPath=canonicalAccessRoute(path);
         if (/^\/api\/model-chats(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
-        if(learningRoute)res.setHeader('Cache-Control','no-store');
-        if(auth.deviceId&&(canonicalPath===undefined||learningRoute)){
-            res.status(403).json({message:'Проектное обучение доступно мосту только через проверенную привязку папки.'});return;
+        const agentTrialRoute=/^\/api\/projects\/[^/]+\/agents\/(?:readiness(?:[/%]|$)|.*\/readiness-trials(?:[/%]|$))/.test(canonicalPath||'');
+        if(learningRoute||agentTrialRoute)res.setHeader('Cache-Control','no-store');
+        if(auth.deviceId&&(canonicalPath===undefined||learningRoute||agentTrialRoute)){
+            res.status(403).json({message:agentTrialRoute?'Испытания агента доступны только пользователю через интерфейс проекта.':'Проектное обучение доступно мосту только через проверенную привязку папки.'});return;
         }
         if(auth.deviceId && !((!!snapshotPublication&&!!req.headers['x-neurocenter-job-id']&&!!req.headers['x-neurocenter-job-lease'])||(['GET','HEAD'].includes(method)&&/^\/api\/(projects|ai-plugins|skills|rag)(\/|$)/.test(path)) || (method==='POST'&&['/api/skills/sync','/api/rag/sync'].includes(path)))){
             res.status(403).json({message:'Подключение MCP не даёт прав управления пользователями, каталогом или настройками сервера.'});return;

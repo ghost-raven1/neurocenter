@@ -27,9 +27,9 @@ export class ProjectEmbeddingRepository {
         if(projectEmbeddingPin(current)!==modelPin)return {...result,blocker:'Снимок закреплённой модели повреждён. Выберите проверенную модель.'};
         return result;
     }
-    async read(projectId:string):Promise<IProjectEmbeddingSelection>{
-        const {rows}=await this.pool.query<Row>('SELECT * FROM project_embedding_settings WHERE project_id=$1',[projectId]);
-        return this.selection(this.pool,projectId,rows[0]);
+    async read(projectId:string,db:Queryable=this.pool):Promise<IProjectEmbeddingSelection>{
+        const {rows}=await db.query<Row>('SELECT * FROM project_embedding_settings WHERE project_id=$1',[projectId]);
+        return this.selection(db,projectId,rows[0]);
     }
     async clear(projectId:string,expectedRevision:number,actor:string,authorize:(db:Queryable)=>Promise<unknown>):Promise<IProjectEmbeddingSelection>{
         const client=await this.pool.connect();

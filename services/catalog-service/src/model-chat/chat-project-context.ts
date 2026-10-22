@@ -37,7 +37,7 @@ export class ModelChatProjectContext {
     async overview(req: Request, projectId: string | null): Promise<ChatProjectEvidence> {
         return projectId ? (await this.state(req, projectId)).evidence : { ...NONE };
     }
-    async prepare(req: Request, projectId: string | null, prompt: string, signal: AbortSignal): Promise<PreparedProjectContext> {
+    async prepare(req: Request, projectId: string | null, prompt: string, signal: AbortSignal, beforeSearch?: () => Promise<void>): Promise<PreparedProjectContext> {
         signal.throwIfAborted();
         if (!projectId) return this.prepared({ ...NONE }, async () => { signal.throwIfAborted(); });
         const initial = await this.state(req, projectId);
@@ -81,6 +81,7 @@ export class ModelChatProjectContext {
             || vectors[0].some(v => typeof v !== 'number' || !Number.isFinite(Math.fround(v))) || !vectors[0].some(v => Math.fround(v) !== 0)) {
             throw new ServiceUnavailableException('Embedding-модель вернула несовместимый вектор для индекса проекта.');
         }
+        await beforeSearch?.(); await requireFeatureEnabled('project_search'); signal.throwIfAborted();
         const found = await this.client.call<unknown>('search', {
             projectId, revision: selected.revision, dataRevision: selected.dataRevision, generation: selected.activeGeneration,
             profile: selected.profile, snapshot: selected.activeSnapshot, embedding: vectors[0],

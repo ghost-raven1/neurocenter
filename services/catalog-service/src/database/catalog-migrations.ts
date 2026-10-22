@@ -31,6 +31,8 @@ import {OPENCODE_MODEL_SYNC_SCHEMA_SQL} from '../models/opencode-model-sync.sche
 import {OPENCODE_MODEL_SYNC_SCHEMA_ASSERT_SQL} from '../models/opencode-model-sync.schema-verification';
 import {MODEL_USAGE_SCHEMA_SQL} from '../model-usage/model-usage.schema';
 import {MODEL_USAGE_SCHEMA_ASSERT_SQL} from '../model-usage/model-usage.schema-verification';
+import {AGENT_READINESS_SCHEMA_SQL} from '../agent-readiness/agent-readiness.schema';
+import {AGENT_READINESS_SCHEMA_ASSERT_SQL} from '../agent-readiness/agent-readiness.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
@@ -50,4 +52,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:17,name:'opencode-model-auto-sync',sql:OPENCODE_MODEL_SYNC_SCHEMA_SQL+'\n'+OPENCODE_MODEL_SYNC_SCHEMA_ASSERT_SQL},
     {version:18,name:'model-inference-usage-ledger',sql:MODEL_USAGE_SCHEMA_SQL+'\n'+MODEL_USAGE_SCHEMA_ASSERT_SQL},
     {version:19,name:'bounded-chat-research',sql:CHAT_RESEARCH_SCHEMA_SQL+'\n'+CHAT_RESEARCH_SCHEMA_ASSERT_SQL},
+    {version:20,name:'project-agent-diagnostic-trials',sql:AGENT_READINESS_SCHEMA_SQL+'\n'+AGENT_READINESS_SCHEMA_ASSERT_SQL},
 ];

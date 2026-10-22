@@ -1,6 +1,7 @@
 import { canReadCommon, IAccessClaims, projectLevel } from './access.model';
 import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 import {allowLearningRoute} from './learning-access-policy';
+import {allowAgentReadinessRoute} from '../agent-readiness/agent-readiness.access';
 
 export interface IAccessRequest { method: string; path: string; query?: Record<string, unknown>; body?: Record<string, unknown> }
 
@@ -25,6 +26,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
         const level = projectLevel(claims,activeRole,project[1]);
         if (!level) { return false; }
         if(project[2]&&/^learning(?:[/%]|$)/.test(project[2]))return allowLearningRoute(level,request.method.toUpperCase(),project[2]);
+        const trial = project[2] && allowAgentReadinessRoute(level, request.method.toUpperCase(), project[2]);
+        if (typeof trial === 'boolean') return trial;
         if (project[2]?.startsWith('backups')) { return level >= 3; }
         if (read) { return true; }
         if (project[2]?.startsWith('members') && body.role === 'Админ проекта' && !main) { return false; }

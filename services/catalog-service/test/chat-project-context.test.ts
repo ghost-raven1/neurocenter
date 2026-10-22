@@ -3,6 +3,8 @@ import type { Request } from 'express';
 import { ModelChatProjectContext } from '../src/model-chat/chat-project-context';
 import { ProjectEmbeddingRepository } from '../src/models/project-embedding.repository';
 import {readFeatures,FeatureFlagError} from '../../shared/feature-client.cjs';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { requireFeatureEnabled } from '../src/features/require-feature-enabled';
 
 vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn(async () => {}) }));
 vi.mock('../../shared/feature-client.cjs',async original=>({...await original<typeof import('../../shared/feature-client.cjs')>(),readFeatures:vi.fn(async()=>({flags:{project_search:true},blockedBy:{}}))}));
@@ -16,6 +18,7 @@ let models: any, runtime: any, context: ModelChatProjectContext;
 const source = (id = 'source') => ({ id, path: 'src/research.ts', startLine: 3, endLine: 7, score: 0.8, excerpt: 'Найденное знание' });
 beforeEach(() => {
     vi.restoreAllMocks(); current = selection();
+    vi.mocked(requireFeatureEnabled).mockReset().mockResolvedValue(undefined);
     vi.mocked(readFeatures).mockResolvedValue({flags:{project_search:true},blockedBy:{}} as never);
     vi.spyOn(ProjectEmbeddingRepository.prototype, 'read').mockImplementation(async () => current as any);
     models = { pool: { query: vi.fn(async () => ({ rowCount: 0, rows: [] })) }, resolveProject: vi.fn(async () => ({ ...project })) };
@@ -71,6 +74,15 @@ describe('Ephemeral chat project context', () => {
         runtime.infer.mockImplementation(async () => { current.dataRevision++; return { embeddings: [[1, 2, 3]] }; });
         await expect(context.prepare(req, project.id, 'question', new AbortController().signal)).rejects.toMatchObject({ status: 409 });
         expect(context.client.call).not.toHaveBeenCalled();
+    });
+    it.each([new ForbiddenException('Поиск отключён'), new ServiceUnavailableException('Флаги недоступны')])('rechecks search admission after a paid embedding and blocks the next tool on %s', async error => {
+        runtime.infer.mockImplementationOnce(async () => {
+            vi.mocked(requireFeatureEnabled).mockRejectedValueOnce(error);
+            return { embeddings: [[1, 2, 3]] };
+        });
+        await expect(context.prepare(req, project.id, 'question', new AbortController().signal)).rejects.toBe(error);
+        expect(runtime.infer).toHaveBeenCalledOnce(); expect(context.client.call).not.toHaveBeenCalled();
+        expect(vi.mocked(requireFeatureEnabled).mock.calls.map(call => call[0])).toEqual(['model_hosting', 'project_search']);
     });
     it('Cancellation and later permission revocation discard prepared material', async () => {
         const abort = new AbortController(), prepared = await context.prepare(req, project.id, 'question', abort.signal);
