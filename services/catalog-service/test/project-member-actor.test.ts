@@ -28,15 +28,16 @@ describe('Исполнитель изменения проектных роле�
         catalog.listProjectMembers.mockResolvedValue([]);
         const body = { principalName: member.principalName, role: 'Наблюдатель', actor: 'forged@example.invalid' };
         await controller.addProjectMember('prj-qa', body, request());
-        expect(access.ensureProjectUser).toHaveBeenCalledWith({ email: member.principalName, displayName: undefined }, actor);
-        expect(catalog.addProjectMember).toHaveBeenCalledWith('prj-qa', expect.objectContaining({ principalName: member.principalName }), actor);
+        const currentActor={email:actor,activeRole:'Главный админ'};
+        expect(access.ensureProjectUser).toHaveBeenCalledWith({ email: member.principalName, displayName: undefined }, currentActor,'prj-qa');
+        expect(catalog.addProjectMember).toHaveBeenCalledWith('prj-qa', expect.objectContaining({ principalName: member.principalName }), currentActor);
     });
 
     it('Смена и отзыв передают проверенную исходную роль вместе с исполнителем', async () => {
         await controller.updateProjectMember('prj-qa', member.userId, { role: 'Разработчик', expectedRole: 'Наблюдатель' }, request());
-        expect(catalog.updateProjectMemberRole).toHaveBeenCalledWith('prj-qa', member.userId, 'Разработчик', 'Наблюдатель', actor);
+        expect(catalog.updateProjectMemberRole).toHaveBeenCalledWith('prj-qa', member.userId, 'Разработчик', 'Наблюдатель', {email:actor,activeRole:'Главный админ'});
         await controller.removeProjectMember('prj-qa', member.userId, request(), 'Наблюдатель');
-        expect(catalog.removeProjectMember).toHaveBeenCalledWith('prj-qa', member.userId, 'Наблюдатель', actor);
+        expect(catalog.removeProjectMember).toHaveBeenCalledWith('prj-qa', member.userId, 'Наблюдатель', {email:actor,activeRole:'Главный админ'});
     });
 
     it('Проверка прав происходит до сохранения и аудита даже для повторного запроса', async () => {

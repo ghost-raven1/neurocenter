@@ -20,6 +20,8 @@ describe('Проектное назначение сохраняет глоба�
     beforeEach(()=>{
         vi.clearAllMocks();fixture.user={...existing};
         fixture.query.mockImplementation(async(sql:string,params?:unknown[])=>{
+            if(sql.startsWith('SELECT enabled,is_main_admin FROM platform_users'))return{rows:[{enabled:true,is_main_admin:false}]};
+            if(sql.startsWith('SELECT role FROM project_members'))return{rows:[{role:'Админ проекта'}]};
             if(sql.startsWith('SELECT * FROM platform_users'))return {rows:fixture.user?[{...fixture.user}]:[]};
             if(sql.startsWith('INSERT INTO platform_users')){
                 fixture.user=fixture.user?{...fixture.user,display_name:String(params![4]??fixture.user.display_name)}:

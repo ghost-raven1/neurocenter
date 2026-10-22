@@ -1,8 +1,9 @@
 import {ensureCatalogSchema} from '../database/catalog-schema';
 import {createPool} from '../database/pool';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { IAccessClaims, IPlatformUser, IPlatformUserWrite, normalizeEmail, ROLES } from './access.model';
+import { IAccessActor, IAccessClaims, IPlatformUser, IPlatformUserWrite, normalizeEmail, ROLES } from './access.model';
 import {securityEvent} from './security-events';
+import {authorizeAccessWrite} from './access-write-policy';
 
 /** Хранит пользователей по почте; проектные назначения остаются в project_members. */
 @Injectable()
@@ -31,16 +32,16 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
         return rows as IPlatformUser[];
     }
 
-    save(input:IPlatformUserWrite,actor='system:administration'):Promise<IPlatformUser> {
+    save(input:IPlatformUserWrite,actor:IAccessActor):Promise<IPlatformUser> {
         return this.writeUser(input,actor,'save');
     }
 
     /** Проектное назначение создаёт только отсутствующий аккаунт, сохраняя существующий профиль и права. */
-    ensureProjectUser(input:Pick<IPlatformUserWrite,'email'|'displayName'>,actor:string):Promise<IPlatformUser> {
-        return this.writeUser({email:input.email,displayName:input.displayName},actor,'create-if-missing');
+    ensureProjectUser(input:Pick<IPlatformUserWrite,'email'|'displayName'>,actor:IAccessActor,projectId:string):Promise<IPlatformUser> {
+        return this.writeUser({email:input.email,displayName:input.displayName},actor,'create-if-missing',projectId);
     }
 
-    private async writeUser(input:IPlatformUserWrite,actor:string,mode:'save'|'create-if-missing'):Promise<IPlatformUser> {
+    private async writeUser(input:IPlatformUserWrite,actor:IAccessActor,mode:'save'|'create-if-missing',projectId?:string):Promise<IPlatformUser> {
         if (!input || typeof input !== 'object' || Array.isArray(input)) { throw new BadRequestException('Передайте данные пользователя.'); }
         if (input.displayName !== undefined && (typeof input.displayName !== 'string' || input.displayName.trim().length > 128 || /[\x00-\x1f\x7f]/.test(input.displayName))) { throw new BadRequestException('Имя пользователя: строка до 128 символов без управляющих знаков.'); }
         let email: string;
@@ -52,8 +53,8 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
-            // Сериализация защищает последнего администратора от двух одновременных отзывов.
-            await client.query("SELECT pg_advisory_xact_lock(72465381)");
+            // Admission follows the same serialization fence as last-admin protection and role revocation.
+            const currentActor=await authorizeAccessWrite(client,actor,mode==='save'?undefined:projectId);
             const current = await client.query('SELECT * FROM platform_users WHERE email=$1 FOR UPDATE', [email]);
             if(mode==='create-if-missing'&&current.rows[0]) {
                 const user=current.rows[0];
@@ -77,7 +78,7 @@ export class AccessDb implements OnModuleInit, OnModuleDestroy {
             const previous=current.rows[0];
             const saved=rows[0] as IPlatformUser;
             if (!previous || previous.display_name!==saved.displayName || previous.is_main_admin!==saved.isMainAdmin || previous.enabled!==saved.enabled) {
-                await securityEvent(client,{actor,action:previous?'user.update':'user.create',resourceId:email,
+                await securityEvent(client,{actor:currentActor.email,action:previous?'user.update':'user.create',resourceId:email,
                     before:previous?{displayName:previous.display_name,isMainAdmin:previous.is_main_admin,enabled:previous.enabled}:null,after:saved});
             }
             await client.query('COMMIT'); return rows[0] as IPlatformUser;

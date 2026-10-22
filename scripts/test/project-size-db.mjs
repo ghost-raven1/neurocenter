@@ -6,6 +6,7 @@ import {mkdir,mkdtemp,readFile,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
 
 // Все записи, файлы и HTTP-серверы принадлежат только этому воспроизведению.
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
@@ -15,7 +16,7 @@ const reportPath=process.env.PROJECT_SIZE_TEST_REPORT||path.join(workspace,'outp
 const {Pool}=require('pg');
 const {Module}=require('@nestjs/common');
 const {NestFactory}=require('@nestjs/core');
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL||process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL).href;
 const database='nc_project_size_test_'+randomBytes(8).toString('hex');
 const admin=new Pool({connectionString:adminUrl,max:2});
 const databases=async()=>(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows.map(item=>item.datname);
@@ -57,6 +58,7 @@ try{
     const {CatalogService}=require(path.join(dist,'catalog/catalog.service.js'));
     const {CatalogController}=require(path.join(dist,'catalog/catalog.controller.js'));
     const {AccessDb}=require(path.join(dist,'access/access-db.js'));
+    const {bootstrapAdministrator}=require(path.join(dist,'access/bootstrap-admin.js'));
     class ProjectSizeFixtureModule{}
     Module({controllers:[CatalogController],providers:[CatalogService,AccessDb]})(ProjectSizeFixtureModule);
     app=await NestFactory.create(ProjectSizeFixtureModule,{logger:false});
@@ -64,8 +66,8 @@ try{
         if(request.headers['x-neurocenter-internal']!==internalToken){response.status(403).json({message:'Только изолированный fixture'});return;}next();
     });
     await app.listen(0,'127.0.0.1');endpoint=await app.getUrl();
-    const service=app.get(CatalogService),access=app.get(AccessDb);
-    await access.save({email:'qa-size@example.test',isMainAdmin:true});
+    const service=app.get(CatalogService);
+    await bootstrapAdministrator(pool,{email:'qa-size@example.test'});
     project=await service.createProject({name:'Изолированный замер проекта',fsRootPath:path.join(ownedRoot,'missing'),quotas:{currentBytesUsed:777,retentionBytesUsed:888}});
 
     await check('503 RAG: list/detail сохраняют null и безопасную причину; nested quota не использует сохранённый расход',async()=>{

@@ -20,6 +20,7 @@ import { ProjectAssetRepository } from './project-asset-repository';
 import { reserveSkillDependencies } from '../publication/skill-dependency-registry';
 import { SkillAuditRepository } from '../publication/skill-audit-repository';
 import { backfillModelCatalog } from '../models/models.repository';
+import type { IAccessActor } from '../access/access.model';
 
 import { IAccessDecision, IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, IOperation, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
 
@@ -413,7 +414,7 @@ export class CatalogDb {
      * @param {IProjectMember} member - сотрудник
      * @returns {Promise<IProjectMember>}
      */
-    public addProjectMember(projectId: string, member: IProjectMember, actor = 'system:administration'): Promise<IProjectMember> {
+    public addProjectMember(projectId: string, member: IProjectMember, actor: IAccessActor): Promise<IProjectMember> {
         return this.members.add(projectId, member, actor);
     }
 
@@ -425,7 +426,7 @@ export class CatalogDb {
      * @param {string} role - новая роль
      * @returns {Promise<IProjectMember | null>}
      */
-    public updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole?: string, actor = 'system:administration'): Promise<IProjectMember | null> {
+    public updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole: string|undefined, actor: IAccessActor): Promise<IProjectMember | null> {
         return this.members.update(projectId, userId, role, expectedRole, actor);
     }
 
@@ -436,7 +437,7 @@ export class CatalogDb {
      * @param {string} userId - id сотрудника
      * @returns {Promise<boolean>}
      */
-    public removeProjectMember(projectId: string, userId: string, expectedRole?: string, actor = 'system:administration'): Promise<boolean> {
+    public removeProjectMember(projectId: string, userId: string, expectedRole: string|undefined, actor: IAccessActor): Promise<boolean> {
         return this.members.remove(projectId, userId, expectedRole, actor);
     }
 

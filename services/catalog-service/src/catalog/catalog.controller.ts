@@ -193,8 +193,8 @@ export class CatalogController {
         if (list.some(m => m.principalName.toLowerCase() === principalName.toLowerCase())) {
             throw new ConflictException(`Сотрудник ${principalName} уже в проекте`);
         }
-        const actor = this.actor(req).email;
-        await this.access.ensureProjectUser({email:principalName,displayName:body.displayName}, actor);
+        const actor = this.actor(req);
+        await this.access.ensureProjectUser({email:principalName,displayName:body.displayName}, actor,id);
         const member: IProjectMember = {
             userId: `u-${principalName}`,
             principalName,
@@ -226,7 +226,7 @@ export class CatalogController {
         }
         if (body.expectedRole!==undefined && target.role!==body.expectedRole) { throw new ConflictException('Роль сотрудника уже изменена. Обновите назначения перед сохранением.'); }
         if (target.role==='Админ проекта' && !this.isMain(req)) { throw new ForbiddenException('Роль администратора проекта меняет Главный админ.'); }
-        const member = await this.catalog.updateProjectMemberRole(id, userId, body?.role as string, target.role, this.actor(req).email);
+        const member = await this.catalog.updateProjectMemberRole(id, userId, body?.role as string, target.role, this.actor(req));
 
         if (!member) {
             throw new ConflictException('Назначение изменено или удалено другим администратором. Обновите список.');
@@ -258,7 +258,7 @@ export class CatalogController {
         if (target.role === 'Админ проекта' && !this.isMain(req)) {
             throw new ForbiddenException('Администратора проекта удаляет Главный админ.');
         }
-        const removed = await this.catalog.removeProjectMember(id, userId, target.role, this.actor(req).email);
+        const removed = await this.catalog.removeProjectMember(id, userId, target.role, this.actor(req));
 
         if (!removed) {
             throw new ConflictException('Назначение изменено или удалено другим администратором. Обновите список.');

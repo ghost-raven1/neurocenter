@@ -13,6 +13,7 @@ import { isMainAdmin, roleLevel } from './rbac';
 import {assertProjectCatalogAsset} from '../devices/project-skill';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import type { IOperationReadScope } from '../operations/operation.types';
+import type { IAccessActor } from '../access/access.model';
 
 /**
  * Сервис каталога: PG-backed проекты (реальные) + идемпотентная схема при старте.
@@ -362,21 +363,21 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     /**
      * Добавить сотрудника в проект (PG).
      */
-    addProjectMember(projectId: string, member: IProjectMember, actor?: string): Promise<IProjectMember> {
+    addProjectMember(projectId: string, member: IProjectMember, actor: IAccessActor): Promise<IProjectMember> {
         return this.db.addProjectMember(projectId, member, actor);
     }
 
     /**
      * Изменить роль сотрудника в проекте (PG).
      */
-    updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole?: string, actor?: string): Promise<IProjectMember | null> {
+    updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole: string|undefined, actor: IAccessActor): Promise<IProjectMember | null> {
         return this.db.updateProjectMemberRole(projectId, userId, role, expectedRole, actor);
     }
 
     /**
      * Удалить сотрудника из проекта (PG).
      */
-    removeProjectMember(projectId: string, userId: string, expectedRole?: string, actor?: string): Promise<boolean> {
+    removeProjectMember(projectId: string, userId: string, expectedRole: string|undefined, actor: IAccessActor): Promise<boolean> {
         return this.db.removeProjectMember(projectId, userId, expectedRole, actor);
     }
 

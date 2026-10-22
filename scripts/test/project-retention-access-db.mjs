@@ -5,6 +5,8 @@ import {createServer} from 'node:http';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
+import {defaultFeatureFlags,evaluateFeatureFlags} from '../../services/shared/feature-flags.cjs';
 
 // Настоящие ProxyService → AccessController/AccessDb → CatalogController работают только с собственной БД.
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
@@ -15,7 +17,7 @@ const ts=require('typescript');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(require('node:fs').readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021,experimentalDecorators:true,emitDecoratorMetadata:true,esModuleInterop:true}}).outputText,filename);
 const {ProxyService}=require(path.join(workspace,'services/api-gateway/src/proxy/proxy.service.ts'));
 const {Pool}=require('pg');const {Module}=require('@nestjs/common');const {NestFactory}=require('@nestjs/core');
-const adminUrl=process.env.PUBLICATION_TEST_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/postgres';
+const adminUrl=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL||process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL).href;
 const admin=new Pool({connectionString:adminUrl,max:2});
 const databases=async()=>(await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows.map(item=>item.datname);
 const beforeDatabases=await databases();
@@ -40,19 +42,23 @@ try{
     Object.assign(process.env,{NODE_ENV:'production',CATALOG_PG_URL:ownUrl.href,SSO_DISABLE:'false',RAG_SERVICE_URL:'',NEUROCENTER_INTERNAL_TOKEN:token});
     const {CatalogService}=require(path.join(dist,'catalog/catalog.service.js'));const {CatalogController}=require(path.join(dist,'catalog/catalog.controller.js'));
     const {AccessDb}=require(path.join(dist,'access/access-db.js'));const {AccessController}=require(path.join(dist,'access/access.controller.js'));
+    const {bootstrapAdministrator}=require(path.join(dist,'access/bootstrap-admin.js'));
     class RetentionAccessFixtureModule{}
     Module({controllers:[CatalogController,AccessController],providers:[CatalogService,AccessDb]})(RetentionAccessFixtureModule);
     app=await NestFactory.create(RetentionAccessFixtureModule,{logger:false});
     app.use((request,response,next)=>{
         if(request.headers['x-neurocenter-internal']!==token){response.status(403).json({message:'Только fixture'});return;}
+        if(request.method==='GET'&&request.path==='/internal/feature-flags/evaluated'){response.json(evaluateFeatureFlags(defaultFeatureFlags()));return;}
         if(request.path.startsWith('/api/projects/'))downstream.push({path:request.path,actor:request.headers['x-bridge-principal']});next();
     });
     await app.listen(0,'127.0.0.1');const catalogEndpoint=await app.getUrl();
     const catalog=app.get(CatalogService),access=app.get(AccessDb);
-    for(const email of ['owner@example.test','main@example.test','backup-main@example.test'])await access.save({email,isMainAdmin:email!=='owner@example.test'});
+    const mainActor={email:'main@example.test',activeRole:'Главный админ'},backupActor={email:'backup-main@example.test',activeRole:'Главный админ'};
+    await bootstrapAdministrator(pool,{email:mainActor.email});
+    for(const email of ['owner@example.test','backup-main@example.test'])await access.save({email,isMainAdmin:email!=='owner@example.test'},mainActor);
     project=await catalog.createProject({name:'Своя область retention'});foreign=await catalog.createProject({name:'Чужая область retention'});
     const developer=await catalog.createProject({name:'Назначение разработчика'});const observer=await catalog.createProject({name:'Назначение наблюдателя'});
-    for(const [target,role] of [[project,'Админ проекта'],[developer,'Разработчик'],[observer,'Наблюдатель']])await catalog.addProjectMember(target.id,{userId:'u-owner',principalName:'owner@example.test',displayName:'Владелец fixture',role,addedAt:new Date().toISOString()},'qa-access');
+    for(const [target,role] of [[project,'Админ проекта'],[developer,'Разработчик'],[observer,'Наблюдатель']])await catalog.addProjectMember(target.id,{userId:'u-owner',principalName:'owner@example.test',displayName:'Владелец fixture',role,addedAt:new Date().toISOString()},mainActor);
     const proxy=new ProxyService({get:()=>catalogEndpoint},{authenticate:async()=>({email:selectedEmail,userId:selectedEmail,principalName:selectedEmail,activeRole:selectedRole,userRoles:[selectedRole],policies:{}})},{mutation:()=>{}});
     gateway=createServer(async(request,response)=>{
         const url=new URL(request.url,'http://fixture.test');request.path=url.pathname;request.query=Object.fromEntries(url.searchParams);
@@ -73,9 +79,9 @@ try{
         for(const variant of variants)for(const key of [foreign.id,foreign.name,'несуществующий alias'])await assertBlocked(key,variant);
     });
     await check('Настоящий отзыв назначения в SQL блокирует ту же активную роль без нового входа',async()=>{
-        await catalog.removeProjectMember(project.id,'u-owner','Админ проекта','qa-revoke');
+        await catalog.removeProjectMember(project.id,'u-owner','Админ проекта',backupActor);
         for(const variant of variants)await assertBlocked(project.id,variant);
-        await catalog.addProjectMember(project.id,{userId:'u-owner',principalName:'owner@example.test',displayName:'Владелец fixture',role:'Админ проекта',addedAt:new Date().toISOString()},'qa-restore');
+        await catalog.addProjectMember(project.id,{userId:'u-owner',principalName:'owner@example.test',displayName:'Владелец fixture',role:'Админ проекта',addedAt:new Date().toISOString()},backupActor);
         assert.equal((await patch(project.id,variants[0])).status,200);
     });
     await check('Главный администратор изменяет все три настройки в проекте без назначения',async()=>{
@@ -86,7 +92,7 @@ try{
         for(const variant of variants)assert.equal((await patch('несуществующий alias',variant)).status,404,variant.name);
     });
     await check('Настоящий отзыв платформенного права блокирует следующий запрос без нового входа',async()=>{
-        await access.save({email:'main@example.test',isMainAdmin:false},'qa-revoke');
+        await access.save({email:'main@example.test',isMainAdmin:false},backupActor);
         for(const variant of variants)await assertBlocked(project.id,variant);
     });
 }catch(error){fatal=error;}

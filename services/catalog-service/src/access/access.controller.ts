@@ -33,7 +33,7 @@ export class AccessController {
     @Get('api/platform/users')
     async users(@Req() req: Request) { await this.requireMain(req); return this.access.list(); }
     @Post('api/platform/users')
-    async save(@Req() req: Request,@Body() input: Parameters<AccessDb['save']>[0]) { const actor=await this.requireMain(req); return this.access.save(input,actor.email); }
+    async save(@Req() req: Request,@Body() input: Parameters<AccessDb['save']>[0]) { const actor=await this.requireMain(req); return this.access.save(input,actor); }
     private async requireMain(req: Request): Promise<IAccessActor> {
         assertInternal(req.headers['x-neurocenter-internal']);
         const actor=JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || 'null'))) as IAccessActor | null;

@@ -4,15 +4,13 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assetEnvironment} from '../assets/environment.mjs';
+import {ownedTestPostgresAdmin} from './owned-postgres.fixture.mjs';
 
 // Профили, квоты, хостинг и удаление проверяются в новой временной базе; рабочий каталог не используется.
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const require=createRequire(new URL('../../services/catalog-service/package.json',import.meta.url));
 const {Pool}=require('pg');
-const environment=await assetEnvironment(root);
-const adminUrl=new URL(process.env.PUBLICATION_TEST_PG_URL||environment.CATALOG_PG_URL||'postgresql://rag:rag@127.0.0.1:5432/catalog');
-adminUrl.pathname='/postgres';
+const adminUrl=ownedTestPostgresAdmin(process.env.PUBLICATION_TEST_PG_URL||process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL);
 const admin=new Pool({connectionString:adminUrl.href,max:2});
 const database='nc_profile_delete_'+randomBytes(8).toString('hex');
 const candidate=path.resolve(process.env.PROJECT_AUDIT_FIXES_DIST||path.join(root,'services/catalog-service/.audit-fixes-dist'));
@@ -27,13 +25,14 @@ const check=async(name,action)=>{
     catch(error){checks.push({name,ok:false,error:error.message});}
 };
 const actor='project-admin@example.test';
+const mainActor={email:'fixture-main@example.test',activeRole:'Главный админ'},projectActor={email:actor,activeRole:'Админ проекта'};
 const request={headers:{'x-bridge-principal':actor,
     'x-bridge-actor':encodeURIComponent(JSON.stringify({email:actor,activeRole:'Админ проекта'}))}};
 const account=async email=>(await pool.query('SELECT email,display_name,is_main_admin,enabled FROM platform_users WHERE email=$1',[email])).rows[0];
 const count=async(sql,params)=>(await pool.query(sql,params)).rows[0].n;
 const project=async name=>{
     const value=await service.createProject({name});
-    await service.addProjectMember(value.id,{userId:'u-'+actor,principalName:actor,displayName:'Администратор проекта',role:'Админ проекта',addedAt:new Date().toISOString()},actor);
+    await service.addProjectMember(value.id,{userId:'u-'+actor,principalName:actor,displayName:'Администратор проекта',role:'Админ проекта',addedAt:new Date().toISOString()},mainActor);
     return value;
 };
 
@@ -45,11 +44,13 @@ try{
     const {CatalogService}=require(path.join(candidate,'catalog/catalog.service.js'));
     const {CatalogController}=require(path.join(candidate,'catalog/catalog.controller.js'));
     const {AccessDb}=require(path.join(candidate,'access/access-db.js'));
+    const {bootstrapAdministrator}=require(path.join(candidate,'access/bootstrap-admin.js'));
     service=new CatalogService();access=new AccessDb();await service.ensureSchema();await access.onModuleInit();
     controller=new CatalogController(service,access);
-    await access.save({email:actor,displayName:'Администратор проекта'});
+    await bootstrapAdministrator(pool,{email:mainActor.email});
+    await access.save({email:actor,displayName:'Администратор проекта'},mainActor);
     const email='existing@example.test';
-    await access.save({email,displayName:'Иван Иванов',isMainAdmin:true,enabled:false});
+    await access.save({email,displayName:'Иван Иванов',isMainAdmin:true,enabled:false},mainActor);
     const expected=await account(email);
 
     for(const displayName of [undefined,email,'Имя в отдельном проекте'])await check('Назначение сохраняет глобальный профиль при имени '+String(displayName),async()=>{
@@ -75,8 +76,8 @@ try{
         assert.equal(await count('SELECT count(*)::int AS n FROM project_members WHERE project_id=$1 AND principal_name=$2',[p.id,email]),0);
     });
     await check('Параллельное создание сохраняет один профиль и одно событие',async()=>{
-        const email='concurrent@example.test';
-        const values=await Promise.all(['Первое имя','Другое имя'].map(displayName=>access.ensureProjectUser({email,displayName},actor)));
+        const email='concurrent@example.test',p=await project('Параллельное создание сотрудника');
+        const values=await Promise.all(['Первое имя','Другое имя'].map(displayName=>access.ensureProjectUser({email,displayName},projectActor,p.id)));
         assert.equal(values[0].displayName,values[1].displayName);
         assert.equal((await account(email)).display_name,values[0].displayName);
         assert.equal(await count("SELECT count(*)::int AS n FROM security_events WHERE resource_id=$1 AND action='user.create'",[email]),1);

@@ -5,15 +5,17 @@ import { ProjectMemberRepository } from '../src/catalog/project-member-repositor
 
 const member = { userId: 'u-member@example.invalid', principalName: 'member@example.invalid', displayName: 'Участник', role: 'Наблюдатель', addedAt: '2026-10-18T10:00:00Z' };
 const row = { user_id: member.userId, principal_name: member.principalName, display_name: member.displayName, role: member.role, added_at: member.addedAt };
-const actor = 'admin@example.invalid';
+const actor = {email:'admin@example.invalid',activeRole:'Главный админ'};
+type Query=(sql:string,params?:unknown[])=>Promise<{rows:unknown[]}>;
 
 describe('Атомарный аудит проектных назначений', () => {
-    let query: ReturnType<typeof vi.fn>;
+    let query: ReturnType<typeof vi.fn<Query>>;
     let release: ReturnType<typeof vi.fn>;
     let repository: ProjectMemberRepository;
 
     beforeEach(() => {
-        query = vi.fn(async (sql: string, params?: unknown[]) => {
+        query = vi.fn<Query>(async (sql: string, params?: unknown[]) => {
+            if(sql.startsWith('SELECT enabled,is_main_admin FROM platform_users'))return{rows:[{enabled:true,is_main_admin:true}]};
             if (sql.startsWith('SELECT * FROM project_members') || sql.startsWith('INSERT INTO project_members')) { return { rows: [row] }; }
             if (sql.startsWith('UPDATE project_members')) { return { rows: [{ ...row, role: params![2] }] }; }
             return { rows: [] };
@@ -22,12 +24,12 @@ describe('Атомарный аудит проектных назначений'
         repository = new ProjectMemberRepository({ connect: async () => ({ query, release }) } as unknown as Pool);
     });
 
-    const events = (query: ReturnType<typeof vi.fn>) => query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO security_events'));
+    const events = (query: ReturnType<typeof vi.fn<Query>>) => query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO security_events'));
 
     it('Выдача сохраняет исполнителя и адрес сотрудника до COMMIT', async () => {
         expect(await repository.add('prj-qa', member, actor)).toEqual(member);
         const event = events(query)[0][1] as unknown[];
-        expect(event.slice(1, 4)).toEqual([actor, 'project.member.add', 'prj-qa · member@example.invalid']);
+        expect(event.slice(1, 4)).toEqual([actor.email, 'project.member.add', 'prj-qa · member@example.invalid']);
         expect(JSON.parse(String(event[4]))).toBeNull();
         expect(JSON.parse(String(event[5]))).toEqual({ projectId: 'prj-qa', ...member });
         expect(query.mock.calls.at(-1)).toEqual(['COMMIT']);
@@ -36,7 +38,7 @@ describe('Атомарный аудит проектных назначений'
 
     it('Смена роли фиксирует исходное назначение под блокировкой строки', async () => {
         await repository.update('prj-qa', member.userId, 'Разработчик', 'Наблюдатель', actor);
-        expect(query.mock.calls[1][0]).toContain('FOR UPDATE');
+        expect(query.mock.calls.find(([sql])=>sql.startsWith('SELECT * FROM project_members'))?.[0]).toContain('FOR UPDATE');
         const event = events(query)[0][1] as unknown[];
         expect(event[2]).toBe('project.member.update');
         expect(JSON.parse(String(event[4])).role).toBe('Наблюдатель');
@@ -80,9 +82,14 @@ describe('Атомарный аудит проектных назначений'
     });
 
     it('Конкурирующее добавление не возвращает ложный успех', async () => {
-        query.mockImplementation(async () => ({ rows: [] }));
+        query.mockImplementation(async (sql:string) => ({ rows: sql.startsWith('SELECT enabled,is_main_admin FROM platform_users')?[{enabled:true,is_main_admin:true}]:[] }));
         await expect(repository.add('prj-qa', member, actor)).rejects.toThrow('Сотрудник уже в проекте');
         expect(events(query)).toEqual([]);
         expect(query.mock.calls.at(-1)).toEqual(['ROLLBACK']);
+    });
+
+    it('Неизвестная роль не создаёт назначение или успешный аудит',async()=>{
+        await expect(repository.add('prj-qa',{...member,role:'Главный админ'},actor)).rejects.toMatchObject({status:400});
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('INSERT INTO project_members'))).toBe(false);expect(events(query)).toEqual([]);
     });
 });
