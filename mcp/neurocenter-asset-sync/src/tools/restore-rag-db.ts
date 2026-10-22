@@ -140,7 +140,7 @@ export async function restoreRagDb(input: TRestoreRagDbInput, cwd: string, autho
             await previous?.assertCurrent();
             await lock!.assert(stage!);
             previous?.close(); previous = undefined;
-            try { await commitRagRestore({ root: located.root, store: storePath, stage: stage!, lock: lock!.raw, overrides: runtimeOverrides, identity: initial.value, result }); }
+            try { await commitRagRestore({ root: located.root, store: storePath, stage: stage!, lock: lock!.raw, overrides: runtimeOverrides, identity: initial.value, result, admit:authorize }); }
             catch (error) { if ((error as { restoreRecoveryPending?: boolean }).restoreRecoveryPending) { stage = undefined; } throw error; }
             stage = undefined;
         });

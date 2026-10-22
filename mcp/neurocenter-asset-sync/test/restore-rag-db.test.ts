@@ -228,4 +228,34 @@ describe('Атомарное восстановление RAG в подтвер�
         await expect(restoreRagDb({ projectKey: 'test-project', project: fixture.root }, fixture.root, async () => { if (sealedRead) { throw new Error('отозвано'); } })).rejects.toThrow('отозвано');
         expect(await ids()).toEqual(['local-original']);
     });
+    it.each([{name:'отзыв прав',error:new Error('late authorization revoked')},{name:'отмена',error:new DOMException('late cancellation','AbortError')}])(
+        '$name после публикации prepared intent не начинает переключение рабочего индекса',async({error})=>{
+            const link=fs.link,rename=fs.rename;let revoked=false,mutations=0,lateChecks=0;
+            vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores')revoked=true;return result;});
+            vi.spyOn(fs,'rename').mockImplementation(async(...args)=>{if(args[0]===store||args[1]===store)mutations++;return rename(...args);});
+            await expect(restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{if(revoked){lateChecks++;throw error;}})).rejects.toBe(error);
+            expect(lateChecks).toBe(1);expect(mutations).toBe(0);expect(await ids()).toEqual(['local-original']);
+            expect((await fs.readdir(path.dirname(store))).filter(name=>name.startsWith('.neurocenter-rag-restore-'))).toEqual([]);
+            await expect(fs.stat(path.join(store,'index.lock'))).rejects.toMatchObject({code:'ENOENT'});
+        },
+    );
+    it('Свежий допуск после prepared journal видит прежний индекс и разрешает единственное переключение',async()=>{
+        const link=fs.link;let journal:string|undefined,admissions=0;
+        vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores')journal=String(args[1]);return result;});
+        const result=JSON.parse(await restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{
+            if(journal){admissions++;expect(JSON.parse(await fs.readFile(journal,'utf8')).state).toBe('prepared');expect(await ids()).toEqual(['local-original']);}
+        }));
+        expect(admissions).toBe(1);expect(result).toMatchObject({complete:true,written:1});expect(await ids()).toEqual(['server-row']);
+        await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});
+    });
+    it('Отказ очистки prepared intent сохраняет исходную причину и восстанавливается без повторного скачивания',async()=>{
+        const primary=Error('revoked before switch'),cleanup=Object.assign(Error('staging cleanup unavailable'),{code:'EACCES'}),link=fs.link,remove=fs.rm;
+        let journal:string|undefined,stage:string|undefined;
+        vi.spyOn(fs,'link').mockImplementation(async(...args)=>{const result=await link(...args);if(path.basename(path.dirname(String(args[1])))==='rag-restores'){journal=String(args[1]);stage=JSON.parse(await fs.readFile(journal,'utf8')).stage;}return result;});
+        const failure=vi.spyOn(fs,'rm').mockImplementation(async(...args)=>{if(args[0]===stage)throw cleanup;return remove(...args);});
+        await expect(restoreRagDb({projectKey:'test-project',project:fixture.root},fixture.root,async()=>{if(journal)throw primary;})).rejects.toSatisfy((error:unknown)=>error instanceof Error&&error.cause===primary&&'recoveryCause'in error&&error.recoveryCause===cleanup&&'restoreRecoveryPending'in error&&error.restoreRecoveryPending===true);
+        expect(await ids()).toEqual(['local-original']);expect(JSON.parse(await fs.readFile(journal!,'utf8')).state).toBe('prepared');await fs.stat(stage!);
+        failure.mockRestore();transport.fetch.mockClear();await locateStore(fixture.root,fixture.root);
+        expect(await ids()).toEqual(['local-original']);expect(transport.fetch).not.toHaveBeenCalled();await expect(fs.stat(journal!)).rejects.toMatchObject({code:'ENOENT'});await expect(fs.stat(stage!)).rejects.toMatchObject({code:'ENOENT'});
+    });
 });

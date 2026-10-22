@@ -127,7 +127,7 @@ async function finish(intent: RestoreIntent,recovery=false,final=false): Promise
 }
 
 /** Под identity-lock запись intent предшествует обоим rename; prepared откатывается, committed завершает свою очистку. */
-export async function commitRagRestore(input: { root: string; store: string; stage: string; lock: string; overrides: string | null; identity: IRagProjectIdentity; result: Record<string, unknown>; privateConfiguration?:{key:string;before:unknown|null;after:unknown};deferCompletion?:true }): Promise<void> {
+export async function commitRagRestore(input: { root: string; store: string; stage: string; lock: string; overrides: string | null; identity: IRagProjectIdentity; result: Record<string, unknown>; privateConfiguration?:{key:string;before:unknown|null;after:unknown};deferCompletion?:true;admit?:()=>Promise<void> }): Promise<void> {
     await recoveryDirectory(directory());
     if (await readIntent(input.root)) { throw new Error('Предыдущее восстановление индекса ещё не завершено.'); }
     const before = await restoreDirectoryProof(input.store, input.lock), after = await restoreDirectoryProof(input.stage, input.lock, true);
@@ -154,6 +154,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
             throw new Error('Индекс изменился перед переключением. Файлы сохранены.');
         }
         if(intent.privateConfiguration){const change=intent.privateConfiguration;await writePrivateConfiguration(change.key,change.after,change.before===null?undefined:change.before);}
+        await input.admit?.(); // Fresh lease/actor admission after durable preparation, before switching the working index.
         await fs.rename(intent.store, intent.backup); await syncDirectory(path.dirname(intent.store));
         await fs.rename(intent.stage, intent.store); await syncDirectory(path.dirname(intent.store));
         intent.state = 'committed'; await atomicText(file, JSON.stringify(intent), 0o600);
@@ -161,7 +162,7 @@ export async function commitRagRestore(input: { root: string; store: string; sta
     } catch (error) {
         if (published) {
             try { const saved = await readIntent(input.root); if (saved) { await finish(saved); } }
-            catch (failure) { throw uncertain(failure); }
+            catch (failure) { throw Object.assign(uncertain(error), {recoveryCause:failure}); }
         }
         throw error;
     } finally { if(!input.deferCompletion||intent.state!=='committed')inFlight.delete(input.root); await fs.rm(temporary, { force: true }); }
