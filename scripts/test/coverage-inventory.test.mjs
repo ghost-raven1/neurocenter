@@ -87,7 +87,7 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-runner-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),pkg=path.join(root,'services/feature-flags-service'),output=path.join(root,'output');
  await Promise.all([fs.mkdir(tools,{recursive:true}),fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true}),fs.mkdir(path.join(root,'services/shared'),{recursive:true}),fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
- for(const file of ['run.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
+ for(const file of ['run.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
  await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
  for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
  // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.
@@ -96,10 +96,19 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  await fs.writeFile(path.join(pkg,'src/entry.ts'),'export const value=1;\n');
  for(const file of ['selected.test.ts','workspace-bounds.test.ts','excluded-db.test.ts'])await fs.writeFile(path.join(pkg,'test',file),'// synthetic test file\n');
  await fs.writeFile(path.join(pkg,'node_modules/vitest/vitest.mjs'),syntheticVitest);
- const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service','--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath),SYNTHETIC_COVERAGE_CASE:scenario},encoding:'utf8',timeout:15000});
+ await fs.mkdir(path.join(root,'scripts/production'),{recursive:true});await fs.writeFile(path.join(root,'scripts/production/cli.mjs'),'throw Error("Must never execute an inventoried production CLI");\n');
+ await fs.mkdir(path.join(root,'bridge-dist'),{recursive:true});await fs.writeFile(path.join(root,'bridge-dist/install.sh'),'#!/bin/bash\nexit 99\n');
+ assert.equal(spawnSync('git',['init','--quiet'],{cwd:root}).status,0);
+ const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service','--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,SYNTHETIC_COVERAGE_CASE:scenario},encoding:'utf8',timeout:15000});
  assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,scenario==='success'?0:1,result.stdout+'\n'+result.stderr);
  const manifest=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8')),item=manifest.packages[0];
  assert.equal(item.exitCode,0);assert.equal(manifest.complete,scenario==='success');assert.equal(manifest.suiteCompletion,scenario==='success');
+ assert.equal(manifest.denominator.allWorkspaceSourcesIncluded,false);
+ const sources=manifest.sourceInventory.files;
+ assert.equal(sources.find(file=>file.path==='scripts/production/cli.mjs').measurement,'unrepresented');
+ assert.equal(sources.find(file=>file.path==='bridge-dist/install.sh').measurement,'unsupported-runtime');
+ assert.equal(sources.find(file=>file.path==='services/feature-flags-service/src/entry.ts').measurement,'represented');
+ assert.match(await fs.readFile(path.join(output,'source-inventory.md'),'utf8'),/bridge-dist\/install\.sh/);
  assert.equal(item.passed,1);assert.equal(item.failed,0);assert.equal(item.testFileInventory.complete,scenario!=='missing');
  assert.equal(item.reportValidation.ok,scenario!=='suite-failed');assert.deepEqual(item.excludedInfrastructureSuites,['test/excluded-db.test.ts']);
  if(scenario==='missing')assert.deepEqual(item.testFileInventory.missingFiles,[path.join(pkg,'test/workspace-bounds.test.ts')]);
