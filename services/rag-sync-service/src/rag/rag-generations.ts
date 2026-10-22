@@ -94,10 +94,10 @@ export class RagGenerations {
     }
     /** Переиспользует уже подтверждённые батчи после restart; одна generation обрабатывается одним worker. */
     async build(project:string,id:string,embed:(texts:string[],profile:IIndexProfile)=>Promise<number[][]>):Promise<IRagGeneration>{
-        const owner=await this.pool.connect();let locked=false;
+        const owner=await this.pool.connect();let locked=false,discard=true;
         try{
             const lock=await owner.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',['rag-reindex:'+id]);
-            locked=lock.rows[0].locked;if(!locked)return this.get(project,id);
+            locked=lock.rows[0].locked;discard=false;if(!locked)return this.get(project,id);
             while(true){
                 const state=await this.get(project,id);if(state.state!=='building')return state;
                 const page=await this.pool.query(`SELECT ${columns} FROM rag_chunks WHERE project_key=$1 AND generation_id=$2 AND embedding IS NULL ORDER BY id LIMIT 32`,[project,id]);
@@ -118,7 +118,7 @@ export class RagGenerations {
             }
         }catch(error){
             await this.pool.query("UPDATE rag_generations SET state='failed',error=$2,updated_at=now() WHERE id=$1 AND state='building'",[id,'Переиндексация прервана. Действующий индекс сохранён.']);throw mapRagQuotaError(error);
-        }finally{if(locked)await owner.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['rag-reindex:'+id]).catch(()=>undefined);owner.release();}
+        }finally{if(locked)await owner.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['rag-reindex:'+id]).catch(()=>{discard=true;});owner.release(discard);}
     }
     private async finish(project:string,id:string):Promise<IRagGeneration>{
         const candidate=await this.get(project,id);
