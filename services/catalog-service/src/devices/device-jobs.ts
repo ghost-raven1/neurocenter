@@ -267,6 +267,7 @@ export class DeviceJobs {
         await this.expire();
         const client = await this.store.pool.connect();
         let job: Job | undefined;
+        let discard = false;
         try {
             await client.query('BEGIN');
             const connection = await client.query('SELECT id,paused_until>now() AS paused FROM bridge_devices WHERE id=$1 FOR UPDATE', [device.id]);
@@ -288,10 +289,10 @@ export class DeviceJobs {
             }
             await client.query('COMMIT');
         } catch (error) {
-            await client.query('ROLLBACK');
+            await client.query('ROLLBACK').catch(() => { discard = true; });
             throw error;
         } finally {
-            client.release();
+            client.release(discard);
         }
         if (!job) {
             return null;

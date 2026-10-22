@@ -44,6 +44,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         throw new BadRequestException('Некорректное подтверждение задания.');
     }
     const client = await pool.connect();
+    let discard = false;
     try {
         await client.query('BEGIN');
         const { rows } = await client.query<Job>(
@@ -209,9 +210,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         await recordDeviceOperation(client, job, input.state.toUpperCase(), percent, message);
         await client.query('COMMIT');
     } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
+        // Неподтверждённый откат не должен попасть в транзакцию следующего заёмщика пула.
+        await client.query('ROLLBACK').catch(() => { discard = true; });
         throw error;
-    } finally { client.release(); }
+    } finally { client.release(discard); }
     await notifyDeviceOperations();
     return { ok: true, repeated: false };
 }
