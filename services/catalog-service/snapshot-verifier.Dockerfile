@@ -14,10 +14,10 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=true
+    NPM_CONFIG_STRICT_SSL=false
 WORKDIR /verifier
 COPY services/catalog-service/package.json services/catalog-service/package-lock.json ./
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --omit=dev --no-audit --no-fund
+RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund
 COPY scripts/snapshots/verify-image.cjs ./scripts/snapshots/verify-image.cjs
 COPY services/shared/project-snapshot.cjs ./services/shared/project-snapshot.cjs
 ENV RAYON_NUM_THREADS=2

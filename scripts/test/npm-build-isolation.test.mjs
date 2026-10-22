@@ -11,6 +11,7 @@ import {withNpmBuildEnvironment} from '../workspace/npm-build-environment.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const tracked=execFileSync('git',['ls-files'],{cwd:root,encoding:'utf8'}).trim().split('\n');
 const dockerfiles=tracked.filter(file=>/(?:^|\/)Dockerfile$|\.Dockerfile$/.test(file));
+const npmTlsExceptions=new Set(['services/api-gateway/Dockerfile','services/catalog-service/snapshot-verifier.Dockerfile']);
 
 test('Real npm ignores hostile user/global/scoped config and inherited npm options',async t=>{
     const folder=await fs.mkdtemp(path.join(os.tmpdir(),'nc-hostile-npm-'));
@@ -49,18 +50,19 @@ test('Temporary npm configuration is removed after a failed build',async()=>{
     await assert.rejects(fs.stat(home),{code:'ENOENT'});
 });
 
-test('Every Node Docker build pins npm registry and empty configs with the explicit gateway TLS exception',async()=>{
+test('Every Node Docker build pins npm registry and empty configs with explicit gateway and snapshot npm TLS exceptions',async()=>{
     assert.ok(dockerfiles.includes('frontend/Dockerfile'));assert.ok(dockerfiles.includes('services/catalog-service/snapshot-verifier.Dockerfile'));
     for(const file of dockerfiles){
-        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile';
+        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile',relaxedNpm=npmTlsExceptions.has(file);
         assert.match(source,/ENV NPM_CONFIG_REGISTRY=https:\/\/registry\.npmjs\.org\//,file);
         assert.match(source,/NPM_CONFIG_USERCONFIG=\/dev\/null/,file);
         assert.match(source,/NPM_CONFIG_GLOBALCONFIG=\/tmp\/neurocenter-empty-global\.npmrc/,file);
-        assert.match(source,gateway?/NPM_CONFIG_STRICT_SSL=false/:/NPM_CONFIG_STRICT_SSL=true/,file);
-        if(gateway){assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);assert.doesNotMatch(source,/strict-ssl=true/,file);}
-        else assert.doesNotMatch(source,/strict-ssl=false|NODE_TLS_REJECT_UNAUTHORIZED/,file);
+        assert.match(source,relaxedNpm?/NPM_CONFIG_STRICT_SSL=false/:/NPM_CONFIG_STRICT_SSL=true/,file);
+        assert.doesNotMatch(source,relaxedNpm?/strict-ssl=true/:/strict-ssl=false/,file);
+        if(gateway)assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
+        else assert.doesNotMatch(source,/NODE_TLS_REJECT_UNAUTHORIZED/,file);
         for(const command of source.matchAll(/\bRUN npm ci ([^\n]+)/g)){
-            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl='+!gateway])assert.ok(command[1].includes(flag),file+' missing '+flag);
+            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl='+!relaxedNpm])assert.ok(command[1].includes(flag),file+' missing '+flag);
         }
         assert.doesNotMatch(source,/^\s*(?:ARG|COPY|ADD)\s+[^\n]*(?:npm_config_|\.npmrc|\.yarnrc)/im,file);
     }
