@@ -34,6 +34,15 @@ test('Optional S3 uses a separate explicit config, never the main endpoint, and 
   await fs.writeFile(filename,JSON.stringify({...base,...override}));await assert.rejects(integrationConfiguration(env,directory));
  }
 });
+test('Owned integration includes chat recovery SQL using only its admitted PostgreSQL, overriding a caller alias',async()=>{
+ const owned='postgresql://fixture:private-test-value@127.0.0.1:59616/postgres';
+ const caller='postgresql://unsafe:unsafe@127.0.0.1:5432/postgres';
+ const result=await integrationConfiguration({MODEL_CHAT_TEST_ADMIN_URL:owned,CHAT_RECOVERY_TEST_ADMIN_PG_URL:caller},'/');
+ assert.equal(result.env.CHAT_RECOVERY_TEST_ADMIN_PG_URL,owned);
+ assert.equal(result.suites.filter(file=>file==='chat-recovery-postgres.test.mjs').length,1);
+ assert.equal(JSON.stringify(result.fixture).includes('private-test-value'),false);
+ assert.equal(safeEnvironment({CHAT_RECOVERY_TEST_ADMIN_PG_URL:caller}).CHAT_RECOVERY_TEST_ADMIN_PG_URL,undefined);
+});
 test('TAP footer counts preserve failures, skips and cancellation; missing output is incomplete',()=>{
  assert.deepEqual(tapCounts('# pass 12\n# fail 1\n# skipped 2\n# cancelled 3\n'),{passed:12,failed:1,skipped:2,cancelled:3});
  assert.deepEqual(tapCounts('process died before summary'),{passed:null,failed:null,skipped:null,cancelled:null});

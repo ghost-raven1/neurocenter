@@ -13,11 +13,13 @@ export const integrationSuites = [
  'opencode-model-sync-http.test.mjs','platform-rag-quota-http.test.mjs','store-archive-http.test.mjs',
  'asset-source-archive-http.test.mjs','agent-compilation-http.test.mjs','mcp-host-access-http.test.mjs',
  'research-mcp-http.test.mjs','model-chat-research-http.test.mjs','feature-flags-gateway.test.cjs',
+ 'chat-recovery-postgres.test.mjs',
 ];
 const databaseVariables = [
  'MODEL_CHAT_TEST_ADMIN_URL','MODEL_CHAT_CONTEXT_TEST_ADMIN_URL','MODEL_CHAT_FILES_TEST_ADMIN_URL',
  'MODEL_CHAT_LIST_TEST_ADMIN_URL','MODEL_USAGE_TEST_ADMIN_URL','OPENCODE_MODEL_SYNC_TEST_PG_URL',
  'ASSET_ARCHIVE_TEST_ADMIN_URL','STORE_ARCHIVE_TEST_ADMIN_URL','CATALOG_TEST_PG_URL',
+ 'CHAT_RECOVERY_TEST_ADMIN_PG_URL',
 ];
 
 /** The integration profile has no default database or production-object-store fallback. */
