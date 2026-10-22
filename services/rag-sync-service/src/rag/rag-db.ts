@@ -144,6 +144,15 @@ export class RagDb {
         return Math.floor((tsize * pcount) / tcount);
     }
 
+    /** Exact committed replies remain readable when admission of new writes has been disabled. */
+    public async completedWrite(projectKey:string,generation:string,intent:{id:string;payloadHash:string}):Promise<({upserted:number;deleted:number}&IRagIndexSummary)|null>{
+        const saved=(await this.pool.query('SELECT * FROM rag_write_receipts WHERE id=$1',[intent.id])).rows[0];
+        if(!saved)return null;
+        if(saved.project_key!==projectKey||saved.generation_id!==generation||saved.payload_hash!==intent.payloadHash)throw new BadRequestException('Идентификатор записи уже закреплён за другим содержимым.');
+        if(saved.state==='failed')throw new BadRequestException(saved.error?.message||'Запись была отменена без изменения данных.');
+        return saved.state==='succeeded'?saved.result:null;
+    }
+
     /**
      * Идемпотентный dельта-apply: upsert новых/изменённых, delete удалённых.
      *

@@ -109,13 +109,17 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         if(write.snapshot?.complete&&(delta.chunks.length||delta.deletes.length)){throw new BadRequestException('Подтверждение снимка передаётся отдельным пустым пакетом после всех изменений.');}
         if(write.indexProfile){requireUsableVectors(delta.chunks.map(row=>({embedding:row.embedding??null})),dimension);}
         const upserts: IUpsertRow[] = delta.chunks.map(row=>toRow(row,!!write.indexProfile));
-        await requireRagFeatures(['rag_sync']);
         const base=(process.env.CATALOG_SERVICE_URL||'http://localhost:4100').replace(/\/+$/,'');
         const authorization=await fetch(base+'/internal/project-rag/write-authorize',{method:'POST',
             headers:{'content-type':'application/json','x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN||''},
             body:JSON.stringify({id:value.id,payloadHash:value.payloadHash,context}),signal:AbortSignal.timeout(8000)});
         if(!authorization.ok)throw new ServiceUnavailableException('Каталог пока не подтвердил intent записи. Повтор использует тот же пакет.');
-        return this.databases.withProject(context.projectId,(db,id)=>db.applyDelta(id,context.generation,upserts,delta.deletes,write,{id:value.id,payloadHash:value.payloadHash}));
+        return this.databases.withProject(context.projectId,async(db,id)=>{
+            const intent={id:value.id,payloadHash:value.payloadHash},completed=await db.completedWrite(id,context.generation,intent);
+            if(completed)return completed;
+            await requireRagFeatures(['rag_sync']);
+            return db.applyDelta(id,context.generation,upserts,delta.deletes,write,intent);
+        });
     }
 
     /**

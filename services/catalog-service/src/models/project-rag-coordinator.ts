@@ -95,7 +95,10 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
                 ||result.complete&&!sha(result.snapshotHash))throw new ServiceUnavailableException('Результат записи не подтверждён.');
         }
         catch(error){
-            const definitive=error instanceof HttpException&&[400,403,409,413].includes(error.getStatus());
+            const response=error instanceof HttpException?error.getResponse():null;
+            // A disabled replay may race a previously admitted COMMIT; only its exact receipt resolves that uncertainty.
+            const featureDisabled=error instanceof HttpException&&error.getStatus()===403&&typeof response==='object'&&response!==null&&'code'in response&&response.code==='feature-disabled';
+            const definitive=!featureDisabled&&error instanceof HttpException&&[400,403,409,413].includes(error.getStatus());
             await this.models.pool.query("UPDATE project_rag_sync_intents SET state=$2,error=$3::jsonb,updated_at=now() WHERE id=$1 AND state IN ('pending','uncertain')",
                 [intent.id,definitive?'failed':'uncertain',JSON.stringify({message:definitive?'Пакет отклонён без изменения индекса.':'Результат синхронизации ещё не подтверждён.'})]);throw error;
         }

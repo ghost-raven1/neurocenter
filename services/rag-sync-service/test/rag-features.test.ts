@@ -12,9 +12,9 @@ beforeEach(()=>{
     flags=defaultFeatureFlags();unavailable=false;calls=[];
     vi.mocked(projectRagContext).mockResolvedValue(context());
     db={search:vi.fn(async()=>({generation:context().generation,snapshot:context().snapshot,sources:[]})),count:vi.fn(async()=>1),
-        quota:vi.fn(async()=>({availableBytes:100})),applyDelta:vi.fn(),generations:{get:vi.fn(),create:vi.fn(),retry:vi.fn(),cancel:vi.fn(),source:vi.fn(async()=>({rowCount:1})),build:vi.fn()}};
+        quota:vi.fn(async()=>({availableBytes:100})),completedWrite:vi.fn(async()=>null),applyDelta:vi.fn(),generations:{get:vi.fn(),create:vi.fn(),retry:vi.fn(),cancel:vi.fn(),source:vi.fn(async()=>({rowCount:1})),build:vi.fn()}};
     databases={withProject:vi.fn(async(id,action)=>action(db,id))};service=new RagService(databases);controller=new ProjectRagController(service,databases);
-    vi.stubGlobal('fetch',vi.fn(async(url)=>{calls.push(String(url));if(unavailable)throw Error('private upstream');return new Response(JSON.stringify(evaluateFeatureFlags(flags)));}));
+    vi.stubGlobal('fetch',vi.fn(async(url)=>{calls.push(String(url));if(String(url).endsWith('/internal/project-rag/write-authorize'))return Response.json({ok:true});if(unavailable)throw Error('private upstream');return new Response(JSON.stringify(evaluateFeatureFlags(flags)));}));
 });
 afterEach(()=>vi.unstubAllGlobals());
 describe('RAG internal and worker feature boundaries',()=>{
@@ -29,8 +29,15 @@ describe('RAG internal and worker feature boundaries',()=>{
         const input={...context(),embedding:[1,0,0]};expect(await service.search(input)).toMatchObject({sources:[]});expect(db.search).toHaveBeenCalledWith(input);
         vi.mocked(projectRagContext).mockResolvedValue({...context(),revision:2});await expect(service.search(input)).rejects.toMatchObject({status:409});expect(db.search).toHaveBeenCalledTimes(1);
     });
-    it('disabled sync refuses even a valid intent before external authorization and writes',async()=>{
-        flags.rag_sync=false;await expect(service.applyDelta(write())).rejects.toMatchObject({status:403});expect(calls).toHaveLength(1);expect(databases.withProject).not.toHaveBeenCalled();
+    it('disabled sync permits authorized receipt inspection but prevents new business writes',async()=>{
+        flags.rag_sync=false;await expect(service.applyDelta(write())).rejects.toMatchObject({status:403});
+        expect(calls).toHaveLength(2);expect(calls[0]).toMatch(/\/internal\/project-rag\/write-authorize$/);
+        expect(db.completedWrite).toHaveBeenCalledOnce();expect(db.applyDelta).not.toHaveBeenCalled();
+    });
+    it.each([false,true])('a completed authorized reply survives disabled flags and flag-service unavailable=%s',async missing=>{
+        flags.rag_sync=false;unavailable=missing;const result={upserted:1,deleted:0};db.completedWrite.mockResolvedValueOnce(result);
+        expect(await service.applyDelta(write())).toEqual(result);expect(db.applyDelta).not.toHaveBeenCalled();
+        expect(calls).toHaveLength(1);expect(calls[0]).toMatch(/\/internal\/project-rag\/write-authorize$/);
     });
     it.each(['create','retry','build'] as const)('disabled sync blocks internal generation %s before mutation',async method=>{
         flags.rag_sync=false;
