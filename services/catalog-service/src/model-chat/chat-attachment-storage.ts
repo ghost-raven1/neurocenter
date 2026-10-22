@@ -75,9 +75,10 @@ export class ChatAttachmentStorage {
     }
     private async collectBatch(limit: number): Promise<number> {
         if (!this.objects) return 0;
-        const db = await this.pool.connect(); let locked = false, completed = 0;
+        const db = await this.pool.connect(); let locked = false, completed = 0, discard = true;
         try {
             locked = (await db.query("SELECT pg_try_advisory_lock(hashtextextended('model-chat-object-cleanup',0)) AS locked")).rows[0].locked;
+            discard = false;
             if (!locked) return 0;
             const rows = (await db.query<ObjectRow>(`SELECT * FROM model_chat_objects WHERE
                 ((state IN ('DELETE','DELETED') AND next_attempt_at<=now()) OR (state='STAGING' AND lease_until<=now()))
@@ -94,13 +95,16 @@ export class ChatAttachmentStorage {
                 }
             }
             return completed;
-        } finally { if (locked) await db.query("SELECT pg_advisory_unlock(hashtextextended('model-chat-object-cleanup',0))").catch(() => undefined); db.release(); }
+        } finally {
+            if (locked) await db.query("SELECT pg_advisory_unlock(hashtextextended('model-chat-object-cleanup',0))").catch(() => { discard = true; });
+            db.release(discard);
+        }
     }
     /** Upgrade payloads are deleted only after S3 read-back, checksum validation and a committed reference. */
     private async migrateTransfers(): Promise<void> {
-        const db = await this.pool.connect(); let locked = false;
+        const db = await this.pool.connect(); let locked = false, discard = true;
         try {
-            await db.query("SELECT pg_advisory_lock(hashtextextended('model-chat-attachment-transfer',0))"); locked = true;
+            await db.query("SELECT pg_advisory_lock(hashtextextended('model-chat-attachment-transfer',0))"); locked = true; discard = false;
             await db.query('DELETE FROM model_chat_attachment_transfers t USING model_chat_attachments a WHERE a.id=t.attachment_id AND a.deleted_at IS NOT NULL');
             for (;;) {
                 const source = (await db.query<{ attachment_id: string; content: Buffer; sha256: string; bytes: number; owner_email: string; project_id: string | null; conversation_id: string; media_type: string }>(`SELECT t.*,a.conversation_id,a.media_type,c.owner_email,c.project_id
@@ -115,8 +119,16 @@ export class ChatAttachmentStorage {
                     if (!current.rowCount) { await db.query('ROLLBACK'); await this.abandon(object, db); continue; }
                     await db.query("UPDATE model_chat_attachments SET object_id=$2,storage_state='S3' WHERE id=$1", [source.attachment_id, object.id]);
                     await this.activate(db, object); await db.query('DELETE FROM model_chat_attachment_transfers WHERE attachment_id=$1', [source.attachment_id]); await db.query('COMMIT');
-                } catch (error) { await db.query('ROLLBACK').catch(() => undefined); await this.abandon(object, db).catch(() => undefined); throw error; }
+                } catch (error) {
+                    await db.query('ROLLBACK').catch(() => { discard = true; });
+                    // An unconfirmed rollback leaves transaction state unknown; its durable intent remains collectible.
+                    if (!discard) await this.abandon(object, db).catch(() => undefined);
+                    throw error;
+                }
             }
-        } finally { if (locked) await db.query("SELECT pg_advisory_unlock(hashtextextended('model-chat-attachment-transfer',0))").catch(() => undefined); db.release(); }
+        } finally {
+            if (locked && !discard) await db.query("SELECT pg_advisory_unlock(hashtextextended('model-chat-attachment-transfer',0))").catch(() => { discard = true; });
+            db.release(discard);
+        }
     }
 }
