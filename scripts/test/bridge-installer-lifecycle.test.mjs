@@ -59,7 +59,7 @@ test('A fresh public installation registers the caller config without pausing an
     assert.equal(f.state.requests.filter(r=>r.method==='POST').length,0);
 }));
 for(const [label,change] of [
-    ['foreign site',entry=>entry.environment.NEUROCENTER_URL='https://other.example.test'],
+    ['invalid saved site',entry=>entry.environment.NEUROCENTER_URL='https://other.example.test/path'],
     ['foreign command',entry=>entry.command=['other-node','other-entry']],
     ['non-string environment',entry=>entry.environment.CUSTOM_SETTING=4],
     ['empty runtime HOME',entry=>entry.environment.HOME=''],

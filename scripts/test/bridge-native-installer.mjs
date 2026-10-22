@@ -18,7 +18,7 @@ const incompatibleVersion = '0.' + (Number(bridgeVersion.split('.')[1]) - 1) + '
 const target = `${process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
 const file = `neurocenter-asset-sync-${target}-${bridgeVersion}.tgz`;
 const archive = path.join(process.env.TEST_RUNTIME_DIR || path.join(root, 'bridge-dist/runtime'), file);
-const siteOrigin = 'http://panel.fixture.test:5173';
+let siteOrigin = 'http://panel.fixture.test:5173';
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-native-installer-')));
 const installDirectory = path.join(temporary, 'папка с пробелами', 'MCP');
 const entry = path.join(installDirectory, 'dist/index.js');
@@ -29,6 +29,7 @@ let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksu
 let expectedEntryInode, paused = false, pauseObservations = 0;
 let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
 const rejectedRoutes = [];
+const pairAuthorizations = [];
 const cases = [];
 async function waitFor(predicate, label, timeout = 10000) {
     const deadline = Date.now() + timeout;
@@ -88,7 +89,7 @@ async function stopFixtureWorker(profile) {
 }
 try {
     const bin = path.join(temporary, 'system-bin'); await fs.mkdir(bin);
-    for (const command of ['uname', 'sysctl', 'curl', 'tar', 'gzip', 'dirname', 'basename', 'mkdir', 'mktemp', 'rm', 'awk', 'shasum', 'sha256sum', 'grep', 'rmdir', 'mv', 'ldd', 'ps']) {
+    for (const command of ['uname', 'sysctl', 'curl', 'tar', 'gzip', 'cat', 'dirname', 'basename', 'mkdir', 'mktemp', 'rm', 'awk', 'shasum', 'sha256sum', 'grep', 'rmdir', 'mv', 'ldd', 'ps']) {
         const found = spawnSync('/bin/sh', ['-c', 'command -v "$1"', 'fixture', command], { encoding: 'utf8' });
         if (found.status === 0 && found.stdout.trim().startsWith('/')) await fs.symlink(found.stdout.trim(), path.join(bin, command));
     }
@@ -112,6 +113,7 @@ try {
             const token = String(request.headers.authorization || '').replace(/^Bearer /, '');
             const route = url.pathname.replace('/api/device-channel/', ''); let data;
             if (route === 'pair/start') {
+                pairAuthorizations.push(!!token);
                 pairStarts++; candidateHash = body.credentialHash;
                 data = { deviceCode: 'a'.repeat(64), userCode: 'A'.repeat(16), expiresIn: 600 };
             } else if (route === 'pair/poll') {
@@ -147,7 +149,7 @@ try {
     env.BASE_URL = origin + '/api/bridge';
     const script = path.join(temporary, 'install.sh');
     await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', siteOrigin).replaceAll('__RECONNECT__', '0'));
-    const profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(siteOrigin).slice(0, 20));
+    let profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(siteOrigin).slice(0, 20));
     const config = path.join(env.XDG_CONFIG_HOME, 'opencode/opencode.json');
     let installedConfig, installedMtime;
     await check('Реальный Bash устанавливает готовый архив без Node/npm, регистрирует MCP и запускает heartbeat', async () => {
@@ -233,11 +235,30 @@ try {
         await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
         installedMtime = (await fs.stat(entry)).mtimeMs;
     });
+    await check('Установщик другой площадки сохраняет прежние ключи и запускает новый heartbeat после подтверждения', async () => {
+        const previousProfile=profile,previousCredentials=await fs.readFile(path.join(profile,'credentials.json'));
+        const beforeConfig=JSON.parse(await fs.readFile(config,'utf8'));
+        siteOrigin='http://next-panel.fixture.test:5173';env.SITE_URL=siteOrigin;
+        profile=path.join(env.NEUROCENTER_BRIDGE_HOME,digest(siteOrigin).slice(0,20));heartbeat=undefined;
+        const migrated=await installer(env,script);assert.equal(migrated.code,0,migrated.output);
+        assert.match(migrated.output,/Подключение ждёт подтверждения/);
+        await waitFor(()=>!!heartbeat&&pairStarts===3,'новое подтверждение и heartbeat после перехода площадки');
+        const current=JSON.parse(await fs.readFile(config,'utf8'));
+        beforeConfig.mcp['neurocenter-asset-sync'].environment.NEUROCENTER_URL=siteOrigin;
+        assert.deepEqual(current,beforeConfig);
+        assert.deepEqual(await fs.readFile(path.join(previousProfile,'credentials.json')),previousCredentials);
+        const credentials=JSON.parse(await fs.readFile(path.join(profile,'credentials.json'),'utf8'));
+        assert.notEqual(credentials.token,JSON.parse(previousCredentials).token);assert.equal(pairAuthorizations.at(-1),false);
+        assert.equal(heartbeatWorkerPid,Number(await fs.readFile(path.join(profile,'worker.lock'),'utf8')));
+        assert.deepEqual(JSON.parse(await fs.readFile(path.join(installDirectory,'installation.json'),'utf8')),{schemaVersion:1,siteUrl:siteOrigin,apiUrl:origin});
+        assert.equal(paused,false);await assert.rejects(fs.access(path.join(previousProfile,'worker.lock')),{code:'ENOENT'});
+        installedConfig=await fs.readFile(config,'utf8');installedMtime=(await fs.stat(entry)).mtimeMs;
+    });
     await check('Неверная SHA256 реального архива оставляет установленный MCP и настройки неизменными', async () => {
         corruptChecksum = true;
         const rejected = await installer(env, script); assert.notEqual(rejected.code, 0); assert.ok(rejected.output.includes('Контрольная сумма'));
         assert.equal((await fs.stat(entry)).mtimeMs, installedMtime); assert.equal(await fs.readFile(config, 'utf8'), installedConfig);
-        assert.equal(pairStarts, 2);
+        assert.equal(pairStarts, 3);
     });
     await check('Более новая версия запрещает понижение без замены программы и настроек', async () => {
         corruptChecksum = false;
@@ -250,11 +271,11 @@ try {
             assert.ok(rejected.output.includes('Автоматическое понижение версии MCP запрещено'), rejected.output);
             assert.equal(JSON.parse(await fs.readFile(manifest, 'utf8')).version, futureVersion);
             assert.equal(digest(await fs.readFile(entry)), beforeEntry); assert.equal((await fs.stat(entry)).mtimeMs, beforeMtime);
-            assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 2);
+            assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 3);
             assert.deepEqual((await fs.readdir(path.dirname(installDirectory))).filter(name => name.startsWith('.neurocenter-previous.')).sort(), beforeBackups);
         } finally { await fs.writeFile(manifest, original); }
     });
-    await check('Сбой регистрации сохраняет несовместимую прежнюю версию отдельно без автоматического отката', async () => {
+    await check('Небезопасная регистрация отклоняется до замены даже несовместимого прежнего runtime', async () => {
         const manifest = path.join(installDirectory, 'package.json'); const installed = JSON.parse(await fs.readFile(manifest, 'utf8'));
         // Старую версию имитирует только манифест одноразовой установки, исходный архив не меняется.
         await fs.writeFile(manifest, JSON.stringify({ ...installed, version: incompatibleVersion }));
@@ -262,22 +283,13 @@ try {
         const oldManifest = await fs.readFile(manifest, 'utf8'); const oldEntry = digest(await fs.readFile(entry));
         const savedConfig = config + '.saved-fixture'; await fs.rename(config, savedConfig); await fs.mkdir(config);
         const rejected = await installer(env, script); assert.notEqual(rejected.code, 0, rejected.output);
-        assert.ok(rejected.output.includes('Регистрация MCP не удалась'), rejected.output);
-        assert.ok(rejected.output.includes('автоматический откат на несовместимую версию запрещён'), rejected.output);
-        assert.equal(JSON.parse(await fs.readFile(manifest, 'utf8')).version, bridgeVersion);
-        assert.equal(JSON.parse(await fs.readFile(path.join(installDirectory, 'runtime.json'), 'utf8')).buildId, metadata.buildId);
-        await assert.rejects(fs.access(path.join(installDirectory, sentinel)), { code: 'ENOENT' });
+        assert.ok(rejected.output.includes('Не удалось проверить существующую регистрацию MCP'), rejected.output);
+        assert.equal(await fs.readFile(manifest,'utf8'),oldManifest);
+        assert.equal(digest(await fs.readFile(entry)),oldEntry);
+        assert.equal(await fs.readFile(path.join(installDirectory,sentinel),'utf8'),'Несовместимую предыдущую установку сохранить');
         assert.equal((await fs.lstat(config)).isDirectory(), true); assert.deepEqual(await fs.readdir(config), []);
-        assert.equal(await fs.readFile(savedConfig, 'utf8'), installedConfig); assert.equal(pairStarts, 2);
-        const previous = [];
-        for (const name of (await fs.readdir(path.dirname(installDirectory))).filter(name => name.startsWith('.neurocenter-previous.'))) {
-            const directory = path.join(path.dirname(installDirectory), name);
-            if (JSON.parse(await fs.readFile(path.join(directory, 'package.json'), 'utf8')).version === incompatibleVersion) previous.push(directory);
-        }
-        assert.equal(previous.length, 1);
-        assert.equal(await fs.readFile(path.join(previous[0], 'package.json'), 'utf8'), oldManifest);
-        assert.equal(digest(await fs.readFile(path.join(previous[0], 'dist/index.js'))), oldEntry);
-        assert.equal(await fs.readFile(path.join(previous[0], sentinel), 'utf8'), 'Несовместимую предыдущую установку сохранить');
+        assert.equal(await fs.readFile(savedConfig, 'utf8'), installedConfig); assert.equal(pairStarts, 3);
+        assert.equal((await fs.readdir(path.dirname(installDirectory))).filter(name=>name.startsWith('.neurocenter-previous.')).length,0);
     });
 } catch (error) { fatal = error.stack || String(error); console.error(fatal); process.exitCode = 1; }
 finally {
