@@ -318,6 +318,16 @@ async function main() {
     const command = args[0];
     const commands = ['install', 'build', 'check', 'up', 'down', 'status', 'tail'];
     const helpFlags = ['--help', '-h', '—help'];
+    // Scoped checks admit arguments before dotenv and keep their own report and exit status.
+    if (command === 'check') {
+        const {parseCheckOptions, checkPlan, checkHelp} = await import('./workspace/check-plan.mjs');
+        const options = parseCheckOptions(args.slice(1));
+        if (options.help) { console.log(checkHelp); return; }
+        checkPlan(root, options);
+        const {launchNode24} = await import('./workspace/node24-cli.mjs');
+        await launchNode24(path.join(root, 'scripts/workspace/check.mjs'), args.slice(1));
+        return;
+    }
     if (!args.length || args.length === 1 && (command === 'help' || helpFlags.includes(command))
         || args.length === 2 && commands.includes(command) && helpFlags.includes(args[1])) {
         output.help();
@@ -359,8 +369,7 @@ async function main() {
 
     const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
     output.heading(titles[command]);
-    if (command === 'check') { run(node, [ path.join(root, 'scripts/workspace/check.mjs') ]); output.success('Проверки проекта завершены'); }
-    else if (command === 'install') {
+    if (command === 'install') {
         const next = progress(packages.length + 3);
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();

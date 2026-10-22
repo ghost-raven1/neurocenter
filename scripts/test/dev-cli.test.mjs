@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
+import {setTimeout as delay} from 'node:timers/promises';
 import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {workspacePackages} from '../workspace/check-plan.mjs';
@@ -25,7 +26,7 @@ async function fixture(t, mode = 'ready') {
             process.exitCode=92;`, {mode: 0o700});
     }
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -106,6 +107,67 @@ test('Лишний аргумент отклоняется до сборки, Do
     assert.match(result.stderr, /[А-Яа-яЁё]/);
     assert.deepEqual(result.events, []);
     await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+});
+
+test('check передаёт выбор пакета и шага, сохраняя код отказа проверки', async t => {
+    const f = await fixture(t);
+    await fs.writeFile(path.join(f.checkout, 'frontend/package.json'), JSON.stringify({scripts: {test: 'vitest run'}}));
+    await fs.writeFile(path.join(f.checkout, 'scripts/workspace/check.mjs'), `import fs from 'node:fs';
+        fs.appendFileSync(process.env.DEV_CLI_RECORD, JSON.stringify({kind:'check',args:process.argv.slice(2),dotenv:process.env.DEV_DOTENV_MARKER??null})+'\\n');
+        process.exitCode=7;`);
+    await fs.writeFile(path.join(f.checkout, '.env'), 'DEV_DOTENV_MARKER=unexpected\n');
+    const result = await f.run('check', '--package', 'frontend', '--step', 'test');
+    assert.equal(result.status, 7, result.stdout+result.stderr);
+    assert.deepEqual(result.events, [{kind: 'check', args: ['--package', 'frontend', '--step', 'test'], dotenv: null}]);
+    assert.doesNotMatch(result.stdout, /Проверки проекта завершены/);
+    await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+});
+
+test('check --help показывает свои селекторы без dotenv, npm и файлов отчёта', async t => {
+    const f = await fixture(t);
+    await fs.writeFile(path.join(f.checkout, '.env'), 'malformed dotenv is not needed for help');
+    const result = await f.run('check', '--help');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /--package/); assert.match(result.stdout, /--step/);
+    assert.deepEqual(result.events, []);
+    await assert.rejects(fs.access(path.join(f.checkout, '.run')), {code: 'ENOENT'});
+});
+
+test('check сохраняет SIGTERM дочерней проверки как код 143', async t => {
+    const f = await fixture(t);
+    await fs.writeFile(path.join(f.checkout, 'frontend/package.json'), JSON.stringify({scripts: {test: 'vitest run'}}));
+    await fs.writeFile(path.join(f.checkout, 'scripts/workspace/check.mjs'), `process.kill(process.pid,'SIGTERM');`);
+    const result = await f.run('check', '--package', 'frontend', '--step', 'test');
+    assert.equal(result.status, 143, result.stdout+result.stderr);
+    assert.deepEqual(result.events, []);
+});
+
+test('отмена только dev check завершает его потомков и сохраняет чужой процесс', async t => {
+    if (process.platform === 'win32') { t.skip('POSIX owned process groups.'); return; }
+    const f = await fixture(t);
+    await fs.writeFile(path.join(f.checkout, 'frontend/package.json'), JSON.stringify({scripts: {test: 'vitest run'}}));
+    await fs.writeFile(path.join(f.checkout, 'scripts/workspace/check.mjs'), `import {spawn} from 'node:child_process';
+        const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},50)"],{stdio:'ignore'});
+        process.on('SIGTERM',()=>setTimeout(()=>process.exit(0),100));console.log(JSON.stringify({pid:process.pid,child:child.pid}));setInterval(()=>{},50);`);
+    const outsider = spawn(process.execPath, ['-e', 'setInterval(()=>{},50)'], {stdio: 'ignore', detached: true});
+    const launcher = spawn(process.execPath, [path.join(f.checkout, 'scripts/dev.mjs'), 'check', '--package', 'frontend', '--step', 'test'],
+        {cwd: f.checkout, env: f.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+    let output = '', errors = '', owned;
+    launcher.stdout.on('data', bytes => { output += bytes; if (output.includes('\n')) owned = JSON.parse(output.trim()); });
+    launcher.stderr.on('data', bytes => { errors += bytes; });
+    const ended = new Promise(resolve => launcher.once('close', (code, signal) => resolve({code, signal})));
+    const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
+    t.after(async () => {
+        for (const pid of [launcher.pid, owned?.pid, outsider.pid]) if (pid) try { process.kill(-pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        await ended;
+    });
+    for (let attempt = 0; attempt < 200 && !owned; attempt++) await delay(25);
+    assert.ok(owned, errors || 'check did not start');
+    launcher.kill('SIGTERM');
+    const result = await Promise.race([ended, delay(5000).then(() => null)]);
+    assert.deepEqual(result, {code: 143, signal: null});
+    for (let attempt = 0; attempt < 100 && (alive(owned.pid) || alive(owned.child)); attempt++) await delay(25);
+    assert.equal(alive(owned.pid), false); assert.equal(alive(owned.child), false); assert.equal(alive(outsider.pid), true);
 });
 
 for(const args of [['up','--profile'],['up','--profile='],['up','--profile','unknown'],['up','--profile=fast','--profile','full'],

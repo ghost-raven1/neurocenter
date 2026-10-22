@@ -88,7 +88,7 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-runner-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),pkg=path.join(root,'services/feature-flags-service'),output=path.join(root,'output');
  await Promise.all([fs.mkdir(tools,{recursive:true}),fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true}),fs.mkdir(path.join(root,'services/shared'),{recursive:true}),fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
- for(const file of ['run.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
+ for(const file of ['run.mjs','focused-selection.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
  await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
  for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
  // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.

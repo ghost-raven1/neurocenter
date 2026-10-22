@@ -154,7 +154,7 @@ for(const mode of ['same-source','legacy','mixed-instrumentation'])test('Actual 
 
 test('Actual native runner retains c8 hits for a production CLI outside every package src tree',async t=>{
     const {root,put}=await fixture(t),tools=path.join(root,'scripts/coverage');
-    for(const file of ['run.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
+    for(const file of ['run.mjs','focused-selection.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
     await fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true});await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
     for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
     await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
