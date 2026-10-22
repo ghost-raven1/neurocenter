@@ -8,10 +8,12 @@ export interface ToolBuildRequest {
     requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource;
 }
 export interface ToolBuild {
-    id: string; operationId: string; name?: string; state: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+    id: string; operationId: string; requestKey: string; publicationStartedAt: string | null;
+    name?: string; state: 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
     percent: number; message: string; error?: string;
     result?: { catalogId: string; name: string; version: number; kind?: PackagingKind; assetId?: string; sourceVersion?: string; sourceSha256?: string };
 }
+export interface ToolBuildRequestCancellation { requestKey: string; state: ToolBuild['state']; build: ToolBuild | null }
 export interface RepositoryRelease { tag: string; asset?: string; id?: number; assetId?: number; sha256?: string }
 export interface SourceDetection { requiresEntrypointChoice?: boolean; runnableKinds?: PackagingKind[]; warnings?: string[] }
 export interface NpmPackageMetadata extends SourceDetection {

@@ -181,7 +181,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         finally { if (current()) setReading(false); }
     };
     const submit = async (): Promise<void> => {
-        if (!availability.enabled && !build.unresolved) return;
+        if (!availability.enabled || build.cancelPending || build.cancelled) return;
         if (busy) return;
         if (build.unresolved) { await build.retrySaved(); return; }
         const request = ++preparation.current;
@@ -255,25 +255,29 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
         setSource(detected); setError(''); return true;
     };
 
-    const showingProgress = !!build.job || build.active;
+    const showingProgress = !!build.job || build.active || build.cancelPending || build.cancelled;
     const actions = <Space wrap className="tool-packaging__actions">
         <Button disabled={false} onClick={close}>{showingProgress ? 'Скрыть' : 'Закрыть'}</Button>
         {showingProgress ? <>
+            {build.canCancel && <Button danger loading={build.cancelling} onClick={() => { void build.cancel(); }}>Отменить сборку</Button>}
+            {build.cancelPending && <Button loading={build.cancelling} disabled={build.cancelling} onClick={() => { void build.retryCancel(); }}>Повторить отмену</Button>}
+            {build.canDetach && <Button loading={build.archiving} onClick={() => { void build.detach(); }}>К новой сборке</Button>}
             {build.job?.state === 'SUCCEEDED' && <Button type="primary" loading={opening} onClick={() => { void openPublished(); }}>Открыть в каталоге</Button>}
-            {build.job && !build.active && <Button disabled={build.submitting || resetting} loading={build.submitting || resetting} onClick={() => { void reset(); }}>{build.job.state === 'FAILED' ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
+            {(build.job || build.cancelled) && !build.active && <Button disabled={build.submitting || resetting} loading={build.submitting || resetting} onClick={() => { void reset(); }}>{build.job?.state === 'FAILED' || build.cancelled ? 'Вернуться к исходникам' : 'Упаковать ещё'}</Button>}
         </> : <FeatureButton features={['tool_builds']} type="primary" onClick={() => { void submit(); }} loading={preparing || build.submitting} disabled={busy || build.recoveryBlocked || (build.unresolved ? !build.draft : !hasSource || sourceBlocked || (source === 'files' || source === 'upload') && !sourceReady)}>{build.unresolved ? 'Повторить сохранённый запрос' : sourceAction}</FeatureButton>}
     </Space>;
 
     return <Modal open={open} title="Упаковать инструмент" width={680} footer={actions} onCancel={close} className="tool-packaging" style={{ top: 32 }}>
         <FeatureAvailabilityNotice features={['tool_builds']}/>
         <ol className="tool-packaging__steps" aria-label="Этапы упаковки">{['Источник', 'Проверка', 'Добавление'].map((label, index) => <li key={label} aria-current={progressStep === index ? 'step' : undefined} className={progressStep >= index ? 'is-current' : ''}><span aria-hidden="true">{index + 1}</span>{label}</li>)}</ol>
-        {build.unresolved && <Alert className="tool-packaging__error" type="warning" showIcon message="Результат первого запроса ещё неизвестен"
+        {build.unresolved && !build.cancelPending && <Alert className="tool-packaging__error" type="warning" showIcon message="Результат первого запроса ещё неизвестен"
             description={<>
                 <div>{build.draft ? 'Точный запрос и исходники восстановлены. Можно проверить состояние или повторить тот же запрос. Изменить его до выяснения результата нельзя.' : 'Исходный запрос недоступен. Можно проверить состояние сохранённого UUID; другая форма под ним не отправится.'}</div>
                 <Button className="tool-packaging__recheck" onClick={build.recheck}>Проверить сохранённый запрос</Button>
             </>} />}
         {build.recoveryBlocked && <Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>}
-        {showingProgress ? <PackagingBuildStatus active={open} job={build.job} name={name || suggestedName || 'Сборка инструмента'} /> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy || build.unresolved || build.recoveryBlocked}>
+        {build.canDetach && <Alert type="info" showIcon message="Можно начать другую сборку" description={<>Отмена принята сервером и продолжится в <a href="/operations">операциях</a>. Точные исходники этого запроса сохранятся ниже.</>} />}
+        {showingProgress ? <PackagingBuildStatus active={open} job={build.job} cancelPending={build.cancelPending} cancelled={build.cancelled} name={name || suggestedName || 'Сборка инструмента'} /> : <Form layout="vertical" onFinish={() => { void submit(); }} disabled={busy || build.unresolved || build.recoveryBlocked}>
             <Paragraph type="secondary">Добавьте MCP, плагин или скилл. Мы определим тип и данные карточки по источнику. SKILL.md найдётся и во вложенной папке архива; если скиллов несколько, выберите нужный.</Paragraph>
             <Form.Item label="Откуда добавить инструмент"><Radio.Group aria-label="Источник инструмента" value={source} onChange={event => { setSource(event.target.value);if(event.target.value==='npm'||event.target.value==='upload'){setKind('mcp');}setError(''); }} options={[{ label: 'npm', value: 'npm' }, { label: 'GitHub', value: 'repository' }, { label: 'Архив и файлы', value: 'files' }, {label:'Архив MCP',value:'upload'}]} optionType="button" className="tool-packaging__sources" /></Form.Item>
             {source === 'npm' ? <>
@@ -320,6 +324,14 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
                 <Form.Item label="Описание"><Input.TextArea aria-label="Описание инструмента" rows={2} value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} placeholder={suggestedDescription || 'Кратко опишите инструмент'} /></Form.Item>
             </Collapse.Panel></Collapse>
         </Form>}
+        {!!build.archived?.length && <Collapse ghost className="tool-packaging__details"><Collapse.Panel key="archived" header={`Сохранённые запросы (${build.archived.length})`}>
+            <Paragraph type="secondary">Отмена этих сборок была принята сервером. Их состояние доступно в <a href="/operations">операциях</a>. Открытие вернёт сохранённые исходники и проверит прежнюю отмену.</Paragraph>
+            <Space direction="vertical" style={{width:'100%'}}>{build.archived.map(record=><Space wrap key={record.requestKey}>
+                <Typography.Text>{record.name}</Typography.Text><Button disabled={!build.canRestoreArchived} loading={build.archiving} onClick={()=>{void build.restoreArchived(record.requestKey);}}>Открыть сохранённый запрос</Button>
+            </Space>)}</Space>
+            {!build.canRestoreArchived && <Paragraph type="secondary">Сначала завершите текущий запрос или вернитесь к его исходникам.</Paragraph>}
+        </Collapse.Panel></Collapse>}
+        {build.archiveError && <Alert type="warning" showIcon message={build.archiveError} action={<Button onClick={build.retryRecovery}>Повторить восстановление</Button>} />}
         {(error || build.error) && <Alert className="tool-packaging__error" type="error" role="alert" showIcon message={error || build.error} />}
     </Modal>;
 };

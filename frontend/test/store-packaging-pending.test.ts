@@ -103,3 +103,18 @@ describe('Восстановление неизвестного ответа н�
         expect(acceptBuildProgress(completed, queued)).toEqual(completed);
     });
 });
+
+describe('Монотонное завершение и отмена упаковщика',()=>{
+    it('Поздние RUNNING/QUEUED не откатывают CANCELLING; поздний failure не отменяет CANCELLED',()=>{
+        const cancelling={...queued,state:'CANCELLING' as const,percent:60};
+        expect(acceptBuildProgress(cancelling,{...queued,state:'RUNNING',percent:80})).toEqual(cancelling);
+        expect(acceptBuildProgress(cancelling,queued)).toEqual(cancelling);
+        const cancelled={...cancelling,state:'CANCELLED' as const,message:'Отменено'};
+        expect(acceptBuildProgress(cancelling,cancelled)).toEqual(cancelled);
+        expect(acceptBuildProgress(cancelled,{...queued,state:'FAILED',error:'Late child error'})).toEqual(cancelled);
+    });
+    it('Поздний снимок без fence не делает публикацию снова отменяемой',()=>{
+        const publishing={...queued,state:'RUNNING' as const,publicationStartedAt:'2026-10-23T00:00:00Z',percent:90};
+        expect(acceptBuildProgress(publishing,{...publishing,publicationStartedAt:null,percent:70})).toMatchObject({publicationStartedAt:publishing.publicationStartedAt,percent:90});
+    });
+});

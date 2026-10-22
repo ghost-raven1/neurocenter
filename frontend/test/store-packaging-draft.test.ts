@@ -9,7 +9,7 @@ beforeEach(()=>vi.stubGlobal('indexedDB',new IDBFactory()));
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 async function rawRecord(value:unknown):Promise<void>{
-    const database=await new Promise<IDBDatabase>((resolve,reject)=>{const open=indexedDB.open('neurocenter-tool-builds',1);open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error);});
+    const database=await new Promise<IDBDatabase>((resolve,reject)=>{const open=indexedDB.open('neurocenter-tool-builds',3);open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error);});
     try{await new Promise<void>((resolve,reject)=>{const tx=database.transaction('requests','readwrite');tx.objectStore('requests').put(value);tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error);});}
     finally{database.close();}
 }

@@ -1,5 +1,5 @@
 import base from '../../../core/api/base';
-import type { NpmPackageMetadata, RepositoryMetadata, RepositoryQuery, ToolBuild, ToolBuildRequest } from './types';
+import type { NpmPackageMetadata, RepositoryMetadata, RepositoryQuery, ToolBuild, ToolBuildRequest, ToolBuildRequestCancellation } from './types';
 import type { AxiosRequestConfig } from 'axios';
 import {isAxiosError} from 'axios';
 import type { PackagingFilesResult } from './sourceFiles';
@@ -39,4 +39,6 @@ export const packagingApi = {
     create: (body: ToolBuildRequest, signal?: AbortSignal): Promise<ToolBuild> => bounded(90_000, config => base.post<ToolBuild>('/api/tool-builds', body, config).then(response => response.data), signal),
     get: (id: string, signal?: AbortSignal): Promise<ToolBuild> => bounded(10_000, config => base.get<ToolBuild>('/api/tool-builds/' + encodeURIComponent(id), config).then(response => response.data), signal),
     lookup: (key: string, signal?: AbortSignal): Promise<ToolBuild> => bounded(10_000, config => base.get<ToolBuild>('/api/tool-builds/requests/' + encodeURIComponent(key), config).then(response => response.data), signal),
+    cancel: (id: string, signal?: AbortSignal): Promise<ToolBuild> => bounded(10_000, config => base.delete<ToolBuild>('/api/tool-builds/' + encodeURIComponent(id), config).then(response => response.data), signal),
+    cancelRequest: (key: string, signal?: AbortSignal): Promise<ToolBuildRequestCancellation> => bounded(10_000, config => base.delete<ToolBuildRequestCancellation>('/api/tool-builds/requests/' + encodeURIComponent(key), config).then(response => response.data), signal),
 };

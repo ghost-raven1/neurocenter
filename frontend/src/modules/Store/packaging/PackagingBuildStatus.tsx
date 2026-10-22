@@ -9,10 +9,12 @@ interface Props {
     job?: ToolBuild;
     name: string;
     active?: boolean;
+    cancelPending?: boolean;
+    cancelled?: boolean;
 }
 
 /** Закрытие окна сохраняет серверную сборку; повтор после отказа возвращает заполненные исходники. */
-export function PackagingBuildStatus({ job, name, active = true }: Props) {
+export function PackagingBuildStatus({ job, name, active = true, cancelPending = false, cancelled = false }: Props) {
     const {captureOwner}=useAuthRequestOwner();
     const [exporting,setExporting]=useState<'asset'|'supply'|undefined>(),[exportError,setExportError]=useState(''),[requested,setRequested]=useState(false);
     const generation=useRef(0);
@@ -46,12 +48,19 @@ export function PackagingBuildStatus({ job, name, active = true }: Props) {
     };
     const failed = job?.state === 'FAILED';
     const succeeded = job?.state === 'SUCCEEDED';
+    const stopped = cancelled || job?.state === 'CANCELLED';
+    const cancelling = !stopped && (cancelPending || job?.state === 'CANCELLING');
+    const stopping = cancelling && job?.state === 'CANCELLING';
+    const publishing = !succeeded && !failed && !!job?.publicationStartedAt;
     const percent = Math.max(0, Math.min(100, job?.percent ?? 0));
     return <div className="tool-packaging__progress" role="status" aria-live="polite">
         <Typography.Text strong className="tool-packaging__progress-title">{job?.result?.name ?? job?.name ?? name}</Typography.Text>
-        <Typography.Paragraph type="secondary">{succeeded ? 'Инструмент добавлен в общий каталог' : failed ? 'Упаковка остановлена' : 'Готовим инструмент к установке'}</Typography.Paragraph>
-        <Progress percent={percent} aria-label="Прогресс упаковки" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} status={failed ? 'exception' : succeeded ? 'success' : 'active'} />
-        <Typography.Paragraph>{job?.message ?? 'Проверяем, принят ли запрос, и загружаем прогресс…'}</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">{succeeded ? 'Инструмент добавлен в общий каталог' : stopped ? 'Упаковка отменена' : failed ? 'Упаковка остановлена' : cancelling ? 'Отменяем упаковку' : 'Готовим инструмент к установке'}</Typography.Paragraph>
+        <Progress percent={percent} aria-label="Прогресс упаковки" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} status={failed ? 'exception' : succeeded ? 'success' : stopped ? 'normal' : 'active'} />
+        <Typography.Paragraph>{stopped ? 'Отмена подтверждена сервером.' : stopping ? job.message : cancelling ? 'Намерение отмены сохранено. Проверяем завершение процесса; новую сборку не запускаем.' : job?.message ?? 'Проверяем, принят ли запрос, и загружаем прогресс…'}</Typography.Paragraph>
+        {stopping && job.error && <Alert type="warning" showIcon message={job.error} description="Отмена ещё не завершена. Повторите отмену или скройте окно и продолжите работу." />}
+        {stopped && <Alert type="info" showIcon message="Исходники и настройки сохранены" description="Вернитесь к исходникам, чтобы изменить их или запустить новую сборку." />}
+        {publishing && <Alert type="info" showIcon message="Публикация уже началась" description="Отменить её нельзя — дождитесь результата. Окно можно скрыть, результат останется в операциях." />}
         {failed && <Alert type="error" showIcon message={job?.error || 'Не удалось завершить сборку.'} description="Исходники и настройки сохранены. Вернитесь к ним, исправьте причину и повторите упаковку." />}
         {succeeded && job?.result?.assetId && <Space wrap>
             <Button type="primary" onClick={()=>{void download('supply');}} loading={exporting==='supply'} disabled={!active||!!exporting}>Скачать поставку</Button>
@@ -60,6 +69,6 @@ export function PackagingBuildStatus({ job, name, active = true }: Props) {
         {requested && <Typography.Paragraph type="secondary">Запрос на скачивание передан браузеру.</Typography.Paragraph>}
         {exportError && <Alert type="error" showIcon message={exportError} />}
         {succeeded ? <Alert type="success" showIcon message="Готово к следующему шагу" description="Откройте карточку, выберите проект и установите инструмент на нужный компьютер." />
-            : !failed && <Typography.Paragraph type="secondary" className="tool-packaging__background-note">Можно скрыть окно и продолжить работу. Упаковка продолжится; откройте её снова, чтобы посмотреть результат.</Typography.Paragraph>}
+            : !failed && !stopped && !cancelling && <Typography.Paragraph type="secondary" className="tool-packaging__background-note">Можно скрыть окно и продолжить работу. Упаковка продолжится; откройте её снова, чтобы посмотреть результат.</Typography.Paragraph>}
     </div>;
 }

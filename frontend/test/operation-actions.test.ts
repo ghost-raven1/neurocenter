@@ -51,3 +51,30 @@ describe('Управление реальной очередью MCP из жур
         expect(operationActionPermissions({...operation,state:'FAILED',bridgeJob:{kind:'install',retrySupported:true,minimumLevel}},admin).retry).toBe(false);
     });
 });
+
+describe('Отмена упаковки из общей истории операций',()=>{
+    const main={email:operation.actor,activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[]} as IUserInfo;
+    const build={...operation,resourceType:'tool-build',state:'RUNNING',projectId:null,
+        actions:{executor:'tool-build',digest:'a'.repeat(64),retry:{supported:false},cancel:{supported:true}}} as IOperation;
+    it.each(['QUEUED','RUNNING'])('Предлагает владельцу с текущей главной ролью отмену реальной сборки %s',state=>{
+        expect(operationActionPermissions({...build,state} as IOperation,main)).toEqual({cancel:true,retry:false,reopenKnowledge:false});
+    });
+    it('Требует явного права главного админа даже при разрешении записи',()=>{
+        expect(operationActions(build,main.email,true).cancel).toBe(false);
+        expect(operationActions(build,main.email,false,false,true).cancel).toBe(true);
+        expect(operationActionPermissions(build,{...main,activeRole:'Разработчик',userRoles:['Главный админ','Разработчик']}).cancel).toBe(false);
+        expect(operationActionPermissions(build,{...main,userRoles:[]}).cancel).toBe(false);
+        expect(operationActionPermissions(build,{...main,email:'other@operations.fixture'}).cancel).toBe(false);
+    });
+    it('Скрывает отмену при серверном запрете публикации и для исторического ID',()=>{
+        expect(operationActionPermissions({...build,actions:{...build.actions!,cancel:{supported:false,reason:'Публикация началась.'}}},main).cancel).toBe(false);
+        expect(operationActionPermissions({...build,resourceId:'old-build'},main).cancel).toBe(false);
+        expect(operationActionPermissions({...build,resourceType:'bridge'},main).cancel).toBe(false);
+    });
+    it.each(['CANCELLED','FAILED','SUCCEEDED'])('Не выдаёт завершённую сборку %s за отменяемую при устаревших capabilities',state=>{
+        expect(operationActionPermissions({...build,state} as IOperation,main).cancel).toBe(false);
+    });
+    it('Повтор упаковки идёт через новый проверенный источник, даже если capabilities устарели',()=>{
+        expect(operationActionPermissions({...build,actions:{...build.actions!,retry:{supported:true}}},main).retry).toBe(false);
+    });
+});

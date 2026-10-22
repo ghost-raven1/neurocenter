@@ -104,3 +104,20 @@ describe('Ограничение HTTP ожидания только для уп�
         } finally { await close(); }
     });
 });
+
+describe('HTTP отмена упаковки',()=>{
+    it('DELETE requestKey сохраняет подтверждение tombstone и не делает POST',async()=>{
+        const requests:string[]=[];const responseBody={requestKey:key,state:'CANCELLED',build:null};
+        const close=await serverFixture((request,response)=>{requests.push(request.method+' '+request.url);request.resume();response.setHeader('content-type','application/json');response.end(JSON.stringify(responseBody));});
+        try{expect(await packagingApi.cancelRequest(key)).toEqual(responseBody);expect(requests).toEqual(['DELETE /api/tool-builds/requests/'+key]);}
+        finally{await close();}
+    });
+    it.each(['cancel','cancelRequest'] as const)('Зависший %s ограничен 10 секундами; ошибку нельзя принять за подтверждённую отмену',async method=>{
+        let received!:()=>void;const seen=new Promise<void>(resolve=>{received=resolve;});const requests:string[]=[];
+        const close=await serverFixture(request=>{requests.push(request.method+' '+request.url);request.resume();received();});
+        try{
+            vi.useFakeTimers({toFake:['setTimeout','clearTimeout','Date']});const result=packagingApi[method](key).catch(error=>error);await seen;
+            await vi.advanceTimersByTimeAsync(10_000);expect(isAxiosError(await result)).toBe(true);expect(requests).toEqual(['DELETE /api/tool-builds/'+(method==='cancelRequest'?'requests/':'')+key]);
+        }finally{await close();}
+    });
+});

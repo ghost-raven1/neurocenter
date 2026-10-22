@@ -48,7 +48,9 @@ const ui = vi.hoisted(() => ({
     selects: new Map<string, SelectProps>(),
     metadata: new Map<string, NpmPackageMetadata>(),
     repositoryMetadata: undefined as RepositoryMetadata | undefined, repositoryQuery: undefined as RepositoryQuery | undefined,
-    resolve: vi.fn(), submit: vi.fn(), reset: vi.fn(),
+    resolve: vi.fn(), submit: vi.fn(), reset: vi.fn(), cancel: vi.fn(), retryCancel: vi.fn(),
+    cancelling:false,cancelPending:false,cancelled:false,canCancel:false,canDetach:false,canRestoreArchived:false,archiving:false,
+    archived:[] as Array<{requestKey:string;jobId:string;name:string}>,detach:vi.fn(),restoreArchived:vi.fn(),
     finish: undefined as (() => void) | undefined, close: undefined as (() => void) | undefined,
     job: undefined as ToolBuild | undefined,
     source: '' as string, selectSource: undefined as ((event: { target: { value: string } }) => void) | undefined,
@@ -66,7 +68,9 @@ vi.mock('../src/modules/Store/packaging/useNpmMetadata', () => ({ useNpmMetadata
 vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({ useRepositoryMetadata: (query: RepositoryQuery) => {
     ui.repositoryQuery=query; return { metadata:ui.repositoryMetadata, resolve:async()=>ui.repositoryMetadata };
 } }));
-vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: ui.unresolved,recoveryBlocked:ui.recoveryBlocked, submit: ui.submit, reset: ui.reset }) }));
+vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: () => ({ job: ui.job, active: ui.active, submitting: false, unresolved: ui.unresolved,recoveryBlocked:ui.recoveryBlocked, submit: ui.submit, reset: ui.reset,
+    cancel:ui.cancel,retryCancel:ui.retryCancel,cancelling:ui.cancelling,cancelPending:ui.cancelPending,cancelled:ui.cancelled,canCancel:ui.canCancel,
+    canDetach:ui.canDetach,detach:ui.detach,canRestoreArchived:ui.canRestoreArchived,archived:ui.archived,archiving:ui.archiving,restoreArchived:ui.restoreArchived }) }));
 vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,error:ui.uploadError,select:ui.uploadSelect,upload:ui.upload,intent:ui.uploadIntent,forget:async()=>true }) }));
 vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
 vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect,disabled}:{onSelect:typeof ui.selectFiles;disabled:boolean})=>{ui.selectFiles=onSelect;ui.pickerDisabled=disabled;return null;}}));
@@ -103,9 +107,10 @@ function ready() { render(); input('npm-пакет или ссылка', metadat
 beforeEach(() => {
     vi.resetAllMocks(); ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
     ui.resolve.mockImplementation(async () => metadata);
-    ui.reset.mockImplementation(() => { ui.job = undefined; });
+    ui.reset.mockImplementation(() => { ui.job = undefined;ui.cancelled=false; });
     ui.upload=undefined;ui.uploadIntent=undefined;ui.uploadError='';ui.uploadSelect.mockResolvedValue(undefined);
-    ui.unresolved=false;ui.recoveryBlocked=false;ui.pickerDisabled=false;
+    ui.unresolved=false;ui.recoveryBlocked=false;ui.pickerDisabled=false;ui.cancelling=false;ui.cancelPending=false;ui.cancelled=false;ui.canCancel=false;
+    ui.canDetach=false;ui.canRestoreArchived=false;ui.archiving=false;ui.archived=[];
 });
 afterEach(() => hooks.dispose());
 
@@ -343,5 +348,64 @@ describe('Упаковка скилла через тот же поток',()=>{
         vi.mocked(readPackagingArchive).mockResolvedValue({files,skipped:0});
         render();ui.selectSource!({target:{value:'files'}});render();ui.selectFiles!([selectedFile('review.zip','synthetic archive')],true);await flush();render();render();
         ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({kind:'skill',source:{type:'files',entrypoint:'bundle/review/SKILL.md',files}}));
+    });
+});
+
+describe('Отмена сборки отличается от скрытия окна',()=>{
+    it('Скрыть сохраняет сборку, отдельная отмена вызывает серверное действие',async()=>{
+        ui.active=true;ui.canCancel=true;ui.job={id:'existing',operationId:'operation',state:'RUNNING',percent:10,message:'Проверяем'};
+        render();expect(ui.buttons.has('Отменить сборку')).toBe(true);
+        ui.buttons.get('Скрыть')!.onClick!();expect(ui.open).toBe(false);expect(ui.cancel).not.toHaveBeenCalled();
+        ui.open=true;render();ui.buttons.get('Отменить сборку')!.onClick!();await flush();expect(ui.cancel).toHaveBeenCalledOnce();expect(ui.open).toBe(true);
+    });
+    it('После подтверждённой отмены возвращает заполненную форму, без нового POST',async()=>{
+        ready();input('Название в каталоге','Моя ручная карточка');input('Описание инструмента','Моё описание');render();
+        ui.cancelled=true;ui.job={id:'existing',operationId:'operation',state:'CANCELLED',percent:10,message:'Отменено'};
+        let html=render();expect(html).toContain('Упаковка отменена');expect(ui.buttons.has('Вернуться к исходникам')).toBe(true);
+        ui.buttons.get('Вернуться к исходникам')!.onClick!();await flush();html=render();
+        expect(ui.inputs.get('Название в каталоге')?.value).toBe('Моя ручная карточка');expect(ui.inputs.get('Описание инструмента')?.value).toBe('Моё описание');expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Потерянный ответ отмены предлагает повторить DELETE и не повторять сохранённый POST',async()=>{
+        ui.cancelPending=true;ui.unresolved=true;render();
+        expect(ui.buttons.has('Повторить отмену')).toBe(true);expect(ui.buttons.has('Повторить сохранённый запрос')).toBe(false);
+        ui.buttons.get('Повторить отмену')!.onClick!();await flush();expect(ui.retryCancel).toHaveBeenCalledOnce();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Незавершённая очистка показывает причину сервера и доступный повтор, без подтверждения отмены',async()=>{
+        ui.active=true;ui.cancelPending=true;ui.job={id:'existing',operationId:'operation',requestKey:'11111111-1111-4111-8111-111111111111',publicationStartedAt:null,state:'CANCELLING',percent:30,
+            message:'Сборщик остановлен; очистка временных файлов будет повторена.',error:'Не удалось очистить временные файлы. Отмена ещё не завершена.'};
+        const html=render();expect(html).toContain(ui.job.message);expect(html).toContain(ui.job.error);
+        expect(html).not.toContain('Отмена подтверждена сервером');expect(ui.buttons.has('Вернуться к исходникам')).toBe(false);
+        expect(ui.buttons.has('Повторить отмену')).toBe(true);ui.buttons.get('Повторить отмену')!.onClick!();await flush();expect(ui.retryCancel).toHaveBeenCalledOnce();
+    });
+    it('Ожидание подтверждения прежнего worker показывает авторитетное продолжение и позволяет скрыть окно',()=>{
+        ui.active=true;ui.cancelPending=true;ui.job={id:'existing',operationId:'operation',requestKey:'11111111-1111-4111-8111-111111111111',publicationStartedAt:null,state:'CANCELLING',percent:30,
+            message:'Ожидаем подтверждение остановки прежнего сборщика. Можно продолжить работу и запустить другую сборку.'};
+        const html=render();expect(html).toContain(ui.job.message);expect(html).not.toContain('Отмена подтверждена сервером');
+        expect(ui.buttons.has('Повторить отмену')).toBe(true);ui.buttons.get('Скрыть')!.onClick!();expect(ui.open).toBe(false);expect(ui.reset).not.toHaveBeenCalled();
+    });
+    it('После границы публикации показывает продолжение без ложного обещания отмены',()=>{
+        ui.active=true;ui.job={id:'existing',operationId:'operation',state:'RUNNING',percent:90,message:'Публикуем',publicationStartedAt:'2026-10-23T00:00:00.000Z'};
+        const html=render();expect(ui.buttons.has('Отменить сборку')).toBe(false);expect(html).toContain('Публикация уже началась');expect(html).toContain('дождитесь результата');
+    });
+});
+
+describe('Новая сборка после принятой отмены и доступный архив',()=>{
+    it('Явный переход к новой сборке сохраняет ручные поля и не заявляет, что старая отменена',async()=>{
+        ready();input('Название в каталоге','Ручная карточка');input('Описание инструмента','Точное описание');render();
+        ui.active=true;ui.cancelPending=true;ui.canDetach=true;ui.job={id:'old',operationId:'op',state:'CANCELLING',percent:30,message:'Ожидаем подтверждение остановки прежнего сборщика.'};
+        ui.detach.mockImplementation(async()=>{ui.active=false;ui.cancelPending=false;ui.canDetach=false;ui.job=undefined;return true;});
+        const html=render();expect(html).toContain('Можно начать другую сборку');expect(html).not.toContain('Отмена подтверждена сервером');
+        ui.buttons.get('К новой сборке')!.onClick!();await flush();render();
+        expect(ui.detach).toHaveBeenCalledOnce();expect(ui.reset).not.toHaveBeenCalled();expect(ui.inputs.get('Название в каталоге')?.value).toBe('Ручная карточка');expect(ui.inputs.get('Описание инструмента')?.value).toBe('Точное описание');expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Неизвестный DELETE ACK не показывает переход даже при видимом CANCELLING',()=>{
+        ui.active=true;ui.cancelPending=true;ui.job={id:'old',operationId:'op',state:'CANCELLING',percent:30,message:'Ожидаем остановку'};
+        render();expect(ui.buttons.has('К новой сборке')).toBe(false);expect(ui.buttons.has('Повторить отмену')).toBe(true);
+    });
+    it('Сохранённый запрос открывается отдельным действием; активная B защищена от перезаписи',async()=>{
+        const key='11111111-1111-4111-8111-111111111111';ui.archived=[{requestKey:key,jobId:'old-job',name:'Старая карточка'}];ui.canRestoreArchived=true;
+        const html=render();expect(html).toContain('Старая карточка');expect(html).toContain('Открытие вернёт сохранённые исходники');
+        ui.buttons.get('Открыть сохранённый запрос')!.onClick!();await flush();expect(ui.restoreArchived).toHaveBeenCalledExactlyOnceWith(key);expect(ui.submit).not.toHaveBeenCalled();
+        ui.active=true;ui.canRestoreArchived=false;render();expect(ui.buttons.get('Открыть сохранённый запрос')?.disabled).toBe(true);
     });
 });

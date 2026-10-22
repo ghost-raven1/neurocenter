@@ -70,6 +70,8 @@ async function pendingRead(key: string, read: (key: string, signal?: AbortSignal
 
 export function acceptBuildProgress(previous: ToolBuild | undefined, next: ToolBuild): ToolBuild {
     if (previous?.id !== next.id) return next;
-    if (['SUCCEEDED', 'FAILED'].includes(previous.state) || previous.state === 'RUNNING' && next.state === 'QUEUED') return previous;
-    return { ...next, percent: Math.max(previous.percent, next.percent) };
+    if (['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(previous.state)
+        || previous.state === 'CANCELLING' && ['QUEUED', 'RUNNING'].includes(next.state)
+        || previous.state === 'RUNNING' && next.state === 'QUEUED') return previous;
+    return { ...next, publicationStartedAt: previous.publicationStartedAt || next.publicationStartedAt, percent: Math.max(previous.percent, next.percent) };
 }
