@@ -22,7 +22,7 @@ class AssetSourceClient {
         this.signal?.throwIfAborted();
         const cached=await this.cache?.read(expected,maximum);
         if(cached&&cached.length<=maximum&&this.contract.assetDigest(cached)===expected)return cached;
-        if(this.offline)throw fail('METADATA_MISSING','Закреплённая опись отсутствует или повреждена в кэше. Выполните npm run assets:sync.');
+        if(this.offline)throw fail(cached==null?'ASSET_METADATA_MISSING':'METADATA_MISSING','Закреплённая опись отсутствует или повреждена в кэше. Выполните npm run assets:sync.');
         const url=`https://raw.githubusercontent.com/${this.pin.repository}/${this.pin.commit}/${relative.split('/').map(encodeURIComponent).join('/')}`;
         const signal=AbortSignal.any([AbortSignal.timeout(15000),...(this.signal?[this.signal]:[])]);let response;
         try{signal.throwIfAborted();response=await this.request(url,{redirect:'error',signal});}

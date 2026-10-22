@@ -1,13 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {readFile,writeFile,readdir,lstat} from 'node:fs/promises';
+import {readFile,writeFile,readdir,lstat,rm,chmod} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {assetFixture,sha,clone} from './assets-sync.fixture.mjs';
 import {prepareStartupAssets} from '../assets/startup.mjs';
 import {runModelStartupProcess} from '../models/startup-process.mjs';
 import {assetRetrievalFetch} from '../assets/retrieval.mjs';
+import * as contract from '@neurocenter/asset-contract';
+import sourceReader from '../../services/shared/asset-source-client.cjs';
 
 const cli=fileURLToPath(new URL('../assets/cli.mjs',import.meta.url));
 
@@ -46,6 +48,7 @@ async function startup(t,f,mode){
         NODE_OPTIONS:'--import='+pathToFileURL(hook).href,RUNTIME_ARTIFACT_DIR:'data/runtime-artifacts',
         ASSET_TEST_MODE:mode,ASSET_TEST_PAYLOADS:payloads,ASSET_TEST_CALLS:calls,ASSET_TEST_REFUSED:refused};
     delete environment.ASSET_SOURCE_MODE;
+    if(mode==='offline')environment.ASSET_SOURCE_MODE='offline';
     const output={info:(...args)=>events.push(['info',...args]),success:(...args)=>events.push(['success',...args]),warning:(...args)=>events.push(['warning',...args])};
     let result;
     const run=async(command,args,options)=>{result=await runModelStartupProcess(command,[cli,'--root',f.root,...args.slice(1)],{...options,env:environment,stdio:['ignore','pipe','pipe'],timeout:15000});return result;};
@@ -113,4 +116,40 @@ test('Explicit user abort identity survives transport classification while a sou
     }
     const timeout=new DOMException('Source timeout','TimeoutError'),abort=new AbortController();abort.abort(timeout);
     await assert.rejects(assetRetrievalFetch(async()=>{throw timeout;})('https://example.invalid',{signal:abort.signal}),error=>error.code==='ASSET_RETRIEVAL_UNAVAILABLE'&&error.cause===timeout);
+});
+
+test('An empty offline cache defers the actual CLI without network and explains how to transfer a verified cache',async t=>{
+    const f=await assetFixture(t),s=await startup(t,f,'offline');assert.equal((await s.run()).deferred,true);
+    assert.equal(JSON.parse(s.result.stdout).error.code,'ASSET_METADATA_MISSING');assert.deepEqual(await s.calls(),[]);
+    assert.ok(s.events.some(([kind,...args])=>kind==='info'&&/машине с доступом/.test(args.join(' '))&&/--offline-ready --without-models/.test(args.join(' '))&&/перенесите/i.test(args.join(' '))));
+    assert.equal(s.events.some(([kind])=>kind==='success'),false);await assert.rejects(lstat(f.receipt),{code:'ENOENT'});
+});
+
+test('Missing offline binary bytes defer after validating pinned metadata and preserve the previous receipt and remaining cache',async t=>{
+    const f=await assetFixture(t);await f.run();await rm(f.blob(f.tool.delivery.artifacts[0].descriptor.sha256));
+    const before=await snapshot(path.join(f.root,'data')),receipt=await readFile(f.receipt),s=await startup(t,f,'offline');
+    assert.equal((await s.run()).deferred,true);assert.equal(JSON.parse(s.result.stdout).error.code,'ASSET_ARTIFACTS_MISSING');
+    assert.deepEqual(await s.calls(),[]);assert.deepEqual(await snapshot(path.join(f.root,'data')),before);assert.deepEqual(await readFile(f.receipt),receipt);
+    assert.equal(s.events.some(([kind])=>kind==='success'),false);
+});
+
+test('Corrupt offline metadata and binary cache entries remain hard failures with their original bytes intact',async t=>{
+    for(const kind of ['metadata','binary']){
+        const f=await assetFixture(t);await f.run();const filename=kind==='metadata'?path.join(f.root,'data/runtime-artifacts/.asset-source-metadata',f.pin.index.sha256+'.json'):f.blob(f.tool.delivery.artifacts[0].descriptor.sha256);
+        await chmod(filename,0o600);const damaged=Buffer.from('corrupt immutable cache');await writeFile(filename,damaged);
+        const before=await snapshot(path.join(f.root,'data')),receipt=await readFile(f.receipt),s=await startup(t,f,'offline');
+        await assert.rejects(s.run(),/Поставка проекта не подготовлена/);assert.deepEqual(await s.calls(),[]);
+        if(kind==='metadata')assert.equal(JSON.parse(s.result.stdout).error.code,'METADATA_MISSING');
+        assert.deepEqual(await readFile(filename),damaged);assert.deepEqual(await snapshot(path.join(f.root,'data')),before);assert.deepEqual(await readFile(f.receipt),receipt);
+        assert.equal(s.events.some(([kind])=>kind==='warning'||kind==='success'),false);
+    }
+});
+
+test('The shared offline reader distinguishes absent metadata from corrupt bytes without fetching either',async t=>{
+    const f=await assetFixture(t);let calls=0;
+    for(const cached of [undefined,null,Buffer.alloc(0),Buffer.from('damaged')]){
+        const client=new sourceReader.AssetSourceClient(f.pin,{contract,offline:true,cache:{read:async()=>cached},fetch:async()=>{calls++;throw Error('No offline network');}});
+        await assert.rejects(client.index(),error=>error.code===(cached==null?'ASSET_METADATA_MISSING':'METADATA_MISSING'));
+    }
+    assert.equal(calls,0);
 });

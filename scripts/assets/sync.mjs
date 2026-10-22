@@ -37,7 +37,7 @@ export async function syncAssets({root=repository,environment=process.env,artifa
         }
         if(verifyOnly&&missing.length)throw new Error('Часть выбранных ассетов отсутствует в SHA-кэше. Выполните npm run assets:sync с тем же выбором.');
         if(!verifyOnly&&!metadataOnly){
-            if(supply.offline&&missing.length)throw new Error('ASSET_SOURCE_MODE=offline: бинарные файлы выбранных ассетов отсутствуют в SHA-кэше. Подготовьте тот же выбор с --offline-ready на машине с доступом к сети.');
+            if(supply.offline&&missing.length)throw Object.assign(new Error('ASSET_SOURCE_MODE=offline: бинарные файлы выбранных ассетов отсутствуют в SHA-кэше. Подготовьте тот же выбор с --offline-ready на машине с доступом к сети.'),{code:'ASSET_ARTIFACTS_MISSING'});
             if(missing.some(artifact=>!artifact.url))throw new Error('Локальные файлы выбранного ассета отсутствуют в проверенном SHA-кэше. Загрузите исходный пакет или импортируйте опубликованную версию с адресом доставки.');
             await safeDirectory(cache.directory,'',true);await ensureSpace(cache.directory,missing.reduce((sum,item)=>sum+item.bytes,0),readDisk);
             let completed=0;

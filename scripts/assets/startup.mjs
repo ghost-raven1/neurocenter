@@ -14,9 +14,10 @@ export async function prepareStartupAssets({root,environment=process.env,output,
     };
     const {result,report}=await execute('scripts/assets/cli.mjs',withoutModels?['--without-models']:[]);
     if(!result.error&&!result.signal&&Number.isInteger(result.status)&&result.status>0&&report?.ok===false
-        &&['UNAVAILABLE','ASSET_RETRIEVAL_UNAVAILABLE'].includes(report.error?.code)){
+        &&['UNAVAILABLE','ASSET_RETRIEVAL_UNAVAILABLE','ASSET_METADATA_MISSING','ASSET_ARTIFACTS_MISSING'].includes(report.error?.code)){
         output.warning('Получить ассеты сейчас не удалось; запуск продолжится с ранее сохранёнными данными. Новые ассеты пока недоступны.');
-        output.info('Повторить получение ассетов',`npm run assets:sync${withoutModels?' -- --without-models':''}`);
+        if(['ASSET_METADATA_MISSING','ASSET_ARTIFACTS_MISSING'].includes(report.error.code))output.info('Восстановить автономный кэш',`На машине с доступом к источнику выполните npm run assets:sync -- --offline-ready${withoutModels?' --without-models':''}; перенесите каталог RUNTIME_ARTIFACT_DIR целиком и повторите scripts/dev.sh up.`);
+        else output.info('Повторить получение ассетов',`npm run assets:sync${withoutModels?' -- --without-models':''}`);
         return {ok:false,deferred:true,reason:'assets-unavailable'};
     }
     if(result.error||result.status!==0||report?.ok!==true||report.mode!=='prefetch'||report.verifyOnly!==false
