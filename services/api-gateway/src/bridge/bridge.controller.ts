@@ -52,6 +52,18 @@ export class BridgeController {
         await this.script('install.sh', req, res, true);
     }
 
+    /** Подключение использует установленный runtime и не требует доступной поставки ассетов. */
+    @Get('connect.sh')
+    public async connectScript(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await this.script('connect.sh', req, res);
+    }
+
+    /** Подключение существующего моста из PowerShell без повторного скачивания архива. */
+    @Get('connect.ps1')
+    public async connectWindowsScript(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await this.script('connect.ps1', req, res);
+    }
+
     /**
      * Отдаёт установщик OpenCode для текущей площадки.
      *
@@ -102,17 +114,29 @@ export class BridgeController {
     private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
         await bridgeRequest(req, res, async signal => {
             const version = bridge ? (await this.supply.supply(signal)).version : undefined;
-            if (signal.aborted) { return; }
+            if (signal.aborted || res.destroyed) { return; }
             let script = (await this.read(file)).toString('utf8');
+            if (signal.aborted || res.destroyed) { return; }
+            const connection = file === 'connect.sh' || file === 'connect.ps1';
+            for (const [token, helper] of [['__BRIDGE_CONTEXT__', 'context.cjs'], ['__BRIDGE_CONNECT__', 'connect.cjs']]) {
+                const count = script.split(token).length - 1;
+                if ((connection || count > 0) && count !== 1) { throw new NotFoundException('Шаблон подключения моста недоступен.'); }
+                if (count) {
+                    const text = (await this.read(helper)).toString('utf8');
+                    if (signal.aborted || res.destroyed) { return; }
+                    script = script.replace(token, () => text);
+                }
+            }
             if (bridge) {
                 if (script.split('__BRIDGE_VERSION__').length !== 2) { throw new NotFoundException('Шаблон установщика моста недоступен.'); }
                 script = script.replace('__BRIDGE_VERSION__', version!);
             }
-            if (signal.aborted) { return; }
+            if (signal.aborted || res.destroyed) { return; }
             const quote = (value:string):string => value.replace(/'/g,file.endsWith('.sh')?"'\"'\"'":"''");
             script = script.replace(/__BASE_URL__/g, () => quote(`${publicApiOrigin()}/api/bridge`))
                 .replace(/__SITE_URL__/g, () => quote(panelOrigin()))
                 .replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
+            if (/__(?:BRIDGE_[A-Z_]+|BASE_URL|SITE_URL|RECONNECT)__/.test(script)) { throw new NotFoundException('Шаблон подключения моста недоступен.'); }
             res.setHeader('cache-control', 'no-store');
             res.setHeader('content-type', file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8');
             res.send(script);

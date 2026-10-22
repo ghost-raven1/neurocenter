@@ -32,6 +32,8 @@ coverage/
 /bridge-dist/*
 !/bridge-dist/*.sh
 !/bridge-dist/*.ps1
+!/bridge-dist/context.cjs
+!/bridge-dist/connect.cjs
 
 # Локальные свидетельства могут содержать сессии, пути и пользовательские данные.
 /output/

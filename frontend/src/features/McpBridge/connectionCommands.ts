@@ -6,14 +6,10 @@ function siteOrigin(origin: string): string {
 
 const quote = (value: string, windows: boolean): string => value.replace(/'/g, windows ? "''" : "'\"'\"'");
 
-/** Подключает имеющийся автономный мост к текущей площадке без скачивания и регистрации заново. */
+/** Сценарий выбранного Gateway подключает существующий автономный мост к этой площадке. */
 export function installedBridgeCommand(origin: string, windows: boolean, reconnect = false): string {
-    siteOrigin(origin);
-    const option = reconnect ? ' --reconnect' : '';
-    if (windows) {
-        return `& "$env:USERPROFILE/.local/bin/neurocenter-bridge.cmd" connect --open${option}`;
-    }
-    return `"\${HOME}/.local/bin/neurocenter-bridge" connect --open${option}`;
+    const url = quote(`${siteOrigin(origin)}/api/bridge/connect.${windows ? 'ps1' : 'sh'}${reconnect ? '?reconnect=1' : ''}`, windows);
+    return windows ? `irm '${url}' | iex` : `curl -fsSL '${url}' | bash`;
 }
 
 /** Команда установки использует выбранную ОС и публичный адрес API Gateway. */

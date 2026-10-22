@@ -6,10 +6,11 @@ import os from 'node:os';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {readBridgeTemplate} from '../workspace/bridge-templates.mjs';
 
 const script = fileURLToPath(new URL('../../bridge-dist/install.sh', import.meta.url));
 const version = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package.json', import.meta.url), 'utf8')).version;
-const renderedTemplate=(await fs.readFile(script,'utf8')).replace('__BRIDGE_VERSION__',version).replace('__SITE_URL__','https://platform.example');
+const renderedTemplate=(await readBridgeTemplate(script)).replace('__BRIDGE_VERSION__',version).replace('__SITE_URL__','https://platform.example');
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 test('Оба установщика, протокол и lock-файл раздают текущую версию моста', async () => {

@@ -174,7 +174,7 @@ cat > "$CONTEXT_HELPER" <<'JS'
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {pathToFileURL}=require('node:url');
 const {createHash,randomUUID}=require('node:crypto'),{spawnSync,spawn}=require('node:child_process');
-const limit=8*1024*1024,name='neurocenter-asset-sync';
+const limit=8*1024*1024,name='neurocenter-asset-sync',nodeName=process.platform==='win32'?'node.exe':'node';
 const changed=()=>Error('Конфигурация OpenCode изменилась. Файлы не заменены; повторите установку.');
 const stamp=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.ctimeNs,s.mode,s.nlink].join(':');
 const identity=s=>[s.dev,s.ino,s.size,s.mtimeNs,s.mode,s.nlink].join(':');
@@ -204,7 +204,7 @@ function origin(value){
     const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.origin!==value||url.username||url.password)throw Error('Некорректный адрес сохранённого моста.');return value;
 }
 const digest=text=>createHash('sha256').update(text).digest('hex');
-const profileState=environment=>path.join(environment.NEUROCENTER_BRIDGE_HOME||path.join(environment.HOME||os.homedir(),'.config/neurocenter/bridge'),digest(environment.NEUROCENTER_URL).slice(0,20));
+const profileState=environment=>path.join(environment.NEUROCENTER_BRIDGE_HOME||path.join((process.platform==='win32'?environment.USERPROFILE:environment.HOME)||os.homedir(),'.config/neurocenter/bridge'),digest(environment.NEUROCENTER_URL).slice(0,20));
 const withoutText=value=>{if(value)delete value.text;return value;};
 function assertCurrent(expected){
     const current=selected();if(current.snapshot)delete current.snapshot.text;
@@ -217,7 +217,7 @@ function replace(file,text,check,mode=0o600,prepared=()=>{}){
         const fd=fs.openSync(temporary,'wx',mode);
         try{fs.writeFileSync(fd,text);fs.fchmodSync(fd,mode);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
         prepared(fs.lstatSync(temporary,{bigint:true}));check();fs.renameSync(temporary,file);
-        const directory=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}
+        if(process.platform!=='win32'){const directory=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(directory);}finally{fs.closeSync(directory);}}
     }finally{fs.rmSync(temporary,{force:true});}
 }
 const runtimeEnvironment=(value,target=false)=>({...process.env,...value.saved,...(target?value.target:value.previous)});
@@ -243,10 +243,14 @@ function workerProof(install,saved){
         const lock=snapshot(path.join(state,'worker.lock')),marker=snapshot(path.join(state,'worker-version.json')),manifest=snapshot(path.join(install,'package.json')),build=snapshot(path.join(install,'dist/build.json'));
         const pid=Number(lock?.text.trim()),version=JSON.parse(manifest.text),identity=JSON.parse(marker.text),artifact=JSON.parse(build.text),directory=fs.lstatSync(install);
         if(!Number.isSafeInteger(pid)||pid<2||pid===process.pid||!alive(pid)||!directory.isDirectory()||directory.isSymbolicLink()||fs.realpathSync(install)!==install||identity.pid!==pid||identity.version!==version.version||identity.buildId!==artifact.buildId||version.name!==name||!/^[a-f0-9]{64}$/.test(artifact.buildId))return;
-        const entry=path.join(install,'dist/index.js'),program=snapshot(entry),node=fs.lstatSync(path.join(install,'bin/node'),{bigint:true});if(!program||!node.isFile()||node.nlink!==1n)return;let owned=false;
+        const entry=path.join(install,'dist/index.js'),program=snapshot(entry),node=fs.lstatSync(path.join(install,'bin',nodeName),{bigint:true});if(!program||!node.isFile()||node.nlink!==1n)return;let owned=false;
         if(process.platform==='linux'){
             const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').replace(/\0$/,'').split('\0');
             owned=fs.statSync('/proc/'+pid).uid===process.getuid()&&argv.at(-2)===entry&&argv.at(-1)==='--worker'&&!argv.slice(1,-2).some(v=>/^(?:--(?:eval|print)(?:=|$)|-[^-]*[ep])/.test(v));
+        }else if(process.platform==='win32'){
+            const script=`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; $o=Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid; @{owned=($o.ReturnValue -eq 0 -and $o.Sid -eq [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value);command=$p.CommandLine}|ConvertTo-Json -Compress`;
+            const result=spawnSync('powershell.exe',['-NoProfile','-Command',script],{encoding:'utf8',timeout:5000}),proof=JSON.parse(result.stdout),escaped=entry.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+            owned=result.status===0&&proof.owned===true&&typeof proof.command==='string'&&new RegExp('(?:^|\\s)(?:"'+escaped+'"|'+escaped+')\\s+--worker$').test(proof.command);
         }else{
             const command=spawnSync('ps',['-p',String(pid),'-o','uid=','-o','args='],{encoding:'utf8',timeout:3000}),match=/^(\d+)\s+([\s\S]*)$/.exec(command.stdout.trim()),escaped=entry.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
             owned=command.status===0&&Number(match?.[1])===process.getuid()&&new RegExp('(?:^|\\s)(?:"'+escaped+'"|'+escaped+')\\s+--worker$').test(match[2]);
@@ -267,7 +271,7 @@ exports.main=async([receipt,mode,...args])=>{
             if(rootMcp.length>1||ownProperties.length>1||duplicated(ownTree)||duplicated(properties(ownTree,'environment')[0]?.children?.[1]))throw Error('Неоднозначная регистрация моста в OpenCode. Удалите повторяющиеся поля.');
             const own=value.mcp?.[name];
             if(own!==undefined){
-                if(!own||own.type!=='local'||!Array.isArray(own.command)||JSON.stringify(own.command)!==JSON.stringify([path.join(install,'bin/node'),path.join(install,'dist/index.js')])||own.enabled!==undefined&&typeof own.enabled!=='boolean')throw Error('Существующая регистрация моста несовместима с этой папкой установки.');
+                if(!own||own.type!=='local'||!Array.isArray(own.command)||JSON.stringify(own.command)!==JSON.stringify([path.join(install,'bin',nodeName),path.join(install,'dist/index.js')])||own.enabled!==undefined&&typeof own.enabled!=='boolean')throw Error('Существующая регистрация моста несовместима с этой папкой установки.');
                 saved=own.environment??{};
                 if(!saved||typeof saved!=='object'||Array.isArray(saved)||Object.entries(saved).some(([key,v])=>!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)||typeof v!=='string'||v.includes('\0')))throw Error('Повреждены сохранённые переменные моста.');
                 previous={NEUROCENTER_URL:origin(saved.NEUROCENTER_URL),NEUROCENTER_API_URL:origin(saved.NEUROCENTER_API_URL??saved.NEUROCENTER_URL)};
@@ -323,9 +327,9 @@ exports.main=async([receipt,mode,...args])=>{
         for(const [file,expected] of [[path.join(original.install,'package.json'),original.manifest],[path.join(original.install,'dist/build.json'),original.build],[path.join(original.install,'dist/index.js'),original.program]]){
             const current=snapshot(file);if(current)delete current.text;if(JSON.stringify(current)!==JSON.stringify(expected))throw Error('Прежний runtime изменился; автоматический запуск запрещён.');
         }
-        if(stamp(fs.lstatSync(path.join(original.install,'bin/node'),{bigint:true}))!==original.node)throw Error('Прежний Node runtime изменился; автоматический запуск запрещён.');
+        if(stamp(fs.lstatSync(path.join(original.install,'bin',nodeName),{bigint:true}))!==original.node)throw Error('Прежний Node runtime изменился; автоматический запуск запрещён.');
         try{fs.lstatSync(path.join(original.state,'worker.lock'));return;}catch(e){if(e.code!=='ENOENT')throw e;}
-        const child=spawn(path.join(original.install,'bin/node'),[path.join(original.install,'dist/index.js'),'--worker'],{env:runtimeEnvironment(value),detached:true,stdio:'ignore'});
+        const child=spawn(path.join(original.install,'bin',nodeName),[path.join(original.install,'dist/index.js'),'--worker'],{env:runtimeEnvironment(value),detached:true,stdio:'ignore'});
         await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});child.unref();return;
     }
     if(mode==='run'||mode==='connect'){

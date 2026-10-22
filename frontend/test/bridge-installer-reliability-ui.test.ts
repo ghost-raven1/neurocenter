@@ -15,7 +15,7 @@ vi.mock('../src/features/McpBridge/BridgeSourcePanel',()=>({BridgeSourcePanel:()
 vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
 vi.mock('../src/features/McpBridge/PairingCode',()=>({PairingCode:()=>null}));
 vi.mock('react-router-dom',()=>({useHistory:()=>({push:vi.fn(),location:{pathname:'/start',search:io.search}})}));
-vi.mock('antd',async original=>{const actual=await original<typeof import('antd')>();return{...actual,Radio:{...actual.Radio,Group:(props:Parameters<typeof actual.Radio.Group>[0])=>{io.changeAction=props.onChange;return createElement(actual.Radio.Group,props);}}};});
+vi.mock('antd',async original=>{const actual=await original<typeof import('antd')>();return{...actual,Radio:{...actual.Radio,Group:(props:Parameters<typeof actual.Radio.Group>[0])=>{io.changeAction=props.onChange?event=>props.onChange?.({...event,target:{...event.target,checked:true},stopPropagation(){},preventDefault(){},nativeEvent:{} as MouseEvent}):undefined;return createElement(actual.Radio.Group,props);}}};});
 const installer={origin:'https://gateway.test',loading:false,error:'',reload:vi.fn(),devSupply:{version:'0.9.18',buildId:'b'.repeat(64),targets:['darwin-arm64']}};
 const copy=vi.fn();
 const device:IBridgeDevice={id:'own',name:'Own',role:'Разработчик',fingerprint:'',online:true,lastSeen:'2026-10-22T00:00:00Z',report:{platform:'darwin',arch:'x64',bridgeVersion:'0.9.17',protocolVersion:2,capabilities:[]}};
@@ -33,13 +33,13 @@ describe('Совместимость dev-поставки во всех вход
     });
     it('Ручной переход Radio к установке также повторяет точный target guard выбранного устройства',()=>{
         io.search='?addComputer=1';io.bridge.device={...device,report:{...device.report,capabilities:['durable-completions','managed-installations','install-set-v1','workspace-instance-v1']}};
-        expect(setup()).toContain('connect --open');expect(io.changeAction).toBeDefined();io.changeAction!({target:{value:'install'}});const html=setup();expect(html).not.toContain('/api/bridge/install.sh');expect(html).toContain('нет пакета');expect(copy).not.toHaveBeenCalled();
+        expect(setup()).toContain('/api/bridge/connect.sh');expect(io.changeAction).toBeDefined();io.changeAction!({target:{value:'install'}});const html=setup();expect(html).not.toContain('/api/bridge/install.sh');expect(html).toContain('нет пакета');expect(copy).not.toHaveBeenCalled();
     });
     it('Неизвестная архитектура POSIX оставляет проверку установщику, без обещания совместимости',()=>{
         const html=renderToStaticMarkup(createElement(BridgeInstallerCommand,{installer,windows:false,onCopy:copy}));expect(html).toContain('/api/bridge/install.sh');expect(html).toContain('Архитектуру компьютера проверит установщик');expect(html).not.toContain('Установлено');
     });
     it('Первый вход без устройств по-прежнему предлагает подключить ранее установленный мост',()=>{
-        io.bridge.devices=[];io.bridge.device=undefined;const html=setup();expect(html).toContain('Мост уже установлен');expect(html).toContain('connect --open');expect(html).not.toContain('/api/bridge/install.sh');
+        io.bridge.devices=[];io.bridge.device=undefined;const html=setup();expect(html).toContain('Мост уже установлен');expect(html).toContain('/api/bridge/connect.sh');expect(html).not.toContain('/api/bridge/install.sh');
     });
     it('Production-команда без dev metadata сохраняет прежний выбор Windows',()=>{
         const html=renderToStaticMarkup(createElement(BridgeInstallerCommand,{installer:{...installer,devSupply:undefined},windows:true,onCopy:copy}));expect(html).toContain('/api/bridge/install.ps1');expect(html).toContain('Копировать команду');

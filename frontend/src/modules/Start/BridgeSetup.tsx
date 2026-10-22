@@ -17,7 +17,7 @@ import {bridgeDeviceTarget} from '../../features/McpBridge/bridgeSource';
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projectId,canManageSource=false}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean})=>{
+export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,canManageSource=false}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean})=>{
     const bridge=useBridge();const history=useHistory();
     const connectionRequested=new URLSearchParams(history.location.search).get('addComputer')==='1';
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
@@ -50,7 +50,7 @@ export const BridgeSetup=({origin,installer,windows:browserWindows,onCopy,projec
         </Radio.Group>
         <Space wrap><Typography.Text>Система компьютера</Typography.Text><Select aria-label="Система компьютера" style={{width:200,maxWidth:'100%'}} value={windows?'windows':'posix'} onChange={setPlatform}
             options={[{value:'posix',label:'macOS / Linux'},{value:'windows',label:'Windows (PowerShell)'}]}/></Space>
-        {currentAction==='connect'?<InstalledBridgeConnect origin={origin} windows={windows}
+        {currentAction==='connect'?<InstalledBridgeConnect installer={installer} windows={windows}
             reconnect={needsReconnect||(bridge.devicesReady&&bridge.devices.length===0)} onCopy={onCopy}/>:installation}
         <Collapse ghost><Collapse.Panel key="manual" header="Есть код подключения? Ввести вручную"><PairingCode/></Collapse.Panel></Collapse>
     </Space>;

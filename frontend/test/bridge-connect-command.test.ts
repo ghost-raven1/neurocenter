@@ -5,37 +5,38 @@ import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { bridgeInstallerCommand, installedBridgeCommand } from '../src/features/McpBridge/connectionCommands';
 
-describe('Подключение установленного моста без повторной установки', () => {
+describe('Подключение установленного моста через выбранный Gateway', () => {
     it.each([false, true])('Формирует команду для текущей площадки и reconnect=%s', reconnect => {
         const command = installedBridgeCommand('https://panel.example.test:8443/projects?tab=local', false, reconnect);
-        expect(command).toContain('neurocenter-bridge');
-        expect(command).toContain('connect --open');
-        expect(command).not.toMatch(/NEUROCENTER_URL|INSTALL_DIR|bin\/node|dist\/index/);
-        expect(command.includes('--reconnect')).toBe(reconnect);
-        expect(command).not.toMatch(/curl|wget|install\.(?:sh|ps1)|--init|npm\s|npx\s/);
+        expect(command).toBe(`curl -fsSL 'https://panel.example.test:8443/api/bridge/connect.sh${reconnect?'?reconnect=1':''}' | bash`);
+        expect(command).not.toMatch(/NEUROCENTER_URL|INSTALL_DIR|bin\/node|dist\/index|\.local\/bin/);
+        expect(command).not.toMatch(/install\.(?:sh|ps1)|--init|npm\s|npx\s/);
         expect(command).not.toContain('projects?tab=local');
     });
 
-    it('Windows использует установленный автономный Node и браузерное подтверждение', () => {
-        const command = installedBridgeCommand('http://127.0.0.1:5173', true, true);
+    it.each([false,true])('PowerShell получает сценарий выбранной площадки и reconnect=%s', reconnect => {
+        const command = installedBridgeCommand('http://127.0.0.1:4000', true, reconnect);
+        expect(command).toBe(`irm 'http://127.0.0.1:4000/api/bridge/connect.ps1${reconnect?'?reconnect=1':''}' | iex`);
         expect(command).not.toContain('NEUROCENTER_URL');
-        expect(command).toContain('$env:USERPROFILE');
-        expect(command).toContain('neurocenter-bridge.cmd');
-        expect(command).toContain('connect --open --reconnect');
-        expect(command).not.toContain('dist/index.js');
-        expect(command).not.toMatch(/Invoke-WebRequest|\birm\b|\biex\b|--init|install\.ps1/);
+        expect(command).not.toMatch(/USERPROFILE|neurocenter-bridge\.cmd|dist\/index\.js|--init|install\.ps1/);
+    });
+
+    it('PowerShell заключает выбранный origin в один литерал, сохраняя кавычки и метасимволы',()=>{
+        expect(installedBridgeCommand("https://panel'$(false)'.example.test/ignored?secret=hidden",true,true))
+            .toBe("irm 'https://panel''$(false)''.example.test/api/bridge/connect.ps1?reconnect=1' | iex");
     });
 
     it.each(['file:///tmp/bridge', 'javascript:alert(1)', 'ftp://example.test', 'not a URL'])('Отклоняет неподдерживаемый адрес %s', origin => {
         expect(() => installedBridgeCommand(origin, false)).toThrow();
     });
 
-    it.skipIf(process.platform === 'win32')('Выполняет существующий мост из каталога с пробелами и кавычками, не раскрывая параметры адреса', async () => {
+    it.skipIf(process.platform === 'win32')('Bash передаёт connect URL в curl буквально и исполняет только подставленный сценарий без сети', async () => {
         const temporary = await mkdtemp(path.join(os.tmpdir(), 'neurocenter-existing-bridge-'));
         try {
-            const install = path.join(temporary, "мост с 'кавычкой' и пробелами");
-            await mkdir(path.join(install,'.local/bin'),{recursive:true});
-            await writeFile(path.join(install,'.local/bin/neurocenter-bridge'),'#!/bin/sh\nprintf \'%s\\n\' "$@"\n',{mode:0o755});
+            const binary = path.join(temporary, "команды с 'кавычкой' и пробелами");
+            await mkdir(binary);
+            const argumentsFile=path.join(temporary,'arguments');
+            await writeFile(path.join(binary,'curl'),'#!/bin/sh\nprintf \'%s\\n\' "$@" > "$QA_CONNECT_ARGS"\nprintf \'%s\\n\' \'printf bridge-command-fixture\'\n',{mode:0o755});
             for (const [address, reconnect] of [
                 ['https://owner:secret@panel.example.test:8443/path?x=$(false)#fragment', false],
                 ['https://owner:secret@panel.example.test:8443/path?x=$(false)#fragment', true],
@@ -43,12 +44,13 @@ describe('Подключение установленного моста без 
             ] as const) {
                 const command = installedBridgeCommand(address, false, reconnect);
                 const result = spawnSync('/bin/bash', ['-c', command], {
-                    env: { ...process.env, HOME: install, PATH: '/usr/bin:/bin' },
+                    env: { ...process.env, HOME: temporary, PATH: binary+path.delimiter+'/usr/bin:/bin', QA_CONNECT_ARGS:argumentsFile },
                     encoding: 'utf8', timeout: 5000,
                 });
                 expect(result.status, result.stderr).toBe(0);
-                expect(result.stdout.trim().split('\n')).toEqual([
-                    'connect','--open',...(reconnect?['--reconnect']:[]),
+                expect(result.stdout).toBe('bridge-command-fixture');
+                expect((await readFile(argumentsFile,'utf8')).trim().split('\n')).toEqual([
+                    '-fsSL',`${new URL(address).origin}/api/bridge/connect.sh${reconnect?'?reconnect=1':''}`,
                 ]);
                 expect(command).not.toContain('secret');
                 if (address.includes('@')) { expect(command).not.toContain('$(false)'); }

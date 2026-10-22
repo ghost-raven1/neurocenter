@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import {readBridgeTemplate} from '../workspace/bridge-templates.mjs';
 
 // Нативный Bash и реальный архив; сервер подключения одноразовый и не связан с аккаунтом пользователя.
 assert.ok(['darwin', 'linux'].includes(process.platform), 'Для Windows нужна отдельная нативная PowerShell-приёмка.');
@@ -28,6 +29,7 @@ const deviceId = randomUUID();
 let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal;
 let expectedEntryInode, paused = false, pauseObservations = 0;
 let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
+let archiveRequests=0;
 const rejectedRoutes = [];
 const pairAuthorizations = [];
 const cases = [];
@@ -102,6 +104,7 @@ try {
         try {
             const url = new URL(request.url, origin);
             if (request.method === 'GET' && url.pathname === '/api/bridge/runtime/' + file) {
+                archiveRequests++;
                 response.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': metadata.bytes });
                 createReadStream(archive).pipe(response); return;
             }
@@ -148,7 +151,7 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
     env.BASE_URL = origin + '/api/bridge';
     const script = path.join(temporary, 'install.sh');
-    await fs.writeFile(script, (await fs.readFile(path.join(root, 'bridge-dist/install.sh'), 'utf8')).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', siteOrigin).replaceAll('__RECONNECT__', '0'));
+    await fs.writeFile(script, (await readBridgeTemplate(path.join(root, 'bridge-dist/install.sh'))).replaceAll('__BRIDGE_VERSION__', bridgeVersion).replaceAll('__BASE_URL__', env.BASE_URL).replaceAll('__SITE_URL__', siteOrigin).replaceAll('__RECONNECT__', '0'));
     let profile = path.join(env.NEUROCENTER_BRIDGE_HOME, digest(siteOrigin).slice(0, 20));
     const config = path.join(env.XDG_CONFIG_HOME, 'opencode/opencode.json');
     let installedConfig, installedMtime;
@@ -164,6 +167,17 @@ try {
         assert.equal(setting.environment.NEUROCENTER_API_URL, origin);
         assert.equal((await fs.stat(path.join(profile, 'credentials.json'))).mode & 0o777, 0o600);
         assert.equal(JSON.parse(await fs.readFile(path.join(profile, 'credentials.json'), 'utf8')).deviceId, deviceId);
+    });
+    await check('Подключение без launcher использует прежний runtime и ключи без повторного скачивания архива',async()=>{
+        const beforeArchive=archiveRequests,beforeProgram=await fs.stat(entry),beforeCredentials=await fs.readFile(path.join(profile,'credentials.json'));
+        await fs.unlink(path.join(temporary,'.local/bin/neurocenter-bridge'));
+        const connectScript=path.join(temporary,'connect.sh');
+        await fs.writeFile(connectScript,(await readBridgeTemplate(path.join(root,'bridge-dist/connect.sh'))).replaceAll('__BASE_URL__',env.BASE_URL).replaceAll('__SITE_URL__',siteOrigin).replaceAll('__RECONNECT__','0'));
+        const result=await installer(env,connectScript);assert.equal(result.code,0,result.output);
+        assert.match(result.output,/Существующее подключение сохранено/);assert.equal(archiveRequests,beforeArchive);assert.equal(pairStarts,1);
+        assert.equal((await fs.stat(entry)).ino,beforeProgram.ino);assert.equal((await fs.stat(entry)).mtimeMs,beforeProgram.mtimeMs);
+        assert.deepEqual(await fs.readFile(path.join(profile,'credentials.json')),beforeCredentials);assert.equal(await fs.readFile(config,'utf8'),installedConfig);
+        await fs.access(path.join(temporary,'.local/bin/neurocenter-bridge'));assert.equal(paused,false);
     });
     await check('Короткая команда использует bundled Node, сохранённый Gateway и существующее подключение', async () => {
         const command = path.join(temporary, '.local/bin/neurocenter-bridge');
