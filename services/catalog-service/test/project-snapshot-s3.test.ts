@@ -7,11 +7,11 @@ import {promisify} from 'node:util';
 import {readFile,statfs} from 'node:fs/promises';
 import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {SnapshotStorage} from '../src/snapshots/snapshot-storage';
-import {snapshotS3FixtureConfiguration} from './snapshot-s3.fixture';
+import {snapshotS3FixtureAdmin,snapshotS3FixtureConfiguration,snapshotS3FixturePreflight} from './snapshot-s3.fixture';
 
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 const execute=promisify(execFile),nonce=randomUUID().replaceAll('-',''),container='nc-snapshot-storage-test-'+nonce.slice(0,16);
-const adminConnection=process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL,storageFile=process.env.SNAPSHOT_TEST_S3_CONFIG||process.env.MODEL_CHAT_TEST_STORAGE_CONFIG,spawnDocker=process.env.SNAPSHOT_S3_TEST_SPAWN_DOCKER==='1',enabled=!!adminConnection&&!!(storageFile||spawnDocker);
+const adminConnection=process.env.TEST_ADMIN_PG_URL??process.env.CATALOG_TEST_PG_URL,storageFile=process.env.SNAPSHOT_TEST_S3_CONFIG??process.env.MODEL_CHAT_TEST_STORAGE_CONFIG,spawnDocker=process.env.SNAPSHOT_S3_TEST_SPAWN_DOCKER==='1',enabled=adminConnection!==undefined&&(storageFile!==undefined||spawnDocker);
 let access='storage'+nonce.slice(0,16),secret=randomUUID()+randomUUID(),region='us-east-1';
 let started=false,client:Client,endpoint:string,admin:Pool;const cleanup:Array<()=>Promise<void>>=[];
 async function docker(args:string[]){try{return(await execute('docker',args,{timeout:60000,maxBuffer:1024*1024})).stdout.trim();}catch{throw new Error('Изолированный MinIO: Docker '+args[0]+' не завершён.');}}
@@ -19,17 +19,18 @@ const key=(project:string,sha:string)=>'projects/'+hash(project)+'/blobs/'+sha;
 async function versions(bucket:string,object?:string){const rows:Array<{name?:string;versionId?:string;isDeleteMarker?:boolean}>=[];for await(const item of client.listObjects(bucket,object||'',true,{IncludeVersion:true}))rows.push(item);return rows.filter(row=>!object||row.name===object);}
 beforeAll(async()=>{
  if(!enabled)return;
- const url=new URL(adminConnection!);if(!['localhost','127.0.0.1','[::1]'].includes(url.hostname)||!url.port||url.port==='5432')throw new Error('Explicit owned localhost PostgreSQL port is required; main5432 is forbidden.');url.pathname='/postgres';admin=new Pool({connectionString:url.href,max:2});
+ const url=snapshotS3FixtureAdmin(adminConnection!);admin=new Pool({connectionString:url.href,max:2});
  let port:number;
- if(storageFile){
-  const target=snapshotS3FixtureConfiguration(JSON.parse(await readFile(storageFile,'utf8')));
+ if(storageFile!==undefined){
+  const raw=JSON.parse(await readFile(storageFile,'utf8')),target=snapshotS3FixtureConfiguration(raw);
   endpoint=target.endpoint;port=target.port;access=target.accessKey;secret=target.secretKey;region=target.region;
+  await snapshotS3FixturePreflight(raw);
  }else{
   const disk=await statfs(process.cwd(),{bigint:true});if(disk.bavail*disk.bsize<8n*1024n**3n)throw new Error('Explicit Docker S3 spawn requires8GiB free disk.');
   await docker(['run','--detach','--rm','--name',container,'--publish','127.0.0.1::9000','--env','MINIO_ROOT_USER='+access,'--env','MINIO_ROOT_PASSWORD='+secret,'quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z','server','/data']);started=true;
   const record=JSON.parse(await docker(['inspect',container]))[0];port=Number(record.NetworkSettings.Ports['9000/tcp'][0].HostPort);endpoint='http://127.0.0.1:'+port;
+  for(let attempt=0;;attempt++){try{if((await fetch(endpoint+'/minio/health/ready',{signal:AbortSignal.timeout(1000)})).ok)break;}catch{}if(attempt>=30)throw new Error('Own MinIO did not become ready.');await new Promise(resolve=>setTimeout(resolve,100));}
  }
- for(let attempt=0;;attempt++){try{if((await fetch(endpoint+'/minio/health/ready',{signal:AbortSignal.timeout(1000)})).ok)break;}catch{}if(attempt>=30)throw new Error('Own MinIO did not become ready.');await new Promise(resolve=>setTimeout(resolve,100));}
  client=new Client({endPoint:new URL(endpoint).hostname,port,useSSL:new URL(endpoint).protocol==='https:',accessKey:access,secretKey:secret,region,retryOptions:{disableRetry:true}});
 },60000);
 afterEach(async()=>{vi.unstubAllEnvs();for(const action of cleanup.splice(0).reverse())await action();});
@@ -45,7 +46,7 @@ async function fixture({versioning=true}={}){
  const failRegistration=()=>pool.query("ALTER TABLE project_snapshot_blobs ADD CONSTRAINT own_reject_registration CHECK(project_id<> '"+project+"')");
  return{pool,bucket,s3,storage,project,payload,sha,object,row,intent,failRegistration};
 }
-describe.skipIf(!enabled)('SnapshotStorage — actual versioned MinIO and PostgreSQL write-intent durability',()=>{
+describe.skipIf(!enabled)('SnapshotStorage — actual versioned S3 and PostgreSQL write-intent durability',()=>{
  it('publishes LIVE metadata only after real PUT, pins nonce/version and reads the older version after a foreign latest write',async()=>{
   const f=await fixture();await f.storage.put(f.project,f.sha,f.payload);const row=await f.row();expect(row).toMatchObject({bytes:String(f.payload.length),storage_id:f.storage.storageId,state:'LIVE'});expect(row.version_id).toBeTruthy();expect(await f.intent()).toBeUndefined();
   const stat=await client.statObject(f.bucket,f.object,{versionId:row.version_id});expect(stat.metaData['neurocenter-snapshot-write']).toMatch(/^[a-f0-9-]{36}$/);expect(await f.storage.read(f.project,f.sha)).toEqual(f.payload);
