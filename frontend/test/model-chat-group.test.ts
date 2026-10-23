@@ -1,7 +1,7 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import api from '../src/core/api/base';
 import {modelChatApi} from '../src/features/ModelChat/api';
-import {chatRecipients} from '../src/features/ModelChat/participants';
+import {chatMentions, chatRecipients} from '../src/features/ModelChat/participants';
 import {detail, model, participant} from './model-chat-fixtures';
 
 vi.mock('../src/core/api/base', () => ({default: {get: vi.fn(), post: vi.fn(), put: vi.fn()}}));
@@ -9,6 +9,23 @@ const agents = [participant(), participant({agentId: 'agent-review', slug: 'nc-r
 beforeEach(() => vi.clearAllMocks());
 
 describe('Адресация существующим участникам группы', () => {
+    it('Чистый parser не вводит default group eligibility в people-only переписку', () => {
+        expect(chatMentions('Вопрос людям', [])).toEqual({ids: [], hasMentions: false});
+        const inactive = [participant({status: 'disabled'})];
+        expect(chatMentions('Почта dev@example.test и `@nc-developer`', inactive)).toEqual({ids: [], hasMentions: false});
+        expect(chatRecipients('Вопрос людям', inactive).error).toContain('Добавьте');
+        expect(chatMentions('@nc-developer вопрос', inactive)).toMatchObject({ids: [], hasMentions: true, error: expect.any(String)});
+    });
+    it('Чистый parser возвращает только explicit IDs, сохраняя текстовый порядок и ошибки вместо broadcast', () => {
+        expect(chatMentions('@nc-reviewer @NC-DEVELOPER @nc-reviewer', agents)).toEqual({ids: ['agent-review', 'agent-dev'], hasMentions: true});
+        expect(chatMentions('@nc-developer @unknown', agents)).toMatchObject({ids: [], hasMentions: true, error: expect.stringContaining('не найден')});
+    });
+    it('Канонический slug из подсказки имеет приоритет над совпавшим отображаемым именем другого агента', () => {
+        const collision = [participant({agentId: 'review', slug: 'reviewer', name: 'Ревьюер'}), participant({agentId: 'test', slug: 'tester', name: 'reviewer'})];
+        expect(chatMentions('@REVIEWER проверь', collision)).toEqual({ids: ['review'], hasMentions: true});
+        expect(chatRecipients('@reviewer проверь', collision)).toEqual({ids: ['review']});
+        expect(chatMentions('@reviewer', [...collision, participant({agentId: 'duplicate', slug: 'Reviewer', name: 'Другой'})]).error).toContain('неоднозначен');
+    });
     it('Без упоминания адресует всем выбранным; не принимает email и inline/fenced code за адресата', () => {
         for (const text of ['Вопрос всем', 'dev@example.test', '`@unknown`', '```ts\n@unknown\n```']) expect(chatRecipients(text, agents)).toEqual({ids: []});
     });

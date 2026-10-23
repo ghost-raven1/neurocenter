@@ -36,3 +36,7 @@
     }
     @media (max-width: 600px) {height: 72vh; gap: 8px; padding: 12px; &__heading .ant-space {width: 100%;} &__send > .ant-typography {font-size: 11px;} &__message {padding: 10px;} &__message header {flex-wrap: wrap;} &__delivery label {flex-basis: 100%;} &__send > button {width: 100%;} &__reply-draft {align-items: flex-start; flex-wrap: wrap;}}
 }
+.project-chat__mentions {
+    max-width: min(360px, calc(100vw - 32px));
+    .ant-mentions-dropdown-menu-item {white-space: normal; overflow-wrap: anywhere;}
+}

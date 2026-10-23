@@ -18,6 +18,7 @@ const harness = vi.hoisted(() => {
 const ui = vi.hoisted(() => ({
     buttons: new Map<string, () => void>(), inputs: new Map<string, {value: string; disabled?: boolean; onChange: (event: {target: {value: string}}) => void; onKeyDown: (event: unknown) => void}>(),
     selects: new Map<string, {value: string | string[]; disabled?: boolean; onChange: (value: unknown) => void}>(),
+    mentions: new Map<string, {value: string; disabled?: boolean; notFoundContent: string; options: Array<{value: string; label: string}>; filterOption: (search: string, option: {value: string}) => boolean; onChange: (body: string) => void; onPressEnter: (event: unknown) => void; onCompositionStart: () => void; onCompositionEnd: () => void}>(),
     checks: new Map<string, {checked: boolean; disabled?: boolean; onChange: (event: {target: {checked: boolean}}) => void}>(),
     flags: new Map<string, boolean>(), owner: 'alice', scope: 'alice',
 }));
@@ -42,10 +43,16 @@ vi.mock('antd', () => {
         Select: (props: {'aria-label': string; value: string | string[]; disabled?: boolean; onChange: (value: unknown) => void}) => {ui.selects.set(props['aria-label'], props); return null;},
         Checkbox: (props: {children: ReactNode; checked: boolean; disabled?: boolean; onChange: (event: {target: {checked: boolean}}) => void}) => {const label = Array.isArray(props.children) ? props.children.join('') : String(props.children); ui.checks.set(label, props); return createElement('label', null, props.children);},
         Input: {TextArea: input}, Space: content, Spin: content, Empty: ({description}: {description: string}) => createElement('p', null, description), Typography: {Text: content, Paragraph: content, Title: content},
+        Mentions: (props: {value: string; disabled?: boolean; 'aria-label': string; notFoundContent: string; options: Array<{value: string; label: string}>; filterOption: (search: string, option: {value: string}) => boolean; onChange: (body: string) => void; onPressEnter: (event: unknown) => void; onCompositionStart: () => void; onCompositionEnd: () => void}) => {
+            ui.mentions.set(props['aria-label'], props);
+            // AntD Mentions emits a string, and delegates submission to onPressEnter only outside its popup.
+            ui.inputs.set(props['aria-label'], {...props, onChange: event => props.onChange(event.target.value), onKeyDown: props.onPressEnter});
+            return createElement('textarea', {'aria-label': props['aria-label'], value: props.value, disabled: props.disabled, onChange: event => props.onChange(event.target.value)});
+        },
     };
 });
 export function renderProjectUi(element: () => ReactElement): {element: ReactElement; html: string} {
-    harness.begin(); ui.buttons.clear(); ui.inputs.clear(); ui.selects.clear(); ui.checks.clear();
+    harness.begin(); ui.buttons.clear(); ui.inputs.clear(); ui.selects.clear(); ui.checks.clear(); ui.mentions.clear();
     const value = element(), html = renderToStaticMarkup(value); harness.commit(); return {element: value, html};
 }
 export async function settleProjectUi(element: () => ReactElement): Promise<ReturnType<typeof renderProjectUi>> {
