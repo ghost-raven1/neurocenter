@@ -30,7 +30,7 @@ function binding(device:Device,input:Pick<JobInput,'projectId'|'expectedBindingI
 }
 
 /** Only a server-built, pinned auth-only connector may enter a native job; browser references are never accepted. */
-async function connector(store:DeviceStore,artifacts:DeviceArtifacts):Promise<IPackage>{
+export async function trustedCodexConnector(store:DeviceStore,artifacts:DeviceArtifacts):Promise<IPackage>{
     let pin:{schemaVersion:number;repository:string;sourceCommit:string;version:string;sdkVersion:string;authOnly:boolean};
     try{pin=JSON.parse(await readFile(path.resolve(__dirname,'../../../shared/codex-connector-pin.json'),'utf8'));}
     catch{throw new ServiceUnavailableException('Закреплённый коннектор Codex ещё не подготовлен на площадке.');}
@@ -67,7 +67,7 @@ async function descriptor(store:DeviceStore,artifacts:DeviceArtifacts,device:Dev
         expectations={catalogModelId:model.id,modelPin:model.modelPin!,runtimeModel:model.model,capability:model.capability as 'chat'|'vision',baseUrl:remoteModelBaseUrl(connection.base_url),options};
     }else if(input.providerKind==='codex-bridge'){
         if(input.catalogModelId!==undefined||input.expectedModelPin!==undefined)throw new BadRequestException('Codex использует закреплённый коннектор, а не клиентскую модель.');
-        pkg=await connector(store,artifacts);assertPackageBridge(device.report,pkg);
+        pkg=await trustedCodexConnector(store,artifacts);assertPackageBridge(device.report,pkg);
     }else throw new BadRequestException('Неизвестный вид провайдера.');
     const context={schemaVersion:1,deviceId:device.id,projectId:input.projectId!,...current,providerKind:input.providerKind,
         providerId:'neurocenter-'+(input.providerKind==='ollama'?'ollama':expectations?'openai':'codex')+'-'+hash([input.projectId,input.providerKind,input.catalogModelId??null]).slice(0,16),

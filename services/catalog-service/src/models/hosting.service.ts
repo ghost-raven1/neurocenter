@@ -1,4 +1,5 @@
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {DeviceCodexService} from './device-codex.service';
 import { BadRequestException, ConflictException, Injectable, Logger, Optional, type OnModuleInit, type BeforeApplicationShutdown } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
@@ -26,7 +27,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
     private stopping = false;
 
     constructor(private readonly models: ModelsService, private readonly access: AccessDb, private readonly runtime: OllamaClient,
-        @Optional() private readonly remote?: RemoteConnectionService, @Optional() private readonly bundles?: ModelBundleRuntime) {
+        @Optional() private readonly remote?: RemoteConnectionService, @Optional() private readonly bundles?: ModelBundleRuntime,@Optional()private readonly codex?:DeviceCodexService) {
         this.repository = new ModelHostingRepository(models.pool);
     }
 
@@ -58,6 +59,10 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
     }
 
     async status(model: IModel): Promise<IModelHosting> {
+        if(model.runtime==='device-codex'){
+            if(!this.codex)return {state:'unavailable',message:'Подключение Codex недоступно.',checkedAt:null};
+            const state=await this.codex.status(model);return {state:state.state,message:state.message,checkedAt:null};
+        }
         const latest = await this.currentJob(model.id);
         if (latest?.state === 'running') {
             return { state: 'busy', message: latest.message, checkedAt: await this.repository.checkedAt(model.id), operation: hostingOperation(latest) };
@@ -118,6 +123,10 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         const model = await this.models.get(id);
         if (model.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
         if (model.archivedAt) throw new ConflictException('Модель убрана из общего каталога. Существующие подключения сохранены.');
+        if(model.runtime==='device-codex'){
+            if(action!=='check')throw new BadRequestException('Codex работает на компьютере. Запустите или остановите мост на устройстве.');
+            return this.status(model);
+        }
         if (isRemoteModel(model) && action !== 'check') throw new BadRequestException('Для удалённого API доступна проверка подключения. Управление процессом выполняется у провайдера.');
         const lease = await this.models.pool.connect();
         let transferred = false, locked = false, released = false, discard = false;

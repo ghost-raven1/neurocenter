@@ -15,5 +15,5 @@ export async function assertAgentCompletionAccess(db:PoolClient,job:{device_id:s
     if(!device||!user?.enabled||!allowed(device.role)||!allowed(job.role))throw new ForbiddenException('Доступ к настройке агентов отозван.');
     const binding=Array.isArray(device.report.bindings)?device.report.bindings.find(item=>item&&typeof item==='object'&&(item as {projectId?:unknown}).projectId===job.project_id) as {instanceId?:unknown}|undefined:undefined;
     if(managedBinding(device.report,job.project_id??undefined)!==payload.bindingId||binding?.instanceId!==payload.instanceId)throw new ConflictException('Папка изменилась до подтверждения настройки агентов.');
-    if(!isDeepStrictEqual(await agentModelRequirements(db,job.project_id!,payload.agents),payload.modelRequirements))throw new ConflictException('Модель изменилась до подтверждения настройки агентов.');
+    if(!isDeepStrictEqual(await agentModelRequirements(db,job.project_id!,payload.agents,device),payload.modelRequirements))throw new ConflictException('Модель изменилась до подтверждения настройки агентов.');
 }

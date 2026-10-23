@@ -1,4 +1,6 @@
 import {PROJECT_CONFIGURATION_JOB} from '../../../shared/project-configuration.cjs';
+import {DeviceCodexService} from '../models/device-codex.service';
+import {DEVICE_CODEX_JOB} from '../../../shared/device-codex-inference.cjs';
 import {projectConfigurationPayload,assertProjectConfigurationJob,authorizeProjectConfiguration} from './project-configuration-jobs';
 import {PROJECT_AGENTS_JOB} from '../../../shared/project-agents.cjs';
 import {compileAgentJob} from '../agents/agent-job-compiler';
@@ -9,6 +11,7 @@ import {
     ConflictException,
     ForbiddenException,
     Injectable,
+    Optional,
     NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -64,6 +67,7 @@ export class DeviceJobs {
         private readonly installations:DeviceInstallations,
         private readonly plans: InstallPlans,
         private readonly embedding: ProjectEmbeddingService,
+        @Optional()private readonly codex?:DeviceCodexService,
     ) {}
     /** Повтор создаёт новое задание через обычные проверки, сохраняя исходную запись журнала. */
     async retry(actor:IAccessActor,id:string,requestKey:string){
@@ -318,6 +322,8 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             await assertProviderJob(this.store,this.artifacts,device,job);
+            if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
+            await this.codex?.authorizeJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
             await assertProjectConfigurationJob(this.installations,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
@@ -374,6 +380,8 @@ export class DeviceJobs {
             );
         }
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
+        if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
+        await this.codex?.authorizeJob(device,job);
         if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
         if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         await assertRagAutoInspection(this.store.pool,device,job);
@@ -476,8 +484,9 @@ export class DeviceJobs {
         const selected = await this.store.pool.query<{kind:string}>(
             'SELECT kind FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3',[id,device.id,input.lease],
         );
+        if(selected.rows[0]?.kind===DEVICE_CODEX_JOB&&(input.result!==undefined&&input.result!==null&&JSON.stringify(input.result)!=='{}'))throw new BadRequestException('Приватный результат Codex передаётся только в завершении задания.');
         if (Buffer.byteLength(JSON.stringify(input.result ?? null)) > 10000) { throw new BadRequestException('Промежуточный результат превышает допустимый размер.'); }
-        let progressMessage = input.message;
+        let progressMessage = selected.rows[0]?.kind===DEVICE_CODEX_JOB?'Codex обрабатывает запрос на компьютере.':input.message;
         if ([PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
             progressMessage = 'Мост выполняет проверенное действие.';
@@ -511,6 +520,11 @@ export class DeviceJobs {
         const scope = await this.readScope(actor);
         const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind='choose-root'))";
         const params = [id,scope.email,scope.main,scope.projects];
+        const codex=(await this.store.pool.query<{kind:string;state:string}>(`SELECT kind,state FROM bridge_jobs WHERE id=$1 AND email=$2 ${access}`,params)).rows[0];
+        if(codex?.kind===DEVICE_CODEX_JOB){
+            if(['succeeded','failed'].includes(codex.state))throw new ConflictException('Запрос Codex уже завершён.');
+            if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');await this.codex.cancel(id);return {ok:true};
+        }
         // Прерывается только очередь: начатая запись файлов должна завершиться или откатиться в worker.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
             `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND state='queued' RETURNING *`,

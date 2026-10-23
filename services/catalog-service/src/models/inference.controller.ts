@@ -109,7 +109,7 @@ export class ModelInferenceController {
                 if (projectEmbeddingPin(current) !== modelPin) throw new ConflictException('Модель изменилась. Обновите подключение.');
                 abort.signal.throwIfAborted();
             };
-            const result = await withModelUsage({ purpose: 'direct', actorEmail: actor.email, projectId: canonicalProject, beforeInference }, () => this.runtime.infer(model, endpoint, body, abort.signal));
+            const result = await withModelUsage({ purpose: 'direct', actorEmail: actor.email,actorRole:actor.activeRole, projectId: canonicalProject, beforeInference }, () => this.runtime.infer(model, endpoint, body, abort.signal));
             const current = await this.models.getUsable(id, request, projectId);
             if (projectEmbeddingPin(current) !== modelPin) throw new ConflictException('Модель изменилась во время запроса. Обновите подключение.');
             if (!openai) { return result; }

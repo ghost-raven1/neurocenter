@@ -11,6 +11,7 @@ import {
     Res,
     StreamableFile,
     ConflictException,
+    Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { assertInternal } from '../access/access.controller';
@@ -22,6 +23,7 @@ import { completeDeviceJob, type DeviceCompletion } from './device-completion';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { approvedRuntimeArtifact } from './runtime-job-artifact';
 import {DeviceEmbeddingService} from '../models/device-embedding.service';
+import {DeviceCodexService} from '../models/device-codex.service';
 
 /** Browser управляет только своими устройствами; channel принимает только секрет привязанного MCP. */
 @Controller()
@@ -32,6 +34,7 @@ export class DeviceController {
         private readonly installations:DeviceInstallations,
         private readonly runtimeArtifacts:RuntimeArtifacts,
         private readonly embedding:DeviceEmbeddingService,
+        @Optional()private readonly codex?:DeviceCodexService,
     ) {}
     private actor(req: Request): IAccessActor {
         assertInternal(req.headers['x-neurocenter-internal']);
@@ -144,6 +147,8 @@ export class DeviceController {
     @Post('internal/device-channel/embedding/context') async embeddingContext(@Req() req:Request,@Body() input:unknown){
         return this.embedding.context(await this.device(req),input);
     }
+    @Post('internal/device-channel/codex-inference/context') async codexContext(@Req() req:Request,@Body() input:unknown){if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');return this.codex.context(await this.device(req),input);}
+    @Post('internal/device-channel/codex-inference/dispatch') async codexDispatch(@Req() req:Request,@Body() input:unknown){if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');return this.codex.dispatch(await this.device(req),input);}
     @Post('internal/device-channel/embedding') async embeddings(@Req() req:Request,@Body() input:unknown){
         const device=await this.device(req);const abort=new AbortController();
         const disconnected=()=>abort.abort();const closed=()=>{if(!req.res?.writableEnded)abort.abort();};
@@ -171,7 +176,9 @@ export class DeviceController {
     @Post('internal/device-channel/jobs/:id/complete') async complete(
         @Req() req: Request, @Param('id') id: string, @Body() input: DeviceCompletion,
     ) {
-        const device = await this.device(req);
+        assertInternal(req.headers['x-neurocenter-internal']);
+        const token=String(req.headers.authorization||'').replace(/^Bearer /,'');
+        const device = await this.codex?.receiptIdentity(token,id,input?.lease)??await this.device(req);
         return completeDeviceJob(this.devices.pool, device.id, id, input);
     }
 }

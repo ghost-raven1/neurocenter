@@ -81,7 +81,7 @@ export class LearningAnalysisService implements OnModuleInit,OnApplicationShutdo
     await this.repository.current(row);signal.throwIfAborted();const fresh=await this.usableModel(req,row.project_id,row.model_id);
     if(projectEmbeddingPin(fresh)!==row.model_pin)throw new ConflictException('Выбранная модель изменилась.');signal.throwIfAborted();
    };
-   const result=await withModelUsage({purpose:'learning',actorEmail:row.actor_email,projectId:row.project_id,operationId:row.id,beforeInference},()=>this.runtime.infer(model,'chat',{messages:learningAnalysisMessages(row.experiences),think:false,
+   const result=await withModelUsage({purpose:'learning',actorEmail:row.actor_email,actorRole:row.actor_role,projectId:row.project_id,operationId:row.id,beforeInference},()=>this.runtime.infer(model,'chat',{messages:learningAnalysisMessages(row.experiences),think:false,
     options:model.runtime==='ollama'?{temperature:0,num_predict:2048,num_ctx:8192}:{}},signal));
    signal.throwIfAborted();const current=await this.usableModel(req,row.project_id,row.model_id);
    if(projectEmbeddingPin(current)!==row.model_pin)throw new ConflictException('Выбранная модель изменилась во время анализа.');

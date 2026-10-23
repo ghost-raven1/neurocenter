@@ -29,7 +29,9 @@ describe('Common bounded role runner', () => {
         const f = fixture(); let context;
         f.infer.mockImplementation(async () => { context = currentModelUsage(); await context.beforeInference?.(); return { done_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(result) } }; });
         await f.run(); expect(f.infer).toHaveBeenCalledOnce(); expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 1, result });
-        expect(context).toMatchObject({ purpose: 'agent', actorEmail: f.row.actor, agentId: 'agent-ai-admin', operationId: 'system-role-' + f.row.id, requiredFeatures: ['system_ai_admin'] });
+        expect(context).toMatchObject({ purpose: 'agent', actorEmail: f.row.actor,actorRole:f.row.actor_role, agentId: 'agent-ai-admin', operationId: f.row.id, requiredFeatures: ['system_ai_admin'] });
+        // The actual usage ledger stores operation_id as UUID, independently of the Operations display ID.
+        expect(context.operationId).toMatch(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/);
         expect(f.infer.mock.calls[0][0]).toBe(f.model); expect(JSON.stringify(f.infer.mock.calls[0][2])).toContain('SELECTED SAFE TEXT');
     });
     it('spends at most two calls repairing only malformed model JSON', async () => {

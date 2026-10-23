@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {automaticModelOptions} from '../models/model-runtime-options';
 import type { Request } from 'express';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { withModelUsage } from '../model-usage/model-usage.context';
@@ -16,7 +17,7 @@ import type { PreparedProjectContext } from './chat-project-context.types';
 import type { PreparedChatRound } from './chat-round-preflight';
 import { assertPendingChatInference } from './chat-inference-admission';
 
-export interface ChatRoundScope { owner: string; row: ConversationRow; model: IModel; authorize(pin?: boolean): Promise<IModel> }
+export interface ChatRoundScope { owner: string;actorRole?:string; row: ConversationRow; model: IModel; authorize(pin?: boolean): Promise<IModel> }
 export interface ChatRoundHooks {
     compact(model: IModel, overhead: ChatMessage[], assertCurrent: (db?: ChatDb) => Promise<void>, budget: ChatRoundBudget, responseId: string, beforeInference?: () => Promise<void>): Promise<ChatMessage[]>;
     localContextWindow: number | null;
@@ -39,13 +40,13 @@ export async function executeChatRound(req: Request, scope: ChatRoundScope, turn
             const minimal = project.fit([...base, { role: 'user', content: turn.input_text }], settings);
             const overhead = [...minimal.messages.slice(0, minimal.messages.length - base.length - 1), ...base, ...hooks.research.overhead(turn.research_request)];
             const assertCurrent = async (db?: ChatDb) => { signal.throwIfAborted(); await scope.authorize(true); await groups.assert(req, scope.row, scope.model, response.snapshot, db); await project.assertCurrent(); await learning.assertAuthorized(db); };
-            const attribution = { purpose: 'agent' as const, actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, agentId: response.agent_id, operationId: turn.request_id };
+            const attribution = { purpose: 'agent' as const, actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, agentId: response.agent_id, operationId: turn.request_id };
             const history = await withModelUsage({ ...attribution, requiredFeatures: learning.requiredFeatures }, () => hooks.compact(model, overhead, assertCurrent, budget, response.id, learning.beforeInference));
             const fitted = project.fit([...base, ...history], settings);
-            const definition = response.snapshot.definition, options = {
+            const definition = response.snapshot.definition, options = automaticModelOptions(model,{}, {
                 ...(definition.temperature === undefined ? {} : { temperature: definition.temperature }), ...(definition.topP === undefined ? {} : { top_p: definition.topP }),
-                ...(model.runtime === 'ollama' && hooks.localContextWindow !== null ? { num_ctx: hooks.localContextWindow } : {}) };
-            const researched = await hooks.research.run({ req, owner: scope.owner, row: scope.row, turn, responseId: response.id, agentId: response.agent_id,
+                ...(model.runtime === 'ollama' && hooks.localContextWindow !== null ? { num_ctx: hooks.localContextWindow } : {}) });
+            const researched = await hooks.research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, responseId: response.id, agentId: response.agent_id,
                 model, messages: [...persona, ...fitted.messages.slice(0, fitted.messages.length - base.length - history.length), ...learning.messages, ...history], initialProjectSources: fitted.evidence.sources, settings, signal,
                 options, budget: hooks.researchBudget, assertCurrent, beforeInference: learning.beforeInference, requiredFeatures: learning.requiredFeatures });
             const messages = researched.messages;

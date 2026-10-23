@@ -196,7 +196,7 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|embedding(?:\/context)?|opencode-models\/(context|sync)|agents\/compile|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|embedding(?:\/context)?|codex-inference\/(context|dispatch)|opencode-models\/(context|sync)|agents\/compile|learning\/(context|record|propose|observe)|worker\/(pause|resume)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
         if(suffix==='opencode-models/sync'&&req.body?.credentials&&Object.keys(req.body.credentials).length&&!deviceCredentialTransport(req)){
             res.status(403).json({message:'Перенос ключей OpenCode требует HTTPS. Для TLS-прокси настройте доверенные адреса на API Gateway.'});return;
         }
@@ -219,7 +219,9 @@ export class ProxyService {
         // Catalog checks the retained key for queue maintenance, even after normal device access was revoked.
         const maintenance=/^worker\/(pause|resume)$/.test(suffix);
         const auth=publicPair||maintenance?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
-        if(!publicPair&&!maintenance&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+        // Catalog accepts only the already-dispatched call's exact retained token, job and lease.
+        const codexReceipt=/^jobs\/[a-f0-9-]{36}\/complete$/.test(suffix)&&req.body?.result?.protocol==='device-codex-inference-v1';
+        if(!publicPair&&!maintenance&&!codexReceipt&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
         const failure=await featureFlagsFailure(this.http,this.featureFlagsUrl,requiredFeatureFlags(req.method,req.path,req.body));
         if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
         try{

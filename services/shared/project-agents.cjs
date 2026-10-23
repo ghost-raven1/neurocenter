@@ -103,9 +103,10 @@ function normalizeModelRequirements(value,agents){
         if(!record(item)||!identity(item.agentId)||!agents.some(agent=>agent.id===item.agentId&&agent.enabled&&agent.model))fail();
         if(item.kind==='native'){if(!exact(item,['kind','agentId','selector'])||!nativeSelector(item.selector)||agents.find(agent=>agent.id===item.agentId).model!==item.selector)fail();}
         else if(item.kind==='catalog'){
-            if(!exact(item,['kind','agentId','catalogModelId','modelPin','runtime','runtimeModel','baseUrl','options','capability'])||!identity(item.catalogModelId)||typeof item.modelPin!=='string'||!SHA.test(item.modelPin)
-                ||!['remote-openai','remote-ollama','ollama'].includes(item.runtime)||!text(item.runtimeModel,200)||!['chat','vision'].includes(item.capability)
+            if(!exact(item,['kind','agentId','catalogModelId','modelPin','runtime','runtimeModel','baseUrl','options','capability'],['sourceSelector'])||!identity(item.catalogModelId)||typeof item.modelPin!=='string'||!SHA.test(item.modelPin)
+                ||!['remote-openai','remote-ollama','ollama','device-codex'].includes(item.runtime)||!text(item.runtimeModel,200)||!['chat','vision'].includes(item.capability)
                 ||agents.find(agent=>agent.id===item.agentId).model!=='neurocenter/'+item.catalogModelId)fail();
+            if(item.runtime==='device-codex'?!nativeSelector(item.sourceSelector):item.sourceSelector!==undefined)fail();
             if(item.baseUrl!==null){if(!text(item.baseUrl,1024))fail();let url;try{url=new URL(item.baseUrl);}catch{fail();}if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)fail();}
             normalizeModelOptions(item.options);
         }else fail();
@@ -128,7 +129,7 @@ function compileProjectAgents(payload,value){
     for(const requirement of source.modelRequirements){
         const mapping=mappings.find(item=>item.agentId===requirement.agentId);if(!mapping)fail();
         if(requirement.kind==='native'){if(mapping.provider+'/'+mapping.configKey!==requirement.selector)fail();}
-        else if(mapping.runtime!==requirement.runtime||mapping.model!==requirement.runtimeModel||mapping.baseUrl!==requirement.baseUrl||mapping.capability!==requirement.capability
+        else if(mapping.runtime!==(requirement.runtime==='device-codex'?'remote-openai':requirement.runtime)||requirement.runtime==='device-codex'&&mapping.provider+'/'+mapping.configKey!==requirement.sourceSelector||mapping.model!==requirement.runtimeModel||mapping.baseUrl!==requirement.baseUrl||mapping.capability!==requirement.capability
             ||JSON.stringify(canonical(mapping.options))!==JSON.stringify(canonical(requirement.options)))fail();
     }
     const agents=nativeProjectAgents(source,mappings);

@@ -429,7 +429,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             };
             const verified=await buildVerifiedAttempts(row.config,{
                 agent:this.agent,authorize,identity:attempt=>`${row.id}:${attempt}:${row.execution_nonce}`,
-                context:(attempt,feedback)=>({buildId:row.id,executionNonce:row.execution_nonce!,actorEmail:row.actor,attempt,signal:cancellation.controller.signal,
+                context:(attempt,feedback)=>({buildId:row.id,executionNonce:row.execution_nonce!,actorEmail:row.actor,actorRole:'Главный админ',attempt,signal:cancellation.controller.signal,
                     candidates:row.config.agentCandidates??[row.config.source.entrypoint],feedback,requiredFeatures:buildFeatures(row.config),authorize,
                     transaction:work=>this.withLease(ownerLease,()=>this.repository.agentTransaction(ownerLease,work))}),
                 reset:async()=>{

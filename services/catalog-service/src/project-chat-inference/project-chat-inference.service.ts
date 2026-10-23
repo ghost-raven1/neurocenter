@@ -1,3 +1,5 @@
+import {modelPlanningOptions} from '../models/model-planning-options';
+import {automaticModelOptions} from '../models/model-runtime-options';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 import { projectLevel } from '../access/access.model';
@@ -84,10 +86,10 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const model = await this.base(req, projectId, snapshot.modelId, snapshot.modelPin), settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
         const messages = projectChatContext(snapshot.definition.prompt, source, ancestors, learning.messages, settings);
-        const options = { ...(snapshot.definition.temperature === undefined ? {} : { temperature: snapshot.definition.temperature }),
+        const options = automaticModelOptions(model,{}, { ...(snapshot.definition.temperature === undefined ? {} : { temperature: snapshot.definition.temperature }),
             ...(snapshot.definition.topP === undefined ? {} : { top_p: snapshot.definition.topP }),
-            ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) };
-        const result = await withModelUsage({ purpose: 'agent', privateProjectChatRoomId: privateRoomId, actorEmail: actor.email, projectId, agentId: snapshot.agentId,
+            ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) });
+        const result = await withModelUsage({ purpose: 'agent', privateProjectChatRoomId: privateRoomId, actorEmail: actor.email,actorRole:actor.activeRole, projectId, agentId: snapshot.agentId,
             turnId: source.id, operationId: response.id, requiredFeatures: ['project_chat', 'group_chat', ...((source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM) === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]), ...learning.requiredFeatures], beforeInference: () => authorize() },
             () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
         await authorize(false);
@@ -108,7 +110,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     }
     private async settings(model: IModel): Promise<IChatContextSettings> {
         if (model.runtime === 'ollama') return { contextWindowTokens: this.localContextWindow };
-        const row = (await this.models.pool.query<{ options: { contextWindow?: number; maxOutputTokens?: number } }>('SELECT options FROM model_remote_connections WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1', [model.id, model.verificationSha256 ?? null])).rows[0];
+        const row={options:await modelPlanningOptions(this.models.pool,model)};
         return { contextWindowTokens: row?.options.contextWindow ?? null, reservedOutputTokens: row?.options.maxOutputTokens ?? null };
     }
     private async ancestors(projectId: string, source: ProjectChatMessageRow): Promise<ProjectChatMessageRow[]> {

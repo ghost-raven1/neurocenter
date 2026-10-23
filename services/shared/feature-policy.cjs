@@ -11,6 +11,7 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
     if(['choose-root','prepare-bind-project','bind-project'].includes(kind))return (input.bindingMode==='resume'||input.mode==='resume')?[]:['computer_connections'];
     if(kind==='open-project-configuration')return ['project_configuration','computer_connections'];
     if(kind==='scan-opencode-models')return ['opencode_model_sync'];
+    if(kind==='infer-device-codex')return ['device_codex_inference'];
     if(kind==='configure-project-agents')return trustedPayload&&Array.isArray(input.agents)&&input.agents.every(agent=>record(agent).enabled===false)?[]:['agents','computer_connections'];
     if(kind==='publish-project-snapshot')return ['project_snapshots','computer_connections'];
     if(['sync-rag','connect-rag-model'].includes(kind))return ['rag_sync'];

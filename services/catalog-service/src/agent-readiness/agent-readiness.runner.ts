@@ -1,3 +1,5 @@
+import {modelPlanningOptions} from '../models/model-planning-options';
+import {automaticModelOptions} from '../models/model-runtime-options';
 import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -35,17 +37,17 @@ export class AgentTrialRunner {
         const invoke = async (): Promise<Record<string, unknown>> => {
             signal.throwIfAborted();
             await requireFeaturesEnabled([...AGENT_TRIAL_FEATURES, ...(row.request.tool === 'project_search' ? ['project_search' as const] : [])], process.env, globalThis.fetch, signal);
-            const model = await checkpoint(receipt);
-            const options = (await this.policy.models.pool.query<{ options: { contextWindow?: number; maxOutputTokens?: number } }>('SELECT options FROM model_remote_connections WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1', [model.id, model.verificationSha256 ?? null])).rows[0]?.options;
+            const model = await checkpoint(receipt),actor=model.runtime==='device-codex'?await this.policy.actor(req,row.project_id):undefined;
+            const options = await modelPlanningOptions(this.policy.models.pool,model);
             const contextWindow = model.runtime === 'ollama' ? managedChatContextWindow() : options?.contextWindow ?? null;
             const maxOutput = Math.min(256, options?.maxOutputTokens ?? 256);
             const context = chatContext(messages, { contextWindowTokens: contextWindow, reservedOutputTokens: maxOutput });
             if (context.exceeded) throw new BadRequestException(context.reason);
             signal.throwIfAborted();
-            const result = await bounded(withModelUsage({ purpose: 'verification', actorEmail: row.owner_email, projectId: row.project_id, agentId: row.agent_id, operationId: row.id,
+            const result = await bounded(withModelUsage({ purpose: 'verification', actorEmail: row.owner_email,actorRole:actor?.activeRole, projectId: row.project_id, agentId: row.agent_id, operationId: row.id,
                 requiredFeatures: [...AGENT_TRIAL_FEATURES, ...(row.request.tool === 'project_search' ? ['project_search' as const] : [])], beforeInference: async () => { signal.throwIfAborted(); await checkpoint(receipt); signal.throwIfAborted(); } },
-            () => this.runtime.infer(model, 'chat', { messages, stream: false, options: { num_predict: maxOutput, ...(contextWindow && model.runtime !== 'remote-openai' ? { num_ctx: contextWindow } : {}),
-                ...(definition.temperature === undefined ? {} : { temperature: definition.temperature }), ...(definition.topP === undefined ? {} : { top_p: definition.topP }) } }, signal)), signal);
+            () => this.runtime.infer(model, 'chat', { messages, stream: false, options: automaticModelOptions(model,{ num_predict: maxOutput, ...(contextWindow && model.runtime !== 'remote-openai' ? { num_ctx: contextWindow } : {}) },{
+                ...(definition.temperature === undefined ? {} : { temperature: definition.temperature }), ...(definition.topP === undefined ? {} : { top_p: definition.topP }) }) }, signal)), signal);
             const usage = chatUsage(result), previous = receipt.usage;
             receipt.usage = { calls: (previous?.calls ?? 0) + 1, reported: (previous?.reported ?? true) && usage.reported,
                 inputTokens: (previous === undefined || previous.inputTokens !== null) && usage.inputTokens !== null ? (previous?.inputTokens ?? 0) + usage.inputTokens : null,

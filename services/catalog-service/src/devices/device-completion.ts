@@ -1,4 +1,5 @@
 import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../../../shared/project-configuration.cjs';
+import {completeDeviceCodex} from '../models/device-codex-completion';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
@@ -57,6 +58,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         const job = rows[0];
         if(job&&['install','uninstall','apply-local-change','apply-adopt-installation'].includes(job.kind))await client.query('SELECT id FROM bridge_devices WHERE id=$1 FOR UPDATE',[deviceId]);
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
+        const codex=await completeDeviceCodex(client,job,input);
+        if(codex){await client.query('COMMIT');return codex;}
         // Потерянный ACK уже принятого legacy-результата не превращается в повторную запись индекса.
         if (RAG_JOB_KINDS.includes(job.kind) && job.state===input.state && isDeepStrictEqual(job.result ?? {},input.result)) {
             await client.query('COMMIT'); return {ok:true,repeated:true};

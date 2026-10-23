@@ -1,5 +1,5 @@
 export type TModelCapability = 'embedding' | 'vision' | 'chat';
-export type TModelRuntime = 'ollama' | 'remote-openai' | 'remote-ollama';
+export type TModelRuntime = 'ollama' | 'remote-openai' | 'remote-ollama' | 'device-codex';
 
 /** Карточка модели хранит имя в реестре, но не даёт задавать адрес серверного runtime. */
 export interface IModel {

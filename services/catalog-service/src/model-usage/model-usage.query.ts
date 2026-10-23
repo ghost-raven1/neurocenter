@@ -19,7 +19,7 @@ export function modelUsageFilter(query: ModelUsageQuery): UsageFilter {
         catch { throw new BadRequestException('Выберите пользователя или серверные задания.'); }
     }
     if (query.endpoint !== undefined) { if (!['chat', 'embed'].includes(query.endpoint)) throw new BadRequestException('Неизвестный API модели.'); filter.endpoint = query.endpoint as UsageFilter['endpoint']; }
-    if (query.provider !== undefined) { if (!['ollama', 'remote-openai', 'remote-ollama'].includes(query.provider)) throw new BadRequestException('Неизвестный тип подключения.'); filter.provider = query.provider; }
+    if (query.provider !== undefined) { if (!['ollama', 'remote-openai', 'remote-ollama','device-codex'].includes(query.provider)) throw new BadRequestException('Неизвестный тип подключения.'); filter.provider = query.provider; }
     if (query.purpose !== undefined) { if (!MODEL_USAGE_PURPOSES.includes(query.purpose as never)) throw new BadRequestException('Неизвестное назначение вызова.'); filter.purpose = query.purpose as UsageFilter['purpose']; }
     if (query.status !== undefined) { if (!MODEL_USAGE_STATUSES.includes(query.status as never)) throw new BadRequestException('Неизвестное состояние вызова.'); filter.status = query.status as UsageFilter['status']; }
     if (query.cursor !== undefined) {

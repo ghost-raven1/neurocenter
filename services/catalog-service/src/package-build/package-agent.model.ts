@@ -15,7 +15,7 @@ export interface PackageAgentRuntimeReport {passed:boolean;summary?:string;diagn
 export type PackageAgentReview={decision:'publish'}|{decision:'repair';config:BuildConfiguration};
 export type PackageAgentDb=Pick<PoolClient,'query'>;
 export interface PackageAgentContext {
-    buildId:string;executionNonce:string;actorEmail:string;attempt:number;signal:AbortSignal;
+    buildId:string;executionNonce:string;actorEmail:string;actorRole?:string;attempt:number;signal:AbortSignal;
     /** These entrypoints have already been inspected in the original pinned source. */
     candidates:readonly string[];
     /** Trusted argument vectors; model-generated arguments are never executed. */

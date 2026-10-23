@@ -23,7 +23,7 @@ export async function agentConfigurationJobPayload(store:DeviceStore,device:Devi
     revision(input.expectedAgentsRevision);const target=context(device,input.projectId,input.expectedBindingId,input.expectedInstanceId);
     const snapshot=await new ProjectAgentRepository(store.pool).snapshot(input.projectId!);
     if(snapshot.revision!==input.expectedAgentsRevision||snapshot.revision<1)throw new ConflictException('Настройки агентов изменились. Примените актуальную ревизию.');
-    return createProjectAgentsPayload({schemaVersion:2,projectId:input.projectId!,...target,...snapshot,modelRequirements:await agentModelRequirements(store.pool,input.projectId!,snapshot.agents)});
+    return createProjectAgentsPayload({schemaVersion:2,projectId:input.projectId!,...target,...snapshot,modelRequirements:await agentModelRequirements(store.pool,input.projectId!,snapshot.agents,device)});
 }
 /** Rechecked before lease delivery and before local commit; editing desired state invalidates an old queued snapshot. */
 export async function assertAgentConfigurationJob(store:DeviceStore,device:Device,job:Pick<Job,'kind'|'payload'|'project_id'>,db:Pick<PoolClient,'query'>=store.pool):Promise<void>{
@@ -31,7 +31,7 @@ export async function assertAgentConfigurationJob(store:DeviceStore,device:Devic
     const payload=normalizeProjectAgentsPayload(job.payload),target=context(device,job.project_id??undefined,payload.bindingId,payload.instanceId);
     const snapshot=await new ProjectAgentRepository(store.pool).snapshot(job.project_id!,db);
     const {compilation:_compilation,...base}=payload;
-    if(snapshot.revision<1||!isDeepStrictEqual(createProjectAgentsPayload({schemaVersion:2,projectId:job.project_id!,...target,...snapshot,modelRequirements:await agentModelRequirements(db,job.project_id!,snapshot.agents)}),base))throw new ConflictException('Это задание относится к прежней настройке агентов. Примените текущую ревизию.');
+    if(snapshot.revision<1||!isDeepStrictEqual(createProjectAgentsPayload({schemaVersion:2,projectId:job.project_id!,...target,...snapshot,modelRequirements:await agentModelRequirements(db,job.project_id!,snapshot.agents,device)}),base))throw new ConflictException('Это задание относится к прежней настройке агентов. Примените текущую ревизию.');
 }
 /** Old valid receipts remain historical evidence and cannot confirm a newer desired revision or another target. */
 export function assertAgentConfigurationResult(job:Pick<Job,'kind'|'payload'|'project_id'>,result:Record<string,unknown>,failed:boolean):void{

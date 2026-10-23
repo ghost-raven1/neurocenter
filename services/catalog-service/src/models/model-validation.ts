@@ -37,8 +37,9 @@ export function validateModelCreate(value: unknown): IValidatedModelCreate {
     const body = record(value);
     fields(body, ['name', 'description', 'capability', 'model', 'dimension', 'runtime', 'modelVersion']);
     const runtime = body.runtime ?? 'ollama';
-    if (!['ollama', 'remote-openai', 'remote-ollama'].includes(String(runtime))) { throw new BadRequestException('Выберите управляемый Ollama или удалённый API OpenAI/Ollama.'); }
+    if (!['ollama', 'remote-openai', 'remote-ollama','device-codex'].includes(String(runtime))) { throw new BadRequestException('Выберите управляемый Ollama или поддерживаемое подключение модели.'); }
     if (!capabilities.includes(body.capability as TModelCapability)) { throw new BadRequestException('Выберите назначение модели: embedding, vision или chat.'); }
+    if(runtime==='device-codex'&&body.capability==='embedding')throw new BadRequestException('Codex на компьютере поддерживает чат и изображения; embedding недоступен.');
     if (typeof body.model !== 'string' || body.model.length > 200 || /[\x00-\x20\x7f]/.test(body.model)
         || (runtime === 'ollama' ? !modelName.test(body.model) : !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(body.model) || body.model.includes('://'))) {
         throw new BadRequestException('Укажите имя модели Ollama с явным тегом, например qwen3:4b. Адрес реестра задавать нельзя.');

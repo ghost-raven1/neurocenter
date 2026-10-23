@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException,Optional } from '@nestjs/common';
 import type { Request } from 'express';
 import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
 import { DeviceStore } from '../devices/device-store';
@@ -10,16 +10,18 @@ import { validateModelCreate } from './model-validation';
 import { remoteModelBaseUrl } from './remote-model-validation';
 import { openCodeCardMetadata } from './opencode-model-sync.repository';
 import {resolveOpenCodeIdentity,saveOpenCodeIdentity} from './opencode-model-identity';
+import {DeviceCodexService} from './device-codex.service';
+import type {DeviceCodexSource} from '../../../shared/device-codex-inference.cjs';
 
 /** Импортирует только выбранную metadata запись из собственной завершённой очереди и текущей папки. */
 @Injectable()
 export class OpenCodeModelImport {
-    constructor(private readonly models: ModelsService, private readonly devices: DeviceStore) {}
+    constructor(private readonly models: ModelsService, private readonly devices: DeviceStore,@Optional()private readonly codex?:DeviceCodexService) {}
     async import(request: Request, value: unknown) {
         const actor = await this.models.requireMain(request);
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Выберите модель из отчёта OpenCode.');
         const body = value as Record<string, unknown>;
-        if (Object.keys(body).some(key => !['deviceId', 'jobId', 'candidateId', 'name'].includes(key))
+        if (Object.keys(body).some(key => !['deviceId', 'jobId', 'candidateId', 'name','projectId'].includes(key))
             || ['deviceId', 'jobId', 'candidateId'].some(key => typeof body[key] !== 'string' || !/^[a-f0-9-]{36}$/.test(String(body[key])))) throw new BadRequestException('Нужны компьютер, отчёт и выбранная модель.');
         const device = await this.devices.owned({ email: actor, activeRole: 'Главный админ' }, String(body.deviceId));
         const result = await this.models.pool.query<{ project_id: string|null; result: unknown; payload: Record<string, unknown> }>(`SELECT project_id,result,payload FROM bridge_jobs
@@ -33,6 +35,15 @@ export class OpenCodeModelImport {
         const context = job.payload.scope==='global'&&!job.project_id?{scope:'global',deviceId:device.id}:{scope:'project',projectId:job.project_id,bindingId:managedBinding(device.report,job.project_id??undefined),instanceId:binding?.instanceId};
         if (!validModelScan(job.result, context)) throw new ConflictException('Компьютер, папка или отчёт изменились. Повторите чтение OpenCode.');
         const candidate = job.result.candidates.find(item => item.candidateId === body.candidateId);
+        if(candidate?.blocker==='codex-local-auth'){
+            if(!this.codex)throw new ConflictException('Обновите сервисы для подключения Codex на компьютере.');
+            if(body.projectId!==undefined&&typeof body.projectId!=='string'||job.project_id&&body.projectId!==undefined&&body.projectId!==job.project_id)throw new BadRequestException('Источник Codex относится к другому проекту.');
+            const projectId=job.project_id??(typeof body.projectId==='string'?(await this.models.resolveProject(request,body.projectId,3)).id:null);
+            const name=typeof body.name==='string'?body.name.trim():candidate.name;
+            if(!name||name.length>128||/[\x00-\x1f\x7f]/.test(name))throw new BadRequestException('Укажите название модели до 128 символов.');
+            const source:DeviceCodexSource=context.scope==='global'?{scope:'global'}:{scope:'project',projectId:job.project_id!,bindingId:context.bindingId!,instanceId:context.instanceId!};
+            return this.codex.importModel(request,device,candidate,source,projectId,name,job.result.expiresAt);
+        }
         if (!candidate || candidate.blocker || !candidate.runtime || !candidate.baseUrl) throw new ConflictException('Это подключение нельзя импортировать автоматически. Укажите поддерживаемый API вручную.');
         const baseUrl = remoteModelBaseUrl(candidate.baseUrl);
         const metadata=openCodeCardMetadata(candidate,job.result.scope);

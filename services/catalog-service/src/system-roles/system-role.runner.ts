@@ -1,3 +1,5 @@
+import {modelPlanningOptions} from '../models/model-planning-options';
+import {automaticModelOptions} from '../models/model-runtime-options';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
@@ -53,17 +55,17 @@ export class SystemRoleRunner {
         for (let attempt = 0; attempt < ROLE_BUDGET.calls; attempt++) {
             if (messages.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0) > ROLE_BUDGET.contextBytes) throw new BadRequestException('Уменьшите выбранный контекст.');
             signal.throwIfAborted(); await this.features(flags, process.env, globalThis.fetch, signal); const model = await checkpoint();
-            const options = (await this.policy.models.pool.query<{ options: { contextWindow?: number; maxOutputTokens?: number } }>('SELECT options FROM model_remote_connections WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1', [model.id, model.verificationSha256 ?? null])).rows[0]?.options;
+            const options = await modelPlanningOptions(this.policy.models.pool,model);
             const contextWindow = model.runtime === 'ollama' ? managedChatContextWindow() : options?.contextWindow ?? null;
             const maxOutput = Math.min(2048, options?.maxOutputTokens ?? 2048), context = chatContext(messages, { contextWindowTokens: contextWindow, reservedOutputTokens: maxOutput });
             if (context.exceeded) throw new BadRequestException(context.reason);
             await this.repository.reserveCall(row.id, row.lease_token, async (db, current) => { await this.policy.current(req, current, db); });
             // Admission may wait. Re-read flags, authority, sources and model pin immediately before the paid request.
-            const response = await abortable(() => withModelUsage({ purpose: 'agent', actorEmail: row.actor, projectId: row.project_id, agentId: row.agent_id,
-                operationId: 'system-role-' + row.id, requiredFeatures: flags, beforeInference: async () => {
+            const response = await abortable(() => withModelUsage({ purpose: 'agent', actorEmail: row.actor,actorRole:row.actor_role, projectId: row.project_id, agentId: row.agent_id,
+                operationId: row.id, requiredFeatures: flags, beforeInference: async () => {
                     signal.throwIfAborted(); await this.features(flags, process.env, globalThis.fetch, signal); await checkpoint(); signal.throwIfAborted();
-                } }, () => this.runtime.infer(model, 'chat', { messages, stream: false, options: { num_predict: maxOutput,
-                ...(contextWindow && model.runtime !== 'remote-openai' ? { num_ctx: contextWindow } : {}) } }, signal)), signal);
+                } }, () => this.runtime.infer(model, 'chat', { messages, stream: false, options: automaticModelOptions(model,{ num_predict: maxOutput,
+                ...(contextWindow && model.runtime !== 'remote-openai' ? { num_ctx: contextWindow } : {}) }) }, signal)), signal);
             await checkpoint(); // A completed paid result is retained if only the feature flag changed.
             try {
                 const message = response.message as { role?: unknown; content?: unknown } | undefined;

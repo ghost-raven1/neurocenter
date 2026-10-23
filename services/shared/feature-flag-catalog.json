@@ -361,5 +361,17 @@
       "model_hosting"
     ],
     "defaultEnabled": true
+  },
+  {
+    "key": "device_codex_inference",
+    "name": "Codex на компьютере",
+    "description": "Запросы чатов и агентов через личный мост. Авторизация остаётся на компьютере.",
+    "group": "models",
+    "dependsOn": [
+      "codex_connector",
+      "computer_connections",
+      "model_catalog"
+    ],
+    "defaultEnabled": false
   }
 ]

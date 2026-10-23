@@ -4,6 +4,7 @@ import type {IModel} from '../models/model.types';
 import {projectEmbeddingPin} from '../models/project-embedding.validation';
 import {modelInferenceBody} from '../models/inference.controller';
 import type {IModelInferenceRuntime} from '../models/model-runtime';
+import {automaticModelOptions} from '../models/model-runtime-options';
 import {withModelUsage} from '../model-usage/model-usage.context';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import type {FeatureFlagKey} from '../../../shared/feature-flags.cjs';
@@ -21,7 +22,7 @@ import {ChatResearchTools,RESEARCH_LIMITS} from './chat-research-tools';
 export interface ResearchRoundBudget {externalCalls:number;validatedManifest?:string}
 export interface ResearchResult {messages:ChatMessage[];projectSources:ChatProjectSource[];externalSources:ResearchExternalSource[];assertCurrent:(db?:ChatDb)=>Promise<void>;limitReached?:boolean}
 export interface ResearchScope {
-    req:Request;owner:string;row:ConversationRow;turn:TurnRow;responseId?:string;agentId?:string;model:IModel;messages:ChatMessage[];
+    req:Request;owner:string;actorRole?:string;row:ConversationRow;turn:TurnRow;responseId?:string;agentId?:string;model:IModel;messages:ChatMessage[];
     initialProjectSources?:ChatProjectSource[];settings:IChatContextSettings;signal:AbortSignal;options?:Record<string,unknown>;budget:ResearchRoundBudget;
     assertCurrent(db?:ChatDb):Promise<void>;
     beforeInference?():Promise<void>;requiredFeatures?:readonly FeatureFlagKey[];
@@ -86,9 +87,9 @@ export class ChatResearchExecutor {
             let command:ResearchCommand;
             try {
                 await scope.beforeInference?.();
-                const result=await withModelUsage({purpose:'research',actorEmail:scope.owner,projectId:scope.row.project_id,turnId:scope.turn.id,
+                const result=await withModelUsage({purpose:'research',actorEmail:scope.owner,actorRole:scope.actorRole,projectId:scope.row.project_id,turnId:scope.turn.id,
                     agentId:scope.agentId,beforeInference:async()=>{await active();await scope.beforeInference?.();},requiredFeatures:flags()},()=>this.runtime.infer(scope.model,'chat',modelInferenceBody('chat',{messages,stream:false,
-                        options:{...scope.options,num_predict:settings.reservedOutputTokens}}),scope.signal));
+                        options:automaticModelOptions(scope.model,{num_predict:settings.reservedOutputTokens},scope.options)}),scope.signal));
                 await current();const message=result.message as {role?:unknown;content?:unknown}|undefined;
                 if(message?.role!=='assistant'||typeof message.content!=='string'||result.done_reason!=='stop')throw new BadRequestException('Модель не завершила выбор шага исследования. Можно повторить сообщение.');
                 command=researchCommand(message.content,{project:request.project,external:!!request.external});

@@ -15,10 +15,15 @@ export async function approvedRuntimeArtifact(pool: Pool, deviceId: string, jobI
                 AND p.digest=j.payload->>'expectedChangeDigest' AND p.revision::text=j.payload->>'changePlanRevision'
                 AND p.purpose='repair' AND p.expires_at>now() AND p.applied_job_id IS NULL
                 AND p.summary->'runtimeRepairRequired'='true'::jsonb)))`, [jobId,deviceId,lease]);
-    const payload=rows[0]?.payload;
+    const inference=rows.length?undefined:(await pool.query(`SELECT m.connector_package FROM device_model_calls c
+        JOIN bridge_jobs j ON j.id=c.job_id JOIN model_device_connections m ON m.model_id=c.model_id AND m.revision=c.connection_revision
+        WHERE j.id=$1 AND j.device_id=$2 AND j.lease=$3 AND j.kind='infer-device-codex'
+        AND j.state='running' AND j.lease_until>clock_timestamp() AND c.cancelled_at IS NULL AND c.result IS NULL AND c.deadline_at>clock_timestamp()
+        AND m.revoked_at IS NULL`,[jobId,deviceId,lease])).rows[0];
+    const payload=rows[0]?.payload??(inference?{connectorPackage:inference.connector_package}:undefined);
     const connector=payload?.connectorPackage as IPackage|undefined;
-    if(connector&&(!verifyPackage(connector)||connector.plugin.kind!=='plugin'||connector.plugin.id!==payload.descriptor?.connector?.assetId
-        ||connector.plugin.version!==payload.descriptor?.connector?.version||connector.manifest.sha256!==payload.descriptor?.connector?.manifest))throw new ConflictException('Комплект коннектора не соответствует заданию.');
+    if(connector&&(!verifyPackage(connector)||connector.plugin.kind!=='plugin'||!inference&&(connector.plugin.id!==payload.descriptor?.connector?.assetId
+        ||connector.plugin.version!==payload.descriptor?.connector?.version||connector.manifest.sha256!==payload.descriptor?.connector?.manifest)))throw new ConflictException('Комплект коннектора не соответствует заданию.');
     const packages:IPackage[]=connector?[connector]:payload?.installSet?.packages??(payload?.package?[payload.package]:[]);
     const descriptors=packages.flatMap(pkg=>Array.isArray(pkg.config?.extra?.runtimeArtifacts)?pkg.config.extra.runtimeArtifacts:[]) as Array<{sha256:string;compressedBytes:number}>;
     const descriptor=descriptors.find(item=>item.sha256===sha256);

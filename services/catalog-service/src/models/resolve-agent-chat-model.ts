@@ -10,7 +10,9 @@ export async function resolveAgentChatModel(models: ModelsService, req: Request,
     const catalogId = selector?.startsWith('neurocenter/') ? selector.slice('neurocenter/'.length) : selector;
     let candidates = catalog.items.filter(model => catalog.assignedModelIds.includes(model.id) && (model.id === catalogId || model.model === selector));
     if (selector && !candidates.length) {
-        const linked = (await db.query<{ model_id: string }>("SELECT DISTINCT model_id FROM opencode_model_sources WHERE project_id=$1 AND state='present' AND provider||'/'||config_key=$2 AND model_id IS NOT NULL", [projectId, selector])).rows.map(row => row.model_id);
+        const linked = (await db.query<{ model_id: string }>(`SELECT DISTINCT model_id FROM opencode_model_sources WHERE project_id=$1 AND state='present' AND provider||'/'||config_key=$2 AND model_id IS NOT NULL
+            UNION SELECT model_id FROM model_device_connections WHERE revoked_at IS NULL AND (source->>'scope'='global' OR source->>'projectId'=$1)
+                AND (expected_candidate->>'provider')||'/'||COALESCE(expected_candidate->>'configKey',expected_candidate->>'model')=$2`, [projectId, selector])).rows.map(row => row.model_id);
         candidates = catalog.items.filter(model => catalog.assignedModelIds.includes(model.id) && linked.includes(model.id));
     }
     let selected = fallback;

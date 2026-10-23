@@ -1,3 +1,4 @@
+import {automaticModelOptions} from '../models/model-runtime-options';
 import {ConflictException} from '@nestjs/common';
 import type {ModelsService} from '../models/models.service';
 import type {IModelInferenceRuntime} from '../models/model-runtime';
@@ -57,7 +58,7 @@ export class PackageAgentService {
         const model=await this.models.getPinned(agent.modelId,agent.expectedModelPin);
         if(!model||model.archivedAt||model.id!==agent.modelId||model.capability!=='chat'&&model.capability!=='vision'
             ||projectEmbeddingPin(model)!==agent.expectedModelPin
-            ||(model.runtime==='ollama'?!/^[a-f0-9]{64}$/.test(model.manifestSha256??''):!['remote-openai','remote-ollama'].includes(model.runtime)
+            ||(model.runtime==='ollama'?!/^[a-f0-9]{64}$/.test(model.manifestSha256??''):!['remote-openai','remote-ollama','device-codex'].includes(model.runtime)
                 ||!/^[a-f0-9]{64}$/.test(model.verificationSha256??'')||!model.modelVersion))
             throw new ConflictException('Выбранная модель агента недоступна или её точный pin не подтверждён.');
         return model;
@@ -93,9 +94,9 @@ export class PackageAgentService {
                 context.signal.throwIfAborted();await journal.assertOwner();await this.pinned(agent);context.signal.throwIfAborted();
             };
             await beforeInference();
-            const response=await withModelUsage({purpose:'agent',actorEmail:context.actorEmail,operationId:context.buildId,agentId:PACKAGE_AGENT_ID,
+            const response=await withModelUsage({purpose:'agent',actorEmail:context.actorEmail,actorRole:context.actorRole,operationId:context.buildId,agentId:PACKAGE_AGENT_ID,
                 requiredFeatures:['tool_build_agent',...(context.requiredFeatures??[])],beforeInference},
-            ()=>this.runtime.infer(model,'chat',{messages,stream:false,think:false,options},context.signal));
+            ()=>this.runtime.infer(model,'chat',{messages,stream:false,think:false,options:automaticModelOptions(model,options)},context.signal));
             context.signal.throwIfAborted();await beforeInference();
             if(response.done!==true||response.done_reason!=='stop'||!agentObject(response.message)||typeof response.message.content!=='string'
                 ||Buffer.byteLength(response.message.content)>8192)throw invalid();
