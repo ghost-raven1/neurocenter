@@ -25,6 +25,7 @@ async function fixture(failure?:Error,rollbackFails=false){
     const query=vi.fn(async(sql:string)=>{
         events.push(sql);
         if(sql.includes('EXTRACT(EPOCH'))return {rows:[{lock_ms:'0',statement_ms:'0'}]};
+        if(sql.startsWith('SELECT is_main_admin'))return {rows:[{is_main_admin:true,enabled:true}]};
         if(sql.includes('pg_advisory_xact_lock')&&failure)throw failure;
         if(sql==='ROLLBACK'&&rollbackFails)throw Error('Rollback ACK lost');
         return {rows:[]};

@@ -12,6 +12,7 @@ import type {ToolAsset,SkillAsset} from '@neurocenter/asset-contract';
 import {validateAsset,toToolPublication} from '@neurocenter/asset-contract';
 import {createHash} from 'node:crypto';
 import {AssetSourcesService} from '../asset-sources/asset-sources.service';
+import {authorizeImportActor} from '../asset-sources/import-worker';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
@@ -466,23 +467,24 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await this.progress(row.id,60,'Проверка SKILL.md, ресурсов и связанной версии ассета');
         const prepared=await this.sources.prepareLocalSkill(built.asset,row.request_key,built.sourceFile,{createOnly:true}),lease=this.currentLease();
         await this.withLease(lease,async()=>{
-            await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
-            await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
+            const guard=async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);};
+            await guard();await this.repository.beginPublication(row.id,lease,guard);
             await lease.query('BEGIN');
             try{
                 await configureBuildPublicationTransaction(lease);
                 await lease.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:skill:common/'+built.asset.card.slug]);
+                await authorizeImportActor(lease,row.actor,true);await guard();
                 const native=await this.sources.publishLocalSkill(prepared,row.actor);
-                await this.requireMain({email:row.actor,activeRole:'Главный админ'});this.currentLease(lease);
+                await guard();
                 const source=await this.sources.recordLocalSkill(lease,prepared,native,row.actor);
                 await this.repository.completeWithPublication(lease,row.id,{catalogId:native.id,name:built.asset.card.name,version:native.version,kind:'skill',...source});
-                this.currentLease(lease);await lease.query('COMMIT');
+                await guard();await lease.query('COMMIT');
             }catch(error){try{await lease.query('ROLLBACK');}catch{this.discardLease(lease);}throw error;}
         });
         await this.notifySkillPublication();
     }
     private async importSkillAsset(actor:IAccessActor,asset:SkillAsset,requestKey:string){
-        return importBuiltSkill(this.pool,this.sources,asset,requestKey,actor.email,()=>this.requireMain(actor),()=>this.notifySkillPublication());
+        return importBuiltSkill(this.pool,this.sources,asset,requestKey,actor.email,async()=>{await this.requireMain(actor);await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures('skill')]);},()=>this.notifySkillPublication());
     }
     private async notifySkillPublication(){
         await fetch((process.env.API_GATEWAY_URL||'http://localhost:4000')+'/internal/events',{
