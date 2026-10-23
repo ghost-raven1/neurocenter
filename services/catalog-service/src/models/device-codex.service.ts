@@ -110,8 +110,13 @@ export class DeviceCodexService {
                         throw new ServiceUnavailableException('Запрос Codex отменён. Полученная квитанция сохранена без применения результата.');
                     if (result && 'response' in result)
                         return { ...result.response };
-                    if (result && 'error' in result)
+                    if (result && 'error' in result) {
+                        if (!call.dispatched_at && result.error.code === 'runtime-cache-full')
+                            throw new ServiceUnavailableException('На компьютере заполнен кэш готовых комплектов. Запрос остановлен до отправки в Codex. Попросите владельца компьютера открыть «Мои компьютеры → Подробнее → Кэш комплектов» и увеличить лимит. Затем повторите запрос. Автоматический повтор не выполняется.');
+                        if (!call.dispatched_at && result.error.code === 'disk-full')
+                            throw new ServiceUnavailableException('На компьютере недостаточно свободного места для комплекта Codex. Запрос остановлен до отправки в Codex. Попросите владельца компьютера освободить место на диске, затем отправьте запрос снова. Автоматический повтор не выполняется.');
                         throw new ServiceUnavailableException('Codex не завершил запрос (' + result.error.code + '). Полученный результат не запускается повторно автоматически.');
+                    }
                     signal?.throwIfAborted();
                     if (Date.now() >= Date.parse(deadlineAt))
                         throw new ServiceUnavailableException('Codex не ответил вовремя. Запрос остановлен; автоматический повтор не выполняется.');

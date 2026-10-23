@@ -7,6 +7,13 @@ import {deviceCodexIdentityDigest} from '../src/models/device-codex-identity';
 const id='10000000-0000-4000-8000-000000000001',sha='a'.repeat(64);
 const payload={protocol:DEVICE_CODEX_PROTOCOL,callId:id,modelId:'model-local',modelPin:sha,connectionRevision:1,source:{scope:'global'},deadlineAt:'2026-10-24T00:00:00.000Z'};
 describe('Local Codex protocol preserves privacy and declared capabilities',()=>{
+    it.each(['runtime-cache-full','disk-full'])('accepts only the bounded preparation code %s, without local details',code=>{
+        const result={protocol:DEVICE_CODEX_PROTOCOL,callId:id,error:{code}};
+        expect(normalizeDeviceCodexResult(result)).toEqual(result);
+        expect(deviceCodexResultDigest(result)).toMatch(/^[a-f0-9]{64}$/);
+        expect(()=>normalizeDeviceCodexResult({...result,error:{code,message:'PRIVATE_TOKEN /local/path'}})).toThrow();
+        expect(()=>normalizeDeviceCodexResult({...result,error:{code:'arbitrary-capacity-code'}})).toThrow();
+    });
     it('public job rejects prompt, connector package and arbitrary source fields',()=>{
         expect(normalizeDeviceCodexPayload(payload)).toEqual(payload);
         for(const extra of [{messages:[]},{connectorPackage:{}},{source:{scope:'global',path:'/private'}}])expect(()=>normalizeDeviceCodexPayload({...payload,...extra})).toThrow();

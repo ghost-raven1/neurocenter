@@ -7,6 +7,7 @@ import {assertCodexModelSource} from './model-source.js';
 import {DEVICE_CODEX_PROTOCOL,normalizeDeviceCodexPayload,normalizeDeviceCodexContext,type DeviceCodexContext,type DeviceCodexPayload,type DeviceCodexResult} from './contract.js';
 import {readCodexReceipt,writeCodexReceipt,codexCompletionSummary,type CodexReceipt} from './receipts.js';
 import {readCodexResponse} from './response.js';
+import {RuntimeArtifactCapacityError} from '../runtime-artifacts/capacity-error.js';
 
 interface CodexJob {id:string;lease:string;payload:unknown}
 interface ExecutionDependencies {
@@ -69,6 +70,7 @@ export async function runDeviceCodexJob(job:CodexJob,deviceId:string,authorize:(
     const controller=new AbortController(),deadline=Date.parse(payload.deadlineAt)-Date.now();
     const timer=setTimeout(()=>controller.abort(new Error('deadline')),Math.max(0,deadline));
     let poll:ReturnType<typeof setInterval>|undefined,pollPending=false,dispatched=false,denied=false;
+    let stage:'preflight'|'runtime'|'transport'='preflight';
     let checkIdentity:()=>Promise<void>=async()=>{};
     const check=async()=>{
         controller.signal.throwIfAborted();
@@ -84,7 +86,7 @@ export async function runDeviceCodexJob(job:CodexJob,deviceId:string,authorize:(
         const checkSource=()=>deps.checkLocal?deps.checkLocal(context):assertCodexModelSource(context,deviceId,check,async()=>{controller.signal.throwIfAborted();await checkIdentity();});
         await check();await checkSource();await check();
         const body=requestBody(context);
-        await deps.prepare?.(context,check);await check();
+        stage='runtime';await deps.prepare?.(context,check);stage='transport';await check();
         poll=setInterval(()=>{
             if(pollPending)return;pollPending=true;
             void checkSource().then(check).catch(()=>controller.abort(new Error('authorization'))).finally(()=>{pollPending=false;});
@@ -105,9 +107,10 @@ export async function runDeviceCodexJob(job:CodexJob,deviceId:string,authorize:(
         const response=await transport('https://chatgpt.com/backend-api/codex/responses',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
         result=await readCodexResponse(response,context.model,payload.callId,controller.signal);
         await check();
-    }catch{
+    }catch(error){
         // A complete response remains private evidence; the server decides whether a late ACK may apply it.
-        if(!result)result=failed(payload.callId,receipt?'unknown-after-send':Date.now()>=Date.parse(payload.deadlineAt)?'deadline':denied||controller.signal.aborted?'authorization':'unavailable');
+        const preparationCode=stage==='runtime'&&error instanceof RuntimeArtifactCapacityError?error.code:undefined;
+        if(!result)result=failed(payload.callId,receipt?'unknown-after-send':Date.now()>=Date.parse(payload.deadlineAt)?'deadline':denied||controller.signal.aborted?'authorization':preparationCode??'unavailable');
     }finally{clearTimeout(timer);if(poll)clearInterval(poll);controller.abort();}
     return finish(result!);
 }

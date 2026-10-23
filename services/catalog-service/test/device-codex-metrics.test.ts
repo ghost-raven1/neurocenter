@@ -15,7 +15,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
-function fixture(outcome:'success'|'queued-cancel'|'dispatched-cancel'){
+function fixture(outcome:'success'|'queued-cancel'|'dispatched-cancel'|'runtime-cache-full'|'disk-full'|'runtime-cache-full-after-dispatch'){
     const model:IModel={id:'model-codex',name:'Codex',description:'',runtime:'device-codex',capability:'chat',model:'codex',modelVersion:'codex',manifestSha256:null,verificationSha256:'b'.repeat(64),dimension:null,source:'custom',revision:1,createdAt:'',updatedAt:''};
     const abort=new AbortController(),metrics=createModelDispatchMetrics();metrics.progress=vi.fn(async()=>undefined);
     let jobId='',callId='',cancelled=false;const publicPayloads:unknown[]=[],privateRequests:unknown[]=[];
@@ -25,11 +25,12 @@ function fixture(outcome:'success'|'queued-cancel'|'dispatched-cancel'){
         if(sql.startsWith('INSERT INTO device_model_calls')){callId=String(args[0]);privateRequests.push(JSON.parse(String(args[10])));}
         if(sql.startsWith('UPDATE device_model_calls SET cancelled_at'))cancelled=true;
         if(sql.startsWith('SELECT c.*,j.state')){
-            if(outcome!=='success'&&!cancelled)abort.abort(new Error('explicit cancellation'));
+            const preparationFailure=outcome==='runtime-cache-full'||outcome==='disk-full'||outcome==='runtime-cache-full-after-dispatch';
+            if(outcome!=='success'&&!preparationFailure&&!cancelled)abort.abort(new Error('explicit cancellation'));
             return {rows:[{id:callId,job_id:jobId,model_id:model.id,device_id:'device',owner_email:'owner@example.test',actor_role:'Главный админ',project_id:null,
                 model_pin:projectEmbeddingPin(model),connection_revision:1,deadline_at:new Date(Date.now()+60000),state:cancelled?'cancelled':'running',lease:'lease',
-                dispatched_at:outcome==='queued-cancel'?null:new Date(Date.now()-10),cancelled_at:cancelled?new Date():null,
-                result:outcome==='success'?{protocol:DEVICE_CODEX_PROTOCOL,callId,response}:null}]};
+                dispatched_at:outcome==='queued-cancel'||outcome==='runtime-cache-full'||outcome==='disk-full'?null:new Date(Date.now()-10),cancelled_at:cancelled?new Date():null,
+                result:outcome==='success'?{protocol:DEVICE_CODEX_PROTOCOL,callId,response}:preparationFailure?{protocol:DEVICE_CODEX_PROTOCOL,callId,error:{code:outcome==='disk-full'?'disk-full':'runtime-cache-full'}}:null}]};
         }
         return {rows:[],rowCount:1};
     });
@@ -45,6 +46,21 @@ function fixture(outcome:'success'|'queued-cancel'|'dispatched-cancel'){
 }
 
 describe('Device queue records durable one-send admission separately from provider usage',()=>{
+    it.each(['runtime-cache-full','disk-full'] as const)('%s explains a pre-dispatch stop to the user without starting a retry',async code=>{
+        const f=fixture(code);let message='';
+        try{await f.run();}catch(error){message=(error as Error).message;}
+        expect(message).toMatch(/до отправки/);expect(message).toMatch(/владельц.*компьютера/);
+        expect(message).toMatch(code==='runtime-cache-full'?/кэш/:/диске/);
+        if(code==='runtime-cache-full')expect(message).toContain('Мои компьютеры → Подробнее → Кэш комплектов» и увеличить лимит');
+        expect(message).not.toMatch(/PRIVATE|runtime-cache-full|disk-full/);
+        expect(f.metrics.dispatchCount).toBe(0);expect(f.publicPayloads).toHaveLength(1);expect(f.privateRequests).toHaveLength(1);
+    });
+    it('does not claim an unsent request when the durable call already has dispatch admission',async()=>{
+        const f=fixture('runtime-cache-full-after-dispatch');let message='';
+        try{await f.run();}catch(error){message=(error as Error).message;}
+        expect(message).toMatch(/Codex не завершил запрос/);expect(message).not.toMatch(/до отправки|не отправлен/);
+        expect(f.metrics.dispatchCount).toBe(1);expect(f.publicPayloads).toHaveLength(1);
+    });
     it('queued cancellation reserves one private call but records zero provider dispatches',async()=>{
         const f=fixture('queued-cancel');await expect(f.run()).rejects.toThrow('explicit cancellation');
         expect(f.publicPayloads).toHaveLength(1);expect(f.privateRequests).toHaveLength(1);expect(f.metrics.dispatchCount).toBe(0);expect(f.metrics.dispatchedAt).toBeNull();

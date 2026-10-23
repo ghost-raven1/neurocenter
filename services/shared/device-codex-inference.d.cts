@@ -69,7 +69,7 @@ export type DeviceCodexResult = {
     protocol: typeof DEVICE_CODEX_PROTOCOL;
     callId: string;
     error: {
-        code: 'cancelled' | 'deadline' | 'authorization' | 'unavailable' | 'response' | 'unknown-after-send';
+        code: 'cancelled' | 'deadline' | 'authorization' | 'unavailable' | 'response' | 'unknown-after-send' | 'runtime-cache-full' | 'disk-full';
     };
 };
 export function normalizeDeviceCodexPayload(value: unknown): DeviceCodexPayload;

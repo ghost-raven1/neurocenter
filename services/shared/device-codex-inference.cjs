@@ -48,7 +48,7 @@ function normalizeDeviceCodexContext(v){
 /** Only a bounded completed response or a non-secret error code can be saved as a private receipt. */
 function normalizeDeviceCodexResult(v){
  if(!record(v)||v.protocol!==DEVICE_CODEX_PROTOCOL||!uuid(v.callId)||Buffer.byteLength(JSON.stringify(v))>512*1024)throw new TypeError('Invalid Codex receipt.');
- if(exact(v,['protocol','callId','error'])&&exact(v.error,['code'])&&['cancelled','deadline','authorization','unavailable','response','unknown-after-send'].includes(v.error.code))return {protocol:v.protocol,callId:v.callId,error:{code:v.error.code}};
+ if(exact(v,['protocol','callId','error'])&&exact(v.error,['code'])&&['cancelled','deadline','authorization','unavailable','response','unknown-after-send','runtime-cache-full','disk-full'].includes(v.error.code))return {protocol:v.protocol,callId:v.callId,error:{code:v.error.code}};
  const r=v.response;
  if(!exact(v,['protocol','callId','response'])||!exact(r,['model','done','done_reason','message','prompt_eval_count','eval_count','usage_reported'])||!text(r.model,200)||r.done!==true||!['stop','length'].includes(r.done_reason)
   ||!exact(r.message,['role','content'])||r.message.role!=='assistant'||typeof r.message.content!=='string'||!r.message.content.trim()||Buffer.byteLength(r.message.content)>480*1024

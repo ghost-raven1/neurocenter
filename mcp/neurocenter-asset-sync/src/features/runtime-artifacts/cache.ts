@@ -9,6 +9,7 @@ import { hash, stateDir } from '../../bridge/state.js';
 import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
 import { inspectRuntimeArchive, LIMITS, normalizeRuntimeArtifacts, portablePath, runtimeArtifactTarget, type RuntimeArtifact, type RuntimeArtifactEntry } from './model.js';
+import { RuntimeArtifactCapacityError } from './capacity-error.js';
 
 export interface RuntimeArtifactResolution { target: string; sha256: string; root: string; entrypoint: string; executable: boolean }
 export interface ArtifactDownloadOptions {
@@ -42,7 +43,7 @@ async function usage(root: string): Promise<number> {
         const filename = path.join(root, item.name); const info = await fs.lstat(filename);
         if (info.isSymbolicLink() || !info.isDirectory() && (!info.isFile() || info.nlink !== 1)) { throw new Error('Ссылки и специальные файлы в кэше запрещены.'); }
         bytes += info.isDirectory() ? await usage(filename) : info.size;
-        if (bytes > LIMITS.cacheBytes) { throw new Error('Кэш готовых комплектов превышает 2 ГиБ. Удалите неиспользуемые комплекты через администратора.'); }
+        if (bytes > LIMITS.cacheBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Кэш готовых комплектов превышает 2 ГиБ. Удалите неиспользуемые комплекты через администратора.'); }
     }
     return bytes;
 }
@@ -158,8 +159,8 @@ export async function ensureRuntimeArtifact(pkg: Package, options: ArtifactDownl
             }
         }
         const currentBytes = await usage(root); const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
-        if (currentBytes + required > LIMITS.cacheBytes) { throw new Error('Для нового комплекта недостаточно места в кэше 2 ГиБ. Прежняя установка сохранена.'); }
-        const disk = await fs.statfs(root, { bigint: true }); if (disk.bavail * disk.bsize < BigInt(required + 128 * 1024 ** 2)) { throw new Error('На диске недостаточно свободного места для готового комплекта. Прежняя установка сохранена.'); }
+        if (currentBytes + required > LIMITS.cacheBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Для нового комплекта недостаточно места в кэше 2 ГиБ. Прежняя установка сохранена.'); }
+        const disk = await fs.statfs(root, { bigint: true }); if (disk.bavail * disk.bsize < BigInt(required + 128 * 1024 ** 2)) { throw new RuntimeArtifactCapacityError('disk-full','На диске недостаточно свободного места для готового комплекта. Прежняя установка сохранена.'); }
         await fs.mkdir(stage, { mode: 0o700 });
         const ownerHandle = await fs.open(path.join(stage, '.owner.json'), 'wx', 0o600);
         try { await ownerHandle.writeFile(JSON.stringify({schemaVersion: 1, id: stageId, pid: process.pid})); await ownerHandle.sync(); } finally { await ownerHandle.close(); }
