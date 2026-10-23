@@ -49,9 +49,9 @@ vi.mock('antd', () => {
         Button: ({children, onClick}: {children: ReactNode; onClick?: () => void}) => {ui.buttons.set(String(children), {onClick}); return children;}};
 });
 let projectId: string | undefined, canManage = true;
-function render(agents = false) {hooks.begin(); ui.buttons.clear(); ui.cards = []; ui.modal = undefined; ui.importModal = undefined;
+function render(agents = false, commit = true) {hooks.begin(); ui.buttons.clear(); ui.cards = []; ui.modal = undefined; ui.importModal = undefined;
     const html = renderToStaticMarkup(agents ? createElement(AgentCatalog, {projectId, canManage, isMain: true, bridge: bridgeFixture()})
-        : createElement(ModelCatalog, {projectId, canManage, isMain: true})); hooks.commit(); return html;}
+        : createElement(ModelCatalog, {projectId, canManage, isMain: true})); if (commit) hooks.commit(); return html;}
 beforeEach(() => {hooks = adminSetupHooks(); projectId = selection.projectId; canManage = true; ui.owner = 'admin-a'; ui.error = ''; vi.clearAllMocks(); bridge = bridgeFixture(); bridge.choose = ui.choose;});
 afterEach(() => hooks.dispose());
 
@@ -79,6 +79,12 @@ describe('Catalog and agent handoff into local provider setup', () => {
         ui.owner = 'admin-b'; configure(selection.deviceId); render(); expect(ui.modal).toBeUndefined(); expect(ui.choose).not.toHaveBeenCalled();
         projectId = undefined; render(); ui.buttons.get('Из OpenCode')!.onClick!(); render(); expect(ui.importModal!.onConfigureCodex).toBeUndefined();
         projectId = selection.projectId; canManage = false; render(); ui.buttons.get('Из OpenCode')!.onClick!(); render(); expect(ui.importModal!.onConfigureCodex).toBeUndefined();
+    });
+    it.each(['project', 'permission'])('A retained Codex handoff cannot change the shared computer after %s changes, before effects commit', mode => {
+        render(); ui.buttons.get('Из OpenCode')!.onClick!(); render(); const configure = ui.importModal!.onConfigureCodex!;
+        if (mode === 'project') projectId = 'prj-next'; else canManage = false;
+        render(false, false); configure(selection.deviceId); expect(ui.choose).not.toHaveBeenCalled();
+        hooks.commit(); render(); expect(ui.modal).toBeUndefined();
     });
     it.each(['project', 'permission'])('No setup is created without %s', mode => {
         if (mode === 'project') projectId = undefined; else canManage = false; render(); expect(ui.buttons.has('Настроить в OpenCode')).toBe(false); expect(ui.modal).toBeUndefined();

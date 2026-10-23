@@ -53,6 +53,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
     const formScope = JSON.stringify([scope, projectId]), previousScope = useRef(formScope);
+    const providerContext = useRef({formScope, canManage}); providerContext.current = {formScope, canManage};
     useEffect(() => {
         if (previousScope.current === formScope) return;
         previousScope.current = formScope;
@@ -62,13 +63,13 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         if (captureOwner()() && previousScope.current === formScope && projectId && canManage) setProviderSetup({scope: formScope, modelId});
     };
     const openCodexProvider = (deviceId: string): void => {
-        if (!captureOwner()() || previousScope.current !== formScope || !projectId || !canManage) return;
+        if (!captureOwner()() || providerContext.current.formScope !== formScope || !projectId || !providerContext.current.canManage) return;
         embeddingTarget.bridge.choose(deviceId); setImporting(false); setProviderSetup({scope: formScope, providerKind: 'codex-bridge', deviceId});
     };
     const providerBridge = providerSetup?.deviceId ? {...embeddingTarget.bridge,
         device: embeddingTarget.bridge.devices.find(device => device.id === providerSetup.deviceId),
         choose: (deviceId: string): void => {
-            if (!captureOwner()() || previousScope.current !== formScope || providerSetupRef.current !== providerSetup) return;
+            if (!captureOwner()() || providerContext.current.formScope !== formScope || !providerContext.current.canManage || providerSetupRef.current !== providerSetup) return;
             embeddingTarget.bridge.choose(deviceId); setProviderSetup({...providerSetup, deviceId});
         }} : embeddingTarget.bridge;
     const lock = useRef(false);
