@@ -8,7 +8,9 @@ import type { RoleRunRow, RoleRunState, SystemRoleId } from './system-role.types
 export type RoleDb = Pick<PoolClient, 'query'>;
 const lost = (): never => { throw new ConflictException('Задание изменилось, отменено или потеряло lease. Обновите состояние.'); };
 type RolePatch = Partial<Pick<RoleRunRow, 'facts' | 'result' | 'applied'>>;
-/** A single owner journal serves both roles; a new process never claims another process's paid work. */
+/** One journal serves builtin roles; a new process never claims another process's paid work.
+ * Identity is immutable, so NO KEY UPDATE serializes state while allowing a dialog's FK receipt attachment.
+ */
 export class SystemRoleRepository {
     constructor(readonly pool: Pool, readonly instance = randomUUID()) {}
     async transaction<T>(work: (db: PoolClient) => Promise<T>): Promise<T> {
@@ -17,7 +19,7 @@ export class SystemRoleRepository {
         catch (cause) { await db.query('ROLLBACK').catch(() => undefined); throw cause; } finally { db.release(); }
     }
     async get(id: string, db: RoleDb = this.pool, lock = false): Promise<RoleRunRow | null> {
-        return (await db.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE id=$1' + (lock ? ' FOR UPDATE' : ''), [id])).rows[0] ?? null;
+        return (await db.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE id=$1' + (lock ? ' FOR NO KEY UPDATE' : ''), [id])).rows[0] ?? null;
     }
     async existing(actor: string, request: string, db: RoleDb = this.pool): Promise<RoleRunRow | null> {
         return (await db.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE actor=$1 AND request_id=$2', [actor, request])).rows[0] ?? null;
@@ -44,13 +46,13 @@ export class SystemRoleRepository {
     }
     async claim(): Promise<RoleRunRow | null> {
         return this.transaction(async db => {
-            const row = (await db.query<RoleRunRow>(`SELECT * FROM system_role_runs WHERE runner_instance=$1 AND state='queued' AND lease_until>now() ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [this.instance])).rows[0];
+            const row = (await db.query<RoleRunRow>(`SELECT * FROM system_role_runs WHERE runner_instance=$1 AND state='queued' AND lease_until>now() ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED`, [this.instance])).rows[0];
             return row ? this.change(db, row, 'running', 'collecting', 'Собираем выбранные диагностические сведения.') : null;
         });
     }
     async fenced<T>(id: string, lease: string, work: (db: RoleDb, row: RoleRunRow) => Promise<T>): Promise<T> {
         return this.transaction(async db => {
-            const row = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND state='running' AND lease_token=$2 AND lease_until>now() FOR UPDATE", [id, lease])).rows[0];
+            const row = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND state='running' AND lease_token=$2 AND lease_until>now() FOR NO KEY UPDATE", [id, lease])).rows[0];
             if (!row) return lost();
             return work(db, row);
         });
@@ -62,7 +64,7 @@ export class SystemRoleRepository {
         });
     }
     async applying(id: string, phase: string, db: RoleDb): Promise<RoleRunRow> {
-        const row = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND state='applying' AND phase=$2 AND lease_until>now() FOR UPDATE", [id, phase])).rows[0];
+        const row = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND state='applying' AND phase=$2 AND lease_until>now() FOR NO KEY UPDATE", [id, phase])).rows[0];
         if (!row) return lost(); return row;
     }
     async change(db: RoleDb, row: RoleRunRow, state: RoleRunState, phase: string, message: string, patch: RolePatch = {}): Promise<RoleRunRow> {
@@ -78,7 +80,7 @@ export class SystemRoleRepository {
     }
     async expire(): Promise<void> {
         await this.transaction(async db => {
-            const rows = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE state IN ('queued','running','applying') AND lease_until<=now() FOR UPDATE SKIP LOCKED")).rows;
+            const rows = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE state IN ('queued','running','applying') AND lease_until<=now() FOR NO KEY UPDATE SKIP LOCKED")).rows;
             for (const row of rows) await this.change(db, row, 'interrupted', 'interrupted', row.state === 'applying'
                 ? 'Исход применения не подтверждён. Проверьте настройки у владельца перед новым действием.' : 'Исполнение прервано. Новый вызов модели требует явного запуска.');
         });
