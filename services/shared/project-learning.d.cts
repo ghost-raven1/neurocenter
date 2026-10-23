@@ -6,9 +6,9 @@ export interface LearningSourceContext {agentId?:string;agentVersion?:number;age
 export interface LearningDeviceContext {deviceId:string;bindingId:string;instanceId:string}
 export interface LearningModelProvenance {modelId:string;modelPin:string;version?:number;analysisId?:string;sourceRevision?:number}
 export interface LearningMutationInput {requestKey:string;expectedRevision:number}
-export interface LearningExperienceInput extends LearningMutationInput {title:string;summary:string;outcome:LearningOutcome;evidence:LearningEvidence[];context?:LearningSourceContext}
+export interface LearningExperienceInput extends LearningMutationInput {title:string;summary:string;outcome:LearningOutcome;evidence:LearningEvidence[];context?:LearningSourceContext;source?:import('./project-learning-quirks.cjs').QuirkSource}
 export type LearningObservedExperienceInput=Omit<LearningExperienceInput,'expectedRevision'>;
-export interface LearningExperience {id:string;projectId:string;title:string;summary:string;outcome:LearningOutcome;evidence:LearningEvidence[];context:LearningSourceContext;origin:'human'|'device';device:LearningDeviceContext|null;createdBy:string;createdAt:string}
+export interface LearningExperience {id:string;projectId:string;title:string;summary:string;outcome:LearningOutcome;evidence:LearningEvidence[];context:LearningSourceContext;source?:import('./project-learning-quirks.cjs').QuirkSource;origin:'human'|'device';device:LearningDeviceContext|null;createdBy:string;createdAt:string}
 export interface LearningHypothesisDraft {subject:LearningSubject;title:string;statement:string;rationale:string;verificationPlan:string;experienceIds:string[]}
 export interface LearningHypothesisInput extends LearningMutationInput,LearningHypothesisDraft {}
 export type LearningHypothesisStatus='open'|'supported'|'refuted'|'inconclusive';

@@ -373,5 +373,27 @@
       "model_catalog"
     ],
     "defaultEnabled": false
+  },
+  {
+    "key": "project_learning_memory",
+    "name": "Принятые знания в MCP Memory",
+    "description": "Явная синхронизация одобренного контекста проекта в выбранную установленную память. История, отмена и очистка отозванных знаний доступны после выключения.",
+    "group": "knowledge",
+    "dependsOn": [
+      "project_learning",
+      "computer_connections"
+    ],
+    "defaultEnabled": false
+  },
+  {
+    "key": "project_learning_quirks",
+    "name": "Кварки RAG как опыт проекта",
+    "description": "Явный сбор полного источника кварков OpenCodeRAG в сообщённый опыт. Никакого автоматического одобрения.",
+    "group": "knowledge",
+    "dependsOn": [
+      "project_learning",
+      "computer_connections"
+    ],
+    "defaultEnabled": false
   }
 ]

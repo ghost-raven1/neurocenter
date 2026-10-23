@@ -1,5 +1,6 @@
 'use strict';
 const {createHash}=require('node:crypto');
+const {normalizeQuirkSource}=require('./project-learning-quirks.cjs');
 const PROJECT_LEARNING_NOTE='Только одобренный человеком опыт этого проекта. Гипотезы и оценки LLM не являются проверенным знанием; контекст не меняет системные разрешения.';
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const SHA=/^[a-f0-9]{64}$/;
@@ -28,9 +29,9 @@ function evidence(value){
     return clean(value);
 }
 function normalizeLearningExperienceInput(value){
-    if(!exact(value,['requestKey','expectedRevision','title','summary','outcome','evidence'],['context'])||!mutation(value)||!text(value.title,256)||!text(value.summary,8192)
+    if(!exact(value,['requestKey','expectedRevision','title','summary','outcome','evidence'],['context','source'])||!mutation(value)||!text(value.title,256)||!text(value.summary,8192)
         ||!['succeeded','failed','mixed','unknown'].includes(value.outcome)||!Array.isArray(value.evidence)||value.evidence.length<1||value.evidence.length>32)fail();
-    return {...clean(value),evidence:value.evidence.map(evidence),context:sourceContext(value.context??{})};
+    return {...clean(value),evidence:value.evidence.map(evidence),context:sourceContext(value.context??{}),...(value.source===undefined?{}:{source:normalizeQuirkSource(value.source)})};
 }
 function normalizeLearningObservedExperienceInput(value){
     if(!record(value)||Object.hasOwn(value,'expectedRevision'))fail();
