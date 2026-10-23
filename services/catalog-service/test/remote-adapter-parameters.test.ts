@@ -98,7 +98,7 @@ describe('Actual owned HTTP adapter boundaries',()=>{
     it('Maps vision text/image and assistant history to the Responses message schema',async()=>{
         const image=Buffer.from('fixture jpeg').toString('base64');
         await new RemoteModelClient().infer({...model,capability:'vision'},connection,'chat',{messages:[{role:'system',content:'Instruction'},{role:'assistant',content:'Prior'},{role:'user',content:'Image',images:[image]}]});
-        expect(received[0]!.body.input).toEqual([{role:'system',content:[{type:'input_text',text:'Instruction'}]},{role:'assistant',content:[{type:'output_text',text:'Prior'}]},
+        expect(received[0]!.body.input).toEqual([{role:'system',content:[{type:'input_text',text:'Instruction'}]},{role:'assistant',content:[{type:'input_text',text:'Prior'}]},
             {role:'user',content:[{type:'input_text',text:'Image'},{type:'input_image',image_url:'data:image/jpeg;base64,'+image,detail:'auto'}]}]);
     });
     it('Only explicit max_output_tokens incompleteness becomes a length result',async()=>{

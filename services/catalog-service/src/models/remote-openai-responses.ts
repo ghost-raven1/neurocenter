@@ -5,12 +5,12 @@ type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
 const fail = (): never => { throw new RemoteModelError('response', 'Responses API не завершил текстовый ответ поддерживаемого формата.'); };
 
-/** Convert validated OpenAI text/image messages without changing the selected model or options. */
+/** EasyInputMessage accepts assistant history with input_text, without fabricating output IDs/status. */
 export function openaiResponsesBody(model: string, messages: Json[], options: IRemoteModelOptions): Json {
     const input = messages.map(message => ({ role: message.role, content: typeof message.content === 'string'
-        ? [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: message.content }]
+        ? [{ type: 'input_text', text: message.content }]
         : (message.content as Json[]).map(part => part.type === 'text'
-            ? { type: message.role === 'assistant' ? 'output_text' : 'input_text', text: part.text }
+            ? { type: 'input_text', text: part.text }
             : { type: 'input_image', image_url: (part.image_url as Json).url, detail: 'auto' }) }));
     return { model, input, stream: false,
         ...(options.store === undefined ? {} : { store: options.store }),

@@ -11,7 +11,7 @@ const limits = {
     contextWindow: { min: 128, max: 2097152, integer: true },
 } as const;
 
-/** Validates the bounded allowlist without forwarding arbitrary provider JSON or secrets. */
+/** Validates owned settings and bounded private JSON; adapter execution protects transport and control fields. */
 export function remoteModelOptions(value: unknown): IRemoteModelOptions {
     if (value === undefined) return {};
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Параметры модели должны быть объектом.');
