@@ -6,7 +6,7 @@ import {assertProjectionJournal,type ProjectionJournal} from './projection.js';
 
 interface Pending {id:string;lease:string;deviceId:string;payload:MemorySyncPayload;result:MemorySyncResult}
 const index='learning-memory-pending',pendingKey=(id:string)=>hash('learning-memory-result:'+id);
-export const journalKey=(site:string,payload:MemorySyncPayload)=>hash(JSON.stringify(['learning-memory-ownership',site,payload.projectId,payload.bindingId,payload.instanceId,payload.assetId]));
+export const journalKey=(site:string,payload:Pick<MemorySyncPayload,'projectId'|'bindingId'|'instanceId'|'assetId'>)=>hash(JSON.stringify(['learning-memory-ownership',site,payload.projectId,payload.bindingId,payload.instanceId,payload.assetId]));
 /** CAS updates retain only owned text; the pointer used by recovery contains public receipt data. */
 export async function projectionStorage(key:string,namespace:string){
  let saved=await readPrivateConfiguration<ProjectionJournal>(key);

@@ -5,11 +5,22 @@ import {memoryTarget} from './target.js';
 import {connectMemory,type MemoryPort} from './memory-client.js';
 import {projectMemory} from './projection.js';
 import {journalKey,projectionStorage,publicMemoryResult,saveMemoryCheckpoint} from './receipts.js';
+import {recoverWorkspaceIdentity,withWorkspaceIdentityLock} from '../../bridge/workspace-identity-state.js';
+import {withProjectFiles} from '../../bridge/installation-files.js';
 
 interface MemoryJob {id:string;lease:string;payload:{memory?:unknown;package?:Package}}
 interface Dependencies {context:(job:MemoryJob)=>Promise<unknown>;target:typeof memoryTarget;connect:typeof connectMemory}
 /** Source changes stop the plan; explicit retry reconciles only the previously recorded owned mutations. */
 export async function runLearningMemoryJob(job:MemoryJob,deviceId:string,authorize:()=>Promise<unknown>,dependencies:Partial<Dependencies>={}){
+ return withWorkspaceIdentityLock(async()=>{
+  const recovered=await recoverWorkspaceIdentity();
+  // A killed frozen verifier also leaves its file lock; recover it before read-only installation inspection.
+  if(recovered)await withProjectFiles(recovered.projectId,async()=>{});
+  return runLockedLearningMemoryJob(job,deviceId,authorize,dependencies);
+ });
+}
+/** Projection and identity handoff share the cross-process lock; old jobs cannot mutate during migration. */
+async function runLockedLearningMemoryJob(job:MemoryJob,deviceId:string,authorize:()=>Promise<unknown>,dependencies:Partial<Dependencies>){
  const payload=normalizeMemorySyncPayload(job.payload.memory),deps:Dependencies={context:value=>api('learning-memory/context',{jobId:value.id,lease:value.lease}),target:memoryTarget,connect:connectMemory,...dependencies};
  const site=hub(),namespace=memoryNamespace(site,payload.projectId),planDigest=memoryDigest([site,payload]);
  let counts={applied:0,removed:0,remaining:1},result=publicMemoryResult(payload,planDigest,counts,false,'unavailable'),port:MemoryPort|undefined;

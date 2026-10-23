@@ -8,6 +8,7 @@ import type { PhysicalDirectory, WorkspaceBindingResult, WorkspaceInstanceRegist
 import { safeTarget, workspaceDirectory } from './workspace-paths.js';
 import { saveCompletion } from './completions.js';
 import { assertInstallationSpace } from './installation-space.js';
+import { assertMemoryOwnershipHandoffs, assertPreparedMemoryOwnership, finishMemoryOwnershipHandoffs, type MemoryOwnershipHandoff } from '../features/project-learning-memory-sync/workspace-handoff.js';
 
 export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const decimal = /^(0|[1-9][0-9]*)$/;
@@ -75,6 +76,7 @@ interface IdentityJournal {
     changes: IdentityChange[];
     result: WorkspaceBindingResult;
     job?: { id: string; lease: string; deviceId?: string };
+    memoryOwnership?: MemoryOwnershipHandoff[];
 }
 const pendingFile = () => path.join(stateDir(), 'workspace-identity-pending.json');
 const committedFailure = (cause: unknown): Error => Object.assign(new Error('Привязка сохранена; подтверждение требует восстановления.'), { localChangesCommitted: true, cause });
@@ -91,7 +93,7 @@ export async function recoverWorkspaceIdentity(failOnRolledBackJob = false): Pro
     try {
         journal = JSON.parse(raw) as IdentityJournal;
         if (journal.version !== 1 || !['prepared', 'committed'].includes(journal.state) || !journal.target
-            || !exactKeys(journal, ['version', 'state', 'target', 'changes', 'result', ...(journal.job ? ['job'] : [])])
+            || !exactKeys(journal, ['version', 'state', 'target', 'changes', 'result', ...(journal.job ? ['job'] : []), ...(journal.memoryOwnership ? ['memoryOwnership'] : [])])
             || !journal.result || typeof journal.result.projectId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(journal.result.projectId)
             || typeof journal.result.folderName !== 'string' || !journal.result.folderName || /[\x00-\x1f/\\:]/.test(journal.result.folderName)
             || ['.', '..'].includes(journal.result.folderName)
@@ -107,6 +109,7 @@ export async function recoverWorkspaceIdentity(failOnRolledBackJob = false): Pro
                 || typeof change.after !== 'string' || change.before !== null && typeof change.before !== 'string')
             || journal.changes[1]!.file !== registryFile() || journal.changes[2]!.file !== path.join(stateDir(), 'workspace.json')
             || path.basename(journal.changes[0]!.file) !== 'neurocenter.json' || path.basename(path.dirname(journal.changes[0]!.file)) !== '.opencode') { throw new Error(); }
+        if (journal.memoryOwnership !== undefined) { assertMemoryOwnershipHandoffs(journal.memoryOwnership,journal.result); }
     } catch { throw new Error('Повреждён журнал привязки. Автоматическое восстановление остановлено.'); }
     if (JSON.stringify(await workspaceDirectory(journal.target.realpath)) !== JSON.stringify(journal.target)
         || await safeTarget(journal.target.realpath, '.opencode/neurocenter.json') !== journal.changes[0]!.file) {
@@ -120,6 +123,7 @@ export async function recoverWorkspaceIdentity(failOnRolledBackJob = false): Pro
     }
     if (journal.state === 'committed') {
         try {
+            await finishMemoryOwnershipHandoffs(journal.memoryOwnership ?? []);
             await saveWorkspaceBindingCompletion(journal.result, journal.job);
             await fs.rm(pendingFile()); await syncDirectory(stateDir());
             return journal.result;
@@ -142,7 +146,7 @@ export async function recoverWorkspaceIdentity(failOnRolledBackJob = false): Pro
 }
 
 /** Три записи фиксируются с приватным undo-журналом; неизвестные сторонние правки не затираются. */
-export async function commitWorkspaceIdentity(changes: IdentityChange[], target: IdentityJournal['target'], result: WorkspaceBindingResult): Promise<void> {
+export async function commitWorkspaceIdentity(changes: IdentityChange[], target: IdentityJournal['target'], result: WorkspaceBindingResult, memoryOwnership: MemoryOwnershipHandoff[] = []): Promise<void> {
     const assertTarget = async () => {
         if (JSON.stringify(await workspaceDirectory(target.realpath)) !== JSON.stringify(target)
             || await safeTarget(target.realpath, '.opencode/neurocenter.json') !== changes[0]?.file) {
@@ -154,7 +158,10 @@ export async function commitWorkspaceIdentity(changes: IdentityChange[], target:
     for (const change of changes) {
         if (await optionalText(change.file) !== change.before) { throw new Error('Привязка изменилась до сохранения.'); }
     }
+    assertMemoryOwnershipHandoffs(memoryOwnership,result);
+    await assertPreparedMemoryOwnership(memoryOwnership);
     const journal: IdentityJournal = { version: 1, state: 'prepared', target, changes, result,
+        ...(memoryOwnership.length ? {memoryOwnership} : {}),
         ...(jobContext.getStore() ? { job: jobContext.getStore() } : {}) };
     const encoded = JSON.stringify(journal);
     if (Buffer.byteLength(encoded) > 8 * 1048576) { throw new Error('Журнал привязки превышает лимит 8 МиБ.'); }
@@ -166,6 +173,7 @@ export async function commitWorkspaceIdentity(changes: IdentityChange[], target:
             if (await optionalText(change.file) !== change.before) { throw new Error('Привязка изменилась при сохранении.'); }
             await atomicText(change.file, change.after, 0o600);
         }
+        await assertPreparedMemoryOwnership(memoryOwnership);
         journal.state = 'committed';
         await atomicText(pendingFile(), JSON.stringify(journal), 0o600);
     } catch (error) {
@@ -173,6 +181,7 @@ export async function commitWorkspaceIdentity(changes: IdentityChange[], target:
     }
     // Не откатываем завершённую identity, если диск временно не принял durable completion.
     try {
+        await finishMemoryOwnershipHandoffs(memoryOwnership);
         await saveWorkspaceBindingCompletion(result, journal.job);
         await fs.rm(pendingFile()); await syncDirectory(stateDir());
     } catch (error) { throw committedFailure(error); }

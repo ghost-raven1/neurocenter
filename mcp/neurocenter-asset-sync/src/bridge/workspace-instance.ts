@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { hash, hub, readState, stateDir, type Workspace } from './state.js';
 import { safeTarget, workspaceDirectory as directory } from './workspace-paths.js';
 import { commitWorkspaceIdentity, optionalText, readInstanceRegistry, recoverWorkspaceIdentity, registryFile, saveWorkspaceBindingCompletion, UUID, withWorkspaceIdentityLock } from './workspace-identity-state.js';
-import { WorkspaceIdentityError, type PhysicalDirectory, type VerifyWorkspaceFiles, type WorkspaceBindingInput, type WorkspaceBindingPreparation, type WorkspaceBindingResult, type WorkspaceInstance, type WorkspaceMarker } from './workspace-instance.model.js';
+import { WorkspaceIdentityError, type PhysicalDirectory, type VerifyWorkspaceFiles, type WorkspaceBindingInput, type WorkspaceBindingPreparation, type WorkspaceBindingResult, type WorkspaceInstance, type WorkspaceMarker, type WorkspaceVerificationRelease } from './workspace-instance.model.js';
 import { WorkspaceBindingError, workspaceBindingFailure } from './workspace-binding-error.js';
 
 export type { VerifyWorkspaceFiles, WorkspaceBindingInput, WorkspaceBindingMode, WorkspaceBindingPreparation, WorkspaceBindingResult, WorkspaceFileVerification } from './workspace-instance.model.js';
@@ -212,14 +212,16 @@ export async function commitProjectBinding(prepared: WorkspaceBindingPreparation
             throw new WorkspaceBindingError('preparation-stale', 'Папки или привязка изменились после подготовки. Подготовьте действие заново.');
         };
         await assertUnchanged();
-        let release: void | (() => Promise<void>) = undefined;
+        const instance: WorkspaceInstance = current.input.mode === 'new' && current.instance ? current.instance : { instanceId: ['transfer', 'resume'].includes(current.input.mode) ? current.instance!.instanceId : randomUUID(),
+            projectId: prepared.projectId, server: hub(), realpath: current.target.realpath, physical: current.target.physical, bindingNonce: randomUUID() };
+        let release: void | WorkspaceVerificationRelease = undefined;
         try {
             if (current.preparation.requiresFileVerification) {
                 if (!verifyFrozenFiles) { throw new WorkspaceBindingError('installation-mismatch', 'Миграция требует проверки закреплённых файлов исходной и целевой папки.'); }
                 release = await verifyFrozenFiles({ projectId: prepared.projectId, mode: current.input.mode, targetRoot: current.target.realpath,
                     ...(current.source ? { sourceRoot: current.source.realpath } : {}), ...(current.previousBindingId ? { previousBindingId: current.previousBindingId } : {}),
                     ...(current.instance ? { previousConfigRoot: current.instance.realpath } : {}),
-                    ...(current.marker.marker?.instanceId ? { instanceId: current.marker.marker.instanceId } : {}), assertUnchanged });
+                    ...(current.marker.marker?.instanceId ? { instanceId: current.marker.marker.instanceId } : {}), bindingId: bindingId(instance), assertUnchanged });
                 await assertUnchanged();
             }
             if (current.input.mode === 'new' && current.instance && current.marker.marker) {
@@ -228,8 +230,6 @@ export async function commitProjectBinding(prepared: WorkspaceBindingPreparation
                 await saveWorkspaceBindingCompletion(result);
                 return result;
             }
-            const instance: WorkspaceInstance = current.input.mode === 'new' && current.instance ? current.instance : { instanceId: ['transfer', 'resume'].includes(current.input.mode) ? current.instance!.instanceId : randomUUID(),
-                projectId: prepared.projectId, server: hub(), realpath: current.target.realpath, physical: current.target.physical, bindingNonce: randomUUID() };
             // Старая запись той же физической папки не должна ожить при восстановлении marker из копии.
             for (const [key, previous] of Object.entries(current.registry.instances)) {
                 if (key !== instance.instanceId && (previous.realpath === instance.realpath || samePhysical(previous.physical, instance.physical))) {
@@ -250,7 +250,7 @@ export async function commitProjectBinding(prepared: WorkspaceBindingPreparation
                 { file: current.marker.file, before: current.marker.raw, after: json({ version: 2, server: hub(), projectId: prepared.projectId, instanceId: instance.instanceId }) },
                 { file: registryFile(), before: current.registryRaw, after: json(current.registry) },
                 { file: path.join(stateDir(), 'workspace.json'), before: current.workspaceRaw, after: json(current.workspace) },
-            ], current.target, result);
+            ], current.target, result, typeof release === 'function' ? release.memoryOwnership : undefined);
             return result;
         } finally { if (release) { await release(); } }
     });

@@ -11,6 +11,8 @@ import { planInstall } from './installation-planner.js';
 import { hash } from './state.js';
 import { sortedRefs } from './install-set.js';
 import { WorkspaceBindingError } from './workspace-binding-error.js';
+import type { WorkspaceVerificationRelease } from './workspace-instance.model.js';
+import { prepareMemoryOwnershipHandoffs } from '../features/project-learning-memory-sync/workspace-handoff.js';
 
 async function hold(root: string): Promise<() => Promise<void>> {
     let ready!: () => void;
@@ -47,7 +49,7 @@ async function assertReceipts(root: string, packages: Package[]): Promise<void> 
 }
 
 /** Удерживает прежние файловые locks до завершения identity commit; код инструментов не исполняет. */
-export async function verifyWorkspaceInstallations(context: WorkspaceFileVerification, packages: Package[], authorize: () => Promise<unknown> = async () => undefined): Promise<() => Promise<void>> {
+export async function verifyWorkspaceInstallations(context: WorkspaceFileVerification, packages: Package[], authorize: () => Promise<unknown> = async () => undefined): Promise<WorkspaceVerificationRelease> {
     for (const pkg of packages) { verify(pkg); }
     if (packages.length > 20 || packages.reduce((total,pkg) => total+pkg.files.length,0) > 200
         || packages.reduce((total,pkg) => total+pkg.files.reduce((bytes,file) => bytes+file.size,0),0) > 16*1024*1024) { throw new Error('Превышен лимит сверки инструментов проекта.'); }
@@ -83,7 +85,8 @@ export async function verifyWorkspaceInstallations(context: WorkspaceFileVerific
             await commitChanges(context.targetRoot,changes,{action:'install',assetKey:hash('workspace:'+context.projectId).slice(0,24),
                 manifest:hash(JSON.stringify(sortedRefs(packages)))},{verifySnapshot:()=>plan.verifySnapshot()});
         }
-        return async () => { for (const release of releases.reverse()) { await release(); } };
+        const memoryOwnership = await prepareMemoryOwnershipHandoffs(context,packages);
+        return Object.assign(async () => { for (const release of releases.reverse()) { await release(); } }, {memoryOwnership});
     } catch (error) {
         for (const release of releases.reverse()) { await release(); }
         throw error;
