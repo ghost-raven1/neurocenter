@@ -3,18 +3,25 @@ import type { IAiPluginConfig } from '../catalog/dto';
 import { parseLocalConfiguration } from '../devices/mcp-config-schema';
 import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints, type RuntimeArtifact, type RuntimeArtifactEntry } from '../../../shared/runtime-artifacts.cjs';
 import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
+const codexPin=require('../../../shared/codex-connector-pin.json') as {sourceCommit:string;version:string;sdkVersion:string};
 
 /** Публичная публикация принимает декларации поставки и настройки, без произвольных extra и секретных значений. */
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp'].includes(key))) {
-        throw new BadRequestException('В extra поддерживаются runtimeArtifacts, localConfiguration, localUi, hostedEmbedding, hostedMcp и researchMcp. Зависимости задаются отдельно.');
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp','codexConnector'].includes(key))) {
+        throw new BadRequestException('В extra поддерживаются runtimeArtifacts, localConfiguration, localUi, hostedEmbedding, hostedMcp, researchMcp и закреплённый codexConnector. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
     try {
         const artifacts = normalizeRuntimeArtifacts(source.runtimeArtifacts);
         validateRuntimeArtifactEntrypoints(kind, artifacts);
+        const codex=source.codexConnector as Record<string,unknown>|undefined;
+        // This declaration preserves the producer pin; separate build provenance grants connector capability.
+        if(codex!==undefined&&(!codex||typeof codex!=='object'||Array.isArray(codex)||kind!=='plugin'||!artifacts.length
+            ||Object.keys(codex).sort().join(',')!=='authOnly,schemaVersion,sdkVersion,sourceCommit,version'
+            ||codex.schemaVersion!==1||codex.authOnly!==true||codex.sourceCommit!==codexPin.sourceCommit||codex.version!==codexPin.version||codex.sdkVersion!==codexPin.sdkVersion))
+            throw new Error('codexConnector требует закреплённый auth-only плагин Codex с готовыми платформенными комплектами.');
         if (transport === 'remote' && artifacts.length) { throw new Error('Удалённому MCP не нужен локальный готовый комплект.'); }
         if(source.hostedMcp!==undefined&&(typeof source.hostedMcp!=='boolean'||kind!=='mcp'||transport==='remote'||!artifacts.length))throw new Error('hostedMcp требует локальный MCP с готовым комплектом Gateway.');
         const research=source.researchMcp as {adapter?:unknown;tools?:unknown}|undefined;
@@ -31,6 +38,7 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
             throw new Error('hostedEmbedding требует schemaVersion: 1 и необязательный profileSchemaVersion: 2 в закреплённом OpenCodeRAG с localUi.');
         }
         return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
+            ...(codex?{codexConnector:{schemaVersion:1,sourceCommit:codexPin.sourceCommit,version:codexPin.version,sdkVersion:codexPin.sdkVersion,authOnly:true}}:{}),
             ...(source.hostedMcp!==undefined?{hostedMcp:source.hostedMcp}:{}),...(research?{researchMcp:{adapter:'exa',tools:['web_search_exa','web_fetch_exa']}}:{}),
             ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1,...(marker?.profileSchemaVersion === 2 ? {profileSchemaVersion: 2} : {}),...(marker?.reindexSchemaVersion===1?{reindexSchemaVersion:1}:{})}} : {}) };
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
