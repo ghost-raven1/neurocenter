@@ -6,7 +6,7 @@ import {prepareJobRuntimeArtifacts} from '../../bridge/job-runtime-artifacts.js'
 import {assertCodexModelSource} from './model-source.js';
 import {DEVICE_CODEX_PROTOCOL,normalizeDeviceCodexPayload,normalizeDeviceCodexContext,type DeviceCodexContext,type DeviceCodexPayload,type DeviceCodexResult} from './contract.js';
 import {readCodexReceipt,writeCodexReceipt,codexCompletionSummary,type CodexReceipt} from './receipts.js';
-import {readCodexResponse} from './response.js';
+import {readCodexResponse,CodexResponseFailure} from './response.js';
 import {RuntimeArtifactCapacityError} from '../runtime-artifacts/capacity-error.js';
 import {observeCodexHttp,sanitizeCodexDiagnostic,type CodexDiagnostic,type CodexDiagnosticStage} from './diagnostics.js';
 
@@ -121,6 +121,7 @@ export async function runDeviceCodexJob(job:CodexJob,deviceId:string,authorize:(
     }catch(error){
         // A complete response remains private evidence; the server decides whether a late ACK may apply it.
         const observed=sanitizeCodexDiagnostic(diagnostic);
+        if(error instanceof CodexResponseFailure&&observed?.stage==='response-validation')diagnostic={...observed,reason:error.reason};
         const preparationCode=observed?.stage==='runtime-preparation'&&error instanceof RuntimeArtifactCapacityError?error.code:undefined;
         if(!result)result=failed(payload.callId,receipt?'unknown-after-send':Date.now()>=Date.parse(payload.deadlineAt)?'deadline':denied||controller.signal.aborted?'authorization':preparationCode??'unavailable');
     }finally{clearTimeout(timer);if(poll)clearInterval(poll);controller.abort();}

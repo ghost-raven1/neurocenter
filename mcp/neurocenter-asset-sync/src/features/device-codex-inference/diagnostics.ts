@@ -1,7 +1,9 @@
+import {CODEX_RESPONSE_FAILURE_REASONS,type CodexResponseFailureReason} from './response.js';
+
 const stages=['preflight','runtime-preparation','transport-loading','transport-call','dispatch-admission','outbound-fetch','response-headers','response-validation','completed'] as const;
 export type CodexDiagnosticStage=typeof stages[number];
 export type CodexMediaType='sse'|'json'|'other'|'missing';
-export interface CodexDiagnostic {schemaVersion:1;stage:CodexDiagnosticStage;httpStatus?:number;mediaType?:CodexMediaType}
+export interface CodexDiagnostic {schemaVersion:1;stage:CodexDiagnosticStage;httpStatus?:number;mediaType?:CodexMediaType;reason?:CodexResponseFailureReason}
 const httpStages=new Set<CodexDiagnosticStage>(['response-headers','response-validation','completed']);
 const status=(value:unknown):value is number=>Number.isInteger(value)&&Number(value)>=100&&Number(value)<=599;
 
@@ -15,6 +17,7 @@ export function sanitizeCodexDiagnostic(value:unknown):CodexDiagnostic|undefined
         result.httpStatus=item.httpStatus;
         if(typeof item.mediaType==='string'&&['sse','json','other','missing'].includes(item.mediaType))result.mediaType=item.mediaType as CodexMediaType;
     }
+    if(result.stage==='response-validation'&&typeof item.reason==='string'&&CODEX_RESPONSE_FAILURE_REASONS.includes(item.reason as CodexResponseFailureReason))result.reason=item.reason as CodexResponseFailureReason;
     return result;
 }
 
