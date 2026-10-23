@@ -1,4 +1,5 @@
 import {modelPlanningOptions} from '../models/model-planning-options';
+import {MODEL_CHAT_ROUND_TIMEOUT_MS} from '../../../shared/model-chat-deadline.cjs';
 import {automaticModelOptions} from '../models/model-runtime-options';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
@@ -305,7 +306,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         }); return this.read(req, id);
     }
     private async execute(req: Request, scope: Awaited<ReturnType<ModelChatService['scope']>>, turn: TurnRow, signal: AbortSignal): Promise<ChatDetail> {
-        const abort = new AbortController(), combined = AbortSignal.any([signal, abort.signal, AbortSignal.timeout(15 * 60 * 1000)]);
+        const abort = new AbortController(), combined = AbortSignal.any([signal, abort.signal, AbortSignal.timeout(MODEL_CHAT_ROUND_TIMEOUT_MS)]);
         this.active.set(turn.id, { conversationId: scope.row.id, requestId: turn.request_id, abort });
         try {
             combined.throwIfAborted();

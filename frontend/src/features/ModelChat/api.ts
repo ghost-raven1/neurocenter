@@ -1,4 +1,5 @@
 import api from '../../core/api/base';
+import chatDeadline from '../../../../services/shared/model-chat-deadline.json';
 import type { ICatalogModel } from '../ModelCatalog/types';
 import type { IModelChatAttachmentPreview, IModelChatContext, IModelChatConversation, IModelChatDetail, IModelChatHistoryPage, IModelChatParticipant, IChatResearchRequest, IChatResearchChoices, IChatResearchStep, IChatResearchHistory } from './types';
 
@@ -24,10 +25,10 @@ export const modelChatApi = {
     rename: (id: string, revision: number, title: string, signal: AbortSignal) => api.patch<IModelChatDetail>(chatRoute(id), {expectedRevision: revision, title}, {signal}).then(value => value.data),
     remove: (id: string, revision: number, signal: AbortSignal) => api.delete<void>(chatRoute(id), {data: {expectedRevision: revision}, signal}),
     send: (detail: IModelChatDetail, model: ICatalogModel, requestId: string, prompt: string, attachmentIds: string[], signal: AbortSignal, targetAgentIds?: string[], research?: IChatResearchRequest) => api.post<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns`,
-        {expectedRevision: detail.conversation.revision, requestId, prompt, attachmentIds, expectedModelPin: pin(model), ...(targetAgentIds?.length ? {targetAgentIds} : {}), ...(research ? {research} : {})}, {signal, timeout: 920000}).then(value => value.data),
+        {expectedRevision: detail.conversation.revision, requestId, prompt, attachmentIds, expectedModelPin: pin(model), ...(targetAgentIds?.length ? {targetAgentIds} : {}), ...(research ? {research} : {})}, {signal, timeout: chatDeadline.clientTimeoutMs}).then(value => value.data),
     complete: (detail: IModelChatDetail, turnId: string, signal: AbortSignal) => api.post<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns/${encodeURIComponent(turnId)}/complete`, {expectedRevision: detail.conversation.revision}, {signal}).then(value => value.data),
     retry: (detail: IModelChatDetail, model: ICatalogModel, turnId: string, requestId: string, signal: AbortSignal) => api.post<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns/${encodeURIComponent(turnId)}/retry`,
-        {expectedRevision: detail.conversation.revision, expectedModelPin: pin(model), requestId}, {signal, timeout: 920000}).then(value => value.data),
+        {expectedRevision: detail.conversation.revision, expectedModelPin: pin(model), requestId}, {signal, timeout: chatDeadline.clientTimeoutMs}).then(value => value.data),
     cancel: (detail: IModelChatDetail, turnId: string, signal: AbortSignal) => api.post<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns/${encodeURIComponent(turnId)}/cancel`,
         {expectedRevision: detail.conversation.revision}, {signal}).then(value => value.data),
     deleteFailed: (detail: IModelChatDetail, turnId: string, signal: AbortSignal) => api.delete<IModelChatDetail>(`${chatRoute(detail.conversation.id)}/turns/${encodeURIComponent(turnId)}`,

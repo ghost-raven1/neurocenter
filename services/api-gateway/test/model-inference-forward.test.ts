@@ -13,7 +13,7 @@ describe('Model inference transport source contracts',()=>{
  it.each([undefined,'/api/models/model-qa/ollama/api/chat/extra',`/api/model-chats/${chatId}/context-preview`,'/api/model-chats/not-a-uuid/turns','/api/models'])('keeps non-inference actions outside the cancellation adapter %#',path=>{expect(modelInferenceRoute('POST',path)).toBe(false);});
  it.each([false,true])('sets distinct bounded response budgets while preserving the exact request config: saved=%s',async saved=>{
   const p=pair(saved?`/api/model-chats/${chatId}/turns`:undefined),http={request:vi.fn(async()=>payload)};const config={url:'http://fixture/model',headers:{'x-test':'preserve'},data:{messages:[]}};
-  expect(await forwardModelInference(http as never,config,p.req,p.res)).toBe(payload);expect(http.request).toHaveBeenCalledWith({...config,timeout:610000,maxContentLength:(saved?64:8)*1024**2,signal:expect.any(AbortSignal)});cleaned(p);
+  expect(await forwardModelInference(http as never,config,p.req,p.res)).toBe(payload);expect(http.request).toHaveBeenCalledWith({...config,timeout:saved?910000:610000,maxContentLength:(saved?64:8)*1024**2,signal:expect.any(AbortSignal)});cleaned(p);
  });
  it.each(['request','response','finished'])('does not contact Catalog for an already closed %s',async state=>{
   const p=pair();Object.assign(state==='request'?p.req:p.res,state==='request'?{aborted:true}:state==='response'?{destroyed:true}:{writableEnded:true});const http={request:vi.fn()};expect(await forwardModelInference(http as never,{},p.req,p.res)).toBeUndefined();expect(http.request).not.toHaveBeenCalled();cleaned(p);

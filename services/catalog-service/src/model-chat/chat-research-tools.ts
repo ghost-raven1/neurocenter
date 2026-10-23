@@ -10,8 +10,9 @@ import type {ChatDb} from './chat.repository';
 import type {ConversationRow} from './chat.types';
 import type {ChatResearchRequest} from './chat-research.types';
 import {RESEARCH_TOOL_NAMES} from './chat-research-client';
+import {MODEL_CHAT_ROUND_TIMEOUT_MS} from '../../../shared/model-chat-deadline.cjs';
 
-export const RESEARCH_LIMITS={stepsPerRecipient:6,externalCallsPerRound:16,toolOutputBytes:65536,gatheredTextBytes:98304,roundTimeoutMs:900000}as const;
+export const RESEARCH_LIMITS={stepsPerRecipient:6,externalCallsPerRound:16,toolOutputBytes:65536,gatheredTextBytes:98304,roundTimeoutMs:MODEL_CHAT_ROUND_TIMEOUT_MS}as const;
 export interface ResearchChoice {assetId:string;name:string;version:number;manifest:string;available:boolean;reason?:string}
 export interface ResearchChoices {project:{available:boolean;reason?:string};external:ResearchChoice[];limits:typeof RESEARCH_LIMITS}
 

@@ -1,5 +1,6 @@
 import type {AxiosInstance, AxiosRequestConfig, AxiosResponse} from 'axios';
 import type {Request, Response} from 'express';
+import {MODEL_CHAT_GATEWAY_TIMEOUT_MS} from '../../../shared/model-chat-deadline.cjs';
 
 /** The canonical route keeps chat/embed cancellation aligned with inference permissions. */
 export function modelInferenceRoute(method:string,path:string|undefined):boolean {
@@ -18,7 +19,7 @@ export async function forwardModelInference(http:Pick<AxiosInstance,'request'>,c
         if(!connected())return;
         // A historical 8 MiB text answer may expand sixfold when escaped as JSON.
         const savedChat=/^\/api\/model-chats\//.test(req.path||'');
-        const response=await http.request({...config,timeout:610000,maxContentLength:(savedChat?64:8)*1024*1024,signal:abort.signal});
+        const response=await http.request({...config,timeout:savedChat?MODEL_CHAT_GATEWAY_TIMEOUT_MS:610000,maxContentLength:(savedChat?64:8)*1024*1024,signal:abort.signal});
         return connected()?response:undefined;
     } catch(error) {
         if(!abort.signal.aborted&&connected())throw error;

@@ -1,0 +1,6 @@
+{
+  "roundTimeoutMs": 900000,
+  "gatewayTimeoutMs": 910000,
+  "edgeTimeoutMs": 915000,
+  "clientTimeoutMs": 920000
+}
