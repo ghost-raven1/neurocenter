@@ -455,6 +455,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await assertRuntimeCandidate(manifest,verified.report,verified.identity);
             if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
             assertCodexBuildPublication(row.config,tools[0].publication);
+            await authorize();
+            // The verified producer is reaped; statfs now includes its retained staging bytes.
+            if(started&&reaped&&!this.child){releaseDisk();releaseDisk=()=>undefined;}
             for (const artifact of tools[0].artifacts) { if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
             const sourcePath=tools[0].sourceSnapshotPath;
             if(tools[0].asset.source.type==='archive'&&!sourcePath)throw new Error('Сборщик не вернул путь проверенного исходника.');
