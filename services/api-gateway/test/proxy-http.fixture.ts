@@ -1,3 +1,4 @@
+import {discussionAttachmentUploadRoute} from '../../shared/discussion-attachment-route.cjs';
 import 'reflect-metadata';
 import express from 'express';
 import {createServer,type IncomingMessage,type ServerResponse} from 'node:http';
@@ -44,7 +45,7 @@ export async function proxyHttpFixture(){
    }
    if(route.startsWith('/internal/')&&req.headers['x-neurocenter-internal']!=='qa-proxy-internal'){reply(res,403,{message:'Private fixture token required.'});return;}
    if(route==='/internal/feature-flags/evaluated'){if(state.flagsDelay)await state.flagsDelay;if(state.flagsRedirect){res.writeHead(302,{location:state.flagsRedirect});res.end();return;}reply(res,state.flagsStatus,state.flagsPayload??evaluateFeatureFlags(state.flags));return;}
-   const raw=sourceUploadContentRoute(call.method,route)||snapshotContentRoute(call.method,route)||assetSourceArchiveRoute(call.method,route);
+   const raw=discussionAttachmentUploadRoute(call.method,route)||sourceUploadContentRoute(call.method,route)||snapshotContentRoute(call.method,route)||assetSourceArchiveRoute(call.method,route);
    if(!raw)call.body=await readJson(req);
    if(route==='/internal/access/authorize'){if(state.accessDelay)await state.accessDelay;reply(res,state.accessStatus,{allowed:state.allowed,claims:state.claims});return;}
    if(route==='/internal/device-channel/identity'){if(state.authDelay)await state.authDelay;reply(res,state.deviceStatus,state.device);return;}
@@ -59,7 +60,7 @@ export async function proxyHttpFixture(){
  const config={get:(key:string)=>values[key as keyof typeof values]} as ConfigService;
  const auth=new AuthGuardService(config),proxy=new ProxyService(config,auth,live as unknown as LiveService);
  const active=new Set<Promise<unknown>>();
- const app=express(),json=express.json({limit:'50mb'});app.use(sourceUploadConnection);app.use((req,res,next)=>sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)?next():json(req,res,next));
+ const app=express(),json=express.json({limit:'50mb'});app.use(sourceUploadConnection);app.use((req,res,next)=>discussionAttachmentUploadRoute(req.method,req.path)||sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)?next():json(req,res,next));
  app.use((req,res)=>{const status=res.status.bind(res);res.status=(code:number)=>{writes.push({path:req.path,status:code,destroyed:res.destroyed});return status(code);};const pending=proxy.forward(req,res).catch(()=>{if(!res.headersSent)res.status(503).json({message:'Synthetic outer error boundary.'});else res.destroy();}).finally(()=>active.delete(pending));active.add(pending);});
  const gateway=createServer(app),url=await listen(gateway);
  return {state,calls,writes,live,proxy,url,origin,

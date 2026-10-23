@@ -58,6 +58,7 @@ interface IAppCardProps {
     onView?: () => void;
     /** Зона действий в футере (стандартизированные кнопки). */
     action: ReactNode;
+    feedback?: ReactNode;
 }
 
 /**
@@ -68,7 +69,7 @@ interface IAppCardProps {
  * @param {IAppCardProps} props
  * @returns JSX-элемент карточки
  */
-const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action }) => {
+const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback }) => {
     const source=storeCardSource(app.origin),revision=storeCardRevision(app.revision),platforms=storeCardPlatforms(app.config);
     const description=app.description.trim(),tags=[...new Set(app.tags.map(tag=>tag.trim()).filter(Boolean))].slice(0,3);
     return (
@@ -86,6 +87,7 @@ const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action }) =
                 {!!stats?.installs&&<span><DownloadOutlined /> {stats.installs} установок</span>}
                 <Text type="secondary" className="store-card__edition">Редакция {app.version}</Text>
             </div>
+            {feedback}
             <div className="store-card__actions">{action}</div>
         </Card>
     );

@@ -1,5 +1,5 @@
-import { Alert, Button, Collapse, Input, Modal, Space, Typography } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Modal, Space, Typography } from 'antd';
+import { useRef, useState } from 'react';
 import type { IBridgeDevice } from './api';
 import { bridgeDeviceTarget, compareBridgeVersions, type IBridgeSourceRelease } from './bridgeSource';
 import { useBridgeSource } from './useBridgeSource';
@@ -28,13 +28,11 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
 }) {
     const source = useBridgeSource();
     const imports = useBridgeSourceImport(() => { void source.reload(); });
-    const [url, setUrl] = useState('');
     const [localArchiveOpen,setLocalArchiveOpen]=useState(false);
     const setArchiveOpen=onArchiveChange??setLocalArchiveOpen;
     const [resolving, setResolving] = useState<{jobId: string; digest: string; revision: number}>();
     const data = source.data;
     const offline = data?.sourceMode === 'offline';
-    useEffect(() => { setUrl(data?.url ?? ''); }, [data?.url, data?.revision]);
     const status = bridgeSupplyStatus(data?.available, data?.imported);
     const fresh = !offline && !!data?.checkedAt && !data.error && !source.error && !source.loading;
     const devSupply = installer.devSupply;
@@ -97,11 +95,7 @@ export function BridgeSourcePanel({ installer, device, verified, windows, canMan
                 <Button onClick={imports.clear}>Закрыть результат</Button>
             </>}</Space>}
         </div>}
-        {canManage && !offline && <Collapse ghost className="bridge-source__settings"><Collapse.Panel key="source" header="Источник версий моста">
-            <Typography.Paragraph type="secondary">Публичный GitHub-репозиторий поставок в формате neurocenter-assets. Например, ваш fork. Проверка читает описания; файлы скачиваются только при подготовке выбранной версии. Ссылка на install.sh сюда не подходит.</Typography.Paragraph>
-            <Input aria-label="Репозиторий версий моста" value={url} maxLength={2048} disabled={sourceBusy || !data} onChange={event => setUrl(event.target.value)} placeholder="https://github.com/owner/neurocenter-assets" />
-            <Button disabled={sourceBusy || !data || url.trim() === data.url} loading={source.saving} onClick={() => { void source.save(url).then(saved => { if (saved) void source.check(); }); }}>Сохранить и проверить</Button>
-        </Collapse.Panel></Collapse>}
+        {canManage && <Typography.Link href="/settings#sources">Настройки источников</Typography.Link>}
         <Modal open={confirming && canManage && replaceable} title="Подготовить мост из нового источника?" okText="Принять новый источник" cancelText="Оставить текущую поставку"
             confirmLoading={imports.busy} onCancel={() => { if (!imports.busy) setResolving(undefined); }}
             onOk={() => {

@@ -9,7 +9,7 @@ function record(id:string,repository='local-archive',active=true):ISourceReceipt
     const descriptor:ToolAsset={schemaVersion:1,id,version:'1.0.0',kind:'plugin',source:{type:'git',repository:'https://github.com/example/fixture',commit:'a'.repeat(40)},license:{spdx:'MIT'},compatibility:{packageFormat:5},card:{kind:'plugin',name:'Карточка '+id,description:'Описание '+id,revision:'1.0.0',origin:'upload',tags:[],files:[],config:{entrypoint:'index.mjs'}},delivery:{type:'runtime-artifacts',artifacts:[]}};
     return {repository,active,external_id:id,asset_kind:'plugin',asset_version:'1.0.0',descriptor_sha256:assetDigest(serializeAsset(descriptor)),source_commit:repository==='local-archive'?null:'a'.repeat(40),native_id:'native-'+id,native_version:1,native_hash:'b'.repeat(64),descriptor,blobs:[]};
 }
-const repository='ghost-raven1/neurocenter-assets';
+let repository='ghost-raven1/neurocenter-assets';
 let local:ISourceReceipt[],remote:ISourceReceipt[],records:ResolvedAsset[],snapshot:boolean,error:string;
 const query=vi.fn(),receipts=vi.fn();
 function service():AssetSourcesService {
@@ -17,7 +17,7 @@ function service():AssetSourcesService {
     return Object.assign(view,{pool:{query},sources:{status:async()=>({snapshot:snapshot?{pin:{repository,commit:'a'.repeat(40)},assets:records,checked_at:'2026-10-21T00:00:00Z'}:undefined,last:{message:error}})},jobs:{receipts}});
 }
 beforeEach(()=>{
-    local=[record('local')];remote=[];records=[];snapshot=true;error='';
+    repository='ghost-raven1/neurocenter-assets';local=[record('local')];remote=[];records=[];snapshot=true;error='';
     query.mockReset().mockResolvedValue({rows:[{archived_at:null}]});
     receipts.mockReset().mockImplementation(async(value:string)=>value==='local-archive'?local:remote);
 });
@@ -54,4 +54,8 @@ it('Отказ сервиса скиллов не скрывает другие 
 it('Текущие имя и видимость native-карточки не переписывают immutable descriptor',async()=>{
     query.mockResolvedValue({rows:[{name:'Переименованная карточка',archived_at:null}]});const data=await service().view();
     expect(data.localAssets[0].name).toBe('Карточка local');expect(data.localAssets[0].imported?.name).toBe('Переименованная карточка');expect(local[0].descriptor.card.name).toBe('Карточка local');
+});
+
+it('Настройки показывают фактический репозиторий проверенной поставки, а не встроенное имя',async()=>{
+    repository='company/internal-assets';const data=await service().view();expect(data.source.repository).toBe(repository);expect(receipts).toHaveBeenCalledWith(repository);
 });

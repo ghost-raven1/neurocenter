@@ -1,3 +1,5 @@
+import {DISCUSSIONS_SCHEMA_SQL} from '../discussions/discussions.schema';
+import {DISCUSSIONS_SCHEMA_ASSERT_SQL} from '../discussions/discussions.schema-verification';
 import {CHAT_RESEARCH_SCHEMA_SQL} from '../model-chat/chat-research.schema';
 import {CHAT_RESEARCH_SCHEMA_ASSERT_SQL} from '../model-chat/chat-research.schema-verification';
 import {AGENT_SCHEMA_SQL} from '../agents/agent-schema';
@@ -56,4 +58,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:19,name:'bounded-chat-research',sql:CHAT_RESEARCH_SCHEMA_SQL+'\n'+CHAT_RESEARCH_SCHEMA_ASSERT_SQL},
     {version:20,name:'project-agent-diagnostic-trials',sql:AGENT_READINESS_SCHEMA_SQL+'\n'+AGENT_READINESS_SCHEMA_ASSERT_SQL},
     {version:21,name:'durable-tool-build-cancellation',sql:PACKAGE_BUILD_CANCELLATION_SCHEMA_SQL+'\n'+PACKAGE_BUILD_CANCELLATION_SCHEMA_ASSERT_SQL},
+    {version:22,name:'help-and-catalog-discussions',sql:DISCUSSIONS_SCHEMA_SQL+'\n'+DISCUSSIONS_SCHEMA_ASSERT_SQL},
 ];

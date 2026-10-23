@@ -2,8 +2,8 @@ import {decorators,values} from './typescript.mjs';
 
 const stringSchema={type:'string'};
 const freeForm=()=>({'x-neurocenter-untyped':true,description:'JSON body shape is not declared by this controller; server validation still applies.'});
-const BINARY_UPLOAD=/^\/api\/(?:tool-builds\/uploads\/[^/]+\/content|projects\/[^/]+\/snapshot-uploads\/[^/]+\/blobs\/[^/]+|asset-sources\/archive)$/;
-const BINARY_DOWNLOAD=/\/(?:backups\/[^/]+\/download|versions\/[^/]+\/blobs\/[^/]+|tool-builds\/[^/]+\/supply|jobs\/[^/]+\/runtime\/[^/]+)$/;
+const BINARY_UPLOAD=/^\/api\/(?:tool-builds\/uploads\/[^/]+\/content|projects\/[^/]+\/snapshot-uploads\/[^/]+\/blobs\/[^/]+|asset-sources\/archive|discussions\/attachments)$/;
+const BINARY_DOWNLOAD=/\/(?:backups\/[^/]+\/download|versions\/[^/]+\/blobs\/[^/]+|tool-builds\/[^/]+\/supply|jobs\/[^/]+\/runtime\/[^/]+|discussions\/attachments\/[^/]+\/content)$/;
 const SNAPSHOT_PUBLICATION=/^\/api\/projects\/[^/]+\/snapshot-uploads\/[^/]+\/(?:manifest|complete|status|blobs\/[^/]+)$/;
 
 function security(route){
@@ -92,6 +92,13 @@ export function operation(ts,checker,mapper,route){
     if(path.startsWith('/api/skills/_package/'))for(const parameter of parameters)if(parameter.in==='query'&&parameter.name==='version')parameter.required=true;
     if(/^\/api\/device-channel\/jobs\/[^/]+\/runtime\//.test(path))parameters.push({name:'x-neurocenter-job-lease',in:'header',required:true,schema:{type:'string',format:'uuid'},description:'Current runtime-job lease issued by the device channel.'});
     if(SNAPSHOT_PUBLICATION.test(path))for(const name of ['x-neurocenter-job-id','x-neurocenter-job-lease'])parameters.push({name,in:'header',required:false,schema:{type:'string',format:'uuid'},description:'Required when using deviceBearer authentication. Use the current snapshot job and lease; browser session requests do not require this header.'});
+    if(path==='/api/discussions/attachments'&&http==='post')parameters.push(
+        {name:'targetType',in:'query',required:true,schema:{type:'string',enum:['catalog','help']}},
+        {name:'targetId',in:'query',required:true,schema:{type:'string'},description:'Help slug or catalog kind:stableId; skill IDs may contain slash characters.'},
+        {name:'x-file-name',in:'header',required:true,schema:stringSchema,description:'Percent-encoded UTF-8 file name.'},
+        {name:'x-request-key',in:'header',required:true,schema:{type:'string',format:'uuid'}},
+        {name:'content-length',in:'header',required:true,schema:{type:'integer',minimum:1,maximum:10485760}}
+    );
     const responseDecorator=meta.find(item=>item.name==='HttpCode'),code=responseDecorator?values(ts,responseDecorator.args[0],source)[0]:http==='post'?'201':'200';
     const authRedirect=route.service==='oauth2-bridge'&&http==='get'&&/^\/auth\/(?:login|callback|logout)$/.test(path);
     const explicitOAuthJson=route.service==='oauth2-bridge'&&http==='post';

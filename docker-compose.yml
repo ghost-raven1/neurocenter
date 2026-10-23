@@ -137,6 +137,7 @@ services:
     volumes:
       - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
       - runtime-artifacts:/app/runtime-artifacts
+      - ./services/catalog-service/content/help:/app/content/help
       - backup-data:/app/backups
       - ./data/embedding:/data/models:rw
     depends_on:

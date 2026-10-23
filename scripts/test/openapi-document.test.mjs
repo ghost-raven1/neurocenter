@@ -70,6 +70,15 @@ before(() => {
     fixtureDocument = generateOpenApi(fixtureRoot);
     actual = generateOpenApi(root);
 });
+
+test('Discussion files describe actual binary transport and target-bound upload metadata',()=>{
+ const upload=actual.paths['/api/discussions/attachments'].post;
+ assert.equal(upload.requestBody.content['application/octet-stream'].schema.format,'binary');
+ for(const name of ['targetType','targetId','x-file-name','x-request-key','content-length'])assert.equal(upload.parameters.find(value=>value.name===name)?.required,true,name);
+ const download=actual.paths['/api/discussions/attachments/{id}/content'].get;
+ assert.equal(download.responses['200'].content['application/octet-stream'].schema.format,'binary');
+ assert.deepEqual(upload.security,[{sessionCookie:[]}]);
+});
 after(() => {for (const directory of temporary) fs.rmSync(directory, {recursive: true, force: true});});
 
 const jsonResponse = (operation, status = '200') => operation.responses[status].content['application/json'].schema;
@@ -133,8 +142,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 229);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 280);
+    assert.equal(Object.keys(actual.paths).length, 244);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 303);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
@@ -352,7 +361,9 @@ test('Retained disabled endpoints advertise their error instead of a fabricated 
 test('Remote connection docs expose bounded generation defaults and a write-only key with the model CAS receipt', () => {
     const item = actual.paths['/api/models/{id}/connection'];
     const body = item.put.requestBody.content['application/json'].schema;
-    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['contextWindow','maxOutputTokens','temperature','topP']);
+    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['contextWindow','maxOutputTokens','responseModel','temperature','tokenLimitParameter','topP']);
+    assert.deepEqual(body.properties.options.properties.tokenLimitParameter.enum,['max_tokens','max_completion_tokens']);
+    assert.match(body.properties.options.properties.responseModel.description,/exact response identity/);
     assert.match(body.properties.options.properties.contextWindow.description, /Remote Ollama/);
     assert.match(body.properties.timeoutMs.description, /1000 to 300000/);
     assert.match(body.properties.apiKey.description, /Write-only/);

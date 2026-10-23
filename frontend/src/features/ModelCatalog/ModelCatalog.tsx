@@ -11,6 +11,7 @@ import { useProjectReindex } from '../ProjectEmbedding/useProjectReindex';
 import { ProjectReindexStatus } from '../ProjectEmbedding/ProjectReindexStatus';
 import { modelCatalogApi } from './api';
 import { ModelCard } from './ModelCard';
+import {CatalogFeedback} from '../Discussions';
 import { ModelDetails } from './ModelDetails';
 import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
@@ -130,7 +131,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {projectId && <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />}
         {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
             {shown.map(model => <Col key={model.id} xs={24} xl={12}>
-                <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)}
+                <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)} feedback={<CatalogFeedback catalogId={'model:' + model.id} title={model.name}/>}
                     canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
                     onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
                     onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)}

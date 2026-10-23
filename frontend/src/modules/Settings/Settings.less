@@ -1,0 +1,15 @@
+.settings-page {
+    &__sections { display: flex; flex-direction: column; gap: 20px; }
+    &__source { max-width: 960px; }
+    &__shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 960px; }
+    &__content { width: 100%; }
+    &__content .ant-typography { margin-bottom: 0; }
+    &__content label { font-weight: 600; }
+    &__url { overflow-wrap: anywhere; }
+    &__versions { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+    @media (max-width: 600px) {
+        &__shortcuts { grid-template-columns: 1fr; }
+        &__source .ant-card-body { padding: 16px; }
+        &__versions { flex-direction: column; }
+    }
+}

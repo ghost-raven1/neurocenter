@@ -6,6 +6,7 @@ import { useHistory } from 'react-router-dom';
 import { BridgeConnection } from '../McpBridge/BridgeConnection';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { AgentCard } from './AgentCard';
+import {CatalogFeedback} from '../Discussions';
 import { AgentDetails } from './AgentDetails';
 import { AgentEditModal } from './AgentEditModal';
 import { ProjectAgentEditor } from './ProjectAgentEditor';
@@ -99,7 +100,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         {!catalog && loading ? <div className="agent-catalog__loading" role="status"><Spin tip="Загружаем агентов…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">{shown.map(agent => {
             const assignment = assignments.get(agent.id), status = assignment ? projectAgentStatus(catalog, assignment, target) : undefined;
             const trial = readiness.items.find(item => item.agentId === agent.id);
-            return <Col xs={24} xl={12} key={agent.id}><AgentCard agent={agent} assignment={assignment} status={status} isMain={isMain} canManage={canManage} projectSelected={!!projectId}
+            return <Col xs={24} xl={12} key={agent.id}><AgentCard agent={agent} assignment={assignment} status={status} isMain={isMain} canManage={canManage} projectSelected={!!projectId} feedback={<CatalogFeedback catalogId={'agent:' + agent.id} title={agent.name}/>}
                 readiness={trial} trialChecking={checkingTrial(agent.id)} trialDisabled={!trial || actions.busy} onTrial={canReadTrials && assignment && !assignment.removed ? () => setTrialAgentId(agent.id) : undefined}
                 busy={actions.busy} unavailable={unavailable} onView={() => setViewId(agent.id)} onEdit={() => setEditing(agent)} onArchived={() => { void refresh(); }}
                 onAssign={() => perform('assign', assignment?.removed ? assignment.card : agent)}

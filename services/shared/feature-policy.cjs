@@ -39,6 +39,12 @@ function requiredRouteFeatures(method,path,body){
         if(route==='/api/model-usage')return ['model_usage'];
         return [];
     }
+    if(/^\/api\/help\/[^/]+$/.test(route))return verb==='PUT'?['help_center']:[];
+    // New admissions are checked by the executor after exact replay lookup.
+    if(route==='/api/discussions/comments'&&verb==='POST')return [];
+    if(route==='/api/discussions/attachments'&&verb==='POST')return ['discussions','discussion_attachments'];
+    if(/^\/api\/discussions\/comments\/[^/]+$/.test(route))return verb==='PATCH'?['discussions']:[];
+    if(/^\/api\/catalog-reactions(?:\/|$)/.test(route))return [];
     if(/^\/(?:api|internal)\/device-channel\//.test(route)){
         const suffix=route.replace(/^\/(?:api|internal)\/device-channel\//,'');
         if(suffix==='pair/start')return ['computer_connections'];

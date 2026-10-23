@@ -1,4 +1,5 @@
 import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
+import {CatalogFeedback} from '../../features/Discussions';
 import { Alert, Button, Checkbox, Col, Empty, Input, message, Modal, Radio, Row, Select, Space, Spin, Typography } from 'antd';
 import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
@@ -393,7 +394,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         <Row gutter={[12, 12]} align="stretch">
                             { shown.map(a => (
                                 <Col key={ a.id } xs={24} sm={12} xl={8} xxl={6}>
-                                    <AppCard app={ a } installed={ !!target && isInProject(a)} action={ renderAction(a) } onView={() => setViewApp(a)} />
+                                    <AppCard app={ a } installed={ !!target && isInProject(a)} action={ renderAction(a) } onView={() => setViewApp(a)} feedback={<CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name}/>} />
                                 </Col>
                             )) }
                         </Row>

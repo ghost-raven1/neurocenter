@@ -18,4 +18,6 @@ export const baseRoutes = {
     audit: '/audit',
     modelUsage: '/model-usage',
     access: '/access',
+    settings: '/settings',
+    help: '/help',
 };

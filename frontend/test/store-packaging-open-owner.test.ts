@@ -71,6 +71,7 @@ vi.mock('../src/modules/Store/packaging/useRepositoryMetadata', () => ({useRepos
 vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({useToolBuild: () => ({job: ui.job, reset: ui.reset, active: false, submitting: false, unresolved: false})}));
 vi.mock('../src/common/components/PageHeading', () => ({PageHeading: ({actions}: {actions: ReactNode}) => actions}));
 vi.mock('../src/features/McpBridge/BridgeConnection', () => ({BridgeConnection: () => null}));
+vi.mock('../src/features/Discussions', () => ({CatalogFeedback: () => null}));
 vi.mock('../src/features/McpBridge/LocalInstallations', () => ({LocalInstallations: () => null}));
 vi.mock('../src/features/McpBridge/ProjectInstallationReadiness', () => ({ProjectInstallationReadiness: () => null}));
 vi.mock('../src/modules/Store/ProjectKnowledgeLink', () => ({ProjectKnowledgeLink: () => null}));

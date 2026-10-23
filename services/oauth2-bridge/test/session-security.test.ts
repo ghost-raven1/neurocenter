@@ -62,3 +62,8 @@ describe('Cookie request browser origin gate',()=>{
   expect(invoke('GET','/auth/logout',{cookie:'bridge_session=qa'}).response.status).toHaveBeenCalledWith(403);
  });
 });
+
+it('Help is reachable by assigned roles; settings are exclusively the main administrator route',()=>{
+ for(const role of ['Главный админ','Админ проекта','Разработчик','Наблюдатель']){expect(roleRoutes(role)).toContain('help');expect(roleRoutes(role).includes('settings')).toBe(role==='Главный админ');}
+ expect(roleRoutes('unknown')).not.toContain('help');
+});

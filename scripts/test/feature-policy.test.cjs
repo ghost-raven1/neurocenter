@@ -10,7 +10,7 @@ for(const key of FEATURE_FLAG_KEYS)test('Every capability has a complete immutab
  const definition=FEATURE_FLAGS.find(flag=>flag.key===key);assert.ok(Object.isFrozen(definition));assert.ok(Object.isFrozen(definition.dependsOn));assert.ok(definition.name&&definition.description&&definition.group);
  const configured={...defaultFeatureFlags(),[key]:false},evaluated=evaluateFeatureFlags(configured);assert.equal(evaluated.flags[key],false);assert.equal(configured[key],false);
  await assert.rejects(requireFeaturesEnabled([key],env,async()=>response(configured)),error=>error instanceof FeatureFlagError&&error.status===403&&error.feature===key);
- await requireFeaturesEnabled([key],env,async()=>response(defaultFeatureFlags()));
+ await requireFeaturesEnabled([key],env,async()=>response(Object.fromEntries(FEATURE_FLAG_KEYS.map(key=>[key,true]))));
 });
 test('Dependencies disable descendants without rewriting configured choices',()=>{
  const state=evaluateFeatureFlags({...defaultFeatureFlags(),model_hosting:false});
@@ -36,6 +36,11 @@ test('Transport failures and oversized bodies fail closed without exposing secre
  const abort=new AbortController();abort.abort(new Error('qa-cancel'));await assert.rejects(readFeatures(env,async()=>{throw Error('transport');},abort.signal),/qa-cancel/);
 });
 const routes=[
+ ['PUT','/api/help/getting-started',{},['help_center']],
+ ['POST','/api/discussions/comments',{},[]],
+ ['PATCH','/api/discussions/comments/id',{},['discussions']],
+ ['POST','/api/discussions/attachments',{},['discussions','discussion_attachments']],
+ ['PUT','/api/catalog-reactions',{},[]],
  ['POST','/api/projects',{},['projects']],['POST','/api/device-channel/pair/start',{},['computer_connections']],
  ['POST','/api/ai-plugins',{},['tool_catalog']],['PUT','/api/skills/common/qa',{},['tool_catalog']],
  ['POST','/api/asset-imports',{},['asset_sources']],['POST','/api/device-install-plans',{},['tool_installation']],
@@ -47,6 +52,12 @@ const routes=[
  ['POST','/api/device-jobs',{kind:'prepare-local-change'},['local_changes']],['POST','/api/device-channel/agents/compile',{},[]],
  ['POST','/api/models/m/ollama/v1/chat/completions',{},['model_hosting']],['GET','/api/tool-builds/repository',{},['tool_builds']],['POST','/api/rag/sync',{},['rag_sync']],
 ];
+test('Discussion attachment dependency preserves published history and cleanup',()=>{
+ const state=evaluateFeatureFlags({...defaultFeatureFlags(),discussions:false});
+ assert.equal(state.flags.discussion_attachments,false);assert.equal(state.configured.discussion_attachments,true);
+ assert.deepEqual(state.blockedBy.discussion_attachments,['discussions']);
+ for(const [method,path]of [['GET','/api/help/start'],['GET','/api/discussions'],['GET','/api/discussions/attachments/id/content'],['DELETE','/api/discussions/comments/id'],['DELETE','/api/discussions/attachments/id'],['DELETE','/api/catalog-reactions']])assert.deepEqual(requiredRouteFeatures(method,path),[]);
+});
 for(const [method,path,body,keys]of routes)test('Native and Gateway admission agree for '+method+' '+path,()=>assert.deepEqual(requiredRouteFeatures(method,path,body),keys));
 test('Reads, cancellation, revocation, role controls and recovery never depend on business flags',()=>{
  for(const [method,path,body]of [['GET','/api/agents'],['GET','/api/model-chats/id'],['GET','/api/model-chats/id/history'],['POST','/api/model-chats/id/turns/t/cancel'],['POST','/api/model-chats/id/turns/t/complete'],['DELETE','/api/models/m/connection'],['POST','/api/models/m/hosting',{action:'stop'}],['PATCH','/api/feature-flags/model_hosting',{enabled:true}],['POST','/api/projects/p/versions/v/activate'],['POST','/api/device-jobs',{kind:'uninstall'}],['POST','/api/device-jobs',{kind:'bind-project',bindingMode:'resume'}]])assert.deepEqual(requiredRouteFeatures(method,path,body),[],path);

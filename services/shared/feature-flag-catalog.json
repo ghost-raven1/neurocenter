@@ -197,5 +197,37 @@
       "model_chat"
     ],
     "defaultEnabled": true
+  },
+  {
+    "key": "help_center",
+    "name": "Помощь",
+    "description": "Создание и изменение статей Markdown. Чтение опубликованной помощи сохраняется.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "catalog_reactions",
+    "name": "Сердечки каталога",
+    "description": "Отметки на карточках каталога. Счётчики и снятие своей отметки доступны после выключения.",
+    "group": "catalog",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "discussions",
+    "name": "Обсуждения",
+    "description": "Новые комментарии, ответы и редактирование в каталоге и Помощи. История и удаление доступны после выключения.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "discussion_attachments",
+    "name": "Файлы в обсуждениях",
+    "description": "Новые вложения в комментариях. Доступ к ранее прикреплённым файлам сохраняется с проверкой прав.",
+    "group": "platform",
+    "dependsOn": ["discussions"],
+    "defaultEnabled": true
   }
 ]

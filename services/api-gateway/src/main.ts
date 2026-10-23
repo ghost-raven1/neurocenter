@@ -1,3 +1,4 @@
+import {discussionAttachmentUploadRoute} from '../../shared/discussion-attachment-route.cjs';
 // Apply the gateway TLS setting before bootstrap, including direct node dist/main.js launches.
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -35,7 +36,7 @@ async function bootstrap(): Promise<void> {
     app.use('/api/device-channel',express.json({limit:'512kb'}));
     const jsonParser=express.json({limit:'50mb'});
     app.use((req: import('express').Request,res: import('express').Response,next: import('express').NextFunction)=>{
-        if(sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)){next();return;}
+        if(discussionAttachmentUploadRoute(req.method,req.path)||sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)){next();return;}
         jsonParser(req,res,next);
     });
     const port = process.env.PORT ? Number(process.env.PORT) : 4000;

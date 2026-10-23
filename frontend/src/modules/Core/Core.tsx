@@ -1,4 +1,4 @@
-import { ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
+import { SettingOutlined, QuestionCircleOutlined, ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
@@ -34,6 +34,8 @@ const navigation: Record<string, { title: string; icon: ReactNode }> = {
     audit: { title: 'История действий', icon: <AuditOutlined /> },
     'model-usage': { title: 'Использование моделей', icon: <DeploymentUnitOutlined /> },
     access: { title: 'Участники и доступ', icon: <SafetyOutlined /> },
+    settings: { title: 'Настройки', icon: <SettingOutlined /> },
+    help: { title: 'Помощь', icon: <QuestionCircleOutlined /> },
 };
 
 const OperationsQueue = lazySection(() => import('../Operations/OperationsQueue'), 'Операции', { preserveOnNavigation: true });

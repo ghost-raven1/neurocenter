@@ -14,6 +14,17 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     const route = canonicalAccessRoute(request.path);
     if (route === undefined) { return false; }
     const body = request.body ?? {};
+    const verb = request.method.toUpperCase();
+    // Executors additionally check fresh target ACL, authorship and expected version.
+    if(route==='/api/help')return read;
+    if(/^\/api\/help\/[a-z0-9][a-z0-9-]{0,79}$/.test(route))return read||main&&verb==='PUT';
+    if(route==='/api/discussions')return read;
+    if(route==='/api/discussions/comments'||route==='/api/discussions/attachments')return verb==='POST';
+    if(/^\/api\/discussions\/comments\/[a-f0-9-]{36}$/.test(route))return read||['PATCH','DELETE'].includes(verb);
+    if(/^\/api\/discussions\/attachments\/[a-f0-9-]{36}$/.test(route))return verb==='DELETE';
+    if(/^\/api\/discussions\/attachments\/[a-f0-9-]{36}\/content$/.test(route))return read;
+    if(route==='/api/catalog-reactions')return read||['PUT','DELETE'].includes(verb);
+    if(/^\/api\/catalog-reactions\/(mcp|plugin|skill|model|agent)\/[^/]+$/.test(route))return ['PUT','DELETE'].includes(verb);
     if(route==='/api/catalog-requests'){return ['GET','HEAD','POST'].includes(request.method.toUpperCase());}
     if(route==='/api/catalog-requests/targets'){return read;}
     if(/^\/api\/catalog-requests\/[a-f0-9-]{36}$/.test(route)){return read||request.method.toUpperCase()==='PATCH';}

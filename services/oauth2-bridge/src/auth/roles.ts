@@ -1,7 +1,7 @@
 /** Маршруты и действия активной роли; проектная область дополнительно проверяется gateway. */
 export function roleRoutes(role: string): string[] {
-    const base = ['start','store','projects','projects-detail','operations','rag'];
-    if (role === 'Главный админ') { return [...base,'assets','access','maintenance','audit','mcp-bundles','skills','packages','model-usage']; }
+    const base = ['start','store','projects','projects-detail','operations','rag','help'];
+    if (role === 'Главный админ') { return [...base,'settings','assets','access','maintenance','audit','mcp-bundles','skills','packages','model-usage']; }
     if (role === 'Админ проекта') { return [...base,'assets','access','model-usage']; }
     return role === 'Разработчик' ? [...base,'model-usage'] : role === 'Наблюдатель' ? base : [];
 }

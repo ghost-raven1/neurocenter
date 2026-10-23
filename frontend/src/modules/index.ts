@@ -1,6 +1,8 @@
 import type { IModule } from '../core/interfaces';
 
 import Access from './Access';
+import Settings from './Settings';
+import Help from './Help';
 import Assets from './Assets';
 import Audit from './Audit';
 import ModelUsage from './ModelUsage';
@@ -25,6 +27,8 @@ export const contentModules: IModule[] = [
     Audit,
     ModelUsage,
     Access,
+    Settings,
+    Help,
 ];
 
 export default contentModules;

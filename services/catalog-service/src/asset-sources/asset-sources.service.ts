@@ -73,7 +73,7 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
         const view=(asset:Parameters<typeof sourceAssetView>[0],sha256:string,receipt?:ISourceReceipt)=>
             sourceAssetView(asset,sha256,receipt,receipt?states.get(receipt.repository+':'+receipt.external_id):undefined);
         const supply=snapshot?.archive_sha256||assetSourceMode()==='offline'?await sourceSupplyViews(snapshot?.assets??[],this.blobs):undefined;
-        return {source:{mode:assetSourceMode(),repository:'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
+        return {source:{mode:assetSourceMode(),repository:snapshot?.pin.repository??'ghost-raven1/neurocenter-assets',commit:snapshot?.pin.commit,checkedAt:snapshot?.checked_at,
             verified:!!snapshot,lastAttemptAt:last?.attempted_at,error:last?.message||undefined,archiveSha256:snapshot?.archive_sha256??undefined},
             assets:(snapshot?.assets??[]).filter(record=>record.current).map(({asset,sha256})=>({...view(asset,sha256,receipts.find(row=>row.external_id===asset.id)),...(supply?{supply:supply.get(asset.id)}:{})})),
             localAssets:local.map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};

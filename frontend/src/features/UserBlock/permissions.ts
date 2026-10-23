@@ -69,3 +69,6 @@ export const ACCESS_ROUTE = 'access';
 export const RAG_ROUTE = 'rag';
 export const START_ROUTE = 'start';
 export const STORE_ROUTE = 'store';
+
+export const SETTINGS_ROUTE = 'settings';
+export const HELP_ROUTE = 'help';

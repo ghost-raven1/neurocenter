@@ -147,7 +147,7 @@ services:
       MODEL_STORAGE_PATH: /data/models
       MODEL_HOSTING_ENABLED: ${MODEL_HOSTING_ENABLED:-true}
     secrets: [metrics_token, internal_token, catalog_url, backup_url, model_credential_key]
-    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:rw]
+    volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:rw, help-content:/app/content/help]
     depends_on:
       model-runtime: {condition: service_healthy}
       capacity-collector: {condition: service_healthy}
@@ -342,5 +342,6 @@ volumes:
   postgres:
   skills:
   projects:
+  help-content:
   runtime-artifacts:
   backups:

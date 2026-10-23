@@ -1,3 +1,5 @@
+import {discussionAttachmentUploadRoute,discussionAttachmentDownloadRoute,DISCUSSION_ATTACHMENT_MAX_BYTES} from '../../../shared/discussion-attachment-route.cjs';
+import {forwardDiscussionAttachment} from './discussion-attachment-download';
 import {snapshotContentRoute,snapshotDownloadRoute,snapshotPublicationRoute} from '../../../shared/snapshot-content-route.cjs';
 import {forwardSnapshotChunk} from './snapshot-stream';
 import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
@@ -81,7 +83,7 @@ export class ProxyService {
               : this.catalogUrl;
         const snapshotPublication=snapshotPublicationRoute(method,path);
         const canonicalPath=canonicalAccessRoute(path);
-        if (/^\/api\/model-chats(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
+        if (/^\/api\/(?:model-chats|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
         const agentTrialRoute=/^\/api\/projects\/[^/]+\/agents\/(?:readiness(?:[/%]|$)|.*\/readiness-trials(?:[/%]|$))/.test(canonicalPath||'');
         if(learningRoute||agentTrialRoute)res.setHeader('Cache-Control','no-store');
@@ -120,6 +122,15 @@ export class ProxyService {
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
+            const discussionUpload=discussionAttachmentUploadRoute(method,path);
+            if(discussionUpload){
+                const query=new URLSearchParams();
+                for(const key of ['targetType','targetId'])if(typeof req.query[key]==='string')query.set(key,req.query[key] as string);
+                if(!req.headers['content-length']){res.status(411).json({message:'Укажите размер прикрепляемого файла.'});return;}
+                await forwardSourceUpload(this.http,`${this.catalogUrl}${discussionUpload}?${query}`,this.buildHeaders(req.headers,auth),req,res,DISCUSSION_ATTACHMENT_MAX_BYTES,1024*1024,'POST');return;
+            }
+            const discussionDownload=discussionAttachmentDownloadRoute(method,path);
+            if(discussionDownload){await forwardDiscussionAttachment(this.http,`${this.catalogUrl}${discussionDownload}`,this.buildHeaders(req.headers,auth),req,res);return;}
             const archiveRoute=assetSourceArchiveRoute(method,path);
             const uploadRoute=sourceUploadContentRoute(method,path)||snapshotContentRoute(method,path)||archiveRoute;
             if(uploadRoute){await forwardSourceUpload(this.http,`${this.catalogUrl}${uploadRoute}`,this.buildHeaders(req.headers,auth),req,res,archiveRoute?ASSET_SOURCE_ARCHIVE_MAX_BYTES:snapshotContentRoute(method,path)?64*1024**2:undefined,archiveRoute?64*1024**2:undefined);return;}

@@ -1,0 +1,31 @@
+.catalog-feedback {border-top:1px solid #e8edf2;padding-top:8px;margin-top:12px;min-width:0;}
+.catalog-feedback__liked {color:#c94b70 !important;}
+.discussion-thread {min-width:0;}
+.discussion-thread__heading {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.discussion-thread__heading h4 {margin:0 !important;}
+.discussion-thread__entries {display:flex;flex-direction:column;gap:18px;margin:16px 0;}
+.discussion-thread__more {margin-bottom:16px;}
+.discussion-entry {display:flex;gap:10px;min-width:0;scroll-margin-top:100px;}
+.discussion-entry_reply {padding-left:20px;border-left:2px solid #e5eaf0;}
+.discussion-entry__content {flex:1;min-width:0;}
+.discussion-entry header {display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;}
+.discussion-entry time,.discussion-entry__parent,.discussion-entry small {font-size:12px;color:#65788f;}
+.discussion-entry__parent {margin:4px 0;}
+.discussion-entry__actions {margin-top:4px;}
+.discussion-entry__attachments,.discussion-composer__files {list-style:none;padding:0;margin:8px 0;display:flex;flex-direction:column;gap:6px;}
+.discussion-entry__attachments li,.discussion-composer__files li {overflow-wrap:anywhere;}
+.discussion-composer {padding-top:16px;border-top:1px solid #e5eaf0;display:flex;flex-direction:column;gap:10px;}
+.discussion-composer__reply,.discussion-composer__actions {display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.discussion-composer__files li {display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #e5eaf0;border-radius:8px;padding:6px 10px;}
+.discussion-composer__files li>span:first-child {flex:1;min-width:0;}
+.discussion-composer__files small {color:#65788f;white-space:nowrap;}
+.discussion-markdown {overflow-wrap:anywhere;line-height:1.65;}
+.discussion-markdown>:first-child {margin-top:4px;}
+.discussion-markdown>:last-child {margin-bottom:4px;}
+.discussion-markdown pre {white-space:pre;overflow:auto;background:#f4f6f9;padding:12px;border-radius:8px;}
+.discussion-markdown code {font-size:.9em;}
+.discussion-markdown__table {overflow:auto;}
+.discussion-markdown table {border-collapse:collapse;}
+.discussion-markdown th,.discussion-markdown td {border:1px solid #e5eaf0;padding:6px 10px;}
+.discussion-markdown__image {color:#65788f;font-size:13px;}
+@media(max-width:575px) {.discussion-entry_reply{padding-left:10px}.discussion-composer__actions>.ant-btn{width:100%}}

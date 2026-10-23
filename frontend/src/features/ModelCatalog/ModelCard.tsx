@@ -1,3 +1,4 @@
+import type {ReactNode} from 'react';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { CloudOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { Button, Tag, Tooltip, Typography } from 'antd';
@@ -14,10 +15,11 @@ interface IProps {
     assignmentUnavailableReason?: string;onConnect?:()=>void;connectionUnavailableReason?:string;
     onChat?: () => void; chatUnavailableReason?: string;
     onSetupProvider?: () => void;
+    feedback?: ReactNode;
 }
 
 /** В карточке видны назначение, подключение и главное действие; технические сведения открываются отдельно. */
-export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,onChat,chatUnavailableReason,onSetupProvider }: IProps): JSX.Element {
+export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,onChat,chatUnavailableReason,onSetupProvider, feedback }: IProps): JSX.Element {
     const remote = model.runtime !== 'ollama';
     return <article className={`model-card${assigned ? ' model-card_assigned' : ''}`} aria-label={model.name}>
         <div className="model-card__heading">
@@ -37,6 +39,7 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             {model.archivedAt && <Tag>Убрана из общего каталога</Tag>}
         </div>
         <ModelHosting model={model} canManage={canHost && !disabled && !model.archivedAt} compact onManage={onConfigure ?? onView} />
+        {feedback}
         <div className="model-card__actions">
             <Button type="text" onClick={onView}>Подробнее</Button>
             {model.capability !== 'embedding' && onChat && <Tooltip title={chatUnavailableReason}><span aria-label={chatUnavailableReason} tabIndex={chatUnavailableReason ? 0 : undefined}>
