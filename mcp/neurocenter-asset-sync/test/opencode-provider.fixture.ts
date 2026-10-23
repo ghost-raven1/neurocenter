@@ -13,6 +13,7 @@ export const noop=async()=>{};
 export const fixtures:Array<{temporary:string;closed:boolean}>=[];
 /** All identity, project, HOME and key material belong to this temporary workspace. */
 export async function providerFixture(){
+    if(!process.env.NEUROCENTER_TEST_PROCESS_ROOT)throw new Error('Provider fixtures require the isolated Vitest process baseline.');
     const temporary=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-provider-'))),root=path.join(temporary,'projects','project'),home=path.join(temporary,'home');
     await fs.mkdir(root,{recursive:true});await fs.mkdir(path.join(root,'.git'));await fs.mkdir(home);
     for(const [key,value]of Object.entries({HOME:home,CODEX_HOME:'',NEUROCENTER_BRIDGE_HOME:path.join(temporary,'private'),NEUROCENTER_URL:'https://nc.example.test',XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share'),OPENCODE_CONFIG:'',OPENCODE_CONFIG_DIR:'',OPENCODE_CONFIG_CONTENT:'',OPENCODE_DISABLE_PROJECT_CONFIG:''}))vi.stubEnv(key,value);
