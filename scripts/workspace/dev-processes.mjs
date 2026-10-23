@@ -46,10 +46,16 @@ function matchesServiceCommand(command, root, service, executable, pid) {
                 catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) { return false; } }
             }
         }
+        if(script===path.join(root,'scripts/workspace/dev-watch-child.mjs')&&service.name!=='source-watch')return true;
+        if(script?.includes('/.run/dev-watch/generations/')){
+            const prefix=path.join(root,'.run/dev-watch/generations')+path.sep,relative=script.startsWith(prefix)?script.slice(prefix.length):'',parts=relative.split(path.sep);
+            return /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(parts[0]||'')&&parts.slice(1).join('/')==='repository/'+service.dir+'/dist/main.js';
+        }
         return entries.some(entry => script === entry || script === `./${entry}`
             || script === path.join(root, service.dir, entry)
             || path.isAbsolute(script) && script.endsWith(`/${path.join(service.dir, entry)}`));
     }
+    if(command.endsWith(' '+path.join(root,'scripts/workspace/dev-watch-child.mjs'))&&service.name!=='source-watch')return true;
     return entries.some(entry => command.endsWith(` ${path.join(root, service.dir, entry)}`)
         || command.endsWith(`/${path.join(service.dir, entry)}`)
         || command.endsWith(` ${entry}`) || command.endsWith(` ./${entry}`));

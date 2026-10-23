@@ -64,7 +64,7 @@ async function privateEnvironment(folder,node){
 }
 
 /** Build a stable copy of current inputs; keep every failure and artifact in this run without publishing anything. */
-export async function isolatedBuild(root,selection,{signal,timeoutMs=180000,graceMs=1000,onCopied}={}){
+export async function isolatedBuild(root,selection,{signal,timeoutMs=180000,graceMs=1000,onCopied,onBuildProcess,buildOwnerFile}={}){
     await isolatedBuildPlan(root,selection);
     if(process.platform==='win32')throw new BuildError('UNSUPPORTED_PLATFORM','This process-group implementation currently requires POSIX.');
     const cleanPath=[path.dirname(process.execPath),'/usr/bin','/bin','/usr/sbin','/sbin'].join(path.delimiter);
@@ -94,7 +94,7 @@ export async function isolatedBuild(root,selection,{signal,timeoutMs=180000,grac
             if(signal?.aborted)throw new BuildError('CANCELLED','The isolated build was cancelled.');
             if(!await dependencyLinksCurrent(root,repository,links))throw new BuildError('DEPENDENCIES_CHANGED','Dependency link identity changed between builds.');
             const args=[npm,'run','build',...id==='frontend'?['--','--configLoader','runner']:[]],logFile=path.join(folder,id+'.log');
-            const result=await runBuildProcess({node:runtime.node,args,cwd:path.join(repository,relative),env:environment,logFile,signal,timeoutMs,graceMs});
+            const result=await runBuildProcess({node:runtime.node,args,cwd:path.join(repository,relative),env:environment,logFile,signal,timeoutMs,graceMs,onSpawn:onBuildProcess,ownerFile:buildOwnerFile});
             result.id=id;result.command=[runtime.node,...args];result.log={path:path.relative(root,logFile)};
             receipt.builds.push(result);
             if(!result.ok)primary??=result.failure||{code:'BUILD_FAILED'};

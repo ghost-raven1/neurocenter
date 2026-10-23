@@ -30,6 +30,8 @@ const services = [
 ];
 const snapshotWorker={name:'snapshot-verifier',label:'Проверка снимков',dir:'.',port:4100,entry:'scripts/snapshots/runner.mjs'};
 const managedServices=[...services,snapshotWorker];
+const watchService={name:'source-watch',label:'Пересборка исходников',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'};
+const trackedServices=[...managedServices,watchService];
 const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
 const defaultProfile = 'fast';
 const output = createDevOutput({defaultProfile});
@@ -92,7 +94,7 @@ function readProcesses() {
     try {
         const records = JSON.parse(readFileSync(stateFile, 'utf8'));
         if (!Array.isArray(records) || records.some(record => !record || typeof record !== 'object'
-            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !managedServices.some(service => service.name === record.name))) {
+            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !trackedServices.some(service => service.name === record.name))) {
             throw new SyntaxError('Ожидается список PID сервисов');
         }
         return records;
@@ -109,7 +111,7 @@ function readProcesses() {
 
 /** Чужие процессы и переиспользованные PID не останавливаем, перенос checkout поддерживаем. */
 function ownsProcess(record) {
-    const service = managedServices.find(item => item.name === record.name);
+    const service = trackedServices.find(item => item.name === record.name);
     return ownsDevProcess(record, root, service);
 }
 
@@ -132,8 +134,10 @@ function signalProcess(pid, signal) {
 
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
 async function stop(saved) {
-    const known = saved ?? readProcesses();
-    const discovered = saved ? [] : discoverDevProcesses(root, managedServices, known.map(record => record.pid));
+    let known = saved ?? readProcesses();
+    const watchers=[...known.filter(item=>item.name===watchService.name),...(!saved?discoverDevProcesses(root,[watchService],known.map(record=>record.pid)):[])].filter(ownsProcess);
+    if(watchers.length){const {stopDevWatch}=await import('./workspace/dev-watch-control.mjs');for(const record of watchers)await stopDevWatch(root,record);if(!saved)known=readProcesses();}
+    const discovered = saved ? [] : discoverDevProcesses(root, trackedServices, known.map(record => record.pid));
     const records = [...new Map([...known, ...discovered].map(record => [record.pid, record])).values()].filter(ownsProcess);
     for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
     const deadline = Date.now() + 5000;
@@ -180,7 +184,7 @@ async function health(deadline = Infinity, cancellation) {
     }));
 }
 
-async function start(profile) {
+async function start(profile,watchMode=false) {
     const prepareAssets = profile !== 'fast' || process.stdin.isTTY === true && process.stdout.isTTY === true, prepareModels = profile === 'full';
     output.info('Профиль запуска', {fast:'fast — приложения; выбор ассетов в терминале, иначе сохранённый кэш',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и все модели'}[profile]);
     const next = progress(packages.length + 8);
@@ -252,14 +256,19 @@ async function start(profile) {
     process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
-        for (const service of managedServices) {
+        const environmentFor=service=>service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
+            ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)};
+        if(watchMode){
+            const {startDevWatch}=await import('./workspace/dev-watch-control.mjs');
+            const watcher=await startDevWatch({root,node,logDir,signal:cancellation.signal,services:managedServices.map(service=>({...service,entry:entryFor(service),environment:environmentFor(service)}))});
+            records.push(watcher.record);children.push({child:watcher.child,service:watchService,logFile:path.join(logDir,'neurocenter-source-watch.log')});
+        }else for (const service of managedServices) {
             cancellation.signal.throwIfAborted();
             const logFile = path.join(logDir, `neurocenter-${service.name}.log`);
             const log = openSync(logFile, 'a');
             const child = spawn(node, [ entryFor(service) ], {
                 cwd: path.join(root, service.dir),
-                env: service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
-                    ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT: String(service.port) },
+                env: environmentFor(service),
                 detached: true,
                 stdio: [ 'ignore', log, log ],
             });
@@ -298,6 +307,7 @@ async function start(profile) {
                 output.info('Логи', logDir);
                 output.info('Проверить состояние', 'scripts/dev.sh status');
                 output.info('Остановить', 'scripts/dev.sh down');
+                if(watchMode)output.info('Watch','Включён: изменения сервисов/shared собираются последовательно; статус — scripts/dev.sh status.');
                 return;
             }
             await delay(500);
@@ -315,7 +325,7 @@ async function start(profile) {
 async function main() {
     const args = process.argv.slice(2);
     const command = args[0];
-    const commands = ['install', 'build', 'check', 'up', 'down', 'status', 'tail'];
+    const commands = ['install', 'build', 'check', 'up', 'watch', 'down', 'status', 'tail'];
     const helpFlags = ['--help', '-h', '—help'];
     // Scoped checks admit arguments before dotenv and keep their own report and exit status.
     if (command === 'check') {
@@ -334,10 +344,12 @@ async function main() {
     }
     let profile = defaultProfile;
     let seenProfile = false;
+    let watchMode=command==='watch',seenWatch=false;
     let invalid = !commands.includes(command);
     for (let index = 1; index < args.length && !invalid; index++) {
         const argument = args[index];
-        if (command !== 'up' || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
+        if((command==='up'||command==='watch')&&argument==='--watch'&&!seenWatch){watchMode=true;seenWatch=true;continue;}
+        if (!['up','watch'].includes(command) || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
         profile = argument === '--profile' ? args[++index] : argument.slice('--profile='.length);
         seenProfile = true;
         if (!['fast','standard','full'].includes(profile)) { invalid = true; }
@@ -366,7 +378,7 @@ async function main() {
     process.env.NODE_BIN = node;
     logDir = process.env.LOGDIR || path.join(stateDir, 'logs');
 
-    const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
+    const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',watch:'Запуск с пересборкой исходников',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
     output.heading(titles[command]);
     if (command === 'install') {
         const next = progress(packages.length + 3);
@@ -386,7 +398,7 @@ async function main() {
         next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
         await forPackages(command, next); output.success('Проект собран');
     }
-    else if (command === 'up') { await start(profile); }
+    else if (command === 'up'||command==='watch') { await start(profile,watchMode); }
     else if (command === 'down') {
         const count = await stop();
         if (count) { output.success(`Остановлено процессов этого каталога: ${count}`); }
@@ -396,6 +408,7 @@ async function main() {
     }
     else if (command === 'status') {
         const results = await health();
+        if(existsSync(path.join(stateDir,'dev-watch/status.json'))){const {devWatchStatus}=await import('./workspace/dev-watch-control.mjs');const watch=await devWatchStatus(root);if(watch){output.info('Watch',watch.alive?watch.phase:'остановлен');if(watch.lastBuild?.ok===false)output.warning('Последняя пересборка не применена: '+watch.lastBuild.code+'; предыдущие сервисы сохранены. Лог: '+path.join(stateDir,'dev-watch/last-failure'));}}
         for (const service of results) { output.service(service); }
         const ready = results.filter(service => service.ok).length;
         if (ready === results.length) { output.success(`Все сервисы готовы: ${ready}/${results.length}`); output.info('Интерфейс', 'http://localhost:5173'); }

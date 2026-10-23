@@ -14,7 +14,7 @@ function groupMembers(pgid){
 function signalGroup(pgid,signal){try{process.kill(-pgid,signal);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}}
 
 /** Supervise npm and its compiler descendants in one owned POSIX group, even after the leader exits. */
-export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutMs=180000,graceMs=1000,logLimit=32*1024**2}){
+export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutMs=180000,graceMs=1000,logLimit=32*1024**2,onSpawn,ownerFile}){
     if(process.platform==='win32')throw new BuildError('UNSUPPORTED_PLATFORM','Owned process-group cleanup is currently supported on POSIX only.');
     const log=await fs.open(logFile,'wx',0o600),started=Date.now();
     let child,pid,exit,spawnError,primary=null,closed=false,leaderExited=false,groupInspectionFailed=false;
@@ -24,7 +24,8 @@ export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutM
     const abort=()=>{fail('CANCELLED');terminate();};
     try{
         if(signal?.aborted)return {ok:false,failure:{code:'CANCELLED'},exitCode:null,signal:null,durationMs:0,leaderReaped:false,cleanup:{noLiveDescendants:true,signals:[]}};
-        child=spawn(node,args,{cwd,env,stdio:['ignore',log.fd,log.fd],detached:true,windowsHide:true});pid=child.pid;
+        child=spawn(node,ownerFile?[ownerFile]:args,{cwd,env,stdio:ownerFile?['ignore',log.fd,log.fd,'ipc']:['ignore',log.fd,log.fd],detached:true,windowsHide:true});pid=child.pid;
+        child.once('spawn',()=>{onSpawn?.(child.pid);if(ownerFile)child.send({kind:'run',args,environment:env});});
         child.once('error',error=>{spawnError=error.code||'UNKNOWN';fail('SPAWN_FAILED');});
         child.once('exit',(code,endedBy)=>{leaderExited=true;exit={code,signal:endedBy};if(code!==0||endedBy)fail('BUILD_FAILED');});
         child.once('close',()=>{closed=true;});

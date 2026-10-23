@@ -1,0 +1,9 @@
+# Пересборка dev-сервисов — 23 октября
+
+Добавлен явный [watch-режим](features/dev-source-watch.md): `scripts/dev.sh up --watch` / `watch`, общий `status` и `down`. Быстрые правки объединяются, сборки выполняются последовательно через существующий isolated builder без установки зависимостей. Shared-исходники пересобирают backend-потребителей; новый MCP runtime передаётся Catalog/RAG. Vite сохраняет штатный HMR.
+
+Текущий процесс меняется только после успешной сборки. Активный runtime хранит собственные CJS/JSON shared-файлы, чтобы failed startup мог вернуть прежний код. Неиспользуемые поколения и крупные staging manifests удаляются; один последний набор приватных ошибок ограничен 256 КиБ на пакет. Сервисные env передаются в памяти через IPC. Приватные process records не содержат env/ключей. Trusted child owners очищают process groups при SIGKILL/IPC EOF, `down` останавливает watcher первым, а ownership проверяет PID/cwd/start identity.
+
+Локально под Node24.22.0 пройдены **13/13 новых** проверок и **95/95 существующих** dev-cli/start/stop/processes/output/isolated-build, skips 0. Native fixtures проверяют SIGKILL родителя, TERM-ignoring descendants, отмену компилятора, переиспользованный PID, выборочный перезапуск, rollback runtime/shared, приватность metadata и освобождение порта. Отдельный tiny-checkout проходит настоящий guardian → daemon → npm build → source edit → restart → failed compilation с сохранением прежнего PID/version → stop. Это временные процессы и тестовые loopback-порты, без Docker, сети, установки зависимостей или пользовательских данных.
+
+Запуск на исходном checkout, независимое ревью, CI и другие ОС остаются отдельной приёмкой. Агент не менял процессы оригинального стека; live launch выполняет основной агент после объединения с сохранёнными локальными настройками tooling.
