@@ -7,6 +7,7 @@ import { atomicText, syncDirectory } from './atomic-file.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import {DEVICE_CODEX_PROTOCOL} from '../features/device-codex-inference/contract.js';
 import {acknowledgeCodexReceipt,codexDeliveryResult} from '../features/device-codex-inference/receipts.js';
+import {acknowledgeRuntimeCachePolicyReceipt} from '../features/runtime-artifacts/cache-policy.js';
 
 export interface Completion {
     id: string;
@@ -81,6 +82,7 @@ export async function deliverCompletions(
             await fs.rename(path.join(directory(), item.id + '.json'), path.join(archive, item.id + '.json'));
             if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
             if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
+            await acknowledgeRuntimeCachePolicyReceipt(item.id);
             continue;
         }
         const delivered=item.result.protocol===DEVICE_CODEX_PROTOCOL
@@ -89,6 +91,8 @@ export async function deliverCompletions(
         await send(delivered);
         if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
         if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
+        // В pending index входят и отказы до записи, результат которых пуст.
+        await acknowledgeRuntimeCachePolicyReceipt(item.id);
         await fs.rm(path.join(directory(), item.id + '.json'), { force: true });
     }
 }

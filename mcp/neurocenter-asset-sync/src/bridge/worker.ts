@@ -70,6 +70,8 @@ import { synchronizeOpenCodeModels } from './opencode-model-sync.js';
 import {DEVICE_CODEX_JOB} from '../features/device-codex-inference/contract.js';
 import {runDeviceCodexJob} from '../features/device-codex-inference/executor.js';
 import {recoverCodexCompletions} from '../features/device-codex-inference/receipts.js';
+import {runRuntimeCachePolicyJob,recoverRuntimeCachePolicyCompletions} from '../features/runtime-artifacts/cache-policy.js';
+import {RUNTIME_CACHE_POLICY_JOB} from '../features/runtime-artifacts/policy-store.js';
 
 interface Job {
     id: string;
@@ -79,7 +81,7 @@ interface Job {
     payload: {memory?:unknown} & ProjectLocalPayload & ConfigurationPayload & ProviderPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;snapshotId?:string;snapshotProtocol?:string;
-        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
+        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string;runtimeCachePolicy?:unknown };
 }
 
 /** Один worker на профиль и площадку; WS будит очередь, heartbeat страхует разрыв транспорта. */
@@ -153,6 +155,7 @@ export async function runWorker(): Promise<void> {
             await recoverFileJobs();
             await recoverRuntimePreparations();
             await recoverCodexCompletions(saveCompletion);
+            await recoverRuntimeCachePolicyCompletions(saveCompletion);
             await recoverRagRestores();
             await startHostedRagConnections();
             await deliverCompletions();
@@ -193,6 +196,11 @@ export async function runWorker(): Promise<void> {
                     }).catch(() => undefined);
                 }, 30000);
                 try {
+                    if(current.kind===RUNTIME_CACHE_POLICY_JOB){
+                        const completed=await runRuntimeCachePolicyJob({id:current.id,lease:current.lease,payload:current.payload.runtimeCachePolicy},deviceId,authorize);
+                        clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();
+                        await heartbeat().catch(()=>process.stderr.write('neurocenter bridge: присутствие компьютера после подтверждения настройки кэша не обновлено.\n'));continue;
+                    }
                     if(current.kind===DEVICE_CODEX_JOB){
                         const completed=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runDeviceCodexJob(current,deviceId,authorize));
                         clearInterval(renew);
@@ -352,6 +360,12 @@ export async function runWorker(): Promise<void> {
                     await deliverCompletions();
                 } catch (error) {
                     clearInterval(renew);
+                    if(current.kind===RUNTIME_CACHE_POLICY_JOB){
+                        await recoverRuntimeCachePolicyCompletions(saveCompletion);
+                        if((await pendingCompletions()).some(item=>item.id===current.id)){
+                            await deliverCompletions();await heartbeat().catch(()=>process.stderr.write('neurocenter bridge: присутствие компьютера после доставки настройки кэша не обновлено.\n'));continue;
+                        }
+                    }
                     if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
                     if(current.kind===MEMORY_SYNC_JOB)throw new Error('План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}

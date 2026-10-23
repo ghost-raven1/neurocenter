@@ -15,7 +15,7 @@ const snapshotContract = fileURLToPath(new URL('../../services/shared/project-sn
 const configurationContract = fileURLToPath(new URL('../../services/shared/project-configuration.cjs', import.meta.url));
 const agentsContract = fileURLToPath(new URL('../../services/shared/project-agents.cjs', import.meta.url));
 const learningContract = fileURLToPath(new URL('../../services/shared/project-learning.cjs', import.meta.url));
-const additionalSharedContracts=['adapter-parameters.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs','codex-connector-source.cjs'];
+const additionalSharedContracts=['adapter-parameters.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs','codex-connector-source.cjs','runtime-cache-policy.cjs'];
 const providerContract = fileURLToPath(new URL('../../services/shared/opencode-providers.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });

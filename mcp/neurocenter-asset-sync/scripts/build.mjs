@@ -14,6 +14,7 @@ try {
     execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', path.join(root, 'tsconfig.json'), '--outDir', path.join(stage, 'dist')], { cwd: root, stdio: 'inherit' });
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     await fs.copyFile(path.join(root, '../../services/shared/device-codex-inference.cjs'), path.join(stage, 'dist/shared/device-codex-inference.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/runtime-cache-policy.cjs'), path.join(stage, 'dist/shared/runtime-cache-policy.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-pin.json'), path.join(stage, 'dist/shared/codex-connector-pin.json'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-source.cjs'), path.join(stage, 'dist/shared/codex-connector-source.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-artifacts.cjs'), path.join(stage, 'dist/shared/runtime-artifacts.cjs'));

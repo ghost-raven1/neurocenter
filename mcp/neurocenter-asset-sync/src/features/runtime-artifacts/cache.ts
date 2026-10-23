@@ -10,6 +10,7 @@ import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
 import { inspectRuntimeArchive, LIMITS, normalizeRuntimeArtifacts, portablePath, runtimeArtifactTarget, type RuntimeArtifact, type RuntimeArtifactEntry } from './model.js';
 import { RuntimeArtifactCapacityError } from './capacity-error.js';
+import { runtimeCacheLimit } from './policy-store.js';
 
 export interface RuntimeArtifactResolution { target: string; sha256: string; root: string; entrypoint: string; executable: boolean }
 export interface ArtifactDownloadOptions {
@@ -37,13 +38,13 @@ async function syncDirectory(folder: string): Promise<void> {
     try { await handle.sync(); } finally { await handle.close(); }
 }
 
-async function usage(root: string): Promise<number> {
+async function usage(root: string, limitBytes = LIMITS.cacheBytes): Promise<number> {
     let bytes = 0;
     for (const item of await fs.readdir(root, { withFileTypes: true })) {
         const filename = path.join(root, item.name); const info = await fs.lstat(filename);
         if (info.isSymbolicLink() || !info.isDirectory() && (!info.isFile() || info.nlink !== 1)) { throw new Error('Ссылки и специальные файлы в кэше запрещены.'); }
-        bytes += info.isDirectory() ? await usage(filename) : info.size;
-        if (bytes > LIMITS.cacheBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Кэш готовых комплектов превышает 2 ГиБ. Удалите неиспользуемые комплекты через администратора.'); }
+        bytes += info.isDirectory() ? await usage(filename, limitBytes) : info.size;
+        if (bytes > limitBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Кэш готовых комплектов превышает лимит '+(limitBytes/1024**3)+' ГиБ. Настройте его в разделе «Мои компьютеры».'); }
     }
     return bytes;
 }
@@ -65,6 +66,15 @@ async function lock(root: string): Promise<() => Promise<void>> {
     }
     throw new Error('Не удалось заблокировать кэш готовых комплектов.');
 }
+
+/** Настройка бюджета и загрузка используют одну межпроцессную блокировку. */
+export async function withRuntimeCacheLock<T>(action:(root:string)=>Promise<T>,root=cacheRoot()):Promise<T> {
+    await directory(root);const unlock=await lock(root);
+    try{return await action(root);}finally{await unlock();}
+}
+
+/** Диагностика показывает занятый объём и при превышении текущего бюджета. */
+export const measureRuntimeCache=(root:string):Promise<number>=>usage(root,Number.MAX_SAFE_INTEGER);
 
 /** После аварии удаляются только собственные staging с доказанно завершившимся PID. */
 async function recoverStaging(root: string): Promise<void> {
@@ -158,8 +168,9 @@ export async function ensureRuntimeArtifact(pkg: Package, options: ArtifactDownl
                 corrupt = true;
             }
         }
-        const currentBytes = await usage(root); const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
-        if (currentBytes + required > LIMITS.cacheBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Для нового комплекта недостаточно места в кэше 2 ГиБ. Прежняя установка сохранена.'); }
+        const limitBytes=await runtimeCacheLimit();
+        const currentBytes = await usage(root,limitBytes); const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
+        if (currentBytes + required > limitBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Для нового комплекта недостаточно места в кэше '+(limitBytes/1024**3)+' ГиБ. Прежняя установка сохранена.'); }
         const disk = await fs.statfs(root, { bigint: true }); if (disk.bavail * disk.bsize < BigInt(required + 128 * 1024 ** 2)) { throw new RuntimeArtifactCapacityError('disk-full','На диске недостаточно свободного места для готового комплекта. Прежняя установка сохранена.'); }
         await fs.mkdir(stage, { mode: 0o700 });
         const ownerHandle = await fs.open(path.join(stage, '.owner.json'), 'wx', 0o600);

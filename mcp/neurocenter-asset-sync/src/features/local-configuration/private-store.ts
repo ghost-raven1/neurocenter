@@ -69,11 +69,11 @@ export async function readPrivateConfiguration<T>(key: string): Promise<T | unde
     finally {await handle?.close();}
 }
 /** Атомарная замена закрытого файла с CAS; старые значения не попадают в backup проекта. */
-export async function writePrivateConfiguration(key: string, value: unknown, expected: unknown, beforeCommit:()=>void=()=>{}): Promise<void> {
+export async function writePrivateConfiguration(key: string, value: unknown, expected: unknown, beforeCommit:()=>void|Promise<void>=()=>{}): Promise<void> {
     const prior=writes;let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});writes=prior.then(()=>gate);
     await prior;try{await commitPrivateConfiguration(key,value,expected,beforeCommit);}finally{release();}
 }
-async function commitPrivateConfiguration(key: string, value: unknown, expected: unknown, beforeCommit:()=>void): Promise<void> {
+async function commitPrivateConfiguration(key: string, value: unknown, expected: unknown, beforeCommit:()=>void|Promise<void>): Promise<void> {
     const raw = JSON.stringify(value); if (!safeName.test(key) || Buffer.byteLength(raw) > 8 * 1024 * 1024) {throw new Error('Превышен размер настройки.');}
     if (JSON.stringify(await readPrivateConfiguration(key)) !== JSON.stringify(expected)) {throw new Error('Настройка изменена в другом окне.');}
     const {root,stat} = await directory(); const file = path.join(root,key + '.json'); const temporary = path.join(root,'.' + randomUUID() + '.tmp');
@@ -83,7 +83,9 @@ async function commitPrivateConfiguration(key: string, value: unknown, expected:
         handle = await fs.open(temporary,constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,0o600);
         await handle.writeFile(raw); await handle.sync(); await handle.close(); handle = undefined; await enforcePrivateWindowsAcl(temporary,false);
         if (JSON.stringify(await readPrivateConfiguration(key)) !== JSON.stringify(expected)) {throw new Error('Настройка изменена в другом окне.');}
-        await unchanged(root,stat);beforeCommit();await fs.rename(temporary,file); await unchanged(root,stat);
+        await unchanged(root,stat);await beforeCommit();
+        if (JSON.stringify(await readPrivateConfiguration(key)) !== JSON.stringify(expected)) {throw new Error('Настройка изменена в другом окне.');}
+        await unchanged(root,stat);await fs.rename(temporary,file); await unchanged(root,stat);
     } finally {await handle?.close(); await fs.rm(temporary,{force:true});}
 }
 
