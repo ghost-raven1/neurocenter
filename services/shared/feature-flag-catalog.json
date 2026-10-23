@@ -109,7 +109,10 @@
     "name": "Провайдеры OpenCode",
     "description": "Управляемая локальная настройка провайдеров моделей через мост. Ключи остаются на компьютере.",
     "group": "models",
-    "dependsOn": ["computer_connections", "model_catalog"],
+    "dependsOn": [
+      "computer_connections",
+      "model_catalog"
+    ],
     "defaultEnabled": false
   },
   {
@@ -117,7 +120,9 @@
     "name": "Коннектор Codex",
     "description": "Локальное подключение Codex и новые обращения через управляемый коннектор.",
     "group": "models",
-    "dependsOn": ["opencode_providers"],
+    "dependsOn": [
+      "opencode_providers"
+    ],
     "defaultEnabled": false
   },
   {
@@ -256,7 +261,9 @@
     "name": "Файлы в обсуждениях",
     "description": "Новые вложения в комментариях. Доступ к ранее прикреплённым файлам сохраняется с проверкой прав.",
     "group": "platform",
-    "dependsOn": ["discussions"],
+    "dependsOn": [
+      "discussions"
+    ],
     "defaultEnabled": true
   },
   {
@@ -272,7 +279,9 @@
     "name": "Диалоги команды проекта",
     "description": "Новые публичные и приватные диалоги с выбранными участниками. История, отмена и сокращение доступа сохраняются при выключении.",
     "group": "agents",
-    "dependsOn": ["project_chat"],
+    "dependsOn": [
+      "project_chat"
+    ],
     "defaultEnabled": true
   },
   {
@@ -328,6 +337,28 @@
     "group": "agents",
     "dependsOn": [
       "computer_connections"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_indexer",
+    "name": "Агент «Индексатор»",
+    "description": "Проверка снимков баз проектов и явный семантический поиск по публичным сообщениям. История и отмена сохраняются.",
+    "group": "agents",
+    "dependsOn": [
+      "agents",
+      "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_role_chat",
+    "name": "Чат системных агентов",
+    "description": "Приватные диалоги с системными ролями и явные запросы к выбранной модели. История, отмена и восстановление доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "agents",
+      "model_hosting"
     ],
     "defaultEnabled": true
   }

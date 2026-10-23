@@ -10,7 +10,7 @@ const production = () => ({ NODE_ENV: 'production', PANEL_URL: 'https://panel.ex
 
 describe('Общие контракты сервиса переключателей', () => {
     it('Реестр неизменяемый, содержит согласованные функции продукта', () => {
-        expect(FEATURE_FLAG_KEYS).toHaveLength(38); expect(new Set(FEATURE_FLAG_KEYS).size).toBe(38);
+        expect(FEATURE_FLAG_KEYS).toHaveLength(40); expect(new Set(FEATURE_FLAG_KEYS).size).toBe(40);
         expect(Object.isFrozen(FEATURE_FLAGS)).toBe(true); expect(FEATURE_FLAGS.every(Object.isFrozen)).toBe(true);
         expect(isFeatureFlagKey('rag_sync')).toBe(true); expect(isFeatureFlagKey('custom')).toBe(false);
         const flags = defaultFeatureFlags(); flags.rag_sync = false;

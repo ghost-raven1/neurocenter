@@ -78,10 +78,10 @@ test('Per-model policy stays configurable when enforcement or the catalog featur
 test('Research admission depends on selected sources; saved retry uses server snapshot',()=>{assert.deepEqual(requiredRouteFeatures('POST','/api/model-chats/id/turns',{research:{project:true,external:{assetId:'x'}}}),['model_chat','research_tools','project_search','tool_catalog']);assert.deepEqual(requiredRouteFeatures('GET','/api/model-chats/id/research-tools'),[]);assert.deepEqual(requiredRouteFeatures('POST','/internal/research-mcp/call',{}),['research_tools','tool_catalog']);});
 
 test('System roles have independent admission flags and retain history, cancellation and rollback',()=>{
- for(const [id,flag]of [['agent-ai-admin','system_ai_admin'],['agent-autoconfigurator','system_autoconfigurator']]){
+ for(const [id,flag]of [['agent-packager','tool_build_agent'],['agent-ai-admin','system_ai_admin'],['agent-autoconfigurator','system_autoconfigurator'],['agent-indexer','system_indexer']]){
   assert.deepEqual(requiredInferenceFeatures('agent',id),[flag]);
-  for(const suffix of ['prepare','runs','runs/run-id/apply'])assert.deepEqual(requiredRouteFeatures('POST','/api/system-roles/'+id+'/'+suffix),[flag]);
-  for(const [method,suffix]of [['GET','runs'],['GET','runs/run-id'],['POST','runs/run-id/cancel'],['POST','runs/run-id/rollback']])assert.deepEqual(requiredRouteFeatures(method,'/api/system-roles/'+id+'/'+suffix),[]);
+  for(const suffix of ['prepare','runs/run-id/apply'])assert.deepEqual(requiredRouteFeatures('POST','/api/system-roles/'+id+'/'+suffix),[flag]);
+  for(const [method,suffix]of [['POST','runs'],['GET','runs'],['GET','runs/run-id'],['POST','runs/run-id/cancel'],['POST','runs/run-id/rollback']])assert.deepEqual(requiredRouteFeatures(method,'/api/system-roles/'+id+'/'+suffix),[]);
  }
 });
 
@@ -89,4 +89,9 @@ test('System roles have independent admission flags and retain history, cancella
 test('Only trusted normalized agent cleanup bypasses disabled capabilities',()=>{
  for(const agents of [[],[{id:'a',enabled:false}]]){assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents},true),[]);assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents}),['agents','computer_connections']);}
  for(const agents of [[{enabled:true}],[{}],null])assert.deepEqual(requiredJobFeatures('configure-project-agents',{agents},true),['agents','computer_connections']);
+});
+
+test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{
+ for(const [verb,path]of [['POST','/api/system-role-chats'],['POST','/api/system-role-chats/dialog/messages'],['POST','/api/system-role-chats/dialog/messages/turn/retry'],['POST','/api/system-role-chats/dialog/messages/turn/cancel'],['GET','/api/system-role-chats/dialog']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
+ for(const flag of ['system_indexer','system_role_chat'])assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),agents:false}).flags[flag],false);
 });
