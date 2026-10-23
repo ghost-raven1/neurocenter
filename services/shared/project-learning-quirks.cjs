@@ -10,7 +10,7 @@ const text=(value,max)=>typeof value==='string'&&value.trim().length>0&&Buffer.b
 const optionalText=(value,max)=>typeof value==='string'&&Buffer.byteLength(value)<=max&&!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)&&Buffer.from(value).toString('utf8')===value;
 const sha=value=>typeof value==='string'&&SHA.test(value);
 const fail=()=>{throw new Error('Кварки RAG повреждены, изменились или превышают лимит. Исправьте источник и повторите сбор.');};
-const quota=limit=>{throw Object.assign(new Error('Сбор кварков превышает квоту. Уменьшите источник или измените квоту в настройках и повторите сбор; опыт не записан.'),{code:'LEARNING_QUIRKS_QUOTA',limit});};
+const quota=limit=>{throw Object.assign(new Error('Сбор кварков превышает техническую квоту. Уменьшите источник и повторите сбор; опыт не записан.'),{code:'LEARNING_QUIRKS_QUOTA',limit});};
 const digest=value=>createHash('sha256').update(value).digest('hex');
 /** Server-owned limits may tighten physical boundaries; a job cannot expand the reader's hard ceiling. */
 function normalizeQuirksLimits(value={}){

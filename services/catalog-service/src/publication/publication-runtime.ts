@@ -3,14 +3,16 @@ import type { IAiPluginConfig } from '../catalog/dto';
 import { parseLocalConfiguration } from '../devices/mcp-config-schema';
 import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints, type RuntimeArtifact, type RuntimeArtifactEntry } from '../../../shared/runtime-artifacts.cjs';
 import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
+import {MEMORY_RECIPE,memoryRecipeSupported} from '../../../shared/project-learning-memory-sync.cjs';
+import {supportsLearningQuirks} from '../../../shared/project-learning-quirks.cjs';
 const codexPin=require('../../../shared/codex-connector-pin.json') as {sourceCommit:string;version:string;sdkVersion:string};
 
 /** Публичная публикация принимает декларации поставки и настройки, без произвольных extra и секретных значений. */
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp','codexConnector'].includes(key))) {
-        throw new BadRequestException('В extra поддерживаются runtimeArtifacts, localConfiguration, localUi, hostedEmbedding, hostedMcp, researchMcp и закреплённый codexConnector. Зависимости задаются отдельно.');
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp','codexConnector','learningMemory','learningQuirks'].includes(key))) {
+        throw new BadRequestException('В extra поддерживаются декларации runtime, локальной настройки, Codex и совместимого самообучения. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
     try {
@@ -30,6 +32,12 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
             ||source.hostedMcp!==true))throw new Error('researchMcp требует одобренные search/fetch инструменты Exa и hostedMcp: true.');
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
         const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
+        const declaration={schemaVersion:5,plugin:{kind},config:{transport,entrypoint:artifacts[0]?.entrypoint,extra:source}};
+        const memory=source.learningMemory,quirks=source.learningQuirks as Record<string,unknown>|undefined;
+        if(memory!==undefined&&(!artifacts.length||artifacts.some(item=>item.executable||item.entrypoint!=='entrypoint.mjs')||!memoryRecipeSupported(declaration)))
+            throw new Error('learningMemory требует точный ABI локального MCP Memory и готовые платформенные комплекты.');
+        if(quirks!==undefined&&(!artifacts.length||!ui||!supportsLearningQuirks(declaration)))
+            throw new Error('learningQuirks требует закреплённый источник OpenCodeRAG с локальным интерфейсом и готовыми комплектами.');
         const hosted = source.hostedEmbedding;
         const marker = hosted as {schemaVersion?: unknown;profileSchemaVersion?: unknown;reindexSchemaVersion?:unknown}|undefined;
         if (hosted !== undefined && (!hosted || typeof hosted !== 'object' || Array.isArray(hosted)
@@ -38,6 +46,7 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
             throw new Error('hostedEmbedding требует schemaVersion: 1 и необязательный profileSchemaVersion: 2 в закреплённом OpenCodeRAG с localUi.');
         }
         return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
+            ...(memory!==undefined?{learningMemory:{...MEMORY_RECIPE}}:{}),...(quirks?{learningQuirks:{...quirks}}:{}),
             ...(codex?{codexConnector:{schemaVersion:1,sourceCommit:codexPin.sourceCommit,version:codexPin.version,sdkVersion:codexPin.sdkVersion,authOnly:true}}:{}),
             ...(source.hostedMcp!==undefined?{hostedMcp:source.hostedMcp}:{}),...(research?{researchMcp:{adapter:'exa',tools:['web_search_exa','web_fetch_exa']}}:{}),
             ...(hosted !== undefined ? {hostedEmbedding: {schemaVersion: 1,...(marker?.profileSchemaVersion === 2 ? {profileSchemaVersion: 2} : {}),...(marker?.reindexSchemaVersion===1?{reindexSchemaVersion:1}:{})}} : {}) };
