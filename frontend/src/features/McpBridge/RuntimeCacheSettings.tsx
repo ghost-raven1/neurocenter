@@ -15,6 +15,7 @@ function RuntimeCacheSettingsForm({device}: {device: IBridgeDevice}) {
     const [open, setOpen] = useState(false);
     const cache = useRuntimeCacheSettings(device);
     const locked = cache.busy || cache.pending;
+    const duplicateTerminalMessage = !!cache.job && !!cache.error && cache.error === cache.job.message && ['failed', 'cancelled'].includes(cache.job.state);
     return <>
         <Button size="small" onClick={() => {setOpen(true); if (!cache.status && !cache.pending && !cache.reason) void cache.inspect();}}>Кэш комплектов</Button>
         {open && <Modal open title={`Кэш комплектов: ${device.name}`} footer={null} onCancel={() => setOpen(false)}>
@@ -38,7 +39,7 @@ function RuntimeCacheSettingsForm({device}: {device: IBridgeDevice}) {
                         onClick={() => {void cache.set();}}>Сохранить лимит</FeatureButton>
                 </Space>
                 {cache.setReason && <Alert type="info" showIcon message={cache.setReason} />}
-                {cache.job && <Alert role="status" type={cache.job.state === 'succeeded' && !cache.error ? 'success' : cache.job.state === 'failed' ? 'warning' : 'info'} showIcon
+                {cache.job && !duplicateTerminalMessage && <Alert role="status" type={cache.job.state === 'succeeded' && !cache.error ? 'success' : cache.job.state === 'failed' ? 'warning' : 'info'} showIcon
                     message={cache.job.state === 'succeeded' && !cache.error ? 'Компьютер подтвердил настройки кэша' : cache.job.message} />}
                 {cache.error && <Alert role="alert" type="error" showIcon message={cache.error} />}
                 {cache.pending && <Space direction="vertical"><Typography.Text>Запрос сохранён. Новое изменение станет доступно после подтверждения результата.</Typography.Text>
