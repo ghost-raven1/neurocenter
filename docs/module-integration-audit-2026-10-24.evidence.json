@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "kind": "module-integration-audit",
+  "createdAt": "2026-10-23T20:55:52.206Z",
+  "sourceCommit": "802a4463466398e86750a34541c543f967620aca",
+  "scope": "Read-only code audit plus separately recorded local runtime recovery and archive/profile checks. Unrelated dirty developer-tools files preserved.",
+  "findings": {
+    "P1": 4,
+    "P2": 5,
+    "newFindingsRuntimeReproduced": false
+  },
+  "sources": [
+    {
+      "file": "frontend/src/features/ModelChat/api.ts",
+      "sha256": "3a529f06fe10fe819c6252526c94a396f6e19320430403a565e434444617ddce"
+    },
+    {
+      "file": "frontend/src/modules/Operations/operationActions.ts",
+      "sha256": "2f9dc3e0ddd386a94c313ef64a9d6a13f95ae67d2b9e10d2d2083b62d8911922"
+    },
+    {
+      "file": "frontend/src/store.ts",
+      "sha256": "fcacbae711de31c960adbcb37e6aa9df608b20af4ca6901812ad5e289e25ec4d"
+    },
+    {
+      "file": "frontend/test/operation-actions.test.ts",
+      "sha256": "41bc3873663839db248c819a4ee02fab5622714662821d3ae068c611ba1c0a2a"
+    },
+    {
+      "file": "mcp/neurocenter-asset-sync/src/bridge/workspace-instance.ts",
+      "sha256": "75d35be85a59fc600f80be7dba70c28aa7f7e5120299e946657fd16ccc4c5eee"
+    },
+    {
+      "file": "mcp/neurocenter-asset-sync/src/tools/sync-rag-db.ts",
+      "sha256": "086743294e4155ff21e6f47cd56e37fe813df0c16bd52f2ecb6c4d9e25da80ac"
+    },
+    {
+      "file": "scripts/workspace/dev-watch-runtime.mjs",
+      "sha256": "5b53cf7f2b348c34819f589381606cfa13f04e4fe68b93af38b6345230d097e9"
+    },
+    {
+      "file": "services/api-gateway/src/proxy/model-inference-forward.ts",
+      "sha256": "a08259e323d9489f4ddb24b16b049cea2a1757aa37f9a970f86afc20a40ecb3a"
+    },
+    {
+      "file": "services/api-gateway/test/model-inference-forward.test.ts",
+      "sha256": "6f11465f38633e96ac09d4f69bd25d608869f2e11fb9e87e0a37cbf3077e0ce9"
+    },
+    {
+      "file": "services/catalog-service/src/devices/device-jobs.ts",
+      "sha256": "a3367e3c153538dd5d83afa13ed8500372fbfe7f31071f962b0f04638ce47855"
+    },
+    {
+      "file": "services/catalog-service/src/main.ts",
+      "sha256": "b8367b5ccb556763b0b8087025ff21892d0622f9ddce3c82d989bb29b9c49f98"
+    },
+    {
+      "file": "services/catalog-service/src/model-chat/chat.service.ts",
+      "sha256": "435160f6b129dca0a6d48480dcb20b01447e7112f10c7de80913a7fc0e7b517c"
+    },
+    {
+      "file": "services/catalog-service/src/models/model-job-schema.ts",
+      "sha256": "630b81d150c34802fba70b50314bdf8ff1d0896924326a828f6ec52d5deaae76"
+    },
+    {
+      "file": "services/catalog-service/src/models/models.service.ts",
+      "sha256": "5622ed0f4c71cb83887512875cec357742496941d47a058f82749715f407f679"
+    },
+    {
+      "file": "services/catalog-service/src/operations/operation-actions.service.ts",
+      "sha256": "fdde443b80d207cec611768d578d3a3a3c487fac781f510cfeac8f3d831e9e40"
+    },
+    {
+      "file": "services/catalog-service/src/project-chat/project-chat.service.ts",
+      "sha256": "f47752a9dc4ec19c44910a50ea84b660baa4ba526a84d03faaa68e37c7c6ba2e"
+    },
+    {
+      "file": "services/catalog-service/test/chat-storage-lifecycle.test.ts",
+      "sha256": "997adb4ed0b4f679b7fd8b96187e487db6580c27edffb778a278e5636bf2a2bc"
+    },
+    {
+      "file": "services/rag-sync-service/src/rag/rag.service.ts",
+      "sha256": "ad7e75debf638e5c48d27cf6a88d1605802017dab65bb2ec42994734bf520de4"
+    },
+    {
+      "file": "services/shared/project-learning-memory-sync.cjs",
+      "sha256": "4998a2900b70a8921284613dfc8791a219c148593f687abc96d5794ee48eb4df"
+    }
+  ],
+  "local": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "24.22.0",
+    "archive": {
+      "ok": true,
+      "cases": 6,
+      "sourceCommit": "802a4463466398e86750a34541c543f967620aca",
+      "buildId": "74556c6b136eda6bcd3afa2a095160a2c7ee6abff7793dd33bbdae646f5a5f7e",
+      "sha256": "578df4b5b21f10c0b4e1034ad90f5ecf11897bee95bbdc4838cb35340aed2f6f",
+      "limits": [
+        "macOS ARM64 only",
+        "Ollama HTTP fixture and actual OpenCode; no actual Ollama daemon/model weights"
+      ],
+      "pairingOrPaidInference": false
+    },
+    "installedProfile": {
+      "ok": true,
+      "checks": {
+        "site": true,
+        "api": true,
+        "device": true,
+        "configurationBytes": true,
+        "configurationSemantics": true,
+        "otherOpenCodeSettings": true,
+        "bridgeEnvironment": true,
+        "configMode": true,
+        "registrationEnabled": true,
+        "credentials": true,
+        "workspace": true,
+        "installationIdentity": true,
+        "installedBuild": true,
+        "workerOwnerBuild": true,
+        "serverHeartbeat": true
+      },
+      "buildId": "74556c6b136eda6bcd3afa2a095160a2c7ee6abff7793dd33bbdae646f5a5f7e",
+      "finishedAt": "2026-10-23T20:52:01.143Z"
+    },
+    "watch": {
+      "ok": true,
+      "selected": [
+        "catalog-service",
+        "api-gateway",
+        "feature-flags-service",
+        "oauth2-bridge",
+        "rag-sync-service",
+        "skills-service",
+        "bridge"
+      ],
+      "source": "55ab847bc4bb63ff1f1f5426d41ae8d6c9be2f9f7051d465f1a3d3ca8ef13739",
+      "finishedAt": "2026-10-23T20:50:31.180Z"
+    },
+    "passiveHealth": {
+      "capturedAt": "2026-10-23 20:55:23 UTC",
+      "services": [
+        {
+          "name": "bridge",
+          "liveness": true,
+          "readiness": true,
+          "readinessState": "http-ok",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "catalog",
+          "liveness": true,
+          "readiness": true,
+          "readinessState": "http-ok",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "flags",
+          "liveness": true,
+          "readiness": true,
+          "readinessState": "http-ok",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "skills",
+          "liveness": true,
+          "readiness": null,
+          "readinessState": "skipped",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "rag",
+          "liveness": true,
+          "readiness": true,
+          "readinessState": "http-ok",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "gateway",
+          "liveness": true,
+          "readiness": null,
+          "readinessState": "skipped",
+          "ownership": "owned",
+          "compilationPartial": false
+        },
+        {
+          "name": "frontend",
+          "liveness": null,
+          "readiness": null,
+          "readinessState": "skipped",
+          "ownership": "owned",
+          "compilationPartial": true
+        }
+      ]
+    },
+    "publicationRegression": {
+      "passed": 190,
+      "failed": 0,
+      "skipped": 0,
+      "success": true
+    }
+  },
+  "limits": [
+    "Static findings require scenario reproductions before fixes can be accepted.",
+    "No real Codex inference, model weights, production deployment, CI or other-platform acceptance in this audit.",
+    "Overlapping test suites are not unique whole-app coverage."
+  ]
+}
