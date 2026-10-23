@@ -320,5 +320,24 @@
       ".run/module-reliability/codex-publication-acceptance.json": "3b46bff9eb339e60ce45f70f80d57c1c481ee8fdfd84276379c5f08f4945cfb4",
       ".run/module-reliability/codex-predispatch-investigation.json": "4ecadc81c626966f7120ed76b96da7b749876cc36df2e0112b035b107b99721f"
     }
+  },
+  "cacheLiveContractFollowup": {
+    "sourceHead": "b25bc23e2fb19156336dafc181b84b8d456268f1",
+    "at": "2026-10-23T23:04:04.514Z",
+    "liveInspectJobId": "b05c50b8-2294-4830-ab5e-2169f2ee45c6",
+    "liveInspectSucceeded": false,
+    "liveSetAttempted": false,
+    "canonicalCompilerWorkerRedFailed": 3,
+    "compilerWorkerAndPolicyGreen": 19,
+    "uiRedFailed": 1,
+    "uiGreen": 46,
+    "bridgeAndFrontendTypesPassed": true,
+    "appliedCorrectedBridge": false,
+    "sources": {
+      "frontend/src/features/McpBridge/RuntimeCacheSettings.tsx": "511d83bb7d4fd08f7651717becae5f9be859800b7fe5c2e738be7ed79b983e36",
+      "frontend/test/runtime-cache-settings-feedback.test.ts": "92b460646b64e14dbfdb1d58d15df8e4e34075524588dcf816754def0ef865e8",
+      "mcp/neurocenter-asset-sync/src/bridge/worker.ts": "842151bf8b34a68bfb6202e4703748045ac21f4aeb349d249ed57cf0625c0272",
+      "mcp/neurocenter-asset-sync/test/worker-cache-policy.test.ts": "b98b778b1c3070c7c41a2d1ce8a2cae5a87a8fe77db55719f20291b75bcbe555"
+    }
   }
 }
