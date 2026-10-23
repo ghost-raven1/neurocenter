@@ -488,5 +488,55 @@
       ".run/module-reliability/codex-response-headers/red.json": "7c26f212044262fe03fd402881b463e27f54b89edc1916e22d03ccb3fc3fc157",
       ".run/module-reliability/codex-response-headers/green.json": "9e219d0b55e58259159618357f34590799cf7f277164030f1285bbbd366fa673"
     }
+  },
+  "codexSseHeaderApplication": {
+    "at": "2026-10-23T23:48:30.651Z",
+    "sourceHead": "aab05121b5b191d93d7955261ad246f92e13331d",
+    "mainPushed": true,
+    "foreignFilesPreserved": 75,
+    "watchBuildPassed": true,
+    "installedBuild": "5ec3c179042e1c518349d0ffa92af15b411e90a5a6c20fde0b9f2c554c8e3d33",
+    "preservationChecks": 15,
+    "cachePolicyBytesUnchanged": true,
+    "archiveCasesPassed": 6,
+    "archiveSHA256": "fa70249778d81634a4c57e526d312a24c1583bcdbfd129e0a631c275779610de",
+    "archiveRealProvider": false,
+    "personal": {
+      "callId": "f551189b-59a2-4257-80fc-6242b71d9afa",
+      "responseAccepted": true,
+      "dispatchCount": 1,
+      "inputTokens": 28,
+      "outputTokens": 15,
+      "httpStatus": 200,
+      "mediaType": "missing",
+      "stage": "completed",
+      "browserAccepted": true,
+      "automaticRetry": false
+    },
+    "systemRole": {
+      "agentId": "agent-ai-admin",
+      "runId": "ca6b509e-dc7d-4056-870b-1dde5f4f364f",
+      "responseAccepted": true,
+      "callsStarted": 1,
+      "appliedCount": 0,
+      "factsCount": 0,
+      "targetsCount": 0,
+      "canApply": false,
+      "browserAccepted": true,
+      "automaticRetry": false
+    },
+    "nativeOpenCodeResponseAccepted": false,
+    "allAgentScopesAccepted": false,
+    "receipts": {
+      ".run/continuation-20261024/installed-codexsse-after.json": "1c2a32d881c5066b0a0783e3dcf1fd9cf8df6a552d060f60636374de0bffeb94",
+      ".run/continuation-20261024/applied-codex-bridge-codexsse.json": "34cd35f6309ae9f535a977385d96ae8d28236c4e29f391c0ceeb0793c425d2bd",
+      ".run/continuation-20261024/archive-acceptance-4HgtAU/receipt.json": "1c7efcc49833784ae9b0f03e560db908411b1078106705233d8257831af049aa",
+      ".run/module-reliability/codexsse-integration-main.json": "bcc6d4157fff9c638ca88ca84458e9f796cf89cac2b4d6c4e24ea4b9930e76d5",
+      ".run/module-reliability/codexsse-cache-preservation-after.json": "d0658cfa1a23046b384fce8471d031c1fc2dd6062177a69445da9a89354c1db0",
+      ".run/module-reliability/codex-personal-sse-proof.json": "7595e054c14e743a5f0bf280150b6f9f6c4119f27727845dac1cee054d5cb60a",
+      ".run/module-reliability/codex-system-role-acceptance.json": "9927f6bef54959daac2e9bee229fbf9503a9fbc6c609be38ac53d047dc012995",
+      ".run/module-reliability/codex-personal-sse-pass.png": "1188f6516ea2ae5f420423d9dbc07a61bb9f891e40f2a5faf26a50e3723d64a1",
+      ".run/module-reliability/codex-system-role-pass.png": "5a369fb10211356c9b19a585f77ba147f086d301bc467e06ff1d9e95ec0e0421"
+    }
   }
 }
