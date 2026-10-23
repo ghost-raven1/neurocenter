@@ -12,11 +12,21 @@ const script = fileURLToPath(new URL('../../bridge-dist/install.sh', import.meta
 const version = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package.json', import.meta.url), 'utf8')).version;
 const renderedTemplate=(await readBridgeTemplate(script)).replace('__BRIDGE_VERSION__',version).replace('__SITE_URL__','https://platform.example');
 const roots = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+const workers = [];
+afterEach(async () => {
+    for(const child of workers.splice(0))if(child.exitCode===null&&child.signalCode===null){
+        const closed=new Promise(resolve=>child.once('close',resolve));child.kill('SIGTERM');await closed;
+    }
+    await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
+});
 test('Оба установщика, протокол и lock-файл раздают текущую версию моста', async () => {
     const bash = await fs.readFile(script, 'utf8');
     const powershell = await fs.readFile(new URL('../../bridge-dist/install.ps1', import.meta.url), 'utf8');
-    const {BRIDGE_VERSION} = await import(new URL('../../mcp/neurocenter-asset-sync/src/bridge/protocol.ts', import.meta.url));
+    // Resolve source .js imports to their .ts inputs in an isolated child, without depending on live dist.
+    const probe=spawnSync(process.execPath,['--input-type=module','--eval',`import {registerHooks} from 'node:module';
+        registerHooks({resolve(specifier,context,next){try{return next(specifier,context);}catch(error){if(error.code==='ERR_MODULE_NOT_FOUND'&&specifier.startsWith('.')&&specifier.endsWith('.js'))return next(specifier.slice(0,-3)+'.ts',context);throw error;}}});
+        console.log(JSON.stringify((await import(${JSON.stringify(new URL('../../mcp/neurocenter-asset-sync/src/bridge/protocol.ts',import.meta.url).href)})).BRIDGE_VERSION));`],{encoding:'utf8',timeout:5000});
+    assert.equal(probe.status,0,probe.stderr);const BRIDGE_VERSION=JSON.parse(probe.stdout);
     const lock = JSON.parse(await fs.readFile(new URL('../../mcp/neurocenter-asset-sync/package-lock.json', import.meta.url), 'utf8'));
     assert.equal(/^VERSION='([^']+)'/m.exec(bash)?.[1], '__BRIDGE_VERSION__');
     assert.equal(/^\$Version = '([^']+)'/m.exec(powershell)?.[1], '__BRIDGE_VERSION__');
@@ -100,7 +110,20 @@ esac
         const result = spawnSync('bash', [source], { env: { ...env, ...overrides }, encoding: 'utf8' });
         return result;
     };
-    return { root, env, run, pack, scriptPath };
+    /** Pause/refusal assertions use an owned live PID, independent of fake target-platform tools. */
+    const startWorker=async(site='https://platform.example')=>{
+        const entry=path.join(env.INSTALL_DIR,'dist/index.js'),lock=path.join(env.HOME,'.config/neurocenter/bridge',createHash('sha256').update(site).digest('hex').slice(0,20),'worker.lock');
+        await fs.mkdir(path.dirname(entry),{recursive:true});await fs.mkdir(path.join(env.INSTALL_DIR,'bin'),{recursive:true});
+        await fs.copyFile(path.join(root,'package/bin/node'),path.join(env.INSTALL_DIR,'bin/node'));
+        await fs.mkdir(path.dirname(lock),{recursive:true});
+        await fs.writeFile(entry,`require('node:fs').writeFileSync(${JSON.stringify(lock)},String(process.pid));setInterval(()=>{},1000);`);
+        const child=spawn(process.execPath,[entry,'--worker'],{env,stdio:'ignore'});workers.push(child);
+        const until=Date.now()+3000;while(await fs.readFile(lock,'utf8').catch(()=>undefined)!==String(child.pid)){
+            assert.ok(Date.now()<until,'Owned pause fixture worker did not start');await new Promise(resolve=>setTimeout(resolve,10));
+        }
+        process.kill(child.pid,0);return child;
+    };
+    return { root, env, run, pack, scriptPath, startWorker };
 }
 for(const platform of ['Darwin','Linux'])test(`Установщик ${platform} скачивает с Gateway и сохраняет площадку при установке и reconnect`,async()=>{
     const f=await fixture(platform),gateway='https://gateway.example.test/api/bridge',site='https://panel.example.test';
@@ -111,6 +134,7 @@ for(const platform of ['Darwin','Linux'])test(`Установщик ${platform} 
     assert.equal(urls.length,2);assert.ok(urls.every(url=>url.startsWith(gateway+'/runtime/')));assert.ok(urls[1].endsWith('.tgz.sha256'));
     const observed=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n');
     assert.deepEqual(observed,[`--init ${site}`,`--install-command ${site}`,`--reconnect-open ${site}`]);
+    await f.startWorker(site);
     assert.equal(f.run({BASE_URL:gateway,SITE_URL:site}).status,0);
     const upgrade=(await fs.readFile(path.join(f.root,'site-origins'),'utf8')).trim().split('\n').slice(3);
     assert.deepEqual(upgrade,[`--prepare-upgrade ${site}`,`--init ${site}`,`--finish-upgrade ${site}`,`--install-command ${site}`,`--reconnect-open ${site}`]);
@@ -143,7 +167,7 @@ test('Незавершённое задание запрещает замену 
     const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
-    const result = f.run({ TEST_FAIL_UPGRADE: '1' });
+    await f.startWorker();const result = f.run({ TEST_FAIL_UPGRADE: '1' });
     assert.notEqual(result.status, 0, result.stdout);
     assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR, 'previous'), 'utf8'), 'сохранить');
     assert.equal(JSON.parse(await fs.readFile(path.join(f.env.INSTALL_DIR, 'package.json'), 'utf8')).version, '0.9.0');
@@ -158,7 +182,7 @@ test('Незавершённое задание запрещает замену 
 test('Обновление без подключения не требует снятия отсутствующей паузы перед подключением', async () => {
     const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
-    const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_FINISH: '1' });
+    await f.startWorker();const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_FINISH: '1' });
     assert.equal(result.status, 0, result.stderr);
     const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
     assert.match(attempts, /--prepare-upgrade/);
@@ -171,7 +195,7 @@ for (const paused of ['true', '']) {
     test(`Обновление снимает паузу перед подключением, ${paused ? 'пауза подтверждена' : 'старый ответ без признака паузы'}`, async () => {
         const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
         await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
-        const result = f.run({ TEST_UPGRADE_PAUSED: paused });
+        await f.startWorker();const result = f.run({ TEST_UPGRADE_PAUSED: paused });
         assert.equal(result.status, 0, result.stderr);
         const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
         assert.equal(attempts.match(/--finish-upgrade/g)?.length, 1);
@@ -184,7 +208,7 @@ test('Сбой регистрации без паузы не запускает 
     const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
     await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
-    const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_INIT: '1', TEST_FAIL_FINISH: '1' });
+    await f.startWorker();const result = f.run({ TEST_UPGRADE_PAUSED: 'false', TEST_FAIL_INIT: '1', TEST_FAIL_FINISH: '1' });
     assert.notEqual(result.status, 0, result.stdout);
     assert.match(result.stderr, /Конфигурация OpenCode недоступна/);
     assert.doesNotMatch(result.stderr, /Не удалось снять паузу|очередь не подтвердила/);
@@ -198,7 +222,7 @@ for (const upgrade of [{ ok: false, error: 'Обновление отклоне�
         const f = await fixture(); await fs.mkdir(f.env.INSTALL_DIR);
         await fs.writeFile(path.join(f.env.INSTALL_DIR, 'package.json'), '{"name":"neurocenter-asset-sync","version":"0.9.0"}');
         await fs.writeFile(path.join(f.env.INSTALL_DIR, 'previous'), 'сохранить');
-        const result = f.run({ TEST_UPGRADE_RESULT: JSON.stringify(upgrade) });
+        await f.startWorker();const result = f.run({ TEST_UPGRADE_RESULT: JSON.stringify(upgrade) });
         assert.notEqual(result.status, 0, result.stdout);
         assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR, 'previous'), 'utf8'), 'сохранить');
         const attempts = await fs.readFile(path.join(f.root, 'events'), 'utf8');
@@ -354,6 +378,7 @@ for(const payload of ['{"ok":false}', '{invalid'])test(`Нулевой код in
 });
 test('Неподтверждённое снятие паузы не выдаётся за готовое подключение',async()=>{
     const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'package.json'),'{"name":"neurocenter-asset-sync","version":"0.9.0"}');
+    await f.startWorker();
     const result=f.run({TEST_FINISH_RESULT:'{"ok":false}'});assert.notEqual(result.status,0);assert.match(result.stderr,/не подтвердила снятие паузы/);assert.doesNotMatch(result.stdout,/Готово!/);
 });
 test('Старый архив без короткой команды не заменяет предыдущую установку',async()=>{
@@ -382,7 +407,7 @@ test('Отказ распаковки сохраняет предыдущий м
 });
 test('SIGTERM во время init восстанавливает прежнюю версию, снимает паузу и свою блокировку',{timeout:15000},async()=>{
     const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'package.json'),'{"name":"neurocenter-asset-sync","version":"0.9.0"}');await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
-    const gate=path.join(f.root,'cancel-gate');const child=spawn('bash',[f.scriptPath],{env:{...f.env,TEST_INIT_GATE:gate},stdio:['ignore','ignore','pipe']});let errors='';child.stderr.on('data',chunk=>errors+=chunk);
+    await f.startWorker();const gate=path.join(f.root,'cancel-gate');const child=spawn('bash',[f.scriptPath],{env:{...f.env,TEST_INIT_GATE:gate},stdio:['ignore','ignore','pipe']});let errors='';child.stderr.on('data',chunk=>errors+=chunk);
     const finished=new Promise((resolve,reject)=>{child.once('close',resolve);child.once('error',reject);});
     try {const deadline=Date.now()+8000;while(!await fs.access(gate+'.started').then(()=>true,()=>false)){assert.ok(Date.now()<deadline,errors);await new Promise(resolve=>setTimeout(resolve,20));}child.kill('SIGTERM');}
     finally {await fs.writeFile(gate+'.release','continue');}

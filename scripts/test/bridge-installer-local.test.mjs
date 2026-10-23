@@ -33,7 +33,7 @@ async function profile(f, api = f.origin, worker = false) {
     const bytes = Buffer.from(JSON.stringify({ token: 'owned-worker-token', deviceId: 'owned' }));
     await fs.mkdir(path.dirname(credentials), { recursive: true }); await fs.writeFile(credentials, bytes, { mode: 0o600 }); f.state.token = 'owned-worker-token';
     const started = worker ? await f.startWorker(environment) : undefined;
-    return { config, text, credentials, bytes, started };
+    return { config, text, credentials, bytes, started, environment };
 }
 async function preserved(saved) {
     assert.equal(await fs.readFile(saved.config, 'utf8'), saved.text);
@@ -65,10 +65,12 @@ test('Local archive accepts a separate explicit SHA file with spaces', () => ins
 test('Repeated local update keeps disabled JSONC, custom runtime HOME, credentials and other agents byte-for-byte', () => installerLifecycleFixture('local-repeat-profile', async f => {
     const archive = await artifact(f), saved = await profile(f);
     for (let attempt = 0; attempt < 2; attempt++) {
+        const worker = await f.startWorker(saved.environment);
         const result = await run(f, ['--archive', archive], { INSTALLER_FIXTURE_NATIVE_UPGRADE: '1', INSTALLER_FIXTURE_REQUIRE_PROFILE: '1' });
         assert.equal(result.status, 0, result.stderr); await preserved(saved); assert.equal(f.state.paused, false);
+        assert.throws(() => process.kill(worker.pid, 0), error => error.code === 'ESRCH');
     }
-    assert.deepEqual(await events(f), ['--prepare-upgrade', '--finish-upgrade', '--prepare-upgrade', '--finish-upgrade']);
+    assert.deepEqual(await events(f), ['--worker', '--prepare-upgrade', '--finish-upgrade', '--worker', '--prepare-upgrade', '--finish-upgrade']);
     assert.deepEqual(f.state.requests.map(row => [row.method, row.route]), Array.from({ length: 2 }, () => [
         ['POST', '/api/device-channel/worker/pause'], ['POST', '/api/device-channel/worker/resume'],
     ]).flat());

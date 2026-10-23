@@ -35,9 +35,11 @@ async function savedProfile(f) {
 
 test('Shared context embedded in PowerShell keeps exact disabled registration and uses the saved runtime profile for pause/resume', () => installerLifecycleFixture('local-ps-old-owner', async f => {
     const saved = await savedProfile(f), call = await context(f), node = path.join(f.install, 'bin/node'), entry = path.join(f.install, 'dist/index.js');
+    const worker = await f.startWorker({ HOME: saved.home, NEUROCENTER_BRIDGE_HOME: saved.bridgeHome });
     assert.equal(await call('capture', path.join(f.root, 'package'), f.install, f.origin, f.origin), '1');
     assert.equal(await call('needs-prepare'), '1'); await call('assert');
-    assert.equal(JSON.parse(await call('run', node, entry, '--prepare-upgrade', entry)).ok, true);
+    assert.deepEqual(JSON.parse(await call('run', node, entry, '--prepare-upgrade', entry)), { ok: true, paused: true });
+    assert.throws(() => process.kill(worker.pid, 0), error => error.code === 'ESRCH');
     assert.equal(JSON.parse(await call('run', node, entry, '--finish-upgrade')).ok, true);
     assert.equal(await fs.readFile(saved.config, 'utf8'), saved.text); assert.equal((await fs.stat(saved.config)).mode & 0o777, 0o640);
     assert.deepEqual(await fs.readFile(saved.credentials), saved.bytes); assert.equal(f.state.paused, false);

@@ -306,7 +306,6 @@ exports.main=async([receipt,mode,...args])=>{
     }
     const value=JSON.parse(fs.readFileSync(receipt,'utf8'));
     if(mode==='needs-prepare'){
-        if(!value.migrate||value.previous.NEUROCENTER_URL===value.target.NEUROCENTER_URL){process.stdout.write('1');return;}
         const file=path.join(profileState(runtimeEnvironment(value)),'worker.lock'),lock=snapshot(file);let pid;
         if(lock){
             if(!/^[1-9]\d*$/.test(lock.text.trim()))throw Error('Повреждена блокировка прежнего worker.');

@@ -6,12 +6,14 @@ import {createHash} from 'node:crypto';
 import {installerLifecycleFixture} from './bridge-installer-lifecycle.fixture.mjs';
 
 test('Missing paused boolean never permits runtime replacement or registration',()=>installerLifecycleFixture('missing-paused',async f=>{
+    await f.startWorker();
     const result=await f.run({INSTALLER_FIXTURE_PREPARE:'{"ok":true}'});
     assert.notEqual(result.status,0,'An unconfirmed worker pause must refuse publication');
     assert.equal(await fs.readFile(path.join(f.install,'previous.txt'),'utf8'),'owned old runtime');
     assert.equal(f.state.paused,false,'An admitted pause must be compensated when its result is invalid');
 }));
 test('Lost prepare acknowledgement after real API pause resumes the queue and preserves the old runtime',()=>installerLifecycleFixture('lost-prepare-ack',async f=>{
+    await f.startWorker();
     const result=await f.run({INSTALLER_FIXTURE_PREPARE:'lost'});
     assert.notEqual(result.status,0);
     assert.equal(await fs.readFile(path.join(f.install,'previous.txt'),'utf8'),'owned old runtime');
@@ -29,12 +31,17 @@ async function existingProfile(f){
     f.state.token='owned-fixture-token';await fs.writeFile(path.join(bridgeHome,namespace,'credentials.json'),JSON.stringify({token:f.state.token,deviceId:'paired-device'}));
     return{config,text,own,runtimeHome,bridgeHome};
 }
+/** A pause-specific assertion needs a live owner in the saved runtime namespace. */
+async function profileWorker(f,saved){
+    const credentials=path.join(saved.bridgeHome,createHash('sha256').update(f.origin).digest('hex').slice(0,20),'credentials.json');
+    const bytes=await fs.readFile(credentials);await f.startWorker(saved.own.environment);await fs.writeFile(credentials,bytes);
+}
 test('Public update preserves exact disabled same-site JSONC entry and all other OpenCode agents',()=>installerLifecycleFixture('profile-preserved',async f=>{
     const saved=await existingProfile(f);f.state.token=undefined;const result=await f.run();assert.equal(result.status,0,result.stderr);
     assert.equal(await fs.readFile(saved.config,'utf8'),saved.text,'A still-valid registration needs no replacement');
 }));
 test('Public update uses saved runtime namespace and credentials while management keeps caller HOME',()=>installerLifecycleFixture('runtime-environment',async f=>{
-    const saved=await existingProfile(f),result=await f.run({INSTALLER_FIXTURE_REQUIRE_PROFILE:'1'});assert.equal(result.status,0,result.stderr);
+    const saved=await existingProfile(f);await profileWorker(f,saved);const result=await f.run({INSTALLER_FIXTURE_REQUIRE_PROFILE:'1'});assert.equal(result.status,0,result.stderr);
     assert.equal(f.state.paused,false);assert.equal(f.state.requests.filter(r=>r.route.endsWith('/identity')).length,1);
     const contexts=(await fs.readFile(f.environment.INSTALLER_FIXTURE_CONTEXTS,'utf8')).trim().split('\n').map(JSON.parse);
     for(const item of contexts.filter(row=>['--prepare-upgrade','--finish-upgrade','--connect-open'].includes(row.mode))){assert.equal(item.home,saved.runtimeHome);assert.equal(item.bridgeHome,saved.bridgeHome);assert.equal(item.ca,saved.own.environment.NODE_EXTRA_CA_CERTS);assert.equal(item.proxy,saved.own.environment.HTTPS_PROXY);}
@@ -72,7 +79,7 @@ test('Duplicate own entries refuse publication instead of selecting the last JSO
     const result=await f.run();assert.notEqual(result.status,0);assert.equal(await fs.readFile(saved.config,'utf8'),text);assert.equal(f.state.requests.filter(r=>r.method==='POST').length,0);assert.equal(await fs.readFile(path.join(f.install,'previous.txt'),'utf8'),'owned old runtime');
 }));
 test('A concurrent user config edit after queue pause survives and stops runtime publication',()=>installerLifecycleFixture('changed-config',async f=>{
-    const saved=await existingProfile(f);f.state.token=undefined;const edit=saved.text+'// Concurrent user edit\n';f.state.onPause=()=>fs.writeFile(saved.config,edit);
+    const saved=await existingProfile(f);await profileWorker(f,saved);f.state.token=undefined;const edit=saved.text+'// Concurrent user edit\n';f.state.onPause=()=>fs.writeFile(saved.config,edit);
     const result=await f.run();assert.notEqual(result.status,0);assert.equal(await fs.readFile(saved.config,'utf8'),edit);assert.equal(f.state.paused,false);assert.equal(await fs.readFile(path.join(f.install,'previous.txt'),'utf8'),'owned old runtime');assert.equal(f.state.requests.filter(r=>r.route.endsWith('/worker/resume')).length,1);
 }));
 test('A prepare refusal preserves the previous worker while conservatively compensating a possible pause',()=>installerLifecycleFixture('known-refusal',async f=>{
@@ -90,10 +97,11 @@ test('Partial HTTP download preserves the installed runtime and a manual retry c
     const retry=await f.run();assert.equal(retry.status,0,retry.stderr);assert.equal(JSON.parse(await fs.readFile(path.join(f.install,'package.json'),'utf8')).version,f.version);assert.equal(f.state.paused,false);
 }));
 test('Lost resume ACK retries compensation without replacing the retained disabled profile',()=>installerLifecycleFixture('lost-resume-ack',async f=>{
-    const saved=await existingProfile(f);f.state.token=undefined;f.state.resumeFailures=1;const first=await f.run();assert.notEqual(first.status,0);assert.equal(f.state.paused,false);assert.equal(await fs.readFile(saved.config,'utf8'),saved.text);assert.equal(f.state.requests.filter(r=>r.route.endsWith('/worker/resume')).length,2);
+    const saved=await existingProfile(f);await profileWorker(f,saved);f.state.token=undefined;f.state.resumeFailures=1;const first=await f.run();assert.notEqual(first.status,0);assert.equal(f.state.paused,false);assert.equal(await fs.readFile(saved.config,'utf8'),saved.text);assert.equal(f.state.requests.filter(r=>r.route.endsWith('/worker/resume')).length,2);
     const retry=await f.run();assert.equal(retry.status,0,retry.stderr);assert.equal(await fs.readFile(saved.config,'utf8'),saved.text);assert.equal(f.state.paused,false);
 }));
 test('Two actual Bash installers serialize on the owned install lock',()=>installerLifecycleFixture('concurrent-installers',async f=>{
+    await f.startWorker();
     let release,entered;const held=new Promise(resolve=>release=resolve),paused=new Promise(resolve=>entered=resolve);f.state.onPause=()=>{entered();return held;};
     const first=f.run();await paused;let second;try{second=await f.run();}finally{release();}const result=await first;
     assert.notEqual(second.status,0);assert.match(second.stderr,/Другая установка/);assert.equal(result.status,0,result.stderr);assert.equal(f.state.requests.filter(r=>r.route.endsWith('.tgz')).length,1);assert.equal(f.state.paused,false);

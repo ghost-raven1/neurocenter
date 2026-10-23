@@ -88,7 +88,7 @@ test('Migration may reuse the target own credentials without copying or resettin
 }));
 
 test('A legacy missing API uses the saved site for preparation before same-site API transport migration',()=>installerLifecycleFixture('site-legacy-api',async f=>{
-    const saved=await savedProfile(f,{legacyApi:true}),issuer=await f.startIssuer();f.state.issuerToken='owned-worker-token';
+    const saved=await savedProfile(f,{legacyApi:true,worker:true}),issuer=await f.startIssuer();f.state.issuerToken='owned-worker-token';
     const result=await f.run({BASE_URL:issuer+'/api/bridge',SITE_URL:f.origin,INSTALLER_FIXTURE_REQUIRE_PROFILE:'1',INSTALLER_FIXTURE_NATIVE_UPGRADE:'1'});assert.equal(result.status,0,result.stderr);
     await migratedProfile(saved,f.origin,issuer);await phaseContexts(f,saved,f.origin,issuer);assert.equal(f.state.paused,false);
     assert.deepEqual(posts(f.state.requests).map(row=>[row.route,row.authorization]),[['/api/device-channel/worker/pause',true],['/api/device-channel/worker/resume',true]]);

@@ -10,18 +10,21 @@ import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {updateInstalledDevBridge} from '../workspace/dev-bridge-install.mjs';
 import {opencodeVersion} from '../opencode-platforms.mjs';
+import {bridgeSdkFixture} from './bridge-runtime-sdk.fixture.mjs';
 
 const exec=promisify(execFile),root=fileURLToPath(new URL('../../',import.meta.url)),bridge=path.join(root,'mcp/neurocenter-asset-sync');
 const jsonc=createRequire(path.join(bridge,'package.json'))('jsonc-parser'),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const version='0.9.18',target=`${process.platform==='win32'?'windows':process.platform}-${process.arch}${process.platform==='linux'&&!process.report.getReport().header.glibcVersionRuntime?'-musl':''}`;
-const modules=['lib/install.js','lib/global-config-lock.js','bridge/state.js','bridge/read-bounded.js','bridge/atomic-file.js','bridge/cli.js','bridge/protocol.js','bridge/worker-upgrade.js','bridge-cli.js'];
+const modules=['lib/install.js','lib/global-config-lock.js','bridge/state.js','bridge/read-bounded.js','bridge/atomic-file.js','bridge/cli.js','bridge/cli-profile.js','bridge/protocol.js','bridge/worker-upgrade.js','bridge-cli.js'];
 async function fixture(action,{paired=true,legacy=false}={}){
     const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-dev-bridge-update-')));
     try{
         const home=path.join(directory,'home'),install=path.join(home,'own bridge'),content=path.join(directory,'package'),output=path.join(directory,'runtime');
         for(const folder of [install,path.join(content,'bin'),output,path.join(home,'.config/opencode'),path.join(home,'.local/bin')])await fs.mkdir(folder,{recursive:true});
         await fs.writeFile(path.join(content,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version,type:'module'}));
-        for(const module of modules){const to=path.join(content,'dist',module);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(bridge,'dist',module),to);}
+        const requiredModules=[...modules];
+        if((await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8')).includes('../features/opencode-providers/contract.js'))requiredModules.push('features/opencode-providers/contract.js','shared/opencode-providers.cjs');
+        for(const module of requiredModules){const to=path.join(content,'dist',module);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(bridge,'dist',module),to);}
         await fs.writeFile(path.join(content,'dist/bridge/connect.js'),'export async function connectBridge(){throw Error("pair/connect forbidden in updater fixture");}\n');
         // A tiny wrapper avoids copying/compressing a native Node binary per unit case; model its installed execPath explicitly.
         await fs.writeFile(path.join(content,'dist/index.js'),`import fs from 'node:fs/promises';import path from 'node:path';import {fileURLToPath} from 'node:url';
@@ -40,6 +43,10 @@ else if(process.argv[2]==='--worker'){
  setTimeout(()=>process.exit(98),15000);setInterval(()=>{},1000);
 }else throw Error('unexpected fixture CLI');\n`);
         await fs.cp(path.join(bridge,'node_modules/jsonc-parser'),path.join(content,'node_modules/jsonc-parser'),{recursive:true});
+        // Pinned lock/inventory with synthetic package bodies exercises the actual SDK archive verifier.
+        for(const [name,bytes] of (await bridgeSdkFixture(target)).files)if(name.startsWith('bin/opencode-sdk/')){
+            const file=path.join(content,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,bytes);
+        }
         const nodeFile=path.join(content,'bin',process.platform==='win32'?'node.exe':'node');
         await fs.writeFile(nodeFile,`#!/bin/sh\nexec '${process.execPath.replace(/'/g,"'\"'\"'")}' "$@"\n`,{mode:0o755});
         const build=createHash('sha256');for(const file of(await fs.readdir(path.join(content,'dist'),{recursive:true})).sort())if((await fs.stat(path.join(content,'dist',file))).isFile()){build.update(file.split(path.sep).join('/')+'\0');build.update(await fs.readFile(path.join(content,'dist',file)));}

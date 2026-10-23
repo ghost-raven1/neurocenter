@@ -183,7 +183,7 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
             else await assertBridgeSnapshot(launcherBefore);
         }
         if(!launcherAfter?.bytes)throw Error('Короткая команда моста не зарегистрирована.');
-        await cli(run,install,['--finish-upgrade'],settings.environment);prepared=false;resumed=true;
+        if(prepared||prepareAttempted){await cli(run,install,['--finish-upgrade'],settings.environment);prepared=false;resumed=true;}
         await releaseLock(lock);locked=false;
         if(restart)await ready(start(install,settings.environment),state,version,buildId);
         rollbackNeeded=false;
