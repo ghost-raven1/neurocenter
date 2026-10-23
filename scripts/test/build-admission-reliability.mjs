@@ -58,14 +58,30 @@ async function one(boundary,limits){
             if(!limits&&phase==='baseline'){
                 await delay(8005);e.pendingMs=performance.now()-started;assert.ok((posted??worker).pending);assert.ok(cancelled.pending);e.expectedRed=true;
             }else if(boundary==='fence-row'){
-                await until(()=>f.traces.some(item=>item.sql.startsWith('UPDATE tool_build_jobs')&&activeCode(item)==='55P03'),'bounded failed-receipt fallback while the same job row remains locked',14000);
+                const fallback=await until(()=>f.traces.find(item=>item.sql.startsWith('UPDATE tool_build_jobs')&&item.values?.[0]===e.jobId&&item.values?.[1]==='FAILED'),'actual failed-receipt fallback after the fence timeout',10000);
+                e.fallbackEdge=await until(async()=>{
+                    const graph=await f.graph(),row=graph.find(item=>Number(item.pid)===fallback.pid);if(!row)return false;
+                    const visit=(pid,seen=new Set())=>{if(pid===blocker.pid)return[pid];if(seen.has(pid))return;seen.add(pid);for(const next of graph.find(item=>Number(item.pid)===pid)?.blockers??[]){const tail=visit(next,seen);if(tail)return[pid,...tail];}};
+                    const path=visit(fallback.pid);return path?{...row,blockerPath:path,graph}:false;
+                },'actual fallback SQL blocking path to the same owned job-row blocker',3000);
+                // lock_timeout is per acquisition; sequential tuple/xid waits may exceed 5s in one statement.
+                await until(()=>['55P03','57014'].includes(activeCode(fallback)),'bounded failed-receipt fallback while the same job row remains locked',35000);
+                assert.ok(fallback.elapsedMs<=35000);e.fallbackElapsedMs=fallback.elapsedMs;
                 await deadline(worker.promise,'worker relinquishes after unconfirmed FAILED receipt',5000);
-                await deadline(cancelled.promise,'bounded cancellation under the locked job row',5000);assert.equal(outcome(cancelled).error.status,503);
-                assert.equal(f.service.lease,undefined);e.heldRow=(await f.pool.query('SELECT state,publication_started_at FROM tool_build_jobs WHERE id=$1',[e.jobId])).rows[0];assert.equal(e.heldRow.state,'RUNNING');assert.equal(e.heldRow.publication_started_at,null);
+                await deadline(cancelled.promise,'bounded cancellation under the locked job row',35000);e.cancelBeforeUnlock=outcome(cancelled);assert.equal(e.cancelBeforeUnlock.error.status,503);
+                assert.ok(['55P03','57014'].includes(e.cancelBeforeUnlock.error.code));e.workerBeforeUnlock=outcome(worker);e.leaseRelinquished=f.service.lease===undefined;assert.equal(e.leaseRelinquished,true);
+                e.heldRow=(await f.pool.query('SELECT state,publication_started_at FROM tool_build_jobs WHERE id=$1',[e.jobId])).rows[0];assert.equal(e.heldRow.state,'RUNNING');assert.equal(e.heldRow.publication_started_at,null);
             }else{
                 await deadline(posted.promise,'bounded SQL admission',8000);assert.equal(posted.result.ok,false);e.post=outcome(posted);
                 assert.equal(e.post.error.code,limits?.code??'55P03');if(phase==='candidate')assert.equal(e.post.error.status,503);
-                if(cancelled){await deadline(cancelled.promise,'tombstone after admission rollback',3000);assert.equal(cancelled.result.ok,true);assert.equal(cancelled.result.value.state,'CANCELLED');assert.equal(cancelled.result.value.build,null);}
+                if(cancelled){
+                    await deadline(cancelled.promise,'bounded cancellation after admission rollback',35000);e.cancelBeforeUnlock=outcome(cancelled);
+                    if(boundary==='queue'){
+                        assert.equal(e.cancelBeforeUnlock.ok,false);assert.equal(e.cancelBeforeUnlock.error.status,503);assert.equal(e.cancelBeforeUnlock.error.code,'55P03');
+                        const found=await f.track(f.controller.request(f.request,input.requestKey)).promise;assert.equal(found.ok,false);assert.equal(found.error.getStatus(),404);
+                        e.unconfirmedRows=(await f.pool.query('SELECT (SELECT count(*)::int FROM tool_build_jobs WHERE actor=$1 AND request_key=$2) AS jobs,(SELECT count(*)::int FROM tool_build_cancellations WHERE actor=$1 AND request_key=$2) AS cancellations',[f.actor.email,input.requestKey])).rows[0];assert.deepEqual(e.unconfirmedRows,{jobs:0,cancellations:0});
+                    }else{assert.equal(cancelled.result.ok,true);assert.equal(cancelled.result.value.state,'CANCELLED');assert.equal(cancelled.result.value.build,null);}
+                }
             }
         }
         if(boundary==='fence-row'){
@@ -74,6 +90,10 @@ async function one(boundary,limits){
         }
         await blocker?.release();
         if(posted)await deadline(posted.promise,'admission after owned unlock');if(cancelled)await deadline(cancelled.promise,'cancellation after owned unlock');
+        if(boundary==='queue'&&e.cancelBeforeUnlock?.ok===false){
+            cancelled=f.track(f.controller.cancelRequest(f.request,input.requestKey));await deadline(cancelled.promise,'same cancellation intent after owned unlock');
+            assert.equal(cancelled.result.ok,true);assert.equal(cancelled.result.value.requestKey,input.requestKey);assert.equal(cancelled.result.value.state,'CANCELLED');assert.equal(cancelled.result.value.build,null);e.cancellationRetried=true;
+        }
         if(boundary==='fence-row'){
             if(phase==='candidate'){const recovery=f.track(f.service.recoverOwnership()),result=await deadline(recovery.promise,'actual recovery after job-row unlock');if(!result.ok)throw result.error;}
             else await deadline(worker.promise,'baseline actual skill worker after unlock');
