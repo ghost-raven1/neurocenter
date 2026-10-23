@@ -4,8 +4,9 @@ import {syncDirectory} from '../../bridge/atomic-file.js';
 import {readPrivateConfiguration,writePrivateConfiguration} from '../local-configuration/private-store.js';
 import {DEVICE_CODEX_PROTOCOL,normalizeDeviceCodexResult,type DeviceCodexPayload,type DeviceCodexResult} from './contract.js';
 import type {Completion} from '../../bridge/completions.js';
+import {sanitizeCodexDiagnostic,type CodexDiagnostic} from './diagnostics.js';
 
-export interface CodexReceipt {schemaVersion:1;jobId:string;lease:string;deviceId:string;callId:string;payloadHash:string;state:'started'|'completed';result?:DeviceCodexResult}
+export interface CodexReceipt {schemaVersion:1;jobId:string;lease:string;deviceId:string;callId:string;payloadHash:string;state:'started'|'completed';result?:DeviceCodexResult;diagnostic?:CodexDiagnostic}
 type ReceiptPointer=Pick<CodexReceipt,'jobId'|'lease'|'deviceId'|'callId'|'payloadHash'>;
 const indexName='device-codex-pending',uuid=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const key=(callId:string)=>hash('device-codex-receipt:'+callId);
@@ -36,7 +37,9 @@ export async function writeCodexReceipt(receipt:CodexReceipt,expected:CodexRecei
         const {jobId,lease,deviceId,callId,payloadHash}=receipt;
         await writeState(indexName,[...pending,{jobId,lease,deviceId,callId,payloadHash}]);
     }
-    await writePrivateConfiguration(key(receipt.callId),receipt,expected);
+    const stored={...receipt},diagnostic=sanitizeCodexDiagnostic(receipt.diagnostic);
+    if(diagnostic)stored.diagnostic=diagnostic;else delete stored.diagnostic;
+    await writePrivateConfiguration(key(receipt.callId),stored,expected);
     await syncDirectory(path.join(stateDir(),'local-configuration'));
 }
 /** A crash between private completion and generic ACK creation restores delivery without recovering a prompt. */
@@ -45,7 +48,8 @@ export async function recoverCodexCompletions(save:(completion:Completion)=>Prom
         let receipt=await readPrivateConfiguration<CodexReceipt>(key(pointer.callId));
         if(receipt&&(receipt.jobId!==pointer.jobId||receipt.deviceId!==pointer.deviceId||receipt.callId!==pointer.callId||receipt.payloadHash!==pointer.payloadHash))throw new Error('Квитанция Codex изменилась.');
         if(receipt?.state!=='completed'){
-            const completed:CodexReceipt={schemaVersion:1,...pointer,state:'completed',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:pointer.callId,error:{code:receipt?'unknown-after-send':'unavailable'}}};
+            const diagnostic=sanitizeCodexDiagnostic(receipt?.diagnostic);
+            const completed:CodexReceipt={schemaVersion:1,...pointer,state:'completed',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:pointer.callId,error:{code:receipt?'unknown-after-send':'unavailable'}},...(diagnostic?{diagnostic}:{})};
             await writeCodexReceipt(completed,receipt);receipt=completed;
         }
         const result=normalizeDeviceCodexResult(receipt.result);
