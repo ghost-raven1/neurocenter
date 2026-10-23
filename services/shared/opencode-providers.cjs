@@ -1,8 +1,9 @@
 'use strict';
 
 const OPENCODE_PROVIDER_CAPABILITY='opencode-providers-v1';
+const OPENCODE_OLLAMA_CAPABILITY='opencode-ollama-v1';
 const OPENCODE_PROVIDER_JOBS=['prepare-opencode-provider','open-opencode-provider','get-opencode-provider-status'];
-const KINDS=['openai-compatible','codex-bridge'];
+const KINDS=['openai-compatible','ollama','codex-bridge'];
 const SHA=/^[a-f0-9]{64}$/,UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const record=value=>!!value&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
 const exact=(value,keys)=>record(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -17,10 +18,10 @@ function normalizeProviderDescriptor(value){
     if(!exact(value,descriptorKeys)||value.schemaVersion!==1||!UUID.test(value.deviceId)||typeof value.deviceId!=='string'
         ||typeof value.projectId!=='string'||!/^prj-[a-zA-Z0-9-]{1,235}$/.test(value.projectId)||typeof value.bindingId!=='string'||!SHA.test(value.bindingId)
         ||typeof value.instanceId!=='string'||!UUID.test(value.instanceId)||!KINDS.includes(value.providerKind)
-        ||typeof value.providerId!=='string'||!/^neurocenter-(?:openai|codex)-[a-f0-9]{16}$/.test(value.providerId)
+        ||typeof value.providerId!=='string'||!/^neurocenter-(?:openai|ollama|codex)-[a-f0-9]{16}$/.test(value.providerId)
         ||typeof value.schemaDigest!=='string'||!SHA.test(value.schemaDigest))fail();
     let expectations=null,connector=null;
-    if(value.providerKind==='openai-compatible'){
+    if(value.providerKind!=='codex-bridge'){
         const item=value.expectations;
         if(value.connector!==null||!exact(item,['catalogModelId','modelPin','runtimeModel','capability','baseUrl','options'])
             ||!safeText(item.catalogModelId,128)||!item.catalogModelId.startsWith('model-')||typeof item.modelPin!=='string'||!SHA.test(item.modelPin)
@@ -45,7 +46,7 @@ function normalizeProviderDescriptor(value){
             ||typeof item.sourceCommit!=='string'||!/^[a-f0-9]{40}$/.test(item.sourceCommit))fail();
         connector={assetId:item.assetId,version:item.version,manifest:item.manifest,sourceCommit:item.sourceCommit};
     }
-    if(!value.providerId.startsWith(value.providerKind==='codex-bridge'?'neurocenter-codex-':'neurocenter-openai-'))fail();
+    if(!value.providerId.startsWith('neurocenter-'+(value.providerKind==='codex-bridge'?'codex':value.providerKind==='ollama'?'ollama':'openai')+'-'))fail();
     return {schemaVersion:1,deviceId:value.deviceId,projectId:value.projectId,bindingId:value.bindingId,instanceId:value.instanceId,
         providerKind:value.providerKind,providerId:value.providerId,schemaDigest:value.schemaDigest,expectations,connector};
 }
@@ -76,4 +77,4 @@ function normalizeProviderReport(kind,value,descriptor,failed=false,preparationI
         ||kind==='open-opencode-provider'&&(value.opened!==true||value.preparationId!==preparationId))fail();
     return {...source,preparationId:value.preparationId,...kind==='open-opencode-provider'?{opened:true}:{},expiresAt:value.expiresAt};
 }
-module.exports={OPENCODE_PROVIDER_CAPABILITY,OPENCODE_PROVIDER_JOBS,normalizeProviderDescriptor,providerReportIdentity,normalizeProviderReport};
+module.exports={OPENCODE_PROVIDER_CAPABILITY,OPENCODE_OLLAMA_CAPABILITY,OPENCODE_PROVIDER_JOBS,normalizeProviderDescriptor,providerReportIdentity,normalizeProviderReport};

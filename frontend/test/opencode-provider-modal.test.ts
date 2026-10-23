@@ -46,6 +46,29 @@ describe('One local provider setup dialog', () => {
         click('Открыть настройку на компьютере'); expect(operation.open).toHaveBeenCalledOnce();
         expect(vi.mocked(useProviderSetup).mock.calls[vi.mocked(useProviderSetup).mock.calls.length - 1][0]).toMatchObject({selection, canRead: true, canWrite: true});
     });
+    it('An Ollama card opens its exact assigned model with a local optional key and no Codex build', () => {
+        props.models = [{...model, runtime: 'remote-ollama', capability: 'vision', model: 'qwen3-vl:8b'}];
+        props.bridge.device!.report.capabilities!.push('opencode-ollama-v1');
+        const html = render(); const input = vi.mocked(useProviderSetup).mock.calls.at(-1)![0];
+        expect(input).toMatchObject({selection: {...selection, providerKind: 'ollama'}, canRead: true, canWrite: true});
+        expect(html).toContain('ключ необязателен'); expect(html).toContain('Ollama');
+        expect(html).not.toContain('API-ключ для Codex'); expect(html).not.toContain('type="password"');
+        expect(operation.open).not.toHaveBeenCalled(); expect(operation.check).not.toHaveBeenCalled(); expect(supply.build).not.toHaveBeenCalled();
+        click('Открыть настройку на компьютере'); expect(operation.open).toHaveBeenCalledOnce();
+    });
+    it('Selecting Ollama never substitutes an OpenAI model and explains an old bridge', () => {
+        render(); ui.selects.get('Тип провайдера OpenCode')!.onChange('ollama'); const html = render();
+        expect(vi.mocked(useProviderSetup).mock.calls.at(-1)![0].selection).toBeUndefined();
+        expect(html).toContain('Обновите мост для настройки Ollama'); expect(html).toContain('Настроить мост');
+        expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true); expect(ui.buttons.get('Проверить готовность')!.disabled).toBe(true);
+    });
+    it('Ollama feature OFF preserves readiness and an explicit selected model without opening a local window', () => {
+        props.initialProviderKind = 'ollama'; props.models = [{...model, runtime: 'remote-ollama'}];
+        props.bridge.device!.report.capabilities!.push('opencode-ollama-v1'); ui.general = false;
+        render(); expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true); click('Проверить готовность');
+        expect(vi.mocked(useProviderSetup).mock.calls.at(-1)![0]).toMatchObject({selection: {...selection, providerKind: 'ollama'}, canRead: true, canWrite: false});
+        expect(operation.check).toHaveBeenCalledOnce(); expect(operation.open).not.toHaveBeenCalled();
+    });
     it('Feature OFF blocks a new wizard while preserving readiness and recovery', () => {
         ui.general = false; render(); expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true); click('Проверить готовность'); click('Перечитать очередь');
         expect(operation.check).toHaveBeenCalledOnce(); expect(operation.reload).toHaveBeenCalledOnce(); expect(vi.mocked(useProviderSetup).mock.calls[vi.mocked(useProviderSetup).mock.calls.length - 1][0]).toMatchObject({canRead: true, canWrite: false});

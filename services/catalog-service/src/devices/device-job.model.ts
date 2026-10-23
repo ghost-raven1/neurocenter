@@ -42,7 +42,7 @@ export interface JobInput {
     reindex?:true;
     snapshotId?:string;
     expectedAgentsRevision?:number;
-    providerKind?:'openai-compatible'|'codex-bridge';
+    providerKind?:'openai-compatible'|'ollama'|'codex-bridge';
     catalogModelId?:string;
     expectedModelPin?:string;
     expectedProviderSchemaDigest?:string;

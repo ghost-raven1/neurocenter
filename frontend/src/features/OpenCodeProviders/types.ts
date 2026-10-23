@@ -3,7 +3,7 @@ import type {IBridgeJob} from '../McpBridge/api';
 
 export type {OpenCodeProviderIdentity, OpenCodeProviderKind, OpenCodeProviderOpened, OpenCodeProviderPreparation, OpenCodeProviderStatus};
 export interface IProviderSetupTarget {deviceId: string; projectId: string; expectedBindingId: string; expectedInstanceId: string;}
-export type IProviderSetupSelection = IProviderSetupTarget & ({providerKind: 'openai-compatible'; catalogModelId: string; expectedModelPin: string}
+export type IProviderSetupSelection = IProviderSetupTarget & ({providerKind: 'openai-compatible' | 'ollama'; catalogModelId: string; expectedModelPin: string}
     | {providerKind: 'codex-bridge'; catalogModelId?: never; expectedModelPin?: never});
 export type IProviderSetupRequest = IProviderSetupSelection & {kind: OpenCodeProviderJobKind; requestKey: string;
     preparationJobId?: string; expectedProviderSchemaDigest?: string};

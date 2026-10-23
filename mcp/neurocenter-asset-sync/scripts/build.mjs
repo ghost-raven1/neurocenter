@@ -23,6 +23,11 @@ try {
     await fs.copyFile(path.join(root, '../../services/shared/project-agents.cjs'), path.join(stage, 'dist/shared/project-agents.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-configuration.cjs'), path.join(stage, 'dist/shared/project-configuration.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-learning.cjs'), path.join(stage, 'dist/shared/project-learning.cjs'));
+    // Runtime dependencies also identify the build: an SDK update must refresh an installed worker.
+    const adapterFiles = ['vendor/ollama-runtime/package.json', 'vendor/ollama-runtime/index.js', 'package-lock.json'];
+    const adapter = createHash('sha256');
+    for (const file of adapterFiles) { adapter.update(file + '\0'); adapter.update(await fs.readFile(path.join(root, file))); }
+    await fs.writeFile(path.join(stage, 'dist/shared/ollama-runtime.json'), JSON.stringify({sourceSha256: adapter.digest('hex')}) + '\n');
     const digest = createHash('sha256');
     const files = (await fs.readdir(path.join(stage, 'dist'), { recursive: true })).sort();
     for (const file of files) {

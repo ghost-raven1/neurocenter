@@ -11,7 +11,8 @@ export async function projectAgentMappings(payload:ProjectAgentsPayload,root:str
         {authorize,readAuth:false,requestedSelectors:payload.modelRequirements.filter(item=>item.kind==='native').map(item=>item.selector)});
     if(scan.warnings.some(warning=>['read-failed','invalid-json','unsafe-path','source-changed','entry-limit','ambiguous-config'].includes(warning)))throw setup(payload.modelRequirements[0]!.agentId);
     return payload.modelRequirements.map(requirement=>{
-        const matches=scan.candidates.filter(candidate=>(!candidate.blocker||requirement.kind==='native'&&['codex-local-auth','local-provider-auth','device-local-endpoint'].includes(candidate.blocker))&&candidate.runtime&&candidate.baseUrl
+        const matches=scan.candidates.filter(candidate=>(!candidate.blocker||requirement.kind==='native'&&['codex-local-auth','local-provider-auth','device-local-endpoint'].includes(candidate.blocker)
+                ||requirement.kind==='catalog'&&requirement.runtime==='remote-ollama'&&candidate.runtime==='remote-ollama'&&/^neurocenter-ollama-[a-f0-9]{16}$/.test(candidate.provider)&&candidate.blocker==='device-local-endpoint')&&candidate.runtime&&candidate.baseUrl
             &&(requirement.kind==='native'?candidate.provider+'/'+(candidate.configKey??candidate.model)===requirement.selector
                 :candidate.runtime===requirement.runtime&&candidate.model===requirement.runtimeModel&&candidate.baseUrl===requirement.baseUrl
                     &&candidate.capability===requirement.capability&&isDeepStrictEqual(candidate.options??{},requirement.options)));

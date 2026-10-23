@@ -31,10 +31,16 @@ describe('Вход из серверной модели в отдельную л
         expect(action).toBeDefined(); expect(action!.disabled).not.toBe(true); action!.onClick!(); expect(setup).toHaveBeenCalledOnce();
         expect(ui.buttons.has('Настроить API')).toBe(true);
     });
+    it('Assigned Ollama chat and vision cards expose the same explicit local setup action', () => {
+        for (const capability of ['chat', 'vision'] as const) {
+            ui.buttons.clear(); const setup = render({model: {...model, runtime: 'remote-ollama', capability}});
+            const action = ui.buttons.get('Настроить в OpenCode'); expect(action).toBeDefined(); action!.onClick!(); expect(setup).toHaveBeenCalledOnce();
+        }
+    });
     it.each([
         {assigned: false}, {projectSelected: false}, {canAssign: false},
         {model: {...model, capability: 'embedding' as const, dimension: 4}},
-        {model: {...model, runtime: 'remote-ollama' as const}}, {model: {...model, archivedAt: '2026-10-22'}},
+        {model: {...model, runtime: 'ollama' as const}}, {model: {...model, archivedAt: '2026-10-22'}},
     ])('Не обещает локальную настройку неподходящему контексту: %j', patch => {
         render(patch); expect(ui.buttons.has('Настроить в OpenCode')).toBe(false);
     });

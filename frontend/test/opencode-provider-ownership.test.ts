@@ -26,6 +26,29 @@ beforeEach(() => {hooks = adminSetupHooks(); state.owner = 'actor-a'; state.inca
 afterEach(() => hooks.dispose());
 
 describe('Local provider request ownership and ACK recovery', () => {
+    it('Ollama prepare→open→check preserves its catalog pin and requires a deliberate readiness check', async () => {
+        chosen = {...selection, providerKind: 'ollama'};
+        const providerId = 'neurocenter-ollama-0123456789abcdef';
+        const ids = {'prepare-opencode-provider': '33333333-3333-4333-8333-333333333333', 'open-opencode-provider': '55555555-5555-4555-8555-555555555555', 'get-opencode-provider-status': '66666666-6666-4666-8666-666666666666'};
+        vi.mocked(providerSetupApi.create).mockImplementation(async input => ack(input, {id: ids[input.kind], providerKind: 'ollama', providerId, state: 'succeeded',
+            result: {...(input.kind === 'get-opencode-provider-status' ? configured() : preparation()), providerKind: 'ollama', providerId,
+                ...(input.kind === 'open-opencode-provider' ? {opened: true} : {})}}));
+        render().open(); await flushSetup(); render(); await flushSetup(); render(); let view = render();
+        expect(providerSetupApi.create).toHaveBeenCalledTimes(2); expect(requested()).toMatchObject({...chosen, kind: 'prepare-opencode-provider'});
+        expect(requested(1)).toMatchObject({...chosen, kind: 'open-opencode-provider', expectedProviderSchemaDigest: descriptor.schemaDigest});
+        expect(view.opened?.providerKind).toBe('ollama'); expect(view.status).toBeUndefined();
+        view.check(); await flushSetup(); render(); await flushSetup(); view = render();
+        expect(requested(2)).toMatchObject({...chosen, kind: 'get-opencode-provider-status'}); expect(view.status?.ready).toBe(true);
+    });
+    it('A late Ollama ACK cannot open a local window after switching to OpenAI', async () => {
+        chosen = {...selection, providerKind: 'ollama'};
+        const held = deferredSetup<unknown>(); vi.mocked(providerSetupApi.create).mockReturnValue(held.promise); bridge.reload = vi.fn(async () => undefined);
+        render().open(); chosen = {...selection}; render();
+        held.resolve(ack(requested(), {providerKind: 'ollama', providerId: 'neurocenter-ollama-0123456789abcdef', state: 'succeeded',
+            result: {...preparation(), providerKind: 'ollama', providerId: 'neurocenter-ollama-0123456789abcdef'}}));
+        await flushSetup(); const view = render(); expect(view.opened).toBeUndefined(); expect(view.preparation).toBeUndefined();
+        expect(bridge.reload).not.toHaveBeenCalled(); expect(providerSetupApi.create).toHaveBeenCalledOnce();
+    });
     it('Prepare→open uses exact server preparation; successful open is not inference readiness', async () => {
         render().open(); await flushSetup(); expect(requested().kind).toBe('prepare-opencode-provider');
         await finishPrepare(); expect(providerSetupApi.create).toHaveBeenCalledTimes(2);

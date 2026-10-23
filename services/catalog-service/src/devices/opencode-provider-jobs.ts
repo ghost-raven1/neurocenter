@@ -3,10 +3,10 @@ import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
-import {normalizeProviderDescriptor,normalizeProviderReport,OPENCODE_PROVIDER_CAPABILITY,OPENCODE_PROVIDER_JOBS,type OpenCodeProviderDescriptor} from '../../../shared/opencode-providers.cjs';
+import {normalizeProviderDescriptor,normalizeProviderReport,OPENCODE_PROVIDER_CAPABILITY,OPENCODE_OLLAMA_CAPABILITY,OPENCODE_PROVIDER_JOBS,type OpenCodeProviderDescriptor} from '../../../shared/opencode-providers.cjs';
 import {modelFromRow,type IModelRow} from '../models/model-history';
 import {remoteModelBaseUrl} from '../models/remote-model-validation';
-import {remoteModelOptions} from '../models/remote-model-options';
+import {assertRemoteModelOptions,remoteModelOptions} from '../models/remote-model-options';
 import {verifyPackage,type IPackage} from '../catalog/bundle-package';
 import type {Device,DeviceStore} from './device-store';
 import type {DeviceArtifacts} from './device-artifacts';
@@ -47,17 +47,21 @@ async function connector(store:DeviceStore,artifacts:DeviceArtifacts):Promise<IP
 /** Read only non-secret model identity and endpoint; server credential columns are never selected. */
 async function descriptor(store:DeviceStore,artifacts:DeviceArtifacts,device:Device,input:JobInput){
     const current=binding(device,input);let expectations:OpenCodeProviderDescriptor['expectations']=null,pkg:IPackage|undefined;
-    if(input.providerKind==='openai-compatible'){
+    if(input.providerKind==='openai-compatible'||input.providerKind==='ollama'){
+        const ollama=input.providerKind==='ollama';
+        if(ollama)assertLocalFeature(device.report,OPENCODE_OLLAMA_CAPABILITY);
         if(typeof input.catalogModelId!=='string'||!sha(input.expectedModelPin))throw new BadRequestException('Выберите модель и актуальный pin.');
         const row=(await store.pool.query<IModelRow>(`SELECT c.* FROM model_catalog c JOIN project_models p ON p.model_id=c.id
             WHERE c.id=$1 AND p.project_id=$2 AND c.archived_at IS NULL`,[input.catalogModelId,input.projectId])).rows[0];
         if(!row)throw new ConflictException('Модель больше не назначена проекту.');
         const model=modelFromRow(row);
-        if(model.runtime!=='remote-openai'||!['chat','vision'].includes(model.capability)||model.modelPin!==input.expectedModelPin||!model.verificationSha256)throw new ConflictException('Выберите актуальную проверенную OpenAI-совместимую модель чата.');
+        if(model.runtime!==(ollama?'remote-ollama':'remote-openai')||!['chat','vision'].includes(model.capability)||model.modelPin!==input.expectedModelPin||!model.verificationSha256)throw new ConflictException(ollama?'Выберите актуальную проверенную модель чата Ollama.':'Выберите актуальную проверенную OpenAI-совместимую модель чата.');
         const connection=(await store.pool.query<{base_url:string;options:unknown}>(`SELECT base_url,options FROM model_remote_connections
             WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1`,[model.id,model.verificationSha256])).rows[0];
         if(!connection)throw new ConflictException('Подключение модели изменилось. Проверьте API модели.');
         const saved=remoteModelOptions(connection.options);
+        assertRemoteModelOptions(model,saved);
+        if(ollama&&Object.keys(saved.providerParameters??{}).length)throw new ConflictException('Это подключение Ollama содержит дополнительные параметры. Локальный мастер пока переносит температуру, topP, лимит ответа и размер контекста. Сохранённое подключение не изменено.');
         if(saved.apiFormat==='responses'||saved.reasoningEffort!==undefined||saved.store!==undefined||saved.tokenLimitParameter==='max_completion_tokens'||Object.keys(saved.providerParameters??{}).length)throw new ConflictException('Локальный мастер поддерживает Chat Completions с базовыми параметрами. Это серверное подключение использует другой протокол или дополнительные параметры; настройте соответствующего провайдера в OpenCode отдельно.');
         const options=Object.fromEntries(['temperature','topP','maxOutputTokens','contextWindow'].flatMap(key=>saved[key as keyof typeof saved]===undefined?[]:[[key,saved[key as keyof typeof saved]]]));
         expectations={catalogModelId:model.id,modelPin:model.modelPin!,runtimeModel:model.model,capability:model.capability as 'chat'|'vision',baseUrl:remoteModelBaseUrl(connection.base_url),options};
@@ -66,7 +70,7 @@ async function descriptor(store:DeviceStore,artifacts:DeviceArtifacts,device:Dev
         pkg=await connector(store,artifacts);assertPackageBridge(device.report,pkg);
     }else throw new BadRequestException('Неизвестный вид провайдера.');
     const context={schemaVersion:1,deviceId:device.id,projectId:input.projectId!,...current,providerKind:input.providerKind,
-        providerId:'neurocenter-'+(expectations?'openai':'codex')+'-'+hash([input.projectId,input.providerKind,input.catalogModelId??null]).slice(0,16),
+        providerId:'neurocenter-'+(input.providerKind==='ollama'?'ollama':expectations?'openai':'codex')+'-'+hash([input.projectId,input.providerKind,input.catalogModelId??null]).slice(0,16),
         expectations,connector:pkg?{assetId:pkg.plugin.id,version:pkg.plugin.version,manifest:pkg.manifest.sha256,sourceCommit:(pkg.config!.extra!.codexConnector as {sourceCommit:string}).sourceCommit}:null};
     try{return {descriptor:normalizeProviderDescriptor({...context,schemaDigest:hash(context)}),...(pkg?{connectorPackage:pkg}:{})};}
     catch{throw new ConflictException('Модель или поставка не поддерживается текущим форматом OpenCode.');}

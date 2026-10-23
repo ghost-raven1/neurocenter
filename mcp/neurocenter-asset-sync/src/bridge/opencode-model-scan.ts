@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { parse, parseTree, type Node, type ParseError } from 'jsonc-parser';
 import { projectBindingId, projectFolder, projectInstanceId } from './workspace.js';
 import { readBoundedSnapshot, fileFingerprint } from './read-bounded.js';
+import {ollamaAdapterUrl} from '../features/opencode-providers/ollama-entry.js';
 import type { IOpenCodeModelCandidate, IOpenCodeModelScan, IOpenCodeModelSource } from '../../../../services/shared/opencode-model-scan.cjs';
 const parameters=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../services/shared/adapter-parameters.cjs':'../shared/adapter-parameters.cjs',import.meta.url))) as typeof import('../../../../services/shared/adapter-parameters.cjs');
 const shared=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../services/shared/opencode-model-scan.cjs':'../shared/opencode-model-scan.cjs',import.meta.url))) as typeof import('../../../../services/shared/opencode-model-scan.cjs');
@@ -19,19 +20,19 @@ const flag=(value:string|undefined):boolean=>['true','1'].includes(value?.toLowe
 const bounded=(value:unknown,min:number,max:number,integer=false):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max&&(!integer||Number.isInteger(value));
 const empty=(value:unknown):boolean=>value===undefined||object(value)&&Object.keys(value).length===0;
 /** Exact bounded execution options only; unknown SDK options and secrets keep import blocked. */
-function modelOptions(value:unknown,responses:boolean):IOpenCodeModelCandidate['options']|null {
+function modelOptions(value:unknown,responses:boolean,ollama=false):IOpenCodeModelCandidate['options']|null {
     const projected:NonNullable<IOpenCodeModelCandidate['options']>=responses?{apiFormat:'responses',store:false}:{};
     if(value===undefined)return projected;
-    if(!object(value)||Object.keys(value).some(key=>!['temperature','topP','maxOutputTokens',...(responses?['reasoningEffort','store']:[])].includes(key)))return null;
+    if(!object(value)||Object.keys(value).some(key=>!['temperature','topP','maxOutputTokens',...(responses?['reasoningEffort','store']:[]),...(ollama?['contextWindow']:[])].includes(key)))return null;
     for(const [key,option]of Object.entries(value)){
         if(key==='reasoningEffort'){
             if(typeof option!=='string'||!['none','minimal','low','medium','high','xhigh','max'].includes(option))return null;
             projected.reasoningEffort=option as NonNullable<IOpenCodeModelCandidate['options']>['reasoningEffort'];continue;
         }
         if(key==='store'){if(typeof option!=='boolean')return null;projected.store=option;continue;}
-        const range=key==='temperature'?[0,2]:key==='topP'?[0,1]:[1,32768];
-        if(!bounded(option,range[0]!,range[1]!,key==='maxOutputTokens'))return null;
-        projected[key as 'temperature'|'topP'|'maxOutputTokens']=option;
+        const range=key==='temperature'?[0,2]:key==='topP'?[0,1]:key==='contextWindow'?[128,2097152]:[1,32768];
+        if(!bounded(option,range[0]!,range[1]!,key==='maxOutputTokens'||key==='contextWindow'))return null;
+        projected[key as 'temperature'|'topP'|'maxOutputTokens'|'contextWindow']=option;
     }
     return projected;
 }
@@ -68,8 +69,9 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
         if(!id(provider)||provider.length>128||!object(value))continue;
         const options=object(value.options)?value.options:{};
         const models=object(value.models)?value.models:{};
+        const ollama=value.npm===ollamaAdapterUrl;
         const knownOpenai=provider==='openai'&&(!value.npm||value.npm==='@ai-sdk/openai');
-        const supported=(knownOpenai||['@ai-sdk/openai-compatible','@ai-sdk/openai'].includes(String(value.npm)))
+        const supported=(ollama||knownOpenai||['@ai-sdk/openai-compatible','@ai-sdk/openai'].includes(String(value.npm)))
             &&(value.options===undefined||object(value.options))&&(options.apiKey===undefined||typeof options.apiKey==='string')
             &&empty(options.headers)&&Object.keys(options).every(key=>['apiKey','baseURL','timeout','headers'].includes(key))
             &&(options.timeout===undefined||bounded(options.timeout,1000,300000,true));
@@ -84,13 +86,15 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
             const modalities=object(metadata.modalities)?metadata.modalities:{};
             const disabled=Array.isArray(config.disabled_providers)&&config.disabled_providers.includes(provider)
                 ||Array.isArray(config.enabled_providers)&&!config.enabled_providers.includes(provider);
-            const defaults=modelOptions(metadata.options,knownOpenai||value.npm==='@ai-sdk/openai'),apiModel=metadata.id??model;
+            let defaults=modelOptions(metadata.options,knownOpenai||value.npm==='@ai-sdk/openai',ollama);const apiModel=metadata.id??model;
             const parameterIssues=[...parameters.adapterParameterIssues(options,['apiKey','baseURL','timeout',...(empty(options.headers)?['headers']:[])]),
-                ...parameters.adapterParameterIssues(metadata.options,['temperature','topP','maxOutputTokens',...(knownOpenai||value.npm==='@ai-sdk/openai'?['reasoningEffort','store']:[])])].slice(0,100);
-            if(defaults&&object(metadata.limit)&&bounded(metadata.limit.context,128,2097152,true))defaults.contextWindow=metadata.limit.context;
+                ...parameters.adapterParameterIssues(metadata.options,['temperature','topP','maxOutputTokens',...(knownOpenai||value.npm==='@ai-sdk/openai'?['reasoningEffort','store']:[]),...(ollama?['contextWindow']:[])])].slice(0,100);
+            if(defaults&&object(metadata.limit)&&bounded(metadata.limit.context,128,2097152,true)){
+                if(ollama&&defaults.contextWindow!==metadata.limit.context)defaults=null;else defaults.contextWindow=metadata.limit.context;
+            }
             const overridden=metadata.provider!==undefined||!empty(metadata.headers)||defaults===null||!id(apiModel)||apiModel.length>128;
             result.push({candidateId:randomUUID(),configKey:model,provider,name:text(metadata.name,128)?metadata.name:model,model:overridden?model:apiModel as string,modelVersion:overridden?model:apiModel as string,
-                capability:Array.isArray(modalities.input)&&modalities.input.includes('image')?'vision':'chat',runtime:supported?'remote-openai':null,
+                capability:Array.isArray(modalities.input)&&modalities.input.includes('image')?'vision':'chat',runtime:supported&&!overridden?ollama?'remote-ollama':'remote-openai':null,
                 baseUrl:address.url,hasKey:credentialSource!=='none',credentialSource,
                 ...(!overridden&&defaults&&Object.keys(defaults).length?{options:defaults}:{}),
                 ...(parameterIssues.length?{parameterIssues}:{}),
@@ -168,8 +172,9 @@ export async function readOpenCodeModelMetadata(root:string,context:IOpenCodeMod
     if(options.credentialTarget){
         for(const candidate of candidates){
             // Managed wizard keys never enter export payloads, even under the manual-provider transfer opt-in.
-            if(!options.allowManagedCredentialRead&&/^neurocenter-(?:openai|codex)-[a-f0-9]{16}$/.test(candidate.provider))continue;
-            if(candidate.blocker||!candidate.hasKey)continue;await authorize();
+            if(!options.allowManagedCredentialRead&&/^neurocenter-(?:openai|ollama|codex)-[a-f0-9]{16}$/.test(candidate.provider))continue;
+            const localOllama=options.allowManagedCredentialRead&&/^neurocenter-ollama-[a-f0-9]{16}$/.test(candidate.provider)&&candidate.runtime==='remote-ollama'&&candidate.blocker==='device-local-endpoint';
+            if(candidate.blocker&&!localOllama||!candidate.hasKey)continue;await authorize();
             const providers=object(config.provider)?config.provider:{},provider=providers[candidate.provider];
             const providerOptions=object(provider)&&object(provider.options)?provider.options:{};
             let key:unknown=providerOptions.apiKey;

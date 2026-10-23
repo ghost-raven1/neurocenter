@@ -1,5 +1,5 @@
 import {ProviderSetupModal} from '../OpenCodeProviders/ProviderSetupModal';
-import {providerModelEligible} from '../OpenCodeProviders/model';
+import {providerKindForModel, providerModelEligible} from '../OpenCodeProviders/model';
 import type {OpenCodeProviderKind} from '../OpenCodeProviders/types';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {useEmbeddingTarget,EmbeddingTargetFields} from '../ProjectEmbedding/EmbeddingTarget';
@@ -60,7 +60,9 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         setProviderSetup(undefined); setViewId(null); setEditing(null); setConnection(null); setImporting(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
     }, [formScope]);
     const openProvider = (modelId?: string): void => {
-        if (captureOwner()() && previousScope.current === formScope && projectId && canManage) setProviderSetup({scope: formScope, modelId});
+        if (!captureOwner()() || providerContext.current.formScope !== formScope || !projectId || !providerContext.current.canManage) return;
+        const model = catalog?.items.find(item => item.id === modelId);
+        setProviderSetup({scope: formScope, modelId, providerKind: model && providerKindForModel(model)});
     };
     const openCodexProvider = (deviceId: string): void => {
         if (!captureOwner()() || providerContext.current.formScope !== formScope || !projectId || !providerContext.current.canManage) return;

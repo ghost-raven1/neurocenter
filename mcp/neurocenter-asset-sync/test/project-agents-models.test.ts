@@ -8,6 +8,7 @@ import {configureProjectAgents} from '../src/features/project-agents/index.js';
 import {projectAgentsFailureResult,projectAgentMappings} from '../src/features/project-agents/model-compiler.js';
 import {createProjectAgentsPayload,compileProjectAgents,renderProjectAgent,type ProjectAgent} from '../src/features/project-agents/contract.js';
 import {agentFile} from '../src/features/project-agents/receipt.js';
+import {ollamaAdapterUrl} from '../src/features/opencode-providers/ollama-entry.js';
 
 const agent:ProjectAgent={id:'agent-model',slug:'nc-model',version:1,enabled:true,description:'QA',prompt:'Preserve prompt.',mode:'subagent',permission:{bash:'deny'},model:'neurocenter/model-chat'};
 describe('Private native model compilation and cross-scope namespace',()=>{
@@ -32,6 +33,15 @@ describe('Private native model compilation and cross-scope namespace',()=>{
   if(kind==='codex')expect(mappings[0]!.options).toEqual({apiFormat:'responses',reasoningEffort:'high',store:false});
   await configureProjectAgents(p,async()=>undefined,async()=>undefined,async value=>compileProjectAgents(p,value));
   expect(await fs.readFile(path.join(f.root,agentFile(agent.slug)),'utf8')).toContain('"model": "'+provider+'/alias"');
+ });
+ it.each(['exact','model','url','options','transport','namespace'])('catalog Ollama %s keeps native transport and exact pinned correspondence on the chosen computer',async issue=>{
+  const provider=issue==='namespace'?'manual-ollama':'neurocenter-ollama-'+'a'.repeat(16),c={provider:{[provider]:{npm:issue==='transport'?'@ai-sdk/openai-compatible':ollamaAdapterUrl,
+   options:{baseURL:issue==='url'?'http://127.0.0.1:11435':'http://127.0.0.1:11434'},models:{alias:{id:issue==='model'?'wrong-model':'qwen3:8b',limit:{context:8192},options:{temperature:issue==='options'?0.9:0,contextWindow:8192}}}}}};
+  await fs.writeFile(global(),JSON.stringify(c));
+  const p=createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[agent],modelRequirements:[{kind:'catalog',agentId:agent.id,catalogModelId:'model-chat',modelPin:'d'.repeat(64),runtime:'remote-ollama',runtimeModel:'qwen3:8b',baseUrl:'http://127.0.0.1:11434',options:{temperature:0,contextWindow:8192},capability:'chat'}]});
+  if(issue!=='exact'){await expect(projectAgentMappings(p,f.root,async()=>undefined)).rejects.toHaveProperty('code','OPENCODE_AGENT_MODEL_SETUP_REQUIRED');return;}
+  const mappings=await projectAgentMappings(p,f.root,async()=>undefined);expect(mappings).toEqual([expect.objectContaining({provider,runtime:'remote-ollama',model:'qwen3:8b',baseUrl:'http://127.0.0.1:11434'})]);
+  expect(compileProjectAgents(p,mappings).mappings).toEqual(mappings);
  });
  it('an unknown native SDK parameter is diagnosed without exporting its value or pretending compilation succeeded',async()=>{
   const privateValue='PRIVATE_NATIVE_PARAMETER';

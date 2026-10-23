@@ -28,7 +28,7 @@ export async function startProviderSession(context:ProviderContext,id:string,exp
         if(req.method!=='POST'||req.headers.origin!==origin||req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'){json(res,403,{});return;}
         const value=await body(req);current();
         if(req.url==='/session'&&!used&&Object.keys(value).length===1&&value.token===token){used=true;await admit();const e=context.descriptor.expectations;
-            const extra=context.descriptor.providerKind==='codex-bridge'?await models(signal):{};current();json(res,200,{csrf,revision:initial.revision,providerKind:context.descriptor.providerKind,baseUrl:e?.baseUrl,runtimeModel:e?.runtimeModel,credentialConfigured:initial.ready,expiresAt,...extra});return;}
+            const extra=context.descriptor.providerKind==='codex-bridge'?await models(signal):{},credentialConfigured=context.descriptor.providerKind==='ollama'?!!(await providerProof(context))?.receipt.credentialFile:initial.ready;current();json(res,200,{csrf,revision:initial.revision,providerKind:context.descriptor.providerKind,baseUrl:e?.baseUrl,runtimeModel:e?.runtimeModel,credentialConfigured,expiresAt,...extra});return;}
         if(!used||attempted||req.headers['x-provider-csrf']!==csrf){json(res,403,{});return;}
         if(context.descriptor.providerKind==='codex-bridge'&&['/login','/models'].includes(req.url??'')&&Object.keys(value).length===0){
             if(req.url==='/models'){await admit();const result=await models(signal);requestCurrent();json(res,200,result);return;}

@@ -48,7 +48,7 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             </span></Tooltip>}
             {remote && canHost && !model.archivedAt && onConfigure && <FeatureButton features={['model_catalog']} disabled={busy || disabled}
                 aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</FeatureButton>}
-            {model.runtime === 'remote-openai' && model.capability !== 'embedding' && projectSelected && canAssign && assigned && onSetupProvider && !model.archivedAt
+            {(model.runtime === 'remote-openai' || model.runtime === 'remote-ollama') && model.capability !== 'embedding' && projectSelected && canAssign && assigned && onSetupProvider && !model.archivedAt
                 && <Button disabled={busy || disabled} onClick={onSetupProvider}>Настроить в OpenCode</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>
                 <FeatureButton features={['model_catalog','rag_sync','model_hosting']} type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</FeatureButton>

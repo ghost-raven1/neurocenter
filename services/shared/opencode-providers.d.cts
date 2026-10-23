@@ -1,4 +1,4 @@
-export type OpenCodeProviderKind='openai-compatible'|'codex-bridge';
+export type OpenCodeProviderKind='openai-compatible'|'ollama'|'codex-bridge';
 export type OpenCodeProviderJobKind='prepare-opencode-provider'|'open-opencode-provider'|'get-opencode-provider-status';
 export interface OpenCodeProviderExpectations {catalogModelId:string;modelPin:string;runtimeModel:string;capability:'chat'|'vision';baseUrl:string;options:{temperature?:number;topP?:number;maxOutputTokens?:number;contextWindow?:number}}
 export interface OpenCodeConnectorReference {assetId:string;version:number;manifest:string;sourceCommit:string}
@@ -8,6 +8,7 @@ export interface OpenCodeProviderPreparation extends OpenCodeProviderIdentity {p
 export interface OpenCodeProviderOpened extends OpenCodeProviderPreparation {opened:true}
 export interface OpenCodeProviderStatus extends OpenCodeProviderIdentity {state:'missing'|'configured'|'login-required'|'unavailable'|'conflict';ready:boolean;missingFields:Array<'baseUrl'|'credential'|'login'>;revision:string|null;checkedAt:string}
 export const OPENCODE_PROVIDER_CAPABILITY:'opencode-providers-v1';
+export const OPENCODE_OLLAMA_CAPABILITY:'opencode-ollama-v1';
 export const OPENCODE_PROVIDER_JOBS:OpenCodeProviderJobKind[];
 export function normalizeProviderDescriptor(value:unknown):OpenCodeProviderDescriptor;
 export function providerReportIdentity(value:unknown):OpenCodeProviderIdentity;

@@ -1,0 +1,13 @@
+{
+  "name": "@neurocenter/ollama-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "dependencies": {
+    "ollama-ai-provider-v2": "3.5.1",
+    "ai": "6.0.314",
+    "zod": "4.4.3"
+  }
+}

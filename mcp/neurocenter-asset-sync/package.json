@@ -22,6 +22,7 @@
   "dependencies": {
     "@lancedb/lancedb": "^0.29.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@neurocenter/ollama-runtime": "file:vendor/ollama-runtime",
     "apache-arrow": "18.1.0",
     "js-yaml": "^4.1.0",
     "jsonc-parser": "3.3.1",

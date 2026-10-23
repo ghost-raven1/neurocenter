@@ -49,7 +49,28 @@ describe('Public provider contract', () => {
     });
     it('Only assigned verified API chat/vision cards can be offered by caller', () => {
         expect(providerModelEligible(model)).toBe(true);
-        for (const patch of [{capability: 'embedding' as const}, {runtime: 'remote-ollama' as const}, {modelPin: ''}, {verificationSha256: null}, {archivedAt: 'today'}]) expect(providerModelEligible({...model, ...patch})).toBe(false);
+        for (const patch of [{capability: 'embedding' as const}, {runtime: 'ollama' as const}, {modelPin: ''}, {verificationSha256: null}, {archivedAt: 'today'}]) expect(providerModelEligible({...model, ...patch})).toBe(false);
+    });
+    it('Ollama chat and vision keep their exact runtime model while embedding and hosted runtime stay out', () => {
+        for (const capability of ['chat', 'vision'] as const) expect(providerModelEligible({...model, runtime: 'remote-ollama', capability, model: 'qwen3:8b'})).toBe(true);
+        expect(providerModelEligible({...model, runtime: 'remote-ollama', capability: 'embedding'})).toBe(false);
+        expect(providerModelEligible({...model, runtime: 'ollama'})).toBe(false);
+    });
+    it('Only Ollama requires the added bridge capability; updating does not block an existing OpenAI setup', () => {
+        const bridge = bridgeFixture();
+        expect(providerSetupTarget(bridge, selection.projectId, 'ollama').target).toBeUndefined();
+        expect(providerSetupTarget(bridge, selection.projectId, 'openai-compatible').target).toBeDefined();
+        bridge.device!.report.capabilities!.push('opencode-ollama-v1');
+        expect(providerSetupTarget(bridge, selection.projectId, 'ollama').target).toBeDefined();
+    });
+    it('Ollama public jobs accept only the Ollama identity with no connector or private fields', () => {
+        const input = {...request, providerKind: 'ollama' as const};
+        const result = {...preparation(), providerKind: 'ollama', providerId: 'neurocenter-ollama-0123456789abcdef'};
+        const job = ack(input, {providerKind: 'ollama', providerId: result.providerId, result});
+        expect(providerJob(job, input)).toEqual(job); expect(providerReport(job, input)).toEqual(result);
+        expect(providerJob({...job, providerId: descriptor.providerId}, input)).toBeUndefined();
+        expect(providerReport({...job, result: {...result, connector: {assetId: 'foreign'}}}, input)).toBeUndefined();
+        expect(providerReport({...job, result: {...result, baseUrl: 'http://localhost:11434'}}, input)).toBeUndefined();
     });
     it('Catalog API IDs up to200 remain server models but local OpenCode offers only supported128-character selectors', () => {
         expect(providerModelEligible({...model, model: 'a'.repeat(128)})).toBe(true);

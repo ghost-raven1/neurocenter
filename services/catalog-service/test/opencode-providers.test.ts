@@ -41,6 +41,51 @@ describe('Managed local provider contract and fresh device admission',()=>{
     });
     afterEach(()=>vi.unstubAllGlobals());
     async function payload(){return (await providerJobPayload(store,artifacts,device(),input,role))!;}
+    it('Ollama gets its native provider identity and exact project model without a connector build',async()=>{
+        activeModel!.descriptor.runtime='remote-ollama';activeModel!.descriptor.model='qwen3:4b';
+        endpoint='https://ollama.example.test';remoteOptions={temperature:0,topP:0.9,maxOutputTokens:2048,contextWindow:16384};
+        const selected={...input,providerKind:'ollama',expectedModelPin:modelFromRow(activeModel!).modelPin} as unknown as JobInput;
+        const computer=device();computer.report.capabilities!.push('opencode-ollama-v1');
+        const result=await providerJobPayload(store,artifacts,computer,selected,role);
+        const descriptor=normalizeProviderDescriptor(result!.descriptor);
+        expect(descriptor.providerKind).toBe('ollama');expect(descriptor.providerId).toMatch(/^neurocenter-ollama-[a-f0-9]{16}$/);
+        expect(descriptor.expectations).toMatchObject({runtimeModel:'qwen3:4b',baseUrl:endpoint,options:remoteOptions});
+        expect(descriptor.connector).toBeNull();expect(build).not.toHaveBeenCalled();
+        expect(requiredJobFeatures(selected.kind,selected)).toEqual(['opencode_providers']);
+    });
+    it('An older bridge is refused for Ollama before a model is read, without blocking OpenAI',async()=>{
+        await expect(providerJobPayload(store,artifacts,device(),{...input,providerKind:'ollama'},role)).rejects.toHaveProperty('status',409);
+        expect(query).not.toHaveBeenCalled();await expect(payload()).resolves.toBeDefined();
+    });
+    it('Ollama never reinterprets an OpenAI model or silently drops additional native parameters',async()=>{
+        const computer=device();computer.report.capabilities!.push('opencode-ollama-v1');
+        await expect(providerJobPayload(store,artifacts,computer,{...input,providerKind:'ollama'},role)).rejects.toHaveProperty('status',409);
+        activeModel!.descriptor.runtime='remote-ollama';remoteOptions={providerParameters:{num_gpu:1}};
+        await expect(providerJobPayload(store,artifacts,computer,{...input,providerKind:'ollama',expectedModelPin:modelFromRow(activeModel!).modelPin},role)).rejects.toThrow('дополнительные параметры');
+        expect(build).not.toHaveBeenCalled();
+    });
+    it('A queued Ollama job revalidates its model, native transport, endpoint and capability before delivery',async()=>{
+        activeModel!.descriptor.runtime='remote-ollama';endpoint='https://ollama.example.test';
+        const computer=device();computer.report.capabilities!.push('opencode-ollama-v1');
+        const selected={...input,providerKind:'ollama' as const,expectedModelPin:modelFromRow(activeModel!).modelPin};
+        const p=(await providerJobPayload(store,artifacts,computer,selected,role))!;
+        const queued={kind:input.kind,project_id:projectId,role,payload:p};
+        await expect(assertProviderJob(store,artifacts,computer,queued)).resolves.toBeUndefined();
+        endpoint='https://changed.example.test';await expect(assertProviderJob(store,artifacts,computer,queued)).rejects.toHaveProperty('status',409);
+        endpoint='https://ollama.example.test';computer.report.capabilities!.pop();
+        await expect(assertProviderJob(store,artifacts,computer,queued)).rejects.toHaveProperty('status',409);
+    });
+    it('Ollama report accepts only matching native identity and rejects secrets or connector substitution',async()=>{
+        activeModel!.descriptor.runtime='remote-ollama';
+        const computer=device();computer.report.capabilities!.push('opencode-ollama-v1');
+        const p=(await providerJobPayload(store,artifacts,computer,{...input,providerKind:'ollama',expectedModelPin:modelFromRow(activeModel!).modelPin},role))!;
+        const d=normalizeProviderDescriptor(p.descriptor),identity=providerReportIdentity(d);
+        const report={...identity,state:'configured',ready:true,missingFields:[],revision:preparationId,checkedAt:new Date().toISOString()};
+        expect(normalizeProviderReport('get-opencode-provider-status',report,d)).toEqual(report);
+        for(const patch of [{apiKey:'secret'},{providerKind:'openai-compatible'},{baseUrl:endpoint},{connector:{assetId:'forged'}}])
+            expect(()=>normalizeProviderReport('get-opencode-provider-status',{...report,...patch},d)).toThrow();
+        expect(()=>normalizeProviderDescriptor({...d,providerId:d.providerId.replace('ollama','openai')})).toThrow();
+    });
     it.each([{apiFormat:'responses'},{apiFormat:'responses',reasoningEffort:'high',store:false},{providerParameters:{custom:{enabled:false}}},{tokenLimitParameter:'max_completion_tokens'}])('Does not silently drop unsupported local-wizard settings %j',async options=>{
         remoteOptions=options;await expect(payload()).rejects.toThrow('другой протокол или дополнительные параметры');expect(build).not.toHaveBeenCalled();
     });

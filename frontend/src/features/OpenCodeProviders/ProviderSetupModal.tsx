@@ -4,7 +4,7 @@ import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {artifactTargets} from '../McpBridge/runtimeArtifacts';
 import type {useBridge} from '../McpBridge/useBridge';
 import type {ICatalogModel} from '../ModelCatalog/types';
-import {providerModelCompatibilityReason, providerModelEligible, providerSetupTarget} from './model';
+import {providerKindForModel, providerModelCompatibilityReason, providerModelEligible, providerSetupTarget} from './model';
 import type {IProviderSetupSelection, OpenCodeProviderKind} from './types';
 import {useCodexSupply} from './useCodexSupply';
 import {useProviderSetup} from './useProviderSetup';
@@ -21,14 +21,16 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
     const {bridge, projectId, projectName, models, canManage, onClose} = props;
     const general = useFeatureAvailability('opencode_providers'), codex = useFeatureAvailability('codex_connector');
     const buildFlag = useFeatureAvailability('tool_builds', 'tool_catalog', 'codex_connector');
-    const [kind, setKind] = useState<OpenCodeProviderKind>(props.initialProviderKind ?? 'openai-compatible');
+    const initialModel = models.find(item => item.id === props.initialModelId);
+    const [kind, setKind] = useState<OpenCodeProviderKind>(props.initialProviderKind ?? (initialModel && providerKindForModel(initialModel)) ?? 'openai-compatible');
     const [modelId, setModelId] = useState(props.initialModelId ?? '');
-    const eligible = models.filter(providerModelEligible), model = eligible.find(item => item.id === modelId);
-    const selectedCard = models.find(item => item.id === modelId);
-    const compatibility = selectedCard ? providerModelCompatibilityReason(selectedCard) : !eligible.length ? models.map(providerModelCompatibilityReason).find(Boolean) : '';
-    const target = providerSetupTarget(bridge, projectId);
-    const modelReason = kind === 'openai-compatible' ? !props.catalogReady ? props.catalogError || 'Дождитесь актуального каталога моделей.'
-        : !model ? compatibility || 'Выберите назначенную проекту проверенную API-модель для чата.' : '' : '';
+    const catalogProvider = kind !== 'codex-bridge', sameRuntime = models.filter(item => providerKindForModel(item) === kind);
+    const eligible = sameRuntime.filter(providerModelEligible), model = eligible.find(item => item.id === modelId);
+    const selectedCard = sameRuntime.find(item => item.id === modelId);
+    const compatibility = selectedCard ? providerModelCompatibilityReason(selectedCard) : !eligible.length ? sameRuntime.map(providerModelCompatibilityReason).find(Boolean) : '';
+    const target = providerSetupTarget(bridge, projectId, kind);
+    const modelReason = catalogProvider ? !props.catalogReady ? props.catalogError || 'Дождитесь актуального каталога моделей.'
+        : !model ? compatibility || (kind === 'ollama' ? 'Выберите назначенную проекту проверенную модель Ollama для чата или изображений.' : 'Выберите назначенную проекту проверенную API-модель для чата.') : '' : '';
     const runtimeTarget = bridge.device?.report.runtimeArtifactTarget;
     const platformReason = kind === 'codex-bridge' && (!runtimeTarget || !artifactTargets.includes(runtimeTarget as typeof artifactTargets[number]))
         ? 'Платформа компьютера не подтверждена. Обновите мост и перечитайте подключение.' : '';
@@ -49,7 +51,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
     const locked = operation.busy || operation.pending;
     const ready = !readReason && !supplyReason && operation.status?.ready === true;
     const bridgeRepair = !!bridge.device && (bridge.device.requiresReconnect || bridge.device.report.protocolVersion !== 2
-        || !bridge.device.report.capabilities?.includes('opencode-providers-v1') || !!platformReason);
+        || !bridge.device.report.capabilities?.includes('opencode-providers-v1') || kind === 'ollama' && !bridge.device.report.capabilities?.includes('opencode-ollama-v1') || !!platformReason);
     const modelsUrl = `/projects/${encodeURIComponent(projectId)}?tab=store&catalogTab=models`;
     const binding = bridge.device?.report.bindings?.find(item => item.projectId === projectId && item.valid !== false);
     return <Modal open title="Настроить провайдера в OpenCode" width={640} footer={null} onCancel={onClose} className="provider-setup">
@@ -60,11 +62,11 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                 onChange={bridge.choose} options={bridge.devices.map(item => ({value: item.id, label: item.name || 'Компьютер без имени'}))} /></label>
             {binding && <Typography.Text type="secondary">Папка: {binding.folderName}</Typography.Text>}
             <label>Подключение<Select aria-label="Тип провайдера OpenCode" value={kind} disabled={locked} onChange={setKind}
-                options={[{value: 'openai-compatible', label: 'OpenAI-совместимый API'}, {value: 'codex-bridge', label: 'Codex Bridge — локальный вход'}]} /></label>
-            {kind === 'openai-compatible' ? <>
+                options={[{value: 'openai-compatible', label: 'OpenAI-совместимый API'}, {value: 'ollama', label: 'Ollama — локальный или удалённый сервер'}, {value: 'codex-bridge', label: 'Codex Bridge — локальный вход'}]} /></label>
+            {catalogProvider ? <>
                 <label>Модель проекта<Select aria-label="API-модель для OpenCode" value={model?.id} placeholder="Выберите API-модель" disabled={locked}
                     onChange={setModelId} options={eligible.map(item => ({value: item.id, label: `${item.name} · ${item.model}`}))} /></label>
-                <Typography.Text type="secondary">Параметры и ключ вводятся в локальном окне на выбранном компьютере.</Typography.Text>
+                <Typography.Text type="secondary">{kind === 'ollama' ? 'Адрес и параметры Ollama появятся в локальном окне на выбранном компьютере; ключ необязателен.' : 'Параметры и ключ вводятся в локальном окне на выбранном компьютере.'}</Typography.Text>
             </> : <Typography.Text type="secondary">Войдите в Codex на выбранном компьютере: используйте текущий вход или официальный экран. После настройки выберите нужную модель в новой сессии OpenCode.</Typography.Text>}
             {bridge.device?.online === false && <Alert type="info" showIcon message="Компьютер не в сети" description="Запрос останется в очереди. Включите мост на выбранном компьютере; локальный мастер откроется там." />}
             {operation.opened && <Alert role="status" type="success" showIcon message="Локальный мастер открыт" description={`Завершите настройку на компьютере «${bridge.device?.name}», затем проверьте готовность.`} />}
@@ -75,8 +77,8 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
             {operation.job && operation.pending && <Alert role="status" showIcon type="info" message="Ожидаем подтверждения от выбранного компьютера" />}
             {readReason && <Alert type="warning" showIcon message={readReason} action={<Space wrap>
                 {bridgeRepair && <Button href="/start?step=1">Настроить мост</Button>}
-                {kind === 'openai-compatible' && modelReason && <Button href={modelsUrl}>Открыть модели проекта</Button>}
-                {kind === 'openai-compatible' && !props.catalogReady && <Button onClick={props.onReloadModels}>Обновить модели</Button>}
+                {catalogProvider && modelReason && <Button href={modelsUrl}>Открыть модели проекта</Button>}
+                {catalogProvider && !props.catalogReady && <Button onClick={props.onReloadModels}>Обновить модели</Button>}
             </Space>} />}
             {!readReason && writeReason && <Alert type="info" showIcon message={writeReason} description="Чтение готовности и уже принятые задания остаются доступны." action={<Button onClick={() => {void flag.refresh();}}>Проверить доступность</Button>} />}
             {kind === 'codex-bridge' && props.canPrepareConnector && (supply.error || supplyReason || supply.supply?.state === 'conflict') && <Alert type="warning" showIcon
@@ -90,14 +92,14 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
             {ready && <Alert type="success" showIcon message={kind === 'codex-bridge' ? 'Модель настроена в OpenCode' : 'Провайдер настроен'}
                 description={kind === 'codex-bridge' ? 'Откройте новую сессию OpenCode в выбранной папке и выберите модель Codex. Успешный запрос к модели проверяется отдельно.'
                     : 'Настройки сохранены на выбранном компьютере. Успешный запрос к модели проверяется отдельно.'}
-                action={kind === 'openai-compatible' && props.onConfigured && <Button onClick={props.onConfigured}>Вернуться к агентам</Button>} />}
+                action={catalogProvider && props.onConfigured && <Button onClick={props.onConfigured}>Вернуться к агентам</Button>} />}
             <details><summary>Подробности</summary><Space direction="vertical" size={12} className="provider-setup__content">
-                {kind === 'openai-compatible' ? <Typography.Paragraph type="secondary">Карточка и серверное API общие. Здесь настраивается отдельный локальный провайдер OpenCode: ключ с сервера не переносится.</Typography.Paragraph>
+                {catalogProvider ? <Typography.Paragraph type="secondary">Карточка и серверное API общие. Здесь настраивается отдельный локальный провайдер OpenCode: ключ с сервера не переносится.</Typography.Paragraph>
                     : <Typography.Paragraph type="secondary">API-ключ для Codex не требуется; локальный мастер предложит текущий вход или официальный экран. Серверный чат и делегированные команды Codex работают отдельно.</Typography.Paragraph>}
-                {kind === 'openai-compatible' && <Typography.Paragraph type="secondary">Агент должен использовать выбранную каталожную модель с актуальными параметрами. Его применение проверяется отдельно: вернитесь к агентам и явно нажмите «Применить настройки» для текущей версии проекта.</Typography.Paragraph>}
+                {catalogProvider && <Typography.Paragraph type="secondary">Агент должен использовать выбранную каталожную модель с актуальными параметрами. Его применение проверяется отдельно: вернитесь к агентам и явно нажмите «Применить настройки» для текущей версии проекта.</Typography.Paragraph>}
                 <Typography.Paragraph type="secondary">Мост запишет только управляемого провайдера в выбранной папке OpenCode. Чужие настройки сохранятся. Авторизация и ключи хранятся на компьютере; площадка получает только состояние готовности. После изменений перезапустите OpenCode.</Typography.Paragraph>
                 <Button disabled={operation.busy} onClick={operation.reload}>Перечитать очередь</Button>
-                {kind === 'openai-compatible' && <Button onClick={props.onReloadModels}>Обновить модели</Button>}
+                {catalogProvider && <Button onClick={props.onReloadModels}>Обновить модели</Button>}
                 {kind === 'codex-bridge' && props.canPrepareConnector && <>
                     <Typography.Text type="secondary">{supply.supply?.state === 'ready' ? 'Поставка коннектора подготовлена на сервере. Локальная настройка выполняется отдельно.' : supply.supply?.state === 'building' ? 'Сервер готовит закреплённый коннектор. Можно закрыть окно и вернуться позже.' : supply.supply?.state === 'conflict' ? 'Проверьте поставки и сборки в операциях; новая сборка не отправлена.' : 'Подготавливаем только закреплённый источник коннектора.'}</Typography.Text>
                     {!buildFlag.enabled && <Typography.Text type="warning">{buildFlag.reason}</Typography.Text>}

@@ -56,6 +56,13 @@ describe.skipIf(!connection)('Agent model requirements — exact project pins wi
         await pool.query("UPDATE model_catalog SET descriptor=jsonb_set(descriptor,'{manifestSha256}','null'::jsonb) WHERE id=$1",[id]);
         await expect(requirements([item])).rejects.toMatchObject({status:409,response:{code:'OPENCODE_AGENT_MODEL_SETUP_REQUIRED'}});
     });
+    it('keeps native Ollama runtime, proxy root and generation settings for local provider matching without reading its key',async()=>{
+        const id=await create({runtime:'remote-ollama',model:'qwen3:8b'}),options={contextWindow:16384,temperature:0,topP:0.9,maxOutputTokens:2048};
+        await connect(id,1,options);await pool.query('UPDATE model_remote_connections SET base_url=$2 WHERE model_id=$1',[id,'http://127.0.0.1:11434/prefix']);
+        const [saved]=await requirements([agent({model:'neurocenter/'+id})]);
+        expect(saved).toMatchObject({kind:'catalog',catalogModelId:id,runtime:'remote-ollama',runtimeModel:'qwen3:8b',baseUrl:'http://127.0.0.1:11434/prefix',options});
+        expect(JSON.stringify(saved)).not.toMatch(/PRIVATE_KEY|encrypted-value|credential/);
+    });
     it('runtime connection metadata is validated before creating a deliverable model requirement',async()=>{
         const id=await create();await connect(id);await pool.query('UPDATE model_remote_connections SET options=$2 WHERE model_id=$1',[id,{temperature:3}]);
         await expect(requirements([agent({model:'neurocenter/'+id})])).rejects.toMatchObject({status:400});
