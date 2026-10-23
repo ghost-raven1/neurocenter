@@ -1,10 +1,10 @@
 .app-root { position: relative; isolation: isolate; }
-.neural-backdrop { position: fixed; z-index: -1; inset: 0; overflow: hidden; pointer-events: none;
+.neural-backdrop { --neural-signal-speed: 6; position: fixed; z-index: -1; inset: 0; overflow: hidden; pointer-events: none;
     background: radial-gradient(ellipse at 15% 20%, rgba(204,224,238,.36), transparent 48%), radial-gradient(ellipse at 90% 80%, rgba(195,216,235,.3), transparent 50%), #f4f7fa;
     > svg { width: 100%; height: 100%; }
     &__connections { stroke: #89a8c2; stroke-width: 1; opacity: .27; }
     &__dendrites { stroke: #789ab8; stroke-width: 1; opacity: .3; }
-    &__signals path { stroke: #528caf; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 95; opacity: .7; animation: neural-signal 6s linear infinite; }
+    &__signals path { stroke: #528caf; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 95; opacity: .7; animation: neural-signal calc(6s / var(--neural-signal-speed)) linear infinite; }
     &__halo { fill: #89adc9; opacity: .05; transform-box: fill-box; transform-origin: center; animation: neural-pulse 4.7s ease-in-out infinite; }
     &__soma { fill: #779dbb; opacity: .5; }
     &__soma--hub { animation: neural-fire 4.7s ease-in-out infinite; }
