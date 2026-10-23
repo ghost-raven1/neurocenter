@@ -6,8 +6,9 @@ import { applyManagedWebUiCompatibility, RAG_LOCAL_UI } from './rag-web-ui.mjs';
 import { applyManagedPipeline } from './rag-managed-pipeline.mjs';
 
 export const RAG_HOSTED_EMBEDDING = Object.freeze({ schemaVersion: 1, profileSchemaVersion: 2, reindexSchemaVersion: 1 });
+export const RAG_LEARNING_QUIRKS = Object.freeze({ schemaVersion: 1, format: 'opencode-rag-quirks-jsonl', sourceSha256: '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af' });
 export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.11`;
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.12`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
 const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
 // V2/TUI зависимости исключены; настоящий Web UI уже собран в закреплённом upstream-архиве.
@@ -78,7 +79,7 @@ export async function prepareOpenCodeRag(context) {
     const uiPatch = await prepareManagedRagCommands(context.directory);
     const pipelinePatch = await applyManagedPipeline(context.directory);
     return { entrypoint: 'opencode-rag.mjs', kind: 'mcp', mode: 'mcp',
-        config: { transport: 'stdio', command: 'node', entrypoint: 'opencode-rag.mjs', args: ['mcp'], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION, localUi: RAG_LOCAL_UI, hostedEmbedding: RAG_HOSTED_EMBEDDING } },
+        config: { transport: 'stdio', command: 'node', entrypoint: 'opencode-rag.mjs', args: ['mcp'], extra: { localConfiguration: RAG_LOCAL_CONFIGURATION, localUi: RAG_LOCAL_UI, hostedEmbedding: RAG_HOSTED_EMBEDDING, learningQuirks: RAG_LEARNING_QUIRKS } },
         upstream: { ...upstream, compatibilityPatches: [uiPatch, pipelinePatch] },
         limitations: ['Настоящий Web UI и MCP; без TUI и автоматических hooks OpenCode V2.', 'Индекс создаётся только явным вызовом index_project или через Web UI при закрытых сессиях.'] };
 }

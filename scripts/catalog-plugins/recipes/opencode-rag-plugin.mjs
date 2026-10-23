@@ -1,12 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prepareOpenCodeRagRuntime, prepareManagedRagCommands, RAG_DEPENDENCIES, RAG_VERSION, RAG_HOSTED_EMBEDDING } from './opencode-rag.mjs';
+import { prepareOpenCodeRagRuntime, prepareManagedRagCommands, RAG_DEPENDENCIES, RAG_VERSION, RAG_HOSTED_EMBEDDING, RAG_LEARNING_QUIRKS } from './opencode-rag.mjs';
 import { RAG_PLUGIN_SOURCE } from '../../../services/shared/opencode-rag-source.cjs';
 import { managedPipelineSource } from './rag-managed-pipeline.mjs';
 import { RAG_LOCAL_UI } from './rag-web-ui.mjs';
 
-export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.11`;
+export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.12`;
 export const RAG_PLUGIN_COMMIT = RAG_PLUGIN_SOURCE.commit;
 export const RAG_PLUGIN_DEPENDENCIES = Object.freeze({ ...RAG_DEPENDENCIES, '@opencode-ai/plugin': '1.14.48' });
 const original = 'const cfg = await getConfig(input.directory);';
@@ -51,7 +51,7 @@ export async function prepareOpenCodeRagPlugin(context) {
         await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(context.directory, name));
     }
     const patch = await applyManagedPluginCompatibility(context.directory);
-    return { entrypoint: 'rag-plugin.mjs', kind: 'plugin', mode: 'plugin', config: { entrypoint: 'rag-plugin.mjs', extra: { localUi: RAG_LOCAL_UI, hostedEmbedding: RAG_HOSTED_EMBEDDING } },
+    return { entrypoint: 'rag-plugin.mjs', kind: 'plugin', mode: 'plugin', config: { entrypoint: 'rag-plugin.mjs', extra: { localUi: RAG_LOCAL_UI, hostedEmbedding: RAG_HOSTED_EMBEDDING, learningQuirks: RAG_LEARNING_QUIRKS } },
         upstream: { ...upstream, repository: 'https://github.com/MrDoe/OpenCodeRAG', commit: RAG_PLUGIN_COMMIT,
             sdk: { package: '@opencode-ai/plugin', version: RAG_PLUGIN_DEPENDENCIES['@opencode-ai/plugin'] }, compatibilityPatches: [patch, uiPatch] },
         limitations: ['Настоящий Web UI, инструменты и hooks через совместимую фабрику OpenCode 1; V2/TUI не подключаются.'] };
