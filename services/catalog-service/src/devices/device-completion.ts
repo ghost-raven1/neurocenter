@@ -2,6 +2,7 @@ import {completeLearningMemory} from '../learning-memory-sync/completion';
 import {completeLearningQuirks} from '../learning-quirks/completion';
 import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../../../shared/project-configuration.cjs';
 import {completeDeviceCodex} from '../models/device-codex-completion';
+import {completeRuntimeCachePolicy} from './runtime-cache-jobs';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
@@ -62,6 +63,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
         const codex=await completeDeviceCodex(client,job,input);
         if(codex){await client.query('COMMIT');if(!codex.repeated)await notifyDeviceOperations();return codex;}
+        const cache=await completeRuntimeCachePolicy(client,job,input);
+        if(cache){await client.query('COMMIT');if(!cache.repeated)await notifyDeviceOperations();return cache;}
         const memory=await completeLearningMemory(client,job,input);
         if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
         const quirks=await completeLearningQuirks(client,job,input);

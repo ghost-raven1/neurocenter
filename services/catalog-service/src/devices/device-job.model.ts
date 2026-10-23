@@ -18,6 +18,7 @@ export interface JobInput {
     kind: string;
     requestKey: string;
     scope?: 'global'|'project';
+    runtimeCachePolicy?: import('../../../shared/runtime-cache-policy.cjs').RuntimeCachePolicyPayload;
     assetKind?: string;
     assetId?: string;
     version?: number;

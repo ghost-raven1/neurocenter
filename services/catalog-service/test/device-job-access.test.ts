@@ -21,10 +21,10 @@ describe('Доступ к личной очереди и повтор отмен
     it('Список читает свежие назначения и ограничивает обе SQL-выборки до LIMIT истории',async()=>{
         await service.list(actor);
         expect(readClaims).toHaveBeenCalledWith(actor.email);
-        expect(query).toHaveBeenCalledWith(expect.stringContaining("project_id IS NULL AND kind='choose-root'"),[actor.email,false,['prj-keep']]);
+        expect(query).toHaveBeenCalledWith(expect.stringContaining("project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')"),[actor.email,false,['prj-keep']]);
         const sql=query.mock.calls[0][0] as string;
         expect(sql.match(/project_id=ANY\(\$3::text\[\]\)/g)).toHaveLength(2);
-        expect(sql).toContain("FROM bridge_jobs WHERE email=$1 AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind='choose-root')) AND state NOT IN");
+        expect(sql).toContain("FROM bridge_jobs WHERE email=$1 AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy'))) AND state NOT IN");
     });
     it('Последующее чтение не сохраняет старый набор проектов из кэша',async()=>{
         await service.list(actor);

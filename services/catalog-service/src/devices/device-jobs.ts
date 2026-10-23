@@ -44,6 +44,8 @@ import {OPENCODE_PROVIDER_JOBS} from '../../../shared/opencode-providers.cjs';
 import {providerJobPayload,assertProviderJob} from './opencode-provider-jobs';
 import {authorizeProviderAction} from './opencode-provider-permit';
 import {reconcileSnapshotJobs} from './project-snapshot-completion';
+import {RUNTIME_CACHE_POLICY_JOB} from '../../../shared/runtime-cache-policy.cjs';
+import {runtimeCacheWorkRole,runtimeCacheJobPayload,assertRuntimeCacheJob,assertRuntimeCacheAuthority} from './runtime-cache-jobs';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
@@ -125,6 +127,7 @@ export class DeviceJobs {
             !input ||
             ![
                 'choose-root',
+                RUNTIME_CACHE_POLICY_JOB,
                 MEMORY_SYNC_JOB,
                 LEARNING_QUIRKS_KIND,
                 SNAPSHOT_JOB_KIND,
@@ -155,6 +158,8 @@ export class DeviceJobs {
             );
         }
         const device = await this.store.owned(actor, input.deviceId);
+        if(input.kind===RUNTIME_CACHE_POLICY_JOB&&Object.prototype.hasOwnProperty.call(input,'projectId'))throw new BadRequestException('Лимит кэша относится к компьютеру и не принимает проект.');
+        if(input.kind===RUNTIME_CACHE_POLICY_JOB&&(!runtimeCacheWorkRole(actor.activeRole)||!runtimeCacheWorkRole(device.role)))throw new ForbiddenException('Настройка компьютера требует действующей рабочей роли пользователя и моста.');
         if(input.kind==='scan-opencode-models'&&actor.activeRole!=='Главный админ')throw new ForbiddenException('Импорт конфигурации моделей доступен главному администратору.');
         await this.permission(
             device,
@@ -162,7 +167,7 @@ export class DeviceJobs {
             input.kind === 'choose-root' ? undefined : input.projectId,
             jobMinimumLevel(input.kind),
         );
-        if (input.kind !== 'choose-root' && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
+        if (input.kind !== 'choose-root' && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
             throw new BadRequestException('Выберите серверный проект.');
         }
         const requestHash = digest(
@@ -176,6 +181,7 @@ export class DeviceJobs {
             throw new ConflictException('Локальная LanceDB недоступна на выбранном компьютере. Проверьте ОС и архитектуру автономного пакета MCP.');
         }
         assertManagedBridge(device.report);
+        if(input.kind===RUNTIME_CACHE_POLICY_JOB)payload={...runtimeCacheJobPayload(device,input,actor.activeRole)!};
         if (RAG_JOB_KINDS.includes(input.kind)) {
             payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId),ragProtocol:RAG_GENERATION_PROTOCOL};
         }
@@ -270,7 +276,7 @@ export class DeviceJobs {
     async list(actor: IAccessActor) {
         const scope = await this.readScope(actor);
         await this.expire();
-        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind='choose-root'))";
+        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')))";
         return (
             await this.store.pool.query(
                 `SELECT ${view} FROM bridge_jobs WHERE email=$1 ${access} AND (state IN ('queued','running','reconciling')
@@ -333,6 +339,7 @@ export class DeviceJobs {
             await assertProviderJob(this.store,this.artifacts,device,job);
             if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
             await this.codex?.authorizeJob(device,job);
+            assertRuntimeCacheJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
@@ -360,6 +367,8 @@ export class DeviceJobs {
             );
             await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
             await assertRagAutoInspection(this.store.pool,device,job);
+            if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
+            await assertRuntimeCacheAuthority(this.store.pool,device,job);
             if (job.kind === 'install') {
                 await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
                 await this.assertJobPlan(job);
@@ -393,6 +402,7 @@ export class DeviceJobs {
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
         if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
         await this.codex?.authorizeJob(device,job);
+        assertRuntimeCacheJob(device,job);
         if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
         if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         await assertRagAutoInspection(this.store.pool,device,job);
@@ -439,6 +449,8 @@ export class DeviceJobs {
             if(!current.rows.length)throw new ConflictException('Задание или привязка провайдера изменились во время проверки.');
             await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         }
+        if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
+        await assertRuntimeCacheAuthority(this.store.pool,device,job);
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
     async memorySyncContext(device:Device,input:unknown){
@@ -539,7 +551,7 @@ export class DeviceJobs {
     }
     async cancel(actor: IAccessActor, id: string) {
         const scope = await this.readScope(actor);
-        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind='choose-root'))";
+        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')))";
         const params = [id,scope.email,scope.main,scope.projects];
         const codex=(await this.store.pool.query<{kind:string;state:string}>(`SELECT kind,state FROM bridge_jobs WHERE id=$1 AND email=$2 ${access}`,params)).rows[0];
         if(codex?.kind===DEVICE_CODEX_JOB){

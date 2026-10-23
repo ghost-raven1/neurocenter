@@ -2,6 +2,8 @@ import api from '../../core/api/base';
 import type { IInstallPlan, IInstallPlanInput } from './installPlanTypes';
 import type { IBridgeBinding, IRuntimeProbe, TWorkspaceBindingMode } from './operationTypes';
 import type { IMcpConfigurationRevision, IMcpConfigurationStatus } from './mcpConfigurationTypes';
+import type { RuntimeCachePolicyPayload } from '../../../../services/shared/runtime-cache-policy.cjs';
+export type { RuntimeCachePolicyPayload, RuntimeCachePolicyResult } from '../../../../services/shared/runtime-cache-policy.cjs';
 export type { IInstallPlan, IInstallPlanInput } from './installPlanTypes';
 export type { IBridgeBinding, IRuntimeProbe, IWorkspacePreparation, ILocalChangePlan, IProjectInventory, IProjectInventoryEntry,
     ILocalVariant, ILocalVariants, TWorkspaceBindingMode } from './operationTypes';
@@ -111,7 +113,8 @@ interface IBridgeJobInputBase {
     planRevision?: number;
 }
 export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
+    {kind:'runtime-cache-policy';projectId?:never;runtimeCachePolicy:RuntimeCachePolicyPayload}
+    | {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
     | {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}
     | {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
         expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}

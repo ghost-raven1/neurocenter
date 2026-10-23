@@ -6,6 +6,7 @@ const unique=keys=>[...new Set(keys)];
 /** Recovery/removal jobs remain usable when every business capability is disabled. */
 function requiredJobFeatures(kind,payload={},trustedPayload=false){
     const input=record(payload);
+    if(kind==='runtime-cache-policy')return record(trustedPayload?input:input.runtimeCachePolicy).action==='set'?['computer_connections']:[];
     if(kind==='import-learning-quirks')return ['project_learning_quirks'];
     if(kind==='sync-learning-memory')return (trustedPayload?record(input.memory).mode:input.memoryMode)==='cleanup'?[]:['project_learning_memory'];
     if(['uninstall','restore-rag','inspect-installation','list-local-variants','prepare-local-restore','apply-local-restore','open-local-change-report','open-local-recovery-folder','get-mcp-configuration-status','get-opencode-provider-status'].includes(kind))return [];
