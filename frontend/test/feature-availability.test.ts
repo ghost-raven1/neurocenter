@@ -9,8 +9,8 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 31 ключ общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(31); expect(new Set(featureFlagKeys).size).toBe(31);
+    it('Проверяет все 33 ключа общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(featureFlagKeys).toHaveLength(33); expect(new Set(featureFlagKeys).size).toBe(33);
         expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
         expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
         expect(featureDefinitions.find(item => item.key === 'project_chat')).toMatchObject({defaultEnabled: true, dependsOn: []});

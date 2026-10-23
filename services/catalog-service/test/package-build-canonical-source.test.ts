@@ -10,8 +10,9 @@ import type {AssetSourcesService} from '../src/asset-sources/asset-sources.servi
 import type {BuildRow} from '../src/package-build/package-build.model';
 import {databaseFixture,tool} from './asset-import-db.fixture';
 import {LocalAssetIngest} from '../src/asset-sources/local-asset-ingest';
+import {runtimeReportFixture} from './package-build-runtime.fixture';
 
-const mocks=vi.hoisted(()=>({run:vi.fn(),release:vi.fn()}));
+const mocks=vi.hoisted(()=>({run:vi.fn(),release:vi.fn(),verify:vi.fn()}));
 vi.mock('../src/database/pool',()=>({createPool:()=>({})}));
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:async()=>mocks.release}));
 vi.mock('../src/devices/device-operations',()=>({notifyDeviceOperations:vi.fn()}));
@@ -19,6 +20,8 @@ vi.mock('../src/package-build/build-process',async()=>{
     const original=await vi.importActual<typeof import('../src/package-build/build-process')>('../src/package-build/build-process');
     return {...original,runPackageBuilder:mocks.run};
 });
+// This test measures retained source bytes; the common verifier's actual OS/protocol tests stay separate.
+vi.mock('../src/package-build/build-runtime',async()=>({...await vi.importActual('../src/package-build/build-runtime'),verifyBuildRuntime:mocks.verify}));
 import {PackageBuildService} from '../src/package-build/package-build.service';
 
 describe('Canonical builder source path — actual readyManifest, PostgreSQL and filesystem',()=>{
@@ -40,17 +43,19 @@ describe('Canonical builder source path — actual readyManifest, PostgreSQL and
             });
             const ingest=new LocalAssetIngest(db.pool,db.blobs),prepareLocal=vi.fn(ingest.prepare.bind(ingest));
             const progress=vi.fn(),withLease=vi.fn(async()=>undefined);
+            mocks.verify.mockImplementation((manifest:string,identity:string)=>runtimeReportFixture(manifest,identity));
             const service=new PackageBuildService({claims:async()=>({userRoles:['Главный админ']})} as unknown as AccessDb,
                 {} as RuntimeArtifacts,{} as CatalogService,{prepareLocal} as unknown as AssetSourcesService);
-            Object.assign(service,{lease:{},repository:{progress},withLease});
             vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({})));
-            const row={id:randomUUID(),request_key:randomUUID(),actor:'builder@example.test',config:{name:asset.card.name,kind:'plugin',source:{type:'files'}}} as BuildRow;
+            const row={id:randomUUID(),request_key:randomUUID(),execution_nonce:randomUUID(),state:'RUNNING',actor:'builder@example.test',config:{name:asset.card.name,kind:'plugin',source:{type:'files'}}} as BuildRow;
+            Object.assign(service,{lease:{},repository:{progress,get:async()=>row,recordRuntime:vi.fn()},withLease});
             await (service as unknown as {execute:(row:BuildRow,root:string)=>Promise<void>}).execute(row,root);
             const failed=progress.mock.calls.find(([,state])=>state==='FAILED');
             expect(failed,JSON.stringify({executeFailure:failed,progress:progress.mock.calls})).toBeUndefined();
             expect(prepareLocal).toHaveBeenCalledOnce();
             expect(prepareLocal.mock.calls[0][4]).toEqual({archivePath:expectedPath,stagingRoot:path.dirname(expectedPath)});
-            expect(withLease).toHaveBeenCalledOnce();
+            expect(withLease).toHaveBeenCalledTimes(2); // Runtime receipt, then publication fence.
+            expect(mocks.verify).toHaveBeenCalledOnce();
             expect(progress.mock.calls.some(([,state])=>state==='FAILED')).toBe(false);
             const retained=await db.blobs.open(sha256),actual=createHash('sha256');let observed=0;
             for await(const part of retained.stream){observed+=part.length;actual.update(part);}

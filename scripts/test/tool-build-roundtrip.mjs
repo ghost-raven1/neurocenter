@@ -97,6 +97,12 @@ async function sourceProof(result,expectedSource){
     const {rows}=await pool.query('SELECT * FROM asset_source_versions WHERE repository=$1 AND external_id=$2 AND asset_version=$3',['local-archive',result.assetId,result.sourceVersion]);
     assert.equal(rows.length,1);const row=rows[0];assert.equal(row.descriptor_sha256,result.sourceSha256);
     const descriptor=row.descriptor.source;assert.equal(descriptor.type,'archive');
+    const checks=await pool.query(`SELECT runtime.report FROM tool_build_runtime_checks runtime JOIN tool_build_jobs build ON build.id=runtime.build_id
+        WHERE build.state='SUCCEEDED' AND build.result->>'catalogId'=$1 AND build.result->>'version'=$2 ORDER BY runtime.attempt DESC LIMIT 1`,[result.catalogId,String(result.version)]);
+    assert.equal(checks.rows.length,1,'Published queued tools retain their startup receipt');
+    const startup=checks.rows[0].report;assert.equal(startup.ok,true);assert.equal(startup.status,'passed');
+    assert.equal(startup.checks.pluginFactory,true);assert.equal(startup.checks.hooks,true);assert.equal(startup.isolation.osEnforced,true);
+    assert.equal(startup.candidate.sourceDigest,descriptor.sha256,'Runtime proof belongs to the published source bytes');
     const bytes=await readFile(path.join(folder,'runtime/.asset-source-blobs',descriptor.sha256+'.blob'));
     assert.equal(bytes.length,descriptor.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),descriptor.sha256);
     const snapshot=JSON.parse(bytes.toString('utf8'));

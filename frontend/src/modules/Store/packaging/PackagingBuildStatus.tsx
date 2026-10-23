@@ -4,6 +4,7 @@ import {packagingApi} from './api';
 import {useAuthRequestOwner} from '../../../features/UserBlock/useAuthRequestOwner';
 import {errorMessage} from '../../../common/utils/errorMessage';
 import type { ToolBuild } from './types';
+import {PackagingBuildEvidence} from './PackagingBuildEvidence';
 
 interface Props {
     job?: ToolBuild;
@@ -58,6 +59,7 @@ export function PackagingBuildStatus({ job, name, active = true, cancelPending =
         <Typography.Paragraph type="secondary">{succeeded ? 'Инструмент добавлен в общий каталог' : stopped ? 'Упаковка отменена' : failed ? 'Упаковка остановлена' : cancelling ? 'Отменяем упаковку' : 'Готовим инструмент к установке'}</Typography.Paragraph>
         <Progress percent={percent} aria-label="Прогресс упаковки" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} status={failed ? 'exception' : succeeded ? 'success' : stopped ? 'normal' : 'active'} />
         <Typography.Paragraph>{stopped ? 'Отмена подтверждена сервером.' : stopping ? job.message : cancelling ? 'Намерение отмены сохранено. Проверяем завершение процесса; новую сборку не запускаем.' : job?.message ?? 'Проверяем, принят ли запрос, и загружаем прогресс…'}</Typography.Paragraph>
+        <PackagingBuildEvidence job={job}/>
         {stopping && job.error && <Alert type="warning" showIcon message={job.error} description="Отмена ещё не завершена. Повторите отмену или скройте окно и продолжите работу." />}
         {stopped && <Alert type="info" showIcon message="Исходники и настройки сохранены" description="Вернитесь к исходникам, чтобы изменить их или запустить новую сборку." />}
         {publishing && <Alert type="info" showIcon message="Публикация уже началась" description="Отменить её нельзя — дождитесь результата. Окно можно скрыть, результат останется в операциях." />}

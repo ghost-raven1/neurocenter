@@ -1,0 +1,8 @@
+# Optional on AppArmor 4+ hosts after loading docker/apparmor/catalog-packager.
+services:
+  catalog-service:
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./docker/seccomp/catalog-packager.json
+      - apparmor:neurocenter-catalog-packager

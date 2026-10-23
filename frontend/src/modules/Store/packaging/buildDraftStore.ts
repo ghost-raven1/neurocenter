@@ -1,4 +1,5 @@
 import type {ToolBuildRequest} from './types';
+import {validPackagingAgent} from './packagingAgent';
 
 export interface StoredBuildDraft {schemaVersion:1;scope:string;request:ToolBuildRequest}
 export interface StoredBuildCancellation {schemaVersion:1;scope:string;target:'request'|'job';id:string}
@@ -46,9 +47,10 @@ function validPublication(value:unknown):boolean {
 
 /** Восстановление не доверяет изменяемым данным браузера больше, чем новой форме. */
 function requestJSON(request:ToolBuildRequest):string {
-    if(!request||Object.keys(request).some(key=>!['requestKey','kind','name','description','source','publication'].includes(key))
+    if(!request||Object.keys(request).some(key=>!['requestKey','kind','name','description','source','publication','agent'].includes(key))
         ||!uuid.test(request.requestKey)||!['mcp','plugin','skill'].includes(request.kind)||typeof request.name!=='string'||typeof request.description!=='string'
-        ||!validSource(request.source)||(request.publication!==undefined&&!validPublication(request.publication)))throw new Error('Сохранённый запрос упаковки повреждён. Проверьте операции перед новой сборкой.');
+        ||!validSource(request.source)||(request.publication!==undefined&&!validPublication(request.publication))
+        ||request.agent!==undefined&&(request.kind==='skill'||!validPackagingAgent(request.agent)))throw new Error('Сохранённый запрос упаковки повреждён. Проверьте операции перед новой сборкой.');
     if(request.kind==='skill'&&(request.source.type!=='files'&&request.source.type!=='repository'
         ||!/(?:^|\/)SKILL\.md$/.test(request.source.entrypoint)||request.source.entrypoint.split('/').some(part=>!part||part==='.'||part==='..'||/[\\\x00-\x1f\x7f]/.test(part))||'release'in request.source&&request.source.release!==undefined
         ||'args'in request.source&&request.source.args!==undefined))throw new Error('Скилл восстанавливается из SKILL.md и ресурсов, без команды запуска.');

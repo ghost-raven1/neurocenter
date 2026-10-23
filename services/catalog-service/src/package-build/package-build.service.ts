@@ -44,6 +44,11 @@ import {inspectSkillSource} from './skill-source';
 import {buildSkillAsset} from './build-skill';
 import {BuildCancellation,BuildCancelledError,cleanupBuildStages} from './build-cancellation';
 import {acknowledgeBuildCleanup,forgetBuildCleanup} from './build-cleanup';
+import {PackageAgentService} from './package-agent.service';
+import {buildVerifiedAttempts} from './build-attempts';
+import {assertRuntimeCandidate,verifyBuildRuntime} from './build-runtime';
+import {isSourceEntrypoint} from '../../../shared/source-entrypoint.cjs';
+import {withVerifiedToolImport} from './verify-imported-tool';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -66,7 +71,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private readonly stoppedWorkers=new Set<string>();
     private stopping = false;
 
-    constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService,private readonly sources:AssetSourcesService,@Optional() private readonly uploads?:SourceUploadService) {}
+    constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService,private readonly sources:AssetSourcesService,@Optional() private readonly uploads?:SourceUploadService,@Optional() private readonly agent?:PackageAgentService) {}
 
     async onModuleInit(): Promise<void> {
         await this.catalog.ensureSchema();
@@ -110,6 +115,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             if (current) {this.lease = undefined; this.releaseLease = undefined;}
             release(true);
             if (current && this.child) {stopBuildProcess(this.child);}
+            if(current)this.activeBuild?.cancellation.stop(new Error('Сборщик потерял подключение к очереди.'));
             this.retryDelay = 1000; this.scheduleOwnershipRetry();
         };
         lease.on('error', lost);
@@ -133,6 +139,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
 
     async onModuleDestroy(): Promise<void> {
         this.stopping = true;
+        this.activeBuild?.cancellation.stop(new Error('Сборщик останавливается. Повторите сборку новым запросом.'));
         if (this.retryTimer) {clearTimeout(this.retryTimer); this.retryTimer = undefined;}
         if (this.child) { stopBuildProcess(this.child); }
         await this.recovering?.catch(() => undefined);
@@ -151,7 +158,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private discardLease(client:PoolClient):void{
         if(this.lease!==client){client.release(true);return;}
         const release=this.releaseLease;this.lease=undefined;this.releaseLease=undefined;
-        release?.(true);if(this.child)stopBuildProcess(this.child);this.scheduleOwnershipRetry();
+        release?.(true);this.activeBuild?.cancellation.stop(new Error('Сборщик потерял владельца очереди.'));if(this.child)stopBuildProcess(this.child);this.scheduleOwnershipRetry();
     }
 
     /** На lease-сессии не пересекаются BEGIN приёма и публикации; gate включает передачу worker. */
@@ -210,25 +217,26 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     async get(actor: IAccessActor, id: string) {
         await this.requireMain(actor);
         if (!validId(id)) { throw new BadRequestException('Некорректный ID сборки.'); }
-        return buildView(await this.repository.get(id));
+        return this.view(actor,await this.repository.get(id));
     }
     async request(actor: IAccessActor, key: string) {
         await this.requireMain(actor);
         if (!validId(key)) {throw new BadRequestException('Некорректный ключ запроса сборки.');}
-        return buildView(await this.repository.findByRequest(actor.email, key));
+        return this.view(actor,await this.repository.findByRequest(actor.email, key));
     }
+    private async view(actor:IAccessActor,row:BuildRow){const evidence=await this.repository.evidence(row.id);await this.requireMain(actor);return {...buildView(row),...evidence};}
     /** Cancellation remains available on standby and with creation disabled. */
     async cancel(actor:IAccessActor,id:string){
         await this.requireMain(actor);if(!validId(id))throw new BadRequestException('Некорректный ID сборки.');
         const row=await withBuildSqlErrors(()=>this.repository.cancel(actor.email,id,()=>this.requireMain(actor)));
         if(row.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
-        void notifyDeviceOperations();return buildView(row);
+        void notifyDeviceOperations();return this.view(actor,row);
     }
     async cancelRequest(actor:IAccessActor,key:string){
         await this.requireMain(actor);if(!validId(key))throw new BadRequestException('Некорректный ключ запроса сборки.');
         const row=await withBuildSqlErrors(()=>this.repository.cancelRequest(actor.email,key,()=>this.requireMain(actor)));
         if(row?.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
-        void notifyDeviceOperations();return {requestKey:key,state:row?.state??'CANCELLED' as const,build:row?buildView(row):null};
+        void notifyDeviceOperations();return {requestKey:key,state:row?.state??'CANCELLED' as const,build:row?await this.view(actor,row):null};
     }
 
     /** Экспорт читает immutable source history, переживая cleanup staging и reload. */
@@ -252,7 +260,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['requestKey','asset'].includes(key)))throw new BadRequestException('Импорт принимает только requestKey и asset.');
         const input=raw as {requestKey:string;asset:unknown};if(!validId(input.requestKey))throw new BadRequestException('Нужен UUID ключа импорта.');
         let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(!['mcp','plugin','skill'].includes(checked.kind))throw new BadRequestException('Нужен MCP/plugin/skill asset.');
-        await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures(checked.kind)]);
+        await requireFeaturesEnabled(buildFeatures({kind:checked.kind as 'mcp'|'plugin'|'skill',source:checked.source}));
         if(checked.dependencies?.length)throw new BadRequestException('Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.');
         if(checked.kind==='skill')return this.importSkillAsset(actor,checked as SkillAsset,input.requestKey);
         const asset=checked as ToolAsset,files=asset.delivery.artifacts.map(({descriptor})=>({archivePath:path.join(runtimeArtifactDirectory(),descriptor.sha256+'.tar.gz'),sha256:descriptor.sha256,bytes:descriptor.compressedBytes,filename:descriptor.sha256+'.tar.gz',target:descriptor.target}));
@@ -261,11 +269,15 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         }
         const prepared=await this.sources.prepareLocal(asset,files,input.requestKey),bytes=createHash('sha256').update('neurocenter-source-asset\0'+asset.id+'\0'+asset.version).digest().subarray(0,16);
         bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString('hex'),publicationKey=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-        let result:unknown;
-        const saved=await new PluginRepository(this.pool).create({...toToolPublication(asset),publicationKey} as IAiPluginCreate,actor.email,async(client,card)=>{
-            await this.requireMain(actor);const source=await this.sources.recordLocal(client,prepared,card,actor.email);result={catalogId:card.id,name:card.name,version:card.version,...source};
+        return withVerifiedToolImport(prepared,this.sources.blobs,async runtimeVerification=>{
+            await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures({kind:asset.kind,source:asset.source}));
+            let result:unknown;
+            const saved=await new PluginRepository(this.pool).create({...toToolPublication(asset),publicationKey} as IAiPluginCreate,actor.email,async(client,card)=>{
+                await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures({kind:asset.kind,source:asset.source}));
+                const source=await this.sources.recordLocal(client,prepared,card,actor.email);result={catalogId:card.id,name:card.name,version:card.version,...source,runtimeVerification};
+            });
+            return result||{catalogId:saved.id,name:saved.name,version:saved.version,runtimeVerification};
         });
-        return result||{catalogId:saved.id,name:saved.name,version:saved.version};
     }
 
     async publicationTarget(actor:IAccessActor,kind:unknown,catalogId:unknown){await this.requireMain(actor);const result=await publicationTargetPreview(this.pool,kind,catalogId);await this.requireMain(actor);return result;}
@@ -273,14 +285,15 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await this.requireMain(actor);
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
         const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
-        if (previous) { return buildView(previous); }
+        if (previous) { return this.view(actor,previous); }
         await assertBuildCreateName(this.pool,input);
         const publication=await pinBuildPublication(this.pool,input);
         await requireFeaturesEnabled(buildFeatures(input));
         if (!this.lease || this.stopping) { throw new ServiceUnavailableException('Сборщик запускается или работает на другой реплике. Повторите запрос позже.'); }
-        let source: BuildConfiguration['source'];
+        let source: BuildConfiguration['source'],agentCandidates:string[]=[];
         if (input.source.type === 'npm') {
             const resolved = await resolveNpmSource(input.source.specifier, input.source.entrypoint);
+            agentCandidates=resolved.candidates;
             if (input.kind==='skill'||!resolved.runnableKinds.includes(input.kind)) {throw new BadRequestException('Пакет не объявляет исполняемый MCP или плагин OpenCode выбранного типа. Выберите пакет инструмента.');}
             if (!resolved.entrypoint) {throw new BadRequestException('В пакете несколько команд запуска. Выберите исполняемый файл перед упаковкой.');}
             source = {type: 'npm', ...resolved};
@@ -288,7 +301,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         else if (input.source.type === 'upload') {if(!this.uploads)throw new ServiceUnavailableException('Сервис загрузки готовится к работе. Повторите позже.');source=await this.uploads.pin(actor,input.source);}
         else if (input.source.type === 'repository') {
             try {
-                const resolved = await resolveRepositorySource(input.source, {metadata: !input.source.entrypoint, inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository,inspectSkill:files=>inspectSkillSource(files,{metadataOnly:true})});
+                const resolved = await resolveRepositorySource(input.source, {metadata: !!input.agent||!input.source.entrypoint, inspectAsset: inspectGithubReleaseAsset, inspectRepository: inspectGithubRepository,inspectSkill:files=>inspectSkillSource(files,{metadataOnly:true})});
+                agentCandidates=resolved.candidates;
                 if(input.kind==='skill'&&(!/(?:^|\/)SKILL\.md$/.test(resolved.entrypoint)||resolved.release||resolved.runtimeSource))throw new BadRequestException('Для скилла выберите исходники с SKILL.md, без runtime или релиза.');
                 if(input.kind!=='skill'&&resolved.recommendedKind==='skill')throw new BadRequestException('Источник содержит скилл. Выберите тип «Скилл».');
                 if (!resolved.entrypoint) {throw new BadRequestException(resolved.requiresReleaseChoice ? 'Выберите файл релиза перед упаковкой.' : 'Выберите исполняемый файл перед упаковкой.');}
@@ -297,7 +311,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             } catch (error) {throw new BadRequestException(error instanceof Error ? error.message : 'Не удалось закрепить репозиторий GitHub.');}
         } else {source = input.source;}
         const {requestKey: _requestKey, publication:_publication, ...configuration} = input;
-        const config: BuildConfiguration = {...configuration, source,...(publication?{publication}:{})};
+        if(source.type==='files')agentCandidates=source.files.filter(file=>isSourceEntrypoint(file.path)&&file.content.trim()).map(file=>file.path);
+        const config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
         assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
@@ -330,13 +345,14 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             try {
                 releaseDb = await reserveCapacity({resource: 'postgres', bytes: Buffer.byteLength(JSON.stringify(config)) + 131072});
                 await this.requireMain(actor);
-                if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
+                await requireFeaturesEnabled(buildFeatures(config));
                 this.currentLease(lease);
-                const retain=source.type==='upload'||publication?async(client:PoolClient)=>{
+                const retain=async(client:PoolClient)=>{
+                    await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures(config));this.currentLease(lease);
                     if(publication){await lockBuildPublication(client,publication);await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures(config));this.currentLease(lease);}
                     if(source.type==='upload')await this.uploads!.retain(client,actor.email,source);
-                }:undefined;
-                const row=retain?await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,retain):await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease);
+                };
+                const row=await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,retain);
                 this.currentLease(lease);
                 if (row.state === 'QUEUED') {this.startWorker(root);}
                 void notifyDeviceOperations();
@@ -403,18 +419,40 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             if(row.config.kind==='skill'){await this.executeSkill(row,stage);return;}
             await this.progress(row.id, 30, 'Сборка платформенных комплектов и проверка SHA');
             if(row.config.source.type==='upload'){if(!this.uploads)throw new Error('Сервис сохранённых исходников недоступен.');await this.uploads.assertRetained(row.actor,row.config.source);}
-            const manifest = await runPackageBuilder(row.config, stage, child => {
-                this.child = child;
-                cancellation.observe(child);
-                if (child && (this.stopping || !this.lease)) {stopBuildProcess(child);}
-            }, event =>
-                this.progress(row.id, 30 + Math.floor(30 * event.completed / event.total), `Собрано ${event.completed}/${event.total}: ${event.target}`),cancellation.controller.signal,row.execution_nonce?{nonce:row.execution_nonce,reaped:()=>{reaped=true;},markStarted:async()=>{const lease=this.currentLease();await this.withLease(lease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,lease));started=true;}}:undefined);
+            const ownerLease=this.currentLease(),actor={email:row.actor,activeRole:'Главный админ' as const};
+            const authorize=async()=>{
+                cancellation.assertActive();this.currentLease(ownerLease);await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures(row.config));
+                const current=await this.repository.get(row.id);
+                if(current.state==='CANCELLING'||current.state==='CANCELLED')throw new BuildCancelledError();
+                if(current.state!=='RUNNING'||current.execution_nonce!==row.execution_nonce||current.publication_started_at)throw new ConflictException('Сборка потеряла владельца.');
+                this.currentLease(ownerLease);cancellation.assertActive();
+            };
+            const verified=await buildVerifiedAttempts(row.config,{
+                agent:this.agent,authorize,identity:attempt=>`${row.id}:${attempt}:${row.execution_nonce}`,
+                context:(attempt,feedback)=>({buildId:row.id,executionNonce:row.execution_nonce!,actorEmail:row.actor,attempt,signal:cancellation.controller.signal,
+                    candidates:row.config.agentCandidates??[row.config.source.entrypoint],feedback,requiredFeatures:buildFeatures(row.config),authorize,
+                    transaction:work=>this.withLease(ownerLease,()=>this.repository.agentTransaction(ownerLease,work))}),
+                reset:async()=>{
+                    await authorize();if(started&&!reaped)throw new BuildProcessUnreapedError();
+                    await fs.rm(stage,{recursive:true,force:true});await forgetBuildCleanup(root,row);
+                    row.execution_nonce=await this.withLease(ownerLease,()=>this.repository.nextAttempt(row.id,row.execution_nonce!,ownerLease));
+                    started=false;reaped=false;this.child=undefined;await fs.mkdir(stage,{mode:0o700});
+                },
+                build:(config,attempt)=>runPackageBuilder(config,stage,child=>{
+                    this.child=child;cancellation.observe(child);if(child&&(this.stopping||!this.lease))stopBuildProcess(child);
+                },event=>this.progress(row.id,30+Math.floor(30*event.completed/event.total),`Попытка ${attempt}: собрано ${event.completed}/${event.total}: ${event.target}`),cancellation.controller.signal,
+                {nonce:row.execution_nonce!,reaped:()=>{reaped=true;},markStarted:async()=>{await authorize();await this.withLease(ownerLease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,ownerLease));started=true;}}),
+                verify:async(manifest,identity)=>{await this.progress(row.id,65,'Проверка запуска MCP/plugin в изолированном профиле');return verifyBuildRuntime(manifest,identity,cancellation.controller.signal);},
+                record:(attempt,report)=>this.withLease(ownerLease,()=>this.repository.recordRuntime(row.id,row.execution_nonce!,attempt,report,ownerLease)),
+            });
+            const manifest=verified.manifest;
             cancellation.assertActive();
             if (!this.lease || this.stopping) { throw new Error('Сборщик остановлен.'); }
             await this.requireMain({email: row.actor, activeRole: 'Главный админ'});
             await this.progress(row.id, 70, 'Импорт проверенных готовых комплектов');
             const {readyManifest} = createRequire(__filename)(path.join(path.dirname(builderScript()), 'manifest.mjs')) as {readyManifest: (file: string) => Promise<PreparedTool[]>};
             const tools = await readyManifest(manifest);
+            await assertRuntimeCandidate(manifest,verified.report,verified.identity);
             if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
             assertCodexBuildPublication(row.config,tools[0].publication);
             for (const artifact of tools[0].artifacts) { if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));await this.artifacts.importArchive(artifact.archivePath, artifact.descriptor); }
@@ -430,6 +468,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 if(row.config.source.type==='upload')await this.uploads!.assertRetained(row.actor,row.config.source);
                 if(isPreparedCodexRepository(row.config.source))await requireFeaturesEnabled(buildFeatures(row.config));
                 this.currentLease(lease);
+                await assertRuntimeCandidate(manifest,verified.report,verified.identity);
                 await this.repository.beginPublication(row.id,lease,async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);});
                 await publishBuiltTool({pool:this.pool,lease,sources:this.sources,repository:this.repository,row,publication:tools[0].publication,prepared,
                     guard:async()=>{await this.requireMain({email:row.actor,activeRole:'Главный админ'});await requireFeaturesEnabled(buildFeatures(row.config));this.currentLease(lease);},discard:client=>this.discardLease(client)});

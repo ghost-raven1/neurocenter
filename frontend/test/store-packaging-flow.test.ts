@@ -42,11 +42,13 @@ interface InputProps {
 }
 interface ButtonProps { children?: ReactNode; disabled?: boolean; onClick?: () => void; htmlType?: string; }
 interface SelectProps { 'aria-label'?: string; value?: string; onChange: (value: string) => void; }
+interface CheckboxProps { children?: ReactNode; checked?: boolean; disabled?: boolean; onChange?: (event: {target: {checked: boolean}}) => void; }
 const ui = vi.hoisted(() => ({
-    flags:true as boolean|null, catalogFlag:true,scope: 'admin-a', projectId: 'project-a', open: true,
+    flags:true as boolean|null, catalogFlag:true,agentFlag:true,validationFlag:true,scope: 'admin-a', projectId: 'project-a', open: true,
     start: undefined as {source:'files'} | {publication:{catalogId:string;kind:PackagingKind}} | undefined, active: false, unresolved:false,recoveryBlocked:false,pickerDisabled:false,
     inputs: new Map<string, InputProps>(), buttons: new Map<string, ButtonProps>(),
     selects: new Map<string, SelectProps>(),
+    checkboxes: new Map<string, CheckboxProps>(), modelList:vi.fn(),
     metadata: new Map<string, NpmPackageMetadata>(),
     repositoryMetadata: undefined as RepositoryMetadata | undefined, repositoryQuery: undefined as RepositoryQuery | undefined,
     publicationTarget:vi.fn(), draft:undefined as {request:import('../src/modules/Store/packaging/types').ToolBuildRequest}|undefined, resolve: vi.fn(), submit: vi.fn(), reset: vi.fn(), cancel: vi.fn(), retryCancel: vi.fn(),
@@ -75,6 +77,7 @@ vi.mock('../src/modules/Store/packaging/useToolBuild', () => ({ useToolBuild: ()
 vi.mock('../src/modules/Store/packaging/useSourceUpload', () => ({ useSourceUpload: () => ({ busy:false,error:ui.uploadError,select:ui.uploadSelect,upload:ui.upload,intent:ui.uploadIntent,forget:async()=>true }) }));
 vi.mock('../src/modules/Store/packaging/api',()=>({packagingApi:{publicationTarget:(...args:unknown[])=>ui.publicationTarget(...args)}}));
 vi.mock('../src/modules/Store/packaging/sourceArchive',()=>({readPackagingArchive:vi.fn()}));
+vi.mock('../src/features/ModelCatalog/api',()=>({modelCatalogApi:{list:(...args:unknown[])=>ui.modelList(...args)}}));
 vi.mock('../src/modules/Store/packaging/SourceFilesPicker',()=>({SourceFilesPicker:({onSelect,disabled}:{onSelect:typeof ui.selectFiles;disabled:boolean})=>{ui.selectFiles=onSelect;ui.pickerDisabled=disabled;return null;}}));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
@@ -87,6 +90,7 @@ vi.mock('antd', () => {
         Input: Object.assign(input, { Search: input, TextArea: input }),
         Radio: { Group: ({ 'aria-label': label, value, onChange,options }: { 'aria-label': string; value: string; onChange: typeof ui.selectSource;options:typeof ui.kinds }) => { if (label === 'Источник инструмента') { ui.source = value; ui.selectSource = onChange; } else if(label==='Тип инструмента'){ui.kind=value as PackagingKind;ui.selectKind=onChange as typeof ui.selectKind;ui.kinds=options;} return null; } },
         Tooltip:content,Select: (props:SelectProps) => {ui.selects.set(props['aria-label']??'',props);return null;}, Collapse: Object.assign(content, { Panel: content }), Space: content,
+        Checkbox: (props:CheckboxProps) => {ui.checkboxes.set(String(props.children),props);return props.children;},
         Progress: () => null, Spin: () => null, Tag: content, Divider: content,
         Typography: { Text: content, Paragraph: content },
     };
@@ -100,15 +104,16 @@ function deferred<T>() {
 }
 const flush = async () => { for (let turn = 0; turn < 10; turn++) await Promise.resolve(); };
 function render() {
-    hooks.begin(); ui.inputs.clear(); ui.buttons.clear(); ui.selects.clear(); ui.finish = undefined; ui.selectFiles=undefined;
-    const data=ui.flags===null?null:{flags:Object.fromEntries(featureFlagKeys.map(key=>[key,key==='tool_catalog'?ui.catalogFlag:ui.flags])),configured:{},blockedBy:Object.fromEntries(featureFlagKeys.map(key=>[key,[]]))}as IEvaluatedFeatureFlags;
+    hooks.begin(); ui.inputs.clear(); ui.buttons.clear(); ui.selects.clear(); ui.checkboxes.clear(); ui.finish = undefined; ui.selectFiles=undefined;
+    const data=ui.flags===null?null:{flags:Object.fromEntries(featureFlagKeys.map(key=>[key,key==='tool_catalog'?ui.catalogFlag:key==='tool_build_agent'?ui.flags&&ui.agentFlag:key==='tool_build_validation'?ui.flags&&ui.validationFlag:ui.flags])),configured:{},blockedBy:Object.fromEntries(featureFlagKeys.map(key=>[key,[]]))}as IEvaluatedFeatureFlags;
     const html = renderToStaticMarkup(createElement(FeatureAvailabilityContext.Provider,{value:{data,loading:false,error:null,refresh:async()=>undefined}},createElement(ToolPackagingModal, { open: ui.open, start: ui.start, scope: ui.scope, projectId: ui.projectId, onClose: () => { ui.open = false; }, onPublished: vi.fn() })));
     hooks.commit(); return html;
 }
 function input(label: string, value: string) { ui.inputs.get(label)!.onChange!({ target: { value } }); }
 function ready() { render(); input('npm-пакет или ссылка', metadata.package); ui.metadata.set(metadata.package, metadata); render(); }
 beforeEach(() => {
-    vi.resetAllMocks();ui.flags=true;ui.catalogFlag=true; ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
+    vi.resetAllMocks();ui.flags=true;ui.catalogFlag=true;ui.agentFlag=true;ui.validationFlag=true; ui.scope = 'admin-a'; ui.projectId = 'project-a'; ui.open = true; ui.start=undefined; ui.active=false; ui.source=''; ui.metadata.clear(); ui.owners.clear(); ui.job = undefined; ui.repositoryMetadata=undefined; ui.repositoryQuery=undefined;
+    ui.modelList.mockResolvedValue({items:[],assignedModelIds:[]});
     ui.resolve.mockImplementation(async () => metadata);
     ui.reset.mockImplementation(() => { ui.job = undefined;ui.cancelled=false; });
     ui.upload=undefined;ui.uploadIntent=undefined;ui.uploadError='';ui.uploadSelect.mockResolvedValue(undefined);
@@ -466,5 +471,38 @@ describe('Новая сборка после принятой отмены и д
         const html=render();expect(html).toContain('Старая карточка');expect(html).toContain('Открытие вернёт сохранённые исходники');
         ui.buttons.get('Открыть сохранённый запрос')!.onClick!();await flush();expect(ui.restoreArchived).toHaveBeenCalledExactlyOnceWith(key);expect(ui.submit).not.toHaveBeenCalled();
         ui.active=true;ui.canRestoreArchived=false;render();expect(ui.buttons.get('Открыть сохранённый запрос')?.disabled).toBe(true);
+    });
+});
+
+describe('Явная помощь Упаковщика',()=>{
+    const model = {id:'model-chat',name:'Проверенная модель',description:'Чат',capability:'chat',runtime:'remote-openai',model:'provider/model',manifestSha256:null,verificationSha256:'b'.repeat(64),modelPin:'a'.repeat(64),dimension:null,source:'custom',revision:1,createdAt:'2026-10-23',updatedAt:'2026-10-23'};
+    const check = ():void => {ui.checkboxes.get('Помощь Упаковщика')!.onChange!({target:{checked:true}});};
+    async function choose():Promise<void> {check();render();await flush();render();ui.selects.get('Модель Упаковщика')!.onChange(model.id);render();}
+    it('Открытие и обычная сборка обходятся без каталога и обращения к модели',async()=>{
+        ready();expect(ui.checkboxes.get('Помощь Упаковщика')?.checked).toBe(false);expect(ui.modelList).not.toHaveBeenCalled();
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledOnce();expect(ui.submit.mock.calls[0][0]).not.toHaveProperty('agent');expect(ui.modelList).not.toHaveBeenCalled();
+    });
+    it('Требует явную модель и передаёт точный pin с пределом трёх попыток',async()=>{
+        ui.modelList.mockResolvedValue({items:[model,{...model,id:'embedding',capability:'embedding'}],assignedModelIds:[]});ready();
+        check();render();await flush();render();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+        ui.selects.get('Модель Упаковщика')!.onChange(model.id);const html=render();expect(html).toContain('до 6 обращений');expect(html).toContain('результат проверки запуска');
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({agent:{modelId:model.id,expectedModelPin:model.modelPin,maxAttempts:3}}));
+        expect(ui.modelList).toHaveBeenCalledExactlyOnceWith();
+    });
+    it('Отключение агентского флага блокирует новый вызов и сохраняет ручные поля',async()=>{
+        ui.modelList.mockResolvedValue({items:[model],assignedModelIds:[]});ready();input('Описание инструмента','Ручное описание');await choose();
+        ui.agentFlag=false;render();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();expect(ui.inputs.get('Описание инструмента')?.value).toBe('Ручное описание');
+        ui.checkboxes.get('Помощь Упаковщика')!.onChange!({target:{checked:false}});render();ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledOnce();expect(ui.submit.mock.calls[0][0]).not.toHaveProperty('agent');
+    });
+    it('Ошибка каталога оставляет путь ручной сборки и не теряет исходник',async()=>{
+        ui.modelList.mockRejectedValue(new Error('Каталог временно недоступен'));ready();check();render();await flush();expect(render()).toContain('Каталог временно недоступен');
+        ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();ui.checkboxes.get('Помощь Упаковщика')!.onChange!({target:{checked:false}});render();ui.finish!();await flush();expect(ui.submit.mock.calls[0][0].source.specifier).toBe(metadata.specifier);
+    });
+    it('Выключенная обязательная проверка блокирует POST даже через Enter',async()=>{
+        ready();ui.validationFlag=false;expect(render()).toContain('Проверка запуска сейчас недоступна');ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
+    });
+    it('Поздний каталог прежнего владельца не предлагает его модель',async()=>{
+        const pending=deferred<{items:typeof model[];assignedModelIds:string[]}>();ui.modelList.mockReturnValue(pending.promise);ready();check();render();
+        ui.scope='admin-b';render();pending.resolve({items:[model],assignedModelIds:[]});await flush();render();expect(ui.checkboxes.get('Помощь Упаковщика')?.checked).toBe(false);expect(ui.selects.has('Модель Упаковщика')).toBe(false);expect(ui.submit).not.toHaveBeenCalled();
     });
 });

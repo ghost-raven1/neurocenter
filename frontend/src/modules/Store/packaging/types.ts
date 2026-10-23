@@ -11,13 +11,25 @@ export interface BuildPublicationTargetPreview extends ToolBuildPublication {
     updateSupported: boolean; unsupportedReason?: string;
 }
 export type ToolPackagingStart = {source:'files'} | {publication:{catalogId:string;kind:PackagingKind}};
+export interface ToolBuildAgent { modelId: string; expectedModelPin: string; maxAttempts: number }
+export interface ToolBuildRuntimeVerification {
+    schemaVersion: 1; status: 'passed' | 'failed' | 'cancelled';
+    candidate: {identity: string | null; sourceDigest: string | null; assetId: string | null; version: string | number | null; manifestSha256: string | null};
+    hostTarget: string; testedTarget: string | null; untestedTargets: string[];
+    isolation: {kind: string; osEnforced: boolean; network: 'denied'};
+    checks: {integrity: boolean; initialize: boolean; toolsList: boolean; pluginFactory: boolean; hooks: boolean};
+    counts: {tools: number; pluginHooks: number}; diagnostics: Array<{code: string; message: string}>;
+    startedAt: string; finishedAt: string; durationMs: number;
+}
+export interface ToolBuildAgentStep { attempt: number; stage: 'propose' | 'review'; state: 'STARTED' | 'SUCCEEDED' | 'FAILED'; recipe?: unknown; diagnostics?: unknown }
 export interface ToolBuildRequest {
-    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource; publication?: ToolBuildPublication;
+    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource; publication?: ToolBuildPublication; agent?: ToolBuildAgent;
 }
 export interface ToolBuild {
     id: string; operationId: string; requestKey: string; publicationStartedAt: string | null;
     name?: string; state: 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
     percent: number; message: string; error?: string;
+    runtimeVerification?: ToolBuildRuntimeVerification | null; runtimeVerificationAttempt?: number | null; agentSteps?: ToolBuildAgentStep[];
     result?: { catalogId: string; name: string; version: number; kind?: PackagingKind; assetId?: string; sourceVersion?: string; sourceSha256?: string };
 }
 export interface ToolBuildRequestCancellation { requestKey: string; state: ToolBuild['state']; build: ToolBuild | null }

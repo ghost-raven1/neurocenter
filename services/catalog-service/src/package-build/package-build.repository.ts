@@ -5,10 +5,36 @@ import type { Pool, PoolClient } from 'pg';
 import type { BuildConfiguration, BuildResult, BuildRow, BuildState } from './package-build.model';
 import {BuildCancelledError} from './build-cancellation';
 import {configureBuildPublicationTransaction} from './publication-deadline';
+import type {BuildRuntimeReport} from './build-runtime';
 
 /** Очередь сборки и её проекция в «Операциях» фиксируются одной транзакцией. */
 export class PackageBuildRepository {
     constructor(private readonly pool: Pool,private readonly taintedLease?:(client:PoolClient)=>void) {}
+    /** Bounded public history remains readable when creation/inference flags are disabled. */
+    async evidence(id:string){
+        const runtime=await this.pool.query<{attempt:number;report:BuildRuntimeReport}>('SELECT attempt,report FROM tool_build_runtime_checks WHERE build_id=$1 ORDER BY attempt DESC LIMIT 1',[id]);
+        const steps=await this.pool.query(`SELECT attempt,stage,state,recipe,diagnostics,error_code AS "errorCode",started_at AS "startedAt",finished_at AS "finishedAt"
+            FROM tool_build_agent_steps WHERE build_id=$1 ORDER BY attempt,CASE stage WHEN 'propose' THEN 0 ELSE 1 END`,[id]);
+        return {runtimeVerification:runtime.rows[0]?.report??null,runtimeVerificationAttempt:runtime.rows[0]?.attempt??null,agentSteps:steps.rows};
+    }
+    async agentTransaction<T>(lease:PoolClient,work:(client:PoolClient)=>Promise<T>):Promise<T>{return this.transaction(work,lease);}
+    /** A new attempt cannot inherit the previous supervisor's reap proof. */
+    async nextAttempt(id:string,nonce:string,lease:PoolClient):Promise<string>{
+        return this.transaction(async client=>{
+            const row=(await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE',[id])).rows[0];
+            if(row?.state==='CANCELLING'||row?.state==='CANCELLED')throw new BuildCancelledError();
+            if(row?.state!=='RUNNING'||row.execution_nonce!==nonce||row.publication_started_at)throw new ConflictException('Сборка потеряла владельца попытки.');
+            const next=randomUUID();await client.query('UPDATE tool_build_jobs SET execution_nonce=$2,execution_started=false,updated_at=now() WHERE id=$1',[id,next]);return next;
+        },lease);
+    }
+    async recordRuntime(id:string,nonce:string,attempt:number,report:BuildRuntimeReport,lease:PoolClient):Promise<void>{
+        await this.transaction(async client=>{
+            const row=(await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE',[id])).rows[0];
+            if(row?.state==='CANCELLING'||row?.state==='CANCELLED')throw new BuildCancelledError();
+            if(row?.state!=='RUNNING'||row.execution_nonce!==nonce||row.publication_started_at)throw new ConflictException('Проверка запуска потеряла владельца сборки.');
+            await client.query('INSERT INTO tool_build_runtime_checks(build_id,attempt,execution_nonce,report) VALUES($1,$2,$3,$4::jsonb)',[id,attempt,nonce,report]);
+        },lease);
+    }
     async existing(actor: string, key: string, fingerprint: string): Promise<BuildRow | undefined> {
         const {rows} = await this.pool.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2', [actor, key]);
         if (rows[0] && rows[0].request_hash !== fingerprint) { throw new ConflictException('Ключ запроса уже использован для другой сборки.'); }

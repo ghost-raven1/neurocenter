@@ -30,9 +30,9 @@ const publication=():IAiPluginCreate=>({name:'Codex fixture',kind:'plugin',descr
     config:{entrypoint:'plugin.mjs',extra:{codexConnector:{...metadata},runtimeArtifacts:[{sha256:'a'.repeat(64)}]}}});
 
 describe('Pinned Codex build admission and publication',()=>{
-    it('Only exact repository source gets the separate connector flag; ordinary plugins keep their prior flags',()=>{
-        expect(buildFeatures(config)).toEqual(['tool_builds','tool_catalog','codex_connector']);
-        expect(buildFeatures({...config,source:{...source,commit:'a'.repeat(40)}})).toEqual(['tool_builds','tool_catalog']);
+    it('Only exact repository source gets the connector flag; every plugin also needs the common startup gate',()=>{
+        expect(buildFeatures(config)).toEqual(['tool_builds','tool_catalog','tool_build_validation','codex_connector']);
+        expect(buildFeatures({...config,source:{...source,commit:'a'.repeat(40)}})).toEqual(['tool_builds','tool_catalog','tool_build_validation']);
         expect(()=>assertCodexBuildPublication(config,publication())).not.toThrow();
     });
     it('The pinned repository cannot be built as an MCP server',()=>{
@@ -70,7 +70,7 @@ describe('Actual build create preserves resolved provenance before queueing',()=
     it('UI ref becomes exact commit plus metadata-bearing server receipt configuration, without executing a builder',async()=>{
         await service.create(actor,request());
         expect(enqueue).toHaveBeenCalledOnce();expect(enqueue.mock.calls[0][3].source).toEqual(source);
-        expect(requireFeaturesEnabled).toHaveBeenLastCalledWith(['tool_builds','tool_catalog','codex_connector']);
+        expect(requireFeaturesEnabled).toHaveBeenLastCalledWith(['tool_builds','tool_catalog','tool_build_validation','codex_connector']);
     });
     it('Connector OFF after asynchronous repository resolution refuses the new queue mutation',async()=>{
         const failure=new ForbiddenException('Codex disabled during resolution');

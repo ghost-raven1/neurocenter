@@ -20,7 +20,7 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
 
 # Официальный клиент PG16 создаёт полноценные дампы сервера pgvector:pg16.
 # https://www.postgresql.org/download/linux/debian/
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bubblewrap \
     && if [ -s "$NODE_EXTRA_CA_CERTS" ]; then \
       awk '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > ("/usr/local/share/ca-certificates/neurocenter-build-" n ".crt") }' "$NODE_EXTRA_CA_CERTS" \
       && update-ca-certificates; \

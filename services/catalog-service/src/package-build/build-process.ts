@@ -71,7 +71,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     signal?.throwIfAborted();
     const source = path.join(stage, 'source');
     await fs.mkdir(source, {mode: 0o700});
-    const {publication:_publication,...content}=config;
+    const {publication:_publication,agent:_agent,agentCandidates:_agentCandidates,...content}=config;
     const identity=config.source.type==='upload'?{...content,source:{...config.source,uploadId:undefined}}:content;
     const key = 'tool-' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0,32);
     let recipeSource: Record<string, unknown>;

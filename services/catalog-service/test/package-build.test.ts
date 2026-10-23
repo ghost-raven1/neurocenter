@@ -227,8 +227,8 @@ describe('Владение очередью серверной сборки', ()
         const actor = {email: 'admin@example.test', activeRole: 'Главный админ'};
         const request = {...input, source: {type: 'repository', url: 'https://github.com/owner/repo', ref: 'main', entrypoint: 'src/index.ts'}};
         const fingerprint = requestHash(validateBuildInput(request));
-        mocks.pool.query.mockResolvedValue({rows: [{id: input.requestKey, request_hash: fingerprint, state: 'RUNNING', percent: 30,
-            config: {source: {type: 'repository', commit: 'a'.repeat(40)}}}]});
+        mocks.pool.query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT * FROM tool_build_jobs WHERE actor=')?[{id: input.requestKey, request_hash: fingerprint, state: 'RUNNING', percent: 30,
+            config: {source: {type: 'repository', commit: 'a'.repeat(40)}}}]:[]}));
         const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
         expect(await service(['Главный админ']).create(actor, request)).toMatchObject({id: input.requestKey, state: 'RUNNING', percent: 30});
         expect(fetch).not.toHaveBeenCalled();

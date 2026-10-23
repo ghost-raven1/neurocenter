@@ -10,11 +10,11 @@ const actor={email:'cancel@example.test',activeRole:'Главный админ'}
 const row=(state='QUEUED')=>({id:randomUUID(),actor:actor.email,request_key:randomUUID(),state,percent:0,config:{name:'Cancel fixture'}} as BuildRow);
 
 describe('Durable packaging cancellation admission',()=>{
-    let service:PackageBuildService,claims:ReturnType<typeof vi.fn>,repository:{cancel:ReturnType<typeof vi.fn>;cancelRequest:ReturnType<typeof vi.fn>};
+    let service:PackageBuildService,claims:ReturnType<typeof vi.fn>,repository:{cancel:ReturnType<typeof vi.fn>;cancelRequest:ReturnType<typeof vi.fn>;evidence:ReturnType<typeof vi.fn>};
     beforeEach(()=>{
         vi.clearAllMocks();claims=vi.fn(async()=>({userRoles:['Главный админ']}));
         service=new PackageBuildService({claims} as never,{} as never,{} as never,{} as never);
-        repository={cancel:vi.fn(),cancelRequest:vi.fn()};Object.assign(service,{repository});
+        repository={cancel:vi.fn(),cancelRequest:vi.fn(),evidence:vi.fn(async()=>({runtimeVerification:null,runtimeVerificationAttempt:null,agentSteps:[]}))};Object.assign(service,{repository});
         mocks.features.mockRejectedValue(new Error('Creation is OFF'));
     });
     it('Cancels a queued owned build while creation is OFF and without a local worker lease',async()=>{
@@ -22,7 +22,7 @@ describe('Durable packaging cancellation admission',()=>{
         const result=await (service as any).cancel(actor,cancelled.id);
         expect(result).toMatchObject({id:cancelled.id,state:'CANCELLED',requestKey:cancelled.request_key});
         expect(repository.cancel).toHaveBeenCalledWith(actor.email,cancelled.id,expect.any(Function));
-        expect(claims).toHaveBeenCalledTimes(2);expect(mocks.features).not.toHaveBeenCalled();
+        expect(claims).toHaveBeenCalledTimes(3);expect(mocks.features).not.toHaveBeenCalled();
     });
     it('Acknowledges a durable actor/request tombstone when a POST acknowledgment is unknown',async()=>{
         const key=randomUUID();repository.cancelRequest.mockImplementation(async(_actor,_key,authorize)=>{await authorize();return undefined;});

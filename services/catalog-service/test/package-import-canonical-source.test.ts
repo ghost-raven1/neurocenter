@@ -9,16 +9,21 @@ import type {CatalogService} from '../src/catalog/catalog.service';
 import type {AssetSourcesService} from '../src/asset-sources/asset-sources.service';
 import {databaseFixture,tool,actor as email} from './asset-import-db.fixture';
 import {LocalAssetIngest} from '../src/asset-sources/local-asset-ingest';
+import {runtimeReportFixture} from './package-build-runtime.fixture';
 
+const mocks=vi.hoisted(()=>({verify:vi.fn()}));
 vi.mock('../src/database/pool',()=>({createPool:()=>({})}));
+// Source/provenance acceptance retains the real filesystem copy/hash gate; OS startup is covered separately.
+vi.mock('../src/package-build/build-runtime',async()=>({...await vi.importActual('../src/package-build/build-runtime'),verifyBuildRuntime:mocks.verify}));
 import {PackageBuildService} from '../src/package-build/package-build.service';
 
 const actor={email,activeRole:'Главный админ'};
 function fixture(db:Awaited<ReturnType<typeof databaseFixture>>){
     let allowed=true;
+    mocks.verify.mockImplementation((manifest:string,identity:string)=>runtimeReportFixture(manifest,identity));
     const ingest=new LocalAssetIngest(db.pool,db.blobs),prepareLocal=vi.fn(ingest.prepare.bind(ingest)),recordLocal=vi.fn(ingest.record.bind(ingest));
     const service=new PackageBuildService({claims:async()=>({userRoles:allowed?['Главный админ']:[]})} as unknown as AccessDb,
-        {} as RuntimeArtifacts,{} as CatalogService,{prepareLocal,recordLocal} as unknown as AssetSourcesService);
+        {} as RuntimeArtifacts,{} as CatalogService,{prepareLocal,recordLocal,blobs:db.blobs} as unknown as AssetSourcesService);
     Object.assign(service,{pool:db.pool});
     return {service,prepareLocal,recordLocal,revoke:()=>{allowed=false;}};
 }
@@ -44,7 +49,9 @@ describe('Source asset API import uses only registered immutable SHA blobs — a
             const imported=await f.service.importAsset(actor,{requestKey:randomUUID(),asset:input.asset});
             expect(imported).toMatchObject({assetId:input.asset.id,sourceVersion:input.asset.version,version:1});
             expect(f.prepareLocal).toHaveBeenCalledExactlyOnceWith(input.asset,[],expect.any(String));
-            const repeated=await f.service.importAsset(actor,{requestKey:randomUUID(),asset:input.asset});expect(repeated).toMatchObject(imported);
+            const repeated=await f.service.importAsset(actor,{requestKey:randomUUID(),asset:input.asset});
+            const {runtimeVerification:_runtimeVerification,...published}=imported as Record<string,unknown>;expect(repeated).toMatchObject(published);
+            expect(mocks.verify).toHaveBeenCalledTimes(2);
             expect((await db.pool.query('SELECT * FROM ai_plugins')).rowCount).toBe(1);expect((await db.pool.query('SELECT * FROM ai_plugin_versions')).rowCount).toBe(1);
             expect(await db.jobs.versions('local-archive')).toHaveLength(1);
             const retained=await db.blobs.open(input.sha256),chunks=[];for await(const chunk of retained.stream)chunks.push(chunk);expect(Buffer.concat(chunks)).toEqual(input.bytes);

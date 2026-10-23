@@ -46,6 +46,8 @@ import {AGENT_READINESS_SCHEMA_SQL} from '../agent-readiness/agent-readiness.sch
 import {AGENT_READINESS_SCHEMA_ASSERT_SQL} from '../agent-readiness/agent-readiness.schema-verification';
 import {PACKAGE_BUILD_CANCELLATION_SCHEMA_SQL} from '../package-build/package-build-cancellation.schema';
 import {PACKAGE_BUILD_CANCELLATION_SCHEMA_ASSERT_SQL} from '../package-build/package-build-cancellation.schema-verification';
+import {PACKAGE_AGENT_SCHEMA_SQL,PACKAGE_BUILD_RUNTIME_SCHEMA_SQL} from '../package-build/package-agent.schema';
+import {PACKAGE_AGENT_SCHEMA_ASSERT_SQL} from '../package-build/package-agent.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
@@ -72,4 +74,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:24,name:'per-model-api-rate-limits-and-usage-detail',sql:MODEL_RATE_LIMITS_SCHEMA_SQL+'\n'+MODEL_USAGE_DETAILS_SCHEMA_SQL+'\n'+MODEL_RATE_LIMITS_SCHEMA_ASSERT_SQL},
     {version:25,name:'public-and-private-project-dialogues',sql:PROJECT_CHAT_DIALOGS_SCHEMA_SQL+'\n'+PROJECT_CHAT_DIALOGS_SCHEMA_ASSERT_SQL},
     {version:26,name:'chat-presence-typing-and-visible-message-receipts',sql:CHAT_ACTIVITY_SCHEMA_SQL+'\n'+CHAT_ACTIVITY_SCHEMA_ASSERT_SQL},
+    {version:27,name:'packager-agent-and-runtime-verification',sql:PACKAGE_AGENT_SCHEMA_SQL+'\n'+PACKAGE_BUILD_RUNTIME_SCHEMA_SQL+'\n'+PACKAGE_AGENT_SCHEMA_ASSERT_SQL},
 ];

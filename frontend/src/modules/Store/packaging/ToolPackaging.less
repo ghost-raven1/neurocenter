@@ -30,6 +30,8 @@
     &__selection-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
     .tool-packaging__language-note { margin-top: -4px; margin-bottom: 20px; font-size: 12px; line-height: 1.6; }
     &__details { margin: 0 -16px 12px; }
+    &__agent { margin: 20px 0; padding: 16px; border: 1px solid @brand-border; border-radius: 10px; .ant-select { width: 100%; } .ant-checkbox-wrapper { margin-bottom: 8px; } }
+    &__agent-steps { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 20px; font-size: 12px; [aria-current='step'] { color: @brand-primary; font-weight: 600; } }
     .tool-packaging__actions { display: flex; justify-content: flex-end; }
     &__error { margin-top: 20px; }
     .tool-packaging__recheck { margin-top: 12px; max-width: 100%; height: auto; white-space: normal; }

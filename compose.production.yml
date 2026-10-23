@@ -119,6 +119,11 @@ services:
 
   catalog-service:
     <<: *service
+    # bwrap owns nested PID/network namespaces; no host administrative capabilities are granted.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./docker/seccomp/catalog-packager.json
     image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
     build: {context: ., dockerfile: services/catalog-service/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}"}}
     mem_limit: 512m

@@ -64,7 +64,7 @@ vi.mock('antd',()=>{
   Input:Object.assign(input,{Search:input,TextArea:input}),
   Radio:{Group:({'aria-label':label,value,onChange}:{'aria-label':string;value:string;onChange:typeof ui.selectSource})=>{if(label==='Источник инструмента'){ui.source=value;ui.selectSource=onChange;}return null;}},
   Select:(props:SelectProps)=>{ui.selects.set(props['aria-label']??'',props);return null;},
-  Collapse:Object.assign(content,{Panel:content}),Space:content,Progress:()=>null,Spin:()=>null,Tag:content,Divider:content,
+  Collapse:Object.assign(content,{Panel:content}),Space:content,Checkbox:content,Progress:()=>null,Spin:()=>null,Tag:content,Divider:content,
   Typography:{Text:content,Paragraph:content},
  };
 });

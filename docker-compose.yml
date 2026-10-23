@@ -108,6 +108,11 @@ services:
 
   # Каталог: проекты/версии/пакеты/операции/аудит/maintenance — internal-only (RBAC = доверие x-bridge-* от gateway).
   catalog-service:
+    # Mandatory package startup runs inside bwrap, including nested PID/network namespaces.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./docker/seccomp/catalog-packager.json
     build:
       context: .
       dockerfile: services/catalog-service/Dockerfile

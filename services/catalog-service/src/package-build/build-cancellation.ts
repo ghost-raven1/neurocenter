@@ -29,6 +29,8 @@ export class BuildCancellation {
         this.timer.unref();
     }
     cancel():void{this.abort(new BuildCancelledError());}
+    /** Lease loss/shutdown aborts provider waits and runtime checks without claiming user cancellation. */
+    stop(reason:Error):void{this.abort(reason);}
     private abort(reason:Error):void{
         if(!this.controller.signal.aborted){this.controller.abort(reason);this.changed();}
         if(this.child)stopBuildProcess(this.child);

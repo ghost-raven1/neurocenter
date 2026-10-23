@@ -16,6 +16,27 @@
     "defaultEnabled": true
   },
   {
+    "key": "tool_build_agent",
+    "name": "Агент «Упаковщик»",
+    "description": "Создание и исправление рецепта выбранной моделью перед публикацией. История и отмена остаются доступны.",
+    "group": "catalog",
+    "dependsOn": [
+      "tool_builds",
+      "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "tool_build_validation",
+    "name": "Проверка runtime пакетов",
+    "description": "Проверка работоспособности MCP и плагинов перед публикацией новых комплектов.",
+    "group": "catalog",
+    "dependsOn": [
+      "tool_builds"
+    ],
+    "defaultEnabled": true
+  },
+  {
     "key": "rag_sync",
     "name": "Обновление базы знаний",
     "description": "Новая передача и переиндексация данных проекта.",

@@ -21,6 +21,7 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
 /** The native asset kind, never its display name, selects the publication dependency. */
 function requiredAssetFeatures(kind){return kind==='model'?['model_catalog']:kind==='agent'?['agents']:['mcp','plugin','skill'].includes(kind)?['tool_catalog']:[];}
 function requiredInferenceFeatures(purpose,agentId){
+    if(purpose==='agent'&&agentId==='agent-packager')return ['tool_build_agent'];
     if(purpose==='research')return agentId?['group_chat','research_tools']:['research_tools'];
     if(purpose==='agent'||purpose==='compaction'&&agentId)return ['group_chat'];
     if(purpose==='chat'||purpose==='compaction')return ['model_chat'];

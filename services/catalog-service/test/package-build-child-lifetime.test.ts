@@ -33,8 +33,8 @@ describe('Поздний запуск дочерней сборки после �
         const progress=vi.fn().mockResolvedValue(undefined);
         const service=new PackageBuildService({claims:async()=>({userRoles:['Главный админ']})} as unknown as AccessDb,
             {} as RuntimeArtifacts,{} as CatalogService,{} as never);
-        Object.assign(service,{lease:{},repository:{progress}});
-        const row={id:randomUUID(),actor:'builder@example.test',config:{name:'Проверка позднего запуска',source:{type:'files',entrypoint:'index.mjs',files:[{path:'index.mjs',content:'export default()=>({})'}]}}} as BuildRow;
+        const row={id:randomUUID(),state:'RUNNING',execution_nonce:randomUUID(),actor:'builder@example.test',config:{kind:'plugin',name:'Проверка позднего запуска',source:{type:'files',entrypoint:'index.mjs',files:[{path:'index.mjs',content:'export default()=>({})'}]}}} as BuildRow;
+        Object.assign(service,{lease:{},repository:{progress,get:async()=>row}});
         const execute=(service as unknown as{execute:(row:BuildRow,root:string)=>Promise<void>}).execute.bind(service);
         const running=execute(row,root);
         await prepared.promise;
@@ -51,8 +51,9 @@ describe('Поздний запуск дочерней сборки после �
         const completeCancellation=vi.fn(),cancellationAwaitingOwner=vi.fn();
         mocks.run.mockImplementation(async(_config:unknown,stage:string)=>{await fs.writeFile(path.join(stage,'pending-writer'),'keep');throw new BuildProcessUnreapedError();});
         const service=new PackageBuildService({claims:async()=>({userRoles:['Главный админ']})} as never,{} as never,{} as never,{} as never);
-        Object.assign(service,{lease:{},repository:{progress,completeCancellation,cancellationAwaitingOwner}});
-        await (service as unknown as{execute:(row:BuildRow,root:string)=>Promise<void>}).execute({id,actor:'owner@example.test',config:{source:{type:'files'}}} as BuildRow,root);
+        const row={id,state:'RUNNING',execution_nonce:randomUUID(),actor:'owner@example.test',config:{kind:'mcp',source:{type:'files'}}} as BuildRow;
+        Object.assign(service,{lease:{},repository:{progress,completeCancellation,cancellationAwaitingOwner,get:async()=>row}});
+        await (service as unknown as{execute:(row:BuildRow,root:string)=>Promise<void>}).execute(row,root);
         expect(completeCancellation).not.toHaveBeenCalled();expect(cancellationAwaitingOwner).toHaveBeenCalledWith(id);
         expect(await fs.readFile(path.join(root,id,'pending-writer'),'utf8')).toBe('keep');
     });
@@ -63,7 +64,7 @@ describe('Поздний запуск дочерней сборки после �
         const remove=fs.rm.bind(fs);let failed=false;
         const removal=vi.spyOn(fs,'rm').mockImplementation(async(filename,options)=>{if(String(filename)===stage&&!failed){failed=true;throw failure;}return remove(filename,options);});
         const completeCancellation=vi.fn(async()=>{row.state='CANCELLED';}),cancellationCleanupFailed=vi.fn(),cancellationAwaitingOwner=vi.fn();
-        const repository={progress:vi.fn(),completeCancellation,cancellationCleanupFailed,cancellationAwaitingOwner,stagesToClean:async()=>[row],cancellationsWithoutStage:async()=>[]};
+        const repository={progress:vi.fn(),completeCancellation,cancellationCleanupFailed,cancellationAwaitingOwner,get:async()=>row,stagesToClean:async()=>[row],cancellationsWithoutStage:async()=>[]};
         mocks.run.mockRejectedValue(new BuildCancelledError());
         const service=new PackageBuildService({claims:async()=>({userRoles:['Главный админ']})} as never,{} as never,{} as never,{} as never);
         Object.assign(service,{lease:{},repository});

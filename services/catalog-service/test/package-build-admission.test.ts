@@ -25,14 +25,14 @@ describe('Приём сборки не переживает владельца �
     let worker:ReturnType<typeof deferred>;
     let unblock:()=>void;
     let destroyed:boolean;
-    let repository:Record<'existing'|'enqueue'|'takeQueued'|'cancel'|'cancelRequest',ReturnType<typeof vi.fn>>;
+    let repository:Record<'existing'|'enqueue'|'takeQueued'|'cancel'|'cancelRequest'|'evidence',ReturnType<typeof vi.fn>>;
     beforeEach(()=>{
         vi.clearAllMocks();mocks.pool.query.mockResolvedValue({rows:[]});mocks.reserve.mockResolvedValue(vi.fn());
         lease={query:vi.fn().mockResolvedValue({rows:[]})} as unknown as PoolClient;
         worker=deferred();unblock=()=>{};destroyed=false;
         service=new PackageBuildService({claims:vi.fn().mockResolvedValue({userRoles:['Главный админ']})} as unknown as AccessDb,
             {} as RuntimeArtifacts,{} as CatalogService,{} as never);
-        repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn(),cancel:vi.fn(),cancelRequest:vi.fn()};
+        repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn(),cancel:vi.fn(),cancelRequest:vi.fn(),evidence:vi.fn(async()=>({runtimeVerification:null,runtimeVerificationAttempt:null,agentSteps:[]}))};
         Object.assign(service,{lease,repository,stagingRoot:async()=>'/unused-admission-stage',execute:vi.fn(()=>worker.promise)});
     });
     afterEach(async()=>{unblock();worker.resolve();if(!destroyed)await service.onModuleDestroy();});
@@ -47,7 +47,7 @@ describe('Приём сборки не переживает владельца �
         expect(repository.takeQueued).not.toHaveBeenCalled();
     });
     it.each(['cancel','cancelRequest'] as const)('%s: SQL deadline не подтверждает отмену работающего процесса',async method=>{
-        const key=randomUUID(),cancel=vi.fn();Object.assign(service,{activeBuild:{id:key,cancellation:{cancel}}});
+        const key=randomUUID(),cancel=vi.fn();Object.assign(service,{activeBuild:{id:key,cancellation:{cancel,stop:vi.fn()}}});
         for(const code of ['55P03','57014']){
             const raw=Object.assign(new Error('private SQL cancellation lock'),{code});repository[method].mockRejectedValue(raw);
             const error=await service[method](actor,key).catch(error=>error);
@@ -100,7 +100,7 @@ describe('Приём сборки не переживает владельца �
         if(sameKey){expect(await concurrent).toMatchObject({id:result.id});}
         else{expect(await concurrent).not.toMatchObject({id:result.id});}
         expect(callsBeforeCommit).toBe(1);
-        expect(repository.enqueue).toHaveBeenCalledWith(actor.email,first.requestKey,expect.any(String),expect.any(Object),lease);
+        expect(repository.enqueue).toHaveBeenCalledWith(actor.email,first.requestKey,expect.any(String),expect.any(Object),lease,expect.any(Function));
         expect(repository.enqueue).toHaveBeenCalledTimes(2);
         await new Promise(resolve=>setImmediate(resolve));
         expect((service as unknown as{execute:ReturnType<typeof vi.fn>}).execute).toHaveBeenCalledOnce();
