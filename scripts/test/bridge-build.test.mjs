@@ -15,6 +15,7 @@ const snapshotContract = fileURLToPath(new URL('../../services/shared/project-sn
 const configurationContract = fileURLToPath(new URL('../../services/shared/project-configuration.cjs', import.meta.url));
 const agentsContract = fileURLToPath(new URL('../../services/shared/project-agents.cjs', import.meta.url));
 const learningContract = fileURLToPath(new URL('../../services/shared/project-learning.cjs', import.meta.url));
+const additionalSharedContracts=['adapter-parameters.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs'];
 const providerContract = fileURLToPath(new URL('../../services/shared/opencode-providers.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
@@ -44,6 +45,7 @@ async function fixture(source) {
     await fs.copyFile(configurationContract, path.join(workspace, 'services/shared/project-configuration.cjs'));
     await fs.copyFile(agentsContract, path.join(workspace, 'services/shared/project-agents.cjs'));
     await fs.copyFile(learningContract, path.join(workspace, 'services/shared/project-learning.cjs'));
+    for(const name of additionalSharedContracts)await fs.copyFile(new URL('../../services/shared/'+name,import.meta.url),path.join(workspace,'services/shared',name));
     await fs.copyFile(providerContract, path.join(workspace, 'services/shared/opencode-providers.cjs'));
     await fs.copyFile(path.join(bridge, '../../services/shared/opencode-model-scan.cjs'), path.join(workspace, 'services/shared/opencode-model-scan.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
@@ -52,6 +54,9 @@ async function fixture(source) {
     await fs.copyFile(path.join(bridge,'package-lock.json'),path.join(root,'package-lock.json'));
     await fs.copyFile(path.join(bridge, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'));
     await fs.writeFile(path.join(root, 'package.json'), '{"version":"0.2.0","type":"module"}');
+    await fs.mkdir(path.join(root,'vendor/ollama-runtime'),{recursive:true});
+    for(const name of ['package.json','index.js'])await fs.copyFile(path.join(bridge,'vendor/ollama-runtime',name),path.join(root,'vendor/ollama-runtime',name));
+    await fs.copyFile(path.join(bridge,'package-lock.json'),path.join(root,'package-lock.json'));
     await fs.writeFile(path.join(root, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","outDir":"dist","rootDir":"src","skipLibCheck":true},"include":["src"]}');
     await fs.writeFile(path.join(root, 'src/index.ts'), source);
     await fs.writeFile(path.join(root, 'dist/removed-tool.js'), 'Старая реализация');
@@ -69,6 +74,7 @@ test('Чистая сборка убирает удалённый инструм
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-configuration.cjs'), 'utf8'), await fs.readFile(configurationContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-agents.cjs'), 'utf8'), await fs.readFile(agentsContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-learning.cjs'), 'utf8'), await fs.readFile(learningContract, 'utf8'));
+    for(const name of additionalSharedContracts)assert.equal(await fs.readFile(path.join(f.root,'dist/shared',name),'utf8'),await fs.readFile(new URL('../../services/shared/'+name,import.meta.url),'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/opencode-providers.cjs'), 'utf8'), await fs.readFile(providerContract, 'utf8'));
 });
 test('Ошибка компиляции сохраняет предыдущую рабочую сборку', async () => {

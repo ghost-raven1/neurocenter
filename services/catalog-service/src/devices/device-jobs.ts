@@ -1,3 +1,6 @@
+import {LEARNING_QUIRKS_KIND,quirksJobPayload,assertQuirksJob} from '../learning-quirks/learning-quirks-jobs';
+import {MEMORY_SYNC_JOB} from '../../../shared/project-learning-memory-sync.cjs';
+import {memorySyncJobPayload,assertMemorySyncJob} from '../learning-memory-sync/jobs';
 import {PROJECT_CONFIGURATION_JOB} from '../../../shared/project-configuration.cjs';
 import {DeviceCodexService} from '../models/device-codex.service';
 import {DEVICE_CODEX_JOB} from '../../../shared/device-codex-inference.cjs';
@@ -122,6 +125,8 @@ export class DeviceJobs {
             !input ||
             ![
                 'choose-root',
+                MEMORY_SYNC_JOB,
+                LEARNING_QUIRKS_KIND,
                 SNAPSHOT_JOB_KIND,
                 PROJECT_AGENTS_JOB,
                 PROJECT_CONFIGURATION_JOB,
@@ -179,6 +184,8 @@ export class DeviceJobs {
             const bindingId=managedBinding(device.report,input.projectId); assertExpectedBinding(bindingId,input.expectedBindingId,true);
             payload={bindingId};
         }
+        const quirks=await quirksJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input);
+        const memorySync=await memorySyncJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input,actor);
         const agentConfiguration=await agentConfigurationJobPayload(this.store,device,input);
         const snapshot=await projectSnapshotPayload(this.store,device,input);
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
@@ -187,7 +194,9 @@ export class DeviceJobs {
         const projectConfiguration=await projectConfigurationPayload(this.installations,device,input);
         const provider=await providerJobPayload(this.store,this.artifacts,device,input,actor.activeRole);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(projectConfiguration){payload=projectConfiguration;}
+        if(quirks){payload=quirks;}
+        else if(memorySync){payload=memorySync;}
+        else if(projectConfiguration){payload=projectConfiguration;}
         else if(provider){payload=provider;}
         else if(agentConfiguration){payload={...agentConfiguration};}
         else if(snapshot){payload=snapshot;}
@@ -325,6 +334,8 @@ export class DeviceJobs {
             if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
             await this.codex?.authorizeJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
+        await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
+        await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
             await assertProjectConfigurationJob(this.installations,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
             await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
@@ -390,6 +401,8 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertAgentConfigurationJob(this.store,device,job);
+        await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
+        await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertProjectConfigurationJob(this.installations,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
         await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
@@ -427,6 +440,14 @@ export class DeviceJobs {
             await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         }
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
+    }
+    async memorySyncContext(device:Device,input:unknown){
+        const value=input as {jobId?:unknown;lease?:unknown}|null;
+        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='jobId,lease'||typeof value.jobId!=='string'||typeof value.lease!=='string')throw new BadRequestException('Нужны точное задание Memory и аренда.');
+        await this.authorize(device,value.jobId,value.lease);
+        const job=(await this.store.pool.query<Job>("SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND lease=$4 AND kind=$5 AND state='running' AND lease_until>now()",[value.jobId,device.id,device.email,value.lease,MEMORY_SYNC_JOB])).rows[0];
+        if(!job)throw new ConflictException('Задание Memory завершено или принадлежит другому подключению.');
+        return assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
     }
     async compileAgents(device:Device,input:unknown){return compileAgentJob(this.store,device,input,(id,lease)=>this.authorize(device,id,lease));}
     async authorizeConfiguration(device:Device,input:unknown){
@@ -525,9 +546,9 @@ export class DeviceJobs {
             if(['succeeded','failed'].includes(codex.state))throw new ConflictException('Запрос Codex уже завершён.');
             if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');await this.codex.cancel(id);return {ok:true};
         }
-        // Прерывается только очередь: начатая запись файлов должна завершиться или откатиться в worker.
+        // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
-            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND state='queued' RETURNING *`,
+            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks') AND state IN ('running','reconciling')) RETURNING *`,
             params,
             {state:'CANCELLED',percent:0,message:'Отменено пользователем'},
         );

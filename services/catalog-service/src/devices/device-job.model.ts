@@ -14,6 +14,7 @@ export interface Job {
 export interface JobInput {
     deviceId: string;
     projectId?: string;
+    expectedLearningRevision?:number; expectedLearningDigest?:string; memoryMode?:'sync'|'cleanup';
     kind: string;
     requestKey: string;
     scope?: 'global'|'project';

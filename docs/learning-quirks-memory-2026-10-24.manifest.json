@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "kind": "focused-learning-quirks-memory-acceptance",
+  "capturedAt": "2026-10-23T20:27:10.928131+00:00",
+  "base": "90bf6f81364e87c2c1bbfc842ba551d948b01922",
+  "preparationCommits": [
+    "d57eb34c49cc0c8b1cc3194eac0af5476a99c1a8",
+    "25052a811c4701871cbbe66364514fb22b59b2a6",
+    "82e2d0a1f19063dc679a2a8af92792fd479d7ff8"
+  ],
+  "sourceSha256": {
+    "frontend/src/features/McpBridge/api.ts": "415774c3f04d0cef74ba1dd7de3cda113776d5d8b1e332e1b3f29db4137ce494",
+    "frontend/src/features/ProjectLearning/LearningMemorySync.less": "a089c7dc4af42d61703afed8a07a685de3aeb8c9b6c13ee8dd6adeee56dc9d43",
+    "frontend/src/features/ProjectLearning/LearningMemorySyncButton.tsx": "e6bfe4b7eaeb7b9636d640497024b86ff0e5ca903be84bba4bef9112dd6d29dd",
+    "frontend/src/features/ProjectLearning/LearningMemorySyncModal.tsx": "96ef7824e96db21e9544fe7e78483e656f25291e66773e592a7ab13c660b0232",
+    "frontend/src/features/ProjectLearning/LearningQuirksButton.tsx": "3098b5b2384a9a6aa5ddc9aafb80b33877bbf2fe02793211169c4de9e9c03058",
+    "frontend/src/features/ProjectLearning/LearningQuirksImport.less": "51289a17db99ac1595382f7ae35ef3e4e6e3ccb92b95d355a88470e3d871bb7a",
+    "frontend/src/features/ProjectLearning/LearningQuirksImportModal.tsx": "50df18a77abd2b246ab6179a15ddd65866563ba432dc0180efeec2d306316a7d",
+    "frontend/src/features/ProjectLearning/ProjectLearning.tsx": "3b7bf8e39d57ce1e0d922a9d9f810765543a9e713aea6cbb55647e467e6a8d37",
+    "frontend/src/features/ProjectLearning/learningMemorySyncApi.ts": "590f9632b9596821af7beae7359af8bf294006d870a83fe341d7f23b0fdf3574",
+    "frontend/src/features/ProjectLearning/quirksImportApi.ts": "2b7e312df65364e22a068146f21d1c0b0cc2452374cf3933044ec41f2d7c8ffc",
+    "frontend/src/features/ProjectLearning/quirksImportTypes.ts": "316a96e7be4727a99180c28e513bda23ec8a156c368a148775bf6234bfeddfdc",
+    "frontend/src/features/ProjectLearning/useLearningQuirksImport.ts": "827e55158e9735778a19817658597f6f0437dc052d955567eee753ecf649ddfa",
+    "frontend/test/project-learning-memory-ui.test.ts": "8a511d8bac8198783e392788647506db30fe5a9aaaf39bf9010289a7bb71381c",
+    "frontend/test/project-learning-quirks-actions.test.ts": "7d20f81dad90d268a60e0125c351801b24d8085d45e9e28544ac5663a3035489",
+    "frontend/test/project-learning-quirks-ui.test.ts": "b9f19fff3add581efcde718c24299ee67f7f6e8b4c5540d9a393f40c9fc5225a",
+    "mcp/neurocenter-asset-sync/scripts/build.mjs": "e2b003241579aecabf443d30322c3433d533c08d731b95f90c071b1365a2f2af",
+    "mcp/neurocenter-asset-sync/src/bridge/completions.ts": "9e0c8a4f4788c69a681161b78bc81ef8ae4e43afdd552065768b7f6883e4a6f4",
+    "mcp/neurocenter-asset-sync/src/bridge/protocol.ts": "b87e0037bc297b6e797491345d1695e3152d4587d39ef69c91f424035da2c6a7",
+    "mcp/neurocenter-asset-sync/src/bridge/worker.ts": "c9fb885fff3f2406a3b0ddd95bc6dc96bc45d2189106a1200855d9647443af99",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/contract.ts": "bd5bb9b0434aed6d4010d810e7cd823e6ee01169096de56f3ff145972aad4eb8",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/memory-client.ts": "55061db42785242fc664deed507042ced3cc63eafa24a263c0be3ba2de179a2b",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/projection.ts": "2fd64b896ee35fe0c2a5b8187d9af0ac6513e96d85c37abd31e24d29922ed32b",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/receipts.ts": "9497eb43fad5b4f5c2bc6bda9051c37eab5fdc446c8161466b59eab6c0653c1a",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/target.ts": "835bb8b1e4367d348c6bda3d3261b6c30308c000da5776910937962773568e7b",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/worker.ts": "24c1edfc48f380698d42a2219606384df37c0629a2f991b3f0aa37e35e1c2847",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-quirks/contract.ts": "7d07c7f2c2e997eeb556a951222cd4a39a4f8d396955334eee990ac97cd6cdc9",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-quirks/index.ts": "8dcbdb2ad12f3af72220ef8d17f92d3ed3a26d34b4c65db70b08cd64d2f5b48f",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-quirks/source.ts": "e5ecb45fedb5d5680b2f9413ab784d739329e0549ca234ade9ff1326070a7649",
+    "mcp/neurocenter-asset-sync/test/fixtures/memory-sync-server.mjs": "1743a185ca978981a525ce2476e3c97b836eb385ff6840d97bac7c4a44ec6937",
+    "mcp/neurocenter-asset-sync/test/project-learning-memory-client.test.ts": "b45263c339e7fba67fc5b873f4d0e61246ba748e9757ac0673178b32e7ce3fcb",
+    "mcp/neurocenter-asset-sync/test/project-learning-memory-projection.test.ts": "810d9ecb1da763887b8cf0459161bbacb1825cdb95ea90af58d0989a1565a41b",
+    "mcp/neurocenter-asset-sync/test/project-learning-memory-receipts.test.ts": "5a4abb109a9fe7cbdfcb623d07c8203732d74e1e5648de4ea57fce8f1fa436ac",
+    "mcp/neurocenter-asset-sync/test/project-learning-quirks-source.test.ts": "26c741ffb8309af905dfa4e35f92a3bfd4c8373c181bb0430b58f5d7009ec3f9",
+    "scripts/catalog-plugins/generic.mjs": "f3024653878174571d70f7a088096f221078ead8f7ceddbf9334518c55daf522",
+    "scripts/catalog-plugins/prepare.mjs": "cbd4c5df8b6fb6a75c303e6c255bff61f19a93ace485864d8f030b8e0d6ed0c4",
+    "scripts/catalog-plugins/recipes/opencode-rag-plugin.mjs": "1ab1af1bc1b114fc0863585776769bc591c02d45095cb72a49352a2b2e11432b",
+    "scripts/catalog-plugins/recipes/opencode-rag.mjs": "63992524d0b58265b74353ae7d4ce6d4c89786bbd997a19c1177e0cf1b4b1cc2",
+    "scripts/catalog-plugins/recipes/test/rag-learning-quirks.test.mjs": "a805edc7a4fc5cc481d240cbc25e79948d6ee350a9f46a778842ad8119d02716",
+    "scripts/catalog-plugins/test/prepare.test.mjs": "288200c51c859575f1974d931f558aa1af7c1663d0a727f5c83980f88b3e7fe6",
+    "scripts/test/bridge-build.test.mjs": "cd0f2cde8576d690a29198af2826e596849dd0c1cce990566f614f4b82dab361",
+    "services/api-gateway/src/proxy/proxy.service.ts": "52b2fea8c4f25a84dbc017c2456d390bbca4e5088dfce09a87025f3f210358be",
+    "services/catalog-service/src/catalog/catalog.module.ts": "11ad859f1487b0642bbff73379bcce2e38b4c1959951d818fac8cdd89af1b109",
+    "services/catalog-service/src/devices/device-completion.ts": "85a17d21742de378a5f432b683e8e1e2104c0bdf10d432470cb59c8db42ee945",
+    "services/catalog-service/src/devices/device-installations.ts": "78de5ca140197407c1d171def0b05b4cb6105f556761a587dafe5835de23a69d",
+    "services/catalog-service/src/devices/device-job-access.ts": "1b942ef9917ca49ebd7fbd37e3d1d9c8e97491612ff4dd2e8bef8c2708a94092",
+    "services/catalog-service/src/devices/device-job.model.ts": "626f9a78e994b6a79d3926244167455addba84c67de849eb62192ed42a358ff4",
+    "services/catalog-service/src/devices/device-jobs.ts": "3db9ccaebb2c626daa57e4870e9ca4d3689bf08dfa1e04e65a49676f3bbb65d4",
+    "services/catalog-service/src/learning-memory-sync/completion.ts": "a5df78f38116e41f65d25645fc518b5745a55f2b289708ef9ab57414d69caf4e",
+    "services/catalog-service/src/learning-memory-sync/controller.ts": "b6acf22fe61018031f2ba4a6562e572720864b82eb5240d015df575bed665d79",
+    "services/catalog-service/src/learning-memory-sync/jobs.ts": "52cd0e0fa751f890af13087bb5678b1bf10864b0e158c253fd40198c7708625e",
+    "services/catalog-service/src/learning-quirks/completion.ts": "3b067d89372c9704a5fda2ba1aa729ef433c4c26dc432661fc4b0c63c60bc750",
+    "services/catalog-service/src/learning-quirks/learning-quirks-import.ts": "6794c961ffeb841d35cdd80e4cbed08c28f5c10490fc44e4c7692228b13b1211",
+    "services/catalog-service/src/learning-quirks/learning-quirks-jobs.ts": "4c961fc624c4628c90b2bbc7ade53f573e5684d6595063866f50ac71e339b347",
+    "services/catalog-service/src/learning-quirks/learning-quirks.controller.ts": "73825acf30e87fa8f17451e6321d1bcc41d6f676cfe9a24d9e5bfc96915ca25c",
+    "services/catalog-service/src/learning-quirks/learning-quirks.service.ts": "2424ec0e9cf2795d9b10ed96227f982006c19a1adf829e423c3dbcbb87f85257",
+    "services/catalog-service/test/learning-memory-completion.test.ts": "0678eda57881bc8ac1748055ea6b4e40ea98424234f1708e25f483e4d45bb1d8",
+    "services/catalog-service/test/learning-memory-contract.test.ts": "f6b6c66ff7a725c0de68435020dc8ee520f2b85349d45f64cffcc5e979e3f861",
+    "services/catalog-service/test/learning-quirks-contract.test.ts": "94066735f2ba053e43df7218b2abc5d1eb67828889771cc22c1c01ea0794630a",
+    "services/catalog-service/test/learning-quirks-service.test.ts": "55d4d4e655038e117217517943be073fc85be073a7dd1806e515e4b4ec0f3118",
+    "services/rag-sync-service/Dockerfile": "09b17b4de8ebc5ef6fd18cc12d18626616f0e096a4b11cf9c6c23e706dc54811",
+    "services/shared/feature-flag-catalog.json": "5d7cb65581971ba7cbecd8527aad9336167571f05325392a20c74e07dfe04632",
+    "services/shared/feature-flags.d.cts": "ec930326cf316468e70535f3a1864141a303740f4053bcd687002c2188acea27",
+    "services/shared/feature-policy.cjs": "a14cf0f78c0c10e0eb8c550c95c2ff85100850819837db3e46ffa4f71b1d8820",
+    "services/shared/project-learning-memory-sync.cjs": "4998a2900b70a8921284613dfc8791a219c148593f687abc96d5794ee48eb4df",
+    "services/shared/project-learning-memory-sync.d.cts": "07b22ab79dcf1d8051ea49d20d19069d33a9716ea12cf95da3624f95f3e76c6c",
+    "services/shared/project-learning-quirks.cjs": "10e51bcd2995e249faae1d1f7ca5e0a4758944505bae0fe9181c1871e8b3d914",
+    "services/shared/project-learning-quirks.d.cts": "6b4bf00ee4687e11555995deabc9d704dcecae1995019d436ca3a12ed460b2ea",
+    "services/shared/project-learning.cjs": "9033cfdcc31feb45a45726bc20d49bb54068f607d010ae2de7a9116ffbc89c6e",
+    "services/shared/project-learning.d.cts": "d9b06c16bb8455c0fd306f8fc39da6e214739ab44fcd6d40cdf9d1743a429f7e"
+  },
+  "runtime": {
+    "node": "24.22.0",
+    "platform": "darwin-arm64",
+    "dependencyReuse": true,
+    "npmInstallRun": false,
+    "isolatedBridgeProcessGuard": true
+  },
+  "results": [
+    {
+      "report": ".run/learning-memory/bridge-final.json",
+      "sha256": "1594e094688628f3fb03086f5781b92bba190c077c9ab8bcc5b13fd91e11ddb1",
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "files": [
+        {
+          "path": "mcp/neurocenter-asset-sync/test/process-environment.test.ts",
+          "passed": 4
+        },
+        {
+          "path": "mcp/neurocenter-asset-sync/test/project-learning-memory-client.test.ts",
+          "passed": 2
+        },
+        {
+          "path": "mcp/neurocenter-asset-sync/test/project-learning-memory-projection.test.ts",
+          "passed": 19
+        },
+        {
+          "path": "mcp/neurocenter-asset-sync/test/project-learning-memory-receipts.test.ts",
+          "passed": 5
+        },
+        {
+          "path": "mcp/neurocenter-asset-sync/test/project-learning-quirks-source.test.ts",
+          "passed": 13
+        }
+      ]
+    },
+    {
+      "report": ".run/learning-memory/catalog-green.json",
+      "sha256": "3551b3f40b0f2098bcf3804ee5bdf26a24587cf28fd1eb4a6cca737a9e24b51d",
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0,
+      "files": [
+        {
+          "path": "services/catalog-service/test/learning-memory-completion.test.ts",
+          "passed": 17
+        },
+        {
+          "path": "services/catalog-service/test/learning-memory-contract.test.ts",
+          "passed": 12
+        },
+        {
+          "path": "services/catalog-service/test/learning-quirks-contract.test.ts",
+          "passed": 22
+        },
+        {
+          "path": "services/catalog-service/test/learning-quirks-service.test.ts",
+          "passed": 10
+        }
+      ]
+    },
+    {
+      "report": ".run/learning-memory/frontend-final.json",
+      "sha256": "4034ceb52811deb558186ebdcc72456d043f9a971f1d0a12bc9d28e93d442a52",
+      "passed": 24,
+      "failed": 0,
+      "skipped": 0,
+      "files": [
+        {
+          "path": "frontend/test/project-learning-memory-ui.test.ts",
+          "passed": 15
+        },
+        {
+          "path": "frontend/test/project-learning-quirks-actions.test.ts",
+          "passed": 4
+        },
+        {
+          "path": "frontend/test/project-learning-quirks-ui.test.ts",
+          "passed": 5
+        }
+      ]
+    }
+  ],
+  "nodeRecipesBuildFixtures": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "report": ".run/learning-memory/recipe-build-final.log",
+    "sha256": "849da1bd5d490dcd783ce1e4cc4dbb807827791ae5142a860315c268521a691f"
+  },
+  "typechecks": {
+    "bridge": {
+      "exit": 0,
+      "report": ".run/learning-memory/bridge-typecheck-current.log"
+    },
+    "catalog": {
+      "exit": 0,
+      "report": ".run/learning-memory/catalog-typecheck-final.log"
+    },
+    "frontend": {
+      "exit": 0,
+      "report": ".run/learning-memory/frontend-typecheck-current.log"
+    },
+    "gateway": {
+      "exit": 0,
+      "report": ".run/learning-memory/gateway-typecheck.log"
+    }
+  },
+  "catalogBuild": {
+    "exit": 0,
+    "report": ".run/learning-memory/catalog-build.log",
+    "servicesStarted": false
+  },
+  "confirmedRedToGreen": [
+    "pending step counts checkpointed before first MCP mutation",
+    "cleanup removes previous approved observation after canonical version replacement without adding the new one"
+  ],
+  "fixtureCorrections": [
+    "canonical macOS temporary root path",
+    "required workspace-instance-v1 capability",
+    "separate vi.hoisted declarations",
+    "package build inputs match required adapter/vendor/shared contracts"
+  ],
+  "flags": {
+    "project_learning_memory": false,
+    "project_learning_quirks": false
+  },
+  "coverage": {
+    "collected": false,
+    "overallPercentageClaimed": false
+  },
+  "notVerified": [
+    "live installed MCP Memory lifecycle or personal graph",
+    "live RAG quirk import on a real bound device",
+    "native PostgreSQL integration for these new slices",
+    "SIGKILL and non-darwin-arm64 host behavior",
+    "published pack.12 RAG and pack.2 Memory artifact/native execution",
+    "merge with current main and its Codex migration29",
+    "configurable central project quotas (design only)"
+  ]
+}

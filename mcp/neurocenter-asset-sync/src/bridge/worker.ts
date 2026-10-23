@@ -1,3 +1,7 @@
+import {runProjectLearningQuirksJob} from '../features/project-learning-quirks/index.js';
+import {MEMORY_SYNC_JOB} from '../features/project-learning-memory-sync/contract.js';
+import {runLearningMemoryJob} from '../features/project-learning-memory-sync/worker.js';
+import {recoverMemoryCompletions} from '../features/project-learning-memory-sync/receipts.js';
 import {PROJECT_CONFIGURATION_JOB} from '../features/project-configuration/contract.js';
 import {openProjectConfiguration} from '../features/project-configuration/index.js';
 import {closeConfigurationSessions} from '../features/project-configuration/server.js';
@@ -72,7 +76,7 @@ interface Job {
     kind: string;
     project_id?: string;
     lease: string;
-    payload: ProjectLocalPayload & ConfigurationPayload & ProviderPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
+    payload: {memory?:unknown} & ProjectLocalPayload & ConfigurationPayload & ProviderPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;snapshotId?:string;snapshotProtocol?:string;
         changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
@@ -144,6 +148,7 @@ export async function runWorker(): Promise<void> {
         }
         running = true;
         try {
+            await recoverMemoryCompletions(saveCompletion);
             await recoverPendingWorkspaceIdentity();
             await recoverFileJobs();
             await recoverRuntimePreparations();
@@ -195,6 +200,14 @@ export async function runWorker(): Promise<void> {
                         await deliverCompletions();
                         await heartbeat();
                         continue;
+                    }
+                    if(current.kind==='import-learning-quirks'){
+                        const result=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runProjectLearningQuirksJob({id:current.id,projectId:current.project_id!,lease:current.lease,payload:{...current.payload}},deviceId,async()=>{await authorize();},update));
+                        clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,state:result.status==='complete'?'succeeded':'failed',message:result.status==='complete'?'Кварки сохранены как сообщённый опыт.':'Сохранена часть сообщённого опыта. Повтор безопасен.',result:{...result}});await deliverCompletions();await heartbeat();continue;
+                    }
+                    if(current.kind===MEMORY_SYNC_JOB){
+                        const completed=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runLearningMemoryJob(current,deviceId,authorize));
+                        clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();await heartbeat();continue;
                     }
                     await authorize();
                     let result: unknown;
@@ -340,6 +353,7 @@ export async function runWorker(): Promise<void> {
                 } catch (error) {
                     clearInterval(renew);
                     if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
+                    if(current.kind===MEMORY_SYNC_JOB)throw new Error('План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
                     // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
                     if (current.kind !== 'inspect-installation') { await recoverFileJobs(); }

@@ -1,3 +1,5 @@
+import {LearningMemorySyncButton} from './LearningMemorySyncButton';
+import {LearningQuirksButton} from './LearningQuirksButton';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {Alert, Button, Collapse, Drawer, Empty, Input, Modal, Space, Spin, Tabs, Tag, Tooltip, Typography} from 'antd';
 import {useEffect, useState} from 'react';
@@ -56,7 +58,7 @@ export function ProjectLearning({projectId}: {projectId: string}): JSX.Element {
     return <section className="project-learning">
         <div className="project-learning__heading"><div><Typography.Title level={4}>Обучение проекта</Typography.Title>
             <Typography.Paragraph type="secondary">Сохраняйте опыт, проверяйте гипотезы и принимайте полезные выводы. Применение — только после одобрения человеком.</Typography.Paragraph></div>
-            <Space wrap size={4} className="project-learning__heading-actions"><Button size="small" onClick={() => setHistory(true)}>История</Button><Button size="small" loading={source.loading} disabled={actions.busy || analysis.busy} onClick={() => {void source.refresh(); void resources.refresh();}}>Обновить</Button></Space>
+            <Space wrap size={4} className="project-learning__heading-actions"><LearningMemorySyncButton projectId={projectId} canManage={data.capabilities.approve}/><LearningQuirksButton projectId={projectId} canManage={data.capabilities.record} onImported={()=>{void source.refresh();}}/><Button size="small" onClick={() => setHistory(true)}>История</Button><Button size="small" loading={source.loading} disabled={actions.busy || analysis.busy} onClick={() => {void source.refresh(); void resources.refresh();}}>Обновить</Button></Space>
         </div>
         <div className="project-learning__summary"><span><strong>{data.pages.hypotheses.total}</strong> {learningCountLabel(data.pages.hypotheses.total, 'hypotheses')} в проекте</span><span><strong>{data.activeCandidates.length}</strong> {learningCountLabel(data.activeCandidates.length, 'knowledge')}</span><Tag>Только этот проект</Tag></div>
         <Collapse ghost className="project-learning__collection"><Collapse.Panel header="Как поступает опыт из OpenCode" key="collection"><Typography.Paragraph>Автосбор включается после подключения агентов новой версией моста и перезапуска OpenCode. Собираются только разрешённые названия инструментов, счётчики, статусы и время. Команды, вывод, промпты и секреты не отправляются.</Typography.Paragraph><Typography.Paragraph type="secondary">Окончание сессии не подтверждает успех задачи. Подробный опыт можно добавить здесь или сообщить через инструмент записи опыта в OpenCode. Знания применяются только после одобрения человеком.</Typography.Paragraph><Button href={'/store?' + new URLSearchParams({tab: 'agents', p: projectId}).toString()}>Открыть агентов проекта</Button></Collapse.Panel></Collapse>

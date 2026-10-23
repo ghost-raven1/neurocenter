@@ -1,3 +1,5 @@
+import {MEMORY_SYNC_CAPABILITY} from '../features/project-learning-memory-sync/contract.js';
+import {acknowledgeMemoryCheckpoint} from '../features/project-learning-memory-sync/receipts.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { api, stateDir, readState, type Credentials } from './state.js';
@@ -78,6 +80,7 @@ export async function deliverCompletions(
             await fs.mkdir(archive, { recursive: true, mode: 0o700 });
             await fs.rename(path.join(directory(), item.id + '.json'), path.join(archive, item.id + '.json'));
             if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
+            if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
             continue;
         }
         const delivered=item.result.protocol===DEVICE_CODEX_PROTOCOL
@@ -85,6 +88,7 @@ export async function deliverCompletions(
             : item;
         await send(delivered);
         if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
+        if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
         await fs.rm(path.join(directory(), item.id + '.json'), { force: true });
     }
 }

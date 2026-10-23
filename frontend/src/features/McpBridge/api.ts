@@ -93,6 +93,8 @@ export interface IBridgeInstallation {
     configurationInvalidatedAt?: string;
     configurationObservedAt?: string;
     configuration?: IMcpConfigurationStatus;
+    learningMemory?: {supported:true};
+    learningQuirks?: {supported:true};
     ragUi?: { supported: true; mode: 'web' };
     hostedEmbedding?: { supported: true;reindexSupported?:true };
 }
@@ -109,7 +111,8 @@ interface IBridgeJobInputBase {
     planRevision?: number;
 }
 export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}
+    {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
+    | {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}
     | {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
         expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}
     | {kind: 'connect-rag-model'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;

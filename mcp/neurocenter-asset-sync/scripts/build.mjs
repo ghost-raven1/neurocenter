@@ -25,6 +25,8 @@ try {
     await fs.copyFile(path.join(root, '../../services/shared/project-agents.cjs'), path.join(stage, 'dist/shared/project-agents.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-configuration.cjs'), path.join(stage, 'dist/shared/project-configuration.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-learning.cjs'), path.join(stage, 'dist/shared/project-learning.cjs'));
+    await fs.copyFile(path.join(root,'../../services/shared/project-learning-memory-sync.cjs'),path.join(stage,'dist/shared/project-learning-memory-sync.cjs'));
+    await fs.copyFile(path.join(root,'../../services/shared/project-learning-quirks.cjs'),path.join(stage,'dist/shared/project-learning-quirks.cjs'));
     // Runtime dependencies also identify the build: an SDK update must refresh an installed worker.
     const adapterFiles = ['vendor/ollama-runtime/package.json', 'vendor/ollama-runtime/index.js', 'package-lock.json'];
     const adapter = createHash('sha256');

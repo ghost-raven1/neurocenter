@@ -1,3 +1,5 @@
+import {supportsLearningQuirks} from '../../../shared/project-learning-quirks.cjs';
+import {memoryRecipeSupported} from '../../../shared/project-learning-memory-sync.cjs';
 import type {PoolClient} from 'pg';
 import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
 import {
@@ -167,7 +169,7 @@ export class DeviceInstallations {
             }
             let ragUi: {supported:true;mode:'web'}|undefined;
             try{if(localRagUi({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig}))ragUi={supported:true,mode:'web'};}catch{/* Неизвестный descriptor не обещает интерфейс. */}
-            return { ...item,...(ragUi?{ragUi}:{}),...(ragUi&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true,...((installedConfig?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion===1?{reindexSupported:true}:{})}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
+            return { ...item,...(supportsLearningQuirks({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningQuirks:{supported:true as const}}:{}),...(memoryRecipeSupported({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningMemory:{supported:true as const}}:{}),...(ragUi?{ragUi}:{}),...(ragUi&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true,...((installedConfig?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion===1?{reindexSupported:true}:{})}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
                 ...(!item.bindingId ? { legacyBinding: true } : {}),
                 ...(verifiedInspection ? { inspection:verifiedInspection } : {}),
                 ...(verifiedRuntime && isCurrentBinding ? {runtime:verifiedRuntime} : {}),

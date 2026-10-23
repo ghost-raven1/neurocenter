@@ -1,3 +1,5 @@
+import {completeLearningMemory} from '../learning-memory-sync/completion';
+import {completeLearningQuirks} from '../learning-quirks/completion';
 import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../../../shared/project-configuration.cjs';
 import {completeDeviceCodex} from '../models/device-codex-completion';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
@@ -60,6 +62,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
         const codex=await completeDeviceCodex(client,job,input);
         if(codex){await client.query('COMMIT');return codex;}
+        const memory=await completeLearningMemory(client,job,input);
+        if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
+        const quirks=await completeLearningQuirks(client,job,input);
+        if(quirks){await client.query('COMMIT');if(!quirks.repeated)await notifyDeviceOperations();return quirks;}
         // Потерянный ACK уже принятого legacy-результата не превращается в повторную запись индекса.
         if (RAG_JOB_KINDS.includes(job.kind) && job.state===input.state && isDeepStrictEqual(job.result ?? {},input.result)) {
             await client.query('COMMIT'); return {ok:true,repeated:true};
