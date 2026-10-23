@@ -215,6 +215,7 @@ services:
   # Postgres + pgvector: develop-версия RAG-индекса (хранит rag_chunks, role-gated sync)
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-rag}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag}
