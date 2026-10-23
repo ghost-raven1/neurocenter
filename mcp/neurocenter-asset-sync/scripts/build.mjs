@@ -21,6 +21,7 @@ try {
     await fs.copyFile(path.join(root, '../../services/shared/opencode-providers.cjs'), path.join(stage, 'dist/shared/opencode-providers.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-snapshot.cjs'), path.join(stage, 'dist/shared/project-snapshot.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-agents.cjs'), path.join(stage, 'dist/shared/project-agents.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/project-configuration.cjs'), path.join(stage, 'dist/shared/project-configuration.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/project-learning.cjs'), path.join(stage, 'dist/shared/project-learning.cjs'));
     const digest = createHash('sha256');
     const files = (await fs.readdir(path.join(stage, 'dist'), { recursive: true })).sort();

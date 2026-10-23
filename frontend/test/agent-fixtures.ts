@@ -13,5 +13,5 @@ export const delivery = (changes: Partial<IAgentDelivery> = {}): IAgentDelivery 
 export const catalog = (changes: Partial<IAgentCatalog> = {}): IAgentCatalog => ({items:[agent()],assignments:[assignment()],revision:3,deliveries:[],...changes});
 export const bridge = (): IAgentCatalogProps['bridge'] => ({
     device:{id:target.deviceId,name:'Компьютер',role:'Админ проекта',online:true,report:{protocolVersion:2,capabilities:['durable-completions','managed-installations','project-agents-v2'],bindings:[{projectId:'project-one',bindingId:target.expectedBindingId,instanceId:target.expectedInstanceId,valid:true}]}},
-    devicesReady:true,jobsReady:true,errors:{},reload:async()=>undefined,
+    jobs:[],devicesReady:true,jobsReady:true,errors:{},reload:async()=>undefined,
 } as IAgentCatalogProps['bridge']);

@@ -320,5 +320,15 @@
     "group": "platform",
     "dependsOn": [],
     "defaultEnabled": true
+  },
+  {
+    "key": "project_configuration",
+    "name": "Локальные настройки проекта",
+    "description": "Открытие мастера AGENTS.md, OpenCode и настроек установленного OpenCodeRAG. Закрытие, история и локальные резервные копии сохраняются после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "computer_connections"
+    ],
+    "defaultEnabled": true
   }
 ]

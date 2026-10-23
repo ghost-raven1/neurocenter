@@ -38,6 +38,7 @@ COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.c
     services/shared/opencode-providers.cjs services/shared/opencode-providers.d.cts \
     services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts \
     services/shared/project-agents.cjs services/shared/project-agents.d.cts \
+    services/shared/project-configuration.cjs services/shared/project-configuration.d.cts \
     services/shared/project-learning.cjs services/shared/project-learning.d.cts /app/services/shared/
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund

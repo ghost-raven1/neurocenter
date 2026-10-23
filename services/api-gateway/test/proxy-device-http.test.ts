@@ -17,6 +17,12 @@ describe.sequential('Device channel source allowlist, fresh identity and event b
  it('does not turn a browser session into a device identity',async()=>{
   expect((await f.send('/api/device-channel/heartbeat',{method:'POST',body:{}})).status).toBe(401);expect(f.calls.filter(call=>call.path==='/internal/device-channel/heartbeat')).toEqual([]);
  });
+ it('forwards only the exact project configuration permit with the real device bearer',async()=>{
+  const body={jobId};const result=await f.send('/api/device-channel/project-configuration/authorize',{method:'POST',headers:deviceHeaders,body});expect(result.status).toBe(200);const call=f.calls.find(call=>call.path==='/internal/device-channel/project-configuration/authorize')!;expect(call.body).toEqual(body);expect(call.headers.authorization).toBe(deviceHeaders.authorization);expect(f.live.sections).not.toHaveBeenCalled();
+ });
+ it.each(['project-configuration/authorize/extra','project-configuration/read','project-configuration/save'])('rejects nearby local-only configuration routes: %s',async suffix=>{
+  const result=await f.send('/api/device-channel/'+suffix,{method:'POST',headers:deviceHeaders,body:{}});expect(result.status).toBe(404);expect(f.calls).toEqual([]);
+ });
  it('forwards the exact managed provider permit with current device authority',async()=>{
   const body={jobId,phase:'request',providerId:'neurocenter-codex-0123456789abcdef',schemaDigest:'b'.repeat(64)};
   const result=await f.send('/api/device-channel/opencode-provider/authorize',{method:'POST',headers:deviceHeaders,body});

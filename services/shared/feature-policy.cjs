@@ -9,6 +9,7 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
     if(['uninstall','restore-rag','inspect-installation','list-local-variants','prepare-local-restore','apply-local-restore','open-local-change-report','open-local-recovery-folder','get-mcp-configuration-status','get-opencode-provider-status'].includes(kind))return [];
     if(['prepare-opencode-provider','open-opencode-provider'].includes(kind))return (trustedPayload?record(input.descriptor).providerKind:input.providerKind)==='codex-bridge'?['opencode_providers','codex_connector']:['opencode_providers'];
     if(['choose-root','prepare-bind-project','bind-project'].includes(kind))return (input.bindingMode==='resume'||input.mode==='resume')?[]:['computer_connections'];
+    if(kind==='open-project-configuration')return ['project_configuration','computer_connections'];
     if(kind==='scan-opencode-models')return ['opencode_model_sync'];
     if(kind==='configure-project-agents')return trustedPayload&&Array.isArray(input.agents)&&input.agents.every(agent=>record(agent).enabled===false)?[]:['agents','computer_connections'];
     if(kind==='publish-project-snapshot')return ['project_snapshots','computer_connections'];

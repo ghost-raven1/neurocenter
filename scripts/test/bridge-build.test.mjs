@@ -12,6 +12,7 @@ const shared = fileURLToPath(new URL('../../services/shared/runtime-artifacts.cj
 const ragContract = fileURLToPath(new URL('../../services/shared/rag-index-contract.cjs', import.meta.url));
 const ragUiContract = fileURLToPath(new URL('../../services/shared/rag-ui-contract.cjs', import.meta.url));
 const snapshotContract = fileURLToPath(new URL('../../services/shared/project-snapshot.cjs', import.meta.url));
+const configurationContract = fileURLToPath(new URL('../../services/shared/project-configuration.cjs', import.meta.url));
 const agentsContract = fileURLToPath(new URL('../../services/shared/project-agents.cjs', import.meta.url));
 const learningContract = fileURLToPath(new URL('../../services/shared/project-learning.cjs', import.meta.url));
 const providerContract = fileURLToPath(new URL('../../services/shared/opencode-providers.cjs', import.meta.url));
@@ -39,6 +40,7 @@ async function fixture(source) {
     await fs.copyFile(ragContract, path.join(workspace, 'services/shared/rag-index-contract.cjs'));
     await fs.copyFile(ragUiContract, path.join(workspace, 'services/shared/rag-ui-contract.cjs'));
     await fs.copyFile(snapshotContract, path.join(workspace, 'services/shared/project-snapshot.cjs'));
+    await fs.copyFile(configurationContract, path.join(workspace, 'services/shared/project-configuration.cjs'));
     await fs.copyFile(agentsContract, path.join(workspace, 'services/shared/project-agents.cjs'));
     await fs.copyFile(learningContract, path.join(workspace, 'services/shared/project-learning.cjs'));
     await fs.copyFile(providerContract, path.join(workspace, 'services/shared/opencode-providers.cjs'));
@@ -61,6 +63,7 @@ test('Чистая сборка убирает удалённый инструм
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/rag-index-contract.cjs'), 'utf8'), await fs.readFile(ragContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/rag-ui-contract.cjs'), 'utf8'), await fs.readFile(ragUiContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-snapshot.cjs'), 'utf8'), await fs.readFile(snapshotContract, 'utf8'));
+    assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-configuration.cjs'), 'utf8'), await fs.readFile(configurationContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-agents.cjs'), 'utf8'), await fs.readFile(agentsContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-learning.cjs'), 'utf8'), await fs.readFile(learningContract, 'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/opencode-providers.cjs'), 'utf8'), await fs.readFile(providerContract, 'utf8'));

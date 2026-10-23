@@ -1,3 +1,4 @@
+import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../../../shared/project-configuration.cjs';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
@@ -68,6 +69,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         await assertSnapshotCompletion(client,job,input.result,input.state==='failed');
         assertRagJobResult(job,input.result,input.state==='failed');
         assertAgentConfigurationResult(job,input.result,input.state==='failed');
+        if(job.kind===PROJECT_CONFIGURATION_JOB){try{normalizeProjectConfigurationReport(input.result,job.payload.descriptor,input.state==='failed');}catch{throw new ConflictException('Мастер не передаёт локальные файлы, адреса и значения на сервер.');}}
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
         if(OPENCODE_PROVIDER_JOBS.includes(job.kind as never)){
@@ -75,7 +77,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             catch{throw new ConflictException('Отчёт провайдера содержит неподдерживаемые данные или другой контекст.');}
         }
         if(job.kind==='scan-opencode-models'&&(input.state==='failed'?Object.keys(input.result).length>0:!validModelScan(input.result,job.payload.scope==='global'?{scope:'global',deviceId:job.device_id}:{scope:'project',projectId:job.project_id,bindingId:job.payload.bindingId,instanceId:job.payload.instanceId})))throw new ConflictException('Отчёт моделей содержит неподдерживаемые данные или относится к другому источнику.');
-        if (![...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
+        if (![PROJECT_CONFIGURATION_JOB,...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
             throw new BadRequestException('Результат задания превышает допустимый размер.');
         }
         if (['scan-project-inventory','list-local-variants'].includes(job.kind)) {
@@ -203,7 +205,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             :job.kind==='open-opencode-provider'?'Мастер открыт на компьютере. После сохранения обновите статус.'
             :input.result.ready?'Локальный провайдер настроен; запрос к модели не проверялся.':'Локальному провайдеру требуется настройка.':undefined;
         const automaticInspection=await continueRagInstallationInspection(client,job,input.state);
-        const message = providerMessage ?? agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
+        const localConfigurationMessage=job.kind===PROJECT_CONFIGURATION_JOB?(input.state==='succeeded'?'Мастер открыт на компьютере. Просмотрите и подтвердите изменения в локальной форме.':'Мастер не открыт. Проверьте права администратора проекта, флаг и привязку папки.'):undefined;
+        const message = localConfigurationMessage ?? providerMessage ?? agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
             : LOCAL_APPLIES.includes(job.kind) ? input.state === 'failed' ? 'Восстановление не выполнено. Локальный вариант сохранён.' : 'Одобренные файлы восстановлены. Локальный вариант сохранён на компьютере.'

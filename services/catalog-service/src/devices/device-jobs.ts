@@ -1,3 +1,5 @@
+import {PROJECT_CONFIGURATION_JOB} from '../../../shared/project-configuration.cjs';
+import {projectConfigurationPayload,assertProjectConfigurationJob,authorizeProjectConfiguration} from './project-configuration-jobs';
 import {PROJECT_AGENTS_JOB} from '../../../shared/project-agents.cjs';
 import {compileAgentJob} from '../agents/agent-job-compiler';
 import {agentConfigurationJobPayload,assertAgentConfigurationJob} from '../agents/agent-jobs';
@@ -118,6 +120,7 @@ export class DeviceJobs {
                 'choose-root',
                 SNAPSHOT_JOB_KIND,
                 PROJECT_AGENTS_JOB,
+                PROJECT_CONFIGURATION_JOB,
                 ...PROJECT_LOCAL_KINDS,
                 ...CONFIGURATION_KINDS,
                 ...OPENCODE_PROVIDER_JOBS,
@@ -177,9 +180,11 @@ export class DeviceJobs {
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
         const configuration=await mcpConfigurationJobPayload(this.store,this.installations,this.plans,device,input);
+        const projectConfiguration=await projectConfigurationPayload(this.installations,device,input);
         const provider=await providerJobPayload(this.store,this.artifacts,device,input,actor.activeRole);
         const projectLocal = await projectLocalJobPayload(this.store,this.installations,this.plans,device,input);
-        if(provider){payload=provider;}
+        if(projectConfiguration){payload=projectConfiguration;}
+        else if(provider){payload=provider;}
         else if(agentConfiguration){payload={...agentConfiguration};}
         else if(snapshot){payload=snapshot;}
         else if(hostedRag){payload=hostedRag;}
@@ -314,6 +319,7 @@ export class DeviceJobs {
             await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
             await assertProviderJob(this.store,this.artifacts,device,job);
             await assertAgentConfigurationJob(this.store,device,job);
+            await assertProjectConfigurationJob(this.installations,device,job);
             await assertRagUiJob(this.installations,this.plans,device,job);
             await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
             if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
@@ -376,6 +382,7 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertAgentConfigurationJob(this.store,device,job);
+        await assertProjectConfigurationJob(this.installations,device,job);
         await assertRagUiJob(this.installations,this.plans,device,job);
         await assertHostedRagJob(this.embedding,this.installations,this.plans,device,job);
         if (job.kind === 'open-local-recovery-folder') { assertLocalFeature(device.report,'local-change-plan-v1'); }
@@ -420,6 +427,9 @@ export class DeviceJobs {
     }
     async authorizeProvider(device:Device,input:unknown){
         return authorizeProviderAction(this.store,this.artifacts,device,input,(role,projectId)=>this.permission(device,role,projectId,2));
+    }
+    async authorizeProjectConfiguration(device:Device,input:unknown){
+        return authorizeProjectConfiguration(this.store,this.installations,device,input,(role,projectId)=>this.permission(device,role,projectId,3));
     }
     /** Общие инструменты требуют выбора админа; собственные проектные скиллы доступны по роли. */
     private async assertCatalogAsset(projectId: unknown, kind: unknown, id: unknown): Promise<void> {
@@ -468,7 +478,7 @@ export class DeviceJobs {
         );
         if (Buffer.byteLength(JSON.stringify(input.result ?? null)) > 10000) { throw new BadRequestException('Промежуточный результат превышает допустимый размер.'); }
         let progressMessage = input.message;
-        if ([...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
+        if ([PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
             progressMessage = 'Мост выполняет проверенное действие.';
         }
