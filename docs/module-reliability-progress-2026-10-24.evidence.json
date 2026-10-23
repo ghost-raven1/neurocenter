@@ -417,5 +417,76 @@
       ".run/module-reliability/codex-transport-diagnostics/green.json": "1f2e8ef0de287ea3b10b2f6e1a6e275eb17e2c567b0939c6d62183fbea1103a6",
       ".run/module-reliability/codex-official-model-metadata.json": "48c63162408b0da1840fb7503d14ac0e2f58739dc93024a2bb56a125b90d1195"
     }
+  },
+  "codexPrivateDiagnosticsApplication": {
+    "at": "2026-10-23T23:30:47.510Z",
+    "sourceHead": "bbe79a58d5ebeeb850958e5d33763c6d44fbcb88",
+    "mainPushed": true,
+    "foreignFilesPreserved": 75,
+    "watchBuildPassed": true,
+    "installedBuild": "0e14e228bede7f455ce9e255007031a773318998b2fe5df58b928db3d576c888",
+    "preservationChecks": 15,
+    "cachePolicyBytesUnchanged": true,
+    "archiveCasesPassed": 6,
+    "archiveSHA256": "7771f52cf226cbd2b2d6cefc49d07133f4386d67ba78f5dc6dcfd2c2efb1aa84",
+    "attempt": {
+      "callId": "2aeb4863-2269-402e-bc14-be399cd2a5e2",
+      "dispatchAdmissionCount": 1,
+      "error": "unknown-after-send",
+      "httpStatus": 200,
+      "mediaType": "missing",
+      "stage": "response-validation",
+      "responseAccepted": false,
+      "automaticRetry": false
+    },
+    "systemRoleResponseAccepted": false,
+    "nativeOpenCodeResponseAccepted": false,
+    "receipts": {
+      ".run/continuation-20261024/installed-codexdiag-after.json": "57ccafd06ec4d78663e890185bef1ee2dd83a7a3ca674a29e9ef8b8b5f5d04d2",
+      ".run/continuation-20261024/applied-codex-bridge-codexdiag.json": "333ecc29423151c991149ceafc475f8bda9a614e85a10f2700dae7a4d5eb8fc2",
+      ".run/continuation-20261024/archive-acceptance-rtu0kK/receipt.json": "ed3b87405c23db903e07bbfd1a4528a37d9a3d69167e68fc9bf50faeb03131ff",
+      ".run/module-reliability/codexdiag-integration-main.json": "33b98fb83f4beba6415da83eb8f2245885ad6f886872733a3412a2abb4873b6b",
+      ".run/module-reliability/codexdiag-cache-preservation-after.json": "1993913db1e3ee9ebfe681391609363675bd860db88470f7aed3f84adf7386f9",
+      ".run/module-reliability/codex-diagnostic-attempt-observation.json": "eddb83166fb149cd2c2080b6c4730b2f8a40e2647136bb7e1045f8d234484e3b",
+      ".run/module-reliability/codex-diagnostic-attempt-usage.json": "1c980c66baa7d55d1056d1cc7144bbcb2c0151dad8f62f356709d1e3939c15b6",
+      ".run/module-reliability/codex-unauthenticated-head-metadata.json": "d2c532c79c847efe7bec2c2bd35d5c31f502cf530696783ba2786250492fc0aa"
+    }
+  },
+  "codexSseHeaderFollowup": {
+    "at": "2026-10-23T23:34:29.529Z",
+    "sourceHead": "8526ab8556c4137cf2caedcb9a9abbe813725ea7",
+    "redFailed": 22,
+    "greenPassed": 22,
+    "relatedPassed": 60,
+    "skipped": 0,
+    "bridgeTypesPassed": true,
+    "buildContractPassed": 4,
+    "independentReview": "PASS",
+    "onlyMissingMimeFallback": true,
+    "strictTerminalAndExactModelPreserved": true,
+    "wireOrRetryPolicyChanged": false,
+    "privateReasonsOnly": true,
+    "appliedBridge": false,
+    "realProviderResponseAccepted": false,
+    "sources": {
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/response.ts": "9b8875b8b8fa56d1f6b73c79c3b0296baee917172c2a9b6b697aac5110df55d6",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/diagnostics.ts": "682942e75b576b20aa8182b28583ff6f4c5d250d72c2d890aca1ae2bc322a8ca",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/executor.ts": "823dcd685ecdafb27500e1ccc35004fec44f643504d9429a7307e963b5acda36",
+      "mcp/neurocenter-asset-sync/vitest.config.mts": "8671557f57c8a41fe961797f179420ec548f3a020d3ea41c655de90f5dc575a6",
+      "mcp/neurocenter-asset-sync/test/process-environment.mjs": "7accbd53a33dc85ec6c405c3d12e3a08223a3c358b8668be4162314a211b4871",
+      "mcp/neurocenter-asset-sync/test/device-codex-response-headers.test.ts": "db1361f19b11d83ec43e47c95b53f6616f9961ed44bcc5d6b8e92904e37c0d77",
+      "mcp/neurocenter-asset-sync/test/opencode-provider.fixture.ts": "91f424fb3774879e6a33f6ee04124e7814b9f6319d77c0cd97cc6b5b97087057",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/receipts.ts": "0324ee09c89358171758e7d6438e91926e6230b52c129f79c5368253800fd39e",
+      "services/shared/device-codex-inference.cjs": "53321a44b9956d8138556765d37c0172c6bccc021003bdd198e33bbf9c9db0fe",
+      "mcp/neurocenter-asset-sync/test/device-codex-diagnostics.test.ts": "2b46b1f3f08ab0d8654cf781db7b05f143876f19e17c4b87a3d6d4e37161383c",
+      "mcp/neurocenter-asset-sync/test/device-codex-inference.test.ts": "eace3eb401af2b3a132850cbd7bcdc2d67687439b6960a5b8005224477ccd929",
+      "mcp/neurocenter-asset-sync/test/device-codex-runtime-capacity.test.ts": "92c69068b5e02cb4b1d2a981134bd107c94a23c0f55cf6b8b4d8eef880c41be3",
+      "mcp/neurocenter-asset-sync/test/device-codex-source.test.ts": "d0dc64566ffb4b3167a9df74c50c85e6d135c7c919f4133c6e518d5f8c75ca67"
+    },
+    "receipts": {
+      ".run/module-reliability/codex-response-headers/receipt.json": "409094d6198723c8724139485005c8f67fa8bacbc7cc53177104fcd6f15823f0",
+      ".run/module-reliability/codex-response-headers/red.json": "7c26f212044262fe03fd402881b463e27f54b89edc1916e22d03ccb3fc3fc157",
+      ".run/module-reliability/codex-response-headers/green.json": "9e219d0b55e58259159618357f34590799cf7f277164030f1285bbbd366fa673"
+    }
   }
 }
