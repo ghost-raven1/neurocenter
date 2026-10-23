@@ -1,10 +1,12 @@
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {createHash} from 'node:crypto';
 import {workspaceName,packages,logServices,evidenceNote,DiagnosticError} from './constants.mjs';
 import {readOwnedFile} from './safe-file.mjs';
 import {redactLog} from './redact.mjs';
 import {healthReader} from './health.mjs';
+import {readCoverageGaps} from './coverage-gaps.mjs';
 
 const execute=promisify(execFile),sha=/^[a-f0-9]{40,64}$/;
 const count=value=>Number.isSafeInteger(value)&&value>=0?value:null;
@@ -70,6 +72,10 @@ export async function createDiagnostics(root,{services}={}){
                 note:'Commands are suggestions only and can be expensive; this server never executes checks.',evidence:evidenceNote};
         },
         async servicesHealth(signal){return {...await health(signal),evidence:evidenceNote};},
+        async coverageGaps(report,packageName,limit=10){
+            const verification=await this.verificationSummary(report);
+            return readCoverageGaps(root,report,packageName,limit,verification);
+        },
         async serviceLogs(service,lines=50){
             if(!logServices.includes(service)||!Number.isInteger(lines)||lines<1||lines>100)throw new DiagnosticError('INVALID_ARGUMENT','Choose a listed service and between 1 and 100 lines.');
             const file=await readOwnedFile(root,'.run/logs/neurocenter-'+service+'.log',{limit:32768,tail:true});
@@ -82,8 +88,8 @@ export async function createDiagnostics(root,{services}={}){
         },
         async verificationSummary(report){
             if(typeof report!=='string'||!/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/.test(report))throw new DiagnosticError('INVALID_ARGUMENT','Choose .run/coverage/<one-directory>/manifest.json; reports are never discovered recursively.');
-            let value;
-            try{value=JSON.parse((await readOwnedFile(root,report,{limit:16*1024**2})).text);}catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
+            let value,reportSha256;
+            try{const text=(await readOwnedFile(root,report,{limit:16*1024**2})).text;value=JSON.parse(text);reportSha256=createHash('sha256').update(text).digest('hex');}catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
             if(!value||typeof value!=='object'||Array.isArray(value)||![1,2].includes(value.schemaVersion)||typeof value.profile!=='string'
                 ||!/^[a-zA-Z0-9][a-zA-Z0-9+._-]{0,119}$/.test(value.profile)||!Array.isArray(value.packages)||value.packages.length>32)throw malformed();
             const finished=date(value.finishedAt),comparable=value.comparablePercentages===true;
@@ -112,7 +118,7 @@ export async function createDiagnostics(root,{services}={}){
             const incomplete=results.some(item=>item.skipped>0||item.cancelled>0||item.fileInventory!=='complete'||item.reportValid!=='valid')
                 ||external.some(item=>item.skipped>0||item.cancelled>0)||value.sourceInventory?.inventoryComplete===false;
             const status=!finished?'in-progress':failed?'failed':value.complete===true&&!incomplete?'requested-suites-complete':'incomplete';
-            return {report,profile:value.profile,coverageKind:['vitest-ast-v8','native-c8-v8','experimental-mixed-instrumentation'].includes(value.coverageKind)?value.coverageKind:null,
+            return {report,reportSha256,profile:value.profile,coverageKind:['vitest-ast-v8','native-c8-v8','experimental-mixed-instrumentation'].includes(value.coverageKind)?value.coverageKind:null,
                 status,startedAt:date(value.startedAt),finishedAt:finished,
                 complete:status==='requested-suites-complete',comparablePercentages:comparable,packages:results,native:value.native?counters(value.native):null,integration:value.integration?counters(value.integration):null,
                 countScope:value.profile==='retained-runs-merge'?'Counts are per retained run and can overlap; do not sum them as unique tests.':'Counters describe the selected requested suites only.',

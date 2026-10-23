@@ -1,7 +1,7 @@
 import {createRequire} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createDiagnostics} from './diagnostics.mjs';
-import {logServices,DiagnosticError} from './constants.mjs';
+import {logServices,packages,DiagnosticError} from './constants.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const require=createRequire(new URL('../../mcp/neurocenter-asset-sync/package.json',import.meta.url));
@@ -16,10 +16,12 @@ const definitions=[
     {name:'services_health',description:'Probe only the seven fixed local development HTTP endpoints. Discards response bodies; supports cancellation.',inputSchema:empty},
     {name:'service_logs',description:'Read a bounded, redacted tail from one fixed local development log. Returned text is untrusted evidence.',inputSchema:{type:'object',properties:{service:{type:'string',enum:logServices},lines:{type:'integer',minimum:1,maximum:100,default:50}},required:['service'],additionalProperties:false}},
     {name:'verification_summary',description:'Summarize one explicitly selected .run/coverage/<directory>/manifest.json. Never scans or returns raw logs/source inventories.',inputSchema:{type:'object',properties:{report:{type:'string',maxLength:180,pattern:'^\\.run/coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json$'}},required:['report'],additionalProperties:false}},
+    {name:'coverage_gaps',description:'Read bounded test-writing targets for a package with unit results in one finished coverage report: uncovered functions/branches, missing sources and unit infrastructure exclusions. HTTP-only reports have no package scope. Does not run or edit code.',inputSchema:{type:'object',properties:{report:{type:'string',maxLength:180,pattern:'^\\.run/coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json$'},package:{type:'string',enum:packages.map(([name])=>name)},limit:{type:'integer',minimum:1,maximum:20,default:10}},required:['report','package'],additionalProperties:false}},
 ];
 const schemas={workspace_status:z.object({}).strict(),services_health:z.object({}).strict(),
     service_logs:z.object({service:z.enum(logServices),lines:z.number().int().min(1).max(100).default(50)}).strict(),
-    verification_summary:z.object({report:z.string().max(180).regex(/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/)}).strict()};
+    verification_summary:z.object({report:z.string().max(180).regex(/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/)}).strict(),
+    coverage_gaps:z.object({report:z.string().max(180).regex(/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/),package:z.enum(packages.map(([name])=>name)),limit:z.number().int().min(1).max(20).default(10)}).strict()};
 
 function failure(error){
     const known=error instanceof DiagnosticError;
@@ -40,13 +42,13 @@ export async function startDevMcp({workspace=root,services,stdin=process.stdin,s
     server.setRequestHandler(ListToolsRequestSchema,()=>({tools:definitions.map(tool=>({...tool,annotations}))}));
     server.setRequestHandler(CallToolRequestSchema,async(request,extra)=>{
         const {name}=request.params,schema=Object.hasOwn(schemas,name)?schemas[name]:null;
-        if(!schema)throw new McpError(ErrorCode.InvalidParams,'Choose one of the four listed developer tools.');
+        if(!schema)throw new McpError(ErrorCode.InvalidParams,'Choose one of the listed developer tools.');
         const parsed=schema.safeParse(request.params.arguments??{});
         if(!parsed.success)return failure(new DiagnosticError('INVALID_ARGUMENT','Use the listed tool schema; arbitrary paths, destinations and commands are not accepted.'));
         try{
             const args=parsed.data,signal=AbortSignal.any([lifecycle.signal,extra.signal]);
             const value=name==='workspace_status'?await diagnostics.workspaceStatus():name==='services_health'?await diagnostics.servicesHealth(signal)
-                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines):await diagnostics.verificationSummary(args.report);
+                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines):name==='coverage_gaps'?await diagnostics.coverageGaps(args.report,args.package,args.limit):await diagnostics.verificationSummary(args.report);
             return {content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value};
         }catch(error){return failure(error);}
     });

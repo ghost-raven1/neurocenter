@@ -178,16 +178,25 @@ async function sdkFixture(t,definitions=[],fixtureEnvironment={}){
     return {...f,client,transport};
 }
 
-test('actual SDK stdio initializes, lists four readonly tools, calls them and returns safe input/file errors',async t=>{
+test('actual SDK stdio initializes, lists five readonly tools, calls them and returns safe input/file errors',async t=>{
     let requests=0;const target=await localHttp(t,(_request,response)=>{requests++;response.end('DO_NOT_RETURN_RAW_BODY');});
     let proxies=0;const proxy=await localHttp(t,(_request,response)=>{proxies++;response.writeHead(502).end();});
     const f=await sdkFixture(t,[{name:'catalog',port:target.port,path:'/health'}],{HTTP_PROXY:'http://127.0.0.1:'+proxy.port,HTTPS_PROXY:'http://127.0.0.1:'+proxy.port,NO_PROXY:'',NODE_USE_ENV_PROXY:'1'});assert.equal(requests,0);
-    const list=await f.client.listTools();assert.equal(list.tools.length,4);assert.ok(list.tools.every(tool=>tool.annotations.readOnlyHint&&tool.annotations.idempotentHint&&!tool.annotations.destructiveHint&&!tool.annotations.openWorldHint));
+    const list=await f.client.listTools();assert.equal(list.tools.length,5);assert.ok(list.tools.every(tool=>tool.annotations.readOnlyHint&&tool.annotations.idempotentHint&&!tool.annotations.destructiveHint&&!tool.annotations.openWorldHint));
     const call=async(name,args={})=>(await f.client.callTool({name,arguments:args}));
     const status=await call('workspace_status');assert.equal(status.structuredContent.workspace,'neurocenter-workspace');
     const health=await call('services_health');assert.equal(health.structuredContent.services[0].state,'http-ok');assert.equal(requests,1);assert.equal(proxies,0);assert.ok(!JSON.stringify(health).includes('DO_NOT_RETURN'));
     await writeFile(path.join(f.root,'.run/logs/neurocenter-catalog.log'),'token=SDK_SECRET\nready');const logs=await call('service_logs',{service:'catalog',lines:5});assert.ok(!JSON.stringify(logs).includes('SDK_SECRET'));
     const verification=await call('verification_summary',{report:f.reportPath});assert.equal(verification.structuredContent.packages[0].passed,10);
+    const metrics=Object.fromEntries(['lines','statements','functions','branches'].map(name=>[name,{total:2,covered:1}]));
+    f.report.sourceInventory={files:[{path:'services/catalog-service/src/example.ts',role:'production',measurement:'represented'}]};await f.saveReport(f.report);
+    await writeFile(path.join(f.root,'.run/coverage/final/gaps.json'),JSON.stringify({schemaVersion:1,profile:f.report.profile,coverageKind:f.report.coverageKind,
+        comparablePercentages:true,complete:true,sourceChangedDuringRun:false,gaps:[{file:'services/catalog-service/src/example.ts',summary:metrics,
+            uncoveredBranches:1,uncoveredFunctions:[{name:'recover',line:7}],uncoveredStatementLines:[7]}]}));
+    const gaps=await call('coverage_gaps',{report:f.reportPath,package:'catalog-service'});
+    assert.equal(gaps.structuredContent.totalTargets,1);assert.equal(gaps.structuredContent.targets[0].uncoveredFunctions[0].name,'recover');
+    assert.equal(gaps.structuredContent.source.status,'clean-head-match');assert.match(gaps.structuredContent.reportSha256,/^[a-f0-9]{64}$/);
+    assert.equal((await call('coverage_gaps',{report:f.reportPath,package:'catalog-service',limit:21})).isError,true);
     for(const [name,args]of [['services_health',{url:'http://secret:token@example.test'}],['service_logs',{service:'../../private-secret'}],['verification_summary',{report:'.env'}]]){
         const result=await call(name,args);assert.equal(result.isError,true);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes('secret:token'));
     }
