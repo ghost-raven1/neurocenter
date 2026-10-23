@@ -59,6 +59,17 @@ describe('One local provider setup dialog', () => {
         expect(html).toContain('официальный экран'); expect(html).toContain('API-ключ для Codex не требуется'); expect(vi.mocked(useProviderSetup).mock.calls[vi.mocked(useProviderSetup).mock.calls.length - 1][0].canRead).toBe(true);
         ui.codex = false; render(); expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true); expect(ui.buttons.get('Проверить готовность')!.disabled).toBe(false);
     });
+    it('An explicit Codex handoff opens no wizard, build or inference and never substitutes an API model', () => {
+        props.initialProviderKind = 'codex-bridge'; props.models = []; props.catalogReady = false; props.canPrepareConnector = true;
+        const html = render(); expect(html).toContain('После настройки выберите нужную модель в новой сессии OpenCode');
+        const input = vi.mocked(useProviderSetup).mock.calls.at(-1)![0];
+        expect(input.selection).toEqual({deviceId: selection.deviceId, projectId: selection.projectId, expectedBindingId: selection.expectedBindingId,
+            expectedInstanceId: selection.expectedInstanceId, providerKind: 'codex-bridge'});
+        expect(ui.selects.has('API-модель для OpenCode')).toBe(false); expect(operation.open).not.toHaveBeenCalled(); expect(operation.check).not.toHaveBeenCalled();
+        expect(supply.build).not.toHaveBeenCalled(); expect(supply.reload).not.toHaveBeenCalled();
+        ui.codex = false; render(); expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true);
+        click('Проверить готовность'); expect(operation.check).toHaveBeenCalledOnce(); expect(supply.build).not.toHaveBeenCalled();
+    });
     it('API selection requires a current assigned verified model; failure has refresh action', () => {
         props.catalogReady = false; props.catalogError = 'Каталог не загрузился'; const html = render(); expect(html).toContain('Каталог не загрузился');
         expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true); click('Обновить модели'); expect(props.onReloadModels).toHaveBeenCalledOnce();

@@ -12,7 +12,7 @@ import './ProviderSetup.less';
 
 export interface IProviderSetupModalProps {
     bridge: ReturnType<typeof useBridge>; projectId: string; projectName?: string; models: ICatalogModel[];
-    initialModelId?: string; canPrepareConnector?: boolean; canManage: boolean; catalogReady: boolean; catalogError?: string;
+    initialModelId?: string; initialProviderKind?: OpenCodeProviderKind; canPrepareConnector?: boolean; canManage: boolean; catalogReady: boolean; catalogError?: string;
     onReloadModels(): void; onClose(): void; onConfigured?(): void;
 }
 
@@ -21,7 +21,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
     const {bridge, projectId, projectName, models, canManage, onClose} = props;
     const general = useFeatureAvailability('opencode_providers'), codex = useFeatureAvailability('codex_connector');
     const buildFlag = useFeatureAvailability('tool_builds', 'tool_catalog', 'codex_connector');
-    const [kind, setKind] = useState<OpenCodeProviderKind>('openai-compatible');
+    const [kind, setKind] = useState<OpenCodeProviderKind>(props.initialProviderKind ?? 'openai-compatible');
     const [modelId, setModelId] = useState(props.initialModelId ?? '');
     const eligible = models.filter(providerModelEligible), model = eligible.find(item => item.id === modelId);
     const selectedCard = models.find(item => item.id === modelId);
@@ -65,7 +65,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                 <label>Модель проекта<Select aria-label="API-модель для OpenCode" value={model?.id} placeholder="Выберите API-модель" disabled={locked}
                     onChange={setModelId} options={eligible.map(item => ({value: item.id, label: `${item.name} · ${item.model}`}))} /></label>
                 <Typography.Text type="secondary">Параметры и ключ вводятся в локальном окне на выбранном компьютере.</Typography.Text>
-            </> : <Typography.Text type="secondary">Войдите в Codex на выбранном компьютере: используйте текущий вход или официальный экран.</Typography.Text>}
+            </> : <Typography.Text type="secondary">Войдите в Codex на выбранном компьютере: используйте текущий вход или официальный экран. После настройки выберите нужную модель в новой сессии OpenCode.</Typography.Text>}
             {bridge.device?.online === false && <Alert type="info" showIcon message="Компьютер не в сети" description="Запрос останется в очереди. Включите мост на выбранном компьютере; локальный мастер откроется там." />}
             {operation.opened && <Alert role="status" type="success" showIcon message="Локальный мастер открыт" description={`Завершите настройку на компьютере «${bridge.device?.name}», затем проверьте готовность.`} />}
             <div aria-live="polite"><Tag color={ready ? 'green' : 'gold'}>{ready ? 'Настройки проверены' : operation.status ? 'Требуется локальная настройка' : 'Готовность ещё не проверена'}</Tag>

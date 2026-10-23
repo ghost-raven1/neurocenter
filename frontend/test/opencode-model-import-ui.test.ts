@@ -8,7 +8,7 @@ import { bridgeApi, type IBridgeJob } from '../src/features/McpBridge/api';
 
 const ui = vi.hoisted(() => ({
     cursor: 0, states: [] as unknown[], refs: [] as unknown[], refCursor: 0, owner: 'admin-a',
-    buttons: new Map<string, { click?: () => void; disabled?: boolean }>(), imported: vi.fn(), reload: vi.fn(), job: undefined as IBridgeJob | undefined,
+    buttons: new Map<string, { click?: () => void; disabled?: boolean }>(), imported: vi.fn(), configureCodex: vi.fn(), canConfigureCodex: true, reload: vi.fn(), job: undefined as IBridgeJob | undefined,
     selects:new Map<string,{change:(value:string)=>void;disabled:boolean}>(),projectId:'project-one' as string|undefined,
     bound:true,online:true,capabilities:['opencode-model-scan-v2'],
 }));
@@ -35,11 +35,11 @@ vi.mock('antd', () => {
 const candidate = { candidateId: 'candidate-one', provider: 'fixture', name: 'Модель из OpenCode', model: 'fixture-chat', capability: 'chat', runtime: 'remote-openai', hasKey: true, blocker: null,
     options: { temperature: 0, topP: 0.8, maxOutputTokens: 2048 }, timeoutMs: 30000 };
 const scan = (changes = {}) => ({ id: 'job-one', deviceId: 'computer-one', state: 'succeeded', result: {schemaVersion:2,scope:'project',projectId:'project-one',bindingId:'binding-one',instanceId:'instance-one', candidates: [{ ...candidate, ...changes }], warnings: [], expiresAt: '2099-01-01T00:00:00Z' } } as unknown as IBridgeJob);
-function render() { ui.cursor = 0; ui.refCursor = 0; ui.buttons.clear();ui.selects.clear(); return renderToStaticMarkup(createElement(OpenCodeImportModal, { projectId: ui.projectId, onClose: vi.fn(), onImported: ui.imported })); }
+function render() { ui.cursor = 0; ui.refCursor = 0; ui.buttons.clear();ui.selects.clear(); return renderToStaticMarkup(createElement(OpenCodeImportModal, { projectId: ui.projectId, onClose: vi.fn(), onImported: ui.imported, onConfigureCodex: ui.canConfigureCodex ? ui.configureCodex : undefined })); }
 const flush = async () => { for (let index = 0; index < 16; index++) await Promise.resolve(); };
 async function read(job = scan()) { vi.mocked(bridgeApi.create).mockResolvedValueOnce(job); render(); ui.buttons.get('Прочитать OpenCode')!.click!(); await flush(); return render(); }
 
-beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.job = undefined;ui.projectId='project-one';ui.bound=true;ui.online=true;ui.capabilities=['opencode-model-scan-v2']; ui.imported.mockResolvedValue(undefined); });
+beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.job = undefined;ui.projectId='project-one';ui.bound=true;ui.online=true;ui.canConfigureCodex=true;ui.capabilities=['opencode-model-scan-v2']; ui.imported.mockResolvedValue(undefined); });
 
 describe('Импорт модели из доступной конфигурации OpenCode', () => {
     it('Показывает Responses и точную политику false до импорта',async()=>{
@@ -53,6 +53,27 @@ describe('Импорт модели из доступной конфигурац
     it.each(['codex-local-auth','device-local-endpoint','local-provider-auth'])('Точный blocker %s не предлагает небезопасный импорт',async blocker=>{
         const html=await read(scan({blocker}));expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
         expect(html).toContain(blocker==='codex-local-auth'?'Codex Bridge — локальный вход':blocker==='device-local-endpoint'?'Этот localhost относится к выбранному компьютеру':'локальная сессия не переносится');
+    });
+    it('Старый generic blocker CodexBridge объясняет локальный вход и передаёт выбранный компьютер без импорта', async () => {
+        const html = await read(scan({provider: 'codexbridge', name: 'GPT-6.1-Sol', model: 'gpt-6.1-sol', blocker: 'unsupported-provider', parameterIssues: [{name: 'transport', type: 'object'}]}));
+        expect(html).toContain('Codex Bridge — локальный вход'); expect(html).not.toContain('Провайдер или параметры не поддерживаются');
+        expect(html).toContain('transport (object)'); expect(html).not.toContain('JSON параметров адаптера'); expect(html).toContain('gpt-6.1-sol');
+        expect(html).toContain('Вход Codex остаётся на компьютере'); expect(html).not.toContain('Этот импорт не передаёт ключ с компьютера');
+        expect(ui.buttons.get('Импортировать')?.disabled).toBe(true); expect(ui.configureCodex).not.toHaveBeenCalled();
+        ui.buttons.get('Импортировать')!.click!(); await flush(); expect(baseApi.post).not.toHaveBeenCalled();
+        ui.buttons.get('Настроить Codex в OpenCode')!.click!(); expect(ui.configureCodex).toHaveBeenCalledExactlyOnceWith('computer-one');
+        expect(bridgeApi.create).toHaveBeenCalledTimes(1); expect(ui.imported).not.toHaveBeenCalled();
+    });
+    it('Общий CodexBridge требует выбрать проект и не изображает переход в локальный мастер', async () => {
+        ui.projectId = undefined; const job = scan({provider: 'codexbridge', blocker: 'unsupported-provider'});
+        Object.assign(job.result!, {scope: 'global', deviceId: 'computer-one', projectId: undefined, bindingId: undefined, instanceId: undefined});
+        const html = await read(job); expect(html).toContain('Откройте нужный проект'); expect(ui.buttons.has('Настроить Codex в OpenCode')).toBe(false);
+        expect(ui.configureCodex).not.toHaveBeenCalled(); expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
+    });
+    it('Смена actor отвергает старый локальный handoff, а отсутствие прав не предлагает его', async () => {
+        await read(scan({provider: 'codexbridge', blocker: 'unsupported-provider'})); const action = ui.buttons.get('Настроить Codex в OpenCode')!.click!;
+        ui.owner = 'admin-b'; action(); expect(ui.configureCodex).not.toHaveBeenCalled();
+        ui.canConfigureCodex = false; render(); expect(ui.buttons.has('Настроить Codex в OpenCode')).toBe(false);
     });
     it('Показывает поддерживаемые параметры, явный ноль и таймаут до импорта, не обещая автоматическую синхронизацию', async () => {
         const html = await read();

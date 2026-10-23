@@ -1,5 +1,6 @@
 import {ProviderSetupModal} from '../OpenCodeProviders/ProviderSetupModal';
 import {providerModelEligible} from '../OpenCodeProviders/model';
+import type {OpenCodeProviderKind} from '../OpenCodeProviders/types';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import {useEmbeddingTarget,EmbeddingTargetFields} from '../ProjectEmbedding/EmbeddingTarget';
 import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, Typography } from 'antd';
@@ -45,7 +46,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [editing, setEditing] = useState<ICatalogModel | 'new' | 'api' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
-    const [providerSetup, setProviderSetup] = useState<{scope: string; modelId?: string}>();
+    const [providerSetup, setProviderSetup] = useState<{scope: string; modelId?: string; providerKind?: OpenCodeProviderKind; deviceId?: string}>();
+    const providerSetupRef = useRef(providerSetup); providerSetupRef.current = providerSetup;
     const [chatId, setChatId] = useState<string | null>(null);
     const [connectionHint, setConnectionHint] = useState<IRemoteConnectionHint>();
     const [busy, setBusy] = useState<string | null>(null);
@@ -59,6 +61,16 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const openProvider = (modelId?: string): void => {
         if (captureOwner()() && previousScope.current === formScope && projectId && canManage) setProviderSetup({scope: formScope, modelId});
     };
+    const openCodexProvider = (deviceId: string): void => {
+        if (!captureOwner()() || previousScope.current !== formScope || !projectId || !canManage) return;
+        embeddingTarget.bridge.choose(deviceId); setImporting(false); setProviderSetup({scope: formScope, providerKind: 'codex-bridge', deviceId});
+    };
+    const providerBridge = providerSetup?.deviceId ? {...embeddingTarget.bridge,
+        device: embeddingTarget.bridge.devices.find(device => device.id === providerSetup.deviceId),
+        choose: (deviceId: string): void => {
+            if (!captureOwner()() || previousScope.current !== formScope || providerSetupRef.current !== providerSetup) return;
+            embeddingTarget.bridge.choose(deviceId); setProviderSetup({...providerSetup, deviceId});
+        }} : embeddingTarget.bridge;
     const lock = useRef(false);
     const assigned = useMemo(() => new Set(catalog?.assignedModelIds ?? []), [catalog]);
     const shown = useMemo(() => catalog ? filterCatalogModels(catalog, query, !!projectId && assignedOnly) : [], [catalog, query, projectId, assignedOnly]);
@@ -160,10 +172,10 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {chatting && canChat && (!projectId || assigned.has(chatting.id)) && <ModelChatModal key={JSON.stringify([scope, projectId, chatting.id])} model={chatting} projectId={projectId} projectName={projectName}
             unavailableReason={loading ? 'Дождитесь обновления каталога перед следующим запросом.' : loadError ? 'Обновите каталог перед следующим запросом.'
                 : modelChatUnavailableReason(chatting, canChat, !!projectId, assigned.has(chatting.id))} onClose={() => setChatId(null)} />}
-        {projectId && canManage && providerSetup?.scope === formScope && <ProviderSetupModal key={formScope} bridge={embeddingTarget.bridge} projectId={projectId} projectName={projectName}
-            models={catalog?.items.filter(model => assigned.has(model.id)) ?? []} initialModelId={providerSetup.modelId} canManage={canManage} canPrepareConnector={isMain}
+        {projectId && canManage && providerSetup?.scope === formScope && <ProviderSetupModal key={JSON.stringify([formScope, providerSetup.providerKind])} bridge={providerBridge} projectId={projectId} projectName={projectName}
+            models={catalog?.items.filter(model => assigned.has(model.id)) ?? []} initialModelId={providerSetup.modelId} initialProviderKind={providerSetup.providerKind} canManage={canManage} canPrepareConnector={isMain}
             catalogReady={!!catalog && !loading && !loadError} catalogError={loadError} onReloadModels={() => {void refresh();}} onClose={() => {if (captureOwner()()) setProviderSetup(current => current === providerSetup ? undefined : current);}} />}
-        {isMain && importing && <OpenCodeImportModal key={`${scope}:${projectId||'common'}`} projectId={projectId} onClose={() => setImporting(false)} onImported={async (model, hint) => {
+        {isMain && importing && <OpenCodeImportModal key={`${scope}:${projectId||'common'}`} projectId={projectId} onClose={() => setImporting(false)} onConfigureCodex={projectId && canManage ? openCodexProvider : undefined} onImported={async (model, hint) => {
             const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}
     </div>;
