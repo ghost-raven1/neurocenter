@@ -6,8 +6,8 @@ export interface AgentDefinition {
     model?:string;temperature?:number;topP?:number;steps?:number;
 }
 export interface ProjectAgent extends AgentDefinition {id:string;slug:string;version:number;enabled:boolean}
-export interface ProjectAgentModelMapping {agentId:string;provider:string;configKey:string;runtime:'remote-openai'|'remote-ollama';model:string;baseUrl:string;options:Record<string,number>;capability:'chat'|'vision'}
-export type ProjectAgentModelRequirement={kind:'native';agentId:string;selector:string}|{kind:'catalog';agentId:string;catalogModelId:string;modelPin:string;runtime:'remote-openai'|'remote-ollama'|'ollama';runtimeModel:string;baseUrl:string|null;options:Record<string,number>;capability:'chat'|'vision'};
+export interface ProjectAgentModelMapping {agentId:string;provider:string;configKey:string;runtime:'remote-openai'|'remote-ollama';model:string;baseUrl:string;options:import('./opencode-model-scan.cjs').IOpenCodeModelOptions;capability:'chat'|'vision'}
+export type ProjectAgentModelRequirement={kind:'native';agentId:string;selector:string}|{kind:'catalog';agentId:string;catalogModelId:string;modelPin:string;runtime:'remote-openai'|'remote-ollama'|'ollama';runtimeModel:string;baseUrl:string|null;options:import('./opencode-model-scan.cjs').IOpenCodeModelOptions;capability:'chat'|'vision'};
 export interface ProjectAgentsCompilation {schemaVersion:2;payloadManifest:string;mappings:ProjectAgentModelMapping[];agents:ProjectAgentReceipt[];manifestSha256:string}
 export interface ProjectAgentsPayload {
     schemaVersion:2;projectId:string;bindingId:string;instanceId:string;revision:number;agents:ProjectAgent[];modelRequirements:ProjectAgentModelRequirement[];manifestSha256:string;compilation?:ProjectAgentsCompilation;

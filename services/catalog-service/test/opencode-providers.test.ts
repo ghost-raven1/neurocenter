@@ -31,16 +31,19 @@ describe('Managed local provider contract and fresh device admission',()=>{
     const query=vi.fn(),permission=vi.fn(),owned=vi.fn(),claims=vi.fn();
     const store={pool:{query},access:{claims},owned} as unknown as DeviceStore;
     const build=vi.fn(),artifacts={build} as never;
-    let activeModel:IModelRow|null,endpoint:string,prepared:unknown,preparedRole:string,job:Job|undefined,current:boolean;
+    let activeModel:IModelRow|null,endpoint:string,prepared:unknown,preparedRole:string,job:Job|undefined,current:boolean,remoteOptions:Record<string,unknown>;
     beforeEach(()=>{
         vi.clearAllMocks();vi.mocked(requireFeaturesEnabled).mockReset().mockResolvedValue(undefined);
-        activeModel=structuredClone(row);endpoint='https://provider.example.invalid/v1';prepared=undefined;preparedRole=role;job=undefined;current=true;
+        activeModel=structuredClone(row);endpoint='https://provider.example.invalid/v1';prepared=undefined;preparedRole=role;job=undefined;current=true;remoteOptions={temperature:0.3};
         permission.mockResolvedValue(undefined);owned.mockResolvedValue(device());claims.mockResolvedValue({email:actor.email,userRoles:[role],projects:[{projectId,projectName:'Provider',role}]});
-        query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM model_catalog')?(activeModel?[activeModel]:[]):sql.startsWith('SELECT base_url')?[{base_url:endpoint,options:{temperature:0.3}}]
+        query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM model_catalog')?(activeModel?[activeModel]:[]):sql.startsWith('SELECT base_url')?[{base_url:endpoint,options:remoteOptions}]
             :sql.startsWith('SELECT result,role')?(prepared?[{result:prepared,role:preparedRole}]:[]):sql.startsWith('SELECT * FROM bridge_jobs')?(job?[job]:[]):sql.startsWith('SELECT job.id')?(current?[{id:jobId}]:[]):[],rowCount:1}));
     });
     afterEach(()=>vi.unstubAllGlobals());
     async function payload(){return (await providerJobPayload(store,artifacts,device(),input,role))!;}
+    it.each([{apiFormat:'responses'},{apiFormat:'responses',reasoningEffort:'high',store:false},{providerParameters:{custom:{enabled:false}}},{tokenLimitParameter:'max_completion_tokens'}])('Does not silently drop unsupported local-wizard settings %j',async options=>{
+        remoteOptions=options;await expect(payload()).rejects.toThrow('другой протокол или дополнительные параметры');expect(build).not.toHaveBeenCalled();
+    });
     async function opened(){const p=await payload();prepared={...providerReportIdentity(p.descriptor),preparationId,expiresAt:expiry()};
         const open=await providerJobPayload(store,artifacts,device(),{...input,kind:'open-opencode-provider',preparationJobId:jobId,expectedProviderSchemaDigest:(p.descriptor as {schemaDigest:string}).schemaDigest},role);
         job={id:jobId,device_id:deviceId,email:actor.email,role,project_id:projectId,kind:'open-opencode-provider',payload:open!,state:'succeeded',lease:'lease',lease_until:new Date(0),percent:100};return job;}

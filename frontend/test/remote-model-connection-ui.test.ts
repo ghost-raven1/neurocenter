@@ -40,7 +40,7 @@ vi.mock('antd', () => {
         ui.fields.set(Array.isArray(name) ? name.join('.') : name, { rules, extra }); return createElement('label', null, label, children, extra);
     } });
     return { Form, Modal: content, Space: content, Spin: input, Checkbox: content, Select: input, InputNumber: input,
-        Input: Object.assign(input, { Password: input }), Collapse: Object.assign(content, { Panel: content }), Popconfirm: content,
+        Input: Object.assign(input, { Password: input, TextArea: input }), Collapse: Object.assign(content, { Panel: content }), Popconfirm: content,
         Alert: ({ message, description }: { message: string; description?: string }) => createElement('div', null, message, description),
         Typography: { Paragraph: content }, Button: ({ children, disabled }: { children?: ReactNode; disabled?: boolean }) => createElement('button', { disabled }, children),
     };
@@ -64,6 +64,20 @@ beforeEach(() => {
 afterEach(() => hooks.dispose());
 
 describe('API-ключ и параметры подключения', () => {
+    it('Показывает приватный JSON адаптера и сохраняет непросмотренные вложенные поля, false и null',async()=>{
+        const options={apiFormat:'responses' as const,reasoningEffort:'high' as const,store:false,providerParameters:{custom:{enabled:false,value:null},seed:42}};
+        const html=await open({...stored,options});expect(html).toContain('Дополнительные параметры адаптера (JSON)');expect(html).toContain('64 КиБ');expect(html).toContain('localhost здесь относится к серверу');
+        expect(modelCatalogApi.operate).not.toHaveBeenCalled();submit();await flush();
+        expect(modelCatalogApi.configure).toHaveBeenCalledExactlyOnceWith(model.id,expect.objectContaining({options}));expect(modelCatalogApi.operate).toHaveBeenCalledOnce();
+    });
+    it('Явно введённый произвольный JSON сохраняется без отбрасывания неизвестных параметров',async()=>{
+        await open(stored);submit({options:{providerParameters:'{"seed":0,"custom":{"enabled":false,"value":null},"list":[1,"x",false]}'}});await flush();
+        expect(modelCatalogApi.configure).toHaveBeenCalledExactlyOnceWith(model.id,expect.objectContaining({options:{providerParameters:{seed:0,custom:{enabled:false,value:null},list:[1,'x',false]}}}));
+    });
+    it('Ошибка JSON оставляет форму открытой и не запускает сохранение или тестовую модель',async()=>{
+        await open(stored);submit({options:{providerParameters:'{"custom":'}});await flush();
+        expect(modelCatalogApi.configure).not.toHaveBeenCalled();expect(modelCatalogApi.operate).not.toHaveBeenCalled();expect(ui.close).not.toHaveBeenCalled();expect(render()).toContain('Исправьте JSON');
+    });
     it('Явно объясняет общий scope и тестовый запрос до сохранения, без автоматической проверки при открытии',async()=>{
         const html=await open(stored);expect(html).toContain('общее для команды');expect(html).toContain('тестовый запрос');expect(html).toContain('проект отдельно');expect(modelCatalogApi.operate).not.toHaveBeenCalled();
     });

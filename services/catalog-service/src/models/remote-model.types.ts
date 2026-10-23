@@ -1,7 +1,16 @@
 import type { IModel } from './model.types';
+import type { AdapterParameters } from '../../../shared/adapter-parameters.cjs';
 
 /** Optional generation defaults; absent values are chosen by the provider. */
 export interface IRemoteModelOptions {
+    /** Private arbitrary JSON parameters, executed only at the selected adapter's declared wire path. */
+    providerParameters?: AdapterParameters;
+    /** OpenAI wire protocol; omission retains existing Chat Completions connections. */
+    apiFormat?: 'chat-completions' | 'responses';
+    /** Exact provider effort; supported here only by the Responses transport. */
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    /** Explicit Responses retention policy; false must survive UI/import round trips. */
+    store?: boolean;
     /** OpenAI only: exact response identity when the requested name is an alias. */
     responseModel?: string;
     /** OpenAI chat/vision only; omitted values retain the legacy max_tokens wire format. */

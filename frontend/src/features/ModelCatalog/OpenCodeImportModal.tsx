@@ -9,10 +9,13 @@ import { createBridgeRequestKey } from '../McpBridge/bridgeRequestKey';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import type { ICatalogModel, IRemoteConnectionHint, IRemoteModelOptions } from './types';
 
-interface Candidate {candidateId:string;provider:string;name:string;model:string;capability:'vision'|'chat';runtime:string|null;hasKey:boolean;blocker:string|null;outputTokenLimit?:number;options?:IRemoteModelOptions;timeoutMs?:number}
+interface Candidate {candidateId:string;provider:string;name:string;model:string;capability:'vision'|'chat';runtime:string|null;hasKey:boolean;blocker:string|null;outputTokenLimit?:number;options?:IRemoteModelOptions;parameterIssues?:Array<{name:string;type:string}>;timeoutMs?:number}
 interface Scan {schemaVersion:2;scope:'global'|'project';deviceId?:string;projectId?:string;bindingId?:string;instanceId?:string;candidates:Candidate[];warnings:string[];expiresAt:string}
 interface IProps {projectId?:string;onClose:()=>void;onImported:(model:ICatalogModel,hint:IRemoteConnectionHint)=>Promise<void>}
 const blocker:Record<string,string>={'unsupported-provider':'Провайдер или параметры не поддерживаются; настройте подключение вручную','missing-endpoint':'Адрес API не задан','unresolved-endpoint':'Адрес задан через переменную или файл','unsafe-endpoint':'Адрес API не подходит для импорта','disabled-provider':'Провайдер отключён в OpenCode'};
+Object.assign(blocker,{'codex-local-auth':'CodexBridge использует локальный вход и специальный транспорт Responses. В настройке провайдера проекта выберите «Codex Bridge — локальный вход». Импорт в серверный API не переносит этот вход.',
+    'local-provider-auth':'Авторизацией управляет локальный OpenCode. Для серверного API нужно отдельное поддерживаемое подключение; локальная сессия не переносится.',
+    'device-local-endpoint':'Этот localhost относится к выбранному компьютеру. Запросы каталога выполняются сервером: задайте доступный серверу адрес API вручную.'});
 const scanProblems:Record<string,string>={'invalid-json':'В конфигурации ошибка JSON/JSONC или повторяющийся ключ. Исправьте файл на компьютере и прочитайте его заново.',
     'read-failed':'Не удалось прочитать часть конфигурации. Проверьте права на файлы OpenCode.', 'unsafe-path':'Конфигурация использует символическую ссылку или небезопасный путь. Автоматическое чтение остановлено.',
     'ambiguous-config':'Обновите мост и повторите чтение: настройки opencode.jsonc накладываются поверх opencode.json.', 'source-changed':'Конфигурация изменилась во время чтения. Повторите проверку.'};
@@ -74,6 +77,9 @@ export function OpenCodeImportModal({projectId,onClose,onImported}:IProps):JSX.E
             <List dataSource={scan.candidates} locale={{emptyText:'В доступной конфигурации нет моделей для импорта.'}} renderItem={candidate=><List.Item className="model-opencode__candidate">
                 <div><Typography.Text strong>{candidate.name}</Typography.Text><div><Typography.Text type="secondary">{candidate.provider} · {candidate.model}</Typography.Text></div><Tag>{candidate.capability==='vision'?'Изображения':'Чат'}</Tag>
                     {candidate.options&&Object.keys(candidate.options).length>0&&<div><Typography.Text type="secondary">{[
+                        candidate.options.apiFormat?`API: ${candidate.options.apiFormat==='responses'?'Responses':'Chat Completions'}`:undefined,
+                        candidate.options.reasoningEffort?`Рассуждения: ${candidate.options.reasoningEffort}`:undefined,
+                        candidate.options.store!==undefined?`Хранение ответа: ${candidate.options.store?'включено':'выключено'}`:undefined,
                         candidate.options.temperature!=null?`Температура: ${candidate.options.temperature}`:undefined,
                         candidate.options.topP!=null?`Top P: ${candidate.options.topP}`:undefined,
                         candidate.options.maxOutputTokens!=null?`Ответ: до ${candidate.options.maxOutputTokens} токенов`:undefined,
@@ -82,6 +88,7 @@ export function OpenCodeImportModal({projectId,onClose,onImported}:IProps):JSX.E
                     {candidate.outputTokenLimit!=null&&<div><Typography.Text type="secondary">Предел ответа модели: {candidate.outputTokenLimit} токенов</Typography.Text></div>}
                     {candidate.timeoutMs!=null&&<div><Typography.Text type="secondary">Ожидание ответа: {candidate.timeoutMs} мс</Typography.Text></div>}
                     {candidate.hasKey&&<Typography.Text type="secondary">Этот импорт не передаёт ключ с компьютера</Typography.Text>}
+                    {candidate.parameterIssues?.length&&<div><Typography.Text type="secondary">Параметры без подтверждённого преобразования: {candidate.parameterIssues.map(item=>`${item.name} (${item.type})`).join(', ')}. Значения сохранены в исходном OpenCode на компьютере; автоматический импорт заблокирован. Для серверного API задайте соответствующие поля в JSON параметров адаптера.</Typography.Text></div>}
                     {candidate.blocker&&<div><Typography.Text type="secondary">{blocker[candidate.blocker]||'Настройте API вручную'}</Typography.Text></div>}</div>
                 <FeatureButton features={['opencode_model_sync']} disabled={busy||!!candidate.blocker||Date.parse(scan.expiresAt)<=Date.now()} onClick={()=>{void importCandidate(candidate);}}>Импортировать</FeatureButton>
             </List.Item>}/>

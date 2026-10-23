@@ -57,7 +57,9 @@ async function descriptor(store:DeviceStore,artifacts:DeviceArtifacts,device:Dev
         const connection=(await store.pool.query<{base_url:string;options:unknown}>(`SELECT base_url,options FROM model_remote_connections
             WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1`,[model.id,model.verificationSha256])).rows[0];
         if(!connection)throw new ConflictException('Подключение модели изменилось. Проверьте API модели.');
-        const saved=remoteModelOptions(connection.options),options=Object.fromEntries(['temperature','topP','maxOutputTokens','contextWindow'].flatMap(key=>saved[key as keyof typeof saved]===undefined?[]:[[key,saved[key as keyof typeof saved]]]));
+        const saved=remoteModelOptions(connection.options);
+        if(saved.apiFormat==='responses'||saved.reasoningEffort!==undefined||saved.store!==undefined||saved.tokenLimitParameter==='max_completion_tokens'||Object.keys(saved.providerParameters??{}).length)throw new ConflictException('Локальный мастер поддерживает Chat Completions с базовыми параметрами. Это серверное подключение использует другой протокол или дополнительные параметры; настройте соответствующего провайдера в OpenCode отдельно.');
+        const options=Object.fromEntries(['temperature','topP','maxOutputTokens','contextWindow'].flatMap(key=>saved[key as keyof typeof saved]===undefined?[]:[[key,saved[key as keyof typeof saved]]]));
         expectations={catalogModelId:model.id,modelPin:model.modelPin!,runtimeModel:model.model,capability:model.capability as 'chat'|'vision',baseUrl:remoteModelBaseUrl(connection.base_url),options};
     }else if(input.providerKind==='codex-bridge'){
         if(input.catalogModelId!==undefined||input.expectedModelPin!==undefined)throw new BadRequestException('Codex использует закреплённый коннектор, а не клиентскую модель.');

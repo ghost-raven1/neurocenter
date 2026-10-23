@@ -5,7 +5,7 @@ import {workspaceFixture} from './bridge-fixture.js';
 import {isolateAgentHome} from './project-agents.fixture.js';
 import {projectBindingId,projectInstanceId} from '../src/bridge/workspace.js';
 import {configureProjectAgents} from '../src/features/project-agents/index.js';
-import {projectAgentsFailureResult} from '../src/features/project-agents/model-compiler.js';
+import {projectAgentsFailureResult,projectAgentMappings} from '../src/features/project-agents/model-compiler.js';
 import {createProjectAgentsPayload,compileProjectAgents,renderProjectAgent,type ProjectAgent} from '../src/features/project-agents/contract.js';
 import {agentFile} from '../src/features/project-agents/receipt.js';
 
@@ -23,6 +23,30 @@ describe('Private native model compilation and cross-scope namespace',()=>{
   await fs.symlink('/must-not-be-read',path.join(home,'.config/opencode/DO_NOT_READ'));
   const result=await apply();expect(result.schemaVersion).toBe(2);expect(result.compiledManifestSha256).toMatch(/^[a-f0-9]{64}$/);
   const rendered=await fs.readFile(path.join(f.root,agentFile(agent.slug)),'utf8');expect(rendered).toContain('"model": "team/alias"');expect(rendered).not.toContain('neurocenter/model-chat');expect(rendered).toContain(agent.prompt);expect(JSON.stringify(result)).not.toContain('PRIVATE');
+ });
+ it.each(['codex','loopback'])('native %s is usable on its own computer while server import remains blocked',async kind=>{
+  const provider=kind==='codex'?'codexbridge':'team',options=kind==='codex'?{reasoningEffort:'high',store:false}:{};
+  await fs.writeFile(global(),JSON.stringify({provider:{[provider]:{npm:kind==='codex'?'@ai-sdk/openai':'@ai-sdk/openai-compatible',options:{baseURL:kind==='codex'?'https://chatgpt.com/backend-api/codex':'http://127.0.0.1:1234/v1'},models:{alias:{id:'upstream-chat',options}}}}}));
+  const native={...agent,model:provider+'/alias'},p=createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[native],modelRequirements:[{kind:'native',agentId:agent.id,selector:native.model}]});
+  const mappings=await projectAgentMappings(p,f.root,async()=>undefined);expect(mappings[0]!.provider).toBe(provider);
+  if(kind==='codex')expect(mappings[0]!.options).toEqual({apiFormat:'responses',reasoningEffort:'high',store:false});
+  await configureProjectAgents(p,async()=>undefined,async()=>undefined,async value=>compileProjectAgents(p,value));
+  expect(await fs.readFile(path.join(f.root,agentFile(agent.slug)),'utf8')).toContain('"model": "'+provider+'/alias"');
+ });
+ it('an unknown native SDK parameter is diagnosed without exporting its value or pretending compilation succeeded',async()=>{
+  const privateValue='PRIVATE_NATIVE_PARAMETER';
+  await fs.writeFile(global(),JSON.stringify({provider:{codexbridge:{npm:'@ai-sdk/openai',options:{baseURL:'https://chatgpt.com/backend-api/codex'},models:{alias:{options:{custom:{value:privateValue}}}}}}}));
+  const native={...agent,model:'codexbridge/alias'},p=createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[native],modelRequirements:[{kind:'native',agentId:agent.id,selector:native.model}]});
+  const error=await projectAgentMappings(p,f.root,async()=>undefined).catch(value=>value);expect(projectAgentsFailureResult(error)).toHaveProperty('code','OPENCODE_AGENT_MODEL_SETUP_REQUIRED');expect(JSON.stringify(projectAgentsFailureResult(error))).not.toContain(privateValue);
+  await expect(fs.stat(path.join(f.root,agentFile(agent.slug)))).rejects.toHaveProperty('code','ENOENT');expect(await fs.readFile(global(),'utf8')).toContain(privateValue);
+ });
+ it('catalog/native Responses correspondence includes protocol, reasoning and store=false exactly',async()=>{
+  await fs.writeFile(global(),JSON.stringify({provider:{team:{npm:'@ai-sdk/openai',options:{baseURL:'https://provider.example.test/v1'},models:{alias:{id:'upstream-chat',options:{reasoningEffort:'high',store:false}}}}}}));
+  const base=payload(),{manifestSha256:_manifest,compilation:_compilation,...body}=base;
+  const p=createProjectAgentsPayload({...body,modelRequirements:body.modelRequirements.map(requirement=>requirement.kind==='catalog'?{...requirement,options:{apiFormat:'responses',reasoningEffort:'high',store:false}}:requirement)});
+  const mappings=await projectAgentMappings(p,f.root,async()=>undefined);expect(mappings[0]!.options).toEqual({apiFormat:'responses',reasoningEffort:'high',store:false});expect(compileProjectAgents(p,mappings).mappings).toEqual(mappings);
+  await fs.writeFile(global(),JSON.stringify({provider:{team:{npm:'@ai-sdk/openai',options:{baseURL:'https://provider.example.test/v1'},models:{alias:{id:'upstream-chat',options:{reasoningEffort:'high',store:true}}}}}}));
+  await expect(projectAgentMappings(p,f.root,async()=>undefined)).rejects.toHaveProperty('code','OPENCODE_AGENT_MODEL_SETUP_REQUIRED');
  });
  it.each(['absent','ambiguous','disabled','options','malformed'])('rejects %s correspondence with actionable public guidance and no file write',async issue=>{
   const c=config() as any;if(issue==='absent')c.provider={};if(issue==='ambiguous')c.provider.team.models.second={...c.provider.team.models.alias};if(issue==='disabled')c.disabled_providers=['team'];if(issue==='options')c.provider.team.models.alias.limit.context=4096;if(issue==='malformed'){await fs.writeFile(global(),'{invalid');}else await fs.writeFile(global(),JSON.stringify(c));

@@ -1,5 +1,6 @@
 import { Collapse, Form, Input, InputNumber, Select, Typography } from 'antd';
 import type { ICatalogModel } from './types';
+import { parseProviderParameters } from './adapterParameterForm';
 
 interface IProps { model: ICatalogModel; }
 
@@ -14,10 +15,23 @@ export function RemoteModelParameters({ model }: IProps): JSX.Element {
                     { validator: (_rule, value: string | undefined) => value?.includes('://') ? Promise.reject(new Error('Укажите идентификатор модели без адреса API')) : Promise.resolve() }]}>
                 <Input allowClear maxLength={200} placeholder={model.model} />
             </Form.Item>
-            {model.capability !== 'embedding' && <Form.Item name={['options', 'tokenLimitParameter']} label="Параметр лимита токенов" preserve={false}
-                extra="Настройка API для всех запросов этой модели. Пусто — max_tokens; автоматического повтора с другим параметром нет.">
+            {model.capability !== 'embedding' && <>
+            <Form.Item name={['options', 'apiFormat']} label="Протокол API" preserve={false}
+                extra="Выберите протокол провайдера. Пусто — Chat Completions; автоматического перехода или повтора с другим протоколом нет.">
+                <Select allowClear placeholder="Chat Completions (по умолчанию)" options={[{value:'chat-completions',label:'Chat Completions'},{value:'responses',label:'Responses'}]} />
+            </Form.Item>
+            <Form.Item name={['options', 'reasoningEffort']} label="Уровень рассуждений" preserve={false} extra="Для Responses API. Сохраняется точно; доступные уровни зависят от модели.">
+                <Select allowClear placeholder="По умолчанию у провайдера" options={['none','minimal','low','medium','high','xhigh','max'].map(value=>({value,label:value}))} />
+            </Form.Item>
+            <Form.Item name={['options', 'store']} label="Хранение ответа у провайдера" preserve={false} extra="Для Responses API. Пусто — политика провайдера."
+                getValueProps={(value:boolean|undefined)=>({value:value===undefined?undefined:String(value)})}
+                normalize={(value:string|undefined)=>value==='true'?true:value==='false'?false:undefined}>
+                <Select allowClear placeholder="По умолчанию у провайдера" options={[{value:'false',label:'Не хранить'},{value:'true',label:'Хранить'}]} />
+            </Form.Item>
+            <Form.Item name={['options', 'tokenLimitParameter']} label="Параметр лимита токенов" preserve={false}
+                extra="Для Chat Completions: пусто — max_tokens. Для Responses очистите поле: используется max_output_tokens. Автоматического повтора нет.">
                 <Select allowClear placeholder="max_tokens (по умолчанию)" options={[{ value: 'max_tokens', label: 'max_tokens' }, { value: 'max_completion_tokens', label: 'max_completion_tokens' }]} />
-            </Form.Item>}
+            </Form.Item></>}
         </>}
         {model.capability !== 'embedding' && <>
             <Form.Item name={['options', 'temperature']} label="Температура" extra="От 0 до 2. Меньше — более предсказуемые ответы."
@@ -39,6 +53,13 @@ export function RemoteModelParameters({ model }: IProps): JSX.Element {
                 <InputNumber min={128} max={2097152} precision={0} style={{ width: '100%' }} placeholder={model.runtime === 'remote-openai' ? 'Не указан' : 'По умолчанию у провайдера'} />
             </Form.Item>}
         </>}
+        <Form.Item name={['options','providerParameters']} label="Дополнительные параметры адаптера (JSON)" preserve={false}
+            extra="Произвольный JSON-объект, до 64 КиБ и 8 уровней. OpenAI: поля тела запроса; Ollama: поля options. false и null сохраняются. Адрес, ключи, заголовки, модель, сообщения и инструменты задаются отдельно. Не повторяйте параметры основной формы."
+            getValueProps={value=>({value:value===undefined?'':typeof value==='string'?value:JSON.stringify(value,null,2)})}
+            getValueFromEvent={(event:{target:{value:string}})=>event.target.value}
+            rules={[{validator:(_rule,value)=>{try{if(typeof value==='string')parseProviderParameters(value);return Promise.resolve();}catch(cause){return Promise.reject(cause);}}}]}>
+            <Input.TextArea rows={5} maxLength={65536} placeholder={'{"seed": 42, "custom": {"enabled": false, "value": null}}'} />
+        </Form.Item>
         <Form.Item name="timeoutMs" label="Ожидание ответа, мс" extra="От 1 000 до 300 000 мс. По умолчанию — 90 000 мс."
             rules={[{ type: 'integer', min: 1000, max: 300000, message: 'Целое число от 1000 до 300000' }]}>
             <InputNumber min={1000} max={300000} step={1000} precision={0} style={{ width: '100%' }} placeholder="90 000" />

@@ -1,5 +1,17 @@
 import {describe,expect,it} from 'vitest';
 import {isRemoteApiUrl,remoteModelOptions} from '../src/features/ModelCatalog/remoteModelForm';
+import {parseProviderParameters} from '../src/features/ModelCatalog/adapterParameterForm';
+
+it('Произвольные JSON поля адаптера сохраняют типы и не зависят от списка полей формы',()=>{
+ const parameters=Object.fromEntries(Array.from({length:100},(_,index)=>['custom'+index,{enabled:false,value:null}]));
+ expect(remoteModelOptions({apiFormat:'responses',reasoningEffort:'high',store:false,providerParameters:JSON.stringify(parameters)},{runtime:'remote-openai',capability:'chat'})).toEqual({apiFormat:'responses',reasoningEffort:'high',store:false,providerParameters:parameters});
+ expect(remoteModelOptions({providerParameters:parameters},{runtime:'remote-ollama',capability:'embedding'})).toEqual({providerParameters:parameters});
+ expect(remoteModelOptions({providerParameters:' '},{runtime:'remote-openai',capability:'chat'})).toEqual({});
+});
+it('JSON редактор отклоняет незавершённый JSON, массив и избыточный объём без потери структуры',()=>{
+ for(const value of ['{','[]','null','{"x":"'+'x'.repeat(65536)+'"}'])expect(()=>parseProviderParameters(value)).toThrow();
+ expect(parseProviderParameters('{"f":false,"n":null,"a":[0,"x"]}')).toEqual({f:false,n:null,a:[0,'x']});
+});
 import {eligibleEmbedding} from '../src/features/ProjectEmbedding/model';
 import type {ICatalogModel} from '../src/features/ModelCatalog/types';
 

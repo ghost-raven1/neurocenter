@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { IModel } from './model.types';
 import type { IRemoteModelOptions } from './remote-model.types';
+import { normalizeAdapterParameters } from '../../../shared/adapter-parameters.cjs';
 
 export const REMOTE_MODEL_TIMEOUT_MS = 90000;
 const limits = {
@@ -16,6 +17,23 @@ export function remoteModelOptions(value: unknown): IRemoteModelOptions {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Параметры модели должны быть объектом.');
     const result: IRemoteModelOptions = {};
     for (const [key, entry] of Object.entries(value)) {
+        if (key === 'providerParameters') {
+            try { result.providerParameters = normalizeAdapterParameters(entry); }
+            catch (cause) { throw new BadRequestException((cause as Error).message); }
+            continue;
+        }
+        if (key === 'apiFormat') {
+            if (entry !== 'chat-completions' && entry !== 'responses') throw new BadRequestException('Выберите Chat Completions или Responses API.');
+            result.apiFormat = entry; continue;
+        }
+        if (key === 'reasoningEffort') {
+            if (!['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(String(entry)) || typeof entry !== 'string') throw new BadRequestException('Укажите поддерживаемый уровень рассуждений.');
+            result.reasoningEffort = entry as IRemoteModelOptions['reasoningEffort']; continue;
+        }
+        if (key === 'store') {
+            if (typeof entry !== 'boolean') throw new BadRequestException('Хранение ответа: выберите да или нет.');
+            result.store = entry; continue;
+        }
         if (key === 'responseModel') {
             if (typeof entry !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(entry) || entry.includes('://')) throw new BadRequestException('Укажите точный идентификатор модели в ответе API.');
             result.responseModel = entry; continue;
@@ -36,8 +54,10 @@ export function remoteModelOptions(value: unknown): IRemoteModelOptions {
 
 /** OpenAI contextWindow declares the server budget; Ollama also receives num_ctx. */
 export function assertRemoteModelOptions(model: Pick<IModel, 'runtime' | 'capability'>, options: IRemoteModelOptions): void {
-    if ((options.responseModel !== undefined || options.tokenLimitParameter !== undefined) && model.runtime !== 'remote-openai') throw new BadRequestException('Параметры совместимости доступны только для OpenAI API.');
-    if (model.capability === 'embedding' && Object.keys(options).some(key => key !== 'responseModel')) throw new BadRequestException('Embedding-модель не принимает параметры генерации текста.');
+    if (['responseModel', 'tokenLimitParameter', 'apiFormat', 'reasoningEffort', 'store'].some(key => options[key as keyof IRemoteModelOptions] !== undefined) && model.runtime !== 'remote-openai') throw new BadRequestException('Параметры совместимости доступны только для OpenAI API.');
+    if ((options.reasoningEffort !== undefined || options.store !== undefined) && options.apiFormat !== 'responses') throw new BadRequestException('Уровень рассуждений и хранение ответа требуют Responses API.');
+    if (options.apiFormat === 'responses' && options.tokenLimitParameter !== undefined) throw new BadRequestException('Responses API использует max_output_tokens; очистите параметр лимита Chat Completions.');
+    if (model.capability === 'embedding' && Object.keys(options).some(key => !['responseModel','providerParameters'].includes(key))) throw new BadRequestException('Embedding-модель не принимает параметры генерации текста.');
     if (options.contextWindow !== undefined && !['remote-ollama', 'remote-openai'].includes(model.runtime)) throw new BadRequestException('Размер контекста подключения задаётся для удалённой модели.');
 }
 

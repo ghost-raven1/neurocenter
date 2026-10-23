@@ -35,6 +35,10 @@ export interface IModelCreate {
 
 /** Приватные значения по умолчанию; пустые параметры оставляют выбор провайдеру. */
 export interface IRemoteModelOptions {
+    providerParameters?: import('../../../../services/shared/adapter-parameters.cjs').AdapterParameters;
+    apiFormat?: 'chat-completions' | 'responses';
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+    store?: boolean;
     temperature?: number; topP?: number; maxOutputTokens?: number; contextWindow?: number;
     responseModel?: string;
     tokenLimitParameter?: 'max_tokens' | 'max_completion_tokens';

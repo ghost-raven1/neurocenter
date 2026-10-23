@@ -5,16 +5,16 @@ import { remoteModelBaseUrl } from './remote-model-validation';
 import { assertRemoteModelOptions, remoteModelOptions } from './remote-model-options';
 import type { IRemoteModelOptions } from './remote-model.types';
 import type { ModelApiAdmission } from '../model-api-admission/model-api-admission';
+import { RemoteModelError } from './remote-model-error';
+import { openaiResponsesBody, openaiResponsesResult } from './remote-openai-responses';
+import { ADAPTER_PARAMETER_DEFINITIONS, applyAdapterParameters } from '../../../shared/adapter-parameters.cjs';
+export { RemoteModelError } from './remote-model-error';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
 const validVector = (vector: unknown, dimension: number | null): vector is number[] => Array.isArray(vector) && vector.length > 0 && vector.length <= 16384
     && (dimension === null || vector.length === dimension) && vector.every(value => typeof value === 'number' && Number.isFinite(Math.fround(value)))
     && vector.some(value => Math.fround(value) !== 0);
-
-export class RemoteModelError extends Error {
-    constructor(readonly kind: 'authorization' | 'rate-limit' | 'unavailable' | 'response', message: string) { super(message); }
-}
 
 /** Клиент делает только inference зарегистрированной модели и никогда не следует редиректам. */
 export class RemoteModelClient {
@@ -32,9 +32,14 @@ export class RemoteModelClient {
             throw new RemoteModelError('response', 'Передайте от 1 до 64 непустых текстов.');
         }
         const dimension = connection.requestDimensions && model.dimension ? { dimensions: model.dimension } : {};
-        const payload = endpoint === 'embed' ? { model: model.model, input: texts, ...dimension, ...(openai ? { encoding_format: 'float' } : { truncate: false }) }
+        let payload = endpoint === 'embed' ? { model: model.model, input: texts, ...dimension, ...(openai ? { encoding_format: 'float' } : { truncate: false }) }
             : this.chatBody(model, body, openai, connection.options);
-        const route = openai ? endpoint === 'embed' ? '/embeddings' : '/chat/completions' : '/api/' + endpoint;
+        const responses = openai && endpoint === 'chat' && connection.options?.apiFormat === 'responses';
+        if (connection.options?.providerParameters !== undefined) {
+            try { payload = applyAdapterParameters(payload, connection.options.providerParameters, ADAPTER_PARAMETER_DEFINITIONS[openai ? responses ? 'openai-responses' : 'openai-chat-completions' : 'ollama']); }
+            catch (cause) { throw new RemoteModelError('response', (cause as Error).message); }
+        }
+        const route = openai ? endpoint === 'embed' ? '/embeddings' : responses ? '/responses' : '/chat/completions' : '/api/' + endpoint;
         const request = () => this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
         const value = await (this.options.admission ? this.options.admission.run(model, signal, request) : request());
         const responseModel = connection.options?.responseModel ?? model.model;
@@ -49,6 +54,11 @@ export class RemoteModelClient {
             return { model: model.model, embeddings: vectors, prompt_eval_count: inputTokens, usage_reported: inputTokens !== null };
         }
         if (openai) {
+            if (responses) {
+                const result = openaiResponsesResult(value), inputTokens = this.tokens(result.inputTokens), outputTokens = this.tokens(result.outputTokens);
+                return { model: model.model, done: true, done_reason: result.reason, message: { role: 'assistant', content: result.content },
+                    prompt_eval_count: inputTokens, eval_count: outputTokens, usage_reported: inputTokens !== null || outputTokens !== null };
+            }
             const choice = Array.isArray(value.choices) && value.choices.length === 1 ? value.choices[0] : undefined;
             if (!object(choice) || choice.index !== 0 || typeof choice.finish_reason !== 'string' || !['stop', 'length'].includes(choice.finish_reason) || !object(choice.message)
                 || typeof choice.message.content !== 'string' || !choice.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
@@ -98,6 +108,7 @@ export class RemoteModelClient {
                 return { type: 'image_url', image_url: { url: 'data:image/' + mime + ';base64,' + image } };
             })] };
         });
+        if (options.apiFormat === 'responses') return openaiResponsesBody(model.model, messages, options);
         return { model: model.model, messages, stream: false,
             ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
             ...(options.topP === undefined ? {} : { top_p: options.topP }),

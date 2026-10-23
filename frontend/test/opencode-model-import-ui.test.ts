@@ -42,6 +42,18 @@ async function read(job = scan()) { vi.mocked(bridgeApi.create).mockResolvedValu
 beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.job = undefined;ui.projectId='project-one';ui.bound=true;ui.online=true;ui.capabilities=['opencode-model-scan-v2']; ui.imported.mockResolvedValue(undefined); });
 
 describe('Импорт модели из доступной конфигурации OpenCode', () => {
+    it('Показывает Responses и точную политику false до импорта',async()=>{
+        const html=await read(scan({options:{apiFormat:'responses',reasoningEffort:'high',store:false}}));
+        expect(html).toContain('API: Responses');expect(html).toContain('Рассуждения: high');expect(html).toContain('Хранение ответа: выключено');
+    });
+    it('Неизвестные параметры имеют имена/типы и явный путь ручной настройки без ложной готовности',async()=>{
+        const html=await read(scan({blocker:'unsupported-provider',parameterIssues:[{name:'custom',type:'object'},{name:'enabled',type:'boolean'}]}));
+        expect(html).toContain('custom (object)');expect(html).toContain('enabled (boolean)');expect(html).toContain('Значения сохранены в исходном OpenCode');expect(html).toContain('JSON параметров адаптера');expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
+    });
+    it.each(['codex-local-auth','device-local-endpoint','local-provider-auth'])('Точный blocker %s не предлагает небезопасный импорт',async blocker=>{
+        const html=await read(scan({blocker}));expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
+        expect(html).toContain(blocker==='codex-local-auth'?'Codex Bridge — локальный вход':blocker==='device-local-endpoint'?'Этот localhost относится к выбранному компьютеру':'локальная сессия не переносится');
+    });
     it('Показывает поддерживаемые параметры, явный ноль и таймаут до импорта, не обещая автоматическую синхронизацию', async () => {
         const html = await read();
         expect(html).toContain('Температура: 0'); expect(html).toContain('Top P: 0.8'); expect(html).toContain('2048 токенов'); expect(html).toContain('Ожидание ответа: 30000 мс');

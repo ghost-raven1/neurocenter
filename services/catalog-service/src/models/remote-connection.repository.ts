@@ -115,9 +115,10 @@ export class RemoteConnectionRepository {
         await this.pool.query('UPDATE model_remote_connections SET failure_message=$3 WHERE model_id=$1 AND revision=$2 AND revoked_at IS NULL', [row.model_id, row.revision, message]);
     }
     private audit(row: IRemoteConnectionRow) {
-        // Ни URL, ни env-значение, ни ciphertext не попадают в общий аудит.
+        // Arbitrary private JSON, URL, env values and ciphertext never enter the shared audit.
+        const { providerParameters, ...options } = remoteModelOptions(row.options);
         return { revision: Number(row.revision), credential: row.credential_kind, hasKey: row.credential_kind !== 'none', requestDimensions: row.request_dimensions,
-            options: row.options, timeoutMs: row.timeout_ms };
+            options, providerParameterCount: Object.keys(providerParameters ?? {}).length, timeoutMs: row.timeout_ms };
     }
     private async pin(db: Db, current: IModel, digest: string | null, dimension: number | null): Promise<IModel> {
         if ((current.verificationSha256 ?? null) === digest && current.dimension === dimension) return current;

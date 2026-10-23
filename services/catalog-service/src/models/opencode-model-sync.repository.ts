@@ -16,7 +16,7 @@ export interface OpenCodeSyncSettings { revision: number; enabled: boolean; tran
 export const defaultOpenCodeSyncSettings: OpenCodeSyncSettings = { revision: 0, enabled: true, transferCredentials: false };
 export function openCodeCardMetadata(candidate:IOpenCodeModelCandidate,scope:'global'|'project'):{name:string;description:string}{
     const source=scope==='global'?'общая конфигурация':'конфигурация проекта',options=remoteModelOptions(candidate.options);
-    const parameters=Object.entries(options).map(([key,value])=>`${({contextWindow:'Контекст',temperature:'Температура',topP:'Top P',maxOutputTokens:'Ответ'} as Record<string,string>)[key]}: ${value}`).join(' · ');
+    const parameters=Object.entries(options).filter(([key])=>key!=='providerParameters').map(([key,value])=>`${({contextWindow:'Контекст',temperature:'Температура',topP:'Top P',maxOutputTokens:'Ответ',apiFormat:'API',reasoningEffort:'Рассуждения',store:'Хранение ответа'} as Record<string,string>)[key]}: ${value}`).join(' · ');
     return {name:`${candidate.name} · ${candidate.provider} · ${scope==='global'?'общая':'проект'}`.slice(0,128),description:`OpenCode: ${source}. Провайдер: ${candidate.provider}.`+(parameters?' '+parameters+'.':'')};
 }
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value;

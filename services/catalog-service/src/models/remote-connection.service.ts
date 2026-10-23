@@ -68,7 +68,7 @@ export class RemoteConnectionService {
                     : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
                         ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
                         ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
-                        options: { num_predict: connection.options?.tokenLimitParameter === 'max_completion_tokens'
+                        options: { num_predict: connection.options?.apiFormat === 'responses' || connection.options?.tokenLimitParameter === 'max_completion_tokens'
                             ? connection.options.maxOutputTokens ?? 64 : Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
             };
             await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();

@@ -91,11 +91,9 @@ function validateProjectAgentsResult(value,payload){
     return canonical(value);
 }
 
-/** Numeric execution metadata only; credentials, headers and file references cannot enter a compilation. */
+/** Safe protocol/generation metadata only; private JSON, credentials and file references stay outside compilations. */
 function normalizeModelOptions(value){
-    if(!record(value))fail();
-    const ranges={temperature:[0,2,false],topP:[0,1,false],maxOutputTokens:[1,32768,true],contextWindow:[128,2097152,true]};
-    for(const [key,number]of Object.entries(value)){const range=ranges[key];if(!range||!Number.isFinite(number)||number<range[0]||number>range[1]||range[2]&&!Number.isSafeInteger(number))fail();}
+    if(!require('./opencode-model-scan.cjs').validModelOptions(value))fail();
     return canonical(value);
 }
 function nativeSelector(value){return text(value,200)&&/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(value)&&!value.startsWith('neurocenter/');}

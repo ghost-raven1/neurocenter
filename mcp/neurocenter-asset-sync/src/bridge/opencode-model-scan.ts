@@ -8,6 +8,7 @@ import { parse, parseTree, type Node, type ParseError } from 'jsonc-parser';
 import { projectBindingId, projectFolder, projectInstanceId } from './workspace.js';
 import { readBoundedSnapshot, fileFingerprint } from './read-bounded.js';
 import type { IOpenCodeModelCandidate, IOpenCodeModelScan, IOpenCodeModelSource } from '../../../../services/shared/opencode-model-scan.cjs';
+const parameters=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../services/shared/adapter-parameters.cjs':'../shared/adapter-parameters.cjs',import.meta.url))) as typeof import('../../../../services/shared/adapter-parameters.cjs');
 const shared=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../services/shared/opencode-model-scan.cjs':'../shared/opencode-model-scan.cjs',import.meta.url))) as typeof import('../../../../services/shared/opencode-model-scan.cjs');
 type Json=Record<string,unknown>;
 const object=(value:unknown):value is Json=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -17,15 +18,20 @@ const duplicate=(node:Node|undefined):boolean=>!!node&&((node.type==='object'&&n
 const flag=(value:string|undefined):boolean=>['true','1'].includes(value?.toLowerCase()??'');
 const bounded=(value:unknown,min:number,max:number,integer=false):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max&&(!integer||Number.isInteger(value));
 const empty=(value:unknown):boolean=>value===undefined||object(value)&&Object.keys(value).length===0;
-/** Только числовые настройки исполнения; произвольные SDK options и заголовки не покидают компьютер. */
-function modelOptions(value:unknown):IOpenCodeModelCandidate['options']|null {
-    if(value===undefined)return {};
-    if(!object(value)||Object.keys(value).some(key=>!['temperature','topP','maxOutputTokens'].includes(key)))return null;
-    const projected:NonNullable<IOpenCodeModelCandidate['options']>={};
+/** Exact bounded execution options only; unknown SDK options and secrets keep import blocked. */
+function modelOptions(value:unknown,responses:boolean):IOpenCodeModelCandidate['options']|null {
+    const projected:NonNullable<IOpenCodeModelCandidate['options']>=responses?{apiFormat:'responses',store:false}:{};
+    if(value===undefined)return projected;
+    if(!object(value)||Object.keys(value).some(key=>!['temperature','topP','maxOutputTokens',...(responses?['reasoningEffort','store']:[])].includes(key)))return null;
     for(const [key,option]of Object.entries(value)){
+        if(key==='reasoningEffort'){
+            if(typeof option!=='string'||!['none','minimal','low','medium','high','xhigh','max'].includes(option))return null;
+            projected.reasoningEffort=option as NonNullable<IOpenCodeModelCandidate['options']>['reasoningEffort'];continue;
+        }
+        if(key==='store'){if(typeof option!=='boolean')return null;projected.store=option;continue;}
         const range=key==='temperature'?[0,2]:key==='topP'?[0,1]:[1,32768];
         if(!bounded(option,range[0]!,range[1]!,key==='maxOutputTokens'))return null;
-        projected[key as keyof typeof projected]=option;
+        projected[key as 'temperature'|'topP'|'maxOutputTokens']=option;
     }
     return projected;
 }
@@ -78,16 +84,20 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
             const modalities=object(metadata.modalities)?metadata.modalities:{};
             const disabled=Array.isArray(config.disabled_providers)&&config.disabled_providers.includes(provider)
                 ||Array.isArray(config.enabled_providers)&&!config.enabled_providers.includes(provider);
-            const defaults=modelOptions(metadata.options),apiModel=metadata.id??model;
+            const defaults=modelOptions(metadata.options,knownOpenai||value.npm==='@ai-sdk/openai'),apiModel=metadata.id??model;
+            const parameterIssues=[...parameters.adapterParameterIssues(options,['apiKey','baseURL','timeout',...(empty(options.headers)?['headers']:[])]),
+                ...parameters.adapterParameterIssues(metadata.options,['temperature','topP','maxOutputTokens',...(knownOpenai||value.npm==='@ai-sdk/openai'?['reasoningEffort','store']:[])])].slice(0,100);
             if(defaults&&object(metadata.limit)&&bounded(metadata.limit.context,128,2097152,true))defaults.contextWindow=metadata.limit.context;
             const overridden=metadata.provider!==undefined||!empty(metadata.headers)||defaults===null||!id(apiModel)||apiModel.length>128;
             result.push({candidateId:randomUUID(),configKey:model,provider,name:text(metadata.name,128)?metadata.name:model,model:overridden?model:apiModel as string,modelVersion:overridden?model:apiModel as string,
                 capability:Array.isArray(modalities.input)&&modalities.input.includes('image')?'vision':'chat',runtime:supported?'remote-openai':null,
                 baseUrl:address.url,hasKey:credentialSource!=='none',credentialSource,
                 ...(!overridden&&defaults&&Object.keys(defaults).length?{options:defaults}:{}),
+                ...(parameterIssues.length?{parameterIssues}:{}),
                 ...(object(metadata.limit)&&bounded(metadata.limit.output,1,2097152,true)?{outputTokenLimit:metadata.limit.output}:{}),
                 ...(supported&&typeof options.timeout==='number'?{timeoutMs:options.timeout}:{}),
-                blocker:disabled?'disabled-provider':!supported||overridden?'unsupported-provider':address.blocker});
+                blocker:disabled?'disabled-provider':!supported||overridden?'unsupported-provider':shared.serverImportBlocker({provider,baseUrl:address.url})
+                    ??(object(auth[provider])&&auth[provider].type==='oauth'?'local-provider-auth':address.blocker)});
         }
     }
     return result;

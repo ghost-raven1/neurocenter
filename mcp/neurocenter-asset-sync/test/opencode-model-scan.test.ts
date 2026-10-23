@@ -7,7 +7,7 @@ import {opencodeModelCandidates,readOpenCodeModelMetadata} from '../src/bridge/o
 import {modelScanDigest,validModelScan} from '../../../services/shared/opencode-model-scan.cjs';
 const context={scope:'project' as const,projectId:'prj-test',bindingId:'a'.repeat(64),instanceId:randomUUID()};
 const secret='DO_NOT_EXPORT_SECRET';
-const provider=(baseURL='http://127.0.0.1:9999/v1')=>({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL,apiKey:secret},models:{'model-v1':{name:'Team model'}}}}});
+const provider=(baseURL='https://provider.example.test/v1')=>({provider:{team:{npm:'@ai-sdk/openai-compatible',options:{baseURL,apiKey:secret},models:{'model-v1':{name:'Team model'}}}}});
 const directories:string[]=[];
 afterEach(async()=>{await Promise.all(directories.splice(0).map(dir=>fs.rm(dir,{recursive:true,force:true})));});
 async function fixture(){const home=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-model-scan-')));directories.push(home);const root=path.join(home,'project');await fs.mkdir(root);await fs.mkdir(path.join(home,'.config/opencode'),{recursive:true});return {home,root,managedDirectory:path.join(home,'managed'),environment:{XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share')}};}
@@ -48,7 +48,7 @@ describe('Чтение OpenCode передаёт только metadata',()=>{
   await fs.writeFile(path.join(f.root,'opencode.jsonc'),'// project\n'+JSON.stringify({provider:{team:{models:{'model-v2':{name:'Project model',modalities:{input:['text','image']}}},options:{apiKey:'{file:~/.secret}'}}}}));
   await fs.mkdir(path.join(f.home,'.local/share/opencode'),{recursive:true});await fs.writeFile(path.join(f.home,'.local/share/opencode/auth.json'),JSON.stringify({team:{type:'api',key:secret}}));
   const scan=await readOpenCodeModelMetadata(f.root,context,f);
-  expect(scan.candidates).toHaveLength(2);expect(scan.candidates[1]).toMatchObject({model:'model-v2',capability:'vision',hasKey:true,credentialSource:'file',baseUrl:'http://127.0.0.1:9999/v1'});
+  expect(scan.candidates).toHaveLength(2);expect(scan.candidates[1]).toMatchObject({model:'model-v2',capability:'vision',hasKey:true,credentialSource:'file',baseUrl:'https://provider.example.test/v1'});
   expect(JSON.stringify(scan)).not.toContain(secret);expect(JSON.stringify(scan)).not.toContain('~/.secret');expect(scan.warnings).toContain('file-reference-not-expanded');expect(validModelScan(scan,context)).toBe(true);
  });
  it('Выбранная builtin модель определяется без fetch models.dev и без переноса auth',()=>{
