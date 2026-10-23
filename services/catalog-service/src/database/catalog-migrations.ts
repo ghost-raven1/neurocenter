@@ -1,3 +1,4 @@
+import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
 import {CHAT_ACTIVITY_SCHEMA_SQL} from '../chat-activity/chat-activity.schema';
 import {CHAT_ACTIVITY_SCHEMA_ASSERT_SQL} from '../chat-activity/chat-activity.schema-verification';
@@ -75,4 +76,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:25,name:'public-and-private-project-dialogues',sql:PROJECT_CHAT_DIALOGS_SCHEMA_SQL+'\n'+PROJECT_CHAT_DIALOGS_SCHEMA_ASSERT_SQL},
     {version:26,name:'chat-presence-typing-and-visible-message-receipts',sql:CHAT_ACTIVITY_SCHEMA_SQL+'\n'+CHAT_ACTIVITY_SCHEMA_ASSERT_SQL},
     {version:27,name:'packager-agent-and-runtime-verification',sql:PACKAGE_AGENT_SCHEMA_SQL+'\n'+PACKAGE_BUILD_RUNTIME_SCHEMA_SQL+'\n'+PACKAGE_AGENT_SCHEMA_ASSERT_SQL},
+    {version:28,name:'bounded-system-role-agents',sql:SYSTEM_ROLE_SCHEMA_SQL},
 ];

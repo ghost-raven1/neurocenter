@@ -1,3 +1,4 @@
+import {allowSystemRoleRoute} from '../system-roles/system-role.access';
 import { canReadCommon, IAccessClaims, projectLevel } from './access.model';
 import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 import {allowLearningRoute} from './learning-access-policy';
@@ -15,6 +16,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === undefined) { return false; }
     const body = request.body ?? {};
     const verb = request.method.toUpperCase();
+    const systemRole = allowSystemRoleRoute(activeRole, verb, route);
+    if (typeof systemRole === 'boolean') return systemRole;
     if(route==='/api/chat-presence/session')return verb==='PUT';
     // Executors additionally check fresh target ACL, authorship and expected version.
     if(route==='/api/help')return read;

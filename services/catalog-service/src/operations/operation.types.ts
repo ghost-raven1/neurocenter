@@ -44,6 +44,8 @@ export interface IOperationRow {
     error: string | null;
     log: IOperationDetail['log'] | string | null;
     retries: number;
+    system_role_agent_id?: string;
+    system_role_phase?: string;
     bridge_job_kind?: string;
     bridge_job_project_exists?: boolean;
 }

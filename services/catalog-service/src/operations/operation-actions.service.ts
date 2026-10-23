@@ -1,3 +1,4 @@
+import {SystemRoleService} from '../system-roles/system-role.service';
 import {BadRequestException,ConflictException,ForbiddenException,Injectable,OnModuleInit,ServiceUnavailableException} from '@nestjs/common';
 import type {Request} from 'express';
 import {CatalogService} from '../catalog/catalog.service';
@@ -23,7 +24,7 @@ const no=(reason:string)=>({supported:false,reason});
 /** Журнал передаёт команды реальным очередям. Изменение строки operations никогда не заменяет исполнение. */
 @Injectable()
 export class OperationActionsService implements OnModuleInit {
-    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService,private readonly builds:PackageBuildService){}
+    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService,private readonly builds:PackageBuildService,private readonly systemRoles:SystemRoleService){}
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
     }
@@ -37,7 +38,14 @@ export class OperationActionsService implements OnModuleInit {
         let target:Record<string,unknown>={};
         let executor:Capabilities['executor']='history';
         let retry:Capabilities['retry']=no('Историческая запись не содержит исполняемого задания.'),cancel:Capabilities['cancel']=no('Историческая запись не содержит исполняемого задания.');
-        if(operation.resourceType==='bridge'&&uuid(operation.resourceId)){
+        if(operation.resourceType==='system-role'&&uuid(operation.resourceId)){
+            const row=(await this.models.pool.query('SELECT id,actor,project_id,agent_id,state,revision FROM system_role_runs WHERE id=$1',[operation.resourceId])).rows[0];
+            if(row&&row.actor===operation.actor&&row.project_id===operation.projectId){
+                executor='system-role';target={id:row.id,agentId:row.agent_id,revision:row.revision,state:row.state};
+                retry=no('Новый платный запуск требует выбора модели и подтверждения контекста в системном агенте.');
+                cancel=!own?no('Отменить можно только собственный запуск.'):!['queued','running','awaiting_review'].includes(row.state)?no('Применение или завершённый запуск нельзя отменить из журнала.'):{supported:true};
+            }
+        }else if(operation.resourceType==='bridge'&&uuid(operation.resourceId)){
             const job=(await this.models.pool.query('SELECT * FROM bridge_jobs WHERE id=$1',[operation.resourceId])).rows[0];
             if(job&&job.email===operation.actor&&job.project_id===operation.projectId){
                 executor='bridge';target={id:job.id,kind:job.kind,state:job.state,project:job.project_id,actor:job.email,payloadSha256:publicationHash(job.payload)};
@@ -125,6 +133,10 @@ export class OperationActionsService implements OnModuleInit {
         }finally{try{if(locked)await lease.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[lock]);}catch(error){discard=true;throw error;}finally{lease.release(discard);}}
     }
     private async execute(request:Request,operation:IOperation,action:Action,key:string,target:Record<string,unknown>,executor:Capabilities['executor'],actor:IModelActor):Promise<IResult>{
+        if(executor==='system-role'&&action==='cancel'){
+            const run=await this.systemRoles.cancel(request,String(target.agentId),operation.resourceId,{expectedRevision:target.revision,requestId:key});
+            return {operationId:operation.operationId,state:run.state==='cancelled'?'CANCELLED':operation.state,message:run.message};
+        }
         if(executor==='bridge'){
             if(action==='cancel'){await this.jobs.cancel(actor,operation.resourceId);return {operationId:operation.operationId,state:'CANCELLED',message:'Задание в очереди отменено.'};}
             const job=await this.jobs.retry(actor,operation.resourceId,key);

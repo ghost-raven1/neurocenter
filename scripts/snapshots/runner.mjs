@@ -8,6 +8,7 @@ import {privateSnapshotFile,snapshotControl} from './control.mjs';
 import {materializeSnapshot} from './materialize.mjs';
 import {snapshotVerifierImage,runSnapshotVerifier} from './docker-verifier.mjs';
 import {reserveSnapshotStage,sweepSnapshotStages} from './staging.mjs';
+import {createContainerObserver} from './container-state.mjs';
 
 /** Verification is readonly and leased; only the server can sign and publish the resulting receipt. */
 export async function executeSnapshotVerification(claim,{api,workerId,imageId,directory,signal,verify=runSnapshotVerifier,timeout=15*60*1000}){
@@ -29,10 +30,10 @@ export async function executeSnapshotVerification(claim,{api,workerId,imageId,di
 export async function runSnapshotRunner({directory,catalogUrl,image,tokenFile,once=false,signal}){
  process.umask(0o077);directory=path.resolve(directory);await fs.mkdir(directory,{recursive:true,mode:0o700});const info=await fs.lstat(directory);if(!info.isDirectory()||info.isSymbolicLink()||info.mode&0o077)throw new Error('UNSAFE_RUNNER_DIRECTORY');
  if((await sweepSnapshotStages(directory,{signal})).unknown)throw new Error('UNSAFE_RUNNER_DIRECTORY');
- const token=(await privateSnapshotFile(tokenFile,1024)).toString('utf8').trim(),api=snapshotControl(catalogUrl,token),imageId=await snapshotVerifierImage(image),workerId=randomUUID();
+ const token=(await privateSnapshotFile(tokenFile,1024)).toString('utf8').trim(),api=snapshotControl(catalogUrl,token),imageId=await snapshotVerifierImage(image),workerId=randomUUID(),observeContainers=createContainerObserver(process.env.SNAPSHOT_RUNNER_COMPOSE_PROJECT);
  do{
   signal?.throwIfAborted();let claim;
-  try{claim=await api('claim',{input:{workerId,sdkVersion:'0.29.0',imageDigest:imageId},signal});if(!claim)await api('gc',{signal});}
+  try{claim=await api('claim',{input:{workerId,sdkVersion:'0.29.0',imageDigest:imageId,...(process.env.SNAPSHOT_RUNNER_COMPOSE_PROJECT?{containerObservation:await observeContainers(signal)}:{})},signal});if(!claim)await api('gc',{signal});}
   catch(error){if(once||signal?.aborted)throw error;process.stderr.write('Каталог снимков временно недоступен.\n');await pause(3000,undefined,{signal});continue;}
   if(claim)try{await executeSnapshotVerification(claim,{api,workerId,imageId,directory,signal});}catch(error){if(signal?.aborted)throw error;process.stderr.write('Проверка снимка не завершена: '+(['FILES_CHANGED','LANCE_READ_FAILED','RESOURCE_LIMIT'].includes(error.message)?error.message:'CONTROL_OR_STORAGE_UNAVAILABLE')+'\n');}
   if(!once)await pause(3000,undefined,{signal});

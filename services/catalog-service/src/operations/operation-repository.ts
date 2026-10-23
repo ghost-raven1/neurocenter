@@ -7,7 +7,7 @@ import type { IOperationCreate, IOperationReadScope, IOperationRow, IOperationSt
 /** Один SQL-предикат защищает список и detail; исполнитель не заменяет отозванный доступ к проекту. */
 function readScopeCondition(scope: IOperationReadScope, params: unknown[]): string {
     params.push(scope.projectIds, scope.actor);
-    return `(project_id = ANY($${params.length - 1}::text[]) OR (project_id IS NULL AND resource_type='bridge' AND actor=$${params.length}))`;
+    return `(project_id = ANY($${params.length - 1}::text[]) OR (project_id IS NULL AND resource_type IN ('bridge','system-role') AND actor=$${params.length}))`;
 }
 
 /** Хранит журнал операций; исполнение заданий остаётся в соответствующих очередях. */
@@ -31,6 +31,16 @@ export class OperationRepository {
             return job && job.email === row.actor && job.project_id === row.project_id
                 ? { ...row, bridge_job_kind: job.kind, bridge_job_project_exists: job.project_exists } : row;
         });
+    }
+
+    /** Only safe phase metadata is joined; proposal content remains in the private owner endpoint. */
+    private async withSystemRoles(rows: IOperationRow[]): Promise<IOperationRow[]> {
+        const ids = rows.filter(row => row.resource_type === 'system-role' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(row.resource_id)).map(row => row.resource_id);
+        if (!ids.length) return rows;
+        const result = await this.pool.query<{id: string; actor: string; project_id: string | null; agent_id: string; phase: string}>('SELECT id,actor,project_id,agent_id,phase FROM system_role_runs WHERE id=ANY($1::uuid[])', [ids]);
+        const byId = new Map(result.rows.map(row => [row.id, row]));
+        return rows.map(row => { const run = row.resource_type === 'system-role' ? byId.get(row.resource_id) : undefined;
+            return run && run.actor === row.actor && run.project_id === row.project_id ? {...row, system_role_agent_id: run.agent_id, system_role_phase: run.phase} : row; });
     }
 
     /** Фильтр проекта не заменяет scope; undefined scope используется только для главного администратора. */
@@ -63,7 +73,7 @@ export class OperationRepository {
                 [...filterParams, size, offset],
             ),
         ]);
-        const rows = await this.withBridgeJobs(rowsResult.rows);
+        const rows = await this.withSystemRoles(await this.withBridgeJobs(rowsResult.rows));
         return {
             items: rows.map(toOperation),
             page,
@@ -82,7 +92,7 @@ export class OperationRepository {
         const params: unknown[] = [operationId];
         const condition = scope ? ` AND ${readScopeCondition(scope, params)}` : '';
         const result = await this.pool.query<IOperationRow>('SELECT * FROM operations WHERE operation_id = $1' + condition, params);
-        const [row] = await this.withBridgeJobs(result.rows);
+        const [row] = await this.withSystemRoles(await this.withBridgeJobs(result.rows));
         return row ? toOperationDetail(row) : null;
     }
 

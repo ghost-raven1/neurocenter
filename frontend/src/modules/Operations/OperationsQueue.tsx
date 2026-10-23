@@ -1,3 +1,5 @@
+import {roleName} from '../../features/SystemRoles/types';
+import {rolePhaseLabel} from '../../features/SystemRoles/RoleRunContent';
 import { ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Empty, Grid, List, Pagination, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -47,8 +49,8 @@ const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
     const actions = useOperationActions({ reload: refreshAfterAction, enabled: !queue.accessDenied });
 
     const renderIdentity = (operation: IOperation): JSX.Element => <div className="operations-queue__identity">
-        <Text strong>{operationTypeLabel(operation.type)}</Text>
-        <Text type="secondary">{operationResourceLabel(operation.resourceType)}</Text>
+        <Text strong>{operation.systemRole ? roleName(operation.systemRole.agentId) : operationTypeLabel(operation.type)}</Text>
+        <Text type="secondary">{operation.systemRole ? rolePhaseLabel(operation.systemRole.phase) : operationResourceLabel(operation.resourceType)}</Text>
         <Text className="operations-queue__resource" title={operation.resourceId}>{shortOperationId(operation.resourceId)}</Text>
     </div>;
     const renderActor = (operation: IOperation): JSX.Element => <div className="operations-queue__actor">

@@ -16,7 +16,7 @@ const operationTypes: Record<string, string> = {
     SYNC: 'Синхронизация', TRANSFER: 'Передача', MOVE: 'Перемещение', CLEANUP: 'Очистка', RESTORE: 'Восстановление',
 };
 const resourceTypes: Record<string, string> = {
-    bridge: 'Мост', snapshot: 'Снимок', profile: 'Профиль', skill: 'Скилл',
+    'system-role': 'Системный агент', bridge: 'Мост', snapshot: 'Снимок', profile: 'Профиль', skill: 'Скилл',
     package: 'Пакет', rag: 'RAG-индекс', project: 'Проект', catalog: 'Каталог', 'tool-build': 'MCP или плагин', model: 'Модель',
 };
 const logLevels: Record<string, { label: string; color?: string }> = {

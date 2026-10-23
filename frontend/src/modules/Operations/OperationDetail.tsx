@@ -1,3 +1,6 @@
+import {SystemRoleOperation} from '../../features/SystemRoles/SystemRoleOperation';
+import {roleName} from '../../features/SystemRoles/types';
+import {rolePhaseLabel} from '../../features/SystemRoles/RoleRunContent';
 import { Alert, Button, Descriptions, Empty, List, Space, Spin, Tag, Typography } from 'antd';
 import type { FC } from 'react';
 
@@ -31,8 +34,9 @@ const OperationDetail: FC<IOperationDetailProps> = ({ operation, loading, error,
         {!operation && loading && <div className="operation-detail__loading"><Spin /></div>}
         {operation && <>
             <div className="operation-detail__summary">
-                <Title level={5}>{operationTypeLabel(operation.type)}</Title>
+                <Title level={5}>{operation.systemRole ? roleName(operation.systemRole.agentId) : operationTypeLabel(operation.type)}</Title>
                 <OperationProgress operation={operation} />
+                {operation.systemRole && <><Tag>{rolePhaseLabel(operation.systemRole.phase)}</Tag><SystemRoleOperation agentId={operation.systemRole.agentId} runId={operation.systemRole.runId} /></>}
                 <OperationActionButtons operation={operation} user={user} actions={actions} />
             </div>
             {operation.error && <Alert className="operation-detail__failure" type="error" showIcon message="Причина ошибки" description={operation.error} />}

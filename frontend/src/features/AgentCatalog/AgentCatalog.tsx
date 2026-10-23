@@ -1,3 +1,4 @@
+import {SystemRoles} from '../SystemRoles/SystemRoles';
 import {ProjectConfiguration} from '../ProjectConfiguration/ProjectConfiguration';
 import {ProjectProviderSetup} from '../OpenCodeProviders/ProjectProviderSetup';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
@@ -77,6 +78,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         <div className="agent-catalog__heading"><div><Typography.Title level={4}>{projectName ? `Агенты для «${projectName}»` : 'Агенты команды'}</Typography.Title>
             <Typography.Text type="secondary">{projectId ? 'Настройте промпты проекта и примените их к выбранной папке OpenCode.' : 'Готовые роли и собственные промпты для OpenCode.'}</Typography.Text></div>
         </div>
+        {(isMain || projectId && canManage) && <SystemRoles key={JSON.stringify([scope, projectId])} projectId={projectId} />}
         <div className="agent-catalog__toolbar"><Input.Search aria-label="Поиск агентов" placeholder="Название, роль или имя OpenCode…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
             <div className="agent-catalog__filters">
             {projectId && <Checkbox checked={projectOnly} onChange={event => setProjectOnly(event.target.checked)}>Только в проекте</Checkbox>}

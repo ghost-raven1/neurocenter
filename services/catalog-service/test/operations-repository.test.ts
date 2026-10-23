@@ -63,7 +63,7 @@ describe('Контракт хранилища операций', () => {
         await db.listOperations(2, 5, undefined, 'RUNNING', {projectIds:['prj-one', 'Имя проекта'], actor});
 
         for (const [sql] of query.mock.calls) {
-            expect(sql).toContain("WHERE (project_id = ANY($1::text[]) OR (project_id IS NULL AND resource_type='bridge' AND actor=$2)) AND state = $3");
+            expect(sql).toContain("WHERE (project_id = ANY($1::text[]) OR (project_id IS NULL AND resource_type IN ('bridge','system-role') AND actor=$2)) AND state = $3");
             expect(sql).not.toContain(actor);
         }
         expect(query.mock.calls[0][1]).toEqual([['prj-one', 'Имя проекта'], actor, 'RUNNING']);
@@ -76,7 +76,7 @@ describe('Контракт хранилища операций', () => {
         await db.listOperations(1, 20, undefined, undefined, {projectIds:[],actor:'user@example.test'});
 
         expect(query.mock.calls[0]).toEqual([
-            expect.stringContaining("WHERE (project_id = ANY($1::text[]) OR (project_id IS NULL AND resource_type='bridge' AND actor=$2))"),
+            expect.stringContaining("WHERE (project_id = ANY($1::text[]) OR (project_id IS NULL AND resource_type IN ('bridge','system-role') AND actor=$2))"),
             [[], 'user@example.test'],
         ]);
     });
@@ -85,7 +85,7 @@ describe('Контракт хранилища операций', () => {
         query.mockResolvedValueOnce({rows:[{n:0,active:0,active_percent:0,running:0,queued:0}]});
         await db.listOperations(1,20,['prj-foreign'],'RUNNING',{projectIds:['prj-own'],actor:'owner@example.test'});
         expect(query.mock.calls[0]).toEqual([
-            expect.stringContaining("WHERE project_id = ANY($1::text[]) AND (project_id = ANY($2::text[]) OR (project_id IS NULL AND resource_type='bridge' AND actor=$3)) AND state = $4"),
+            expect.stringContaining("WHERE project_id = ANY($1::text[]) AND (project_id = ANY($2::text[]) OR (project_id IS NULL AND resource_type IN ('bridge','system-role') AND actor=$3)) AND state = $4"),
             [['prj-foreign'],['prj-own'],'owner@example.test','RUNNING'],
         ]);
     });
@@ -145,7 +145,7 @@ describe('Контракт хранилища операций', () => {
         const scope={projectIds:[],actor:'user@example.test'};
         expect(await db.getOperation('op-foreign',scope)).toBeNull();
         expect(query).toHaveBeenCalledWith(
-            "SELECT * FROM operations WHERE operation_id = $1 AND (project_id = ANY($2::text[]) OR (project_id IS NULL AND resource_type='bridge' AND actor=$3))",
+            "SELECT * FROM operations WHERE operation_id = $1 AND (project_id = ANY($2::text[]) OR (project_id IS NULL AND resource_type IN ('bridge','system-role') AND actor=$3))",
             ['op-foreign',[],scope.actor],
         );
     });
