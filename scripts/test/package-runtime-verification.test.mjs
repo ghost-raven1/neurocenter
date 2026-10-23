@@ -11,6 +11,9 @@ import {verifyBuiltRuntime} from '../catalog-plugins/verify-runtime.mjs';
 import {RuntimeVerificationScope} from '../catalog-plugins/verify-runtime-process.mjs';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import {toolRuntimePath} from '../catalog-plugins/supply-layout.mjs';
+import {codexFixture} from '../catalog-plugins/test/codex-runtime.fixture.mjs';
+import {CODEX_CONNECTOR} from '../catalog-plugins/recipes/codex-bridge.mjs';
+import codexPin from '../../services/shared/codex-connector-pin.json' with {type:'json'};
 const {artifactFixture}=createRequire(import.meta.url)('./runtime-artifact-fixture.cjs');
 const target=process.platform==='linux'?`linux-${process.arch}-${process.report.getReport().header.glibcVersionRuntime?'glibc':'musl'}`:`${process.platform}-${process.arch}`;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -38,6 +41,64 @@ function available(t,report) {
     if(report.diagnostics[0]?.code==='isolation-unavailable'){if(process.platform==='darwin')assert.fail(JSON.stringify(report));t.skip(`OS isolation unavailable: ${report.diagnostics[0].message}`);return false;}
     return true;
 }
+
+/** Actual prepared adapter and SHA-pinned upstream fixture; no installer, registry, login or model request. */
+async function managedCodexFixture(t,{library}={}){
+    const built=await codexFixture();t.after(()=>built.close());
+    const files=[];
+    async function walk(relative=''){
+        for(const item of await fs.readdir(path.join(built.directory,relative),{withFileTypes:true})){
+            const name=relative?relative+'/'+item.name:item.name;
+            if(item.isDirectory())await walk(name);
+            else files.push({path:name,content:await fs.readFile(path.join(built.directory,name))});
+        }
+    }
+    await walk();if(library!==undefined)files.find(file=>file.path==='codex-plugin.mjs').content=Buffer.from(library);
+    files.sort((a,b)=>(a.path==='codex-plugin.mjs'?-1:b.path==='codex-plugin.mjs'?1:a.path.localeCompare(b.path)));
+    const artifact=artifactFixture(files,target),directory=path.join(built.root,'supply');await fs.mkdir(directory);
+    const publication={name:'Pinned managed Codex',kind:'plugin',description:'Actual auth-only adapter fixture',origin:codexPin.repository,revision:'fixture-v1',files:[],config:{extra:{codexConnector:CODEX_CONNECTOR,runtimeArtifacts:[artifact.descriptor]}}};
+    const asset=createToolAsset({id:'managed-codex-runtime-fixture',version:'fixture-v1',source:{type:'git',repository:codexPin.repository,commit:codexPin.sourceCommit,path:'packages/bridge'},
+        license:{spdx:'NOASSERTION'},publication,artifacts:[{descriptor:artifact.descriptor}]});
+    const archive=path.join(directory,toolRuntimePath(artifact.descriptor.sha256));await fs.mkdir(path.dirname(archive),{recursive:true});await fs.writeFile(archive,artifact.archive);
+    const filename=path.join(directory,'asset.json');await fs.writeFile(filename,serializeAsset(asset));
+    return {filename,built,asset};
+}
+
+test('managed Codex supply verifies its real owned wrapper without login, permit, subprocess or network',async t=>{
+    const f=await managedCodexFixture(t),report=await verifyBuiltRuntime(f.filename);if(!available(t,report))return;
+    assert.equal(report.ok,true,JSON.stringify(report));assert.equal(report.checks.pluginFactory,true);assert.equal(report.checks.hooks,true);
+    assert.deepEqual(report.counts,{tools:0,pluginHooks:2});assert.equal(report.isolation.osEnforced,true);assert.equal(report.isolation.network,'denied');
+    if(process.platform==='darwin')assert.equal(report.isolation.childProcesses,'denied');
+    assert.doesNotMatch(JSON.stringify(report),/codexbridge-managed|neurocenter-codex-|fixture\.|synthetic-account/);
+});
+
+test('managed Codex metadata cannot grant a wrapper to another source or a package without its declaration',async t=>{
+    const f=await managedCodexFixture(t),original=structuredClone(f.asset);
+    for(const [name,change] of [
+        ['another repository',asset=>{asset.source.repository='https://github.com/example/other';}],
+        ['another commit',asset=>{asset.source.commit='a'.repeat(40);}],
+        ['another source directory',asset=>{asset.source.path='packages/other';}],
+        ['an npm source',asset=>{asset.source={type:'npm',name:'untrusted-codex-claim',version:'1.0.0'};}],
+        ['missing connector declaration',asset=>{delete asset.card.config.extra.codexConnector;}],
+    ])await t.test(name,async child=>{
+        const asset=structuredClone(original);change(asset);await fs.writeFile(f.filename,serializeAsset(asset));
+        const report=await verifyBuiltRuntime(f.filename);if(!available(child,report))return;
+        assert.equal(report.checks.integrity,true,JSON.stringify(report));assert.equal(report.ok,false,JSON.stringify(report));
+        assert.equal(report.checks.pluginFactory,false);assert.equal(report.diagnostics[0]?.code,'plugin-initialization-failed');
+    });
+});
+
+test('malformed Codex metadata fails before running an otherwise valid managed library',async t=>{
+    const f=await managedCodexFixture(t);f.asset.card.config.extra.codexConnector.untrusted=true;
+    await fs.writeFile(f.filename,serializeAsset(f.asset));const report=await verifyBuiltRuntime(f.filename);
+    assert.equal(report.ok,false);assert.equal(report.checks.integrity,false);assert.equal(report.testedTarget,null);
+});
+
+test('a trusted source and marker never turn an empty managed factory into a passing smoke',async t=>{
+    const f=await managedCodexFixture(t,{library:'export const createManagedCodexPlugin=()=>async()=>({});export default async()=>({});'});
+    const report=await verifyBuiltRuntime(f.filename);if(!available(t,report))return;
+    assert.equal(report.ok,false);assert.equal(report.checks.pluginFactory,false);assert.equal(report.diagnostics[0]?.code,'plugin-invalid-hooks');
+});
 
 test('MCP gate initializes the byte-pinned host artifact and only enumerates tools',async t=>{
     const other=target==='darwin-x64'?'linux-x64-glibc':'darwin-x64',f=await fixture(t,{kind:'mcp',content:mcp,targets:[target,other]});

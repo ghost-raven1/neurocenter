@@ -10,6 +10,7 @@ import runtime from '../../services/shared/runtime-artifacts.cjs';
 import {readyManifest} from './manifest.mjs';
 import {RuntimeVerificationError,RuntimeVerificationScope,configureRuntimeSandbox,assertRuntimeSandbox} from './verify-runtime-process.mjs';
 import {verifyMcpRuntime} from './verify-runtime-mcp.mjs';
+import {codexRuntimeEntrypoint} from './verify-runtime-codex.mjs';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'
@@ -126,7 +127,10 @@ export async function verifyBuiltRuntime(manifestFile,{signal,timeoutMs=15000,in
         scope.resetDeadline(timeoutMs);
         if(tool.publication.kind==='mcp')report.counts.tools=await verifyMcpRuntime(scope,profile,selected.executable?selected.entrypoint:nodeExecutable,
             [...(selected.executable?[]:[selected.entrypoint]),...(tool.publication.config.args??[])],report.checks);
-        else report.counts=await verifyPluginRuntime(scope,profile,selected.entrypoint,nodeExecutable,report.checks);
+        else {
+            const entrypoint=await scope.wait(codexRuntimeEntrypoint(tool,selected.entrypoint,profile,nodeExecutable));
+            report.counts=await verifyPluginRuntime(scope,profile,entrypoint,nodeExecutable,report.checks);
+        }
         scope.remaining();report.ok=true;report.status='passed';
     } catch(error) {
         const code=error instanceof RuntimeVerificationError?error.code:report.checks.integrity?'verification-failed':'integrity-failed';
