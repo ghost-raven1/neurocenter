@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import { assertInternal } from '../access/access.controller';
 import { normalizeEmail, roleLevel, type IAccessActor } from '../access/access.model';
@@ -6,6 +6,12 @@ import type { ProjectChatDb } from './project-chat.types';
 export interface ProjectChatActor extends IAccessActor { level: number; displayName: string; writable: boolean }
 /** Every shared read and write is authorized by current project grants, never conversation ownership. */
 export class ProjectChatPolicy {
+    /** Admission and worker execution must use the same durable author, never the administrator clicking retry. */
+    request(actor:IAccessActor):Request {
+        const token=process.env.NEUROCENTER_INTERNAL_TOKEN;
+        if(!token)throw new ServiceUnavailableException('Внутренний доступ сервиса не настроен.');
+        return {headers:{'x-neurocenter-internal':token,'x-bridge-actor':encodeURIComponent(JSON.stringify(actor))}} as unknown as Request;
+    }
     input(req: Request): IAccessActor {
         assertInternal(req.headers['x-neurocenter-internal']);
         if (req.headers['x-neurocenter-device-id']) throw new ForbiddenException('Чат проекта доступен пользователям в интерфейсе.');

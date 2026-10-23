@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
-import type { Request } from 'express';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatRepository } from './project-chat.repository';
 import {DEFAULT_PROJECT_CHAT_ROOM} from './project-chat.types';
@@ -40,11 +39,6 @@ export class ProjectChatRunner {
     cancel(messageId: string): void { this.active.get(messageId)?.abort(); }
     async waitIdle(): Promise<void> { while (this.pending.size) await Promise.all([...this.pending.values()]); }
     async stop(): Promise<void> { this.stopped = true; if (this.interval) clearInterval(this.interval); for (const abort of this.active.values()) abort.abort(); await this.waitIdle(); }
-    private request(job: ProjectChatJob): Request {
-        const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
-        if (!token) throw new ServiceUnavailableException('Внутренний доступ сервиса не настроен.');
-        return { headers: { 'x-neurocenter-internal': token, 'x-bridge-actor': encodeURIComponent(JSON.stringify(job.actor)) } } as unknown as Request;
-    }
     private async drain(projectId: string): Promise<void> {
         for (;;) {
             if (this.stopped) return;
@@ -57,7 +51,7 @@ export class ProjectChatRunner {
         }
     }
     private async execute(job: ProjectChatJob, signal: AbortSignal): Promise<void> {
-        const roomId = job.source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM, req = this.request(job), responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id, roomId);
+        const roomId = job.source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM, req = this.repository.policy.request(job.actor), responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id, roomId);
         for (const response of responses.filter(row => row.kind === 'agent' && row.status !== 'done')) {
             signal.throwIfAborted();
             try {

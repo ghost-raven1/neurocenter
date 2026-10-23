@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { ModelsService } from '../models/models.service';
@@ -7,7 +7,7 @@ import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatPolicy, type ProjectChatActor } from './project-chat.policy';
 import { ProjectChatRepository } from './project-chat.repository';
 import {ProjectChatDialogs, canManageProjectChatRoom} from './project-chat-dialogs';
-import {projectChatMembers, projectChatPrivateMembers, projectChatRoomEmails} from './project-chat-room-access';
+import {assertProjectChatRoomAccess,projectChatMembers, projectChatPrivateMembers, projectChatRoomEmails} from './project-chat-room-access';
 import { ProjectChatRunner } from './project-chat.runner';
 import { resolveProjectChatProject } from './project-chat-project';
 import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, projectChatRoomView, type ProjectChatDb, type ProjectChatDetail, type ProjectChatMessage, type ProjectChatMessageRow, type ProjectChatReceipt, type ProjectChatRoomRow } from './project-chat.types';
@@ -124,7 +124,16 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             if (unfinished.some(row => !row.snapshot || !room.agent_ids.includes(row.snapshot.agentId))) throw new ConflictException('Агент исключён из чата. Отправьте новый вопрос текущему составу; готовые ответы сохранены.');
             await this.repository.assertQueueCapacity(db, projectId, source.author_email!);
             await requireFeaturesEnabled(['project_chat', 'group_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const])]);
-            for (const response of unfinished) await this.inference.assert(req, projectId, response.snapshot!, db);
+            const executor={email:source.author_email!,activeRole:source.author_role!};
+            try{
+                await this.policy.authorize(db,projectId,executor,2,true);
+                await assertProjectChatRoomAccess(db,room,executor.email);
+            }catch(error){
+                if(error instanceof ForbiddenException||error instanceof NotFoundException)throw new ConflictException('Доступ автора или его исходной роли изменился. Отправьте новый вопрос от своего имени; готовые ответы сохранены.');
+                throw error;
+            }
+            const executionRequest=this.policy.request(executor);
+            for (const response of unfinished) await this.inference.assert(executionRequest, projectId, response.snapshot!, db);
             const generation = randomUUID();
             await db.query("UPDATE project_chat_messages SET status='queued',generation=$3,lease_until=NULL,error=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND (kind<>'agent' OR status<>'done')", [projectId, messageId, generation]);
             await db.query('INSERT INTO project_chat_retry_requests(project_id,actor_email,request_key,message_id,room_id) VALUES($1,$2,$3,$4,$5)', [projectId, actor.email, key, messageId, roomId]);

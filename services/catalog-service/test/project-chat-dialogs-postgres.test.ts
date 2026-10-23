@@ -19,7 +19,7 @@ const bounded=async<T>(promise:Promise<T>):Promise<T>=>{let timer:ReturnType<typ
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(yes=>{resolve=yes;});return{promise,resolve};};
 describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned PostgreSQL',()=>{
     let f:Awaited<ReturnType<typeof deviceCompletionFixture>>,service:ProjectChatService,project:string;
-    const calls:string[]=[], legacyProject='prj-legacy-rooms', legacyMessage=randomUUID(), token=randomUUID();
+    const calls:string[]=[], checked:string[]=[], legacyProject='prj-legacy-rooms', legacyMessage=randomUUID(), token=randomUUID();
     let infer:(input:{source:ProjectChatMessageRow})=>Promise<{content:string}>;
     const req=(email=a,activeRole='Разработчик')=>({headers:{'x-neurocenter-internal':token,'x-bridge-actor':encodeURIComponent(JSON.stringify({email,activeRole}))}} as Request);
     const mainReq=()=>req(main,'Главный админ');
@@ -43,7 +43,7 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',token);
     });
     beforeEach(async()=>{
-        flags.dialogs=true;flags.project=true;flags.group=true;calls.length=0;project='prj-rooms-'+randomUUID();
+        flags.dialogs=true;flags.project=true;flags.group=true;calls.length=0;checked.length=0;project='prj-rooms-'+randomUUID();
         await f.pool.query('INSERT INTO projects(id,name) VALUES($1,$1)',[project]);
         for(const email of [a,b,outsider,admin])await f.pool.query('INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES($1,$2,$2,$2,$3)',[project,email,email===admin?'Админ проекта':'Разработчик']);
         infer=async({source})=>({content:'Answer '+source.content});
@@ -53,10 +53,42 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
             const grants=(await f.pool.query('SELECT project_id,role FROM project_members WHERE principal_name=$1',[input.email])).rows;
             return{...input,claims:{email:input.email,userRoles:[...new Set(grants.map(row=>row.role)),...(account.is_main_admin?['Главный админ']:[])],projects:grants.map(row=>({projectId:row.project_id,projectName:row.project_id,role:row.role})),pluginIds:[],skillPaths:[]}};
         };
-        service=new ProjectChatService({pool:f.pool,actor} as unknown as ModelsService,{roster:async()=>[],resolve:async()=>[{agentId:agent,name:'Agent',slug:'nc-rooms',modelId:'model-rooms',modelPin:pin,definition:{prompt:'Specialist'}}],assert:async()=>{},infer:async(input:{source:ProjectChatMessageRow})=>{calls.push(input.source.id);return infer(input);}} as unknown as ProjectChatInferenceService);
+        service=new ProjectChatService({pool:f.pool,actor} as unknown as ModelsService,{roster:async()=>[],resolve:async()=>[{agentId:agent,name:'Agent',slug:'nc-rooms',modelId:'model-rooms',modelPin:pin,definition:{prompt:'Specialist'}}],assert:async(request:Request)=>{checked.push(JSON.parse(decodeURIComponent(String(request.headers['x-bridge-actor']))).email);},infer:async(input:{source:ProjectChatMessageRow})=>{calls.push(input.source.id);return infer(input);}} as unknown as ProjectChatInferenceService);
     });
     afterEach(async()=>{await service.onApplicationShutdown();});
     afterAll(async()=>{if(!f)return;const cleanup=await f.dispose();if(process.env.PROJECT_CHAT_DIALOGS_TEST_RECEIPT)await writeFile(process.env.PROJECT_CHAT_DIALOGS_TEST_RECEIPT,JSON.stringify(cleanup,null,2)+'\n',{flag:'wx'});expect(cleanup).toMatchObject({dropped:true,newDatabasesRemaining:[],originalDatabasesPreserved:true});vi.unstubAllEnvs();});
+    it.each(['removed','disabled','downgraded'])('rejects an administrator retry before enqueue when the original author is %s',async mode=>{
+        await configure(DEFAULT_PROJECT_CHAT_ROOM);infer=async()=>{throw new Error('First fixture response failed');};
+        const source=await send(DEFAULT_PROJECT_CHAT_ROOM,a,{targetAgentIds:[agent]});await service.runner.waitIdle();
+        const before=(await f.pool.query('SELECT * FROM project_chat_messages WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) ORDER BY id',[project,source.message.id])).rows;
+        if(mode==='removed')await f.pool.query('DELETE FROM project_members WHERE project_id=$1 AND principal_name=$2',[project,a]);
+        if(mode==='disabled')await f.pool.query('UPDATE platform_users SET enabled=false WHERE email=$1',[a]);
+        if(mode==='downgraded')await f.pool.query("UPDATE project_members SET role='Наблюдатель' WHERE project_id=$1 AND principal_name=$2",[project,a]);
+        const requestKey=randomUUID();
+        try{
+            await expect(service.retry(req(admin,'Админ проекта'),project,source.message.id,{requestKey})).rejects.toHaveProperty('status',409);
+            expect((await f.pool.query('SELECT * FROM project_chat_messages WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) ORDER BY id',[project,source.message.id])).rows).toEqual(before);
+            expect((await f.pool.query('SELECT * FROM project_chat_retry_requests WHERE project_id=$1 AND request_key=$2',[project,requestKey])).rows).toEqual([]);
+            expect(calls).toEqual([source.message.id]);
+        }finally{if(mode==='disabled')await f.pool.query('UPDATE platform_users SET enabled=true WHERE email=$1',[a]);}
+    });
+    it('refuses retry under an original author removed from the private audience, even for an invited administrator',async()=>{
+        const room=await create('PRIVATE',[b,admin]);await configure(room.id);infer=async()=>{throw new Error('First fixture response failed');};
+        const source=await send(room.id,b,{targetAgentIds:[agent]});await service.runner.waitIdle();
+        await f.pool.query('DELETE FROM project_chat_room_members WHERE project_id=$1 AND room_id=$2 AND email=$3',[project,room.id,b]);
+        await expect(service.retry(req(admin,'Админ проекта'),project,source.message.id,{requestKey:randomUUID()},room.id)).rejects.toHaveProperty('status',409);
+        expect(calls).toEqual([source.message.id]);
+    });
+    it.each([false,true])('admission uses the same original executor identity as the runner; administrator=%s',async administrator=>{
+        await configure(DEFAULT_PROJECT_CHAT_ROOM);infer=async()=>{throw new Error('First fixture response failed');};
+        const source=await send(DEFAULT_PROJECT_CHAT_ROOM,a,{targetAgentIds:[agent]});await service.runner.waitIdle();
+        checked.length=0;
+        infer=async()=>({content:'Recovered under original author'});
+        const reply=await service.retry(administrator?req(admin,'Админ проекта'):req(),project,source.message.id,{requestKey:randomUUID()});
+        expect(reply.message.author?.email).toBe(a);expect(checked[0]).toBe(a);
+        await service.runner.waitIdle();expect(calls).toEqual([source.message.id,source.message.id]);
+        expect((await service.read(req(),project)).messages.find(row=>row.sourceMessageId===source.message.id)?.status).toBe('done');
+    });
     it('upgrades the existing history into the public default room without changing its message identity',async()=>{
         const detail=await service.read(req(),legacyProject);expect(detail.room).toMatchObject({id:DEFAULT_PROJECT_CHAT_ROOM,visibility:'PUBLIC',title:'Общий чат'});expect(detail.messages[0]).toMatchObject({id:legacyMessage,content:'LEGACY PUBLIC HISTORY',roomId:DEFAULT_PROJECT_CHAT_ROOM});
     });
