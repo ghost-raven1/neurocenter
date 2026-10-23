@@ -23,10 +23,10 @@ describe.skipIf(!pgUrl || !configFile)('Chat transfer recovery with one PostgreS
     };
     beforeAll(async () => {
         const url = new URL(pgUrl!);
-        if (url.hostname !== '127.0.0.1' || url.port !== '59616') throw new Error('This audit requires the existing own QA PostgreSQL59616.');
+        if (url.hostname !== '127.0.0.1' || !url.port || url.port === '5432') throw new Error('Use a caller-owned loopback PostgreSQL port other than 5432.');
         const supplied = chatS3Configuration(JSON.parse(readFileSync(configFile!, 'utf8')))!;
         const endpoint = new URL(supplied.endpoint);
-        if (endpoint.origin !== 'http://127.0.0.1:59617') throw new Error('This audit requires the existing own S3 QA59617.');
+        if (endpoint.hostname !== '127.0.0.1' || endpoint.protocol !== 'http:' || !endpoint.port || ['19010','19011'].includes(endpoint.port)) throw new Error('Use a caller-owned loopback S3 endpoint; live storage ports are forbidden.');
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 });
         database = 'nc_chat_ceph_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database); url.pathname = '/' + database;
         db = new Pool({ connectionString: url.href, max: 1, connectionTimeoutMillis: 500 });

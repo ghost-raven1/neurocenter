@@ -149,6 +149,7 @@ describe.skipIf(!pgUrl || !configFile)('Chat storage uncertain PostgreSQL cleanu
         const row = (await observer.query('SELECT object_id FROM model_chat_attachments WHERE id=$1', [id])).rows[0]; expect(await storage.read(row.object_id)).toEqual(bytes);
     });
     it('preserves the upload error and durable intent when abandonment transport also fails', async () => {
+        await storage.initialize();
         const failure = new Error('PUT failed before acknowledgement'), fault = await failCleanup(/^UPDATE model_chat_objects SET state='DELETE'/);
         vi.spyOn(objects, 'put').mockRejectedValueOnce(failure);
         await expect(storage.stage({ ownerEmail: 'owner@example.test', projectId: null, conversationId, bytes, mediaType: 'text/plain' })).rejects.toBe(failure);

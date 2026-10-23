@@ -6,6 +6,7 @@ import type { Request } from 'express';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureCatalogSchema, checkCatalogSchema } from '../src/database/catalog-schema';
+import { CATALOG_MIGRATIONS } from '../src/database/catalog-migrations';
 import { ModelChatService } from '../src/model-chat/chat.service';
 import { chatAttachmentIds, chatBody, chatPrompt, chatRevision, chatUpload } from '../src/model-chat/chat-validation';
 import type { ChatDetail } from '../src/model-chat/chat.types';
@@ -71,7 +72,7 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         const settings = chatS3Configuration(JSON.parse(readFileSync(storageConfig!, 'utf8')))!;
         const suffix = randomUUID().replaceAll('-', ''); settings.projectBucket = 'nc-chat-db-project-' + suffix; settings.personalBucket = 'nc-chat-db-personal-' + suffix;
         objects = new ChatObjectStorage(settings, { allowInsecureLocal: true });
-        service.storage = new ChatAttachmentStorage(service.pool, { objectStorage: objects }); await service.onModuleInit();
+        service.storage = new ChatAttachmentStorage(service.pool, { objectStorage: objects }); await service.onModuleInit();await service.storage.initialize();
     });
     afterEach(async () => {
         await db?.query('DELETE FROM model_chat_conversations'); await service?.storage.collect(1000); model = card(); allowed = true; vi.clearAllMocks();
@@ -82,7 +83,7 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         const created = await service.create(request(), { modelId: model.id, projectId: 'Chat project', expectedModelPin: projectEmbeddingPin(model) });
         expect(created.conversation.projectId).toBe('prj-chat-test'); expect(created.turns).toEqual([]);
         expect((await checkCatalogSchema(db, true)).ready).toBe(true);
-        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(19);
+        expect((await db.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.at(-1).version).toBe(CATALOG_MIGRATIONS.at(-1)!.version);
     });
     it('keeps chats private even from another administrator and isolates project scopes', async () => {
         const a = await create(); const b = request('other-admin@localhost');

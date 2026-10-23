@@ -44,7 +44,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     storage = new ChatAttachmentStorage(this.pool);
     private readonly active = new Map<string, { conversationId: string; requestId: string; abort: AbortController }>();
     constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime) { this.groups = new ChatGroup(models, new ProjectAgentRepository(this.pool)); this.projectContext = new ModelChatProjectContext(models, runtime); }
-    async onModuleInit(): Promise<void> { await this.models.ready(); await this.storage.initialize(); }
+    async onModuleInit(): Promise<void> { await this.models.ready(); this.storage.start(); }
     async onApplicationShutdown(): Promise<void> { for (const value of this.active.values()) value.abort.abort(); await this.storage.close(); await this.pool.end(); }
 
     private async scope(req: Request, id: string) {

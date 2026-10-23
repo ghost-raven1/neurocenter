@@ -7,29 +7,52 @@ type Db = Pick<PoolClient, 'query'>;
 export interface ChatStagedObject { id: string }
 interface ObjectRow extends ChatObjectReference { id: string; state: 'STAGING' | 'LIVE' | 'DELETE' | 'DELETED'; attempts: number }
 interface StageInput { ownerEmail: string; projectId: string | null; conversationId: string; bytes: Buffer; mediaType: string }
-const unavailable = (): ServiceUnavailableException => new ServiceUnavailableException('Подключите закрытое хранилище Ceph/S3 для файлов чата.');
+const unavailable = (): ServiceUnavailableException => new ServiceUnavailableException('Хранилище файлов чата ещё не готово. Проверьте подключение закрытого Ceph/S3 и повторите загрузку; история доступна.');
 
 /** A durable write intent precedes S3 PUT; deletion outbox survives attachment/project cascades. */
 export class ChatAttachmentStorage {
     private readonly objects: ChatObjectStorage | null;
     private timer?: NodeJS.Timeout;
+    private retry?: NodeJS.Timeout;
+    private initializing?: Promise<void>;
     private collecting?: Promise<number>;
+    private usable=false;
+    private stopped=false;
     constructor(private readonly pool: Pool, options: { objectStorage?: ChatObjectStorage } = {}) {
         const config = options.objectStorage ? null : chatS3Configuration();
         this.objects = options.objectStorage ?? (config ? new ChatObjectStorage(config) : null);
     }
-    async initialize(): Promise<void> {
+    /** Optional file storage recovers independently; its outage never blocks Catalog metadata startup. */
+    start():void {
+        if(this.stopped||this.initializing||this.retry)return;
+        void this.initialize().catch(()=>{
+            if(this.stopped)return;
+            this.retry=setTimeout(()=>{this.retry=undefined;this.start();},30000);this.retry.unref();
+        });
+    }
+    initialize():Promise<void>{
+        if(this.stopped)return Promise.reject(unavailable());
+        return this.initializing??=this.initializeOnce().finally(()=>{this.initializing=undefined;});
+    }
+    private async initializeOnce(): Promise<void> {
         // Leave transfer recovery pending until storage is configured; text chat remains available.
         if (!this.objects) return;
-        await this.objects.initialize(); await this.migrateTransfers(); await this.collect();
-        if (this.timer) clearInterval(this.timer);
-        this.timer = setInterval(() => { if (!this.collecting) void this.collect().catch(() => undefined); }, 30000);
-        this.timer.unref();
+        try{
+            await this.objects.initialize();if(this.stopped)return;this.usable=true;
+            await this.migrateTransfers();await this.collect();if(this.stopped)return;
+            if (this.timer) clearInterval(this.timer);
+            this.timer = setInterval(() => { if (!this.collecting) void this.collect().catch(() => undefined); }, 30000);
+            this.timer.unref();
+        }catch(error){this.usable=false;throw error;}
     }
-    async close(): Promise<void> { if (this.timer) clearInterval(this.timer); this.timer = undefined; await this.collecting?.catch(() => undefined); }
+    async close(): Promise<void> {
+        this.stopped=true;this.usable=false;
+        if(this.timer)clearInterval(this.timer);if(this.retry)clearTimeout(this.retry);this.timer=undefined;this.retry=undefined;
+        await this.initializing?.catch(()=>undefined);await this.collecting?.catch(()=>undefined);
+    }
     /** Transfer recovery reuses its held session; the durable intent still precedes the attachment activation transaction. */
     async stage(input: StageInput, signal?: AbortSignal, db: Db = this.pool): Promise<ChatStagedObject> {
-        if (!this.objects) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable();
         if (!input.ownerEmail || !/^[a-f0-9-]{36}$/i.test(input.conversationId) || !Buffer.isBuffer(input.bytes) || !input.bytes.length || input.bytes.length > 10 * 1024 ** 2) throw new ConflictException('Некорректная область или размер файла.');
         signal?.throwIfAborted();
         const id = randomUUID(), row: ObjectRow = { id, storage_id: this.objects.storageId,
@@ -47,7 +70,7 @@ export class ChatAttachmentStorage {
     }
     /** Called after attachment INSERT in its transaction, so a rolled-back DB commit leaves a collectible intent. */
     async activate(db: Db, object: ChatStagedObject): Promise<void> {
-        if (!this.objects) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable();
         const result = await db.query(`UPDATE model_chat_objects SET state='LIVE',lease_until=NULL WHERE id=$1 AND storage_id=$2 AND state='STAGING' AND lease_until>now()
             AND EXISTS(SELECT 1 FROM model_chat_attachments a WHERE a.object_id=model_chat_objects.id AND a.deleted_at IS NULL AND a.storage_state='S3' AND a.bytes=model_chat_objects.bytes)
             RETURNING id`, [object.id, this.objects.storageId]);
@@ -57,7 +80,7 @@ export class ChatAttachmentStorage {
         await db.query("UPDATE model_chat_objects SET state='DELETE',lease_until=NULL,next_attempt_at=now() WHERE id=$1 AND state='STAGING' AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=$1)", [object.id]);
     }
     async read(objectId: string, signal?: AbortSignal): Promise<Buffer> {
-        if (!this.objects) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable();
         const row = (await this.pool.query<ObjectRow>("SELECT * FROM model_chat_objects WHERE id=$1 AND state='LIVE'", [objectId])).rows[0];
         if (!row) throw new ServiceUnavailableException('Файл недоступен в хранилище.'); return this.objects.read(row, signal);
     }
@@ -104,6 +127,7 @@ export class ChatAttachmentStorage {
             await db.query("SELECT pg_advisory_lock(hashtextextended('model-chat-attachment-transfer',0))"); locked = true; discard = false;
             await db.query('DELETE FROM model_chat_attachment_transfers t USING model_chat_attachments a WHERE a.id=t.attachment_id AND a.deleted_at IS NOT NULL');
             for (;;) {
+                if(this.stopped)return;
                 const source = (await db.query<{ attachment_id: string; content: Buffer; sha256: string; bytes: number; owner_email: string; project_id: string | null; conversation_id: string; media_type: string }>(`SELECT t.*,a.conversation_id,a.media_type,c.owner_email,c.project_id
                     FROM model_chat_attachment_transfers t JOIN model_chat_attachments a ON a.id=t.attachment_id
                     JOIN model_chat_conversations c ON c.id=a.conversation_id ORDER BY t.attachment_id LIMIT 1`)).rows[0];
