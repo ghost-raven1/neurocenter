@@ -77,7 +77,7 @@
     .model-catalog {
         &__heading { gap: 12px; flex-wrap: wrap; .ant-typography-secondary { font-size: 12px; } > div { min-width: 170px; } }
         &__heading h4 { font-size: 17px; }
-        &__filters { flex-wrap: wrap; .ant-input-search { max-width: none; } }
+        &__filters { flex-wrap: wrap; > .ant-space-item:first-child { flex: 0 0 100%; width: 100%; } .ant-input-search { max-width: none; } }
         &__notice { flex-wrap: wrap; gap: 12px; .ant-alert-content { min-width: 0; } .ant-alert-action { margin-left: 0; width: 100%; .ant-btn { width: 100%; } } }
     }
     .model-card { padding: 16px;

@@ -4,7 +4,7 @@ export interface ICatalogModel {
     name: string;
     description: string;
     capability: 'embedding' | 'vision' | 'chat';
-    runtime: 'ollama' | 'remote-openai' | 'remote-ollama';
+    runtime: 'ollama' | 'remote-openai' | 'remote-ollama' | 'device-codex';
     model: string;
     manifestSha256: string | null;
     verificationSha256?: string | null;
@@ -44,6 +44,19 @@ export interface IRemoteModelOptions {
     tokenLimitParameter?: 'max_tokens' | 'max_completion_tokens';
 }
 export interface IRemoteConnectionHint { baseUrl: string; hasKey: boolean; options?: IRemoteModelOptions; timeoutMs?: number; }
+/** Локальная сессия Codex остаётся у владельца компьютера; здесь только публичное состояние. */
+export interface IDeviceCodexConnection {
+    deviceId: string;
+    deviceName: string;
+    scope: 'global' | 'project';
+    projectId?: string;
+    connectionRevision: number;
+    state?: 'ready' | 'unavailable' | 'error';
+    status?: 'unverified';
+    message: string;
+    checkedAt?: string | null;
+    lastInferenceAt?: string | null;
+}
 export interface IRemoteConnection {
     modelId: string; modelRevision: number; revision: number; baseUrl: string; requestDimensions: boolean;
     credential: 'none' | 'stored' | 'environment'; credentialEnv: string | null; hasKey: boolean;

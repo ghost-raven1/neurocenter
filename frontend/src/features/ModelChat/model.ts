@@ -11,7 +11,7 @@ export function modelChatUnavailableReason(model: ICatalogModel, canUse: boolean
     if (!canUse) return projectSelected ? 'Для чата нужна рабочая роль в выбранном проекте.' : 'Выберите проект, в котором вам доступна эта модель.';
     if (projectSelected && !assigned) return 'Сначала добавьте модель в выбранный проект.';
     if (model.archivedAt && !projectSelected) return 'Модель убрана из общего каталога.';
-    if (model.runtime !== 'ollama' && !model.verificationSha256) return 'Сначала настройте API и проверьте подключение модели.';
+    if (model.runtime !== 'ollama' && model.runtime !== 'device-codex' && !model.verificationSha256) return 'Сначала настройте API и проверьте подключение модели.';
     if (model.runtime === 'ollama' && !model.manifestSha256) return 'Сначала запустите или проверьте модель на сервере.';
     return '';
 }

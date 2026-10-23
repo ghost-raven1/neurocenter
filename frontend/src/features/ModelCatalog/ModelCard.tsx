@@ -1,10 +1,10 @@
 import type {ReactNode} from 'react';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
-import { CloudOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { CloudOutlined, DatabaseOutlined, DesktopOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { Button, Tag, Tooltip, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { eligibleEmbedding } from '../ProjectEmbedding/model';
-import { modelCapabilityLabels } from './modelCatalogState';
+import { modelCapabilityLabels, modelLocationLabel, modelUsesApiConnection } from './modelCatalogState';
 import { ModelHosting } from './ModelHosting';
 import type { ICatalogModel } from './types';
 
@@ -21,12 +21,12 @@ interface IProps {
 
 /** В карточке видны назначение, подключение и главное действие; технические сведения открываются отдельно. */
 export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,embeddingSetupHref,onChat,chatUnavailableReason,onSetupProvider, feedback }: IProps): JSX.Element {
-    const remote = model.runtime !== 'ollama';
+    const remote = modelUsesApiConnection(model), deviceCodex = model.runtime === 'device-codex';
     return <article className={`model-card${assigned ? ' model-card_assigned' : ''}`} aria-label={model.name}>
         <div className="model-card__heading">
-            <span className="model-card__icon" aria-hidden="true">{remote ? <CloudOutlined /> : <DatabaseOutlined />}</span>
+            <span className="model-card__icon" aria-hidden="true">{deviceCodex ? <DesktopOutlined /> : remote ? <CloudOutlined /> : <DatabaseOutlined />}</span>
             <div className="model-card__title"><Button type="link" aria-label={`Подробнее о модели: ${model.name}`} onClick={onView}>{model.name}</Button>
-                <span>{modelCapabilityLabels[model.capability]}<span aria-hidden="true"> · </span>{remote ? 'Удалённый API' : 'На сервере'}</span></div>
+                <span>{modelCapabilityLabels[model.capability]}<span aria-hidden="true"> · </span>{modelLocationLabel(model)}</span></div>
             {canHost && <div className="model-card__management">
                 {onEdit && <Tooltip title="Изменить модель"><FeatureButton features={['model_catalog']} type="text" icon={<EditOutlined />} disabled={busy || disabled || !!model.archivedAt}
                     aria-label={`Изменить модель ${model.name}`} onClick={onEdit} /></Tooltip>}
@@ -48,6 +48,8 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             </span></Tooltip>}
             {remote && canHost && !model.archivedAt && onConfigure && <FeatureButton features={['model_catalog']} disabled={busy || disabled}
                 aria-label={`Настроить API модели ${model.name}`} onClick={onConfigure}>Настроить API</FeatureButton>}
+            {deviceCodex && canHost && !model.archivedAt && onConfigure && <Button disabled={busy || disabled}
+                aria-label={`Подключение Codex модели ${model.name}`} onClick={onConfigure}>Компьютер и вход</Button>}
             {(model.runtime === 'remote-openai' || model.runtime === 'remote-ollama') && model.capability !== 'embedding' && projectSelected && canAssign && assigned && onSetupProvider && !model.archivedAt
                 && <Button disabled={busy || disabled} onClick={onSetupProvider}>Настроить в OpenCode</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>

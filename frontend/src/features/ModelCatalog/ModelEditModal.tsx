@@ -71,9 +71,9 @@ export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: 
                 </Form.Item>}
                 <Form.Item name="model" label={remote ? 'Идентификатор модели API' : 'Модель Ollama с версией'} extra={remote ? 'Точное имя модели у провайдера. Адрес и ключ задаются отдельно.' : 'Идентификатор и тег из реестра Ollama.'}
                     rules={[{ required: true, message: 'Укажите идентификатор модели' }, { pattern: remote ? /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/ : ollamaModelPattern, message: remote ? 'Идентификатор модели без адреса API' : 'Формат: qwen3:4b или автор/модель:тег' }]}>
-                    <Input placeholder={remote ? 'text-embedding-3-large' : 'qwen3:4b'} />
+                    <Input disabled={runtime === 'device-codex'} placeholder={remote ? 'text-embedding-3-large' : 'qwen3:4b'} />
                 </Form.Item>
-                {remote && <Form.Item name="modelVersion" label="Версия модели" extra="Версия или дата из документации провайдера. Изменение потребует проверки и нового индекса." rules={[{ required: true, whitespace: true, message: 'Укажите версию' }, { max: 128, message: 'До 128 символов' }]}><Input placeholder="Например, 2026-10" /></Form.Item>}
+                {remote && <Form.Item name="modelVersion" label="Версия модели" extra="Версия или дата из документации провайдера. Изменение потребует проверки и нового индекса." rules={[{ required: true, whitespace: true, message: 'Укажите версию' }, { max: 128, message: 'До 128 символов' }]}><Input disabled={runtime === 'device-codex'} placeholder="Например, 2026-10" /></Form.Item>}
                 {capability === 'embedding' && <Form.Item name="dimension" label="Размерность эмбеддинга" extra="Если известна. Смена модели не перестраивает существующие индексы."
                     rules={[{ type: 'integer', min: 1, max: 16384, message: 'Целое число от 1 до 16384' }]}>
                     <InputNumber min={1} max={16384} precision={0} style={{ width: '100%' }} placeholder="Например, 2560" />

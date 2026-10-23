@@ -51,16 +51,16 @@ describe('Импорт модели из доступной конфигурац
         expect(html).toContain('custom (object)');expect(html).toContain('enabled (boolean)');expect(html).toContain('Значения сохранены в исходном OpenCode');expect(html).toContain('JSON параметров адаптера');expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
     });
     it.each(['codex-local-auth','device-local-endpoint','local-provider-auth'])('Точный blocker %s не предлагает небезопасный импорт',async blocker=>{
-        const html=await read(scan({blocker}));expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
-        expect(html).toContain(blocker==='codex-local-auth'?'Codex Bridge — локальный вход':blocker==='device-local-endpoint'?'Этот localhost относится к выбранному компьютеру':'локальная сессия не переносится');
+        const html=await read(scan({blocker}));expect(ui.buttons.get(blocker==='codex-local-auth'?'Подключить Codex':'Импортировать')?.disabled).toBe(true);
+        expect(html).toContain(blocker==='codex-local-auth'?'Обновите мост':blocker==='device-local-endpoint'?'Этот localhost относится к выбранному компьютеру':'локальная сессия не переносится');
     });
     it('Старый generic blocker CodexBridge объясняет локальный вход и передаёт выбранный компьютер без импорта', async () => {
         const html = await read(scan({provider: 'codexbridge', name: 'GPT-6.1-Sol', model: 'gpt-6.1-sol', blocker: 'unsupported-provider', parameterIssues: [{name: 'transport', type: 'object'}]}));
-        expect(html).toContain('Codex Bridge — локальный вход'); expect(html).not.toContain('Провайдер или параметры не поддерживаются');
+        expect(html).toContain('Обновите мост'); expect(html).not.toContain('Провайдер или параметры не поддерживаются');
         expect(html).toContain('transport (object)'); expect(html).not.toContain('JSON параметров адаптера'); expect(html).toContain('gpt-6.1-sol');
         expect(html).toContain('Вход Codex остаётся на компьютере'); expect(html).not.toContain('Этот импорт не передаёт ключ с компьютера');
-        expect(ui.buttons.get('Импортировать')?.disabled).toBe(true); expect(ui.configureCodex).not.toHaveBeenCalled();
-        ui.buttons.get('Импортировать')!.click!(); await flush(); expect(baseApi.post).not.toHaveBeenCalled();
+        expect(ui.buttons.get('Подключить Codex')?.disabled).toBe(true); expect(ui.configureCodex).not.toHaveBeenCalled();
+        ui.buttons.get('Подключить Codex')!.click!(); await flush(); expect(baseApi.post).not.toHaveBeenCalled();
         ui.buttons.get('Настроить Codex в OpenCode')!.click!(); expect(ui.configureCodex).toHaveBeenCalledExactlyOnceWith('computer-one');
         expect(bridgeApi.create).toHaveBeenCalledTimes(1); expect(ui.imported).not.toHaveBeenCalled();
     });
@@ -68,7 +68,7 @@ describe('Импорт модели из доступной конфигурац
         ui.projectId = undefined; const job = scan({provider: 'codexbridge', blocker: 'unsupported-provider'});
         Object.assign(job.result!, {scope: 'global', deviceId: 'computer-one', projectId: undefined, bindingId: undefined, instanceId: undefined});
         const html = await read(job); expect(html).toContain('Откройте нужный проект'); expect(ui.buttons.has('Настроить Codex в OpenCode')).toBe(false);
-        expect(ui.configureCodex).not.toHaveBeenCalled(); expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
+        expect(ui.configureCodex).not.toHaveBeenCalled(); expect(ui.buttons.get('Подключить Codex')?.disabled).toBe(true);
     });
     it('Смена actor отвергает старый локальный handoff, а отсутствие прав не предлагает его', async () => {
         await read(scan({provider: 'codexbridge', blocker: 'unsupported-provider'})); const action = ui.buttons.get('Настроить Codex в OpenCode')!.click!;

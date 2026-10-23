@@ -19,13 +19,13 @@ beforeEach(() => {fixture.data = usageReport(); fixture.role = 'Главный �
 describe('Detailed usage report', () => {
     it('separates accepted operations, actual API attempts, unknown counters and measured zeros', () => {
         const html = render(createElement(UsageMetrics, {value: {...usageTotals, requests: 3, apiCalls: '5', unknownDispatchRequests: 1, rateWaitMs: '0', averageProviderLatencyMs: 0}}));
-        expect(html).toContain('Операции'); expect(html).toContain('Обращения к API'); expect(html).toContain('>5<'); expect(html).toContain('Без счётчика обращений: 1 операций'); expect(html).toContain('0 мс'); expect(html).toContain('Нет данных'); expect(html).toContain('может обратиться к API несколько раз');
+        expect(html).toContain('Операции'); expect(html).toContain('Попытки отправки'); expect(html).toContain('>5<'); expect(html).toContain('Без счётчика отправок: 1 операций'); expect(html).toContain('0 мс'); expect(html).toContain('Нет данных'); expect(html).toContain('может содержать несколько попыток отправки');
         expect(render(createElement(UsageMetrics, {value: usageTotals}))).not.toContain('Нет данных мс');
     });
     it('displays human names and the project link before technical details, preserving unknown API metrics', () => {
         const report = usageReport(['technical-call-id']); report.items[0].failureCode = 'PROVIDER_TIMEOUT'; report.items[0].operationId = 'technical-job-id';
         const html = render(createElement(UsageCalls, {report, loading: false, onMore: vi.fn()}));
-        expect(html).toContain('Алиса'); expect(html).toContain('Нейроцентр'); expect(html).toContain('href="/projects/project-a"'); expect(html).toContain('Тестировщик'); expect(html).toContain('Обращения к API: Нет данных'); expect(html).toContain('PROVIDER_TIMEOUT');
+        expect(html).toContain('Алиса'); expect(html).toContain('Нейроцентр'); expect(html).toContain('href="/projects/project-a"'); expect(html).toContain('Тестировщик'); expect(html).toContain('Попытки отправки: Нет данных'); expect(html).toContain('PROVIDER_TIMEOUT');
         const beforeDetails = html.slice(0, html.indexOf('<details')); expect(beforeDetails).not.toContain('technical-call-id'); expect(beforeDetails).not.toContain('technical-job-id'); expect(html).toContain('<summary>Подробности операции</summary>');
     });
     it('filter choices use full authorized facets, with system tasks distinct from an empty selection', () => {

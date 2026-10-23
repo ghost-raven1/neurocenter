@@ -4,6 +4,15 @@ export const modelCapabilityLabels: Record<ICatalogModel['capability'], string> 
     embedding: 'Эмбеддинги', vision: 'Изображения', chat: 'Чат',
 };
 
+/** Только API-подключение имеет серверный адрес и отдельный ключ. */
+export function modelUsesApiConnection(model: ICatalogModel): boolean {
+    return model.runtime === 'remote-openai' || model.runtime === 'remote-ollama';
+}
+
+export function modelLocationLabel(model: ICatalogModel): string {
+    return model.runtime === 'device-codex' ? 'Codex на компьютере' : modelUsesApiConnection(model) ? 'Удалённый API' : 'На сервере';
+}
+
 export const modelHostingLabels: Record<IModelHosting['state'], string> = {
     unavailable: 'Сервис недоступен', missing: 'Веса не загружены', stopped: 'Выгружена из памяти',
     ready: 'Готова', busy: 'Выполняется операция', error: 'Ошибка хостинга',

@@ -17,6 +17,7 @@ import { ModelDetails } from './ModelDetails';
 import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
 import { OpenCodeImportModal } from './OpenCodeImportModal';
+import {DeviceCodexConnectionModal} from './DeviceCodexConnectionModal';
 import { ModelChatModal } from '../ModelChat/ModelChatModal';
 import { modelChatUnavailableReason } from '../ModelChat/model';
 import { filterCatalogModels } from './modelCatalogState';
@@ -66,7 +67,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     };
     const openCodexProvider = (deviceId: string): void => {
         if (!captureOwner()() || providerContext.current.formScope !== formScope || !projectId || !providerContext.current.canManage) return;
-        embeddingTarget.bridge.choose(deviceId); setImporting(false); setProviderSetup({scope: formScope, providerKind: 'codex-bridge', deviceId});
+        embeddingTarget.bridge.choose(deviceId); setImporting(false); setConnection(null); setProviderSetup({scope: formScope, providerKind: 'codex-bridge', deviceId});
     };
     const providerBridge = providerSetup?.deviceId ? {...embeddingTarget.bridge,
         device: embeddingTarget.bridge.devices.find(device => device.id === providerSetup.deviceId),
@@ -130,7 +131,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     return <div className="model-catalog">
         <div className="model-catalog__heading">
             <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
-                <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере и подключённые API.'}</Typography.Text></div>
+                <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере, на компьютере и подключённые API.'}</Typography.Text></div>
             {(isMain || projectId && canManage) && <Space wrap>
                 {projectId && canManage && <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>}
                 {isMain && <><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
@@ -169,9 +170,12 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 const owns = captureOwner(); if (!owns()) return;
                 if (typeof editing === 'string') { setQuery(''); setAssignedOnly(false); }
                 await refresh(); if (!owns()) return;
-                if (saved && saved.runtime !== 'ollama' && !saved.verificationSha256) setConnection(saved);
+                if (saved && saved.runtime !== 'ollama' && saved.runtime !== 'device-codex' && !saved.verificationSha256) setConnection(saved);
             }} />}
-        {isMain && connection && <RemoteConnectionModal key={`${connection.id}:${connection.revision}`} model={connection} hint={connectionHint} onClose={() => { setConnection(null); setConnectionHint(undefined); }} onSaved={refresh} />}
+        {isMain && connection && (connection.runtime === 'device-codex'
+            ? <DeviceCodexConnectionModal key={`${formScope}:${connection.id}:${connection.revision}`} model={connection}
+                onConfigureOpenCode={projectId && canManage ? openCodexProvider : undefined} onClose={() => setConnection(null)}/>
+            : <RemoteConnectionModal key={`${connection.id}:${connection.revision}`} model={connection} hint={connectionHint} onClose={() => { setConnection(null); setConnectionHint(undefined); }} onSaved={refresh} />)}
         {chatting && canChat && (!projectId || assigned.has(chatting.id)) && <ModelChatModal key={JSON.stringify([scope, projectId, chatting.id])} model={chatting} projectId={projectId} projectName={projectName}
             unavailableReason={loading ? 'Дождитесь обновления каталога перед следующим запросом.' : loadError ? 'Обновите каталог перед следующим запросом.'
                 : modelChatUnavailableReason(chatting, canChat, !!projectId, assigned.has(chatting.id))} onClose={() => setChatId(null)} />}
@@ -179,7 +183,11 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
             models={catalog?.items.filter(model => assigned.has(model.id)) ?? []} initialModelId={providerSetup.modelId} initialProviderKind={providerSetup.providerKind} canManage={canManage} canPrepareConnector={isMain}
             catalogReady={!!catalog && !loading && !loadError} catalogError={loadError} onReloadModels={() => {void refresh();}} onClose={() => {if (captureOwner()()) setProviderSetup(current => current === providerSetup ? undefined : current);}} />}
         {isMain && importing && <OpenCodeImportModal key={`${scope}:${projectId||'common'}`} projectId={projectId} onClose={() => setImporting(false)} onConfigureCodex={projectId && canManage ? openCodexProvider : undefined} onImported={async (model, hint) => {
-            const owns = captureOwner(); if (!owns()) return; await refresh(); if (!owns()) return; setImporting(false); setConnectionHint(hint); setConnection(model);
+            const owns = captureOwner(), current = (): boolean => owns() && providerContext.current.formScope === formScope;
+            if (!current()) return;
+            await refresh();
+            if (!current()) return;
+            setImporting(false); setConnectionHint(hint); setConnection(model);
         }} />}
     </div>;
 }

@@ -2,7 +2,7 @@ import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Descriptions, Modal, Space, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { modelCatalogApi } from './api';
-import { modelCapabilityLabels } from './modelCatalogState';
+import { modelCapabilityLabels, modelUsesApiConnection } from './modelCatalogState';
 import type { ICatalogModel } from './types';
 import { ModelHosting } from './ModelHosting';
 import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
@@ -13,7 +13,8 @@ export function ModelDetails({ model, projectId, canManage, busy, error, onClose
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
     return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Space wrap>
         {canManage && !model.archivedAt && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>}
-        {canManage && !model.archivedAt && model.runtime !== 'ollama' && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onConfigure}>Подключение API</FeatureButton>}
+        {canManage && !model.archivedAt && modelUsesApiConnection(model) && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onConfigure}>Подключение API</FeatureButton>}
+        {canManage && !model.archivedAt && model.runtime === 'device-codex' && <Button disabled={busy} onClick={onConfigure}>Компьютер и вход</Button>}
         {canManage && !model.archivedAt && <ArchiveAssetButton kind="model" id={model.id} disabled={busy} onArchived={onRemove}>Удалить модель</ArchiveAssetButton>}
         <Button disabled={busy} onClick={onClose}>Закрыть</Button>
     </Space>}>
