@@ -339,5 +339,41 @@
       "mcp/neurocenter-asset-sync/src/bridge/worker.ts": "842151bf8b34a68bfb6202e4703748045ac21f4aeb349d249ed57cf0625c0272",
       "mcp/neurocenter-asset-sync/test/worker-cache-policy.test.ts": "b98b778b1c3070c7c41a2d1ce8a2cae5a87a8fe77db55719f20291b75bcbe555"
     }
+  },
+  "cachePolicyLiveApplication": {
+    "sourceHead": "620b05e1e9c8b1737bd536220160ea9b0c958c8d",
+    "at": "2026-10-23T23:14:05.594Z",
+    "installedBridgeBuild": "95a7fa56ca17958095395e5566cc235611c98704e6426d9d3a4ab23c4c961418",
+    "preservationChecks": 15,
+    "archive": {
+      "sha256": "f0f6e27ec91a2b167a10448575ee51193fbeeca62e14a790bb9c20b2c1b52bb1",
+      "passedCases": 6,
+      "temporaryProfileRemoved": true,
+      "realProvider": false
+    },
+    "inspectSucceeded": true,
+    "setSucceeded": true,
+    "cacheLimitBytes": 3221225472,
+    "cacheRevision": 1,
+    "garbageCollection": false,
+    "codexAttempt": {
+      "callId": "1d4c00f1-cecc-45d4-ad2e-c8ec5ff43c64",
+      "jobId": "99d9b226-97f4-4dee-b533-d6fc045c26bf",
+      "error": "unknown-after-send",
+      "dispatchAdmissionCount": 1,
+      "httpStatus": "not-recorded",
+      "providerAcceptance": "unknown",
+      "responseAccepted": false,
+      "automaticRetry": false
+    },
+    "systemRoleResponseAccepted": false,
+    "nativeOpenCodeResponseAccepted": false,
+    "receipts": {
+      ".run/continuation-20261024/applied-codex-bridge-cache2-policy.json": "619eda2dd96728f454fa496a9c88b446b8b74ccfd43b1f5167966c08f1684a24",
+      ".run/continuation-20261024/installed-cache2-policy-after.json": "77007d51774266c032d3894f698a15ec7286023219c5ddd711707c987ef37c93",
+      ".run/continuation-20261024/archive-acceptance-EyOqLQ/receipt.json": "e05026ea7c02f53422d574ca8fcb2cb058263dc9363990d8d3e514018c8478db",
+      ".run/module-reliability/cache-policy-live-acceptance.json": "c47e4929e4f6b8d6b2a1b42b6199ce1a7d41211d1fd79e8981c42f699f3fe7ac",
+      ".run/module-reliability/codex-retry-unknown-after-send-forensic.json": "720f769a3ba08ac0dee6119c4914ec07cfd7560c8716461e7f5561a3e84dc545"
+    }
   }
 }
