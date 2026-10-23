@@ -5,7 +5,7 @@ import {loadDeviceCodexTransport,deviceCodexConnectorPackage} from '../opencode-
 import {prepareJobRuntimeArtifacts} from '../../bridge/job-runtime-artifacts.js';
 import {assertCodexModelSource} from './model-source.js';
 import {DEVICE_CODEX_PROTOCOL,normalizeDeviceCodexPayload,normalizeDeviceCodexContext,type DeviceCodexContext,type DeviceCodexPayload,type DeviceCodexResult} from './contract.js';
-import {readCodexReceipt,writeCodexReceipt,type CodexReceipt} from './receipts.js';
+import {readCodexReceipt,writeCodexReceipt,codexCompletionSummary,type CodexReceipt} from './receipts.js';
 import {readCodexResponse} from './response.js';
 
 interface CodexJob {id:string;lease:string;payload:unknown}
@@ -62,9 +62,9 @@ export async function runDeviceCodexJob(job:CodexJob,deviceId:string,authorize:(
         const completed:CodexReceipt={schemaVersion:1,jobId:job.id,lease:job.lease,deviceId,callId:payload.callId,payloadHash:hash(JSON.stringify(payload)),state:'completed',result:value};
         try{await writeCodexReceipt(completed,receipt);}catch{throw unavailable();}
         receipt=completed;
-        return {state:'response'in value?'succeeded' as const:'failed' as const,message:'response'in value?'Ответ Codex получен.':'Запрос Codex не завершён; повторная отправка не выполнялась.',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:payload.callId}};
+        return {...codexCompletionSummary(value),message:'response'in value?'Ответ Codex получен.':'Запрос Codex не завершён; повторная отправка не выполнялась.'};
     };
-    if(result)return {state:'response'in result?'succeeded' as const:'failed' as const,message:'Сохранённый результат Codex доставлен.',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:payload.callId}};
+    if(result)return {...codexCompletionSummary(result),message:'Сохранённый результат Codex доставлен.'};
     if(receipt)return finish(failed(payload.callId,'unknown-after-send'));
     const controller=new AbortController(),deadline=Date.parse(payload.deadlineAt)-Date.now();
     const timer=setTimeout(()=>controller.abort(new Error('deadline')),Math.max(0,deadline));

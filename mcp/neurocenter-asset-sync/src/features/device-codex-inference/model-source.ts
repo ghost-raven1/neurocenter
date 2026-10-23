@@ -1,13 +1,14 @@
 import os from 'node:os';
 import {isDeepStrictEqual} from 'node:util';
 import {readOpenCodeModelMetadata} from '../../bridge/opencode-model-scan.js';
+import {hasUnsafeOpenCodeWarnings} from '../../bridge/opencode-scan-warnings.js';
 import {projectFolder} from '../../bridge/workspace.js';
 import {InstallationPlan} from '../../bridge/installation-plan.js';
 import {providerContext} from '../opencode-providers/context.js';
 import {assertOwnedProvider} from '../opencode-providers/engine.js';
 import {receiptFile,type ProviderReceipt} from '../opencode-providers/receipt.js';
 import type {Package} from '../../bridge/package.js';
-import type {DeviceCodexContext} from './contract.js';
+import {deviceCodexCandidateIdentity,type DeviceCodexContext} from './contract.js';
 
 /** Re-read the effective provider before each send; stale local configuration cannot reuse a server model pin. */
 export async function assertCodexModelSource(context:DeviceCodexContext,deviceId:string,authorize:()=>Promise<unknown>,checkLocal:()=>Promise<unknown>=authorize):Promise<void>{
@@ -15,12 +16,12 @@ export async function assertCodexModelSource(context:DeviceCodexContext,deviceId
     const root=context.source.scope==='project'?await projectFolder(context.source.projectId):os.homedir();
     const source=context.source.scope==='global'?{scope:'global' as const,deviceId}:context.source;
     const scan=await readOpenCodeModelMetadata(root,source,{readAuth:false,authorize:checkLocal});
-    if(scan.warnings.some(warning=>['invalid-json','unsafe-path','read-failed','source-changed','entry-limit','ambiguous-config'].includes(warning)))throw new Error('Настройка OpenCode недоступна.');
+    if(hasUnsafeOpenCodeWarnings(scan.warnings))throw new Error('Настройка OpenCode недоступна.');
     const expected=context.expectedCandidate;
     const matches=scan.candidates.filter(candidate=>candidate.provider===expected.provider&&candidate.configKey===expected.configKey);
     const candidate=matches[0];
     if(matches.length!==1||!candidate||candidate.blocker!=='codex-local-auth'||candidate.runtime!=='remote-openai'||candidate.model!==context.model||candidate.capability!==context.capability||candidate.parameterIssues?.length)throw new Error('Модель OpenCode изменилась.');
-    const identity={provider:candidate.provider,...(candidate.configKey?{configKey:candidate.configKey}:{}),model:candidate.model,modelVersion:candidate.modelVersion,capability:candidate.capability,baseUrl:candidate.baseUrl,...(candidate.options?{options:candidate.options}:{})};
+    const identity=deviceCodexCandidateIdentity(candidate);
     if(!isDeepStrictEqual(identity,expected))throw new Error('Параметры OpenCode изменились.');
     if(/^neurocenter-codex-[a-f0-9]{16}$/.test(candidate.provider)){
         if(context.source.scope!=='project')throw new Error('Управляемый провайдер требует исходную папку проекта.');

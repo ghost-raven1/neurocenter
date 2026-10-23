@@ -9,6 +9,10 @@ export interface CodexReceipt {schemaVersion:1;jobId:string;lease:string;deviceI
 type ReceiptPointer=Pick<CodexReceipt,'jobId'|'lease'|'deviceId'|'callId'|'payloadHash'>;
 const indexName='device-codex-pending',uuid=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const key=(callId:string)=>hash('device-codex-receipt:'+callId);
+/** Generic completion records carry delivery metadata; the answer stays in its private receipt. */
+export function codexCompletionSummary(result:DeviceCodexResult):Pick<Completion,'state'|'result'>{
+    return {state:'response'in result?'succeeded':'failed',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:result.callId}};
+}
 async function pointers():Promise<ReceiptPointer[]>{
     const value=await readState<ReceiptPointer[]>(indexName)??[];
     if(!Array.isArray(value)||value.length>1024||new Set(value.map(item=>item.callId)).size!==value.length||value.some(item=>!item||!uuid.test(item.jobId)||!uuid.test(item.lease)||!uuid.test(item.deviceId)||!uuid.test(item.callId)||!/^[a-f0-9]{64}$/.test(item.payloadHash)))throw new Error('Повреждён список подтверждений Codex.');
@@ -45,7 +49,7 @@ export async function recoverCodexCompletions(save:(completion:Completion)=>Prom
             await writeCodexReceipt(completed,receipt);receipt=completed;
         }
         const result=normalizeDeviceCodexResult(receipt.result);
-        await save({id:pointer.jobId,lease:pointer.lease,deviceId:pointer.deviceId,state:'response'in result?'succeeded':'failed',message:'Сохранённый результат Codex готов к доставке.',result:{protocol:DEVICE_CODEX_PROTOCOL,callId:pointer.callId}});
+        await save({id:pointer.jobId,lease:pointer.lease,deviceId:pointer.deviceId,...codexCompletionSummary(result),message:'Сохранённый результат Codex готов к доставке.'});
     }
 }
 export async function acknowledgeCodexReceipt(jobId:string,callId:string):Promise<void>{

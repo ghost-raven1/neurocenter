@@ -4,6 +4,7 @@ import {parse,parseTree,modify,applyEdits,type ParseError,type Node} from 'jsonc
 import {InstallationPlan} from '../../bridge/installation-plan.js';
 import {withProjectFiles,commitChanges} from '../../bridge/installation-files.js';
 import {readOpenCodeModelMetadata} from '../../bridge/opencode-model-scan.js';
+import {hasUnsafeOpenCodeWarnings as unsafeScan} from '../../bridge/opencode-scan-warnings.js';
 import {createProviderCredential,providerCredentialPresent} from './credential.js';
 import {providerReportIdentity,type OpenCodeProviderStatus} from './contract.js';
 import {type ProviderContext,type Authorize,stale} from './context.js';
@@ -11,8 +12,6 @@ import {providerConfig,providerProof,receiptFile,journalKey,conflict,type Provid
 import {resolveConnector,codexDefinition} from './connector.js';
 import {ollamaAdapterUrl} from './ollama-entry.js';
 import type {IOpenCodeModelCandidate} from '../../../../../services/shared/opencode-model-scan.cjs';
-const unsafeScanWarnings=new Set(['invalid-json','unsafe-path','read-failed','source-changed','entry-limit','ambiguous-config']);
-const unsafeScan=(warnings:readonly string[])=>warnings.some(warning=>unsafeScanWarnings.has(warning));
 /** Local OAuth is expected only after the owned receipt, wrapper and immutable connector have been verified. */
 function matchesOwnedCodex(candidates:IOpenCodeModelCandidate[],models:string[]):boolean{
     const candidate=candidates[0];

@@ -2,7 +2,7 @@ import {deviceCodexIdentityDigest,deviceCodexConflict} from './device-codex-iden
 import { BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
-import { DEVICE_CODEX_CAPABILITY, type DeviceCodexSource, type DeviceCodexRequest } from '../../../shared/device-codex-inference.cjs';
+import { DEVICE_CODEX_CAPABILITY, deviceCodexCandidateIdentity, type DeviceCodexSource, type DeviceCodexRequest } from '../../../shared/device-codex-inference.cjs';
 import type { IOpenCodeModelCandidate } from '../../../shared/opencode-model-scan.cjs';
 import { projectLevel, type IAccessActor } from '../access/access.model';
 import { DeviceStore, type Device } from '../devices/device-store';
@@ -92,7 +92,7 @@ export class DeviceCodexConnections {
         assertLocalFeature(device.report, DEVICE_CODEX_CAPABILITY);
         const connector = await trustedCodexConnector(this.devices, this.artifacts);
         assertPackageBridge(device.report, connector);
-        const expectedCandidate = { provider: candidate.provider, ...(candidate.configKey === undefined ? {} : { configKey: candidate.configKey }), model: candidate.model, modelVersion: candidate.modelVersion, capability: candidate.capability, baseUrl: candidate.baseUrl, ...(candidate.options === undefined ? {} : { options: candidate.options }) };
+        const expectedCandidate = deviceCodexCandidateIdentity(candidate);
         const identity = deviceCodexIdentityDigest([owner, device.id, source, expectedCandidate, options, connector.manifest.sha256]);
         const id = 'model-device-codex-' + identity.slice(0, 40), semantic = deviceCodexIdentityDigest([id, device.id, source, connector.manifest.sha256, options]);
         const db = await this.models.pool.connect();

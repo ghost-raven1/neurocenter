@@ -9,6 +9,12 @@ const text=(v,max)=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\x00-\x1f
 const iso=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v;
 const count=v=>v===null||Number.isSafeInteger(v)&&v>=0;
 const canonical=v=>Array.isArray(v)?v.map(canonical):record(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
+/** Project already validated scan metadata onto the immutable provider identity used at import and dispatch. */
+function deviceCodexCandidateIdentity(candidate){
+ return {provider:candidate.provider,...(candidate.configKey===undefined?{}:{configKey:candidate.configKey}),model:candidate.model,
+  modelVersion:candidate.modelVersion,capability:candidate.capability,baseUrl:candidate.baseUrl,
+  ...(candidate.options===undefined?{}:{options:candidate.options})};
+}
 function source(v){
  if(exact(v,['scope'])&&v.scope==='global')return {scope:'global'};
  if(exact(v,['scope','projectId','bindingId','instanceId'])&&v.scope==='project'&&text(v.projectId,200)&&sha(v.bindingId)&&uuid(v.instanceId))return {...v};
@@ -50,4 +56,4 @@ function normalizeDeviceCodexResult(v){
  return {protocol:v.protocol,callId:v.callId,response:{...r,message:{...r.message}}};
 }
 const deviceCodexResultDigest=v=>createHash('sha256').update(JSON.stringify(canonical(normalizeDeviceCodexResult(v)))).digest('hex');
-module.exports={DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_CAPABILITY,DEVICE_CODEX_JOB,normalizeDeviceCodexPayload,normalizeDeviceCodexRequest,normalizeDeviceCodexContext,normalizeDeviceCodexResult,deviceCodexResultDigest};
+module.exports={DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_CAPABILITY,DEVICE_CODEX_JOB,deviceCodexCandidateIdentity,normalizeDeviceCodexPayload,normalizeDeviceCodexRequest,normalizeDeviceCodexContext,normalizeDeviceCodexResult,deviceCodexResultDigest};

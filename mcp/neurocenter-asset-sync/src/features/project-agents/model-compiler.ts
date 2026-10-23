@@ -1,5 +1,6 @@
 import {isDeepStrictEqual} from 'node:util';
 import {readOpenCodeModelMetadata} from '../../bridge/opencode-model-scan.js';
+import {hasUnsafeOpenCodeWarnings} from '../../bridge/opencode-scan-warnings.js';
 import {compileProjectAgents,type ProjectAgentsPayload,type ProjectAgentModelMapping,type ProjectAgentsCompilation} from './contract.js';
 export type ApproveAgentCompilation=(mappings:ProjectAgentModelMapping[])=>Promise<unknown>;
 const setup=(agentId:string,modelId?:string)=>Object.assign(new Error('Настройте модель агента в OpenCode выбранного компьютера и повторите применение.'),
@@ -9,7 +10,7 @@ export async function projectAgentMappings(payload:ProjectAgentsPayload,root:str
     if(!payload.modelRequirements.length)return [];
     const scan=await readOpenCodeModelMetadata(root,{scope:'project',projectId:payload.projectId,bindingId:payload.bindingId,instanceId:payload.instanceId},
         {authorize,readAuth:false,requestedSelectors:payload.modelRequirements.filter(item=>item.kind==='native').map(item=>item.selector)});
-    if(scan.warnings.some(warning=>['read-failed','invalid-json','unsafe-path','source-changed','entry-limit','ambiguous-config'].includes(warning)))throw setup(payload.modelRequirements[0]!.agentId);
+    if(hasUnsafeOpenCodeWarnings(scan.warnings))throw setup(payload.modelRequirements[0]!.agentId);
     return payload.modelRequirements.map(requirement=>{
         const deviceCodex=requirement.kind==='catalog'&&requirement.runtime==='device-codex';
         const matches=scan.candidates.filter(candidate=>(!candidate.blocker||requirement.kind==='native'&&['codex-local-auth','local-provider-auth','device-local-endpoint'].includes(candidate.blocker)

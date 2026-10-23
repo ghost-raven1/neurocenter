@@ -73,6 +73,7 @@ export type DeviceCodexResult = {
     };
 };
 export function normalizeDeviceCodexPayload(value: unknown): DeviceCodexPayload;
+export function deviceCodexCandidateIdentity(candidate: DeviceCodexCandidate): DeviceCodexCandidate;
 export function normalizeDeviceCodexRequest(value: unknown, capability: 'chat' | 'vision'): DeviceCodexRequest;
 export function normalizeDeviceCodexContext(value: unknown): DeviceCodexContext;
 export function normalizeDeviceCodexResult(value: unknown): DeviceCodexResult;
