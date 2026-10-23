@@ -13,6 +13,9 @@ import {projectLevel} from '../access/access.model';
 import {publicationHash} from '../publication/publication-validation';
 import {PackageBuildService} from '../package-build/package-build.service';
 import type {BuildRow} from '../package-build/package-build.model';
+import {OperationActionStore} from './operation-action-store';
+import {canCancelBridgeJob} from './operation-action-policy';
+import {projectRoleState} from '../system-roles/system-role.operations';
 
 type Action='retry'|'cancel';
 type Capabilities=NonNullable<IOperation['actions']>;
@@ -24,7 +27,7 @@ const no=(reason:string)=>({supported:false,reason});
 /** Журнал передаёт команды реальным очередям. Изменение строки operations никогда не заменяет исполнение. */
 @Injectable()
 export class OperationActionsService implements OnModuleInit {
-    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService,private readonly builds:PackageBuildService,private readonly systemRoles:SystemRoleService){}
+    constructor(private readonly catalog:CatalogService,private readonly models:ModelsService,private readonly jobs:DeviceJobs,private readonly reindex:ProjectReindexService,private readonly builds:PackageBuildService,private readonly systemRoles:SystemRoleService,private readonly requests:OperationActionStore){}
     async onModuleInit():Promise<void>{
         await this.catalog.ensureSchema();
     }
@@ -53,7 +56,7 @@ export class OperationActionsService implements OnModuleInit {
                 const exists=!operation.projectId||!!(await this.models.pool.query('SELECT 1 FROM projects WHERE id=$1',[operation.projectId])).rowCount;
                 retry=!own?no('Повторить можно только собственное задание.'):!exists?no('Проект удалён.'):!policy.retrySupported?no('Повтор требует нового выбора папки или подтверждения в исходном мастере.'):
                     level<policy.minimumLevel?no('Текущая роль не разрешает повтор этого задания.'):!['failed','cancelled'].includes(job.state)?no('Повтор доступен после ошибки или отмены.'):{supported:true};
-                cancel=!own?no('Отменить можно только собственное задание.'):!exists||level<1?no('Доступ к проекту отозван.'):job.state!=='queued'?no('Мост уже принял задание или оно завершено. Отмена записи файлов здесь недоступна.'):{supported:true};
+                cancel=!own?no('Отменить можно только собственное задание.'):!exists||level<1?no('Доступ к проекту отозван.'):!canCancelBridgeJob(job.kind,job.state)?no('Исполнитель уже завершён или не поддерживает отмену после начала записи файлов.'):{supported:true};
             }
         }else if(operation.resourceType==='rag-reindex'&&uuid(operation.resourceId)&&operation.projectId){
             const row=(await this.models.pool.query<IReindexRow&{updated_at:string}>('SELECT * FROM project_reindex_plans WHERE id=$1 AND project_id=$2',[operation.resourceId,operation.projectId])).rows[0];
@@ -99,7 +102,7 @@ export class OperationActionsService implements OnModuleInit {
         return input as {requestKey:string;expectedDigest:string};
     }
     async dispatch(request:Request,id:string,action:Action,raw:unknown):Promise<IResult>{
-        const input=this.input(raw),actor=await this.models.actor(request),lease=await this.models.pool.connect();let locked=false,discard=false;
+        const input=this.input(raw),actor=await this.models.actor(request),lease=await this.requests.connect();let locked=false,discard=false;
         const lock='operation-action:'+actor.email+':'+id;
         try{
             await lease.query('SELECT pg_advisory_lock(hashtextextended($1,0))',[lock]);locked=true;
@@ -135,10 +138,10 @@ export class OperationActionsService implements OnModuleInit {
     private async execute(request:Request,operation:IOperation,action:Action,key:string,target:Record<string,unknown>,executor:Capabilities['executor'],actor:IModelActor):Promise<IResult>{
         if(executor==='system-role'&&action==='cancel'){
             const run=await this.systemRoles.cancel(request,String(target.agentId),operation.resourceId,{expectedRevision:target.revision,requestId:key});
-            return {operationId:operation.operationId,state:run.state==='cancelled'?'CANCELLED':operation.state,message:run.message};
+            return {operationId:operation.operationId,state:projectRoleState(run.state),message:run.message};
         }
         if(executor==='bridge'){
-            if(action==='cancel'){await this.jobs.cancel(actor,operation.resourceId);return {operationId:operation.operationId,state:'CANCELLED',message:'Задание в очереди отменено.'};}
+            if(action==='cancel'){await this.jobs.cancel(actor,operation.resourceId);return {operationId:operation.operationId,state:'CANCELLED',message:'Отмена задания сохранена.'};}
             const job=await this.jobs.retry(actor,operation.resourceId,key);
             if(typeof job.id!=='string'||typeof job.state!=='string'||!['queued','running','succeeded','failed','cancelled','reconciling'].includes(job.state)||typeof job.message!=='string')throw new ServiceUnavailableException('Исполнитель не подтвердил сохранённое задание. Повторите тот же запрос.');
             return {operationId:'bridge-'+job.id,state:job.state.toUpperCase() as TOperationState,message:job.message};

@@ -32,7 +32,7 @@ describe('Tool build cancellation from operation history',()=>{
         const pool={query,connect:async()=>({query,release:vi.fn()})};
         const actor=async()=>({email,activeRole:role,claims:{email,userRoles:roles,projects:[],pluginIds:[],skillPaths:[]}});
         cancel=vi.fn(async()=>{job!.state=job!.state==='QUEUED'?'CANCELLED':'CANCELLING';return{id,requestKey,state:job!.state,message:job!.state==='CANCELLED'?'Stopped before launch':'Stopping owned worker'};});
-        actions=new OperationActionsService({getOperation:async()=>operation} as never,{pool,actor} as never,{} as never,{} as never,{cancel} as never);
+        actions=new OperationActionsService({getOperation:async()=>operation} as never,{pool,actor} as never,{} as never,{} as never,{cancel} as never,{} as never,{connect:pool.connect} as never);
     });
     it.each(['QUEUED','RUNNING','CANCELLING'])('Offers cancel for the actual %s owned build',async state=>{
         job!.state=state;

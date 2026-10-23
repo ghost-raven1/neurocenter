@@ -61,7 +61,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if(job&&['install','uninstall','apply-local-change','apply-adopt-installation'].includes(job.kind))await client.query('SELECT id FROM bridge_devices WHERE id=$1 FOR UPDATE',[deviceId]);
         if (!job) { throw new ConflictException('Аренда задания не соответствует подключению.'); }
         const codex=await completeDeviceCodex(client,job,input);
-        if(codex){await client.query('COMMIT');return codex;}
+        if(codex){await client.query('COMMIT');if(!codex.repeated)await notifyDeviceOperations();return codex;}
         const memory=await completeLearningMemory(client,job,input);
         if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
         const quirks=await completeLearningQuirks(client,job,input);

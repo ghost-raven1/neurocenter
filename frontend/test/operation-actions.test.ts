@@ -78,3 +78,31 @@ describe('Отмена упаковки из общей истории опер�
         expect(operationActionPermissions({...build,actions:{...build.actions!,retry:{supported:true}}},main).retry).toBe(false);
     });
 });
+
+describe('Safe active executors in the operation journal',()=>{
+ const observer={email:operation.actor,activeRole:'Наблюдатель',userRoles:['Наблюдатель'],projectRoles:[{projectId:'prj-own',projectName:'Own',role:'Наблюдатель'}]} as IUserInfo;
+ it.each(['sync-learning-memory','import-learning-quirks','infer-device-codex'])('own %s remains cancellable after bridge admission',kind=>{
+  const active={...operation,projectId:'prj-own',state:'RUNNING',bridgeJob:{kind,retrySupported:false,minimumLevel:2}} as IOperation;
+  expect(operationActionPermissions(active,observer)).toEqual({cancel:true,retry:false,reopenKnowledge:false});
+  expect(operationActionPermissions({...active,state:'RECONCILING'} as unknown as IOperation,observer).cancel).toBe(true);
+  expect(operationActionPermissions({...active,actor:'other@fixture.invalid'},observer).cancel).toBe(false);
+  expect(operationActionPermissions(active,{...observer,projectRoles:[]}).cancel).toBe(false);
+  for(const state of ['SUCCEEDED','FAILED','CANCELLED'])expect(operationActionPermissions({...active,state} as IOperation,observer).cancel).toBe(false);
+ });
+ it.each(['install','uninstall','apply-local-change','bind-project'])('active filesystem %s keeps queued-only cancellation even with stale supported capability',kind=>{
+  const active={...operation,projectId:'prj-own',state:'RUNNING',bridgeJob:{kind,retrySupported:false,minimumLevel:2}} as IOperation;
+  expect(operationActionPermissions(active,observer).cancel).toBe(false);
+  expect(operationActionPermissions({...active,state:'QUEUED'},observer).cancel).toBe(true);
+ });
+ it.each(['QUEUED','RUNNING'])('own active system-role %s follows the server capability with current read access',state=>{
+  const role={...operation,projectId:'prj-own',resourceType:'system-role',state,
+   actions:{executor:'system-role',digest:'a'.repeat(64),retry:{supported:false},cancel:{supported:true}}} as IOperation;
+  expect(operationActionPermissions(role,observer)).toEqual({cancel:true,retry:false,reopenKnowledge:false});
+  expect(operationActionPermissions({...role,actor:'other@fixture.invalid'},observer).cancel).toBe(false);
+  expect(operationActionPermissions(role,{...observer,userRoles:[]}).cancel).toBe(false);
+  expect(operationActionPermissions({...role,actions:{...role.actions!,cancel:{supported:false}}},observer).cancel).toBe(false);
+  expect(operationActionPermissions({...role,state:'CANCELLED'},observer).cancel).toBe(false);
+  expect(operationActionPermissions({...role,actions:{...role.actions!,retry:{supported:true}}},observer).retry).toBe(false);
+  expect(operationActions({...role,actions:{...role.actions!,retry:{supported:true}}},observer.email,true,true).retry).toBe(false);
+ });
+});

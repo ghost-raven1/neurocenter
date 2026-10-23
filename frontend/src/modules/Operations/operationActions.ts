@@ -5,17 +5,27 @@ import { operationKnowledgeRecovery, requiresKnowledgeResync } from './operation
 
 const BRIDGE_JOB_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
+function canCancel(operation:IOperation,canWrite:boolean,currentMainAdmin:boolean):boolean{
+    switch(operation.actions?.executor){
+        case 'bridge':return operation.state==='QUEUED'||['sync-learning-memory','import-learning-quirks','infer-device-codex'].includes(operation.bridgeJob?.kind??'')&&['RUNNING','RECONCILING'].includes(operation.state);
+        case 'system-role':return ['QUEUED','RUNNING'].includes(operation.state);
+        case 'tool-build':return currentMainAdmin&&['QUEUED','RUNNING'].includes(operation.state);
+        default:return canWrite;
+    }
+}
+
 /** Действия доступны только для реальной личной очереди; журнал не подменяет её состояние. */
 export function operationActions(operation: IOperation, email: string, canWrite: boolean, canRetry = canWrite, currentMainAdmin = false) {
     const capabilities=operation.actions;
     const own = !!email && operation.actor === email && !!capabilities && /^[a-f0-9]{64}$/.test(capabilities.digest)
         && (capabilities.executor==='bridge'&&operation.resourceType==='bridge'&&BRIDGE_JOB_ID.test(operation.resourceId)
             ||capabilities.executor==='rag-reindex'&&operation.resourceType==='rag-reindex'
+            ||capabilities.executor==='system-role'&&operation.resourceType==='system-role'&&BRIDGE_JOB_ID.test(operation.resourceId)
             ||capabilities.executor==='tool-build'&&operation.resourceType==='tool-build'&&BRIDGE_JOB_ID.test(operation.resourceId));
     const recovery = operationKnowledgeRecovery(operation);
     return {
-        cancel: own && capabilities!.cancel.supported && (capabilities!.executor==='bridge'?operation.state==='QUEUED':capabilities!.executor==='tool-build'?currentMainAdmin&&['QUEUED','RUNNING'].includes(operation.state):canWrite),
-        retry: own && capabilities!.executor!=='tool-build' && canRetry && capabilities!.retry.supported && (capabilities!.executor!=='bridge'||operation.bridgeJob?.retrySupported===true&&['FAILED','CANCELLED'].includes(operation.state)) && !requiresKnowledgeResync(operation),
+        cancel: own && capabilities!.cancel.supported && canCancel(operation,canWrite,currentMainAdmin),
+        retry: own && !['tool-build','system-role'].includes(capabilities!.executor) && canRetry && capabilities!.retry.supported && (capabilities!.executor!=='bridge'||operation.bridgeJob?.retrySupported===true&&['FAILED','CANCELLED'].includes(operation.state)) && !requiresKnowledgeResync(operation),
         reopenKnowledge: !!email&&operation.actor===email&&canWrite&&!!recovery,
     };
 }

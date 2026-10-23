@@ -1,4 +1,6 @@
 import {deviceCodexIdentityDigest,deviceCodexConflict} from './device-codex-identity';
+import {notifyDeviceOperations} from '../devices/device-operations';
+import {projectDeviceCodexOperation} from './device-codex-operation';
 import { DeviceCodexConnections } from './device-codex-connections';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -237,11 +239,16 @@ export class DeviceCodexService {
     }
     async cancel(jobId: string) {
         const db = await this.models.pool.connect();
+        let projected=false;
+        let outcome:{cancelled:boolean;state:string};
         try {
             await db.query('BEGIN');
-            await db.query('SELECT id FROM bridge_jobs WHERE id=$1 FOR UPDATE', [jobId]);
-            await db.query("UPDATE device_model_calls SET cancelled_at=COALESCE(cancelled_at,clock_timestamp()) WHERE job_id=$1 AND result IS NULL", [jobId]);
-            await db.query("UPDATE bridge_jobs SET state='cancelled',message='Запрос Codex остановлен; автоматический повтор не выполняется.',updated_at=clock_timestamp() WHERE id=$1 AND kind=$2 AND state IN ('queued','running','reconciling')", [jobId, DEVICE_CODEX_JOB]);
+            const current=(await db.query<{id:string;kind:string;state:string;project_id:string|null;email:string;message:string}>('SELECT id,kind,state,project_id,email,message FROM bridge_jobs WHERE id=$1 FOR UPDATE', [jobId])).rows[0];
+            if(current?.kind===DEVICE_CODEX_JOB&&['queued','running','reconciling','cancelled'].includes(current.state)){
+                await db.query("UPDATE device_model_calls SET cancelled_at=COALESCE(cancelled_at,clock_timestamp()) WHERE job_id=$1 AND result IS NULL", [jobId]);
+                await db.query("UPDATE bridge_jobs SET state='cancelled',message='Запрос Codex остановлен; автоматический повтор не выполняется.',updated_at=clock_timestamp() WHERE id=$1 AND kind=$2 AND state IN ('queued','running','reconciling')", [jobId, DEVICE_CODEX_JOB]);
+                await projectDeviceCodexOperation(db,jobId);projected=true;outcome={cancelled:true,state:'cancelled'};
+            }else outcome={cancelled:false,state:current?.state??'missing'};
             await db.query('COMMIT');
         }
         catch (e) {
@@ -251,6 +258,8 @@ export class DeviceCodexService {
         finally {
             db.release();
         }
+        if(projected)void notifyDeviceOperations();
+        return outcome;
     }
     /** A revoked connection can only acknowledge the already-leased private result; it cannot fetch context or dispatch. */
     async receiptIdentity(token: string, jobId: string, lease: string): Promise<Device | undefined> {

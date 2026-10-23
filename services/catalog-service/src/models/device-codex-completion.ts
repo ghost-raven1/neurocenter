@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { DEVICE_CODEX_JOB, normalizeDeviceCodexResult, deviceCodexResultDigest } from '../../../shared/device-codex-inference.cjs';
 import type { DeviceCompletion } from '../devices/device-completion';
+import {projectDeviceCodexOperation} from './device-codex-operation';
 /** Completes within the caller's locked job transaction; the public queue receives a digest only. */
 export async function completeDeviceCodex(db: Pick<PoolClient, 'query'>, job: {
     id: string;
@@ -46,5 +47,6 @@ export async function completeDeviceCodex(db: Pick<PoolClient, 'query'>, job: {
     await db.query('UPDATE device_model_calls SET result=$2::jsonb,response_digest=$3,completed_at=clock_timestamp() WHERE job_id=$1 AND response_digest IS NULL', [job.id, JSON.stringify(result), digest]);
     const state = job.state === 'cancelled' ? 'cancelled' : input.state;
     await db.query('UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5::jsonb,updated_at=clock_timestamp() WHERE id=$1', [job.id, state, success ? 100 : 0, state === 'cancelled' ? 'Запрос остановлен; полученная квитанция сохранена.' : success ? 'Ответ Codex получен.' : 'Codex не завершил запрос. Автоматический повтор не выполняется.', JSON.stringify({ callId: call.id, responseDigest: digest, status: state })]);
+    await projectDeviceCodexOperation(db,job.id);
     return { ok: true, repeated: false };
 }

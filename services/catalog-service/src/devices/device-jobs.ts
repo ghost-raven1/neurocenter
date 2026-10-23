@@ -544,7 +544,10 @@ export class DeviceJobs {
         const codex=(await this.store.pool.query<{kind:string;state:string}>(`SELECT kind,state FROM bridge_jobs WHERE id=$1 AND email=$2 ${access}`,params)).rows[0];
         if(codex?.kind===DEVICE_CODEX_JOB){
             if(['succeeded','failed'].includes(codex.state))throw new ConflictException('Запрос Codex уже завершён.');
-            if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');await this.codex.cancel(id);return {ok:true};
+            if(!this.codex)throw new ConflictException('Подключение Codex недоступно.');
+            const outcome=await this.codex.cancel(id);
+            if(!outcome.cancelled)throw new ConflictException('Запрос Codex уже завершён. Обновите журнал.');
+            return {ok:true};
         }
         // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
