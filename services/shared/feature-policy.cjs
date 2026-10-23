@@ -22,6 +22,8 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
 function requiredAssetFeatures(kind){return kind==='model'?['model_catalog']:kind==='agent'?['agents']:['mcp','plugin','skill'].includes(kind)?['tool_catalog']:[];}
 function requiredInferenceFeatures(purpose,agentId){
     if(purpose==='agent'&&agentId==='agent-packager')return ['tool_build_agent'];
+    if(purpose==='agent'&&agentId==='agent-ai-admin')return ['system_ai_admin'];
+    if(purpose==='agent'&&agentId==='agent-autoconfigurator')return ['system_autoconfigurator'];
     if(purpose==='research')return agentId?['group_chat','research_tools']:['research_tools'];
     if(purpose==='agent'||purpose==='compaction'&&agentId)return ['group_chat'];
     if(purpose==='chat'||purpose==='compaction')return ['model_chat'];
@@ -40,6 +42,8 @@ function requiredRouteFeatures(method,path,body){
         if(route==='/api/model-usage')return ['model_usage'];
         return [];
     }
+    const systemRole=/^\/api\/system-roles\/(agent-ai-admin|agent-autoconfigurator)\/(?:prepare|runs(?:\/[^/]+\/apply)?)$/.exec(route);
+    if(verb==='POST'&&systemRole)return [systemRole[1]==='agent-ai-admin'?'system_ai_admin':'system_autoconfigurator'];
     // Team-chat admissions preserve accepted replay and cleanup; fresh capabilities are checked by its executor.
     if(/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(route))return [];
     if(/^\/api\/help\/[^/]+$/.test(route))return verb==='PUT'?['help_center']:[];

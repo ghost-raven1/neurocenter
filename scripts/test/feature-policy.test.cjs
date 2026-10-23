@@ -77,6 +77,14 @@ test('Per-model policy stays configurable when enforcement or the catalog featur
 
 test('Research admission depends on selected sources; saved retry uses server snapshot',()=>{assert.deepEqual(requiredRouteFeatures('POST','/api/model-chats/id/turns',{research:{project:true,external:{assetId:'x'}}}),['model_chat','research_tools','project_search','tool_catalog']);assert.deepEqual(requiredRouteFeatures('GET','/api/model-chats/id/research-tools'),[]);assert.deepEqual(requiredRouteFeatures('POST','/internal/research-mcp/call',{}),['research_tools','tool_catalog']);});
 
+test('System roles have independent admission flags and retain history, cancellation and rollback',()=>{
+ for(const [id,flag]of [['agent-ai-admin','system_ai_admin'],['agent-autoconfigurator','system_autoconfigurator']]){
+  assert.deepEqual(requiredInferenceFeatures('agent',id),[flag]);
+  for(const suffix of ['prepare','runs','runs/run-id/apply'])assert.deepEqual(requiredRouteFeatures('POST','/api/system-roles/'+id+'/'+suffix),[flag]);
+  for(const [method,suffix]of [['GET','runs'],['GET','runs/run-id'],['POST','runs/run-id/cancel'],['POST','runs/run-id/rollback']])assert.deepEqual(requiredRouteFeatures(method,'/api/system-roles/'+id+'/'+suffix),[]);
+ }
+});
+
 
 test('Only trusted normalized agent cleanup bypasses disabled capabilities',()=>{
  for(const agents of [[],[{id:'a',enabled:false}]]){assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents},true),[]);assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents}),['agents','computer_connections']);}

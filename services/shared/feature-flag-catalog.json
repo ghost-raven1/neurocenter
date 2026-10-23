@@ -282,5 +282,35 @@
     "group": "models",
     "dependsOn": [],
     "defaultEnabled": true
+  },
+  {
+    "key": "card_depth_effect",
+    "name": "Объём карточек",
+    "description": "Лёгкий наклон карточек за курсором. Отключается при уменьшении анимации и на сенсорных устройствах.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_ai_admin",
+    "name": "Агент «AI-админ»",
+    "description": "Диагностика системы и предложения по настройке адаптеров. История, отмена и восстановление доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "agents",
+      "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_autoconfigurator",
+    "name": "Агент «Автоконфигуратор»",
+    "description": "Проверяемые предложения по промптам, скиллам, плагинам и ролям. Изменения применяются отдельным действием.",
+    "group": "agents",
+    "dependsOn": [
+      "agents",
+      "model_hosting"
+    ],
+    "defaultEnabled": true
   }
 ]
