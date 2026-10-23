@@ -6,7 +6,7 @@ import { RAG_PLUGIN_SOURCE } from '../../../services/shared/opencode-rag-source.
 import { managedPipelineSource } from './rag-managed-pipeline.mjs';
 import { RAG_LOCAL_UI } from './rag-web-ui.mjs';
 
-export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.10`;
+export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.11`;
 export const RAG_PLUGIN_COMMIT = RAG_PLUGIN_SOURCE.commit;
 export const RAG_PLUGIN_DEPENDENCIES = Object.freeze({ ...RAG_DEPENDENCIES, '@opencode-ai/plugin': '1.14.48' });
 const original = 'const cfg = await getConfig(input.directory);';

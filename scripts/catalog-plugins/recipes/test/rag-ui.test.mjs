@@ -8,6 +8,7 @@ import { withManagedUiMutation, closeManagedUiMutations, managedUiReindex, manag
 import { acquireManagedIndexLock, releaseManagedIndexLock, preserveManagedSessionLock } from '../adapters/rag-index-lock.mjs';
 import { RAG_LOCAL_UI } from '../rag-web-ui.mjs';
 import { rememberUiConfig, persistUiConfigPatch } from '../adapters/rag-ui-config.mjs';
+import * as uiGuards from '../adapters/rag-ui-guards.mjs';
 
 async function fixture(action) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rag-ui-guards-'));
@@ -74,6 +75,64 @@ test('Фоновая индексация удерживает writer после
     await assert.rejects(withManagedUiMutation(directory, async () => {}), error => error.statusCode === 409);
     await closeManagedUiMutations(); assert.equal(abortSignal.aborted, true);
     await assert.rejects(fs.access(path.join(directory, 'neurocenter-session.lock')), { code: 'ENOENT' });
+}));
+
+test('Фоновый частичный отказ становится видимым terminal failed без утечки ключа и изменения конфига', () => fixture(async directory => {
+    let finished; const done = new Promise(resolve => { finished = resolve; });
+    const cfg = { embedding: { vectorDimension: 2560, apiKey: 'fixture-secret' } }, original = JSON.stringify(cfg);
+    const result = await managedUiReindex({ cwd: directory, storePath: directory, cfg, store: {}, getEmbedder: async () => ({}),
+        runIndexPass: async () => ({ embeddingFailures: 1, embeddingUnavailable: false }), onFinished: finished });
+    assert.equal(result.body.started, true); await done;
+    assert.equal(typeof uiGuards.managedUiIndexingStatus, 'function');
+    const status = uiGuards.managedUiIndexingStatus({ status: 200, body: { manifest: { lastIndexedAt: null }, staleFileCount: 0 } }, directory);
+    assert.equal(status.body.reindex.state, 'failed'); assert.equal(status.body.reindex.id, result.body.runId);
+    assert.ok(status.body.reindex.error); assert.equal(JSON.stringify(status).includes('fixture-secret'), false);
+    assert.equal(status.body.freshness, 'never'); assert.equal(JSON.stringify(cfg), original);
+}));
+
+test('Статус показывает фактические файлы и завершение, повторный конфликт не затирает текущий проход', () => fixture(async directory => {
+    let release, finished; const done = new Promise(resolve => { finished = resolve; });
+    const result = await managedUiReindex({ cwd: directory, storePath: directory, cfg: { embedding: { vectorDimension: 2560 } }, store: {}, getEmbedder: async () => ({}),
+        runIndexPass: async ({ progress }) => { progress.setFileCount(2); progress.startFile('src/a.ts'); progress.finishFile('src/a.ts'); await new Promise(resolve => { release = resolve; }); return { embeddingFailures: 0 }; }, onFinished: finished });
+    assert.equal(typeof uiGuards.managedUiIndexingStatus, 'function');
+    const read = () => uiGuards.managedUiIndexingStatus({ status: 200, body: { manifest: { lastIndexedAt: '2026-01-01' }, staleFileCount: 0 } }, directory).body;
+    assert.equal(read().reindex.state, 'running'); assert.equal(read().reindex.progress.completedFiles, 1); assert.equal(read().reindex.progress.totalFiles, 2);
+    assert.equal(read().reindex.progress.currentFile, 'src/a.ts');
+    assert.equal((await managedUiReindex({ storePath: directory, onFinished() {} })).status, 409);
+    assert.equal(read().reindex.id, result.body.runId); release(); await done;
+    assert.equal(read().reindex.state, 'complete'); assert.ok(read().reindex.finishedAt);
+}));
+
+test('Проверка провайдера видна как starting, её ошибка завершает операцию безопасным сообщением', () => fixture(async directory => {
+    let reject, entered, finished; const checking = new Promise(resolve => { entered = resolve; }), done = new Promise(resolve => { finished = resolve; });
+    const work = managedUiReindex({ cwd: directory, storePath: directory, getEmbedder: () => { entered(); return new Promise((_, fail) => { reject = fail; }); }, onFinished: finished });
+    await checking;
+    const response = { status: 200, body: { manifest: { lastIndexedAt: null }, staleFileCount: 0 } };
+    assert.equal(uiGuards.managedUiIndexingStatus(response, directory).body.reindex.state, 'starting');
+    assert.equal(uiGuards.managedUiIndexingStatus(response, directory + '-other').body.reindex, null);
+    reject(new Error('https://fixture.invalid secret-key=fixture-secret'));
+    assert.equal((await work).status, 503); await done;
+    const status = uiGuards.managedUiIndexingStatus(response, directory);
+    assert.equal(status.body.reindex.state, 'failed'); assert.ok(status.body.reindex.finishedAt);
+    assert.equal(JSON.stringify(status).includes('fixture-secret'), false);
+}));
+
+test('Отмена после started не становится успешным завершением', () => fixture(async directory => {
+    let finished; const done = new Promise(resolve => { finished = resolve; });
+    await managedUiReindex({ cwd: directory, storePath: directory, cfg: { embedding: { vectorDimension: 4 } }, store: {}, getEmbedder: async () => ({}),
+        runIndexPass: ({ abortSignal }) => new Promise(resolve => abortSignal.addEventListener('abort', () => resolve({ embeddingFailures: 0 }), { once: true })), onFinished: finished });
+    await closeManagedUiMutations(); await done;
+    const status = uiGuards.managedUiIndexingStatus({ status: 200, body: { manifest: {} } }, directory);
+    assert.equal(status.body.reindex.state, 'cancelled'); assert.ok(status.body.reindex.finishedAt);
+}));
+
+test('Сбой очистки кэша не теряет terminal status и не создаёт unhandled rejection', () => fixture(async directory => {
+    let observed; const done = new Promise(resolve => { observed = resolve; });
+    await managedUiReindex({ cwd: directory, storePath: directory, cfg: { embedding: { vectorDimension: 4 } }, store: {}, getEmbedder: async () => ({}),
+        runIndexPass: async () => ({ embeddingFailures: 0 }), onFinished() { observed(); throw new Error('fixture cache observer failed'); } });
+    await done;
+    const status = uiGuards.managedUiIndexingStatus({ status: 200, body: { manifest: {} } }, directory);
+    assert.equal(status.body.reindex.state, 'complete'); assert.ok(status.body.reindex.finishedAt);
 }));
 
 test('Первое явное сохранение создаёт минимальный конфиг, запуск его не создаёт', () => fixture(async directory => {
