@@ -1,0 +1,172 @@
+{
+  "kind": "selected-module-reliability-evidence",
+  "baseline": "c7d05ee",
+  "sourceHead": "73faf5921969747b336068808b78193979707250",
+  "wholeProjectCoverageComplete": false,
+  "goalComplete": false,
+  "localOnly": true,
+  "selectedTests": {
+    "catalog": 191,
+    "gateway": 29,
+    "frontend": 94,
+    "bridgeSafety": 19
+  },
+  "steps": [
+    {
+      "name": "catalog",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 18490
+    },
+    {
+      "name": "gateway",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 1138
+    },
+    {
+      "name": "frontend",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 811
+    },
+    {
+      "name": "bridge-safety",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 10616
+    },
+    {
+      "name": "catalog-types",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 3817
+    },
+    {
+      "name": "gateway-types",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 1460
+    },
+    {
+      "name": "frontend-types",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 5682
+    },
+    {
+      "name": "rag-types",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 992
+    },
+    {
+      "name": "bridge-types",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 2206
+    },
+    {
+      "name": "frontend-build",
+      "code": 0,
+      "signal": null,
+      "expired": false,
+      "durationMs": 5555
+    }
+  ],
+  "sourcesUnchanged": true,
+  "sources": {
+    "docker-compose.yml": "6fe5f1606e2842aa4fccad69cd547117679ca8d1439fba369eea83e852fc7a08",
+    "frontend/Dockerfile": "25bf63df28a98ae3a0f9da7dbadbdc1f92cac54a3906b4c12215fc34b4384c0a",
+    "frontend/nginx.conf": "06af8172be428ac679815adb6c7b8682cbe84b71e55c7412cc97f58f1ef8a647",
+    "frontend/nginx.production.conf.template": "2e3d1f2f5a0b4099d8836e76a752a0b2ed47c0ae8cc03f435d52a24ae9800dc0",
+    "frontend/src/features/ModelChat/api.ts": "c413d82880f2487ba6230b8ffae94782c1f7dd4a676d127e9909b8abc5f34266",
+    "frontend/src/modules/Operations/operationActions.ts": "55bc9eec7e27dc16736924dab58227b413c84efc5e6a5fc2a6e84985652135c1",
+    "frontend/test/operation-actions.test.ts": "f94feac8160d4e00821999ffc459facc9e6707b732da1411b326c35b0cae4f79",
+    "mcp/neurocenter-asset-sync/src/bridge/workspace-identity-state.ts": "00dcfb8f0dedd603f3f5e8152ff541df4d9ac5e252a3839b71257ad6695529a3",
+    "mcp/neurocenter-asset-sync/src/bridge/workspace-installations.ts": "64bf9302ba6fd0f1f76ab5f922f092764df2c1fc279fbe9a62821b3fc31dc127",
+    "mcp/neurocenter-asset-sync/src/bridge/workspace-instance.model.ts": "63884b4c14c3be29b9e82ed51caf3844275ed2d3491efb3865a0a6cc4c4a9ee0",
+    "mcp/neurocenter-asset-sync/src/bridge/workspace-instance.ts": "8cd5b769e68858a54a78b7e31a8a1bfb60d85ee03fb382a2def216b4edc00df4",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/receipts.ts": "2a367b4feec756d13effb2adfce1664818f8bae88d8580c32c0698ce81c1882a",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/worker.ts": "b99610a98db36b978d2b91633a0abdb8d47fd62e13e027f310dc2e9508f68614",
+    "mcp/neurocenter-asset-sync/src/features/project-learning-memory-sync/workspace-handoff.ts": "82cd6d926d1c97fa39326e30bc914d7b58c06c434beab096f34101c855fb6903",
+    "mcp/neurocenter-asset-sync/test/project-learning-memory-workspace.test.ts": "6bcfa5f9a6fe27e33697c7fb1f1edf6d2fe265cf24243cee1fa08328945e1b1d",
+    "services/api-gateway/src/proxy/model-inference-forward.ts": "47d5ec8230c6434aada7cff7c81c76a2041f52286d36ccdeb73082142727542c",
+    "services/api-gateway/test/model-chat-deadline.test.ts": "86a7297ba480643f50478daa6a0af1d3443fb71a8dae389e4d0b6c47b2715375",
+    "services/api-gateway/test/model-inference-forward.test.ts": "0fab026d9516f21ad91f61a29d67de00aadec79d3b4d811c6bcafbe9982c4f07",
+    "services/catalog-service/src/catalog/catalog.module.ts": "052aad7cd0ee0f3e1e5d52aef57eb5cc82f8e4a8ca092eafcc003e7227b6ad62",
+    "services/catalog-service/src/database/catalog-migrations.ts": "06bdd1eccb6bed04bf9a2d84c4202bf6f8ef481399c012f736281869c67ff327",
+    "services/catalog-service/src/database/current-schema-verification.ts": "966e982987bf14c004b2c694f581ff0ec1cf7c815b61eee223f03d90babfda47",
+    "services/catalog-service/src/devices/device-completion.ts": "763770bc2b5d3d9638e8c064ae8940c1a34309a0dcdd6401d4e38d2049bd6bed",
+    "services/catalog-service/src/devices/device-jobs.ts": "7c59501c7ac1ad4780be442c4ed67f8d0b936e1c81d359f338343161f37bec6d",
+    "services/catalog-service/src/model-chat/chat-attachment-storage.ts": "0e6c32746df518a9ae94993c5bbeb4f1a361c48039ac4317dd143088a04dc9e3",
+    "services/catalog-service/src/model-chat/chat-research-tools.ts": "750d60cf45c128123fc78e34b9ad0f5b905455bcb6f0a6f6728d750ad29fedb9",
+    "services/catalog-service/src/model-chat/chat.service.ts": "cf688feb48a7d65de2d591eb835b38e0f6b7f5ee013d0d7ae59661cb7dc44044",
+    "services/catalog-service/src/models/device-codex-completion.ts": "47ff5ddf45bc5d9ee2ce46694334768212d83efd68336ee3a539fdabb05e5214",
+    "services/catalog-service/src/models/device-codex-operation.ts": "6d5fe54f8178c396acffab29170e71a870fb0d8091816f997579b1d3308841b7",
+    "services/catalog-service/src/models/device-codex.service.ts": "0130139b8f17b868e10d3f6471c48e5a8a88b7868ba3181df7b053ede76f4967",
+    "services/catalog-service/src/models/project-rag-authorization.schema-contract.ts": "1580c05bba28374fd03fdffc4641c0dfa7463f9c4049544a8d2aa3ac0ad1950a",
+    "services/catalog-service/src/models/project-rag-authorization.schema-verification.ts": "0e9b3701acefa4bcda5b762a2a24e9a416ee2247ab3e0e412da7fa879748dd85",
+    "services/catalog-service/src/models/project-rag-authorization.schema.ts": "5a095b2ff330006696c09f86af07de1e1a963fa9bbdb42f9d8d952ccf6bfd35f",
+    "services/catalog-service/src/models/project-rag-authorization.ts": "2a29cb3acb7b3ba3d40348e6ebab803ea0932d91963128c8a8dfe490c09b9d1f",
+    "services/catalog-service/src/models/project-rag-coordinator.ts": "411512c019f8e9a31b05f78e7c2b1a91fa1120f6ae7626c89fb5e93923b3276d",
+    "services/catalog-service/src/operations/operation-action-policy.ts": "ada2413694ca0a4900064e7b0b53cfe3c823791d48b5d74848d545cc90b549f1",
+    "services/catalog-service/src/operations/operation-action-store.ts": "4aedfd911f047737268f5fb370392c9355dc3c6d28da6a74e85e110d32b9ae7d",
+    "services/catalog-service/src/operations/operation-actions.service.ts": "1f083b66ff1b663617de75660e0877f467d4722fbd64ea0f6024a90c8312294d",
+    "services/catalog-service/src/project-chat/project-chat.policy.ts": "b428b58089ff9c78627d62cda0d73f1d51ea8137ee85e9d273be131521236e67",
+    "services/catalog-service/src/project-chat/project-chat.runner.ts": "2f8bcb0460171cf3a890141943c1a9277869684bb2d5eebd5911a93c27f87d14",
+    "services/catalog-service/src/project-chat/project-chat.service.ts": "18b6623682c1456ba860a612c71f50c880ba2338e4babaae07ce851d1191e95d",
+    "services/catalog-service/src/system-roles/system-role.operations.ts": "038a916b00d3e258d03cfb295d49bda7a5286030f7d2078a2bf5ea4f658f385e",
+    "services/catalog-service/test/catalog-full-migrations.test.ts": "bfc9b7fa3f9b1dd0777a852bef107dd0fb6d1e8f38f0c195156c26d1afc093a2",
+    "services/catalog-service/test/chat-storage-cleanup-failures.test.ts": "74c2669b6015cfd8ca2d690965e7acadab2fc8be0de86ea4a8e92ed6f1004a89",
+    "services/catalog-service/test/chat-storage-lifecycle.test.ts": "bb98312c15514e98c3d8be5d2e1caec6be769f0c702b51320d515bb2aebc83fa",
+    "services/catalog-service/test/chat-storage-startup.test.ts": "ba041e34d2af554cc424b711fbfff706e243c77bdb323765ee8255823b80a73f",
+    "services/catalog-service/test/device-codex-recovery-acceptance.test.ts": "26e03aa63303e2bcc2f32b3a599fa5dc0d7e245634ad102a7ca230931a6b0278",
+    "services/catalog-service/test/model-chat-db.test.ts": "839eda6faef93236d1adfcdbf834e4365eae16707c38ad1fed3a1adbddd98fb5",
+    "services/catalog-service/test/operation-action-store.test.ts": "e622c1711086777fe6640fcc249f5e8b78f110e08c0828ff2e08d5409f507019",
+    "services/catalog-service/test/operation-actions-database.test.ts": "c1943247791a43dcbb513147b66b44fabf01b5a67d5564065e003d81c6cc21a7",
+    "services/catalog-service/test/operation-actions-tool-build.test.ts": "5da7c8960bbd82e8fd811cf56eeddb24aa87c9281fa934236aa42367e84d70e7",
+    "services/catalog-service/test/project-chat-dialogs-postgres.test.ts": "c3d6c45570f786fc3875ffa56d064de3b101b1e82eb5f262df3bcd1b2fdfb02d",
+    "services/catalog-service/test/project-rag-authorization.fixture.ts": "8fed11a63b74da96ad8a225b6d241ec7a83c28059e9d13c9a15cfa13606e657c",
+    "services/catalog-service/test/project-rag-authorization.test.ts": "07a193176ff4fa7c3d607273603a709a74591ef1b9910cdd804b7eb9f9a6535a",
+    "services/catalog-service/test/project-reindex-database.test.ts": "af2f13c2e648067239a8d2815fa5cddaaac38137cca0d7e23d143046305eb227",
+    "services/catalog-service/test/rag-sync-feature-replay.test.ts": "1bd6ea95c1bc627f7af0643d117b8ae9be3f1fe02071ee3f2a18d29db9e7ba2f",
+    "services/rag-sync-service/src/rag/rag-db.ts": "47f791c8c597cc124386b0a635e9b711902dc8ef139c55232008912e961d0ccd",
+    "services/rag-sync-service/src/rag/rag-write-authorization.ts": "7d4bbd2d5924f25bbe61e41255e0da8726968ab9989d0247910a2c53ddbe5169",
+    "services/rag-sync-service/src/rag/rag.service.ts": "26189c9533250e5628ac7691c44776430b91339179afb455d8cb4a117d8510bd",
+    "services/rag-sync-service/test/rag-features.test.ts": "b79addc7c9104bb2c4363a65541f8dc0a8c476ba6706ccd4ed756b1a0c3b9580",
+    "services/rag-sync-service/test/rag-index-contract.test.ts": "5be7425244ba773095a1d3f92020b9c8471ee55e12557802ab317f171d28e88e",
+    "services/rag-sync-service/test/rag-validation.test.ts": "f4f9132a4cfaa8c7ad831596d7ea3d4e79f0ab740038f7bd796e48b65350ea13",
+    "services/shared/model-chat-deadline.cjs": "1a61526d7302d462a919f7147f5c3c016752c0c9f9cf7782033c02d92e3b55b9",
+    "services/shared/model-chat-deadline.d.cts": "d5376072ded49480172cad3b13038539372ff83639f65177948feafe1eb8562c",
+    "services/shared/model-chat-deadline.json": "45369142ec86c459d29d5a604cb23b0a46b2dd5d9aa50ced1a6bf2f2a933d4c3",
+    "services/shared/rag-write-authorization.cjs": "04aaadc7378fcb7fb7c6c7b5b577c05f1b2f608f2c8396d9facca39e1b1c7053",
+    "services/shared/rag-write-authorization.d.cts": "790b5fcd9ebb1148a48ecc423e1bfa5153c55818b0b79dc9faf227c39c33347c"
+  },
+  "artifacts": {
+    "integrated-final/receipt.json": "1724cf987cd473bd229f862fbbc545aed45583dea6d8ef13f24f7bf352669ab9",
+    "integrated-final/catalog.json": "d8d79e039317dc86a311f7a472680136545317a70abd3cbf065c41962d64fd65",
+    "integrated-final/gateway.json": "3ea0b4a6dd25dbbc61109ea032c54cfc95ab9ff2c30ab9589d6297e09894af9c",
+    "integrated-final/frontend.json": "f8b630787ff1a670caef581dffc65bc4b7c641262259a63d7a25f9f757bbc4d4",
+    "integrated-final/bridge-safety.json": "418f2935c44d0ab08834c6b27f1a93ebd743ae86c38e66768e162da08cd1ed2a",
+    "nginx-syntax.json": "205149a462738872a1b7fd70f8031efe9026a205512446871840ae2e65b7d328",
+    "postgres-restart.json": "c84a107aa4e463dc507cb80522107c7c485c4c4fd327ab007f78d144d576a69c",
+    "upgrade-rehearsal.json": "fc106628edd5f546f334b7b65a824e148ed7c0c9a8e41c2c60d23547f4845b87"
+  },
+  "limits": [
+    "selected suites only",
+    "provider inference and CI not accepted",
+    "dev readiness gap remains",
+    "frontend Docker image not accepted"
+  ],
+  "at": "2026-10-23T21:41:25.753Z"
+}
