@@ -86,15 +86,19 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/package-build-admission.test.ts": {
-  "sha256": "0176b34e7a9cf4b659f1ff06e2e52afe54e9f1ab94f6ebba604adb22e9d63070",
+  "sha256": "34d385934ce13099f36b0950700c9a4abf6c8ae33834045280d72006cbc3265c",
   "helpers": {}
  },
  "services/catalog-service/test/package-build-cancellation-control.test.ts": {
-  "sha256": "000dbbc1f36518cf2fce8b5ec436106927c9962e32eef41bc2a75f9a8a772794",
+  "sha256": "3b34484fe2c21d8d920550568e3141bedd907eb418839bb3e1631cb128b32305",
   "helpers": {}
  },
  "services/catalog-service/test/package-build-publication-deadline.test.ts": {
   "sha256": "e6e02b814e76851030991ec9db6fe042d2cad65ff24b600e6cce48f76d6f5e89",
+  "helpers": {}
+ },
+ "services/catalog-service/test/package-build-repository-deadline.test.ts": {
+  "sha256": "aecf033f0913b31f9030e5c30d832477bbc334ab70e140bd8b7117aff798652f",
   "helpers": {}
  },
  "services/catalog-service/test/package-runtime-history.test.ts": {

@@ -135,6 +135,7 @@ describe('Границы серверной сборки', () => {
 });
 
 const mocks = vi.hoisted(() => ({pool: {query: vi.fn(), connect: vi.fn(), end: vi.fn()}, lease: {query: vi.fn(), release: vi.fn(), on: vi.fn()}, reserve: vi.fn()}));
+const leaseRows=async(sql:string)=>({rows:sql.includes('EXTRACT(EPOCH')?[{lock_ms:'0',statement_ms:'0'}]:[]});
 vi.mock('../src/database/pool', () => ({createPool: () => mocks.pool}));
 vi.mock('../../shared/capacity.cjs', () => ({reserveCapacity: mocks.reserve}));
 vi.mock('../src/devices/device-operations', () => ({notifyDeviceOperations: vi.fn()}));
@@ -150,7 +151,7 @@ describe('Владение очередью серверной сборки', ()
         vi.clearAllMocks();
         mocks.pool.query.mockResolvedValue({rows: []});
         mocks.pool.connect.mockResolvedValue(mocks.lease);
-        mocks.lease.query.mockResolvedValue({rows: []});
+        mocks.lease.query.mockImplementation(leaseRows);
         mocks.reserve.mockResolvedValue(vi.fn());
     });
     afterEach(() => vi.unstubAllGlobals());
@@ -169,13 +170,13 @@ describe('Владение очередью серверной сборки', ()
         await builds.onModuleDestroy();
     });
     it('После получения lock закрывает прерванные задания одной транзакцией', async () => {
-        mocks.lease.query.mockResolvedValueOnce({rows: [{locked: true}]}).mockResolvedValue({rows: []});
+        mocks.lease.query.mockResolvedValueOnce({rows: [{locked: true}]}).mockImplementation(leaseRows);
         const builds = service(['Главный админ']);
         await builds.onModuleInit();
         await new Promise(resolve => setImmediate(resolve));
         expect(mocks.lease.query.mock.calls.map(([sql]) => String(sql))).toEqual([
-            'SELECT pg_try_advisory_lock(72465395) AS locked', 'BEGIN', expect.stringContaining("SET state='FAILED'"), 'COMMIT',
-            'BEGIN', expect.stringContaining("state='QUEUED'"), 'COMMIT',
+            'SELECT pg_try_advisory_lock(72465395) AS locked', 'BEGIN', expect.stringContaining('EXTRACT(EPOCH'),expect.stringContaining("set_config('lock_timeout'"),expect.stringContaining("SET state='FAILED'"), 'COMMIT',
+            'BEGIN',expect.stringContaining('EXTRACT(EPOCH'),expect.stringContaining("set_config('lock_timeout'"),expect.stringContaining("state='QUEUED'"), 'COMMIT',
         ]);
         await builds.onModuleDestroy();
         expect(mocks.lease.query).toHaveBeenCalledWith('SELECT pg_advisory_unlock(72465395)');
@@ -277,14 +278,14 @@ describe('Владение очередью серверной сборки', ()
         expect(enqueue.mock.calls[0][2]).toBe(requestHash(validateBuildInput(request)));
     });
     it('Обрыв lease во время unlock не приводит к двойному release и не оставляет пул открытым', async () => {
-        mocks.lease.query.mockResolvedValueOnce({rows: [{locked: true}]}).mockResolvedValue({rows: []});
+        mocks.lease.query.mockResolvedValueOnce({rows: [{locked: true}]}).mockImplementation(leaseRows);
         const builds = service(['Главный админ']);
         await builds.onModuleInit();
         const onError = mocks.lease.on.mock.calls.find(([name]) => name === 'error')![1];
         mocks.lease.release.mockClear();
         mocks.lease.query.mockImplementation(async (sql: string) => {
             if (sql.includes('pg_advisory_unlock')) {onError(new Error('Соединение оборвано')); throw new Error('unlock failed');}
-            return {rows: []};
+            return leaseRows(sql);
         });
         Object.assign(builds, {worker: Promise.reject(new Error('Ошибка очистки рабочего каталога'))});
         await expect(builds.onModuleDestroy()).resolves.toBeUndefined();

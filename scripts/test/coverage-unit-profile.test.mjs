@@ -22,8 +22,8 @@ async function fixture(t,source=typeOnly){
  return {root,file,entry:{sha256:digest(source),helpers:{}},source};
 }
 
-test('All 48 reviewed units and the one self-contained helper retain their exact reviewed bytes',async()=>{
- assert.equal(Object.keys(auditedUnits).length,48);
+test('All 49 reviewed units and the one self-contained helper retain their exact reviewed bytes',async()=>{
+ assert.equal(Object.keys(auditedUnits).length,49);
  assert.equal(Object.values(auditedUnits).reduce((sum,entry)=>sum+Object.keys(entry.helpers).length,0),1);
  await validateUnitSafeProfile(repository,{packages:[['catalog-service','services/catalog-service'],['feature-flags-service','services/feature-flags-service']],chosen:new Set()});
 });

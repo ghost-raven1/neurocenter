@@ -4,7 +4,7 @@ export const PUBLICATION_DEADLINE_MESSAGE='Сервер не дождался з
 interface PublicationTimeouts {lock_ms:string;statement_ms:string}
 const capped=(value:string,maximum:number)=>{const milliseconds=Number(value);return `${milliseconds===0?maximum:Math.min(milliseconds,maximum)}ms`;};
 
-/** Caps only an open publication transaction; lower inherited limits remain effective. */
+/** Caps SQL lock/statement waits in an open build transaction; lower inherited limits remain effective. */
 export async function configureBuildPublicationTransaction(client:PoolClient):Promise<void>{
     const {rows:[current]}=await client.query<PublicationTimeouts>(`SELECT
         EXTRACT(EPOCH FROM current_setting('lock_timeout')::interval)*1000 AS lock_ms,

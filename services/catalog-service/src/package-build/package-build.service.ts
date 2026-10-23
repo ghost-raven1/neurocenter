@@ -25,6 +25,7 @@ import { PluginRepository } from '../publication/plugin-repository';
 import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview} from './publication-target';
 import {publishBuiltTool} from './publish-built-tool';
 import {configureBuildPublicationTransaction,publicationDeadlineMessage} from './publication-deadline';
+import {withBuildSqlErrors} from './build-sql-errors';
 import {importBuiltSkill} from './import-skill-publication';
 import type { IAiPluginCreate } from '../catalog/dto';
 import { CatalogService } from '../catalog/catalog.service';
@@ -219,13 +220,13 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     /** Cancellation remains available on standby and with creation disabled. */
     async cancel(actor:IAccessActor,id:string){
         await this.requireMain(actor);if(!validId(id))throw new BadRequestException('Некорректный ID сборки.');
-        const row=await this.repository.cancel(actor.email,id,()=>this.requireMain(actor));
+        const row=await withBuildSqlErrors(()=>this.repository.cancel(actor.email,id,()=>this.requireMain(actor)));
         if(row.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
         void notifyDeviceOperations();return buildView(row);
     }
     async cancelRequest(actor:IAccessActor,key:string){
         await this.requireMain(actor);if(!validId(key))throw new BadRequestException('Некорректный ключ запроса сборки.');
-        const row=await this.repository.cancelRequest(actor.email,key,()=>this.requireMain(actor));
+        const row=await withBuildSqlErrors(()=>this.repository.cancelRequest(actor.email,key,()=>this.requireMain(actor)));
         if(row?.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
         void notifyDeviceOperations();return {requestKey:key,state:row?.state??'CANCELLED' as const,build:row?buildView(row):null};
     }
@@ -323,7 +324,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         }
         await this.requireMain(actor);
         const lease = this.currentLease();
-        return this.withLease(lease, async () => {
+        return withBuildSqlErrors(()=>this.withLease(lease, async () => {
             const root = await this.stagingRoot();
             let releaseDb: () => void = () => undefined;
             try {
@@ -343,7 +344,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             } finally {
                 releaseDb();
             }
-        });
+        }));
     }
 
     /** Флаг закрывает гонку: новый запрос мог прийти между пустой выборкой и завершением worker. */

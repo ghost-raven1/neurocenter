@@ -33,7 +33,7 @@ describe('Cancellation transaction failure preserves its primary error',()=>{
     const fixture=(borrowed=false)=>{
         const primary=Error('Authorization failed'),rollback=Error('Rollback failed');
         const row={id:randomUUID(),actor:'owner@example.test',request_key:randomUUID(),state:'RUNNING'} as BuildRow;
-        const client={query:vi.fn(async(sql:string)=>{if(sql==='ROLLBACK')throw rollback;return{rows:sql.includes('FOR UPDATE')?[row]:[]};}),release:vi.fn()} as unknown as PoolClient;
+        const client={query:vi.fn(async(sql:string)=>{if(sql==='ROLLBACK')throw rollback;return{rows:sql.includes('EXTRACT(EPOCH')?[{lock_ms:'0',statement_ms:'0'}]:sql.includes('FOR UPDATE')?[row]:[]};}),release:vi.fn()} as unknown as PoolClient;
         const tainted=vi.fn(),pool={connect:async()=>client} as unknown as Pool;
         return{primary,row,client,tainted,repository:new PackageBuildRepository(pool,borrowed?tainted:undefined)};
     };
@@ -51,6 +51,7 @@ describe('Queue admission preserves recovery intents without letting them block 
     const fixture=(states:string[])=>{
         const inserted:BuildRow[]=[];
         const client={query:vi.fn(async(sql:string,values:unknown[]=[])=>{
+            if(sql.includes('EXTRACT(EPOCH'))return{rows:[{lock_ms:'0',statement_ms:'0'}]};
             if(sql.startsWith('SELECT count(*)')){
                 const admitted=sql.match(/state IN \(([^)]+)\)/)![1].split(',').map(value=>value.trim().replaceAll("'",''));
                 return{rows:[{count:states.filter(state=>admitted.includes(state)).length}]};

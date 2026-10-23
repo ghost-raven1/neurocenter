@@ -4,6 +4,7 @@ import {hostname} from 'node:os';
 import type { Pool, PoolClient } from 'pg';
 import type { BuildConfiguration, BuildResult, BuildRow, BuildState } from './package-build.model';
 import {BuildCancelledError} from './build-cancellation';
+import {configureBuildPublicationTransaction} from './publication-deadline';
 
 /** Очередь сборки и её проекция в «Операциях» фиксируются одной транзакцией. */
 export class PackageBuildRepository {
@@ -166,7 +167,7 @@ export class PackageBuildRepository {
     private async transaction<T>(work: (client: PoolClient) => Promise<T>, borrowedClient?: PoolClient): Promise<T> {
         const client = borrowedClient ?? await this.pool.connect();
         let tainted=false;
-        try { await client.query('BEGIN'); const result = await work(client); await client.query('COMMIT'); return result; }
+        try { await client.query('BEGIN'); await configureBuildPublicationTransaction(client); const result = await work(client); await client.query('COMMIT'); return result; }
         catch (error) {
             try{await client.query('ROLLBACK');}catch{tainted=true;if(borrowedClient){if(this.taintedLease)this.taintedLease(client);else client.release(true);}}
             throw error;

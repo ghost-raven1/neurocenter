@@ -52,6 +52,7 @@ export async function inputHashes(){
         'catalog-service':['package-build/package-build.service.js','package-build/package-build.repository.js','package-build/package-build.model.js','package-build/package-build.controller.js','package-build/publication-target.js','package-build/publication-deadline.js','package-build/build-skill.js','package-build/skill-source.js','source-upload/source-upload.service.js','source-upload/source-upload.repository.js','source-upload/source-upload.files.js','source-upload/source-upload.model.js','source-upload/stage-upload.js','asset-sources/local-skill-ingest.js','asset-sources/skill-adapter.js','asset-sources/asset-blob-store.js','access/access-db.js','publication/plugin-repository.js','publication/publication-validation.js'],
         'skills-service':['skills/skills.service.js','skills/asset-import.controller.js','skills/asset-import.js','storage/fs-skills-storage.js','storage/skill-journal.js'],
     };
+    if(phase==='candidate')modules['catalog-service'].push('package-build/build-sql-errors.js');
     for(const [name,files]of Object.entries(modules)){
         const manifestFile=path.resolve(candidate,'..',name+'-artifacts.json'),manifest=JSON.parse(await readFile(manifestFile));hashes[name+'-manifest']=sha(await readFile(manifestFile));
         for(const relative of files){const digest=sha(await readFile(path.join(candidate,'services',name,'dist',relative)));assert.equal(digest,manifest.files[relative]);hashes['compiled:'+name+'/'+relative]=digest;}

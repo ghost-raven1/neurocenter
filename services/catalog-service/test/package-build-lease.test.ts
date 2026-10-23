@@ -16,7 +16,7 @@ describe('Сборщик восстанавливает единственног
         vi.useFakeTimers();state.clients=[];state.available=false;destroyed=false;vi.clearAllMocks();
         state.pool.query.mockResolvedValue({rows:[]});state.pool.end.mockResolvedValue(undefined);
         state.pool.connect.mockImplementation(async()=>{
-            const client=Object.assign(new EventEmitter(),{query:vi.fn(async(sql:string)=>({rows:sql.includes('pg_try_advisory_lock')?[{locked:state.available}]:[]})),release:vi.fn()});
+            const client=Object.assign(new EventEmitter(),{query:vi.fn(async(sql:string)=>({rows:sql.includes('EXTRACT(EPOCH')?[{lock_ms:'0',statement_ms:'0'}]:sql.includes('pg_try_advisory_lock')?[{locked:state.available}]:[]})),release:vi.fn()});
             state.clients.push(client);return client;
         });
         service=new PackageBuildService({} as AccessDb,{} as RuntimeArtifacts,{ensureSchema:vi.fn()} as unknown as CatalogService,{} as never);

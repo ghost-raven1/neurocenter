@@ -28,6 +28,8 @@ vi.mock('../src/modules/Store/packaging/pendingBuild',async original=>({...await
 
 const queued:ToolBuild={id:'33333333-3333-4333-8333-333333333333',operationId:'operation',state:'QUEUED',percent:0,message:'Ожидание'};
 const body=():Omit<ToolBuildRequest,'requestKey'>=>({name:'Точная версия',description:'Описание',kind:'mcp',source:{type:'files',entrypoint:'index.ts',files:[{path:'index.ts',content:'original bytes\n'}]}});
+const unavailableMessage='Сервер занят. Проверьте сохранённый запрос и повторите с прежним UUID.';
+const unavailable=()=>new AxiosError('Service Unavailable','ERR_BAD_RESPONSE',undefined,undefined,{status:503,data:{message:unavailableMessage}} as never);
 type Record={scope:string;schemaVersion:1;request:ToolBuildRequest};
 type Cancellation={schemaVersion:1;scope:string;target:'request'|'job';id:string};
 const records=new Map<string,Record>(),cancellations=new Map<string,Cancellation>();let scope:string,current:ReturnType<typeof useToolBuild>;
@@ -81,6 +83,21 @@ describe('POST упаковки принадлежит durable запросу и
         await current.submit({...body(),name:'Another form'});expect(io.create).toHaveBeenCalledOnce();
         io.create.mockResolvedValue(queued);await current.retrySaved();
         expect(io.create).toHaveBeenCalledTimes(2);expect(io.create.mock.calls[1][0]).toEqual(record.request);expect(io.create.mock.calls[1][0].source.files[0].content).toBe('original bytes\n');
+    });
+    it.each(['files','upload'] as const)('503 на create сохраняет exact %s/CAS; GET reconciliation и recheck не отправляют POST до ручного повтора',async source=>{
+        const actual=await vi.importActual<typeof import('../src/modules/Store/packaging/pendingBuild')>('../src/modules/Store/packaging/pendingBuild');
+        io.resume.mockImplementation(actual.resumePendingBuild);io.lookup.mockRejectedValue(unavailable());
+        const original:Omit<ToolBuildRequest,'requestKey'>={...body(),source:source==='files'?body().source:{type:'upload',uploadId:'22222222-2222-4222-8222-222222222222',sha256:'a'.repeat(64),bytes:100,entrypoint:'bin/server'},publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        await ready();io.create.mockRejectedValueOnce(unavailable());await current.submit(original);render(false);expect(current.error).toBe(unavailableMessage);render();await flush();render();
+        const exact=structuredClone(records.get(scope)!.request);
+        expect(exact).toEqual({...original,requestKey:expect.any(String)});expect(io.create.mock.calls[0][0]).toEqual(exact);
+        expect(current.draft?.request).toEqual(exact);expect(io.clear).not.toHaveBeenCalled();expect(current.canCancel).toBe(true);
+        original.name='Изменённая форма';if(original.source.type==='files')original.source.files[0].content='changed';else if(original.source.type==='upload')original.source.uploadId='44444444-4444-4444-8444-444444444444';
+        await vi.advanceTimersByTimeAsync(45_000);await flush();render();
+        expect(current.unresolved).toBe(true);expect(io.create).toHaveBeenCalledOnce();expect(io.lookup.mock.calls.length).toBeGreaterThan(1);expect(io.lookup.mock.calls.every(call=>call[0]===exact.requestKey)).toBe(true);
+        const reads=io.lookup.mock.calls.length;current.recheck();render();await flush();expect(io.lookup.mock.calls.length).toBeGreaterThan(reads);expect(io.create).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(45_000);await flush();render();expect(current.unresolved).toBe(true);expect(records.get(scope)!.request).toEqual(exact);
+        await current.retrySaved();render();expect(io.create).toHaveBeenCalledTimes(2);expect(io.create.mock.calls[1][0]).toEqual(exact);expect(current.job?.state).toBe('QUEUED');
     });
     it('Другая учётная запись не получает сохранённые исходники',async()=>{
         records.set('alice',{scope:'alice',schemaVersion:1,request:{...body(),requestKey:'11111111-1111-4111-8111-111111111111'}});scope='bob';await ready();
@@ -164,6 +181,18 @@ describe('Отмена durable запроса упаковщика',()=>{
         hooks.dispose();io.resume.mockClear();await ready();await flush();render();
         expect(io.cancelRequest.mock.calls.map(call=>call[0])).toEqual([request.requestKey,request.requestKey]);
         expect(io.create).toHaveBeenCalledOnce();expect(io.resume).not.toHaveBeenCalled();expect(current.cancelled).toBe(true);expect(current.draft?.request).toEqual(request);
+    });
+    it('503 на DELETE переживает reload с exact upload/CAS и повторяет только прежнюю отмену',async()=>{
+        const original:Omit<ToolBuildRequest,'requestKey'>={...body(),source:{type:'upload',uploadId:'22222222-2222-4222-8222-222222222222',sha256:'a'.repeat(64),bytes:100,entrypoint:'bin/server'},publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+        await ready();io.create.mockRejectedValueOnce(unavailable());await current.submit(original);render();const exact=structuredClone(records.get(scope)!.request);
+        expect(exact).toEqual({...original,requestKey:expect.any(String)});expect(io.create.mock.calls[0][0]).toEqual(exact);
+        io.cancelRequest.mockRejectedValueOnce(unavailable()).mockRejectedValueOnce(unavailable());await current.cancel();render();
+        const intent=structuredClone(cancellations.get(scope));expect(current.error).toBe(unavailableMessage);expect(current.cancelPending).toBe(true);expect(current.cancelled).toBe(false);expect(current.canDetach).toBe(false);expect(await current.reset()).toBe(false);
+        hooks.dispose();io.resume.mockClear();io.lookup.mockClear();await ready();await flush();render();
+        expect(io.cancelRequest.mock.calls.map(call=>call[0])).toEqual([exact.requestKey,exact.requestKey]);expect(cancellations.get(scope)).toEqual(intent);expect(current.draft?.request).toEqual(exact);
+        expect(current.cancelPending).toBe(true);expect(current.cancelled).toBe(false);expect(current.canDetach).toBe(false);expect(io.resume).not.toHaveBeenCalled();expect(io.lookup).not.toHaveBeenCalled();expect(io.create).toHaveBeenCalledOnce();
+        await current.retrySaved();expect(io.create).toHaveBeenCalledOnce();await current.retryCancel();render();
+        expect(io.cancelRequest.mock.calls.map(call=>call[0])).toEqual([exact.requestKey,exact.requestKey,exact.requestKey]);expect(current.cancelled).toBe(true);expect(current.draft?.request).toEqual(exact);expect(io.clear).not.toHaveBeenCalled();
     });
     it('403 на DELETE сохраняет intent и повтор отмены не вызывает POST или lookup',async()=>{
         await ready();await current.submit(body());render();io.cancelRequest.mockRejectedValueOnce(new AxiosError('No access','ERR_BAD_REQUEST',undefined,undefined,{status:403} as never));

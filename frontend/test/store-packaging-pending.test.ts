@@ -28,9 +28,9 @@ describe('Восстановление неизвестного ответа н�
         savePendingBuild('alice');
         expect(readPendingBuild('alice')).toBeUndefined();
     });
-    it('После временной 404 находит исходную сборку через GET и не создаёт новую', async () => {
+    it.each([404,503])('После временной %s находит исходную сборку через GET и не создаёт новую', async status => {
         vi.useFakeTimers();
-        const lookup = vi.fn().mockRejectedValueOnce(missing).mockResolvedValueOnce(queued);
+        const lookup = vi.fn().mockRejectedValueOnce({isAxiosError:true,response:{status}}).mockResolvedValueOnce(queued);
         const create = vi.fn();
         const result = resumePendingBuild(key, lookup, new AbortController().signal);
         await vi.advanceTimersByTimeAsync(2000);
@@ -39,11 +39,16 @@ describe('Восстановление неизвестного ответа н�
         expect(lookup).toHaveBeenCalledWith(key, expect.any(AbortSignal));
         expect(create).not.toHaveBeenCalled();
     });
-    it('404 через 45 секунд оставляет исход неопределённым, пока сервер ещё готовит запрос', async () => {
+    it.each([404,503])('%s через 45 секунд сохраняет UUID и оставляет исход неопределённым', async status => {
         vi.useFakeTimers();
-        const result = resumePendingBuild(key, vi.fn().mockRejectedValue(missing), new AbortController().signal).catch(error => error);
+        const values=new Map<string,string>();
+        vi.stubGlobal('localStorage',{getItem:(name:string)=>values.get(name),setItem:(name:string,value:string)=>values.set(name,value),removeItem:(name:string)=>values.delete(name)});
+        savePendingBuild('alice',key);
+        const lookup=vi.fn().mockRejectedValue({isAxiosError:true,response:{status}});
+        const result = resumePendingBuild(key, lookup, new AbortController().signal).catch(error => error);
         await vi.advanceTimersByTimeAsync(46_000);
         expect(await result).toBeInstanceOf(BuildRequestUnresolvedError);
+        expect(readPendingBuild('alice')).toBe(key);expect(lookup.mock.calls.every(call=>call[0]===key)).toBe(true);
     });
     it('Неопределённый ответ разрешает прежний UUID только для точного восстановленного запроса', () => {
         const first = buildSubmissionRequest('исходная форма');

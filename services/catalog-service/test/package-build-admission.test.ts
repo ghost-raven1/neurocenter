@@ -1,6 +1,7 @@
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {randomUUID} from 'node:crypto';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {ConflictException,ForbiddenException} from '@nestjs/common';
 import type {PoolClient} from 'pg';
 import type {AccessDb} from '../src/access/access-db';
 import type {RuntimeArtifacts} from '../src/runtime-artifacts/runtime-artifacts';
@@ -24,17 +25,44 @@ describe('Приём сборки не переживает владельца �
     let worker:ReturnType<typeof deferred>;
     let unblock:()=>void;
     let destroyed:boolean;
-    let repository:{existing:ReturnType<typeof vi.fn>;enqueue:ReturnType<typeof vi.fn>;takeQueued:ReturnType<typeof vi.fn>};
+    let repository:Record<'existing'|'enqueue'|'takeQueued'|'cancel'|'cancelRequest',ReturnType<typeof vi.fn>>;
     beforeEach(()=>{
         vi.clearAllMocks();mocks.pool.query.mockResolvedValue({rows:[]});mocks.reserve.mockResolvedValue(vi.fn());
         lease={query:vi.fn().mockResolvedValue({rows:[]})} as unknown as PoolClient;
         worker=deferred();unblock=()=>{};destroyed=false;
         service=new PackageBuildService({claims:vi.fn().mockResolvedValue({userRoles:['Главный админ']})} as unknown as AccessDb,
             {} as RuntimeArtifacts,{} as CatalogService,{} as never);
-        repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn()};
+        repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn(),cancel:vi.fn(),cancelRequest:vi.fn()};
         Object.assign(service,{lease,repository,stagingRoot:async()=>'/unused-admission-stage',execute:vi.fn(()=>worker.promise)});
     });
     afterEach(async()=>{unblock();worker.resolve();if(!destroyed)await service.onModuleDestroy();});
+    it.each(['55P03','57014'])('SQL %s при приёме даёт безопасный 503 и сохраняет причину без запуска worker',async code=>{
+        const raw=Object.assign(new Error('private SQL details: tool_source_uploads'),{code});
+        repository.enqueue.mockRejectedValue(raw);
+        const error=await service.create(actor,request()).catch(error=>error);
+        expect(error).toMatchObject({status:503,cause:raw});expect(error.cause).toBe(raw);
+        expect(error.getResponse()).toEqual({statusCode:503,error:'Service Unavailable',
+            message:'Сервер не подтвердил результат запроса. Проверьте его состояние или повторите сохранённый запрос.'});
+        expect((service as unknown as{execute:ReturnType<typeof vi.fn>}).execute).not.toHaveBeenCalled();
+        expect(repository.takeQueued).not.toHaveBeenCalled();
+    });
+    it.each(['cancel','cancelRequest'] as const)('%s: SQL deadline не подтверждает отмену работающего процесса',async method=>{
+        const key=randomUUID(),cancel=vi.fn();Object.assign(service,{activeBuild:{id:key,cancellation:{cancel}}});
+        for(const code of ['55P03','57014']){
+            const raw=Object.assign(new Error('private SQL cancellation lock'),{code});repository[method].mockRejectedValue(raw);
+            const error=await service[method](actor,key).catch(error=>error);
+            expect(error).toMatchObject({status:503,cause:raw});expect(error.cause).toBe(raw);
+            expect(error.getResponse().message).toContain('не подтвердил результат');
+            expect(error.getResponse().message).not.toContain(raw.message);expect(cancel).not.toHaveBeenCalled();
+        }
+    });
+    it.each(['create','cancel','cancelRequest'] as const)('%s: проверенные 403/409 и прочие ошибки не маскируются как deadline',async method=>{
+        const call=()=>method==='create'?service.create(actor,request()):service[method](actor,randomUUID());
+        for(const raw of [new ForbiddenException('Доступ отозван'),new ConflictException('Запрос уже отменён'),Object.assign(new Error('DB unavailable'),{code:'08006'})]){
+            repository[method==='create'?'enqueue':method].mockRejectedValue(raw);
+            await expect(call()).rejects.toBe(raw);
+        }
+    });
     it('Потеря lease за staging barrier даёт 503 без enqueue',async()=>{
         const inside=deferred(),barrier=deferred();unblock=barrier.resolve;
         Object.assign(service,{stagingRoot:async()=>{inside.resolve();await barrier.promise;return'/unused-admission-stage';}});

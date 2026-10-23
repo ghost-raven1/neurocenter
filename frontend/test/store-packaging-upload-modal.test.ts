@@ -27,10 +27,10 @@ const ui=vi.hoisted(()=>({
  owners:new Map<number,()=>()=>boolean>(),inputs:new Map<string,InputProps>(),buttons:new Map<string,ButtonProps>(),selects:new Map<string,SelectProps>(),
  source:'',selectSource:undefined as ((event:{target:{value:string}})=>void)|undefined,
  formDisabled:false,finish:undefined as (()=>void)|undefined,close:undefined as (()=>void)|undefined,
- job:undefined as ToolBuild|undefined,draft:undefined as StoredBuildDraft|undefined,unresolved:false,recoveryBlocked:false,
+ job:undefined as ToolBuild|undefined,draft:undefined as StoredBuildDraft|undefined,unresolved:false,recoveryBlocked:false,buildError:'',
  npmMetadata:undefined as NpmPackageMetadata|undefined,
  upload:undefined as SourceUpload|undefined,intent:undefined as SourceUploadIntent|undefined,uploadBusy:false,uploadError:'',phase:'idle' as ReturnType<typeof useSourceUpload>['phase'],
- submit:vi.fn(),retrySaved:vi.fn(),reset:vi.fn(),forget:vi.fn(),restore:vi.fn(),select:vi.fn(),cancel:vi.fn(),recheck:vi.fn(),resolve:vi.fn(),
+ submit:vi.fn(),retrySaved:vi.fn(),buildRecheck:vi.fn(),reset:vi.fn(),forget:vi.fn(),restore:vi.fn(),select:vi.fn(),cancel:vi.fn(),recheck:vi.fn(),resolve:vi.fn(),
 }));
 const uploadIO=vi.hoisted(()=>({read:vi.fn(),save:vi.fn(),clear:vi.fn(),create:vi.fn(),content:vi.fn(),lookup:vi.fn(),get:vi.fn(),cancel:vi.fn(),stored:new Map<string,SourceUploadIntent>()}));
 vi.mock('../src/modules/Store/packaging/sourceUploadApi',()=>({sourceUploadApi:uploadIO}));
@@ -41,8 +41,8 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwne
  return {captureOwner:ui.owners.get(ui.epoch)!};
 }}));
 vi.mock('../src/modules/Store/packaging/useToolBuild',()=>({useToolBuild:()=>({
- job:ui.job,draft:ui.draft,active:false,submitting:false,recovering:false,unresolved:ui.unresolved,recoveryBlocked:ui.recoveryBlocked,
- submit:ui.submit,retrySaved:ui.retrySaved,reset:ui.reset,recheck:vi.fn(),retryRecovery:vi.fn(),
+ job:ui.job,draft:ui.draft,error:ui.buildError,active:false,submitting:false,recovering:false,unresolved:ui.unresolved,recoveryBlocked:ui.recoveryBlocked,
+ submit:ui.submit,retrySaved:ui.retrySaved,reset:ui.reset,recheck:ui.buildRecheck,retryRecovery:vi.fn(),
 })}));
 vi.mock('../src/modules/Store/packaging/useSourceUpload',()=>({useSourceUpload:()=>({
  scope:ui.scope,upload:ui.upload,intent:ui.intent,busy:ui.uploadBusy,phase:ui.phase,percent:0,error:ui.uploadError,
@@ -91,7 +91,7 @@ function ready(){
 }
 beforeEach(()=>{
  hooks.dispose();vi.resetAllMocks();ui.scope='actor-a:main-admin';ui.projectId='project-a';ui.open=true;ui.epoch=0;ui.owners.clear();
- ui.job=undefined;ui.draft=undefined;ui.unresolved=false;ui.recoveryBlocked=false;ui.npmMetadata=undefined;ui.upload=undefined;ui.intent=undefined;ui.uploadBusy=false;ui.uploadError='';ui.phase='idle';
+ ui.job=undefined;ui.draft=undefined;ui.unresolved=false;ui.recoveryBlocked=false;ui.buildError='';ui.npmMetadata=undefined;ui.upload=undefined;ui.intent=undefined;ui.uploadBusy=false;ui.uploadError='';ui.phase='idle';
  ui.reset.mockImplementation(async()=>{ui.job=undefined;ui.draft=undefined;return true;});
  ui.forget.mockImplementation(async()=>{ui.upload=undefined;ui.intent=undefined;return true;});
  ui.restore.mockResolvedValue(undefined);ui.resolve.mockResolvedValue(undefined);
@@ -149,6 +149,15 @@ describe('Ready upload wiring in the actual packaging Modal',()=>{
   expect(ui.inputs.get('Название в каталоге')?.value).toBe('Сохранённый MCP');
   expect(ui.select).not.toHaveBeenCalled();expect(ui.submit).not.toHaveBeenCalled();expect(ui.retrySaved).not.toHaveBeenCalled();
   ui.buttons.get('Повторить сохранённый запрос')!.onClick!();await flush();expect(ui.retrySaved).toHaveBeenCalledOnce();expect(ui.submit).not.toHaveBeenCalled();
+ });
+ it('503 recovery shows the server reason and distinct recheck/retry actions without replacing the saved upload or CAS',async()=>{
+  const source={type:'upload' as const,uploadId:readyUpload().id,sha256:intent.sha256,bytes:100,entrypoint:'bin/second'};
+  const request={requestKey:'44444444-4444-4444-8444-444444444444',kind:'mcp' as const,name:'Сохранённый MCP',description:'Сохранённое описание',source,publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};
+  ui.draft={schemaVersion:1,scope:ui.scope,request};ui.unresolved=true;ui.buildError='Сервер занят. Проверьте сохранённый запрос и повторите с прежним UUID.';
+  render();await flush();const html=render();
+  expect(html).toContain(ui.buildError);expect(ui.formDisabled).toBe(true);expect(ui.inputs.get('Название в каталоге')?.value).toBe(request.name);expect(ui.inputs.get('Описание инструмента')?.value).toBe(request.description);
+  ui.buttons.get('Проверить сохранённый запрос')!.onClick!();await flush();expect(ui.buildRecheck).toHaveBeenCalledOnce();expect(ui.recheck).not.toHaveBeenCalled();expect(ui.retrySaved).not.toHaveBeenCalled();expect(ui.submit).not.toHaveBeenCalled();
+  ui.buttons.get('Повторить сохранённый запрос')!.onClick!();await flush();expect(ui.retrySaved).toHaveBeenCalledOnce();expect(ui.submit).not.toHaveBeenCalled();expect(ui.select).not.toHaveBeenCalled();expect(ui.restore).toHaveBeenCalledExactlyOnceWith(source);expect(ui.draft.request).toEqual(request);
  });
  it('Awaited build reset and upload forget still clear the form when forgetting changes its source key',async()=>{
   ready();ui.job=succeeded();render();const cleared=deferred<boolean>();
