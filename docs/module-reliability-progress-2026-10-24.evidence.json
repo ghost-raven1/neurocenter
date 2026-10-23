@@ -229,5 +229,28 @@
       "codex-managed-verifier/source.sha256": "9c6ad5b645d738c58697cf83985fc5829f0bd139bea4a204875016873c03b7e2"
     },
     "at": "2026-10-23T22:07:06.191Z"
+  },
+  "capacityFollowup": {
+    "sourceCommit": "418bc58",
+    "selectedTests": 44,
+    "catalogTypesPassed": true,
+    "independentReviews": 2,
+    "sources": {
+      "services/catalog-service/src/package-build/package-build.service.ts": "f788e627970391b0784395b252b004c1e6c53fdd3ce52f9c01f88ba1f772c437",
+      "services/catalog-service/test/package-build-capacity-handoff.fixture.ts": "59c141a4175b93f5c95b38781892c2e274e8864e267fe1094f245649e707b222",
+      "services/catalog-service/test/package-build-capacity-handoff.test.ts": "fa616adad2f8c7cffa891f58a3bd5ec41e2c87b00e09592e7b7dcfc6e394bb4b"
+    },
+    "receipts": {
+      ".run/module-reliability/build-reservation/summary.json": "ee6d526b773e4a8b7305d0a66c7c2ebaff8b0579dc7028da2c6452b6f9da8598",
+      ".run/module-reliability/codex-live-wrapper-pass-capacity-fail.json": "67cb6cc4d5d01818dd1e22242448b424b1da5fc14327f8360f3b7d78f43659bc",
+      ".run/module-reliability/codex-integration-main.json": "6ed707e4e977c7235c6fa399948e011a5ac3a8541d598057bb1147e19ae76f54",
+      ".run/continuation-20261024/installed-codex-managed-after.json": "f3dc2c9ec005b43b459ffc2c5b7e2a96d53446d3c329f6610b7dc391c27d9301",
+      ".run/continuation-20261024/archive-acceptance-YSKKtc/receipt.json": "cbfbc30469db39241329583dac1345d3687ff64fbb65b4f1e925af4434403b85"
+    },
+    "snapshotSpentChanged": false,
+    "unreapedFinallyAccountingFixed": false,
+    "realCodexSandboxPassed": true,
+    "publishedConnectorAccepted": false,
+    "at": "2026-10-23T22:25:52.688Z"
   }
 }

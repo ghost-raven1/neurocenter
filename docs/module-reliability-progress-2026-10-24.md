@@ -15,6 +15,7 @@
 | A7, остановившийся PG после выхода контейнера | `1d33198`: restart policy `unless-stopped` в dev Compose | Compose config проверен без чтения env files. На отдельном PG без policy неожиданный выход PID1 оставил его остановленным; с policy счётчик restart вырос 0→1, SQL-маркер сохранился. Контейнер и его volume удалены. Это не проверка полного Docker Desktop restart или dev CLI readiness |
 | Последующая приёмка Codex: библиотека принята за Plugin factory | `51e5dec`: после проверки Git provenance/pins создаётся одноразовая owned wrapper той же формы, что использует мастер провайдера. Проверяются настоящие `config`/пассивный `auth.loader`; общий validator и OS sandbox сохранены | Причинный RED воспроизвёл `plugin-initialization-failed` после успешной integrity. Итог: OS sandbox 29/29, Codex recipe/runtime 16/16, без пропусков; независимое ревью PASS. CLI/login/model response здесь не вызывались |
 | Последующая приёмка Codex: обычная установка могла зарегистрировать library URL | `8fdb1d9` (исходный `f59f96a`): generic install/approve/delivery и зависимости отказывают с переходом к мастеру; старое прямое подключение отмечается изменённым, cleanup доступен | RED: Catalog 3 неправильных допуска, bridge 5 поведенческих отказов и 2 проверки раннего отказа. Итог: Catalog 48/48, файловая приёмка bridge 8/8, связанные bridge 77/77, build contract 4/4, оба TypeScript и standalone bridge build прошли. Wizard/device inference controls и удаление старого подключения с сохранением ручной конфигурации проверены |
+| Настоящая сборка Codex: резерв staging удерживался при импорте | `418bc58` (исходный `105ac6b`): после проверки кандидата и свежего допуска неиспользованный build reservation освобождается только при `started && reaped && !child`; импорт сохраняет собственные guards, staging удаляется в конце | Live build `e1265dbb` прошёл настоящий sandbox с двумя hooks, затем получил CAPACITY_LOW при импорте. Причинный RED: 5 FAIL / 5 PASS; GREEN 44/44 и Catalog TypeScript, два независимых review PASS. Значения свободного места и producer/SQL ports контролировались; guards, проверка архивов и файловые копии настоящие, диск пользователя не заполнялся |
 
 Здесь нет общего числа «новых уникальных тестов»: наборы пересекаются. Частные GREEN не подтверждают 100% покрытия всего проекта.
 
@@ -32,7 +33,7 @@
 
 [Предложение по ролям](system-agent-roles-design-2026-10-24.md) описывает ответственность четырёх текущих агентов, передачу точного плана действующему сервису и проверяемый результат. Две новые роли предложены как отдельные последующие изменения: Куратор знаний и Контролёр качества. Проектные квоты, расширение tools и автоматическое применение не объявляются реализованными.
 
-## Применение на рабочем Mac
+## Применение на рабочем Mac: первый снимок `3413526`
 
 - `main` и `origin/main` обновлены до `3413526`. Все 75 файлов соседней незавершённой работы сохранили исходные байты и mode. Перед применением активных заданий и inference calls не было.
 - Source watch успешно пересобрал и обновил семь сервисов/мост. Работающий Catalog использует schema30; Catalog, Auth, Flags и RAG прошли passive readiness. Gateway/Skills в этом снимке проверены по принадлежности процессов и liveness: их readiness может создавать данные и отдельно не вызывался.
@@ -40,11 +41,14 @@
 - Установленный мост 0.9.18 обновлён до build `dde61fd39fa147c8296dd68263121b95872bd3de18dae3cf89905794dd795f58`, получен свежий heartbeat. Проверки сохранности настроек, устройства, credentials, workspace и pins: 15/15; предыдущая установка сохранена для отката.
 - Новый архив `neurocenter-asset-sync-darwin-arm64-0.9.18.tgz`, SHA256 `b35efb658fa282d32e4ec5dc907041208cd7d1611fa0ff0536cf45b392b87421`, прошёл 6/6 сценариев установки: собственный HOME с пробелами/кириллицей, отсутствие системных Node/npm/curl, сохранение ручных настроек, повтор установки и отказ на неверном SHA. Запуск bundled OpenCode/tool stream использовал локальный HTTP fixture; реальным ответом Codex он не считается.
 
+Следующий срез применён в `main`/`origin/main` `6aa4d5c`: семь source-watch сборок прошли. Мост 0.9.18 обновлён до `0ee3f2df0848e2e4604a4ada43732b287903dcf4e5daa082d6d501d8b632da78`, сохранность — 15/15, свежий heartbeat подтверждён. Его архив SHA256 `03e2b0419eebe57b539fa57bcae01ccd796d1513acf70f6b5b746aa333bdb2cf` повторно прошёл 6/6 сценариев, временный профиль удалён. Свежий браузерный global scan обновлённым мостом вернул восемь моделей; это ещё не ответ модели.
+
 ## Что ещё требует завершения
 
 1. A7: автоматическое восстановление PG и честное отражение readiness в dev status/watch. Restart policy добавлена в `1d33198`; применение и runtime receipt фиксируются ниже. Правки dev-инструментов из другого чата сохраняются отдельно; перевод их проверок с liveness на readiness ещё не завершён.
-2. Реальный Codex: доверенный connector → публикация/установка → import → ответ в чатах и агентах → native OpenCode. Повторный браузерный scan читает восемь моделей. Сборка `66d1fdf6-a8fc-4e43-a838-a0be929ad1b5` дошла до sandbox и воспроизвела ошибочный вызов library helper как Plugin factory. Этот контракт и generic install исправлены и проверены отдельными регрессиями выше; требуется новая настоящая сборка и полезный ответ модели. Исторический failed build сохраняется, повторный запуск получает новый явный request key.
+2. Реальный Codex: доверенный connector → публикация/установка → import → ответ в чатах и агентах → native OpenCode. Сборка `66d1fdf6` воспроизвела неправильный вызов helper, а следующая `e1265dbb` уже прошла sandbox и остановилась при импорте из-за вложенного резерва. Оба дефекта исправлены и проверены регрессиями выше; требуется новая настоящая публикация и полезный ответ модели. Исторические failed builds сохраняются, повторный запуск получает новый явный request key.
 3. Живая цепочка quirks → reported experience → approval → overlay/Memory → revoke cleanup. Сохранность ручных Memory observations обязательна.
+4. Общий долговечный учёт capacity пока не реализован. Текущий guard хранит резервы внутри процесса. Существующий `finally` сборщика освобождает его reservation и при неподтверждённом reap, сохраняя staging; фазовый фикс эту границу не меняет. При snapshot-required режиме release переносит объём в `spent` до нового epoch; без reap proof раннего handoff нет, включая обычный Windows success. Эти случаи не объявляются решёнными общим проектным ledger из проекта квот.
 
 ## Локальные свидетельства
 
@@ -55,3 +59,5 @@ Raw JSON/logs и receipts для этого среза сохраняются в
 Применение: `integration-main.json`, `foreign-after.json`, `runtime-proof.json`, `applied-postgres-policy.json`. Установленный мост: `.run/continuation-20261024/applied-codex-bridge-module-reliability.json`; новая установка из архива: `.run/continuation-20261024/archive-acceptance-FKwXeH/receipt.json`.
 
 Следующие регрессии коннектора: `codex-managed-verifier/` и `codex-guard/`; в обоих сохранены причинный RED, итоговые логи и хеши исходников. Первые setup/preflight ошибки verifier fixture отделены от принятого RED. Проверка Docker COPY для guard была статической; полного Docker image build в этом дополнительном срезе не было.
+
+Поздняя приёмка: `codex-integration-main.json`, `codex-health-after.json`, `codex-live-wrapper-pass-capacity-fail.json`, `build-reservation/summary.json`, `codex-updated-bridge-scan.json`. Обновлённая установка: `.run/continuation-20261024/installed-codex-managed-after.json`; архив: `.run/continuation-20261024/archive-acceptance-YSKKtc/receipt.json`. Старые runtime copies сжаты с полным сравнением после распаковки, текущая установка и ближайший откат сохранены; пользовательские проекты/модели для освобождения места не удалялись.
