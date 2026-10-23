@@ -21,12 +21,13 @@ export class SystemRoleApplication {
             const current = await this.repository.get(input.id, db, true);
             if (!current) throw new ConflictException('Задание недоступно.');
             await this.policy.authorize(db, actor, current.project_id);
-            if (current.state === 'applying' || !rollback && current.state === 'succeeded' || rollback && current.phase === 'rolled_back') return { row: current, started: false };
+            if (current.state === 'applying' || !rollback && current.state === 'succeeded' || rollback && current.phase === 'rolled_back') return { row: current, started: false, unconfirmed: false };
             if (!rollback && current.request.expectedDefinitionPin !== roleDefinitionPin(current.agent_id)) throw new ConflictException('Определение агента изменилось. Подготовьте предложение заново.');
             if (current.revision !== revision || (rollback ? !['succeeded','failed','interrupted'].includes(current.state) || !current.applied.length
                 : current.state !== 'awaiting_review' || current.result?.kind !== 'proposal' || !current.result.changes.length)) throw new ConflictException('Предложение изменилось. Обновите результат перед действием.');
             if (!rollback && current.result!.changes.some(change => !current.snapshot.targets.find(target => target.key === change.targetKey)?.editable)) throw new ConflictException('Для этой цели доступно предложение. Применение выполняется через её владельца.');
-            return { row: await this.repository.change(db, current, 'applying', rollback ? 'rolling_back' : 'applying', rollback ? 'Проверяем версии для отката.' : 'Человек подтвердил применение проверенного предложения.'), started: true };
+            const unconfirmed = rollback && current.phase === 'unconfirmed';
+            return { row: await this.repository.change(db, current, 'applying', rollback ? 'rolling_back' : 'applying', rollback ? 'Проверяем версии для отката.' : 'Человек подтвердил применение проверенного предложения.'), started: true, unconfirmed };
         });
         const row = intent.row; if (!intent.started) return row;
         try {
@@ -48,6 +49,7 @@ export class SystemRoleApplication {
             }
             return await this.repository.transaction(async db => {
                 const current = await this.repository.applying(row.id, row.phase, db);
+                if (intent.unconfirmed) return this.repository.change(db, current, 'interrupted', 'unconfirmed', 'Подтверждённые изменения отменены. Исход другой записи не подтверждён; проверьте актуальные настройки у владельца.');
                 return this.repository.change(db, current, 'succeeded', rollback ? 'rolled_back' : 'applied', rollback ? 'Откат подтверждён владельцами настроек.' : 'Изменение сохранено владельцами. Проверка подключения и доставка выполняются отдельно.');
             });
         } catch {

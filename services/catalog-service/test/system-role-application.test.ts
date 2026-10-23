@@ -39,4 +39,15 @@ describe('Human role proposal application', () => {
         const f = fixture(); await expect(f.apply(4)).rejects.toThrow(); expect(f.targets.write).not.toHaveBeenCalled();
         f.row.snapshot.targets[0].editable = false; await expect(f.apply()).rejects.toThrow('владельца'); expect(f.targets.write).not.toHaveBeenCalled();
     });
+    it('rolling back confirmed receipts cannot resolve an unknown acknowledgement of another target', async () => {
+        const f = fixture();
+        f.row.result!.changes.push({ targetKey: 'agent:two', replacement: 'Another', explanation: 'Improve' });
+        f.row.snapshot.targets.push({ key: 'agent:two', editable: true } as never);
+        f.targets.write.mockResolvedValueOnce(f.receipt).mockRejectedValueOnce(new Error('Second owner ACK unknown'));
+        expect((await f.apply()).phase).toBe('unconfirmed'); expect(f.row.applied).toEqual([f.receipt]);
+        const rolled = await f.apply(f.row.revision, true);
+        expect(rolled).toMatchObject({ state: 'interrupted', phase: 'unconfirmed', applied: [] });
+        expect(rolled.message).toContain('Исход другой записи не подтверждён');
+        expect(f.targets.write).toHaveBeenCalledTimes(3); expect(f.targets.write.mock.calls[2][5]).toEqual(f.receipt);
+    });
 });
