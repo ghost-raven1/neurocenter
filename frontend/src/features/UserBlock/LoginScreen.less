@@ -1,0 +1,61 @@
+.login-screen.app__login {
+    position: relative; isolation: isolate; display: flex; align-items: stretch; min-height: 100vh; min-height: 100dvh;
+    padding: 40px 48px 28px; overflow: hidden; background: #f4f7fa; color: #24344a;
+}
+.login-screen {
+    &__background { position: absolute; z-index: -1; inset: 0; overflow: hidden; pointer-events: none; }
+    &__glow { position: absolute; border-radius: 50%; filter: blur(55px); opacity: .75; animation: login-drift 24s ease-in-out infinite alternate; }
+    &__glow--first { width: 60vw; height: 65vw; max-width: 900px; max-height: 900px; top: -50%; right: -10%; background: radial-gradient(circle, #cbdce9, transparent 70%); }
+    &__glow--second { width: 65vw; height: 65vw; bottom: -55%; left: -15%; background: radial-gradient(circle, #d0e0e8, transparent 70%); animation-delay: -12s; }
+    &__network { position: absolute; width: 100%; height: 100%; opacity: .75; }
+    &__orbit { transform-origin: 770px 480px; animation: login-orbit 40s ease-in-out infinite alternate; }
+    &__orbit--two { animation-direction: alternate-reverse; animation-duration: 55s; }
+    &__nodes { opacity: .45; animation: login-breathe 9s ease-in-out infinite alternate; }
+    &__grain { position: absolute; inset: 0; opacity: .1; background-image: radial-gradient(@brand-primary .6px, transparent .6px); background-size: 6px 6px; mask-image: linear-gradient(transparent 10%, #000); }
+    &__shell { display: flex; flex-direction: column; width: 100%; max-width: 1120px; margin: 0 auto; min-width: 0; }
+    &__brand { display: flex; align-items: center; gap: 11px; > .ant-typography { font-size: 20px; letter-spacing: -.5px; color: @brand-active; } }
+    &__mark { display: grid; place-items: center; width: 43px; height: 43px; border: 1px solid fade(@brand-border-hover, 55%); border-radius: 13px; color: @brand-primary; background: fade(#fff, 75%); box-shadow: 0 4px 12px fade(@brand-primary, 4%); svg { width: 32px; height: 32px; } }
+    &__content { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: center; gap: 72px; width: 100%; margin: auto 0; padding: 80px 0 90px; }
+    &__hero { min-width: 0; }
+    &__eyebrow { display: block; margin-bottom: 22px; font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; color: @brand-primary; }
+    &__hero h1.ant-typography { margin: 0 0 24px; font-size: clamp(38px, 4.2vw, 54px); font-weight: 600; line-height: 1.15; letter-spacing: -2px; color: #20374c; span { color: #6b849c; } }
+    &__hero > p.ant-typography { max-width: 390px; font-size: 15px; line-height: 1.85; color: #687b8f; }
+    &__features { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 36px; font-size: 12px; color: @brand-primary; i { width: 3px; height: 3px; border-radius: 50%; background: @brand-border-hover; } }
+    .login-screen__card.ant-card { width: 100%; max-width: 420px; margin-left: auto; padding: 0; border: 1px solid fade(#fff, 90%); border-radius: 20px; background: fade(#fff, 88%); box-shadow: 0 24px 80px fade(@brand-active, 8%), 0 2px 8px fade(@brand-primary, 3%); backdrop-filter: blur(16px);
+        .ant-card-body { padding: 38px 34px 30px; }
+        h2.ant-typography { margin: 10px 0 12px; color: #243b50; font-size: 24px; font-weight: 600; letter-spacing: -.7px; }
+        p.ant-typography { margin-bottom: 28px; font-size: 13px; line-height: 1.7; color: #728195; }
+        .ant-btn { display: flex; align-items: center; justify-content: center; flex-direction: row-reverse; gap: 10px; min-height: 46px; height: auto; padding: 11px 14px; border-radius: 10px; font-size: 13px; white-space: normal; box-shadow: 0 6px 16px fade(@brand-primary, 12%); > .anticon + span { margin-left: 0; } }
+    }
+    &__card-kicker { font-size: 11px; letter-spacing: .7px; color: #7c8b9b; }
+    &__hint.ant-typography { display: block; margin-top: 18px; font-size: 11px; text-align: center; line-height: 1.7; color: #8794a2; }
+    &__error { margin: 0 0 20px; overflow-wrap: anywhere; }
+    &__footer { font-size: 11px; letter-spacing: .4px; color: #8a98a6; }
+    @media (max-width: 900px) {
+        &.app__login { padding: 30px; }
+        &__content { gap: 36px; }
+        &__hero h1.ant-typography { font-size: 40px; letter-spacing: -1.3px; }
+        .login-screen__card.ant-card .ant-card-body { padding: 30px 24px 26px; }
+    }
+    @media (max-width: 680px) {
+        &.app__login { padding: 24px 22px 20px; }
+        &__brand { gap: 9px; > .ant-typography { font-size: 18px; } }
+        &__mark { width: 37px; height: 37px; border-radius: 11px; svg { width: 29px; height: 29px; } }
+        &__content { grid-template-columns: minmax(0, 1fr); gap: 30px; padding: 45px 0 40px; }
+        &__eyebrow { margin-bottom: 15px; font-size: 10px; letter-spacing: 1.2px; }
+        &__hero h1.ant-typography { margin-bottom: 16px; font-size: 36px; line-height: 1.16; }
+        &__hero > p.ant-typography { max-width: 340px; margin: 0; font-size: 13px; line-height: 1.75; }
+        &__features { gap: 10px; margin-top: 20px; font-size: 11px; }
+        .login-screen__card.ant-card { max-width: none; border-radius: 16px; }
+        .login-screen__card.ant-card .ant-card-body { padding: 26px 24px 24px; }
+        &__footer { font-size: 10px; }
+        &__network { width: 160%; left: -30%; opacity: .5; }
+        &__glow { width: 120vw; height: 120vw; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        &__glow, &__orbit, &__nodes { animation: none; }
+    }
+}
+@keyframes login-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-7%, 10%, 0); } }
+@keyframes login-orbit { from { stroke-opacity: .45; } to { stroke-opacity: 1; } }
+@keyframes login-breathe { from { opacity: .25; } to { opacity: .6; } }

@@ -2,100 +2,64 @@
     margin-bottom: 16px;
     min-width: 0;
     max-width: 100%;
-    .ant-card-head-title {
-        white-space: normal;
-    }
-    .ant-space,
-    .ant-space-item,
-    .ant-list-item {
-        min-width: 0;
-        max-width: 100%;
-    }
-    .ant-tag {
-        max-width: 100%;
-        margin-right: 0;
-        white-space: normal;
-        overflow-wrap: anywhere;
-    }
-    &__intro,
-    &__summary {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        min-width: 0;
-    }
-    &__intro {
-        margin-bottom: 12px;
-    }
-    &__empty {
-        display: block;
-        padding: 4px 0 8px;
-    }
-    &__summary {
-        flex: 1 1 320px;
-    }
-    &__name,
-    &__folder {
-        display: block;
-        min-width: 0;
-        max-width: 100%;
-    }
-    &__date {
-        margin-left: 4px;
-        font-size: 12px;
-    }
-    &__actions {
-        flex: 0 0 auto;
-        justify-content: flex-end;
-    }
-    &__history {
-        margin-top: 8px;
-        border-top: 1px solid #f0f0f0;
-        > .ant-collapse-item > .ant-collapse-header {
-            padding: 12px 0;
-        }
-        .ant-collapse-content-box {
-            padding: 0 0 8px;
-        }
-    }
+    .ant-card-head-title { white-space: normal; }
+    .ant-space, .ant-space-item, .ant-list-item { min-width: 0; max-width: 100%; }
+    .ant-tag { max-width: 100%; margin-right: 0; white-space: normal; overflow-wrap: anywhere; }
+    &__intro { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; min-width: 0; }
+    &__grid .ant-list-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    &__grid .ant-list-item { padding: 0; align-items: stretch; }
     &__item {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        gap: 16px;
-        width: 100%;
-        align-items: center;
-        min-width: 0;
-        overflow-wrap: anywhere;
+        display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0;
+        padding: 16px; border: 1px solid @brand-border; border-radius: 12px;
+        background: linear-gradient(150deg, #fff 65%, @brand-surface); overflow-wrap: anywhere;
+        transition: border-color .18s, box-shadow .18s;
+        &:hover { border-color: @brand-border-hover; box-shadow: 0 3px 14px fade(@brand-primary, 6%); }
     }
-    &__item--history {
-        align-items: flex-start;
+    &__header { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    &__icon { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; color: @brand-primary; background: @brand-tint; font-size: 21px; }
+    &__identity { flex: 1; min-width: 0; }
+    &__name { display: block; font-size: 15px; line-height: 1.45; }
+    &__version { display: block; margin-top: 2px; font-size: 12px; }
+    &__summary { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+    &__state { display: flex; align-items: center; gap: 7px; color: @brand-active; font-size: 13px; font-weight: 600; }
+    &__state-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: @brand-primary; }
+    &__item[data-state='passed'] &__state { color: #39714a; }
+    &__item[data-state='passed'] &__state-dot { background: #568e65; }
+    &__item[data-state='modified'] &__state,
+    &__item[data-state='help'] &__state,
+    &__item[data-state='configuration'] &__state { color: #946627; }
+    &__item[data-state='modified'] &__state-dot,
+    &__item[data-state='help'] &__state-dot,
+    &__item[data-state='configuration'] &__state-dot { background: #b48745; }
+    &__next { font-size: 12px; line-height: 1.6; }
+    &__catalog-note, &__date { font-size: 12px; }
+    &__folder { display: block; min-width: 0; max-width: 100%; }
+    &__details {
+        border-top: 1px solid fade(@brand-border, 65%); padding-top: 10px;
+        > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none; color: @brand-primary; font-size: 12px; }
+        > summary::-webkit-details-marker { display: none; }
+        > summary:focus-visible { outline: 2px solid @brand-focus; outline-offset: 4px; border-radius: 2px; }
+        > summary .anticon { font-size: 10px; transition: transform .18s; }
+        &[open] > summary .anticon { transform: rotate(180deg); }
     }
-    &__path,
-    &__path code {
-        overflow-wrap: anywhere;
-        word-break: break-word;
-        white-space: normal;
+    &__details-content { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 12px; font-size: 12px; }
+    &__actions { padding-top: 0; gap: 6px !important; }
+    &__actions .ant-btn { font-size: 12px; }
+    &__empty { display: block; padding: 4px 0 8px; }
+    &__history {
+        margin-top: 12px; border-top: 1px solid @brand-border;
+        > .ant-collapse-item > .ant-collapse-header { padding: 12px 0; }
+        .ant-collapse-content-box { padding: 0 0 8px; }
     }
-    .ant-alert {
-        margin-top: 12px;
+    &__item--history { background: @brand-surface; }
+    &__path, &__path code { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+    .ant-alert { margin-top: 12px; }
+    &__summary .ant-alert { margin-top: 0; }
+    @media (max-width: 767px) {
+        &__grid .ant-list-items { grid-template-columns: minmax(0, 1fr); }
     }
     @media (max-width: 575px) {
-        &__summary {
-            flex: none;
-            width: 100%;
-        }
-        &__item {
-            flex-direction: column;
-            align-items: stretch;
-        }
-        &__actions {
-            justify-content: flex-start;
-        }
-        .ant-btn {
-            white-space: normal;
-            height: auto;
-            min-height: 28px;
-        }
+        &__item { padding: 14px; gap: 12px; }
+        .ant-btn { max-width: 100%; white-space: normal; height: auto; min-height: 30px; }
     }
 }

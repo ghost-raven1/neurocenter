@@ -5,7 +5,7 @@ import RetiredRagDatabases from '../src/features/RetiredRagDatabases/RetiredRagD
 import {PurgePreview} from '../src/features/RetiredRagDatabases/PurgePreview';
 
 const ui=vi.hoisted(()=>({role:'Главный админ',state:{} as any,modal:{} as any,input:undefined as any,value:'',buttons:[] as any[]}));
-vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:()=>[ui.value,(value:string)=>{ui.value=value;}],useEffect:()=>{}}));
+vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:(initial:unknown)=>[initial===''?ui.value:initial,(value:string)=>{ui.value=value;}],useEffect:()=>{}}));
 vi.mock('react-redux',()=>({useSelector:()=>({user:{id:'own',email:'own@example.test',activeRole:ui.role,userRoles:[ui.role],routePermissions:[],projectRoles:[]},policies:{}})}));
 vi.mock('../src/features/RetiredRagDatabases/useRetiredRagDatabases',()=>({useRetiredRagDatabases:()=>ui.state}));
 vi.mock('antd',()=>{
@@ -15,6 +15,7 @@ vi.mock('antd',()=>{
         List:Object.assign(({dataSource,renderItem}:any)=>dataSource.map(renderItem),{Item:content}),
         Button:(props:any)=>{ui.buttons.push(props);return createElement('button',{disabled:props.disabled},props.children);},
         Descriptions:Object.assign(content,{Item:content}),Input:(props:any)=>{ui.input=props;return createElement('input',{'aria-label':props['aria-label'],value:props.value,readOnly:true});},
+        Pagination:()=>null,
         Modal:(props:any)=>{ui.modal=props;return props.open?props.children:null;}};
 });
 const row={id:'own-retirement',projectId:'prj-own',projectName:'Проект проверки',deletedAt:'2026-10-21T00:00:00Z',retention:{revision:1,retainUntil:null,reason:'',automaticPurge:false},database:{databaseName:'nc_rag_'+'a'.repeat(32),state:'retained',present:true,bytes:2048},blockers:[],job:null};

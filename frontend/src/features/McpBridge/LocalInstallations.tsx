@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Collapse, List, Modal, Space, Tabs, Tag, Typography } from 'antd';
+import { ApiOutlined, AppstoreOutlined, DownOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useEffect, useRef, useState, type FC } from 'react';
 import { bridgeApi, type IBridgeInstallation } from './api';
 import { useBridge } from './useBridge';
@@ -9,7 +10,6 @@ import { InstallationOperationActions } from './InstallationOperationActions';
 import { RuntimeProbeStatus } from './RuntimeProbeStatus';
 import { latestInstallationReport, pendingLocalJob } from './operationHelpers';
 import { ProjectInventory } from './ProjectInventory';
-import { InstallationReadinessStatus } from './InstallationReadinessStatus';
 import { runtimeConfigurationChanged } from './runtimeConfiguration';
 import { installationProgress } from './installationProgress';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -132,37 +132,44 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
         const inspectReason = !currentBinding ? 'Проверка доступна только для текущей подтверждённой папки.' : inspectBlocker
             || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь загрузки подключения и очереди.' : mutationPending ? 'Дождитесь завершения изменения установки.' : '');
         const installedAt = new Date(item.updatedAt);
-        return <List.Item><div className={`local-installations__item${historical ? ' local-installations__item--history' : ''}`}>
+        return <List.Item><article className={`local-installations__item${historical ? ' local-installations__item--history' : ''}`} data-state={historical ? 'history' : next.state}>
+            <div className="local-installations__header">
+                <span className="local-installations__icon" aria-hidden="true">{item.assetKind === 'mcp' ? <ApiOutlined/> : item.assetKind === 'plugin' ? <AppstoreOutlined/> : <FileTextOutlined/>}</span>
+                <div className="local-installations__identity">
+                    <Typography.Text strong ellipsis={{tooltip:nameFor(item)}} className="local-installations__name">{nameFor(item)}</Typography.Text>
+                    <Typography.Text type="secondary" className="local-installations__version">{kindLabels[item.assetKind]}<span aria-hidden="true"> · </span>Версия {item.version}</Typography.Text>
+                </div>
+            </div>
             <div className="local-installations__summary">
-                <Typography.Text strong ellipsis={{tooltip:nameFor(item)}} className="local-installations__name">{nameFor(item)}</Typography.Text>
-                <Space wrap size={4}>
-                    <Tag>{kindLabels[item.assetKind]}</Tag><Tag>Версия {item.version}</Tag>
-                    {historical && <Tag>{item.legacyBinding || !item.bindingId ? 'Привязка неизвестна' : 'Прежняя папка'}</Tag>}
-                    {!approved.has(item.assetKind + ':' + item.assetId) && <Tag>Убран из каталога проекта</Tag>}
-                    <Typography.Text type="secondary" title={installedAt.toLocaleString('ru-RU')} className="local-installations__date">
-                        {installedAt.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
-                    </Typography.Text>
-                </Space>
                 {historical && <Typography.Text type="secondary" ellipsis={{tooltip:folderFor(item)}} className="local-installations__folder">{folderFor(item)}</Typography.Text>}
-                {!historical && <InstallationReadinessStatus item={report} jobs={jobs} />}
-                {historical && !item.inspection ? <Typography.Text type="secondary">Файлы не сверялись</Typography.Text> : <InstallationInspectionStatus item={report} showRuntimeHint={historical} />}
-                {!historical && <RuntimeProbeStatus item={report} />}
-                {mutationPending && pendingChange?.kind !== 'inspect-installation' && <Typography.Text role="status">{pendingChange?.message}</Typography.Text>}
-                {inspecting && <Typography.Text role="status">Проверка файлов: {inspectionJob?.message}</Typography.Text>}
+                {historical ? <Tag>{item.legacyBinding || !item.bindingId ? 'Привязка неизвестна' : 'Прежняя папка'}</Tag> : <>
+                    <div className="local-installations__state" role={mutationPending || inspecting ? 'status' : undefined}><span className="local-installations__state-dot" aria-hidden="true"/>{next.title}</div>
+                    <Typography.Text type="secondary" className="local-installations__next">{next.description}</Typography.Text>
+                </>}
+                {!approved.has(item.assetKind + ':' + item.assetId) && <Typography.Text type="secondary" className="local-installations__catalog-note">Убран из каталога проекта</Typography.Text>}
+                {inspecting && !mutationPending && <Typography.Text role="status">Проверка файлов: {inspectionJob?.message}</Typography.Text>}
                 {inspectionJob?.state === 'failed' && <Typography.Text type="warning">Проверка не завершена: {inspectionJob.message}</Typography.Text>}
                 {inspectionError?.key === key && <Alert role="alert" type="error" showIcon message={inspectionError.message} />}
             </div>
+            <details className="local-installations__details">
+                <summary>Сверка и запуск<DownOutlined aria-hidden="true"/></summary>
+                <div className="local-installations__details-content">
+                    {historical && !item.inspection ? <Typography.Text type="secondary">Файлы не сверялись</Typography.Text> : <InstallationInspectionStatus item={report} showRuntimeHint={historical} />}
+                    {!historical && <RuntimeProbeStatus item={report} />}
+                    <Typography.Text type="secondary" className="local-installations__date">Обновлено {installedAt.toLocaleString('ru-RU')}</Typography.Text>
+                </div>
+            </details>
             {(!historical && (canInspect || canManage) || inspectionJob?.state === 'queued') && <Space wrap className="local-installations__actions">
                 {!historical && canInspect && <Button size="small" type={next.action === 'inspect' ? 'primary' : 'default'} disabled={!!inspectReason || inspecting || !!inspectionBusy || removalBusy}
                     title={inspectReason || undefined} loading={inspectionBusy === key || inspecting}
                     onClick={() => { void inspect(item); }}>Проверить файлы</Button>}
                 {inspectionJob?.state === 'queued' && <Button size="small" onClick={() => { void cancelInspection(inspectionJob.id, key); }}>Отменить проверку</Button>}
-                {!historical && canManage && <Button danger size="small" disabled={!currentBinding || !!removalBlocker || mutationPending || removalBusy || !bridge.devicesReady || !bridge.jobsReady}
+                {!historical && (canManage || canInspect) && <InstallationOperationActions item={{...report,folderName:folderFor(item)}} bridge={bridge} canManage={canManage} canView={canInspect} />}
+                {!historical && canManage && <Button danger type="text" size="small" disabled={!currentBinding || !!removalBlocker || mutationPending || removalBusy || !bridge.devicesReady || !bridge.jobsReady}
                     title={removalBlocker || (!currentBinding ? 'Удаление доступно только в исходной текущей папке.' : undefined)}
                     onClick={() => { setRemovalError(''); setSelected({...item, deviceName:device.name, folderName:folderFor(item)}); }}>Удалить с компьютера</Button>}
-                {!historical && (canManage || canInspect) && <InstallationOperationActions item={{...report,folderName:folderFor(item)}} bridge={bridge} canManage={canManage} canView={canInspect} />}
             </Space>}
-        </div></List.Item>;
+        </article></List.Item>;
     };
     const currentFolder = device.report.bindings?.find(binding => binding.projectId === projectId && binding.valid !== false)?.folderName;
 
@@ -173,7 +180,7 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
         </div>
         <Tabs items={[{key:'managed',label:'Под управлением',children:<>
         {canInspect && inspectNotice && <Alert type="info" showIcon message={inspectNotice} />}
-        {currentItems.length ? <List rowKey={installationIdentity} dataSource={currentItems} renderItem={item => renderInstallation(item)} />
+        {currentItems.length ? <List className="local-installations__grid" split={false} rowKey={installationIdentity} dataSource={currentItems} renderItem={item => renderInstallation(item)} />
             : items.length ? <Typography.Text type="secondary">В текущей папке нет установок.</Typography.Text>
             : <Typography.Text type="secondary" className="local-installations__empty">В этом проекте нет установленных через мост инструментов</Typography.Text>}
         {historyItems.length > 0 && <Collapse ghost className="local-installations__history">

@@ -130,8 +130,10 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {loadError && <Alert className="model-catalog__notice" type={catalog ? 'warning' : 'error'} showIcon message={catalog ? 'Не удалось обновить модели — показаны предыдущие данные' : 'Каталог моделей не загружен'}
             description={loadError} action={<Button loading={loading} onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {error && !viewing && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
-        {projectId&&canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={reindex.busy||reindex.pending}/>}
-        {projectId && <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />}
+        {projectId&&<div className="model-catalog__embedding-target">
+            {canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={reindex.busy||reindex.pending}/>}
+            <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />
+        </div>}
         {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
             {shown.map(model => <Col key={model.id} xs={24} xl={12}>
                 <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)} feedback={<CatalogFeedback catalogId={'model:' + model.id} title={model.name}/>}
