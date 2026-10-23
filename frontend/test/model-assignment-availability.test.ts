@@ -6,14 +6,14 @@ import {ModelCatalog} from '../src/features/ModelCatalog/ModelCatalog';
 import type {ICatalogModel} from '../src/features/ModelCatalog/types';
 
 const ui=vi.hoisted(()=>({loading:false,error:'',assigned:false,targetBlocked:true,targetReason:'Выберите компьютер для локального OpenCodeRAG.',
-    pending:false,busy:false,needsInput:false}));
+    targetKind:'computer',targetMode:'computer',pending:false,busy:false,needsInput:false}));
 const model:ICatalogModel={id:'model-qa-ready',name:'Готовая удалённая модель',description:'Проверенный API',runtime:'remote-openai',capability:'embedding',
     model:'qa-embedding',modelVersion:'qa-v1',dimension:7,verificationSha256:'a'.repeat(64),manifestSha256:null,modelPin:'b'.repeat(64),source:'custom',revision:1,createdAt:'2026-10-21',updatedAt:'2026-10-21'};
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>({scope:'qa',captureOwner:()=>()=>true})}));
 vi.mock('../src/features/ModelCatalog/useModelCatalog',()=>({useModelCatalog:()=>({catalog:{items:[model],assignedModelIds:ui.assigned?[model.id]:[]},loading:ui.loading,error:ui.error,refresh:vi.fn()})}));
 vi.mock('../src/features/ProjectEmbedding/useProjectReindex',()=>({useProjectReindex:()=>({pending:ui.pending,busy:ui.busy,plan:ui.needsInput?{state:'needs_input'}:undefined})}));
 vi.mock('../src/features/ProjectEmbedding/ProjectReindexStatus',()=>({ProjectReindexStatus:()=>null}));
-vi.mock('../src/features/ProjectEmbedding/EmbeddingTarget',()=>({useEmbeddingTarget:()=>({blocked:ui.targetBlocked,reason:ui.targetReason}),EmbeddingTargetFields:()=>null}));
+vi.mock('../src/features/ProjectEmbedding/EmbeddingTarget',()=>({useEmbeddingTarget:()=>({blocked:ui.targetBlocked,blocker:ui.targetKind,mode:ui.targetMode,reason:ui.targetReason}),EmbeddingTargetFields:()=>null}));
 vi.mock('../src/features/ModelCatalog/useModelHosting',()=>({useModelHosting:()=>({hosting:{state:'ready',message:'API проверен',checkedAt:'2026-10-21T00:00:00Z'},busy:false,loading:false,error:'',refresh:vi.fn()})}));
 
 function render(canManage=true,isMain=true):string{
@@ -28,7 +28,7 @@ function actionWrapper(html:string,label:string):string{
     const start=html.indexOf(button(html,label)),wrapper=html.lastIndexOf('<span',start);
     expect(wrapper).toBeGreaterThanOrEqual(0);return html.slice(wrapper,start);
 }
-beforeEach(()=>{ui.loading=false;ui.error='';ui.assigned=false;ui.targetBlocked=true;ui.targetReason='Выберите компьютер для локального OpenCodeRAG.';ui.pending=false;ui.busy=false;ui.needsInput=false;});
+beforeEach(()=>{ui.loading=false;ui.error='';ui.assigned=false;ui.targetBlocked=true;ui.targetReason='Выберите компьютер для локального OpenCodeRAG.';ui.targetKind='computer';ui.targetMode='computer';ui.pending=false;ui.busy=false;ui.needsInput=false;});
 
 describe('Actual ModelCatalog → ModelCard keeps permissions separate from assignment availability',()=>{
     it('Main admin without a target sees their disabled action and its actual reason, retaining edit and archive',()=>{
@@ -63,6 +63,22 @@ describe('Actual ModelCatalog → ModelCard keeps permissions separate from assi
     it('A ready chosen target enables the actual assignment action',()=>{
         ui.targetBlocked=false;expect(disabled(render(),'Добавить в проект')).toBe(false);
         ui.assigned=true;const assigned=render();expect(disabled(assigned,'Подключить модель')).toBe(false);expect(disabled(assigned,'Убрать из проекта')).toBe(false);
+    });
+    it('Missing checked OpenCodeRAG exposes a project-scoped preparation link beside the blocked model action',()=>{
+        ui.targetKind='installation';const html=render(true,false);
+        expect(disabled(html,'Добавить в проект')).toBe(true);expect(html).toContain('Подготовить OpenCodeRAG');
+        expect(html).toMatch(/<a\b[^>]*href="\/store\?q=OpenCodeRAG[^\"]*&amp;p=prj-qa"[^>]*><span>Подготовить OpenCodeRAG<\/span><\/a>/);
+        ui.assigned=true;const assigned=render(true,false);expect(disabled(assigned,'Подключить модель')).toBe(true);expect(disabled(assigned,'Убрать из проекта')).toBe(false);
+        expect(assigned).toContain('Подготовить OpenCodeRAG');expect(render(false,false)).not.toContain('Подготовить OpenCodeRAG');
+    });
+    it('Preparation never bypasses missing computer/binding, an existing operation, stale catalog or server-only selection',()=>{
+        for(const kind of ['computer','bridge','binding','loading','selection','inspection']){ui.targetKind=kind;expect(render()).not.toContain('Подготовить OpenCodeRAG');}
+        ui.targetKind='installation';ui.targetMode='server';expect(render()).not.toContain('Подготовить OpenCodeRAG');ui.targetMode='computer';
+        for(const state of ['pending','busy','loading','error','needsInput'] as const){
+            if(state==='error')ui.error='Нет свежего каталога';else ui[state]=true;
+            expect(render()).not.toContain('Подготовить OpenCodeRAG');
+            if(state==='error')ui.error='';else ui[state]=false;
+        }
     });
     it('Read-only users retain the real role explanation instead of an administrator action',()=>{
         const html=render(false,false);expect(html).toContain('Добавляет администратор проекта');expect(html).not.toContain('Добавить в проект');

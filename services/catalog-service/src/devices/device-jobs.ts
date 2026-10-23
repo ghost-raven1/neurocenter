@@ -48,6 +48,7 @@ import {requiredJobFeatures} from '../../../shared/feature-policy.cjs';
 import { ProjectEmbeddingService } from '../models/project-embedding.service';
 import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
+import {assertRagAutoInspection} from './rag-install-inspection';
 const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
     payload->'descriptor'->>'providerKind' AS "providerKind",payload->'descriptor'->>'providerId' AS "providerId",payload->'descriptor'->>'schemaDigest' AS "providerSchemaDigest",
     payload->'descriptor'->'expectations'->>'catalogModelId' AS "catalogModelId",payload->'descriptor'->'expectations'->>'modelPin' AS "expectedModelPin"`;
@@ -335,6 +336,7 @@ export class DeviceJobs {
                 jobMinimumLevel(job.kind),
             );
             await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
+            await assertRagAutoInspection(this.store.pool,device,job);
             if (job.kind === 'install') {
                 await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
                 await this.assertJobPlan(job);
@@ -368,6 +370,7 @@ export class DeviceJobs {
         await this.permission(device, job.role, job.project_id || undefined,jobMinimumLevel(job.kind));
         if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
         if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
+        await assertRagAutoInspection(this.store.pool,device,job);
         if (RAG_JOB_KINDS.includes(job.kind)) { assertRagJobProtocol(job.payload);assertRagJobBinding(device.report,job.project_id || undefined,job.payload.bindingId); }
         if(job.kind===SNAPSHOT_JOB_KIND)await assertProjectSnapshotJob(this.store,device,job);
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);

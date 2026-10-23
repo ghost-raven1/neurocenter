@@ -23,6 +23,7 @@ import {completeHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, assertHostedRagResult } from './hosted-rag-jobs';
 import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
 import {OPENCODE_PROVIDER_JOBS,normalizeProviderReport} from '../../../shared/opencode-providers.cjs';
+import {continueRagInstallationInspection} from './rag-install-inspection';
 
 export interface DeviceCompletion {
     lease: string;
@@ -201,6 +202,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             :job.kind==='prepare-opencode-provider'?'Настройка подготовлена. Откройте мастер на выбранном компьютере.'
             :job.kind==='open-opencode-provider'?'Мастер открыт на компьютере. После сохранения обновите статус.'
             :input.result.ready?'Локальный провайдер настроен; запрос к модели не проверялся.':'Локальному провайдеру требуется настройка.':undefined;
+        const automaticInspection=await continueRagInstallationInspection(client,job,input.state);
         const message = providerMessage ?? agentMessage ?? snapshotMessage ?? hostedMessage ?? configurationMessage ?? projectMessage ?? workspaceMessage ?? (job.kind === 'inspect-installation'
             ? input.state === 'failed' ? 'Проверка файлов не выполнена.' : input.result.state === 'busy' ? 'Проверка отложена: проект занят.' : 'Сверка файлов завершена; запуск в OpenCode не проверен.'
             : job.kind === 'probe-runtime' ? 'Проверка запуска OpenCode завершена. Результат доступен в установке.'
@@ -210,7 +212,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             : job.kind === 'open-local-change-report' ? input.state === 'failed' ? 'Сравнение не открыто. Проверьте подключённый компьютер.' : 'Полное сравнение открыто только на подключённом компьютере.'
             : job.kind === 'open-local-recovery-folder' ? input.state === 'failed' ? 'Папка резервных копий не открыта.' : 'Резервные копии открыты на подключённом компьютере.'
             : LOCAL_PREPARATIONS.includes(job.kind) ? input.state === 'failed' ? 'Сравнение не выполнено. Локальные файлы сохранены.' : 'План изменений подготовлен. Проверьте его перед применением.'
-            : input.message);
+            : job.kind==='install'&&automaticInspection?'OpenCodeRAG установлен. Проверяем файлы; модель и индекс ещё не проверены.':input.message);
         await client.query(
             'UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5,updated_at=now() WHERE id=$1',
             [id, input.state, percent, message, input.result],

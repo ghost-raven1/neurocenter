@@ -1,7 +1,7 @@
 import type { IBridgeDevice, IBridgeInstallation, IBridgeJob, IBridgeJobDraft } from '../McpBridge/api';
 import type { IBridgeBinding } from '../McpBridge/operationTypes';
 import { hasCurrentBinding, isPending } from '../McpBridge/installationHelpers';
-import { latestInstallationReport, runtimeFileBlocker, uuid } from '../McpBridge/operationHelpers';
+import { latestInstallationReport, runtimeFileBlocker, sameInstallation, uuid } from '../McpBridge/operationHelpers';
 import { bridgeOperationBlocker } from '../McpBridge/readiness';
 import { sameEmbeddingProfile, sha, type IProjectEmbedding } from './model';
 
@@ -11,6 +11,14 @@ export function embeddingInstallations(items: IBridgeInstallation[], device: IBr
     return items.filter(item => item.projectId === projectId && hasCurrentBinding(item, device)
         && ['mcp', 'plugin'].includes(item.assetKind) && item.hostedEmbedding?.supported === true && sha(item.manifest)
         && Number.isSafeInteger(item.version) && item.version > 0 && !runtimeFileBlocker(latestInstallationReport(item, jobs)));
+}
+/** Ожидание точной сверки не делает файлы, модель или индекс готовыми и не меняет выбранный пакет. */
+export function pendingEmbeddingInspection(items: IBridgeInstallation[], device: IBridgeDevice | undefined, projectId: string, jobs: IBridgeJob[], selected?: IBridgeInstallation): IBridgeJob | undefined {
+    return jobs.find(job => job.kind === 'inspect-installation' && isPending(job) && items.some(item => item.projectId === projectId && hasCurrentBinding(item, device)
+        && ['mcp', 'plugin'].includes(item.assetKind) && item.hostedEmbedding?.supported === true && item.hostedEmbedding.reindexSupported === true
+        && sha(item.manifest) && Number.isSafeInteger(item.version) && item.version > 0 && !!runtimeFileBlocker(latestInstallationReport(item, jobs))
+        && sameInstallation(job, item) && job.version === String(item.version) && job.expectedManifest === item.manifest
+        && (!selected || sameInstallation(job, selected) && selected.version === item.version && selected.manifest === item.manifest)));
 }
 export function embeddingConnectionBlocker(device: IBridgeDevice | undefined, binding: IBridgeBinding | undefined): string {
     const common = bridgeOperationBlocker(device); if (common) return common;

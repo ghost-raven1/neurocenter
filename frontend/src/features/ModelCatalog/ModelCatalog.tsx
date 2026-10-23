@@ -22,6 +22,7 @@ import { filterCatalogModels } from './modelCatalogState';
 import type { ICatalogModel, IRemoteConnectionHint } from './types';
 import { useModelCatalog } from './useModelCatalog';
 import './ModelCatalog.less';
+import {projectRagCatalogUrl} from '../../modules/Projects/projectNavigation';
 
 export interface IModelCatalogProps {
     projectId?: string;
@@ -70,6 +71,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         }
     }, [chatId, catalog, chatting, canChat, projectId, assigned]);
     const archived = (): void => { setViewId(null); void refresh(); };
+    const prepareEmbedding=!!projectId&&embeddingTarget.mode==='computer'&&embeddingTarget.blocker==='installation'&&embeddingTarget.blocked
+        &&!loading&&!loadError&&!busy&&!reindex.pending&&!reindex.busy&&reindex.plan?.state!=='needs_input';
     const assignmentReason=(model:ICatalogModel,connecting=false):string=>{
         if(loading)return 'Дождитесь загрузки актуального каталога моделей.';
         if(loadError)return 'Обновите каталог моделей перед изменением проекта.';
@@ -132,6 +135,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
             {shown.map(model => <Col key={model.id} xs={24} xl={12}>
                 <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)} feedback={<CatalogFeedback catalogId={'model:' + model.id} title={model.name}/>}
+                    embeddingSetupHref={prepareEmbedding?projectRagCatalogUrl(projectId!):undefined}
                     canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
                     onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
                     onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)}

@@ -7,6 +7,7 @@ import {modelCatalogApi} from '../src/features/ModelCatalog/api';
 import type {ICatalogModel,IModelCatalog} from '../src/features/ModelCatalog/types';
 import {ProjectEmbedding,ProjectEmbeddingContent} from '../src/features/ProjectEmbedding/ProjectEmbedding';
 import {ProjectEmbeddingConnection,ConnectEmbeddingAction} from '../src/features/ProjectEmbedding/ProjectEmbeddingConnection';
+import {EmbeddingTargetFields,useEmbeddingTarget} from '../src/features/ProjectEmbedding/EmbeddingTarget';
 import {embeddingConnectionInput} from '../src/features/ProjectEmbedding/connection';
 import {requireProjectEmbedding,type IProjectEmbedding} from '../src/features/ProjectEmbedding/model';
 import type {IProjectReindexPlan} from '../src/features/ProjectEmbedding/reindex';
@@ -59,12 +60,15 @@ vi.mock('antd',async()=>{
 });
 const model=(id:string,changes:Partial<ICatalogModel>={}):ICatalogModel=>({id,name:'Модель '+id,description:'',capability:'embedding',runtime:'ollama',model:'qwen3-embedding:4b',
     manifestSha256:'c'.repeat(64),modelPin:(id==='a'?'d':'e').repeat(64),dimension:2560,source:'custom',revision:1,createdAt:'2026-10-20',updatedAt:'2026-10-20',...changes});
-let selection:IProjectEmbedding,catalog:IModelCatalog,current:ReturnType<typeof ragUiFixture>,mode:'panel'|'action'|'connection',canManage:boolean,canConnect:boolean;
+let selection:IProjectEmbedding,catalog:IModelCatalog,current:ReturnType<typeof ragUiFixture>,mode:'panel'|'action'|'connection'|'target',canManage:boolean,canConnect:boolean;
 let serverProfile:IProjectEmbedding['profile']|undefined;
 let actionInput:ReturnType<typeof embeddingConnectionInput>;
+let target:ReturnType<typeof useEmbeddingTarget>;
+function TargetFixture(){target=useEmbeddingTarget('prj-one');return createElement(EmbeddingTargetFields,{target});}
 function render(){hooks.begin();ui.buttons.clear();ui.choices.clear();ui.consent=undefined;ui.ragUi=undefined;
     const component=mode==='panel'?createElement(ProjectEmbeddingContent,{projectId:'prj-one',serverHasData:true,indexProfile:serverProfile??selection.profile,canManage,canConnect})
         :mode==='connection'?createElement(ProjectEmbeddingConnection,{selection,disabled:false})
+        :mode==='target'?createElement(TargetFixture)
         :createElement(ConnectEmbeddingAction,{input:actionInput,selection,bridge:current.bridge,disabled:false,consent:'Модель А · компьютер А · /fixture/root/Проект',onPreferRagUi:ui.prefer});
     const html=renderToStaticMarkup(component);hooks.commit();return html;
 }
@@ -95,6 +99,83 @@ beforeEach(()=>{
     actionInput=embeddingConnectionInput(current.item,current.binding,selection);
 });
 afterEach(()=>hooks.dispose());
+
+describe('Продолжение подготовки локального embedding target',()=>{
+    it('Установленный OpenCodeRAG с точной ожидающей сверкой показывает проверку вместо повторной установки',async()=>{
+        mode='target';current.bridge.installations=[{...current.item,inspection:undefined}];
+        for(const state of ['queued','running','reconciling']){
+            current.bridge.jobs=[job({kind:'inspect-installation',state})];const html=render();
+            expect(html).toContain('OpenCodeRAG установлен. Проверяем файлы');expect(target.blocked).toBe(true);expect(target.value).toBeUndefined();
+            expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(button('Ход проверки').href).toBe('/operations');expect(ui.buttons.has('Обновить установки')).toBe(true);
+        }
+        expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
+        current.bridge.jobs=[job({kind:'inspect-installation',state:'succeeded'})];current.bridge.installations=[current.item];
+        expect(render()).not.toContain('OpenCodeRAG установлен. Проверяем файлы');expect(target.blocked).toBe(false);expect(target.value?.expectedManifest).toBe(current.item.manifest);
+    });
+    it('Сверка другой установки не скрывает stale выбранную цель и не подставляет её пакет',()=>{
+        mode='target';render();expect(target.value?.assetId).toBe(current.item.assetId);
+        const plugin={...checkedPlugin(),inspection:undefined};current.bridge.installations=[{...current.item,inspection:undefined},plugin];
+        current.bridge.jobs=[job({kind:'inspect-installation',assetId:plugin.assetId,assetKind:plugin.assetKind})];
+        expect(render()).not.toContain('OpenCodeRAG установлен. Проверяем файлы');expect(target.item?.assetId).toBe(current.item.assetId);expect(target.value).toBeUndefined();
+        current.bridge.jobs=[job({kind:'inspect-installation'})];expect(render()).toContain('OpenCodeRAG установлен. Проверяем файлы');
+        expect(target.item?.assetId).toBe(current.item.assetId);expect(target.value).toBeUndefined();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Чужие, старые и завершённые задания не становятся текущей проверкой файлов',()=>{
+        mode='target';current.bridge.installations=[{...current.item,inspection:undefined}];
+        for(const patch of [{deviceId:'other-device'},{projectId:'prj-other'},{bindingId:'9'.repeat(64)},{assetId:'other-tool'},{assetKind:'plugin'},
+            {version:String(current.item.version+1)},{expectedManifest:'9'.repeat(64)},{expectedManifest:undefined},{kind:'install'},{kind:'probe-runtime'},
+            {state:'failed'},{state:'cancelled'},{state:'succeeded'}]){
+            current.bridge.jobs=[job({kind:'inspect-installation',...patch})];expect(render()).not.toContain('OpenCodeRAG установлен. Проверяем файлы');
+            expect(target.blocked).toBe(true);expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(true);
+        }
+        current.bridge.jobs=[job({kind:'inspect-installation'})];
+        for(const patch of [{bindingChanged:true},{legacyBinding:true},{isCurrentBinding:false},{hostedEmbedding:undefined}]){
+            current.bridge.installations=[{...current.item,inspection:undefined,...patch}];expect(render()).not.toContain('OpenCodeRAG установлен. Проверяем файлы');
+        }
+        expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Сверка соседнего пакета не закрывает уже выбранную проверенную альтернативу',()=>{
+        mode='target';const plugin={...checkedPlugin(),inspection:undefined};current.bridge.installations=[current.item,plugin];
+        current.bridge.jobs=[job({kind:'inspect-installation',assetId:plugin.assetId,assetKind:plugin.assetKind})];
+        expect(render()).not.toContain('OpenCodeRAG установлен. Проверяем файлы');expect(target.blocked).toBe(false);expect(target.value?.assetId).toBe(current.item.assetId);
+        expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Отсутствующая и ещё не проверенная установка дают каталог и обновление, а проверенный receipt открывает точную локальную цель',async()=>{
+        mode='target';current.bridge.installations=[];const reload=vi.spyOn(current.bridge,'reload');render();
+        expect(target.blocked).toBe(true);expect(button('Установить OpenCodeRAG').href).toBe('/store?q=OpenCodeRAG+%28%D0%BF%D0%BB%D0%B0%D0%B3%D0%B8%D0%BD%29&p=prj-one');
+        button('Обновить установки').onClick!();await settle();expect(reload).toHaveBeenCalledOnce();
+        current.bridge.installations=[{...current.item,inspection:undefined}];render();expect(target.blocked).toBe(true);expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(true);
+        current.bridge.installations=[current.item];render();expect(target.blocked).toBe(false);expect(target.value).toMatchObject({assetId:current.item.assetId,expectedManifest:current.item.manifest,expectedBindingId:current.binding.bindingId});
+        expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Исчезновение выбранной A не подставляет sole B и оставляет явный выбор B',()=>{
+        mode='target';const plugin=checkedPlugin();current.bridge.installations=[current.item,plugin];render();
+        const choose=()=>ui.choices.get('Установка для новой модели')!;choose().onChange(choose().options[0].value);render();expect(target.value?.assetId).toBe(current.item.assetId);
+        current.bridge.installations=[plugin];render();expect(target.blocked).toBe(true);expect(target.value).toBeUndefined();
+        expect(choose()).toBeDefined();expect(choose().options[0]).toMatchObject({disabled:true});
+        const available=choose().options.find(option=>option.value!==choose().value)!;choose().onChange(available.value);render();
+        expect(target.value).toMatchObject({assetId:plugin.assetId,expectedManifest:plugin.manifest});expect(target.blocked).toBe(false);expect(base.post).not.toHaveBeenCalled();
+    });
+    it('Явный серверный выбор не требует локальной установки и честно объясняет отсутствие локального индекса',()=>{
+        mode='target';current.bridge.installations=[];render();ui.choices.get('Область подключения модели')!.onChange('server');const html=render();
+        expect(target.blocked).toBe(false);expect(target.value).toBeUndefined();expect(html).toContain('Локальный индекс не создаётся');
+        expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Старый мост и неподтверждённая привязка показывают свой следующий шаг, а не установку пакета',()=>{
+        mode='target';current.bridge.installations=[];current.device.report.capabilities=current.device.report.capabilities!.filter(value=>value!=='hosted-rag-grants-v1');render();
+        expect(button('Обновить мост').href).toBe('/start');expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();
+        current.device.report.capabilities.push('hosted-rag-grants-v1');current.binding.instanceId='invalid';render();
+        expect(button('Связать папку проекта').href).toBe('/projects?bind=prj-one');expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();
+        expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('Ошибка загрузки списка даёт повтор чтения, а две готовые установки требуют выбора вместо переустановки',()=>{
+        mode='target';current.bridge.installationsReady=false;current.bridge.error='Список установок недоступен';expect(render()).toContain(current.bridge.error);
+        expect(ui.buttons.has('Обновить установки')).toBe(true);expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.blocked).toBe(true);
+        current.bridge.installationsReady=true;current.bridge.error='';current.bridge.installations=[current.item,checkedPlugin()];const html=render();
+        expect(html).toContain('Выберите доступную проверенную установку');expect(ui.choices.get('Установка для новой модели')!.value).toBeUndefined();
+        expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+});
 
 describe('Выбор embedding-модели проекта без скрытых операций',()=>{
     it('Загружает выбор и назначенные embedding-модели всех размерностей без запуска операции',async()=>{
