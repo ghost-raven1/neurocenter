@@ -96,8 +96,8 @@ export function opencodeModelCandidates(config:Json,auth:Json={},experimentalMod
                 ...(parameterIssues.length?{parameterIssues}:{}),
                 ...(object(metadata.limit)&&bounded(metadata.limit.output,1,2097152,true)?{outputTokenLimit:metadata.limit.output}:{}),
                 ...(supported&&typeof options.timeout==='number'?{timeoutMs:options.timeout}:{}),
-                blocker:disabled?'disabled-provider':!supported||overridden?'unsupported-provider':shared.serverImportBlocker({provider,baseUrl:address.url})
-                    ??(object(auth[provider])&&auth[provider].type==='oauth'?'local-provider-auth':address.blocker)});
+                blocker:disabled?'disabled-provider':shared.serverImportBlocker({provider,baseUrl:address.url})
+                    ??(object(auth[provider])&&auth[provider].type==='oauth'?'local-provider-auth':!supported||overridden?'unsupported-provider':address.blocker)});
         }
     }
     return result;

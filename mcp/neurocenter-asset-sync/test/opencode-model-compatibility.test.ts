@@ -48,6 +48,18 @@ describe('Exact OpenCode protocol and parameter discovery',()=>{
         expect(scan.candidates[0]).toMatchObject({blocker:'codex-local-auth',options:{apiFormat:'responses',reasoningEffort:'high',store:false}});expect(credentials).toEqual({});expect(JSON.stringify(scan)).not.toContain(secret);
         expect(validModelScan(scan,source)).toBe(true);
     });
+    it.each(['missing-sdk','custom-options','model-override'])('Local Codex recovery remains explicit with %s instead of a generic provider error',async variation=>{
+        const value=config({},'https://chatgpt.com/backend-api/codex','codexbridge');
+        if(variation==='missing-sdk')delete (value.provider.codexbridge as {npm?:string}).npm;
+        if(variation==='custom-options')Object.assign(value.provider.codexbridge.models.exact.options,{localOnly:{key:secret}});
+        if(variation==='model-override')Object.assign(value.provider.codexbridge.models.exact,{provider:{npm:'local-sdk'}});
+        const f=await fixture(value),credentials:Record<string,string>={};
+        const scan=await readOpenCodeModelMetadata(f.root,source,{...f,credentialTarget:credentials,readAuth:false});
+        expect(scan.candidates[0]!.blocker).toBe('codex-local-auth');
+        expect(validModelScan(scan,source)).toBe(true);expect(credentials).toEqual({});expect(JSON.stringify(scan)).not.toContain(secret);
+        const disabled=opencodeModelCandidates({...value,disabled_providers:['codexbridge']});
+        expect(disabled[0]!.blocker).toBe('disabled-provider');
+    });
     it('OAuth owned by another local provider stays local and cannot be silently treated as a server API key',()=>{
         expect(opencodeModelCandidates(config(),{team:{type:'oauth',access:secret,refresh:secret}})[0]!.blocker).toBe('local-provider-auth');
     });
