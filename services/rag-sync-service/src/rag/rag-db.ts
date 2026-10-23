@@ -7,6 +7,7 @@ import {PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION} from '../databa
 import {RAG_WRITE_LOCK} from './quota/rag-quota-schema';
 import {reserveCapacity} from '../../../shared/capacity.cjs';
 import {normalizeChunkRow,rowFingerprint} from '../../../shared/rag-index-contract.cjs';
+import {ragWriteAdmissionUncertain} from '../../../shared/rag-write-authorization.cjs';
 import {readIndexManifest,readIndexSummary,bindIndexProfile,invalidateIndexSeal,sealIndex,requireUsableVectors,validateIndexWrite,
     type IRagIndexWrite,type IRagIndexManifest,type IRagIndexSummary} from './rag-index-state';
 import {migrateRag,checkRagQuotaMigration} from '../database/migrations';
@@ -168,6 +169,7 @@ export class RagDb {
         deletes: string[],
         write:IRagIndexWrite={indexProfile:null},
         intent?:{id:string;payloadHash:string},
+        authorize?:()=>Promise<void>,
     ): Promise<{ upserted: number; deleted: number }&IRagIndexSummary> {
         if(!/^(?:initial-[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/.test(generation))throw new BadRequestException('Некорректное поколение индекса.');
         if(!intent&&!generation.startsWith('initial-'))throw new BadRequestException('Запись управляемого поколения требует сохранённый catalog intent.');
@@ -185,6 +187,7 @@ export class RagDb {
         const client = await this.pool.connect().catch(error=>{releaseCapacity();throw error;});
         let deleted = 0;
         let upserted = 0;
+        let discard = false;
 
         try {
             await client.query('BEGIN');
@@ -198,6 +201,7 @@ export class RagDb {
             }
             await client.query('LOCK TABLE rag_chunks IN ROW EXCLUSIVE MODE');
             await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
+            await authorize?.();
             await bindIndexProfile(client,projectKey,generation,write);
             if(!write.snapshot?.complete){await invalidateIndexSeal(client,projectKey,generation);}
 
@@ -228,15 +232,16 @@ export class RagDb {
             await client.query('COMMIT');
             return result;
         } catch (error) {
-            await client.query('ROLLBACK').catch(() => undefined);
+            await client.query('ROLLBACK').catch(() => { discard = true; });
+            if(discard)throw new ServiceUnavailableException('Откат записи RAG не подтверждён. Повтор проверит квитанцию исходного пакета.');
             const mapped=mapRagQuotaError(error);
-            if(intent&&mapped instanceof HttpException&&[400,403,409,413].includes(mapped.getStatus())){
+            if(intent&&mapped instanceof HttpException&&[400,403,409,413].includes(mapped.getStatus())&&!ragWriteAdmissionUncertain(mapped.getResponse())){
                 await client.query("UPDATE rag_write_receipts SET state='failed',error=$2::jsonb,updated_at=now() WHERE id=$1 AND state='running'",
                     [intent.id,JSON.stringify({message:'Пакет отклонён без изменения данных.'})]).catch(()=>undefined);
             }
             throw mapped;
         } finally {
-            try{client.release();}finally{releaseCapacity();}
+            try{client.release(discard);}finally{releaseCapacity();}
         }
 
     }

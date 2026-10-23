@@ -8,7 +8,7 @@ vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}))
 const row={id:'test',filePath:'README.md',content:'Инструкция',contentHash:'server'};
 describe('Валидация полной дельты RAG до записи',()=>{
     const applyDelta=vi.fn(async()=>({upserted:1,deleted:0})),completedWrite=vi.fn(async()=>null);const withProject=vi.fn(async(key,action)=>action({applyDelta,completedWrite},key));const service=new RagService({withProject} as unknown as ProjectDatabases);
-    beforeEach(()=>{withProject.mockClear();applyDelta.mockClear();completedWrite.mockClear();vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true}));});
+    beforeEach(()=>{withProject.mockClear();applyDelta.mockClear();completedWrite.mockClear();vi.stubGlobal('fetch',vi.fn(async(_url,options?:RequestInit)=>Response.json({ok:true,protocol:'rag-write-authorization-v1',phase:JSON.parse(String(options?.body)).phase})));});
     afterEach(()=>vi.unstubAllGlobals());
     it.each([null,{...row,id:''},{...row,content:15},{...row,filePath:{}},{...row,description:[]},{...row,startLine:1.5},{...row,startLine:3,endLine:1},{...row,embedding:[1,2]},{...row,embedding:'[1,2]'},{...row,embedding:Array(2560).fill(null)}])('Некорректный фрагмент не открывает БД: %j',invalid=>{
         return expect(service.applyDelta(write([invalid],[]))).rejects.toMatchObject({status:400}).then(()=>expect(withProject).not.toHaveBeenCalled());

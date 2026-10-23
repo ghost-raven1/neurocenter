@@ -7,8 +7,11 @@ import { initialGeneration } from './project-embedding.repository';
 import type { IProjectRagContext } from './project-embedding.types';
 import { ProjectRagClient } from './project-rag-client';
 import {ragRequestHash} from '../../../shared/rag-index-contract.cjs';
+import {RAG_WRITE_AUTHORIZATION_PROTOCOL,RAG_WRITE_POLICY,ragWriteAdmissionUncertain,type IRagWriteGrant,type RagWriteAuthorizationPhase} from '../../../shared/rag-write-authorization.cjs';
+import {authorizeRagIntentAuthor,type IRagIntentAuthor} from './project-rag-authorization';
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 
-interface ISyncIntent {id:string;project_id:string;request_key:string;payload_hash:string;payload:Record<string,unknown>;context:IProjectRagContext;state:string;result:Record<string,unknown>|null;}
+interface ISyncIntent extends IRagIntentAuthor {id:string;project_id:string;request_key:string;payload_hash:string;payload:Record<string,unknown>;context:IProjectRagContext;state:string;result:Record<string,unknown>|null;}
 const sha=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const integer=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>=0;
 
@@ -27,7 +30,7 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
     async onModuleDestroy():Promise<void>{if(this.timer)clearInterval(this.timer);await Promise.allSettled([...this.tasks]);}
     private async recover():Promise<void>{
         if(this.recovering)return;this.recovering=true;
-        try{const pending=await this.models.pool.query<ISyncIntent>("SELECT * FROM project_rag_sync_intents WHERE state IN ('pending','uncertain') ORDER BY created_at LIMIT 10");
+        try{const pending=await this.models.pool.query<ISyncIntent>("SELECT * FROM project_rag_sync_intents WHERE state IN ('pending','uncertain') ORDER BY updated_at,created_at,id LIMIT 10");
             for(const row of pending.rows){await this.finish(row).catch(()=>undefined);}
         }finally{this.recovering=false;}
     }
@@ -41,16 +44,25 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
         const pending=await db.query("SELECT id FROM project_rag_sync_intents WHERE project_id=$1 AND state IN ('pending','uncertain')",[projectId]);
         if(pending.rows.length)throw new ConflictException({code:'RAG_SYNC_UNCERTAIN',message:'Подтверждение синхронизации ещё проверяется. Завершите повтор синхронизации перед сменой модели.'});
     }
-    /** RAG принимает только уже сохранённый catalog intent; произвольный candidate context не является grant. */
-    async authorizeWrite(value:{id:string;payloadHash:string;context:IProjectRagContext}):Promise<{ok:true}>{
-        if(typeof value?.id!=='string'||!sha(value.payloadHash))throw new BadRequestException('Некорректное разрешение записи.');
-        const result=await this.models.pool.query<ISyncIntent>('SELECT * FROM project_rag_sync_intents WHERE id=$1',[value.id]),intent=result.rows[0];
-        if(!intent||intent.state==='failed'||intent.payload_hash!==value.payloadHash||ragRequestHash(intent.context)!==ragRequestHash(value.context))throw new ConflictException('Intent записи не подтверждён каталогом.');
-        if(intent.state!=='succeeded'){
-            const current=await this.context(intent.project_id);
-            if(ragRequestHash(current)!==ragRequestHash(intent.context))throw new ConflictException('Контекст intent изменился.');
-        }
-        return {ok:true};
+    /** Exact receipt recovery is distinct from a fresh admission immediately before RAG's first mutation. */
+    async authorizeWrite(value:{id:string;payloadHash:string;context:IProjectRagContext;phase:RagWriteAuthorizationPhase}):Promise<IRagWriteGrant>{
+        if(typeof value?.id!=='string'||!sha(value.payloadHash)||!['receipt','write'].includes(value.phase))throw new BadRequestException('Некорректная фаза разрешения записи. Обновите RAG и Catalog.');
+        const db=await this.models.pool.connect();
+        let discard=false;
+        try{
+            await db.query('BEGIN');
+            await db.query("SET LOCAL lock_timeout='3s'");
+            await db.query("SET LOCAL statement_timeout='7s'");
+            const intent=(await db.query<ISyncIntent>('SELECT * FROM project_rag_sync_intents WHERE id=$1',[value.id])).rows[0];
+            if(!intent||intent.state==='failed'||intent.payload_hash!==value.payloadHash||ragRequestHash(intent.context)!==ragRequestHash(value.context))throw new ConflictException('Intent записи не подтверждён каталогом.');
+            if(value.phase==='write'){
+                await authorizeRagIntentAuthor(db,intent.project_id,intent);
+                await requireFeaturesEnabled(['rag_sync']);
+                const current=await this.context(intent.project_id,db);
+                if(intent.state==='succeeded'||ragRequestHash(current)!==ragRequestHash(intent.context))throw new ConflictException('Контекст intent изменился или запись уже подтверждена.');
+            }
+            await db.query('COMMIT');return {ok:true,protocol:RAG_WRITE_AUTHORIZATION_PROTOCOL,phase:value.phase};
+        }catch(error){await db.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{db.release(discard);}
     }
     async sync(request:Request,value:unknown):Promise<Record<string,unknown>>{
         if(!value||typeof value!=='object'||Array.isArray(value))throw new BadRequestException('Некорректный пакет синхронизации.');
@@ -78,8 +90,8 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
                 if(!pinned||!await this.models.isAssigned(project.id,pinned[1])||!await this.models.getPinned(pinned[1],pinned[2]))throw new ConflictException('Закреплённая модель больше не назначена проекту.');
                 if(context.revision!==body.expectedSelectionRevision||context.dataRevision!==body.expectedDataRevision||context.generation!==body.expectedGeneration
                     ||ragRequestHash(context.profile)!==ragRequestHash(body.indexProfile))throw new ConflictException('Состояние индекса или модель изменились. Перечитайте серверный снимок.');
-                const inserted=await client.query<ISyncIntent>(`INSERT INTO project_rag_sync_intents(id,project_id,request_key,payload_hash,payload,context,state)
-                    VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'pending') RETURNING *`,[randomUUID(),project.id,body.requestKey,payloadHash,JSON.stringify(body),JSON.stringify(context)]);intent=inserted.rows[0];
+                const inserted=await client.query<ISyncIntent>(`INSERT INTO project_rag_sync_intents(id,project_id,request_key,payload_hash,payload,context,state,author_email,author_role,write_policy)
+                    VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'pending',$7,$8,$9) RETURNING *`,[randomUUID(),project.id,body.requestKey,payloadHash,JSON.stringify(body),JSON.stringify(context),actor.email,actor.activeRole,RAG_WRITE_POLICY]);intent=inserted.rows[0];
             }
             await client.query('COMMIT');
         }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
@@ -97,8 +109,8 @@ export class ProjectRagCoordinator implements OnModuleInit,OnModuleDestroy {
         catch(error){
             const response=error instanceof HttpException?error.getResponse():null;
             // A disabled replay may race a previously admitted COMMIT; only its exact receipt resolves that uncertainty.
-            const featureDisabled=error instanceof HttpException&&error.getStatus()===403&&typeof response==='object'&&response!==null&&'code'in response&&response.code==='feature-disabled';
-            const definitive=!featureDisabled&&error instanceof HttpException&&[400,403,409,413].includes(error.getStatus());
+            const admissionDenied=error instanceof HttpException&&error.getStatus()===403&&ragWriteAdmissionUncertain(response);
+            const definitive=!admissionDenied&&error instanceof HttpException&&[400,403,409,413].includes(error.getStatus());
             await this.models.pool.query("UPDATE project_rag_sync_intents SET state=$2,error=$3::jsonb,updated_at=now() WHERE id=$1 AND state IN ('pending','uncertain')",
                 [intent.id,definitive?'failed':'uncertain',JSON.stringify({message:definitive?'Пакет отклонён без изменения индекса.':'Результат синхронизации ещё не подтверждён.'})]);throw error;
         }

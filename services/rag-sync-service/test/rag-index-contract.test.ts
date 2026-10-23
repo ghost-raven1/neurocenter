@@ -6,7 +6,7 @@ import {RagService} from '../src/rag/rag.service';
 vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}));
 import type {ProjectDatabases} from '../src/rag/project-databases';
 import {write,generation} from './rag-write.fixture';
-beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true})));
+beforeEach(()=>vi.stubGlobal('fetch',vi.fn(async(_url,options?:RequestInit)=>Response.json({ok:true,protocol:'rag-write-authorization-v1',phase:JSON.parse(String(options?.body)).phase}))));
 afterEach(()=>vi.unstubAllGlobals());
 
 const profile={provider:'ollama',model:'qwen3-embedding:4b',dimension:2560};

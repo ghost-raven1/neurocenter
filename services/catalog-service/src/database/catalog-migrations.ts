@@ -1,3 +1,5 @@
+import {PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL} from '../models/project-rag-authorization.schema';
+import {PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL} from '../models/project-rag-authorization.schema-verification';
 import {DEVICE_CODEX_SCHEMA_SQL} from '../models/device-codex.schema';
 import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
@@ -79,4 +81,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:27,name:'packager-agent-and-runtime-verification',sql:PACKAGE_AGENT_SCHEMA_SQL+'\n'+PACKAGE_BUILD_RUNTIME_SCHEMA_SQL+'\n'+PACKAGE_AGENT_SCHEMA_ASSERT_SQL},
     {version:28,name:'bounded-system-role-agents',sql:SYSTEM_ROLE_SCHEMA_SQL},
     {version:29,name:'private-device-codex-inference',sql:DEVICE_CODEX_SCHEMA_SQL},
+    {version:30,name:'fresh-project-rag-write-authorization',sql:PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL+'\n'+PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL},
 ];

@@ -50,6 +50,7 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
         admin=new Client({connectionString:connection});await admin.connect();await admin.query(`CREATE DATABASE "${name}"`);created=true;url.pathname='/'+name;
         pool=new Pool({connectionString:url.toString(),max:12});rag=new RagDb({url:url.toString()});await rag.setup();
         await ensureCatalogSchema(pool);
+        await pool.query("INSERT INTO platform_users(email,is_main_admin,enabled) VALUES('admin@example.test',true,true)");
         await pool.query("INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,'admin@example.test','Главный админ','Fixture','fixture','unique-fixture-token')",[target.deviceId]);
         await pool.query('INSERT INTO model_catalog(id,name,descriptor,revision) VALUES($1,$2,$3,1),($4,$5,$6,1)',[modelId,'Three',descriptor(3),nextId,'Five',descriptor(5)]);
         await backfillModelHistory(pool);repo=new ProjectEmbeddingRepository(pool);
@@ -60,7 +61,9 @@ describe.skipIf(!connection)('Catalog CAS + durable sync receipts + real generat
             if(path==='source')return {...await rag.generations.source(input.projectId,input.generation),availableBytes:1e10};
             if(path==='generations')return rag.generations.create(input.projectId,input.id,input.sourceGeneration,input.profile,input.sourceSnapshot);
             if(path==='write'){
-                await coordinator.authorizeWrite(input);const p=input.payload,result=await rag.applyDelta(input.context.projectId,input.context.generation,p.chunks,p.deletes,{indexProfile:p.indexProfile,snapshot:p.snapshot},{id:input.id,payloadHash:input.payloadHash});
+                await coordinator.authorizeWrite({...input,phase:'receipt'});
+                const p=input.payload,intent={id:input.id,payloadHash:input.payloadHash},completed=await rag.completedWrite(input.context.projectId,input.context.generation,intent);
+                const result=completed??await rag.applyDelta(input.context.projectId,input.context.generation,p.chunks,p.deletes,{indexProfile:p.indexProfile,snapshot:p.snapshot},intent,async()=>{await coordinator.authorizeWrite({...input,phase:'write'});});
                 if(loseAck){loseAck=false;throw new ServiceUnavailableException('lost ACK after real COMMIT');}return result;
             }
             const match=/^generations\/([^/?]+)(?:\/(build|cancel|retry))?/.exec(path);if(!match)throw Error(path);const project=input?.projectId??new URL('http://fixture/'+path).searchParams.get('projectId')!;
