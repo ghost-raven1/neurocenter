@@ -200,8 +200,10 @@ export class ProxyService {
             }
         }
         if(suffix==='embedding'){await this.deviceEmbedding(req,res);return;}
-        const auth=publicPair?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
-        if(!publicPair&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+        // Catalog checks the retained key for queue maintenance, even after normal device access was revoked.
+        const maintenance=/^worker\/(pause|resume)$/.test(suffix);
+        const auth=publicPair||maintenance?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
+        if(!publicPair&&!maintenance&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
         const failure=await featureFlagsFailure(this.http,this.featureFlagsUrl,requiredFeatureFlags(req.method,req.path,req.body));
         if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
         try{

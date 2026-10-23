@@ -49,6 +49,10 @@ export const auditedUnits=Object.freeze({
   "sha256": "150f7b51c5648197f88708d305248ea508f90740acae1f9c9a361c47551f015c",
   "helpers": {}
  },
+ "services/catalog-service/test/device-worker-maintenance.test.ts": {
+  "sha256": "c9cb7306a1d5e439adf4ccfbb9e820105d5af8840acd4b31e849eeb05b191565",
+  "helpers": {}
+ },
  "services/catalog-service/test/feature-execution-boundaries.test.ts": {
   "sha256": "389b05101e3b40d5d3061f2b247d1c6a702c25899239541459faa9f4c610ee6d",
   "helpers": {}

@@ -116,10 +116,12 @@ export class DeviceController {
         return this.jobs.claim(await this.device(req));
     }
     @Post('internal/device-channel/worker/pause') async pause(@Req() req: Request) {
-        return this.devices.pause(await this.device(req));
+        assertInternal(req.headers['x-neurocenter-internal']);
+        return this.devices.pause(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     }
     @Post('internal/device-channel/worker/resume') async resume(@Req() req: Request) {
-        return this.devices.resume(await this.device(req));
+        assertInternal(req.headers['x-neurocenter-internal']);
+        return this.devices.resume(String(req.headers.authorization || '').replace(/^Bearer /, ''));
     }
     @Post('internal/device-channel/jobs/:id/authorize') async authorize(
         @Req() req: Request,

@@ -10,6 +10,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type {PoolClient} from 'pg';
 import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
@@ -243,20 +244,34 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         );
         return { ok: true };
     }
-    /** Пауза сериализована с claim: обновление клиента не обрывает уже начатую файловую операцию. */
-    async pause(device: Device) {
+    /** Старый ключ разрешает только паузу своей очереди; renewal ждёт завершения этой транзакции. */
+    private async maintenance<T>(token:unknown,action:(client:PoolClient,id:string)=>Promise<T>):Promise<T> {
+        if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))throw new UnauthorizedException('MCP не подключён.');
         const client = await this.pool.connect();
+        let discard=false;
         try {
             await client.query('BEGIN');
-            await client.query("UPDATE bridge_devices SET paused_until=now()+interval '1 minute' WHERE id=$1", [device.id]);
-            const active = await client.query<{ count: string }>("SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND state IN ('running','reconciling')", [device.id]);
+            const selected=await client.query<{id:string}>('SELECT id FROM bridge_devices WHERE token_hash=$1 FOR UPDATE',[digest(token)]);
+            if(!selected.rows[0])throw new UnauthorizedException('Ключ MCP отсутствует или уже заменён. Подключите компьютер заново.');
+            const result=await action(client,selected.rows[0].id);
             await client.query('COMMIT');
-            return { activeJobs: Number(active.rows[0]?.count || 0) };
-        } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
-        finally { client.release(); }
+            return result;
+        } catch (error) { await client.query('ROLLBACK').catch(() => {discard=true;}); throw error; }
+        finally { if(discard)client.release(true);else client.release(); }
     }
-    async resume(device: Device) {
-        await this.pool.query('UPDATE bridge_devices SET paused_until=NULL WHERE id=$1', [device.id]);
-        return { ok: true };
+    /** Пауза сериализована с claim и учитывает неподтверждённые локальные задания после отзыва. */
+    async pause(token:unknown) {
+        return this.maintenance(token,async(client,id)=>{
+            await client.query("UPDATE bridge_devices SET paused_until=now()+interval '1 minute' WHERE id=$1", [id]);
+            const active = await client.query<{ count: string }>(`SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND (state IN ('running','reconciling')
+                OR (state='failed' AND message='Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.'))`, [id]);
+            return { activeJobs: Number(active.rows[0]?.count || 0) };
+        });
+    }
+    async resume(token:unknown) {
+        return this.maintenance(token,async(client,id)=>{
+            await client.query('UPDATE bridge_devices SET paused_until=NULL WHERE id=$1', [id]);
+            return { ok: true };
+        });
     }
 }
