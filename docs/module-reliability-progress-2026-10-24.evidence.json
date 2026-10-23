@@ -194,5 +194,40 @@
       ".run/continuation-20261024/installed-module-reliability-after.json": "1ace55f62f8bbd4b51eaa0e58f8a12a21db809a71408724f92b25aa543c939c1",
       ".run/continuation-20261024/archive-acceptance-FKwXeH/receipt.json": "85912e755de23dc906baf0f80b1ad510b72c70f9fc8e775e5b3bf59046cf16a8"
     }
+  },
+  "codexFollowup": {
+    "sourceHead": "51e5dec42c575b20e0d7f2847664db273fa3f76a",
+    "selectedChecks": {
+      "catalog": 48,
+      "bridgeFiles": 8,
+      "relatedBridge": 77,
+      "buildContract": 4,
+      "osSandbox": 29,
+      "codexRecipes": 16
+    },
+    "nativeModelResponseAccepted": false,
+    "sources": {
+      "mcp/neurocenter-asset-sync/scripts/build.mjs": "72ab644f0bbb83879e8732e1fbfe88efa335f6b7b8945182dc1b559338a875d7",
+      "mcp/neurocenter-asset-sync/src/bridge/installation-inspection.ts": "864016ec8efae43dde3584b264cac016773ddf9521c892d4b939d064e3e97e6e",
+      "mcp/neurocenter-asset-sync/src/bridge/installation-planner.ts": "540c44603879acfbaaca94cf31c330336cac0936b0a056ff86dd0760ce719d51",
+      "mcp/neurocenter-asset-sync/src/bridge/managed-codex-connector.ts": "9504772bf266201a81d8321f1313108570815916ba12282427f96d069ad3e8f8",
+      "mcp/neurocenter-asset-sync/test/codex-managed-install.test.ts": "b71506975fa384fceefd9fd48b8209e4776c03a89360b61d6aec375ac686528b",
+      "scripts/catalog-plugins/verify-runtime-codex.mjs": "95097b92a217db6fd163192247da2ff1cf3a2ea5297e231ba4922c313188e40a",
+      "scripts/catalog-plugins/verify-runtime.mjs": "b099aca4be64c77bc4f5b179a55d0bbdf0c4378ac1e44255cb87a79128a10dd6",
+      "scripts/test/bridge-build.test.mjs": "35ab832d7e73f43685f8725fab87b85f33704055bddacd6dfb1bfe25df5cf6a3",
+      "scripts/test/package-runtime-verification.test.mjs": "6c34c051800ca5251d33b65f29cff4d77950a4613ec4745b72693e0ade2329d2",
+      "services/catalog-service/src/devices/install-plans.ts": "a2a1f3e9c781cb4c2a34bc9fa5cf3a3c019d7d8a8f1e273f40d0be5f87fc7115",
+      "services/catalog-service/test/codex-managed-install.test.ts": "b065b3839848da034444997afc7e8d2359748fc228a055853569430fdef1af80",
+      "services/rag-sync-service/Dockerfile": "5880502f885ad765510ac252ccb6a639617276f08ae569cd49c9ee27520b8e57",
+      "services/shared/codex-connector-source.cjs": "70255b5d0ce45f3c73b1dd438034d8bece8d5787d8a7e641ab4201f64371d780",
+      "services/shared/codex-connector-source.d.cts": "42f0bf9350f8574473e0ca2a57a16bf482be909e078933964bac502f9a0fa323"
+    },
+    "receipts": {
+      "codex-guard/summary.json": "fa56db1496aec950190704439f15e283fb2a9e1427cbfa2efa8d0edd0ab4cc11",
+      "codex-guard/source-match.json": "7543ca44e0d1eb780907984df36a85207f910cbb9f14f7d0912579e59e2efc06",
+      "codex-managed-verifier/receipt.json": "bd70186027bef57c8ee8ca3277b5e72574a798befa7c7b2d1cc3a010de0ef1dd",
+      "codex-managed-verifier/source.sha256": "9c6ad5b645d738c58697cf83985fc5829f0bd139bea4a204875016873c03b7e2"
+    },
+    "at": "2026-10-23T22:07:06.191Z"
   }
 }
