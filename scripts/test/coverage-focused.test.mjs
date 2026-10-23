@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {coveragePackages} from '../coverage/source-inventory.mjs';
 
 const repository=fileURLToPath(new URL('../../',import.meta.url));
@@ -27,11 +28,11 @@ await fs.mkdir(process.env.NEUROCENTER_COVERAGE_DIR,{recursive:true});await fs.w
 `;
 
 /** Run the actual orchestration on private packages; only the explicit synthetic worker is substituted. */
-async function fixture(t,{realVitest=false}={}){
+async function fixture(t,{realVitest=false,pgTypes=false,helper=false}={}){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-focused-coverage-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),output=path.join(root,'output'),calls=path.join(root,'worker-calls.jsonl');
  for(const directory of[tools,path.join(root,'scripts/workspace'),path.join(root,'services/shared')])await fs.mkdir(directory,{recursive:true});
- for(const file of['run.mjs','focused-selection.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json']){
+ for(const file of['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json']){
   try{await fs.copyFile(path.join(repository,'scripts/coverage',file),path.join(tools,file));}catch(error){if(file!=='focused-selection.mjs'||error.code!=='ENOENT')throw error;}
  }
  await fs.copyFile(path.join(repository,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
@@ -52,13 +53,47 @@ async function fixture(t,{realVitest=false}={}){
  await fs.writeFile(path.join(root,'.gitignore'),'**/node_modules/\noutput*/\nworker-calls.jsonl\n');
  assert.equal(spawnSync('git',['init','--quiet'],{cwd:root,env:{PATH:process.env.PATH,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'}}).status,0);
  const pkg=path.join(root,'services/feature-flags-service');
+ if(pgTypes)await fs.writeFile(path.join(pkg,selected),'import type {PoolClient} from "pg";\nconst client={query:()=>({rows:[]})};\n');
+ const helpers={};let helperFile;
+ if(helper){
+  helperFile=path.join(root,'scripts/test/owned-helper.cjs');await fs.mkdir(path.dirname(helperFile),{recursive:true});await fs.writeFile(helperFile,'module.exports={value:1};\n');
+  await fs.appendFile(path.join(pkg,selected),'import "../../../scripts/test/owned-helper.cjs";\n');
+  helpers['scripts/test/owned-helper.cjs']=createHash('sha256').update(await fs.readFile(helperFile)).digest('hex');
+ }
+ // Substitute only private fixture approval metadata; classifier/preflight code remains the actual module.
+ const policyFile=path.join(tools,'unit-safe-profile.mjs'),policy=await fs.readFile(policyFile,'utf8'),marker='export const auditedUnits=Object.freeze(';
+ const start=policy.indexOf(marker)+marker.length,end=policy.indexOf(');\n\nconst gap',start);
+ assert.ok(start>=marker.length&&end>start);
+ const audited={['services/feature-flags-service/'+selected]:{sha256:createHash('sha256').update(await fs.readFile(path.join(pkg,selected))).digest('hex'),helpers}};
+ await fs.writeFile(policyFile,policy.slice(0,start)+JSON.stringify(audited)+policy.slice(end));
  function run(args=[],{scenario='selected',destination=output}={}){
   const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),...args,'--max-workers','1','--output',destination],{cwd:root,
    env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,FOCUSED_CALLS:calls,FOCUSED_CASE:scenario,TEST_PG_URL:'postgres://forbidden-caller',TEST_S3_SECRET:'forbidden-caller'},encoding:'utf8',timeout:30000,maxBuffer:2*1024**2});
   assert.equal(result.error,undefined);assert.equal(result.signal,null);return result;
  }
- return{root,tools,pkg,output,calls,run,manifest:async()=>JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'))};
+ return{root,tools,pkg,output,calls,helperFile,run,manifest:async()=>JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'))};
 }
+
+test('Reviewed type-only pg unit executes in full and focused orchestration with the complete source denominator',async t=>{
+ for(const focused of [false,true]){
+  const f=await fixture(t,{pgTypes:true}),result=f.run(focused?['--package','feature-flags-service','--test-file',selected]:[]);
+  assert.equal(result.status,0,result.stdout+result.stderr);const manifest=await f.manifest(),item=manifest.packages.find(item=>item.name==='feature-flags-service');
+  assert.ok(item.testFileInventory.expectedFiles.includes(path.join(f.pkg,selected)));assert.ok(!item.excludedInfrastructureSuites.includes(selected));
+  const map=JSON.parse(await fs.readFile(path.join(f.output,'merged/coverage-final.json'),'utf8'));assert.equal(map[path.join(f.pkg,'src/never.ts')].s[0],0);
+  assert.equal(item.ownSourceSummary.lines.total,2);assert.equal(manifest.packages.length,focused?1:8);
+ }
+});
+
+test('Changed reviewed source or pinned fixture is rejected before output/worker in full and focused orchestration',async t=>{
+ for(const focused of [false,true])for(const mutation of ['source','helper']){
+  const f=await fixture(t,{pgTypes:true,helper:true}),sentinel=path.join(f.root,'MUST_NOT_EXECUTE');
+  const body='require("node:fs").writeFileSync('+JSON.stringify(sentinel)+',"bad"); require("pg");\n';
+  if(mutation==='source')await fs.appendFile(path.join(f.pkg,selected),'service.onModuleInit();\n');else await fs.appendFile(f.helperFile,body);
+  const result=f.run(focused?['--package','feature-flags-service','--test-file',selected]:[]);
+  assert.equal(result.status,1,result.stdout+result.stderr);assert.match(result.stderr,/Unit-safe audit changed.*Re-audit/);
+  for(const file of [f.output,f.calls,sentinel])await assert.rejects(fs.stat(file),{code:'ENOENT'});
+ }
+});
 
 test('Focused runner selects exact requested files, rejects substring expansion and retains untouched source counters',async t=>{
  const f=await fixture(t),result=f.run(['--package','feature-flags-service','--test-file',selected]);

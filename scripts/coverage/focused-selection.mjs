@@ -1,11 +1,13 @@
 import path from 'node:path';
 import {lstat,readFile} from 'node:fs/promises';
+import {auditedUnitException,runtimePg} from './unit-safe-profile.mjs';
 
 /** Unit-safe never activates PG/S3 fallbacks; explicit integration profiles own those fixtures. */
 export async function externalSuite(file,focused=false){
  const source=await readFile(file,'utf8');
- return /(?:database|postgres|(?:^|-)db|(?:^|-)s3)\.test\./.test(path.basename(file))||/databaseFixture|(?:[A-Z_]*TEST[A-Z_]*PG|[A-Z_]*TEST[A-Z_]*S3|TEST_STORAGE_CONFIG)|from\s+['"]pg['"]/.test(source)
-  ||focused&&(/\.(?:integration|e2e)\.test\./.test(path.basename(file))||/\bNEUROCENTER_CATALOG_READY\b/.test(source));
+ if(/(?:database|postgres|(?:^|-)db|(?:^|-)s3)\.test\./.test(path.basename(file))||/databaseFixture|(?:[A-Z_]*TEST[A-Z_]*PG|[A-Z_]*TEST[A-Z_]*S3|TEST_STORAGE_CONFIG)/.test(source)
+  ||focused&&(/\.(?:integration|e2e)\.test\./.test(path.basename(file))||/\bNEUROCENTER_CATALOG_READY\b/.test(source)))return true;
+ return await auditedUnitException(file)?false:runtimePg(source);
 }
 
 /** Admit bounded exact unit files before the runner creates evidence or starts any worker. */

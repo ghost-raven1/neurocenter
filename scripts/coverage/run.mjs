@@ -5,6 +5,7 @@ import {nativeSuites,integrationConfiguration,safeEnvironment,tapCounts} from '.
 import {sourceIdentity} from './source-identity.mjs';
 import {reconcileTestFileInventory} from './test-file-inventory.mjs';
 import {externalSuite,focusedSelection,reconcileFocusedSelection} from './focused-selection.mjs';
+import {validateUnitSafeProfile} from './unit-safe-profile.mjs';
 import {readVitestReport} from '../workspace/check-report.mjs';
 import {ownedPgPackages,ownedPgConfiguration,startOwnedPg} from './owned-pg.mjs';
 import {coverageMethod} from './methods.mjs';
@@ -30,6 +31,7 @@ if(!unit&&!native&&!integration)throw Error('--no-unit requires --native or --in
 if(ownedPg&&(!unit||[...chosen].some(name=>!ownedPgPackages.includes(name))))throw Error('--owned-pg runs only Catalog/RAG/flags full unit suites.');
 const selection=await focusedSelection({root,packages,chosen,testFiles:requestedTestFiles,unit,native,integration,ownedPg});
 if(unit&&(native||integration))throw Error('Keep Vitest AST and native c8 runs separate; combine comparable AST reports with merge.mjs.');
+if(unit&&!ownedPg)await validateUnitSafeProfile(root,{packages,chosen,testFiles:requestedTestFiles});
 const integrationConfig=integration?await integrationConfiguration(process.env,root):null;
 const ownedPgConfig=ownedPg?await ownedPgConfiguration(process.env,root):null;
 output??=path.join(root,'.run/coverage',new Date().toISOString().replaceAll(':','-')+'-'+randomUUID().slice(0,8));await mkdir(path.dirname(output),{recursive:true});await mkdir(output,{recursive:false});
