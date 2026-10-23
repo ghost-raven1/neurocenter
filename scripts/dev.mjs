@@ -181,15 +181,14 @@ async function health(deadline = Infinity, cancellation) {
 }
 
 async function start(profile) {
-    const prepareAssets = profile !== 'fast', prepareModels = profile === 'full';
-    output.info('Профиль запуска', {fast:'fast — приложения без подготовки ассетов',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и все модели'}[profile]);
-    const next = progress(packages.length + 9);
+    const prepareAssets = profile !== 'fast' || process.stdin.isTTY === true && process.stdout.isTTY === true, prepareModels = profile === 'full';
+    output.info('Профиль запуска', {fast:'fast — приложения; выбор ассетов в терминале, иначе сохранённый кэш',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и все модели'}[profile]);
+    const next = progress(packages.length + 8);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
-    next('Установка общего контракта ассетов');
+    next('Выбор и подготовка ассетов');
     await prepareWorkspaceDependencies();
-    next('Проверка поставки проекта');
     if (prepareAssets) { await prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels}); }
     else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.

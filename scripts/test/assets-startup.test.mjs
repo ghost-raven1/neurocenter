@@ -18,7 +18,7 @@ test('Prefetch не восстанавливает и не активирует 
     const root=await mkdtemp(path.join(os.tmpdir(),'nc startup assets '));t.after(()=>rm(root,{recursive:true,force:true}));
     const pending=path.join(root,'data/embedding/.bundle-managed/pending.json');await mkdir(path.dirname(pending),{recursive:true});await writeFile(pending,'оставить');
     const calls=[];
-    await prepareStartupAssets({root,environment:{},output},async(command,args)=>{calls.push(args);return {status:0,stdout:JSON.stringify(report)};});
+    await prepareStartupAssets({root,environment:{},output},async(command,args)=>{calls.push(args);return {status:0,stdout:JSON.stringify(report)};},async()=>({}));
     assert.deepEqual(calls,[[path.join(root,'scripts/assets/cli.mjs')]]);assert.equal(await readFile(pending,'utf8'),'оставить');
 });
 for(const signal of ['SIGINT','SIGTERM'])test('Отмена предзагрузки сохраняет '+signal,async()=>{

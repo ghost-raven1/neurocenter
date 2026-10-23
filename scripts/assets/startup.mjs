@@ -1,8 +1,16 @@
 import path from 'node:path';
 import {runModelStartupProcess} from '../models/startup-process.mjs';
 
+// The source contract is installed in step 2; importing startup must also work before npm ci.
+const selectStartupAssets=async options=>(await import('./selection.mjs')).selectStartupAssets(options);
+
 /** Поставка проверяется до сборки и остановки приложений, включая повтор после сорванного pull. */
-export async function prepareStartupAssets({root,environment=process.env,output,withoutModels=false},run=runModelStartupProcess) {
+export async function prepareStartupAssets({root,environment=process.env,output,withoutModels=false,input=process.stdin,terminalOutput=process.stdout},run=runModelStartupProcess,select=selectStartupAssets) {
+    const selection=await select({root,environment,output,withoutModels,input,terminalOutput});
+    if(selection.skip||selection.ids?.length===0){
+        output.info('Загрузка ассетов','Пропущена; используются сохранённые файлы. Состав каталога и установки не изменены.');
+        return {ok:false,deferred:true,reason:selection.reason||'assets-skipped'};
+    }
     const execute=async(script,args=[])=>{
         const result=await run(process.execPath,[path.join(root,script),...args],{
             cwd:root,env:environment,encoding:'utf8',stdio:['ignore','pipe','inherit'],maxBuffer:2*1024*1024,timeout:2*60*60*1000,
@@ -12,7 +20,10 @@ export async function prepareStartupAssets({root,environment=process.env,output,
         let report;try {report=JSON.parse(result.stdout);} catch { /* Только явное подтверждение CLI означает готовность. */ }
         return {result,report};
     };
-    const {result,report}=await execute('scripts/assets/cli.mjs',withoutModels?['--without-models']:[]);
+    const args=withoutModels?['--without-models']:[];
+    for(const id of selection.ids||[])args.push('--asset',id);
+    if(selection.expectedCommit)args.push('--expected-repository',selection.expectedRepository,'--expected-commit',selection.expectedCommit,'--expected-revision',selection.expectedRevision);
+    const {result,report}=await execute('scripts/assets/cli.mjs',args);
     if(!result.error&&!result.signal&&Number.isInteger(result.status)&&result.status>0&&report?.ok===false
         &&['UNAVAILABLE','ASSET_RETRIEVAL_UNAVAILABLE','ASSET_METADATA_MISSING','ASSET_ARTIFACTS_MISSING'].includes(report.error?.code)){
         output.warning('Получить ассеты сейчас не удалось; запуск продолжится с ранее сохранёнными данными. Новые ассеты пока недоступны.');
@@ -21,7 +32,9 @@ export async function prepareStartupAssets({root,environment=process.env,output,
         return {ok:false,deferred:true,reason:'assets-unavailable'};
     }
     if(result.error||result.status!==0||report?.ok!==true||report.mode!=='prefetch'||report.verifyOnly!==false
-        ||report.withoutModels!==(withoutModels?true:undefined)||!(/^[a-f0-9]{64}$/).test(report.revision||'')) {
+        ||report.withoutModels!==(withoutModels?true:undefined)||!(/^[a-f0-9]{64}$/).test(report.revision||'')
+        ||selection.expectedCommit&&(report.sourceCommit!==selection.expectedCommit||report.revision!==selection.expectedRevision
+            ||!Array.isArray(report.selected)||report.selected.length!==selection.ids.length||report.selected.some((id,index)=>id!==selection.ids[index]))) {
         throw new Error(`Поставка проекта не подготовлена. Повторите npm run assets:sync${withoutModels?' -- --without-models':''}. Прежние сервисы не остановлены.`);
     }
     output.success(withoutModels?'Ассеты без моделей предзагружены':'Все выбранные ассеты предзагружены');

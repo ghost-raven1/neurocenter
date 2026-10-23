@@ -59,6 +59,7 @@ async function fixture(t, mode) {
     await fs.mkdir(path.join(checkout,'scripts/assets'));
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
+    await fs.writeFile(path.join(checkout,'scripts/assets/selection.mjs'),'export async function selectStartupAssets(){return {}};');
     await fs.writeFile(path.join(checkout,'scripts/assets/cli.mjs'), `
         import {appendFileSync} from 'node:fs';
         appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'assets-sync',args:process.argv.slice(2)})+'\\n');
@@ -422,6 +423,7 @@ for(const profile of ['fast','standard','full']) {
         const f=await fixture(t,'profile-ready'),result=await f.run('--profile',profile);
         assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);
         assert.match(result.stdout,new RegExp(`Профиль запуска: ${profile}`));
+        assert.match(result.stdout,/\[2\/16\] Выбор и подготовка ассетов/);
         assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
         assert.equal(result.events.filter(event=>event.kind==='npm').length,9);
         assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,profile==='fast'?0:1);

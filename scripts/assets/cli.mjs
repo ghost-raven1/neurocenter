@@ -9,7 +9,7 @@ import {nodeRuntime} from '../workspace/node-runtime.mjs';
 import {assetEnvironment} from './environment.mjs';
 import {assetRetrievalFetch} from './retrieval.mjs';
 
-const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--offline-ready] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>]';
+const usage='Использование: node scripts/assets/cli.mjs [--download-only | --verify-only] [--offline-ready] [--metadata-only] [--without-models] [--asset <ID> ...] [--root <проект>] [--artifacts-directory <хранилище ассетов>] [--expected-repository <owner/repo> --expected-commit <SHA> --expected-revision <SHA256>]';
 
 /**
  * Системный каталог корневых сертификатов. Если HTTPS завершается корпоративным
@@ -35,7 +35,8 @@ function systemCaBundle() {
 /** CLI одинаков для Git hook и ручного восстановления; проверка не обращается к сети и не пишет файлы. */
 export function parseAssetsArguments(args) {
     if(args.some(value=>['--help','-h','—help'].includes(value)))return {help:true};
-    const options={},seen=new Set(),values={'--root':'root','--artifacts-directory':'artifactsDirectory'};
+    const options={},seen=new Set(),values={'--root':'root','--artifacts-directory':'artifactsDirectory',
+        '--expected-repository':'expectedRepository','--expected-commit':'expectedCommit','--expected-revision':'expectedRevision'};
     for(let index=0;index<args.length;index++) {
         const key=args[index];
         if(key==='--asset'&&args[index+1]&&!args[index+1].startsWith('-')){(options.ids??=[]).push(args[++index]);continue;}
@@ -50,6 +51,9 @@ export function parseAssetsArguments(args) {
     }
     if(seen.has('--verify-only')&&seen.has('--download-only'))throw new Error('Выберите один режим поставки.\n'+usage);
     if(options.ids&&new Set(options.ids).size!==options.ids.length)throw new Error('ID ассета повторён.\n'+usage);
+    const expected=[options.expectedRepository,options.expectedCommit,options.expectedRevision];
+    if(expected.some(value=>value!==undefined)&&(!expected.every(value=>typeof value==='string')||!/^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/i.test(options.expectedRepository)
+        ||!/^[a-f0-9]{40}$/.test(options.expectedCommit)||!/^[a-f0-9]{64}$/.test(options.expectedRevision)))throw new Error('Ожидаемый источник требует repository, commit и SHA-256 описи.\n'+usage);
     return options;
 }
 

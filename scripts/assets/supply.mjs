@@ -47,9 +47,11 @@ function completeGraph(records){
 }
 
 /** Описания читаются без бинарников; offline проверка использует только подтверждённые SHA-кэши. */
-export async function readAssetSupply({root,environment=process.env,artifactsDirectory,verifyOnly=false,offlineReady=false,withoutModels=false,ids,
+export async function readAssetSupply({root,environment=process.env,artifactsDirectory,verifyOnly=false,offlineReady=false,withoutModels=false,ids,expectedRepository,expectedCommit,expectedRevision,
     signal,fetch:request=globalThis.fetch}={}) {
     const {pin,lockSha256}=await readSourcePin(root),directories=assetDirectories({root,environment,artifactsDirectory});
+    if([expectedRepository,expectedCommit,expectedRevision].some(value=>value!==undefined)
+        &&(pin.repository!==expectedRepository||pin.commit!==expectedCommit||pin.index.sha256!==expectedRevision))throw Object.assign(new Error('Источник ассетов отличается от подтверждённого выбора. Повторите запуск; сохранённые файлы не изменены.'),{code:'ASSET_SOURCE_CHANGED'});
     const mode=environment.ASSET_SOURCE_MODE||'online';
     if(!['online','offline'].includes(mode))throw new Error('ASSET_SOURCE_MODE должен быть online или offline.');
     const offline=verifyOnly||mode==='offline';

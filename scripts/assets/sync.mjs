@@ -21,12 +21,16 @@ async function receipt(root,report){
 }
 
 /** Только prefetch нового формата: не создаёт карточки, registry, теги моделей или установки моста. */
-export async function syncAssets({root=repository,environment=process.env,artifactsDirectory,verifyOnly=false,metadataOnly=false,offlineReady=false,withoutModels=false,ids,
+export async function syncAssets({root=repository,environment=process.env,artifactsDirectory,verifyOnly=false,metadataOnly=false,offlineReady=false,withoutModels=false,ids,expectedRepository,expectedCommit,expectedRevision,
     signal,onProgress=()=>{},fetch:request=globalThis.fetch,readDisk,lockWaitMs}={}){
     root=path.resolve(root);await safeDirectory(root);
     const execute=async()=>{
         signal?.throwIfAborted();
-        const supply=await readAssetSupply({root,environment,artifactsDirectory,verifyOnly,offlineReady,withoutModels,ids,signal,fetch:request});
+        const supply=await readAssetSupply({root,environment,artifactsDirectory,verifyOnly,offlineReady,withoutModels,ids,expectedRepository,expectedCommit,expectedRevision,signal,fetch:request});
+        const guardSelection=async()=>{
+            if(expectedCommit!==undefined&&(await readSourcePin(root)).lockSha256!==supply.lockSha256)throw Object.assign(new Error('Источник ассетов изменился после выбора. Повторите запуск; прежние файлы сохранены.'),{code:'ASSET_SOURCE_CHANGED'});
+        };
+        await guardSelection();
         const cache=new AssetCache(supply.directories.blobs),missing=[];
         const report={ok:true,mode:metadataOnly?'metadata':'prefetch',verifyOnly,revision:supply.revision,sourceCommit:supply.pin.commit,directories:supply.directories,
             selected:supply.selected,assets:supply.assets.map(({asset,sha256})=>({id:asset.id,kind:asset.kind,version:asset.version,sha256})),
@@ -45,6 +49,7 @@ export async function syncAssets({root=repository,environment=process.env,artifa
                 signal?.throwIfAborted();const temporary=path.join(cache.directory,'.download-'+randomUUID());
                 try{
                     await onProgress({section:'assets',stage:'downloading',message:'Загружаем выбранные ассеты.',completed,total:missing.length,unit:'files'});
+                    await guardSelection();
                     await fetchArtifact(artifact,temporary,{fetch:request,signal});
                     await cache.publish(temporary,artifact.sha256,'.blob');
                     if(!await cache.verify(artifact,signal))throw new Error('Проверенный ассет исчез из кэша.');

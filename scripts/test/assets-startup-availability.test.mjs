@@ -52,7 +52,8 @@ async function startup(t,f,mode){
     const output={info:(...args)=>events.push(['info',...args]),success:(...args)=>events.push(['success',...args]),warning:(...args)=>events.push(['warning',...args])};
     let result;
     const run=async(command,args,options)=>{result=await runModelStartupProcess(command,[cli,'--root',f.root,...args.slice(1)],{...options,env:environment,stdio:['ignore','pipe','pipe'],timeout:15000});return result;};
-    return{events,async run(){return prepareStartupAssets({root:f.root,environment,output,withoutModels:true},run);},
+    // Selection metadata has its own controlled-fetch suite; these cases exercise the actual prefetch child transport.
+    return{events,async run(){return prepareStartupAssets({root:f.root,environment,output,withoutModels:true},run,async()=>({}));},
         get result(){return result;},async calls(){return(await readFile(calls,'utf8').catch(error=>{if(error.code==='ENOENT')return'';throw error;})).trim().split('\n').filter(Boolean).map(JSON.parse);}};
 }
 
