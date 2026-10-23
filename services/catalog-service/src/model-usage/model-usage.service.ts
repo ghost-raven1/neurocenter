@@ -44,6 +44,10 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
         try { await this.repository.begin({ ...context, id, workerId: this.workerId, model, endpoint }); }
         catch { throw new ServiceUnavailableException('Журнал использования моделей недоступен. Запрос к провайдеру не отправлен; повторите позже.'); }
         const metrics = createModelDispatchMetrics(), started = performance.now(); let terminal: UsageTerminal = { status: 'error', inputTokens: null, outputTokens: null, latencyMs: 0 };
+        metrics.progress = async active => {
+            try { await this.repository.dispatchProgress(id,this.workerId,metrics.dispatchCount,metrics.dispatchedAt,active?null:Math.round(metrics.providerLatencyMs)); }
+            catch { /* Activity metadata cannot turn a provider result into a failed request. */ }
+        };
         const operation = withModelDispatchMetrics(metrics, async () => {
             try {
                 combined.throwIfAborted(); const result = await action(combined), usage = chatUsage(result);

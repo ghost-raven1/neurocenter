@@ -31,8 +31,14 @@ export class ModelApiAdmission {
   if (enabled) await this.limits.acquire(model, signal, beforeAttempt, ms => { if (metrics) metrics.rateWaitMs += ms; });
   signal?.throwIfAborted();
   if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
-  const started = performance.now();
-  try { return await action(); }
-  finally { if (metrics) metrics.providerLatencyMs += Math.max(0, performance.now() - started); }
+  const started=performance.now();let activeWrite:Promise<void>|undefined;
+  try {
+   const request=action();activeWrite=metrics?.progress?.(true);return await request;
+  }
+  finally {
+   if (metrics) metrics.providerLatencyMs += Math.max(0, performance.now() - started);
+   await activeWrite;
+   await metrics?.progress?.(false);
+  }
  }
 }

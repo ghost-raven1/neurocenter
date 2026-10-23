@@ -15,6 +15,11 @@ export class ModelUsageRepository {
         await this.pool.query(`UPDATE model_usage_calls SET status=$3,input_tokens=$4,output_tokens=$5,latency_ms=$6,dispatch_count=$7,dispatched_at=$8,rate_wait_ms=$9,provider_latency_ms=$10,failure_code=$11,finished_at=now(),lease_until=NULL
             WHERE id=$1 AND worker_id=$2 AND status IN ('pending','interrupted')`, [id, worker, value.status, value.inputTokens, value.outputTokens, value.latencyMs, value.dispatchCount ?? null, value.dispatchedAt ?? null, value.rateWaitMs ?? null, value.providerLatencyMs ?? null, value.failureCode ?? null]);
     }
+    /** A settled transport is no longer generating an answer, even while terminal accounting is retried. */
+    async dispatchProgress(id: string, worker: string, count: number, at: string | null, latency: number | null): Promise<void> {
+        await this.pool.query(`UPDATE model_usage_calls SET dispatch_count=$3,dispatched_at=$4,provider_latency_ms=$5
+            WHERE id=$1 AND worker_id=$2 AND status='pending' AND lease_until>now()`, [id,worker,count,at,latency]);
+    }
     async recover(): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET status='interrupted',finished_at=now(),lease_until=NULL WHERE status='pending' AND lease_until<=now()"); }
     async renew(worker: string): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET lease_until=now()+interval '2 minutes' WHERE worker_id=$1 AND status='pending' AND lease_until>now()", [worker]); }
     async interrupt(worker: string): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET status='interrupted',finished_at=now(),lease_until=NULL WHERE worker_id=$1 AND status='pending'", [worker]); }

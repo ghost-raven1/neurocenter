@@ -107,6 +107,14 @@ describe('Detailed usage filters and scope', () => {
 });
 
 describe('Actual dispatch accounting', () => {
+    it('treats optional activity write failure as metadata failure and preserves the provider answer',async()=>{
+        const f=fixture(),progress=vi.spyOn(f.service.repository,'dispatchProgress').mockRejectedValue(new Error('metadata SQL unavailable'));
+        await expect(f.service.observe(model,'chat',async()=>{
+            const metrics=currentModelDispatchMetrics()!;metrics.dispatchCount=1;metrics.dispatchedAt=new Date().toISOString();
+            await metrics.progress!(true);await metrics.progress!(false);return {message:{content:'answer'}};
+        })).resolves.toMatchObject({message:{content:'answer'}});
+        expect(progress).toHaveBeenCalledTimes(2);expect(f.finish.mock.calls[0][2]).toMatchObject({status:'success',dispatchCount:1});
+    });
     it('retains private provenance for nested compaction and explicitly clears it for a public operation', async () => {
         const f = fixture(), roomId = '12345678-1234-4123-8123-123456789012';
         await withModelUsage({ purpose: 'agent', projectId: 'prj-a', privateProjectChatRoomId: roomId }, async () => {

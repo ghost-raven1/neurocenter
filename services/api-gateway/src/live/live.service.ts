@@ -1,5 +1,6 @@
 import { Injectable,OnModuleDestroy } from '@nestjs/common';
 import type { Server } from 'socket.io';
+import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 
 /** События несут только инвалидацию; приватные данные всегда читаются через RBAC API. */
 @Injectable()
@@ -30,6 +31,9 @@ export class LiveService implements OnModuleDestroy {
         data?: Record<string, unknown>,
         method?: string,
     ): void {
+        // Presence and read metadata are fetched only by their authorized room audience.
+        const route=canonicalAccessRoute(path);
+        if(route==='/api/chat-presence/session'||/^\/api\/projects\/[^/]+\/team-chat(?:\/rooms\/[^/]+)?\/activity$/.test(route||''))return;
         // Named dialogue activity is not broadcast to users outside its private audience; authorized clients poll.
         if (/^\/api\/projects\/[^/]+\/team-chat\/rooms(?:\/|$)/.test(path)) return;
         if (/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(path)) {this.sections(['project_chat']);return;}

@@ -21,4 +21,14 @@ describe('Shared project chat admission routes', () => {
             expect(allowRequest(claims, 'Разработчик', { method: 'GET', path })).toBe(false);
         expect(allowRequest(claims, 'Главный админ', { method: 'DELETE', path: base })).toBe(false);
     });
+    it('admits room visibility for read-only members and only authenticated presence updates', () => {
+        for (const path of [base + '/activity', base + '/rooms/' + id + '/activity']) {
+            for (const method of ['GET','HEAD','PUT']) expect(allowRequest(claims,'Наблюдатель',{method,path})).toBe(true);
+            expect(allowRequest(claims,'Наблюдатель',{method:'POST',path})).toBe(false);
+            expect(allowRequest(claims,'Наблюдатель',{method:'GET',path:path.replace('prj-shared','prj-foreign')})).toBe(false);
+        }
+        expect(allowRequest(claims,'Наблюдатель',{method:'PUT',path:'/api/chat-presence/session'})).toBe(true);
+        for(const method of ['GET','POST','DELETE']) expect(allowRequest(claims,'Главный админ',{method,path:'/api/chat-presence/session'})).toBe(false);
+        expect(allowRequest({...claims,userRoles:[]},'Главный админ',{method:'PUT',path:'/api/chat-presence/session'})).toBe(false);
+    });
 });

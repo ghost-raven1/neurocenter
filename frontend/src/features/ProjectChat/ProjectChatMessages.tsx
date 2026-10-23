@@ -1,20 +1,24 @@
 import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
-import {useLayoutEffect, useRef, useState} from 'react';
+import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {modelChatUrl} from '../ModelChat/model';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {projectChatAuthor, projectChatLocalAnchor} from './model';
-import type {ProjectChatMessage} from './types';
+import type {ProjectChatMember, ProjectChatMessage} from './types';
+import type {ProjectChatActivity} from './activity.types';
+import {ProjectChatSeen} from './ProjectChatActivity';
+import {observeVisibleMessages} from './observeVisibleMessages';
 
 interface Props {
     messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
     onLoadEarlier: () => void; onReply: (message: ProjectChatMessage) => void; onRetry: (id: string) => void; onCancel: (id: string) => void;
+    members?: ProjectChatMember[]; activity?: ProjectChatActivity; onVisible?: (ids: string[], currentVisible?: () => string[]) => void;
 }
 const stateText: Record<ProjectChatMessage['status'], string> = {queued: 'В очереди', running: 'Готовится ответ', done: '', failed: 'Ответ не получен', cancelled: 'Остановлено'};
 
 /** Every saved human question and agent answer keeps its author and an explicit reply anchor. */
-export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel}: Props): JSX.Element {
+export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible}: Props): JSX.Element {
     const inference = useFeatureAvailability('project_chat', 'group_chat');
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number}>();
     const [newMessages, setNewMessages] = useState(false);
@@ -26,6 +30,8 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
         else if (last !== before.last || node.scrollHeight !== before.height) setNewMessages(true);
         previous.current = {first, last, count: messages.length, height: node.scrollHeight};
     }, [messages, historyLoading, historyError]);
+    const messageIds = messages.map(message => message.id).join(',');
+    useEffect(() => {if (viewport.current && onVisible) return observeVisibleMessages(viewport.current, onVisible);}, [messageIds, onVisible]);
     return <div className="project-chat__history-wrap"><div className="project-chat__history" ref={viewport} role="log" aria-label="Сообщения команды проекта" aria-live="polite" aria-relevant="additions text"
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setNewMessages(false);}}>
         {hasMore && <Button className="project-chat__earlier" loading={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button>}
@@ -34,9 +40,9 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
         {messages.map(message => {
             const parent = message.replyToId ? messages.find(value => value.id === message.replyToId) : undefined;
             const canQuote = message.kind === 'user' || message.kind === 'agent' && message.status === 'done' && !!message.content;
-            return <article id={`project-chat-message-${message.id}`} tabIndex={-1} key={message.id} className={`project-chat__message project-chat__message_${message.kind}`} aria-label={`${projectChatAuthor(message)}: ${message.kind === 'summary' ? 'итог' : 'сообщение'}`}>
+            return <article id={`project-chat-message-${message.id}`} data-chat-message-id={message.kind === 'user' ? message.id : undefined} tabIndex={-1} key={message.id} className={`project-chat__message project-chat__message_${message.kind}`} aria-label={`${projectChatAuthor(message)}: ${message.kind === 'summary' ? 'итог' : 'сообщение'}`}>
                 <header><div><Typography.Text strong>{projectChatAuthor(message)}</Typography.Text><Typography.Text type="secondary">{message.kind === 'agent' ? `Агент · @${message.agent?.slug || 'agent'}` : message.kind === 'summary' ? 'Из ответов на этот вопрос' : 'Участник проекта'}</Typography.Text></div>
-                    <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString('ru', {hour: '2-digit', minute: '2-digit'})}</time></header>
+                    <div><time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString('ru', {hour: '2-digit', minute: '2-digit'})}</time>{message.kind === 'user' && <ProjectChatSeen messageId={message.id} authorEmail={message.author?.email} activity={activity} members={members}/>}</div></header>
                 {message.replyToId && <blockquote className="project-chat__quote">{parent ? <><Typography.Text strong>{projectChatAuthor(parent)}</Typography.Text><span>{parent.content.slice(0, 220) || 'Сообщение ещё готовится'}</span></> : <span>Ответ на раннее сообщение · доступно в истории</span>}</blockquote>}
                 {message.content && (message.kind === 'user' ? <div className="project-chat__user-content">{message.content}</div> : <div className="project-chat__markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={url => projectChatLocalAnchor(url) ?? modelChatUrl(url) ?? ''} components={{
                     a: ({href, children}) => {

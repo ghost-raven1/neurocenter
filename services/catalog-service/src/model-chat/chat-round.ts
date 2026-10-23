@@ -39,7 +39,7 @@ export async function executeChatRound(req: Request, scope: ChatRoundScope, turn
             const minimal = project.fit([...base, { role: 'user', content: turn.input_text }], settings);
             const overhead = [...minimal.messages.slice(0, minimal.messages.length - base.length - 1), ...base, ...hooks.research.overhead(turn.research_request)];
             const assertCurrent = async (db?: ChatDb) => { signal.throwIfAborted(); await scope.authorize(true); await groups.assert(req, scope.row, scope.model, response.snapshot, db); await project.assertCurrent(); await learning.assertAuthorized(db); };
-            const attribution = { purpose: 'agent' as const, actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, agentId: response.agent_id };
+            const attribution = { purpose: 'agent' as const, actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, agentId: response.agent_id, operationId: turn.request_id };
             const history = await withModelUsage({ ...attribution, requiredFeatures: learning.requiredFeatures }, () => hooks.compact(model, overhead, assertCurrent, budget, response.id, learning.beforeInference));
             const fitted = project.fit([...base, ...history], settings);
             const definition = response.snapshot.definition, options = {

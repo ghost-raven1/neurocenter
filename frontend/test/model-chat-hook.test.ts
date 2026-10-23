@@ -91,6 +91,12 @@ describe('Сохранённая история и безопасная отпр
 });
 
 describe('Ранняя история и фазы автосжатия', () => {
+    it('Потеря GET убирает устаревшее running, сохраняя историю и завершённые ответы', async () => {
+        vi.useFakeTimers(); const saved = detail({turns: [turn({status: 'pending', answer: undefined, executionState: 'running', responses: [response({status: 'pending', executionState: 'running', answer: undefined}), response({id: 'complete', executionState: null})]})]});
+        vi.mocked(modelChatApi.list).mockResolvedValue([saved.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(saved); await ready();
+        vi.mocked(modelChatApi.read).mockRejectedValueOnce(Error('Связь потеряна')); await vi.advanceTimersByTimeAsync(1000);
+        const value = render(); expect(value.turns).toHaveLength(1); expect(value.turns[0].executionState).toBeUndefined(); expect(value.turns[0].responses?.[0].executionState).toBeUndefined(); expect(value.turns[0].responses?.[1].answer?.content).toBe('Ответ'); expect(value.error).toBe('');
+    });
     it('Подгружает страницу один раз и сохраняет её после обновления хвоста', async () => {
         const tail = detail({turns: [turn({id: 'tail'})], history: {hasMore: true, nextCursor: 'tail'}});
         vi.mocked(modelChatApi.list).mockResolvedValue([tail.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(tail);

@@ -4,7 +4,8 @@ import { requiredFeatureFlags } from '../src/features/feature-flag-gate';
 import { LiveService } from '../src/live/live.service';
 
 const base = '/api/projects/prj-qa/team-chat', id = '12345678-1234-4234-8234-123456789abc';
-const routes = [['GET', base], ['GET', base + '/history'], ['PUT', base + '/participants'], ['POST', base + '/messages'],
+const routes = [['PUT','/api/chat-presence/session'], ['GET',base+'/activity'], ['PUT',base+'/activity'], ['GET',base+'/rooms/'+id+'/activity'], ['PUT',base+'/rooms/'+id+'/activity'],
+    ['GET', base], ['GET', base + '/history'], ['PUT', base + '/participants'], ['POST', base + '/messages'],
     ['POST', base + '/messages/' + id + '/retry'], ['POST', base + '/messages/' + id + '/cancel'],
     ['GET', base + '/rooms'], ['POST', base + '/rooms'], ['PUT', base + '/rooms/' + id], ['GET', base + '/rooms/' + id],
     ['GET', base + '/rooms/' + id + '/history'], ['PUT', base + '/rooms/' + id + '/participants'], ['POST', base + '/rooms/' + id + '/messages'],

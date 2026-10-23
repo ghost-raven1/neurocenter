@@ -13,11 +13,12 @@ const drafts = new Map<string, ProjectChatDraft>();
 interface Props {
     draftKey: string; detail: ProjectChatDetail; reply?: ProjectChatMessage;
     onCancelReply: () => void; onFrozenChange?: (value: boolean) => void;
+    onTyping?: (body: string) => void;
     onSend: (intent: ProjectChatIntent) => Promise<ProjectChatReceipt>;
 }
 
 /** A shared-room post gets a short durable receipt; other questions can arrive while agents work. */
-export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onFrozenChange, onSend}: Props): JSX.Element {
+export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onFrozenChange, onTyping, onSend}: Props): JSX.Element {
     const {captureOwner} = useAuthRequestOwner(), availability = useFeatureAvailability('project_chat'), inference = useFeatureAvailability('group_chat');
     const [draft, setDraft] = useState<ProjectChatDraft>(() => drafts.get(draftKey) ?? emptyProjectChatDraft());
     const [sending, setSending] = useState(false), [error, setError] = useState('');
@@ -26,6 +27,7 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
     const frozen = sending || !!draft.pending;
     const dialogs = useFeatureAvailability('project_chat_dialogs'), custom = !!detail.room.id && detail.room.id !== '00000000-0000-0000-0000-000000000000';
     const canSend = availability.enabled && (!custom || dialogs.enabled), privateRoom = detail.room.visibility === 'PRIVATE';
+    useEffect(() => {if (frozen || !detail.canPost || !canSend) onTyping?.(''); return () => onTyping?.('');}, [onTyping, frozen, detail.canPost, canSend]);
     const audience = privateRoom ? 'Переписка видна только участникам этого диалога.' : 'Переписка видна участникам проекта.';
     const update = (value: ProjectChatDraft): void => {latest.current = value; drafts.set(draftKey, value); setDraft(value);};
     useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
@@ -55,6 +57,7 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
             setError(!inference.enabled ? inference.reason : !targets.length ? 'Выберите доступного агента или отправьте сообщение только людям.' : 'Среди адресатов есть недоступный агент. Измените выбор или отправьте только людям.'); return;
         }
         const intent = draft.pending ?? {requestKey: projectChatRequestKey(), prompt: draft.body.trim(), ...(selectedReply ? {replyToId: selectedReply.id} : {}), targetAgentIds: [...targets]};
+        onTyping?.('');
         lock.current = true; update({...draft, reply: selectedReply, pending: intent}); setSending(true); setError('');
         try {
             await onSend(intent);
@@ -70,7 +73,7 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
         {selectedReply && <div className="project-chat__reply-draft"><div><Typography.Text strong>Ответ · {projectChatAuthor(selectedReply)}</Typography.Text><div>{selectedReply.content.slice(0, 220) || 'Сообщение ещё готовится'}</div></div>
             <Button size="small" disabled={frozen} onClick={() => {update({...draft, reply: undefined}); onCancelReply(); text.current?.focus();}}>Отменить ответ</Button></div>}
         <Mentions ref={text} aria-label="Текст сообщения команде" value={draft.body} autoSize={{minRows: 2, maxRows: 8}} disabled={frozen || !detail.canPost || !canSend} placement="top" dropdownClassName="project-chat__mentions"
-            placeholder={detail.canPost ? 'Напишите участникам или @имя, чтобы спросить агента…' : 'Для отправки нужна роль разработчика проекта.'} onChange={body => {update({...draft, body}); setError('');}}
+            placeholder={detail.canPost ? 'Напишите участникам или @имя, чтобы спросить агента…' : 'Для отправки нужна роль разработчика проекта.'} onChange={body => {update({...draft, body}); setError(''); onTyping?.(body);}} onBlur={() => onTyping?.('')}
             options={inference.enabled ? activeRoomAgents.map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`})) : []}
             notFoundContent={!inference.enabled ? inference.reason : !activeRoomAgents.length ? `Нет доступных агентов. ${agentsHelp}` : 'Агент не найден. Измените имя.'}
             filterOption={(search, option) => `${option.value} ${roomAgents.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}

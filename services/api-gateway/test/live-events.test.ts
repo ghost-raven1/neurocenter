@@ -13,6 +13,9 @@ afterEach(()=>vi.unstubAllEnvs());
 function attach(){live.attach(io as unknown as Server);}
 
 describe('Live invalidation without private payloads',()=>{
+    it.each(['/api/chat-presence/session','/api/projects/id/team-chat/activity','/api/projects/id/team-chat/activity/','/api/projects/id/team-chat/%61ctivity','/api/projects/id/team-chat/rooms/private/activity'])('keeps presence, typing and read metadata out of global invalidation: %s',path=>{
+        attach();live.mutation(path,'reader@example.test',{typing:true,visibleMessageIds:['PRIVATE']},'PUT');expect(events).toEqual([]);
+    });
     it('allows an unattached service to shut down without retaining a transport',async()=>{
         live.sections(['projects']);live.bridge('owner');live.wake('device');await live.onModuleDestroy();expect(events).toEqual([]);expect(close).not.toHaveBeenCalled();
     });

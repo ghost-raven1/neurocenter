@@ -21,6 +21,7 @@ import {BridgePairing} from '../../features/McpBridge/BridgePairing';
 import {selectConnectedComputer} from '../../features/McpBridge/pairingProgress';
 import {useCallback} from 'react';
 import {ChatLauncher} from '../../features/ModelChat/ChatLauncher';
+import {useChatPresence} from '../../features/ChatActivity/useChatPresence';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
@@ -59,6 +60,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
     const screens = Grid.useBreakpoint();
     const compact = !screens.lg;
     const { isAuth, user } = useSelector((state: RootState) => state.userBlock);
+    useChatPresence(isAuth);
     const [menuOpen, setMenuOpen] = useState(false);
     const [opsOpen, setOpsOpen] = useState(false);
     const operationsTrigger = useRef<HTMLButtonElement>(null);

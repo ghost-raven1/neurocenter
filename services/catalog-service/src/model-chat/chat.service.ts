@@ -335,7 +335,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             await this.repository.owned(scope.owner, scope.row.id, researched.assertCurrent, (db, row) => this.repository.stage(db, row, turn, 'responding'));
             if (chatContext(messages, settings).exceeded) throw new BadRequestException('Контекст проекта и сообщение не помещаются в окно модели.');
             await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); combined.throwIfAborted();
-            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, beforeInference: async () => { await beforeInference(); await researched.assertCurrent(); }, ...(turn.research_request ? { requiredFeatures: ['research_tools' as const] } : {}) }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
+            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, operationId: turn.request_id, beforeInference: async () => { await beforeInference(); await researched.assertCurrent(); }, ...(turn.research_request ? { requiredFeatures: ['research_tools' as const] } : {}) }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
                 ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { options: { num_ctx: this.localContextWindow } } : {}), stream: false }), combined));
             combined.throwIfAborted(); await researched.assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;

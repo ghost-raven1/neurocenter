@@ -9,10 +9,11 @@ export interface IChatProjectEvidence {
 }
 export interface IModelChatAnswer { content: string; finishReason: 'stop' | 'length'; usage?: IModelChatUsage; evidence?: IChatProjectEvidence; researchSources?: Array<{url: string; title?: string}>; researchLimited?: boolean; }
 export interface IModelChatParticipant { agentId: string; name: string; slug: string; status: 'active' | 'disabled' | 'removed' | 'blocked'; reason?: string; modelId?: string; modelName?: string; }
-export interface IModelChatResponse { id: string; agentId: string; name: string; slug: string; version: number; status: 'pending' | 'done' | 'failed' | 'cancelled'; processingStage?: 'compacting' | 'responding' | 'researching'; modelId: string; modelName: string; modelPin: string; answer?: IModelChatAnswer; error?: string; }
+export interface IModelChatResponse { id: string; agentId: string; name: string; slug: string; version: number; status: 'pending' | 'done' | 'failed' | 'cancelled'; executionState?: 'waiting' | 'running' | null; processingStage?: 'compacting' | 'responding' | 'researching'; modelId: string; modelName: string; modelPin: string; answer?: IModelChatAnswer; error?: string; }
 export interface IModelChatTurn {
     id: string; requestId: string; prompt: string; attachmentIds: string[];
     status: 'pending' | 'done' | 'failed' | 'cancelled'; answer?: IModelChatAnswer; error?: string; createdAt: string;
+    executionState?: 'waiting' | 'running' | null;
     processingStage?: 'compacting' | 'responding' | 'researching';
     targetAgentIds?: string[]; responses?: IModelChatResponse[]; research?: IChatResearchRequest; researchSteps?: IChatResearchStepSummary[];
 }

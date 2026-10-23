@@ -9,15 +9,16 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 30 ключей общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(30); expect(new Set(featureFlagKeys).size).toBe(30);
+    it('Проверяет все 31 ключ общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(featureFlagKeys).toHaveLength(31); expect(new Set(featureFlagKeys).size).toBe(31);
         expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
         expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
         expect(featureDefinitions.find(item => item.key === 'project_chat')).toMatchObject({defaultEnabled: true, dependsOn: []});
         expect(featureDefinitions.find(item => item.key === 'project_chat_dialogs')).toMatchObject({defaultEnabled: true, dependsOn: ['project_chat']});
+        expect(featureDefinitions.find(item => item.key === 'chat_activity')).toMatchObject({defaultEnabled: true, dependsOn: []});
         expect(featureDefinitions.find(item => item.key === 'model_rate_limits')).toMatchObject({defaultEnabled: true, dependsOn: []});
         expect(requireEvaluatedFeatureFlags(evaluated())).toEqual(evaluated());
-        for (const key of ['opencode_providers', 'codex_connector', 'project_chat', 'project_chat_dialogs', 'model_rate_limits'] as const) {
+        for (const key of ['opencode_providers', 'codex_connector', 'project_chat', 'project_chat_dialogs', 'chat_activity', 'model_rate_limits'] as const) {
             for (const field of ['flags', 'configured', 'blockedBy'] as const) {
                 const data = evaluated(), incomplete = { ...data, [field]: Object.fromEntries(Object.entries(data[field]).filter(([item]) => item !== key)) };
                 expect(() => requireEvaluatedFeatureFlags(incomplete)).toThrow('полный список');
@@ -38,6 +39,7 @@ describe('Единая доступность функций', () => {
         expect(featureAvailability({ data, loading: false, error: null }, ['group_chat']).reason).toContain('Управление агентами');
         const items = featureDefinitions.map(item => ({ ...item, enabled: item.key !== 'model_hosting', revision: 1, updatedAt: null, updatedBy: null }));
         expect(configuredBlockers('group_chat', items)).toEqual(['model_hosting']);
+        expect(configuredBlockers('chat_activity', items)).toEqual([]);
         expect(items.find(item => item.key === 'group_chat')?.enabled).toBe(true);
         const withoutModels = items.map(item => ({ ...item, enabled: item.key !== 'model_catalog' }));
         expect(configuredBlockers('opencode_providers', withoutModels)).toEqual(['model_catalog']);

@@ -8,6 +8,8 @@ import {ProjectChatParticipants} from './ProjectChatParticipants';
 import {ProjectChatDialogForm} from './ProjectChatDialogForm';
 import {useProjectChatRooms} from './useProjectChatRooms';
 import {useProjectChat} from './useProjectChat';
+import {useProjectChatActivity} from './useProjectChatActivity';
+import {ProjectChatPresence, ProjectChatTyping} from './ProjectChatActivity';
 import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessage, type ProjectChatRoomSummary} from './types';
 import './ProjectChat.less';
 
@@ -17,18 +19,20 @@ function ProjectChatRoomScope({projectId, projectName, roomId, onAccessLost}: Pr
     const {scope} = useAuthRequestOwner(), chat = useProjectChat(projectId, roomId), flags = useFeatureAvailability('project_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]));
     const [reply, setReply] = useState<ProjectChatMessage>(), [settings, setSettings] = useState(false), [frozen, setFrozen] = useState(false);
     const detail = chat.detail;
+    const activity = useProjectChatActivity(projectId, roomId, detail, chat.clearAccess);
     useEffect(() => {if (chat.accessDenied && roomId !== DEFAULT_PROJECT_CHAT_ROOM) onAccessLost(roomId);}, [chat.accessDenied, roomId, onAccessLost]);
     return <section className="project-chat" aria-label="Команда проекта">
         <div className="project-chat__heading"><div><Typography.Title level={4}>Команда{projectName ? ` · ${projectName}` : ' проекта'}</Typography.Title><Typography.Text type="secondary">{detail?.room.title ?? 'Общий чат'} · {detail?.room.visibility === 'PRIVATE' ? 'Только выбранные участники' : 'Весь проект'}</Typography.Text></div>
             <Space wrap>{detail?.canConfigure && <Button disabled={!!chat.action} onClick={() => setSettings(!settings)}>{settings ? 'Скрыть настройку' : 'Настроить агентов'}</Button>}<Button size="small" loading={chat.loading} onClick={() => {void chat.refresh();}}>Проверить связь</Button></Space></div>
         {chat.error && <Alert type="error" showIcon message={chat.error} action={<Button onClick={() => {void chat.refresh();}}>Повторить</Button>}/>}
         {!detail ? chat.loading ? <Spin tip="Открываем чат команды…"/> : null : <>
-            <details className="project-chat__participants"><summary>Участники · {detail.members.length}<span>Агенты · {detail.room.agentIds.length}</span></summary><div><ul>{detail.members.map(member => <li key={member.email}><Typography.Text strong>{member.displayName || member.email}</Typography.Text><Typography.Text type="secondary">{member.role}</Typography.Text></li>)}</ul>
-                <div>{detail.agents.filter(agent => detail.room.agentIds.includes(agent.agentId)).map(agent => <Tag key={agent.agentId} color={agent.status === 'active' ? undefined : 'warning'}>{agent.name}{agent.status === 'active' ? '' : ' · недоступен'}</Tag>)}</div></div></details>
+            <details className="project-chat__participants"><summary>Участники · {detail.members.length}<span>Агенты · {detail.room.agentIds.length}</span></summary><div><ul>{detail.members.map(member => <li key={member.email}><Typography.Text strong>{member.displayName || member.email}</Typography.Text><Typography.Text type="secondary">{member.role}</Typography.Text><ProjectChatPresence email={member.email} activity={activity.snapshot} connected={activity.connected} enabled={activity.enabled}/></li>)}</ul>
+                <div>{detail.agents.filter(agent => detail.room.agentIds.includes(agent.agentId)).map(agent => <Tag key={agent.agentId} color={agent.status === 'active' ? undefined : 'warning'}>{agent.name}{agent.status === 'active' ? ' · доступен для запросов' : ' · недоступен'}</Tag>)}</div></div></details>
             {settings && detail.canConfigure && <ProjectChatParticipants projectId={projectId} detail={detail} saving={chat.action === 'participants'} error={chat.error} onSave={chat.configure} onClose={() => setSettings(false)}/>}
-            <ProjectChatMessages messages={detail.messages} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
+            <ProjectChatMessages messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
                 onLoadEarlier={() => {void chat.loadEarlier();}} onReply={setReply} onRetry={id => {void chat.retry(id);}} onCancel={id => {void chat.cancel(id);}}/>
-            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onSend={chat.send}/>
+            <ProjectChatTyping activity={activity.snapshot} members={detail.members} connected={activity.connected} enabled={activity.enabled}/>
+            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send}/>
         </>}
     </section>;
 }

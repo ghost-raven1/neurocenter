@@ -74,8 +74,8 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     Object.assign(process.env, { CATALOG_PG_URL: url.href, NODE_ENV: 'production', SSO_DISABLE: 'false', NEUROCENTER_INTERNAL_TOKEN: token, FEATURE_FLAGS_SERVICE_URL: 'http://127.0.0.1:' + server.address().port, API_GATEWAY_URL: 'http://127.0.0.1:' + server.address().port });
     await ensureCatalogSchema(pool);
-    const schema = await checkCatalogSchema(pool, true); assert.deepEqual(schema.applied, Array.from({ length: 26 }, (_, i) => i)); assert.equal(schema.ready, true);
-    receipt.cases.push({ name: 'All26 migrations0..25 apply and repeated physical readiness passes', ok: true });
+    const schema = await checkCatalogSchema(pool, true); assert.deepEqual(schema.applied, Array.from({ length: 27 }, (_, i) => i)); assert.equal(schema.ready, true);
+    receipt.cases.push({ name: 'All27 migrations0..26 apply and repeated physical readiness passes', ok: true });
     for (const [email, name, isMain] of [['a@owned-chat.test', 'User A', false], ['b@owned-chat.test', 'User B', false], ['admin@owned-chat.test', 'Project Admin', false], ['reader@owned-chat.test', 'Reader', false], ['main@owned-chat.test', 'Main', true]]) await pool.query('INSERT INTO platform_users(email,display_name,is_main_admin) VALUES($1,$2,$3)', [email, name, isMain]);
     access = new AccessDb(); await access.ready();
     const catalog = { ensureSchema: () => ensureCatalogSchema(pool), getProject: async id => { const row = (await pool.query('SELECT id,name,state FROM projects WHERE id=$1 OR name=$1', [id])).rows[0]; if (!row) { const { NotFoundException } = require('@nestjs/common'); throw new NotFoundException('Project absent'); } return row; } };

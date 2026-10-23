@@ -221,9 +221,18 @@ describe('Сохранённый чат и подтверждения', () => {
 });
 
 describe('Групповые ответы и контекст проекта', () => {
+    it('Готовит ответ относится только к подтверждённому running, а не к pending или очереди', () => {
+        const props = {attachments: [], modelName: model.name, busy: true, blocked: false, onRetry: vi.fn(), onEdit: vi.fn(), onPreview: vi.fn()};
+        let html = render(createElement(ChatMessages, {...props, turns: [turn({status: 'pending', answer: undefined, executionState: 'waiting'})]}));
+        expect(html).toContain('Ожидаем начало ответа'); expect(html).not.toContain('готовит ответ');
+        html = render(createElement(ChatMessages, {...props, turns: [turn({status: 'pending', answer: undefined, executionState: 'running'})]})); expect(html).toContain('Модель готовит ответ');
+        html = render(createElement(ChatMessages, {...props, turns: [turn({status: 'pending', answer: undefined, executionState: undefined})]})); expect(html).toContain('Уточняем состояние ответа'); expect(html).not.toContain('готовит ответ');
+        html = render(createElement(ChatMessages, {...props, group: true, turns: [turn({status: 'pending', answer: undefined, responses: [response({status: 'pending', answer: undefined, executionState: 'running'})]})]})); expect(html).toContain('Разработчик готовит ответ');
+        html = render(createElement(ChatMessages, {...props, turns: [turn({executionState: null})]})); expect(html).not.toContain('готовит ответ');
+    });
     it('Оптимистичный pending группы не приписывает ответ базовой модели; прежняя model-история остаётся подписана', () => {
         const props = {attachments: [], modelName: 'Базовая модель', busy: true, blocked: false, onRetry: vi.fn(), onEdit: vi.fn(), onPreview: vi.fn(), group: true};
-        let html = render(createElement(ChatMessages, {...props, turns: [turn({status: 'pending', answer: undefined})]})); expect(html).toContain('Участники группы готовят ответы'); expect(html).not.toContain('Базовая модель');
+        let html = render(createElement(ChatMessages, {...props, turns: [turn({status: 'pending', answer: undefined})]})); expect(html).toContain('ожидаем начало ответов'); expect(html).not.toContain('готовят ответы'); expect(html).not.toContain('Базовая модель');
         html = render(createElement(ChatMessages, {...props, turns: [turn()]})); expect(html).toContain('Базовая модель'); expect(html).toContain('Ответ');
     });
     it('Подписывает отдельные ответы и сохраняет успешный ответ при частичном отказе', async () => {

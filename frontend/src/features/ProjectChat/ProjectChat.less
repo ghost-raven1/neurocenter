@@ -21,6 +21,9 @@
     &__reply-draft {display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; max-height: 110px; overflow-y: auto;}
     &__pending {display: flex; align-items: center; gap: 8px; color: #597086; padding: 8px 0;}
     &__message-actions {margin-top: 4px;}
+    &__presence {font-size: 12px; color: #75879a; &_online {color: #33754e;}}
+    &__typing {flex: none; min-height: 18px; color: #597086; font-size: 12px;}
+    &__seen {display: inline-block; color: #75879a; font-weight: 600; letter-spacing: -4px; padding-right: 4px; cursor: help; &_read {color: #1677bb;} &:focus {outline: 2px solid #8aa5bc; outline-offset: 3px;}}
     &__markdown {overflow-wrap: anywhere; pre {max-width: 100%; overflow-x: auto; padding: 10px; background: #edf2f7; border-radius: 6px;} p:last-child {margin-bottom: 0;}}
     &__table {max-width: 100%; overflow-x: auto; table {border-collapse: collapse;} td, th {border: 1px solid #dbe4ec; padding: 6px 8px;}}
     &__latest {position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);}

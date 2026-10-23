@@ -8,6 +8,7 @@ import { RemoteModelClient } from '../src/models/remote-model-client';
 import { localModelAlias } from '../src/models/local-model-alias';
 import type { IModel } from '../src/models/model.types';
 import { withModelUsage } from '../src/model-usage/model-usage.context';
+import {createModelDispatchMetrics,withModelDispatchMetrics} from '../src/model-usage/model-dispatch-metrics';
 
 const local: IModel = { id: 'model-transport', name: 'Transport', description: '', runtime: 'ollama', capability: 'chat', model: 'fixture:v1',
  revision: 1, dimension: null, manifestSha256: 'a'.repeat(64), source: 'custom', createdAt: '', updatedAt: '' };
@@ -19,6 +20,21 @@ beforeEach(() => { flags = defaultFeatureFlags(); vi.stubGlobal('fetch', vi.fn(a
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Gate on the physical provider boundary', () => {
+ it('records active metadata after transport starts and orders settlement after a held active write',async()=>{
+  let release!:()=>void,entered!:()=>void;const hold=new Promise<void>(resolve=>{release=resolve;}),observed=new Promise<void>(resolve=>{entered=resolve;});
+  const events:string[]=[],metrics=createModelDispatchMetrics();
+  metrics.progress=async active=>{events.push(active?'active-start':'settled');if(active){entered();await hold;events.push('active-saved');}};
+  const gate=new ModelApiAdmission({acquire:async()=>undefined} as unknown as ModelRateLimitsService);
+  const result=withModelDispatchMetrics(metrics,()=>gate.run(local,undefined,async()=>{events.push('provider');return 'answer';}));
+  await observed;expect(events).toEqual(['provider','active-start']);release();await expect(result).resolves.toBe('answer');
+  expect(events).toEqual(['provider','active-start','active-saved','settled']);expect(metrics.dispatchCount).toBe(1);
+ });
+ it('does not advertise active inference when admission is cancelled before transport',async()=>{
+  const abort=new AbortController(),metrics=createModelDispatchMetrics();metrics.progress=vi.fn();
+  const gate=new ModelApiAdmission({acquire:async()=>{abort.abort();abort.signal.throwIfAborted();}} as unknown as ModelRateLimitsService),provider=vi.fn();
+  await expect(withModelDispatchMetrics(metrics,()=>gate.run(local,abort.signal,provider))).rejects.toThrow();
+  expect(provider).not.toHaveBeenCalled();expect(metrics.progress).not.toHaveBeenCalled();expect(metrics.dispatchCount).toBe(0);
+ });
  const limiter = () => {
   const acquire = vi.fn(async (_model: IModel, signal: AbortSignal | undefined, fresh: () => Promise<boolean | void>) => { signal?.throwIfAborted(); await fresh(); });
   return { acquire, gate: new ModelApiAdmission({ acquire } as unknown as ModelRateLimitsService) };

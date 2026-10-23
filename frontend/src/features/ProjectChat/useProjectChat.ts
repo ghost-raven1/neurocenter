@@ -124,5 +124,6 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
         const value = latest.current; if (!value) return Promise.resolve(false);
         return perform('participants', signal => projectChatApi.participants(projectId, expectedRevision ?? value.room.revision, agentIds, modelId, modelPin, signal, roomId));
     };
-    return {detail: detail?.room.projectId === projectId && (detail.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId ? detail : undefined, loading, error, accessDenied, refresh, historyLoading, historyError, loadEarlier, send, action, retryPending, retry, cancel, configure};
+    const clearAccess = (): void => {clearDenied(); setError('Доступ к диалогу изменился. Обновите список диалогов или обратитесь к администратору проекта.');};
+    return {detail: detail?.room.projectId === projectId && (detail.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId ? detail : undefined, loading, error, accessDenied, clearAccess, refresh, historyLoading, historyError, loadEarlier, send, action, retryPending, retry, cancel, configure};
 }

@@ -83,7 +83,7 @@ export class ProxyService {
               : this.catalogUrl;
         const snapshotPublication=snapshotPublicationRoute(method,path);
         const canonicalPath=canonicalAccessRoute(path);
-        if (/^\/api\/(?:model-chats|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
+        if (/^\/api\/(?:model-chats|chat-presence|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
         const agentTrialRoute=/^\/api\/projects\/[^/]+\/agents\/(?:readiness(?:[/%]|$)|.*\/readiness-trials(?:[/%]|$))/.test(canonicalPath||'');
         const projectChatRoute=/^\/api\/projects\/[^/]+\/team-chat(?:[/%]|$)/.test(canonicalPath||'');

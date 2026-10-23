@@ -85,11 +85,15 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 accept(value);
                 if (pending.current) {
                     const saved = value.turns.find(turn => turn.requestId === pending.current!.requestId);
-                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
+                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, executionState: saved.executionState, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
                 }
                 again = !!sending || value.turns.some(turn => turn.status === 'pending');
             } catch (cause) {
                 if (owns()) {
+                    const unknown = (turn: IModelChatTurn): IModelChatTurn => turn.status !== 'pending' ? turn : {...turn, executionState: undefined, processingStage: undefined,
+                        responses: turn.responses?.map(response => response.status !== 'pending' ? response : {...response, executionState: undefined, processingStage: undefined})};
+                    if (current.current) accept({...current.current, turns: current.current.turns.map(unknown)});
+                    if (pending.current) updatePending(unknown(pending.current));
                     const status = typeof cause === 'object' && cause !== null && 'response' in cause ? (cause as {response?: {status?: number}}).response?.status : undefined;
                     if (status === 401 || status === 403 || status === 404) {setError(errorMessage(cause, 'Диалог больше недоступен.')); again = false;}
                 }

@@ -6,6 +6,7 @@ import type { AttachmentRow, ConversationRow, TurnRow, ChatTurn } from './chat.t
 import type { ChatHistory } from './chat.types';
 import type { ChatBatch, ChatCheckpoint, ChatSourceTurn } from './chat-compaction';
 import type { ChatResponseRow } from './chat-group.types';
+import { projectExecutionState } from './chat-execution-state';
 
 export type ChatDb = Pick<PoolClient, 'query'>;
 export interface ChatRows { conversation: ConversationRow; turns: TurnRow[]; attachments: AttachmentRow[]; history: ChatHistory }
@@ -54,6 +55,7 @@ export class ChatRepository {
         const turns = (await db.query<TurnRow>('SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND id=ANY($2::uuid[]) ORDER BY position', [row.id, selected])).rows;
         const responses = (await db.query<ChatResponseRow>("SELECT id,conversation_id,turn_id,agent_id,snapshot-'definition' AS snapshot,request_id,status,processing_stage,answer,error FROM model_chat_agent_responses WHERE conversation_id=$1 AND turn_id=ANY($2::uuid[]) ORDER BY created_at,id", [row.id, selected])).rows;
         for (const turn of turns) turn.responses = responses.filter(response => response.turn_id === turn.id).sort((a, b) => turn.target_agent_ids.indexOf(a.agent_id) - turn.target_agent_ids.indexOf(b.agent_id));
+        await projectExecutionState(db, row, turns);
         const history = { hasMore: candidates.length > selected.length, nextCursor: candidates.length > selected.length ? turns[0]?.id ?? null : null };
         const attachments = (await db.query<AttachmentRow>(`SELECT id,conversation_id,request_id,request_hash,name,media_type,bytes,text_bytes,pages,warning,created_at,deleted_at FROM model_chat_attachments a
             WHERE conversation_id=$1 AND deleted_at IS NULL AND (EXISTS(SELECT 1 FROM model_chat_turns t WHERE t.id=ANY($2::uuid[]) AND a.id=ANY(t.attachment_ids))

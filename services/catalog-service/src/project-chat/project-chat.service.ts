@@ -12,6 +12,7 @@ import { ProjectChatRunner } from './project-chat.runner';
 import { resolveProjectChatProject } from './project-chat-project';
 import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, projectChatRoomView, type ProjectChatDb, type ProjectChatDetail, type ProjectChatMessage, type ProjectChatMessageRow, type ProjectChatReceipt, type ProjectChatRoomRow } from './project-chat.types';
 import { projectChatBody, projectChatPage, projectChatParticipants, projectChatSend, projectChatUuid, projectChatWatch } from './project-chat.validation';
+import {ProjectChatActivityService} from '../chat-activity/project-chat-activity';
 
 /** Project membership shares a room; private model chats keep their existing owner boundary. */
 @Injectable()
@@ -20,8 +21,10 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
     readonly repository: ProjectChatRepository;
     readonly runner: ProjectChatRunner;
     readonly dialogs: ProjectChatDialogs;
+    readonly activity: ProjectChatActivityService;
     constructor(private readonly models: ModelsService, private readonly inference: ProjectChatInferenceService) {
         this.repository = new ProjectChatRepository(models.pool, this.policy); this.dialogs = new ProjectChatDialogs(this.repository); this.runner = new ProjectChatRunner(this.repository, inference);
+        this.activity = new ProjectChatActivityService(this.repository);
     }
     async onModuleInit(): Promise<void> { await this.models.ready(); await this.runner.start(); }
     async onApplicationShutdown(): Promise<void> { await this.runner.stop(); }
@@ -143,6 +146,8 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         this.runner.cancel(messageId); return result;
     }
     async rooms(req: Request, id: string) {const {actor, projectId} = await this.project(req, id); return this.dialogs.list(projectId, actor);}
+    async readActivity(req: Request, id: string, messageIds?: string, roomId = DEFAULT_PROJECT_CHAT_ROOM) {const {actor, projectId} = await this.project(req, id); return this.activity.read(projectId, actor, messageIds, roomId);}
+    async updateActivity(req: Request, id: string, raw: unknown, roomId = DEFAULT_PROJECT_CHAT_ROOM) {const {actor, projectId} = await this.project(req, id); return this.activity.update(projectId, actor, raw, roomId);}
     async createRoom(req: Request, id: string, raw: unknown) {const {actor, projectId} = await this.project(req, id); return this.dialogs.create(projectId, actor, raw);}
     async updateRoom(req: Request, id: string, roomId: string, raw: unknown) {const {actor, projectId} = await this.project(req, id); return this.dialogs.update(projectId, actor, roomId, raw);}
     private manage(source: ProjectChatMessageRow, actor: ProjectChatActor): void {

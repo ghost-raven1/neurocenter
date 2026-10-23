@@ -118,6 +118,14 @@
     "defaultEnabled": true
   },
   {
+    "key": "chat_activity",
+    "name": "Статусы в чатах",
+    "description": "Онлайн, набор сообщения и отметки прочтения. Сохранённые отметки доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
     "key": "group_chat",
     "name": "Групповой чат",
     "description": "Новые участники и раунды с выбранными агентами проекта.",
