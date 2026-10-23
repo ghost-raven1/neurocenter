@@ -26,6 +26,7 @@ export class FlagsRepository {
     async setup(): Promise<void> {
         await migrateFeatureFlags(this.pool);
         const client = await this.pool.connect();
+        let discard = false;
         try {
             await client.query('BEGIN');
             await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");
@@ -33,8 +34,8 @@ export class FlagsRepository {
                 await client.query('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING', [item.key]);
             }
             await client.query('COMMIT');
-        } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
-        finally { client.release(); }
+        } catch (error) { await client.query('ROLLBACK').catch(() => { discard = true; }); throw error; }
+        finally { if (discard) client.release(true); else client.release(); }
     }
 
     async list(): Promise<IFeatureFlag[]> {
@@ -53,6 +54,7 @@ export class FlagsRepository {
     async patch(key: unknown, raw: unknown, authorize: () => Promise<string>): Promise<IFeatureFlag> {
         const id = featureFlagKey(key), body = featureFlagPatch(raw);
         const client = await this.pool.connect();
+        let discard = false;
         try {
             await client.query('BEGIN');
             const result = await client.query<IFlagRow>('SELECT * FROM feature_flags WHERE flag_key=$1 FOR UPDATE', [id]);
@@ -69,7 +71,7 @@ export class FlagsRepository {
                 [randomUUID(), actor, 'feature_flag.update', id, JSON.stringify(current), JSON.stringify(saved)]);
             await client.query('COMMIT');
             return saved;
-        } catch (error) { await client.query('ROLLBACK').catch(() => undefined); throw error; }
-        finally { client.release(); }
+        } catch (error) { await client.query('ROLLBACK').catch(() => { discard = true; }); throw error; }
+        finally { if (discard) client.release(true); else client.release(); }
     }
 }

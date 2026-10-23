@@ -100,6 +100,50 @@ describe('Хранилище переключателей и аудит', () => 
         expect(release).toHaveBeenCalledOnce();
     });
 
+    it.each(['normal','not-dispatched','ack-lost'] as const)('Ошибка после записи сохраняет primary error; ROLLBACK=%s определяет discard клиента',async rollback=>{
+        const primary=Object.assign(new Error('Audit acknowledgment lost'),{code:'ECONNRESET'}),rollbackError=new Error('ROLLBACK acknowledgment lost'),executed:string[]=[];
+        const previous=query.getMockImplementation()!;
+        query.mockImplementation(async(sql:string,values?:unknown[])=>{
+            if(sql==='ROLLBACK'&&rollback==='not-dispatched')throw rollbackError;
+            const result=await previous(sql,values);
+            executed.push(sql);
+            if(sql==='ROLLBACK'&&rollback==='ack-lost')throw rollbackError;
+            if(sql.startsWith('INSERT INTO security_events'))throw primary;
+            return result;
+        });
+        await expect(repository.patch('model_hosting',{enabled:false,expectedRevision:1},async()=>actor)).rejects.toBe(primary);
+        expect(query.mock.calls.filter(([sql])=>sql.startsWith('UPDATE feature_flags'))).toHaveLength(1);
+        expect(query.mock.calls.filter(([sql])=>sql.startsWith('INSERT INTO security_events'))).toHaveLength(1);
+        expect(query.mock.calls.filter(([sql])=>sql==='ROLLBACK')).toHaveLength(1);
+        expect(executed.filter(sql=>sql==='ROLLBACK')).toHaveLength(rollback==='not-dispatched'?0:1);
+        expect(query.mock.calls.some(([sql])=>sql==='COMMIT')).toBe(false);
+        if(rollback!=='normal')expect(release).toHaveBeenCalledExactlyOnceWith(true);
+        else expect(release).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it.each(['normal','not-dispatched','ack-lost'] as const)('Defaults после ошибки записи сохраняют primary error и не возвращают неизвестную транзакцию: ROLLBACK=%s',async rollback=>{
+        const primary=Object.assign(new Error('Default insert acknowledgment lost'),{code:'ECONNRESET'}),rollbackError=new Error('ROLLBACK acknowledgment lost'),executed:string[]=[];
+        const previous=query.getMockImplementation()!;
+        query.mockImplementation(async(sql:string,values?:unknown[])=>{
+            if(sql==='ROLLBACK'&&rollback==='not-dispatched')throw rollbackError;
+            const result=await previous(sql,values);
+            executed.push(sql);
+            if(sql==='ROLLBACK'&&rollback==='ack-lost')throw rollbackError;
+            if(sql.startsWith('INSERT INTO feature_flags('))throw primary;
+            return result;
+        });
+        await expect(repository.setup()).rejects.toBe(primary);
+        expect(migrateFeatureFlags).toHaveBeenCalledExactlyOnceWith(pool);
+        expect(query.mock.calls.filter(([sql])=>sql.startsWith('INSERT INTO feature_flags('))).toEqual([
+            ['INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING',[FEATURE_FLAGS[0].key]],
+        ]);
+        expect(query.mock.calls.filter(([sql])=>sql==='ROLLBACK')).toHaveLength(1);
+        expect(executed.filter(sql=>sql==='ROLLBACK')).toHaveLength(rollback==='not-dispatched'?0:1);
+        expect(query.mock.calls.some(([sql])=>sql==='COMMIT')).toBe(false);
+        if(rollback!=='normal')expect(release).toHaveBeenCalledExactlyOnceWith(true);
+        else expect(release).toHaveBeenCalledExactlyOnceWith();
+    });
+
     it('Ошибка схемы не фиксирует частично подготовленное состояние', async () => {
         vi.mocked(migrateFeatureFlags).mockRejectedValueOnce(new Error('БД недоступна'));
         await expect(repository.setup()).rejects.toThrow('БД недоступна');

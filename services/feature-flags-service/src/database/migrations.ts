@@ -52,19 +52,21 @@ const state = (rows: MigrationRow[]): FeatureFlagsMigrationState => ({ok: true, 
 /** No CREATE, ALTER, INSERT or default seeding is allowed in the preflight path. */
 export async function checkFeatureFlagsMigrations(pool: Pool, requireReady = false): Promise<FeatureFlagsMigrationState> {
     const client = await pool.connect();
+    let discard = false;
     try {
         await client.query('BEGIN READ ONLY'); await client.query(lock);
         const result = state(await history(client));
         if (result.ready) await assertFeatureFlagsSchema(client);
         if (requireReady && !result.ready) throw new Error('Миграции переключателей ещё не применены.');
         await client.query('COMMIT'); return result;
-    } catch (error) {await client.query('ROLLBACK').catch(() => undefined); throw error;}
-    finally {client.release();}
+    } catch (error) {await client.query('ROLLBACK').catch(() => {discard = true;}); throw error;}
+    finally {if (discard) client.release(true); else client.release();}
 }
 
 /** Schema creation, physical checks and immutable history commit atomically. */
 export async function migrateFeatureFlags(pool: Pool): Promise<FeatureFlagsMigrationState> {
     const client = await pool.connect();
+    let discard = false;
     try {
         await client.query('BEGIN'); await client.query(lock);
         await client.query(`CREATE TABLE IF NOT EXISTS feature_flags_schema_migrations (
@@ -79,6 +81,6 @@ export async function migrateFeatureFlags(pool: Pool): Promise<FeatureFlagsMigra
         await assertFeatureFlagsSchema(client);
         const result = state(await history(client));
         await client.query('COMMIT'); return result;
-    } catch (error) {await client.query('ROLLBACK').catch(() => undefined); throw error;}
-    finally {client.release();}
+    } catch (error) {await client.query('ROLLBACK').catch(() => {discard = true;}); throw error;}
+    finally {if (discard) client.release(true); else client.release();}
 }
