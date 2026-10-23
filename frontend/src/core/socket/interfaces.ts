@@ -69,4 +69,4 @@ export interface TSocketHandlers {
     'package:changed': (payload: IPackageChanged) => void;
 }
 
-export type TLiveSection='projects'|'catalog'|'knowledge'|'access'|'maintenance'|'audit'|'operations'|'bridge'|'requests';
+export type TLiveSection='projects'|'catalog'|'knowledge'|'access'|'maintenance'|'audit'|'operations'|'bridge'|'requests'|'project_chat';

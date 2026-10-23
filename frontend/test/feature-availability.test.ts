@@ -9,12 +9,13 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 27 ключей общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(27); expect(new Set(featureFlagKeys).size).toBe(27);
+    it('Проверяет все 28 ключей общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(featureFlagKeys).toHaveLength(28); expect(new Set(featureFlagKeys).size).toBe(28);
         expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
         expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
+        expect(featureDefinitions.find(item => item.key === 'project_chat')).toMatchObject({defaultEnabled: true, dependsOn: []});
         expect(requireEvaluatedFeatureFlags(evaluated())).toEqual(evaluated());
-        for (const key of ['opencode_providers', 'codex_connector'] as const) {
+        for (const key of ['opencode_providers', 'codex_connector', 'project_chat'] as const) {
             for (const field of ['flags', 'configured', 'blockedBy'] as const) {
                 const data = evaluated(), incomplete = { ...data, [field]: Object.fromEntries(Object.entries(data[field]).filter(([item]) => item !== key)) };
                 expect(() => requireEvaluatedFeatureFlags(incomplete)).toThrow('полный список');

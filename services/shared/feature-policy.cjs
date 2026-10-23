@@ -39,6 +39,8 @@ function requiredRouteFeatures(method,path,body){
         if(route==='/api/model-usage')return ['model_usage'];
         return [];
     }
+    // Team-chat admissions preserve accepted replay and cleanup; fresh capabilities are checked by its executor.
+    if(/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(route))return [];
     if(/^\/api\/help\/[^/]+$/.test(route))return verb==='PUT'?['help_center']:[];
     // New admissions are checked by the executor after exact replay lookup.
     if(route==='/api/discussions/comments'&&verb==='POST')return [];

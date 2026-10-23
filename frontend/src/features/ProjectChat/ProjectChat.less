@@ -1,0 +1,38 @@
+.project-chat {
+    display: flex; flex-direction: column; gap: 12px; min-height: 320px; height: min(70vh, 900px); padding: 14px 18px; box-sizing: border-box; overflow-y: auto;
+    &__heading, &__settings-heading, &__send {display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;}
+    &__heading h4, &__settings-heading h5 {margin: 0;}
+    &__heading > div:first-child {min-width: 0; flex: 1 1 250px; overflow-wrap: anywhere;}
+    &__participants {flex: none; padding: 8px 12px; border: 1px solid #dbe4ec; border-radius: 8px; background: #f7f9fc;
+        summary {cursor: pointer; font-weight: 500; span {margin-left: 16px; color: #597086;}}
+        ul {display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 10px 0; margin: 0; list-style: none; li {display: flex; gap: 8px;}}
+    }
+    &__history-wrap {position: relative; flex: 1; min-height: 120px; overflow: hidden;}
+    &__history {height: 100%; overflow-y: auto; padding: 0 8px 8px 0; overscroll-behavior: contain;}
+    &__message {border: 1px solid #e0e7ee; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fff;
+        &:focus {outline: 2px solid #8aa5bc; outline-offset: 2px;}
+        header {display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; div {display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere;} time {white-space: nowrap; color: #75879a; font-size: 12px;}}
+        &_user {background: #f3f7fb;} &_summary {border-color: #c1d5cc; background: #f7fbf8;}
+        .ant-alert {margin-top: 8px;}
+    }
+    &__user-content {white-space: pre-wrap; overflow-wrap: anywhere;}
+    &__quote, &__reply-draft {margin: 0 0 8px; padding: 8px 10px; border-left: 3px solid #8aa5bc; background: #edf2f7; border-radius: 4px; overflow-wrap: anywhere;}
+    &__quote {display: flex; flex-direction: column; font-size: 12px; max-height: 90px; overflow-y: auto;}
+    &__reply-draft {display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; max-height: 110px; overflow-y: auto;}
+    &__pending {display: flex; align-items: center; gap: 8px; color: #597086; padding: 8px 0;}
+    &__message-actions {margin-top: 4px;}
+    &__markdown {overflow-wrap: anywhere; pre {max-width: 100%; overflow-x: auto; padding: 10px; background: #edf2f7; border-radius: 6px;} p:last-child {margin-bottom: 0;}}
+    &__table {max-width: 100%; overflow-x: auto; table {border-collapse: collapse;} td, th {border: 1px solid #dbe4ec; padding: 6px 8px;}}
+    &__latest {position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);}
+    &__earlier {display: block; margin: 0 auto 12px;}
+    &__composer {flex: none; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #e0e7ee; padding-top: 12px;}
+    &__delivery {display: flex; gap: 12px; flex-wrap: wrap; label {display: flex; flex: 1 1 260px; flex-direction: column; gap: 4px;} .ant-select {width: 100%;}}
+    &__delivery-note {font-size: 12px;}
+    &__settings {flex: none; max-height: 40vh; overflow-y: auto; padding: 12px; background: #f7f9fc; border: 1px solid #dbe4ec; border-radius: 8px; display: flex; flex-direction: column; gap: 10px;
+        > label {display: flex; flex-direction: column; gap: 4px;}
+    }
+    &__agent-options {display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;
+        > div {display: flex; flex-direction: column; gap: 2px;} .ant-typography {padding-left: 24px; font-size: 12px;}
+    }
+    @media (max-width: 600px) {height: 72vh; gap: 8px; padding: 12px; &__heading .ant-space {width: 100%;} &__send > .ant-typography {font-size: 11px;} &__message {padding: 10px;} &__message header {flex-wrap: wrap;} &__delivery label {flex-basis: 100%;} &__send > button {width: 100%;} &__reply-draft {align-items: flex-start; flex-wrap: wrap;}}
+}

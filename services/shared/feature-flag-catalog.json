@@ -229,5 +229,13 @@
     "group": "platform",
     "dependsOn": ["discussions"],
     "defaultEnabled": true
+  },
+  {
+    "key": "project_chat",
+    "name": "Командный чат проекта",
+    "description": "Общая переписка участников проекта и новые запросы выбранным агентам. История и остановка сохраняются при выключении.",
+    "group": "agents",
+    "dependsOn": [],
+    "defaultEnabled": true
   }
 ]

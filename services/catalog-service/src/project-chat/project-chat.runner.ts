@@ -1,0 +1,107 @@
+import { BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import type { Request } from 'express';
+import { requireFeaturesEnabled } from '../features/require-feature-enabled';
+import { ProjectChatRepository } from './project-chat.repository';
+import type { ProjectChatInference, ProjectChatJob, ProjectChatMessageRow, ProjectChatStatus } from './project-chat.types';
+
+const safeFailure = (error: unknown): string => error instanceof BadRequestException || error instanceof ConflictException || error instanceof ForbiddenException || error instanceof ServiceUnavailableException
+    ? error.message : 'Агент не ответил. Проверьте подключение модели и повторите ответ.';
+const markdownMetadata = (value: string): string => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]()#+\-.!>|~]/g, '\\$&');
+/** A result links each specialist contribution to its question without another hidden model call. */
+export function projectChatSummary(source: ProjectChatMessageRow, responses: ProjectChatMessageRow[]): string {
+    return `## Итог по вопросу\n\n[Сообщение пользователя](#project-chat-message-${source.id})\n\n` + responses.filter(row => row.kind === 'agent').map(row => {
+        const role = row.snapshot?.definition.description || 'Специалист проекта', content = row.content.length > 4000 ? row.content.slice(0, 4000) + '\n\nПолный ответ — в сообщении выше.' : row.content;
+        return `### ${markdownMetadata(row.snapshot?.name || 'Агент')} (@${markdownMetadata(row.snapshot?.slug || 'agent')})\n\nОбласть: ${markdownMetadata(role.slice(0, 1000))}\n\n${row.status === 'done' ? content : row.error || 'Ответ не получен.'}\n\n[Полный ответ агента](#project-chat-message-${row.id})`;
+    }).join('\n\n');
+}
+/** Durable FIFO admits separate user questions; failed attempts never start a paid retry automatically. */
+export class ProjectChatRunner {
+    private readonly pending = new Map<string, Promise<void>>();
+    private readonly reschedule = new Set<string>();
+    private readonly active = new Map<string, AbortController>();
+    private stopped = false;
+    private interval?: ReturnType<typeof setInterval>;
+    constructor(readonly repository: ProjectChatRepository, private readonly inference: ProjectChatInference) {}
+    async start(): Promise<void> {
+        for (const id of await this.repository.recover()) this.schedule(id);
+        this.interval = setInterval(() => { void this.repository.recover().then(ids => { for (const id of ids) this.schedule(id); }).catch(() => undefined); }, 30000);
+        this.interval.unref();
+    }
+    schedule(projectId: string): void {
+        if (this.stopped) return;
+        if (this.pending.has(projectId)) { this.reschedule.add(projectId); return; }
+        const running = Promise.resolve().then(() => this.drain(projectId)).catch(() => undefined).finally(() => {
+            if (this.pending.get(projectId) === running) this.pending.delete(projectId);
+            if (this.reschedule.delete(projectId)) this.schedule(projectId);
+        });
+        this.pending.set(projectId, running);
+    }
+    cancel(messageId: string): void { this.active.get(messageId)?.abort(); }
+    async waitIdle(): Promise<void> { while (this.pending.size) await Promise.all([...this.pending.values()]); }
+    async stop(): Promise<void> { this.stopped = true; if (this.interval) clearInterval(this.interval); for (const abort of this.active.values()) abort.abort(); await this.waitIdle(); }
+    private request(job: ProjectChatJob): Request {
+        const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
+        if (!token) throw new ServiceUnavailableException('Внутренний доступ сервиса не настроен.');
+        return { headers: { 'x-neurocenter-internal': token, 'x-bridge-actor': encodeURIComponent(JSON.stringify(job.actor)) } } as unknown as Request;
+    }
+    private async drain(projectId: string): Promise<void> {
+        for (;;) {
+            if (this.stopped) return;
+            const job = await this.repository.claim(projectId); if (!job) return;
+            const abort = new AbortController(), signal = AbortSignal.any([abort.signal, AbortSignal.timeout(14 * 60 * 1000)]);
+            this.active.set(job.source.id, abort);
+            try { await this.execute(job, signal); }
+            catch (error) { await this.fail(job, signal.aborted ? 'cancelled' : 'failed', signal.aborted ? 'Обработка остановлена. Готовые ответы сохранены.' : safeFailure(error)); }
+            finally { this.active.delete(job.source.id); }
+        }
+    }
+    private async execute(job: ProjectChatJob, signal: AbortSignal): Promise<void> {
+        const req = this.request(job), responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id);
+        for (const response of responses.filter(row => row.kind === 'agent' && row.status !== 'done')) {
+            signal.throwIfAborted();
+            try {
+                await requireFeaturesEnabled(['project_chat', 'group_chat']);
+                await this.repository.scoped(job.projectId, job.actor, 2, false, async (db, room) => {
+                    await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
+                    if (!room.agent_ids.includes(response.snapshot!.agentId)) throw new ConflictException('Агент исключён из состава чата. Уже полученные ответы сохранены.');
+                    await this.inference.assert(req, job.projectId, response.snapshot!, db);
+                });
+                const answer = await this.inference.infer({ req, projectId: job.projectId, source: job.source, response, signal });
+                signal.throwIfAborted();
+                if (!answer.content.trim() || Buffer.byteLength(answer.content) > 8 * 1024 ** 2) throw new BadRequestException('Агент вернул пустой или слишком большой ответ.');
+                await this.repository.scoped(job.projectId, job.actor, 2, true, async (db, room) => {
+                    signal.throwIfAborted(); await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
+                    if (!room.agent_ids.includes(response.snapshot!.agentId)) throw new ConflictException('Агент исключён из состава чата. Уже полученные ответы сохранены.');
+                    await this.inference.assert(req, job.projectId, response.snapshot!, db);
+                    const changed = await db.query("UPDATE project_chat_messages SET status='done',content=$4,usage=$5::jsonb,error=NULL,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running' AND lease_until>now()", [job.projectId, response.id, job.generation, answer.content, answer.usage ? JSON.stringify(answer.usage) : null]);
+                    if (!changed.rowCount) throw new ConflictException('Ответ уже остановлен или завершён.');
+                    await this.inference.assert(req, job.projectId, response.snapshot!, db); await this.repository.bump(db, room);
+                });
+            } catch (error) {
+                signal.throwIfAborted();
+                if (error instanceof ForbiddenException) throw error;
+                await this.repository.scoped(job.projectId, job.actor, 2, true, async (db, room) => {
+                    await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
+                    await db.query("UPDATE project_chat_messages SET status='failed',error=$4,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running'", [job.projectId, response.id, job.generation, safeFailure(error)]);
+                    await this.repository.bump(db, room);
+                });
+            }
+        }
+        await this.repository.scoped(job.projectId, job.actor, 2, true, async (db, room) => {
+            signal.throwIfAborted(); await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
+            const children = await this.repository.children(db, job.projectId, job.source.id), complete = children.filter(row => row.kind === 'agent').every(row => row.status === 'done');
+            await db.query("UPDATE project_chat_messages SET status=$4,content=$5,error=NULL,lease_until=NULL WHERE project_id=$1 AND source_message_id=$2 AND kind='summary' AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', projectChatSummary(job.source, children)]);
+            await db.query("UPDATE project_chat_messages SET status=$4,error=$5,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', complete ? null : 'Не все агенты ответили. Готовые ответы сохранены; можно повторить недостающие.']);
+            await this.repository.bump(db, room);
+        });
+    }
+    /** Cleanup is allowed after revocation but can publish only a safe terminal status, never model output. */
+    private async fail(job: ProjectChatJob, status: ProjectChatStatus, error: string): Promise<void> {
+        await this.repository.transaction(async db => {
+            await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['project-chat:' + job.projectId]);
+            const room = await this.repository.room(db, job.projectId, true); if (!room.revision) return;
+            const changed = await db.query("UPDATE project_chat_messages SET status=$4,error=$5,lease_until=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, status, error]);
+            if (changed.rowCount) await this.repository.bump(db, room);
+        });
+    }
+}

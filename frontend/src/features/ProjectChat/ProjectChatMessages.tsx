@@ -1,0 +1,62 @@
+import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
+import {useLayoutEffect, useRef, useState} from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import {modelChatUrl} from '../ModelChat/model';
+import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
+import {projectChatAuthor, projectChatLocalAnchor} from './model';
+import type {ProjectChatMessage} from './types';
+
+interface Props {
+    messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
+    onLoadEarlier: () => void; onReply: (message: ProjectChatMessage) => void; onRetry: (id: string) => void; onCancel: (id: string) => void;
+}
+const stateText: Record<ProjectChatMessage['status'], string> = {queued: 'В очереди', running: 'Готовится ответ', done: '', failed: 'Ответ не получен', cancelled: 'Остановлено'};
+
+/** Every saved human question and agent answer keeps its author and an explicit reply anchor. */
+export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel}: Props): JSX.Element {
+    const inference = useFeatureAvailability('project_chat', 'group_chat');
+    const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number}>();
+    const [newMessages, setNewMessages] = useState(false);
+    useLayoutEffect(() => {
+        const node = viewport.current; if (!node) return;
+        const first = messages[0]?.id ?? '', last = messages[messages.length - 1]?.id ?? '', before = previous.current;
+        if (before && messages.length > before.count && first !== before.first && last === before.last) node.scrollTop += node.scrollHeight - before.height;
+        else if (!before || nearBottom.current) {node.scrollTop = node.scrollHeight; setNewMessages(false);}
+        else if (last !== before.last || node.scrollHeight !== before.height) setNewMessages(true);
+        previous.current = {first, last, count: messages.length, height: node.scrollHeight};
+    }, [messages, historyLoading, historyError]);
+    return <div className="project-chat__history-wrap"><div className="project-chat__history" ref={viewport} role="log" aria-label="Сообщения команды проекта" aria-live="polite" aria-relevant="additions text"
+        onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setNewMessages(false);}}>
+        {hasMore && <Button className="project-chat__earlier" loading={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button>}
+        {historyError && <Alert type="warning" showIcon message={historyError}/>}
+        {!messages.length && <Empty description="Это общий чат проекта. Напишите коллегам или явно выберите агентов для ответа."/>}
+        {messages.map(message => {
+            const parent = message.replyToId ? messages.find(value => value.id === message.replyToId) : undefined;
+            const canQuote = message.kind === 'user' || message.kind === 'agent' && message.status === 'done' && !!message.content;
+            return <article id={`project-chat-message-${message.id}`} tabIndex={-1} key={message.id} className={`project-chat__message project-chat__message_${message.kind}`} aria-label={`${projectChatAuthor(message)}: ${message.kind === 'summary' ? 'итог' : 'сообщение'}`}>
+                <header><div><Typography.Text strong>{projectChatAuthor(message)}</Typography.Text><Typography.Text type="secondary">{message.kind === 'agent' ? `Агент · @${message.agent?.slug || 'agent'}` : message.kind === 'summary' ? 'Из ответов на этот вопрос' : 'Участник проекта'}</Typography.Text></div>
+                    <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString('ru', {hour: '2-digit', minute: '2-digit'})}</time></header>
+                {message.replyToId && <blockquote className="project-chat__quote">{parent ? <><Typography.Text strong>{projectChatAuthor(parent)}</Typography.Text><span>{parent.content.slice(0, 220) || 'Сообщение ещё готовится'}</span></> : <span>Ответ на раннее сообщение · доступно в истории</span>}</blockquote>}
+                {message.content && (message.kind === 'user' ? <div className="project-chat__user-content">{message.content}</div> : <div className="project-chat__markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={url => projectChatLocalAnchor(url) ?? modelChatUrl(url) ?? ''} components={{
+                    a: ({href, children}) => {
+                        if (!href) return <span>{children}</span>;
+                        const anchor = projectChatLocalAnchor(href);
+                        if (!anchor) return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                        const loaded = messages.some(value => `#project-chat-message-${value.id}` === anchor);
+                        return loaded ? <a href={anchor} onClick={event => {event.preventDefault(); const node = document.getElementById(anchor.slice(1)); if (node && viewport.current?.contains(node)) {node.scrollIntoView({block: 'nearest'}); node.focus({preventScroll: true});}}}>{children}</a>
+                            : <Button type="link" size="small" title="Сообщение в ранней истории" aria-label="Показать связанное сообщение из ранней истории" disabled={!hasMore || historyLoading} onClick={onLoadEarlier}>{children} · в ранней истории</Button>;
+                    },
+                    img: ({alt}) => <span>Изображение: {alt || 'без подписи'}</span>,
+                    table: ({children}) => <div className="project-chat__table" tabIndex={0}><table>{children}</table></div>,
+                }}>{message.content}</Markdown></div>)}
+                {['queued', 'running'].includes(message.status) && <div className="project-chat__pending" role="status"><Spin size="small"/>{stateText[message.status]}{message.kind === 'user' ? ' · остальные участники могут продолжать писать' : ''}</div>}
+                {['failed', 'cancelled'].includes(message.status) && <Alert showIcon type={message.status === 'failed' ? 'error' : 'info'} message={message.error || stateText[message.status]}/>}
+                <Space wrap size={4} className="project-chat__message-actions"><Button type="text" size="small" disabled={!canReply || !canQuote} aria-label={`Ответить · ${projectChatAuthor(message)}`} onClick={() => onReply(message)}>Ответить</Button>
+                    {(message.canRetry || retryPending.includes(message.id)) && <Button size="small" disabled={!!action || !inference.enabled && !retryPending.includes(message.id)} loading={action === message.id} onClick={() => onRetry(message.id)}>{retryPending.includes(message.id) ? 'Проверить повтор отправки' : 'Повторить неуспешные ответы'}</Button>}
+                    {message.canCancel && <Button size="small" disabled={!!action} loading={action === message.id} onClick={() => onCancel(message.id)}>Остановить ответы</Button>}
+                </Space>
+            </article>;
+        })}
+    </div>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
+}

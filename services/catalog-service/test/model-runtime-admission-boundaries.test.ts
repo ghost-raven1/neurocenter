@@ -29,8 +29,8 @@ describe('Provider admission after a delayed durable usage reservation', () => {
         vi.spyOn(usage.repository, 'interrupt').mockResolvedValue(undefined);
         const local = { infer: vi.fn(async () => response) }, remote = { infer: vi.fn(async () => response) };
         const runtime = new ModelRuntime(local as unknown as OllamaClient, remote as unknown as RemoteConnectionService, usage);
-        const send = (signal?: AbortSignal, selected = model) => withModelUsage({ purpose: 'verification', actorEmail: 'owner@example.test',
-            projectId: 'prj-admission', agentId: 'agent-admission', requiredFeatures: ['agents', 'model_chat', 'group_chat', 'model_hosting', 'research_tools'] },
+        const send = (signal?: AbortSignal, selected = model, beforeInference?: () => Promise<void>) => withModelUsage({ purpose: 'verification', actorEmail: 'owner@example.test',
+            projectId: 'prj-admission', agentId: 'agent-admission', requiredFeatures: ['agents', 'model_chat', 'group_chat', 'model_hosting', 'research_tools'], beforeInference },
         () => runtime.infer(selected, 'chat', { messages: [{ role: 'user', content: 'Question' }], stream: false }, signal));
         return { usage, started, held, begin, finish, local, remote, runtime, send };
     };
@@ -80,6 +80,24 @@ describe('Provider admission after a delayed durable usage reservation', () => {
         try {
             await expect(f.send()).rejects.toBeInstanceOf(ServiceUnavailableException);
             expect(f.local.infer).not.toHaveBeenCalled(); expect(f.finish).not.toHaveBeenCalled();
+        } finally { await f.usage.onApplicationShutdown(); }
+    });
+    it('checks the current job generation and grants after a delayed usage reservation', async () => {
+        const f = fixture(); let current = true;
+        const authorize = vi.fn(async () => { if (!current) throw new Error('job revoked'); });
+        const pending = f.send(undefined, model, authorize), result = pending.catch(error => error);
+        try {
+            await f.started.promise; expect(authorize).not.toHaveBeenCalled(); current = false; f.held.release();
+            expect(await result).toMatchObject({ message: 'job revoked' }); expect(authorize).toHaveBeenCalledOnce();
+            expect(f.local.infer).not.toHaveBeenCalled(); expect(f.remote.infer).not.toHaveBeenCalled();
+            expect(f.finish).toHaveBeenCalledWith(expect.any(String), f.usage.workerId, expect.objectContaining({ status: 'error' }));
+        } finally { f.held.release(); await pending.catch(() => undefined); await f.usage.onApplicationShutdown(); }
+    });
+    it('checks feature flags after the final job authorization callback has waited', async () => {
+        const f = fixture(); f.held.release();
+        try {
+            await expect(f.send(undefined, model, async () => {flags.group_chat = false;})).rejects.toMatchObject({ status: 403 });
+            expect(f.local.infer).not.toHaveBeenCalled(); expect(f.remote.infer).not.toHaveBeenCalled();
         } finally { await f.usage.onApplicationShutdown(); }
     });
     it('retries only the failed terminal write-back without repeating a provider call', async () => {

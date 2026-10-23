@@ -1,5 +1,5 @@
-import {Alert,Button,Empty,Modal,Select,Spin,Typography} from 'antd';
-import {useEffect,useRef,useState} from 'react';
+import {Alert,Button,Empty,Modal,Radio,Select,Spin,Typography} from 'antd';
+import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {useSelector} from 'react-redux';
 import {useHistory} from 'react-router-dom';
 import {errorMessage} from '../../common/utils/errorMessage';
@@ -20,10 +20,12 @@ import type {IChatLaunch} from './chatNavigation';
 import type {IModelChatConversation,IModelChatDetail} from './types';
 import './ModelChat.less';
 
-interface ScopeProps {projectId?:string;projects:IProjectSummary[];projectsLoading:boolean;initialGroup?:boolean;onProject:(id:string|undefined)=>void;onClose:()=>void;}
+const ProjectChatWorkspace=lazy(()=>import('../ProjectChat/ProjectChatWorkspace').then(value=>({default:value.ProjectChatWorkspace})));
+const modeControls=(team:boolean,onChange:(team:boolean)=>void)=><Radio.Group aria-label="Режим чата" value={team?'team':'personal'} onChange={event=>onChange(event.target.value==='team')} optionType="button" buttonStyle="solid" options={[{label:'Команда проекта',value:'team'},{label:'Личные диалоги',value:'personal'}]}/>;
+interface ScopeProps {projectId?:string;projects:IProjectSummary[];projectsLoading:boolean;initialGroup?:boolean;onTeam:()=>void;onProject:(id:string|undefined)=>void;onClose:()=>void;}
 
 /** A saved dialogue fixes its model; choosing another model starts a fresh private dialogue. */
-function ChatScope({projectId,projects,projectsLoading,initialGroup,onProject,onClose}:ScopeProps):JSX.Element {
+function ChatScope({projectId,projects,projectsLoading,initialGroup,onTeam,onProject,onClose}:ScopeProps):JSX.Element {
     const user=useSelector((state:RootState)=>state.userBlock.user),history=useHistory(),{captureOwner}=useAuthRequestOwner();
     const canUse=!!user&&(projectId?projectRoleLevel(user,projectId)>=2:user.activeRole==='Главный админ');
     const models=useModelCatalog(projectId),index=useChatIndex(projectId,canUse);
@@ -45,6 +47,7 @@ function ChatScope({projectId,projects,projectsLoading,initialGroup,onProject,on
         finally{if(request.current===controller){request.current=undefined;if(owns())setOpening(false);}}
     };
     const controls=(change:(action:()=>void)=>void)=><div className="model-chat__workspace-controls">
+        {modeControls(false,()=>change(onTeam))}
         <label>Проект<Select aria-label="Проект чата" value={projectId??''} placeholder="Выберите проект" showSearch optionFilterProp="label" loading={projectsLoading} disabled={opening}
             options={[{value:'',label:user?.activeRole==='Главный админ'?'Без проекта':'Выберите проект',disabled:user?.activeRole!=='Главный админ'},...projects.filter(value=>projectRoleLevel(user,value.id)>=2).map(value=>({value:value.id,label:value.name})),...(projectId&&!project?[{value:projectId,label:'Текущий проект'}]:[])]}
             onChange={value=>change(()=>{request.current?.abort();onProject(value||undefined);})}/></label>
@@ -65,11 +68,18 @@ function ChatScope({projectId,projects,projectsLoading,initialGroup,onProject,on
 }
 
 /** Scope lives for the overlay lifetime, independently from navigation behind it. */
-export default function ChatOverlay({projectId:initialProject,group,onClose}:IChatLaunch&{onClose:()=>void}):JSX.Element {
+export default function ChatOverlay({projectId:initialProject,group,team:initialTeam,onClose}:IChatLaunch&{onClose:()=>void}):JSX.Element {
     const {scope}=useAuthRequestOwner(),projects=useAvailableProjects();
     const [projectId,setProjectId]=useState(initialProject);
+    const [team,setTeam]=useState(!!initialTeam);
+    const user=useSelector((state:RootState)=>state.userBlock.user);
     const canonical=projects.projects.find(value=>value.id===projectId||value.name===projectId)?.id??projectId;
     useEffect(()=>{if(projects.ready&&canonical!==projectId)setProjectId(canonical);},[projects.ready,canonical,projectId]);
     if(projectId&&(!projects.ready||canonical!==projectId))return <Modal open centered width={1280} title="Чат" footer={null} onCancel={onClose}>{projects.error?<Alert type="error" message={projects.error} action={<Button onClick={()=>{void projects.refresh();}}>Повторить</Button>}/>:<Spin tip="Проверяем доступные проекты…"/>}</Modal>;
-    return <ChatScope key={JSON.stringify([scope,projectId])} projectId={projectId} projects={projects.projects} projectsLoading={projects.loading} initialGroup={group} onProject={setProjectId} onClose={onClose}/>;
+    if(team)return <Modal open centered width={1280} className="model-chat model-chat_global" title="Чат" footer={null} onCancel={onClose} destroyOnClose>
+        <div className="model-chat__workspace-controls">{modeControls(true,setTeam)}<label>Проект<Select aria-label="Проект командного чата" value={projectId} placeholder="Выберите проект" loading={projects.loading} showSearch optionFilterProp="label"
+            options={projects.projects.filter(project=>projectRoleLevel(user,project.id)>=1).map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></label></div>
+        {projectId?<Suspense fallback={<Spin tip="Открываем команду…"/>}><ProjectChatWorkspace key={JSON.stringify([scope,projectId])} projectId={projectId} projectName={projects.projects.find(project=>project.id===projectId)?.name}/></Suspense>:<Empty description="Выберите проект для общей переписки с участниками и агентами."/>}
+    </Modal>;
+    return <ChatScope key={JSON.stringify([scope,projectId])} projectId={projectId} projects={projects.projects} projectsLoading={projects.loading} initialGroup={group} onTeam={()=>setTeam(true)} onProject={setProjectId} onClose={onClose}/>;
 }

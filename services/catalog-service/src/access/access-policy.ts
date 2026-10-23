@@ -36,6 +36,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (project && project[1] !== 'import-local') {
         const level = projectLevel(claims,activeRole,project[1]);
         if (!level) { return false; }
+        if(project[2]?.startsWith('team-chat'))return allowProjectChat(level,verb,project[2]);
         if(project[2]&&/^learning(?:[/%]|$)/.test(project[2]))return allowLearningRoute(level,request.method.toUpperCase(),project[2]);
         const trial = project[2] && allowAgentReadinessRoute(level, request.method.toUpperCase(), project[2]);
         if (typeof trial === 'boolean') return trial;
@@ -113,3 +114,10 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     return false;
 }
 
+
+/** Route admission complements fresh executor membership and authorship checks. */
+function allowProjectChat(level:number,verb:string,suffix:string):boolean {
+    if(suffix==='team-chat'||suffix==='team-chat/history')return ['GET','HEAD'].includes(verb);
+    if(suffix==='team-chat/participants')return verb==='PUT'&&level>=3;
+    return verb==='POST'&&level>=2&&(suffix==='team-chat/messages'||/^team-chat\/messages\/[a-f0-9-]{36}\/(retry|cancel)$/.test(suffix));
+}

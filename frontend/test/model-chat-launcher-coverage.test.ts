@@ -22,7 +22,7 @@ afterEach(()=>{hooks.dispose();vi.unstubAllGlobals();});
 
 describe('Общий launcher: права, intent, scope и клавиатурный фокус',()=>{
     it('Явное открытие фиксирует проект текущего route, lazy overlay сохраняет его при навигации под ним',async()=>{
-        render();expect(ui.button?.['aria-expanded']).toBe(false);expect(ui.overlay).toBeUndefined();expect(ui.tooltip).toContain('Личные диалоги');ui.button!.onClick();render();await settle();expect(ui.overlay?.projectId).toBe('prj-one');expect(ui.button?.['aria-expanded']).toBe(true);ui.pathname='/projects/prj-two';render();expect(ui.overlay?.projectId).toBe('prj-one');
+        render();expect(ui.button?.['aria-expanded']).toBe(false);expect(ui.overlay).toBeUndefined();expect(ui.tooltip).toContain('Команда проекта');ui.button!.onClick();render();await settle();expect(ui.overlay?.projectId).toBe('prj-one');expect(ui.overlay?.team).toBe(true);expect(ui.button?.['aria-expanded']).toBe(true);ui.pathname='/projects/prj-two';render();expect(ui.overlay?.projectId).toBe('prj-one');
     });
     it('Закрытие возвращает фокус подключённому trigger, следующее открытие берёт новый route scope',async()=>{
         render();ui.button!.onClick();render();await settle();ui.overlay!.onClose();await Promise.resolve();expect(target.focus).toHaveBeenCalledWith({preventScroll:true});render();expect(ui.button?.['aria-expanded']).toBe(false);ui.pathname='/store';ui.search='?p=prj-next';render();ui.button!.onClick();render();expect(ui.overlay?.projectId).toBe('prj-next');
@@ -33,8 +33,11 @@ describe('Общий launcher: права, intent, scope и клавиатурн
     it('Невалидный payload игнорируется, частично валидный payload не подменяет тип projectId/group',async()=>{
         render();for(const detail of [undefined,null,'project',42,false])dispatch(detail);render();expect(ui.overlay).toBeUndefined();dispatch({projectId:99,group:'true'});render();await settle();expect(ui.overlay?.projectId).toBeUndefined();expect(ui.overlay?.group).toBe(false);
     });
-    it.each([null,{activeRole:'Наблюдатель',userRoles:['Наблюдатель']},{activeRole:'Главный админ',userRoles:['Разработчик']},{activeRole:'unknown',userRoles:['unknown']}])('Сниженная/не назначенная роль %j не открывает чат через кнопку или событие',async(user)=>{
-        ui.user=user;render();expect(ui.button?.disabled).toBe(true);expect(ui.tooltip).toContain('нужна роль');ui.button!.onClick();dispatch({projectId:'prj-one',group:true});render();await settle();expect(ui.overlay).toBeUndefined();expect(ui.button?.['aria-expanded']).toBe(false);
+    it.each([null,{activeRole:'Главный админ',userRoles:['Разработчик']},{activeRole:'unknown',userRoles:['unknown']}])('Не назначенная роль %j не открывает чат через кнопку или событие',async(user)=>{
+        ui.user=user;render();expect(ui.button?.disabled).toBe(true);expect(ui.tooltip).toContain('нужен доступ');ui.button!.onClick();dispatch({projectId:'prj-one',group:true});render();await settle();expect(ui.overlay).toBeUndefined();expect(ui.button?.['aria-expanded']).toBe(false);
+    });
+    it('Наблюдатель открывает общую команду для чтения, не личный inference-диалог',async()=>{
+        ui.user={activeRole:'Наблюдатель',userRoles:['Наблюдатель']};render();expect(ui.button?.disabled).toBe(false);ui.button!.onClick();render();await settle();expect(ui.overlay).toMatchObject({projectId:'prj-one',team:true});
     });
     it('Смена auth scope немедленно скрывает private overlay и заменяет listener',async()=>{
         render();const original=listeners.get(OPEN_CHAT_EVENT);ui.button!.onClick();render();await settle();expect(ui.overlay).toBeDefined();ui.scope='bob:admin';ui.user={activeRole:'Главный админ',userRoles:['Главный админ']};render();expect(ui.overlay).toBeUndefined();expect(remove).toHaveBeenCalledWith(OPEN_CHAT_EVENT,original);expect(listeners.get(OPEN_CHAT_EVENT)).not.toBe(original);

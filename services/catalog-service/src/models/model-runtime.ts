@@ -21,9 +21,13 @@ export class ModelRuntime implements IModelInferenceRuntime {
         await requireFeaturesEnabled(features,process.env,globalThis.fetch,signal);signal?.throwIfAborted();
         if (this.usage) return this.usage.observe(model, endpoint, async signal => {
             // The durable usage reservation may wait on SQL; admit paid work again after that wait.
+            await context.beforeInference?.(); signal.throwIfAborted();
             await requireFeaturesEnabled(features,process.env,globalThis.fetch,signal);signal.throwIfAborted();
             return this.dispatch(model, endpoint, body, signal);
         }, signal);
+        await context.beforeInference?.(); signal?.throwIfAborted();
+        if (context.beforeInference) await requireFeaturesEnabled(features,process.env,globalThis.fetch,signal);
+        signal?.throwIfAborted();
         return this.dispatch(model, endpoint, body, signal);
     }
     private dispatch(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
