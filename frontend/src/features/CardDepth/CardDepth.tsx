@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
-import { installCardDepth } from './motion';
 import './CardDepth.less';
 
-/** The global appearance owner controls listener lifetime and feature availability. */
+/** Hover emphasis changes only the shadow; page cards never rotate or move. */
 export function CardDepth({ enabled }: { enabled: boolean }): null {
-    useEffect(() => enabled ? installCardDepth(document) : undefined, [enabled]);
+    useEffect(() => {
+        document.documentElement.classList.toggle('card-depth-enabled', enabled);
+        return () => document.documentElement.classList.remove('card-depth-enabled');
+    }, [enabled]);
     return null;
 }
