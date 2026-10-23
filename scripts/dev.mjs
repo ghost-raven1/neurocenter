@@ -16,7 +16,7 @@ import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
 import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
+const root = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const stateDir = path.join(root, '.run');
 const stateFile = path.join(stateDir, 'processes.json');
 const services = [
