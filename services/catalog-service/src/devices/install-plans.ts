@@ -10,6 +10,12 @@ import { DeviceStore } from './device-store';
 import { assertDeviceCatalogAsset, projectAssignedPackage } from './device-catalog-access';
 import { installPlanView, type InstallPlanInput, type InstallPlanRow } from './install-plan.model';
 import { assertInstallablePackage, packageDependencies, resolveInstallationSet, verifyInstallationSet } from './installation-set';
+import {CODEX_MANAGED_INSTALL_MESSAGE,isManagedCodexConnectorPackage} from '../../../shared/codex-connector-source.cjs';
+
+/** A managed connector is supplied to its wizard, not registered as an OpenCode plugin library. */
+function assertGenericInstallation(packages:readonly IPackage[]):void{
+    if(packages.some(isManagedCodexConnectorPackage))throw new ConflictException(CODEX_MANAGED_INSTALL_MESSAGE);
+}
 
 /** Неизменяемый пакет и отдельное одобрение его хэша внутри проекта. */
 @Injectable()
@@ -36,6 +42,7 @@ export class InstallPlans {
             ?? await this.artifacts.build(input.assetKind,input.assetId,input.version);
         if(pkg.plugin.kind!==input.assetKind||pkg.plugin.id!==input.assetId||pkg.plugin.version!==input.version)throw new ConflictException('Project package identity differs from the requested tool.');
         const set = await resolveInstallationSet(this.store.pool,input.projectId,pkg,(kind,id,version) => this.artifacts.build(kind,id,version));
+        assertGenericInstallation(set?.packages??[pkg]);
         const client=await this.store.pool.connect();
         try{
             await client.query('BEGIN');
@@ -73,7 +80,7 @@ export class InstallPlans {
             if (row.manifest !== input.expectedManifest || row.revision !== input.expectedRevision) {
                 throw new ConflictException('Решение по версии уже изменилось. Откройте план заново.');
             }
-            if(status==='approved')await this.catalog(row,client,true);
+            if(status==='approved'){assertGenericInstallation(row.installation_set?.packages??[row.package]);await this.catalog(row,client,true);}
             if (row.status === status) { await client.query('COMMIT'); return installPlanView(row); }
             const saved = await client.query<InstallPlanRow>(`UPDATE device_install_plans SET status=$2,revision=revision+1,
                 approved_by=CASE WHEN $2='approved' THEN $3 ELSE approved_by END,
@@ -102,6 +109,7 @@ export class InstallPlans {
             throw new ConflictException('План не соответствует инструменту, версии или проекту.');
         }
         if (row.status !== 'approved') { throw new ConflictException('Эта версия ещё не одобрена или её одобрение отозвано админом проекта.'); }
+        assertGenericInstallation(row.installation_set?.packages??[row.package]);
         await this.catalog(row,db);
         return {package: row.package, ...(row.installation_set ? { installSet: row.installation_set } : {})};
     }

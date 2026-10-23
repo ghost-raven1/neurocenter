@@ -41,6 +41,7 @@ COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.c
     services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \
     services/shared/device-codex-inference.cjs services/shared/device-codex-inference.d.cts \
     services/shared/codex-connector-pin.json \
+    services/shared/codex-connector-source.cjs services/shared/codex-connector-source.d.cts \
     services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts \
     services/shared/project-agents.cjs services/shared/project-agents.d.cts \
     services/shared/project-configuration.cjs services/shared/project-configuration.d.cts \

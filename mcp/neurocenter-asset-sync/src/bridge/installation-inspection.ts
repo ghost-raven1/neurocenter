@@ -15,6 +15,7 @@ import { LEDGER_PATH } from './installation-ledger.js';
 import { inspectLedger } from './inspection-ledger.js';
 import { InspectionReader, InspectionReadError } from './inspection-reader.js';
 import type { InstallationInspection, InspectionIssue, InspectionStatus } from './installation-inspection.model.js';
+import {isManagedCodexConnectorPackage} from './managed-codex-connector.js';
 
 const severity = { synced: 0, missing: 1, modified: 2, unknown: 3 };
 function utf8(bytes: Buffer): string {
@@ -92,6 +93,7 @@ export async function inspectInstallationAt(root: string, projectId: string, bin
     };
     try {
         verify(pkg);
+        if(isManagedCodexConnectorPackage(pkg))issue('config-modified','modified');
         const rawReceipt = await read(receiptPath(pkg), 256 * 1024);
         let receipt: Receipt | undefined;
         if (rawReceipt === null) { issue('receipt-missing', 'missing'); }

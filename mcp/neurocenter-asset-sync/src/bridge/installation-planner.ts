@@ -11,6 +11,7 @@ import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
 import { CONFIG_PATHS } from './installation-files.js';
 import type { InstallationPlan } from './installation-plan.js';
 import { repairReceipt } from './installation-repair.js';
+import {CODEX_MANAGED_INSTALL_MESSAGE,isManagedCodexConnectorPackage} from './managed-codex-connector.js';
 
 function parsePreviousReceipt(raw: string, base: string): Receipt {
     try {
@@ -27,6 +28,7 @@ function parsePreviousReceipt(raw: string, base: string): Receipt {
 export interface PlanInstallOptions { repair?: boolean; runtimeRepairPreview?: boolean; hostedMcp?: (pkg: Package) => Promise<string> }
 
 export async function planInstall(plan: InstallationPlan, pkg: Package, options: PlanInstallOptions = {}): Promise<void> {
+    if(isManagedCodexConnectorPackage(pkg))throw new Error(CODEX_MANAGED_INSTALL_MESSAGE);
     const root = plan.root;
     if (options.runtimeRepairPreview && !options.repair) { throw new Error('Пропуск проверки кэша допустим только в явном сравнении восстановления.'); }
     const runtime = runtimeArtifactConnection(pkg);

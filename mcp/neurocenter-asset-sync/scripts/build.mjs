@@ -15,6 +15,7 @@ try {
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     await fs.copyFile(path.join(root, '../../services/shared/device-codex-inference.cjs'), path.join(stage, 'dist/shared/device-codex-inference.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-pin.json'), path.join(stage, 'dist/shared/codex-connector-pin.json'));
+    await fs.copyFile(path.join(root, '../../services/shared/codex-connector-source.cjs'), path.join(stage, 'dist/shared/codex-connector-source.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-artifacts.cjs'), path.join(stage, 'dist/shared/runtime-artifacts.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/rag-index-contract.cjs'), path.join(stage, 'dist/shared/rag-index-contract.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/rag-ui-contract.cjs'), path.join(stage, 'dist/shared/rag-ui-contract.cjs'));
