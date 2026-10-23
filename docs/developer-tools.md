@@ -123,3 +123,22 @@ node --test --test-concurrency=1 \
 ```
 
 `tool-build-publication-deadline.mjs` отдельно проверяет три вида блокировок, меньшие SQL-лимиты, COMMIT/ROLLBACK и skill. Пока он использует тот же специальный приватный допуск PostgreSQL 16.15, что B09/CAS, а не только URL; переносимый bootstrap ещё не поставляется. Ни один из этих opt-in CLI не запускает PostgreSQL из обычного `check`. [Поведение, доказательства и пределы проверки](tool-build-publication-deadline.md).
+
+## Проверить доступ и восстановление публикации skill
+
+`scripts/test/skill-build-authorization.mjs` проверяет сборку skill и публичный `Service.importAsset(skill)` на настоящих Catalog/Skills методах, SQL и файловом хранилище. Нужны Node 24/POSIX, один явно собранный кандидат всех восьми пакетов и его квитанция замороженных исходников. Он использует специальный приватный допуск собственного PostgreSQL 16.15; одного PG URL недостаточно, переносимый bootstrap остаётся B12.
+
+Явные параметры окружения:
+
+- `SKILL_BUILD_AUTHORIZATION_CANDIDATE` — абсолютный путь `repository` из изолированной сборки;
+- `SKILL_BUILD_AUTHORIZATION_SOURCE_RECEIPT` — абсолютный путь к квитанции с `sourceFiles` и SHA каждого исходника;
+- `SKILL_BUILD_AUTHORIZATION_CONNECTION_FILE` — приватная опись свежего собственного кластера с действующим допуском;
+- `SKILL_BUILD_AUTHORIZATION_PHASE=candidate` — десять проверок исправленного кандидата. Фаза `baseline` исполняет шесть проверок старого кандидата; четыре воспроизведённых нарушения дают ненулевой exit и `causalRed:true`.
+
+```sh
+node scripts/test/skill-build-authorization.mjs
+```
+
+Профиль проверяет отказ после отзыва роли/OFF во время SQL-ожидания, порядок конкурирующего штатного `AccessDb.save`, а также OFF после native-записи до ACK и явное восстановление без новой версии. Перед подключением к БД фаза `candidate` требует совпадения текущих исходников и выбранного кандидата; после прогона проверяются SHA, удаление stages и собственной БД. При timeout финализатор отслеживает и текущий повторный запрос. Ошибка очистки исключает GREEN.
+
+Skills transport и доставка файлового аудита задаются внутри процесса; HTTP evaluator флагов настоящий на собственном управляемом endpoint. Профиль не принимает внешний middleware, весь жизненный цикл worker, браузер или обычный OpenCode. [Контракт доступа и восстановления](skill-publication-authorization.md).
