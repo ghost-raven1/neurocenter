@@ -4,17 +4,16 @@ import type { FC } from 'react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store';
 import { authLoginBlitz } from './redux/actions';
-import { LoginBackdrop } from './LoginBackdrop';
+import { BrandMark } from '../../common/components/BrandMark';
 import './LoginScreen.less';
 
 /** The existing Blitz sign-in keeps its loading/error state inside a quiet entry screen. */
 const LoginScreen: FC = () => {
     const { processing, error } = useSelector((state: RootState) => state.userBlock);
     return <main className="app__login login-screen">
-        <LoginBackdrop/>
         <div className="login-screen__shell">
             <div className="login-screen__brand">
-                <span className="login-screen__mark" aria-hidden="true"><svg viewBox="0 0 40 40" fill="none"><path d="M11 11v18m0-18 18 18m0-18v18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><circle cx="11" cy="11" r="3" fill="currentColor"/><circle cx="29" cy="11" r="3" fill="currentColor"/><circle cx="11" cy="29" r="3" fill="currentColor"/><circle cx="29" cy="29" r="3" fill="currentColor"/></svg></span>
+                <BrandMark className="login-screen__mark"/>
                 <Typography.Text strong>Нейроцентр</Typography.Text>
             </div>
             <div className="login-screen__content">

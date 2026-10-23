@@ -18,7 +18,7 @@ describe('Login redesign preserves the existing authentication action and feedba
     it('Offers one sign-in action and keeps decorative vectors outside the accessible content',()=>{
         const html=renderToStaticMarkup(createElement(LoginScreen));
         expect(html).toContain('Войти в Нейроцентр');expect(html.match(/<button/g)).toHaveLength(1);
-        expect(html).toContain('login-screen__background');expect(html).toContain('aria-hidden="true"');
+        expect(html).toContain('/brand-mark.svg');expect(html).toContain('aria-hidden="true"');
         view.button.onClick();expect(authLoginBlitz).toHaveBeenCalledOnce();
     });
     it('Retains processing and exposes a failed sign-in as an alert without removing retry',()=>{

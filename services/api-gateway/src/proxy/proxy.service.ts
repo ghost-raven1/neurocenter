@@ -22,6 +22,7 @@ import {featureFlagsFailure,requiredFeatureFlags} from '../features/feature-flag
 import {awaitEmbedding} from './embedding-deadline';
 import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 import {forwardModelInference,modelInferenceRoute} from './model-inference-forward';
+import {publicAppearance} from '../features/public-appearance';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -57,6 +58,9 @@ export class ProxyService {
      * @returns {Promise<void>}
      */
     public async forward(req: Request, res: Response): Promise<void> {
+        if(req.method==='GET'&&req.path==='/api/ui/appearance'){
+            res.setHeader('Cache-Control','no-store');res.json(await publicAppearance(this.http,this.featureFlagsUrl));return;
+        }
         if(req.path.startsWith('/api/device-channel/')){await this.deviceChannel(req,res);return;}
         const inference=modelInferenceRoute((req.method||'GET').toUpperCase(),canonicalAccessRoute(req.path));
         const inferenceOpen=()=>!inference||!req.aborted&&!res.destroyed&&!res.writableEnded;

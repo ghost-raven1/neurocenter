@@ -312,5 +312,13 @@
       "model_hosting"
     ],
     "defaultEnabled": true
+  },
+  {
+    "key": "neural_background",
+    "name": "Нейронный фон",
+    "description": "Декоративная нейронная сеть с мягкими импульсами на страницах. Учитывает уменьшение анимации.",
+    "group": "platform",
+    "dependsOn": [],
+    "defaultEnabled": true
   }
 ]

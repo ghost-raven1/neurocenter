@@ -1,3 +1,4 @@
+import { BrandMark } from '../../common/components/BrandMark';
 import { SettingOutlined, QuestionCircleOutlined, ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
 import { Button, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -99,7 +100,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         .filter(item => user?.routePermissions.includes(item.name))
         .map(item => ({ key: item.route, label: navigation[item.name]?.title ?? item.title, icon: navigation[item.name]?.icon }));
     const selected = items.find(item => location.pathname.startsWith(item.key));
-    const brand = <div className="app__brand"><DeploymentUnitOutlined /><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
+    const brand = <div className="app__brand"><BrandMark/><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
     const menuItems = [...items, {key: '/api/docs', className: 'app__documentation-item', label: <a className="app__documentation-link" href="/api/docs" target="_blank" rel="noopener noreferrer">Swagger API</a>, icon: <ApiOutlined />}];
     const menu = <nav aria-label="Основная навигация"><Menu theme="dark" mode="inline" items={menuItems} selectedKeys={selected ? [selected.key] : []} onClick={({key}) => { if (key !== '/api/docs') { history.push(key); } setMenuOpen(false); }} /></nav>;
 
@@ -109,7 +110,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
             {!compact && <Layout.Sider width={248} className="app__sidebar">{brand}{menu}<div className="app__sidebar-note">Инструменты, знания и проекты.<br />Всё необходимое для работы.{modelMonitorUrl && <a href={modelMonitorUrl} target="_blank" rel="noreferrer">Мониторинг моделей ↗</a>}</div></Layout.Sider>}
             <Layout className="app__workspace">
                 <Layout.Header className="app__header">
-                    <div className="app__location">
+                    <div className="app__location">{compact && <BrandMark className="app__header-mark"/>}
                         {compact && <Button type="text" icon={<MenuOutlined />} aria-label="Открыть меню" onClick={() => setMenuOpen(true)} />}
                         <Typography.Text type="secondary">Рабочее пространство</Typography.Text>
                         <span className="app__location-separator">/</span><Typography.Text strong>{selected?.label ?? 'Нейроцентр'}</Typography.Text>
@@ -126,7 +127,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                 </Layout.Header>
                 <Layout.Content id="main-content" tabIndex={-1} className="app__content"><div className="app__page">{children}</div></Layout.Content>
             </Layout>
-            <AccessibleDrawer title="Нейроцентр" placement="left" width={280} open={compact && menuOpen} onClose={() => setMenuOpen(false)} className="app__mobile-menu">{menu}</AccessibleDrawer>
+            <AccessibleDrawer title={<span className="app__drawer-brand"><BrandMark/>Нейроцентр</span>} placement="left" width={280} open={compact && menuOpen} onClose={() => setMenuOpen(false)} className="app__mobile-menu">{menu}</AccessibleDrawer>
             <AccessibleDrawer title="Операции" width={compact ? '100%' : 960} open={operationsVisible} onClose={closeOperations}
                 afterOpenChange={open => {
                     if (!open && restoreOperationsFocus.current) {

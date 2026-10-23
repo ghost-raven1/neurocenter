@@ -2,6 +2,7 @@ import block from 'bem-cn';
 import { FC } from 'react';
 
 import Router from './core/routes';
+import { VisualAppearance } from './features/Appearance/VisualAppearance';
 import 'antd/dist/antd.less';
 
 const b = block('app-root');
@@ -14,6 +15,7 @@ const b = block('app-root');
  */
 const App: FC = () => (
     <div className={b()}>
+        <VisualAppearance />
         <Router />
     </div>
 );
