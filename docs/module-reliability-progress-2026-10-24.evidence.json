@@ -375,5 +375,47 @@
       ".run/module-reliability/cache-policy-live-acceptance.json": "c47e4929e4f6b8d6b2a1b42b6199ce1a7d41211d1fd79e8981c42f699f3fe7ac",
       ".run/module-reliability/codex-retry-unknown-after-send-forensic.json": "720f769a3ba08ac0dee6119c4914ec07cfd7560c8716461e7f5561a3e84dc545"
     }
+  },
+  "codexPrivateDiagnosticsFollowup": {
+    "at": "2026-10-23T23:22:31.022Z",
+    "sourceHead": "6af829e873c22e8386b851b51cf6a28dcdf4f224",
+    "redFailed": 9,
+    "redPassed": 1,
+    "greenPassed": 10,
+    "relatedPassed": 38,
+    "skipped": 0,
+    "bridgeTypesPassed": true,
+    "buildContractPassed": 4,
+    "independentReview": "PASS",
+    "privateMetadataOnly": true,
+    "wireOrRetryPolicyChanged": false,
+    "httpErrorBodyRead": false,
+    "crashBeforeFinishMetadataGuaranteed": false,
+    "appliedBridge": false,
+    "realProviderResponseAccepted": false,
+    "officialMetadata": {
+      "selectedListed": true,
+      "selectedIsDefault": true,
+      "visibleModels": 7,
+      "includeToken": false,
+      "generationStarted": false
+    },
+    "sources": {
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/executor.ts": "72fa3473ffd78862cb5b2ec73a4dcb5193373b73efd5f02581ad914eee1217a1",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/receipts.ts": "0324ee09c89358171758e7d6438e91926e6230b52c129f79c5368253800fd39e",
+      "mcp/neurocenter-asset-sync/vitest.config.mts": "8671557f57c8a41fe961797f179420ec548f3a020d3ea41c655de90f5dc575a6",
+      "mcp/neurocenter-asset-sync/test/process-environment.mjs": "7accbd53a33dc85ec6c405c3d12e3a08223a3c358b8668be4162314a211b4871",
+      "mcp/neurocenter-asset-sync/test/device-codex-diagnostics.test.ts": "2b46b1f3f08ab0d8654cf781db7b05f143876f19e17c4b87a3d6d4e37161383c",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/diagnostics.ts": "50d66beae2145f9f4c481fa02d403e8d6ae5bbd7b41ec76dc05457074a938151",
+      "scripts/catalog-plugins/test/fixtures/codex-auth.json": "1082c7d3c666b294ec124f669400c1a94479cb07e2398656049993b980954924",
+      "services/shared/codex-connector-pin.json": "6d9922d502a18cfcfdafb74218e4a4265f6b8bb002f0cec69f365582bb2014ff",
+      "mcp/neurocenter-asset-sync/src/features/device-codex-inference/response.ts": "e57806c0da66783729e19ec4bb1e3df5dcb8abbcfbc887dc18f3ca274b4a8e78"
+    },
+    "receipts": {
+      ".run/module-reliability/codex-transport-diagnostics/receipt.json": "1c1b39af4b9a93522ac3a1074cbdc8211f0dea247edcb7824ad5c11a18af3bb8",
+      ".run/module-reliability/codex-transport-diagnostics/red.json": "290223af550d24a20fd38e0e8d48a84e21c3e3c21aefa08794ec2de2ac5540d4",
+      ".run/module-reliability/codex-transport-diagnostics/green.json": "1f2e8ef0de287ea3b10b2f6e1a6e275eb17e2c567b0939c6d62183fbea1103a6",
+      ".run/module-reliability/codex-official-model-metadata.json": "48c63162408b0da1840fb7503d14ac0e2f58739dc93024a2bb56a125b90d1195"
+    }
   }
 }
