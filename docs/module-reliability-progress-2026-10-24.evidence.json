@@ -538,5 +538,63 @@
       ".run/module-reliability/codex-personal-sse-pass.png": "1188f6516ea2ae5f420423d9dbc07a61bb9f891e40f2a5faf26a50e3723d64a1",
       ".run/module-reliability/codex-system-role-pass.png": "5a369fb10211356c9b19a585f77ba147f086d301bc467e06ff1d9e95ec0e0421"
     }
+  },
+  "nativeCodexAcceptance": {
+    "at": "2026-10-23T23:55:10.746Z",
+    "stage": "succeeded",
+    "engineVersion": "1.3.2",
+    "model": "gpt-6.1-sol",
+    "helperSHA": "5bc643cf9a63b7dfd0b2b1b9bf6e5df6da10755fd1077dc89ff33accf44ca435",
+    "sourcePin": "de21db304bef59af6421079c10e8a43404fd09fa",
+    "publicMarker": "NATIVE_CODEX_f7b8fb82-cf94-4a7c-9958-12cdf1146f84",
+    "sessionId": "ses_e94cfe957ffeuZLcFqyXH4iCVr",
+    "promptPosts": 1,
+    "metadataChecks": {
+      "homeOwned": true,
+      "workspaceOwned": true,
+      "configPathOwned": true,
+      "statePathOwned": true,
+      "wrapperOnly": true,
+      "providerOnly": true,
+      "mcpConfigEmpty": true,
+      "mcpRuntimeEmpty": true,
+      "instructionsEmpty": true,
+      "modelSelected": true,
+      "snapshotsOff": true,
+      "updatesOff": true,
+      "lspOff": true,
+      "formatterOff": true,
+      "schemaExpected": true,
+      "configUnchanged": true,
+      "toolIdsValid": true,
+      "codexToolPresent": true,
+      "agentPresent": true,
+      "agentSingleStep": true,
+      "agentModelSelected": true,
+      "permissionsDeny": true
+    },
+    "childReaped": true,
+    "profileRemoved": true,
+    "stockRetryPolicy": {
+      "helperPromptPostsMax": 1,
+      "helperResubmission": false,
+      "sdkStreamRetryDefault": 0,
+      "sessionRetry": "retryable-errors-until-abort",
+      "sessionRetryConfigurable": false,
+      "auth401RefreshRetryMax": 1,
+      "outboundCountEnforced": false
+    },
+    "modelDiagnostic": null,
+    "toolsInvoked": false,
+    "scope": "Installed ordinary OpenCode executable and global pinned wrapper in isolated temporary profile; no global MCP/project-config acceptance",
+    "outboundRequestsMeasured": false,
+    "receiptScope": "isolated native profile; no global MCP or delegation tools",
+    "receipts": {
+      ".run/module-reliability/native-codex-acceptance-proof.json": "fdca3b612f05d16a576a0ee711ab41094e2648884da7ed0d58af90fa0478b29c",
+      ".run/module-reliability/native-codex-f7b8fb82-cf94-4a7c-9958-12cdf1146f84.json": "76800f2ea2a2fe5625a841548cddf33619dcdc2644decbb48e3b0f140f61803c",
+      ".run/module-reliability/native-codex-official-source-proof.json": "1622a977e5b0a6b49581de3efe34ead04aeb503d5a44dd29839fbc93c19ba8dc",
+      ".run/module-reliability/native-codex-contract-fixtures-v3.json": "420dee1a04aac009b6fec3eca5abc029fd6d83dfcf8fd1f6e8201dddd6294eb4",
+      ".run/module-reliability/native-codex-bdc14ae6-e145-489b-a080-1e52df4f930c-cleanup.json": "57da99ea6f8139d3a59086248f47e653daefafe6e1a16320981ae0c103cc3e10"
+    }
   }
 }
