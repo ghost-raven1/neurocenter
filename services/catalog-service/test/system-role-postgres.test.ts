@@ -8,6 +8,7 @@ import { CATALOG_MIGRATIONS } from '../src/database/catalog-migrations';
 import { SystemRoleRepository } from '../src/system-roles/system-role.repository';
 import type { RoleRunRow } from '../src/system-roles/system-role.types';
 import { OperationRepository } from '../src/operations/operation-repository';
+import { assertSystemRoleSchema } from '../src/system-roles/system-role.schema-verification';
 const connection = process.env.CATALOG_TEST_PG_URL;
 describe.skipIf(!connection)('System role durable owner on caller-owned PostgreSQL', () => {
     let pool: Pool, admin: Pool, database: string, repository: SystemRoleRepository;
@@ -68,5 +69,17 @@ describe.skipIf(!connection)('System role durable owner on caller-owned PostgreS
         await pool.query("INSERT INTO operations(operation_id,type,project_id,resource_type,resource_id,actor,state,percent,log) VALUES('unrelated','MODEL',NULL,'model','model-one',$1,'SUCCEEDED',100,'[]'),('revoked-project','MODEL','prj-revoked','system-role',$2,$1,'SUCCEEDED',100,'[]')", [row.actor, row.id]);
         expect(await operations.get('unrelated', scope)).toBeNull(); expect(await operations.get('revoked-project', scope)).toBeNull();
         await pool.query("DELETE FROM operations WHERE operation_id IN ('unrelated','revoked-project')");
+    });
+    it.each([
+        'ALTER TABLE system_role_runs DISABLE TRIGGER system_role_run_guard',
+        'ALTER TABLE system_role_runs DROP CONSTRAINT system_role_runs_calls_started_check',
+        'DROP INDEX system_role_pending_runner',
+        'ALTER TABLE project_snapshot_verifiers DROP CONSTRAINT project_snapshot_verifiers_container_observation_check',
+        'CREATE OR REPLACE FUNCTION system_role_run_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$',
+    ])('rejects physical role or container observation drift: %s', async sql => {
+        const db = await pool.connect(); await db.query('BEGIN');
+        try { await db.query(sql); await expect(assertSystemRoleSchema(db as never)).rejects.toThrow('не готова'); }
+        finally { await db.query('ROLLBACK'); db.release(); }
+        await expect(assertSystemRoleSchema(pool)).resolves.toBeUndefined();
     });
 });
