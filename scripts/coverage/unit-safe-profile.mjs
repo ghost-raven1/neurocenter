@@ -203,8 +203,12 @@ export const auditedUnits=Object.freeze({
   "sha256": "53e5af61a205b93b193c48eb654c27fe1ec55e4bd99b9c854150bd2e5eb85e1a",
   "helpers": {}
  },
+ "services/feature-flags-service/test/flags-migration-rollback.test.ts": {
+  "sha256": "77bf88b3f22ffc8bcb3bad9860c9f20c1ad9dd4b2384d2b02292201800935ef3",
+  "helpers": {}
+ },
  "services/feature-flags-service/test/flags-repository.test.ts": {
-  "sha256": "a65208d7076a40a543dde1ea8faffc1a9a4c1ca9e3d641e8aad0edca85ca97ad",
+  "sha256": "9fdc94baa3f3268291c929333311321f151dac275361007047fc92ca661b2f31",
   "helpers": {}
  }
 });
