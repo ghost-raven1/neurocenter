@@ -21,5 +21,5 @@ export function useFeatureFlags() {
         return () => controller.dispose();
     }, [controller]);
     useSectionUpdates(['maintenance'], () => { void controller.refresh(); });
-    return { ...state, refresh: controller.refresh, save: controller.save, useCurrent: controller.useCurrent };
+    return { ...state, refresh: controller.refresh, save: controller.save, retryChoice: controller.retryChoice, useCurrent: controller.useCurrent };
 }

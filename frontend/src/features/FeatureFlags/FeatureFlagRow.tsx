@@ -7,11 +7,13 @@ import type { IFeatureFlag, TFeatureFlagKey } from './types';
 interface IProps {
     flag: IFeatureFlag; state: IFeatureFlagRowState; disabled: boolean;
     blockedBy?: TFeatureFlagKey[];
-    onChange: (enabled: boolean) => void; onRefresh: () => void; onUseCurrent: () => void;
+    onChange: (enabled: boolean) => void; onRefresh: () => void; onUseCurrent: () => void; onRetryChoice: () => void;
 }
 
 /** Switch показывает подтверждённое серверное значение до ответа на PATCH. */
-export function FeatureFlagRow({ flag, state, disabled, blockedBy = [], onChange, onRefresh, onUseCurrent }: IProps): JSX.Element {
+export function FeatureFlagRow({ flag, state, disabled, blockedBy = [], onChange, onRefresh, onUseCurrent, onRetryChoice }: IProps): JSX.Element {
+    const choice = state.choice, reviewed = !!choice && choice.reviewedRevision === flag.revision;
+    const matches = !!choice && choice.enabled === flag.enabled;
     return <div className="feature-flags__row">
         <div className="feature-flags__setting">
             <div className="feature-flags__description">
@@ -26,13 +28,27 @@ export function FeatureFlagRow({ flag, state, disabled, blockedBy = [], onChange
             </div>
             <Space className="feature-flags__control" size={12}>
                 <Tag color={flag.enabled ? blockedBy.length ? 'gold' : 'blue' : undefined}>{flag.enabled ? blockedBy.length ? 'Заблокирована' : 'Включена' : 'Выключена'}</Tag>
-                <Switch aria-label={flag.name} checked={flag.enabled} loading={state.saving} disabled={disabled || state.saving || state.needsReview}
+                <Switch aria-label={flag.name} checked={flag.enabled} loading={state.saving} disabled={disabled || state.saving || state.needsReview || !!choice}
                     checkedChildren="Вкл." unCheckedChildren="Выкл." onChange={onChange} />
             </Space>
         </div>
         {state.saving && <Typography.Text role="status" aria-live="polite" type="secondary">Сохраняем настройку…</Typography.Text>}
         {state.saved && <Typography.Text role="status" aria-live="polite" className="feature-flags__saved">Изменение подтверждено сервером</Typography.Text>}
-        {state.error && <Alert showIcon type={state.needsReview ? 'warning' : 'error'} className="feature-flags__error"
+        {choice && !state.saving && <Alert showIcon type={state.error && !state.needsReview ? 'error' : 'warning'} className="feature-flags__error"
+            message={reviewed && matches ? 'Текущее значение соответствует вашему выбору' : state.needsReview ? 'Настройку уже изменили' : 'Выбор сохранён в этой панели'}
+            description={<Space direction="vertical" size={8}>
+                {state.error && <span>{state.error}</span>}
+                <span>Ваш выбор: {choice.enabled ? 'включить' : 'выключить'}.</span>
+                <span>{reviewed ? matches ? 'Совпадение не подтверждает результат предыдущего запроса.'
+                    : 'Примените сохранённый выбор вручную или оставьте серверное значение.'
+                    : 'Сначала проверьте серверное состояние. Изменение не повторяется автоматически.'}</span>
+                <Space wrap>
+                    <Button disabled={disabled} onClick={onRefresh}>Проверить состояние</Button>
+                    {reviewed && !matches && <Button disabled={disabled} onClick={onRetryChoice}>Применить сохранённый выбор</Button>}
+                    <Button disabled={disabled || !reviewed} onClick={onUseCurrent}>Оставить серверное значение</Button>
+                </Space>
+            </Space>} />}
+        {!choice && state.error && <Alert showIcon type={state.needsReview ? 'warning' : 'error'} className="feature-flags__error"
             message={state.needsReview ? 'Настройку уже изменили' : 'Изменение не подтверждено'}
             description={<Space direction="vertical" size={8}>
                 <span>{state.error}</span>

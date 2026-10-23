@@ -72,7 +72,78 @@ describe('Состояние функций платформы', () => {
         await h.controller.save('tool_builds', false);
         expect(h.state.items?.[1].enabled).toBe(true); expect(h.state.rows.tool_builds.error).toBe('Нет ответа');
         await h.controller.refresh(); expect(h.state.rows.tool_builds.error).toBeNull();
-        await h.controller.save('tool_builds', false); expect(h.state.items?.[1].enabled).toBe(false);
+        await h.controller.retryChoice('tool_builds'); expect(h.state.items?.[1].enabled).toBe(false);
+    });
+    it('503 сохраняет выбранное значение после перепроверки без автоматического PATCH и ложного успеха', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
+        await h.controller.save('tool_builds', false);
+        expect(h.state.items?.[1]).toMatchObject({ enabled: true, revision: 1 });
+        expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: null }, saved: false, saving: false });
+        h.read.mockResolvedValue(list(flag('tool_builds', true, 3))); await h.controller.refresh();
+        expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: 3 }, saved: false });
+        expect(h.write).toHaveBeenCalledExactlyOnceWith('tool_builds', false, 1);
+        await h.controller.retryChoice('tool_builds');
+        expect(h.write).toHaveBeenLastCalledWith('tool_builds', false, 3);
+        expect(h.state.items?.[1]).toMatchObject({ enabled: false, revision: 4 });
+        expect(h.state.rows.tool_builds).toMatchObject({ choice: undefined, saved: true });
+    });
+    it('GET после неизвестного ACK может совпасть с выбором, но не подтверждает PATCH и не повторяет его', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
+        await h.controller.save('tool_builds', false);
+        h.read.mockResolvedValue(list(flag('tool_builds', false, 7))); await h.controller.refresh();
+        expect(h.state.items?.[1]).toMatchObject({ enabled: false, revision: 7 });
+        expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: 7 }, saved: false });
+        await h.controller.retryChoice('tool_builds'); expect(h.write).toHaveBeenCalledOnce();
+        h.controller.useCurrent('tool_builds');
+        expect(h.state.rows.tool_builds).toMatchObject({ choice: undefined, saved: false });
+        expect(h.write).toHaveBeenCalledOnce();
+    });
+    it('Непроверенный выбор и ошибка GET не разрешают повтор или тихую замену выбора', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
+        await h.controller.save('rag_sync', false);
+        await h.controller.retryChoice('rag_sync'); await h.controller.save('rag_sync', false); h.controller.useCurrent('rag_sync');
+        expect(h.write).toHaveBeenCalledOnce();
+        expect(h.state.rows.rag_sync.choice).toEqual({ enabled: false, reviewedRevision: null });
+        h.read.mockRejectedValueOnce(new Error('GET недоступен')); await h.controller.refresh();
+        await h.controller.retryChoice('rag_sync'); h.controller.useCurrent('rag_sync');
+        expect(h.state.rows.rag_sync.choice).toEqual({ enabled: false, reviewedRevision: null });
+        expect(h.state.readError).toBe('GET недоступен'); expect(h.write).toHaveBeenCalledOnce();
+        h.read.mockResolvedValue(list(flag('rag_sync', true, 5))); await h.controller.refresh();
+        h.controller.useCurrent('rag_sync'); expect(h.state.rows.rag_sync.choice).toBeUndefined();
+        expect(h.state.items?.[2]).toMatchObject({ enabled: true, revision: 5 }); expect(h.write).toHaveBeenCalledOnce();
+    });
+    it('409 сохраняет выбор, а каждый явный повтор использует ревизию новой GET-перепроверки', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(409));
+        h.read.mockResolvedValueOnce(list(flag('model_hosting', true, 6)));
+        await h.controller.save('model_hosting', false); await flush();
+        expect(h.state.rows.model_hosting).toMatchObject({ needsReview: true, choice: { enabled: false, reviewedRevision: 6 } });
+        expect(h.write).toHaveBeenCalledOnce();
+        h.write.mockRejectedValueOnce(httpError(409)); h.read.mockResolvedValueOnce(list(flag('model_hosting', true, 8)));
+        await h.controller.retryChoice('model_hosting'); await flush();
+        expect(h.write).toHaveBeenLastCalledWith('model_hosting', false, 6);
+        expect(h.state.rows.model_hosting).toMatchObject({ saved: false, choice: { enabled: false, reviewedRevision: 8 } });
+        expect(h.write).toHaveBeenCalledTimes(2);
+        await h.controller.retryChoice('model_hosting');
+        expect(h.write).toHaveBeenLastCalledWith('model_hosting', false, 8);
+        expect(h.state.rows.model_hosting).toMatchObject({ choice: undefined, needsReview: false, saved: true });
+    });
+    it('Потерянный ACK явного повтора снова требует GET, а не повторяет последний CAS', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
+        await h.controller.save('tool_builds', false);
+        h.read.mockResolvedValue(list(flag('tool_builds', true, 3))); await h.controller.refresh();
+        h.write.mockRejectedValueOnce(httpError(503)); await h.controller.retryChoice('tool_builds');
+        expect(h.write).toHaveBeenLastCalledWith('tool_builds', false, 3);
+        expect(h.state.rows.tool_builds.choice).toEqual({ enabled: false, reviewedRevision: null });
+        await h.controller.retryChoice('tool_builds'); expect(h.write).toHaveBeenCalledTimes(2);
+    });
+    it('Выбор прежней панели не переносится в новый scope, поздние ACK и GET его не восстанавливают', async () => {
+        const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
+        await h.controller.save('model_hosting', false); expect(h.state.rows.model_hosting.choice?.enabled).toBe(false);
+        const read = deferred<unknown>(); h.read.mockReturnValueOnce(read.promise); const previous = h.controller.refresh();
+        h.controller.dispose(); h.controller.activate(); h.read.mockResolvedValue(list()); await h.controller.refresh();
+        read.resolve(list(flag('model_hosting', false, 9))); await previous;
+        expect(h.state.rows.model_hosting.choice).toBeUndefined(); expect(h.state.items?.[0]).toMatchObject({ enabled: true, revision: 1 });
+        await h.controller.retryChoice('model_hosting'); expect(h.write).toHaveBeenCalledOnce();
     });
     it('Конфликт с неудачной перечиткой нельзя принять до успешного обновления', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(409)); h.read.mockRejectedValueOnce(new Error('Нет связи'));
@@ -88,6 +159,7 @@ describe('Состояние функций платформы', () => {
         await h.controller.save('model_hosting', false);
         expect(h.state.items?.[0].enabled).toBe(true); expect(h.state.rows.model_hosting.saved).toBe(false);
         expect(h.state.rows.model_hosting.error).toContain('не подтвердил');
+        expect(h.state.rows.model_hosting.choice).toEqual({ enabled: false, reviewedRevision: null });
     });
     it('Отказ доступа очищает прежние значения, временный отказ их сохраняет с предупреждением', async () => {
         const h = harness(); await h.controller.refresh(); h.read.mockRejectedValueOnce(new Error('Нет связи'));
