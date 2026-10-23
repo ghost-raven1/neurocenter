@@ -15,7 +15,7 @@ import {CODEX_REVISION} from './recipes/codex-bridge.mjs';
 /** Встроенный каталог задаёт только рецепты; упаковка совпадает с любым пользовательским расширением. */
 export function builtinRecipes() {
     const tools = [
-        ...npmTools.map(tool => ({ key: tool.key, name: tool.name, kind: 'mcp', description: tool.description, tags: tool.tags, revision: `${tool.version}-pack.1` })),
+        ...npmTools.map(tool => ({ key: tool.key, name: tool.name, kind: 'mcp', description: tool.description, tags: tool.tags, revision: `${tool.version}-pack.${tool.key==='memory'?2:1}` })),
         ...filePlugins.map(tool => ({ key: tool.key, name: tool.name, kind: 'plugin', description: tool.description, tags: tool.tags, revision: `${tool.revision ?? '1.0.0'}-pack.1` })),
         {key:'opencode-codex-bridge',name:'Codex — локальное подключение моделей',kind:'plugin',revision:CODEX_REVISION,tags:['Модели','ChatGPT','Локальный вход'],description:'Подключение моделей ChatGPT в OpenCode через официальный локальный Codex. Настройка и вход из интерфейса проекта; без ручного npm и изменения JSON. Ключи остаются на компьютере.'},
         { key: 'opencode-rag', name: 'OpenCodeRAG', kind: 'mcp', revision: RAG_REVISION, tags: ['RAG', 'npm', 'Локальная настройка'],

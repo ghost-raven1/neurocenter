@@ -37,7 +37,7 @@ export async function prepareNpmTool(tool, directory) {
     }
     await check(directory);
     if (nativeFiles.length) throw new Error('Общий JS-комплект содержит нативные зависимости. Нужна отдельная платформенная сборка.');
-    return { entrypoint: 'entrypoint.mjs' };
+    return { entrypoint: 'entrypoint.mjs', ...(tool.key==='memory'?{config:{transport:'stdio',command:'node',entrypoint:'entrypoint.mjs',args:[],extra:{learningMemory:{schemaVersion:1,package:'@modelcontextprotocol/server-memory',version:'1.0.0',projectionSchemaVersion:1}}}}:{}) };
 }
 
 export const filePlugins = [
