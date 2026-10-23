@@ -23,7 +23,7 @@ let flags:FeatureFlagValues,fetch:ReturnType<typeof vi.fn>;
 const model:IModel={id:'model-execution-flags',name:'QA',description:'',runtime:'ollama',capability:'chat',model:'qa:flags',dimension:null,manifestSha256:'a'.repeat(64),source:'custom',revision:1,createdAt:'',updatedAt:''};
 beforeEach(()=>{flags=defaultFeatureFlags();fetch=vi.fn(async()=>Response.json(evaluateFeatureFlags(flags)));vi.stubGlobal('fetch',fetch);vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','flags-execution-only');});
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();vi.restoreAllMocks();});
-function runtime(){const local={infer:vi.fn(async()=>({message:{role:'assistant',content:'Paid answer'},done_reason:'stop'}))},remote={infer:vi.fn()},usage={observe:vi.fn(async(_model,_endpoint,action,signal)=>action(signal))};return {local,remote,usage,runtime:new ModelRuntime(local as unknown as OllamaClient,remote as unknown as RemoteConnectionService,usage as unknown as ModelUsageService)};}
+function runtime(){const local={infer:vi.fn(async()=>({message:{role:'assistant',content:'Paid answer'},done_reason:'stop'}))},remote={infer:vi.fn()},usage={observe:vi.fn(async(_model,_endpoint,action,signal)=>action(signal??new AbortController().signal))};return {local,remote,usage,runtime:new ModelRuntime(local as unknown as OllamaClient,remote as unknown as RemoteConnectionService,usage as unknown as ModelUsageService)};}
 
 describe('Fresh paid inference boundary',()=>{
  for(const [purpose,key]of [['chat','model_chat'],['agent','group_chat'],['compaction','model_chat'],['project-search','project_search'],['learning','project_learning'],['direct','model_hosting'],['verification','model_hosting']] as const)it(purpose+' cannot bypass '+key,async()=>{
@@ -44,7 +44,7 @@ describe('Native API and saved worker boundaries',()=>{
  it('Native recovery and historical reads work with no feature service',async()=>{fetch.mockRejectedValue(Error('offline'));for(const [method,path]of [['GET','/api/model-chats/id/history'],['DELETE','/api/agents/id'],['POST','/api/model-chats/id/turns/t/cancel'],['PATCH','/api/feature-flags/agents']])await expect(guard.canActivate(context(method,path))).resolves.toBe(true);expect(fetch).not.toHaveBeenCalled();});
  it('Native API authenticates the trusted transport before consulting feature service',async()=>{await expect(guard.canActivate(context('POST','/api/models',{},'wrong'))).rejects.toHaveProperty('status',403);expect(fetch).not.toHaveBeenCalled();});
  it('Saved imports cannot start preparation or downloads after asset_sources is disabled',async()=>{
-  flags.asset_sources=false;const initial={id:'qa-import',actor:'owner',items:[],cancel_requested:false,state:'QUEUED'} as unknown as IImportJob;
+  flags.asset_sources=false;const initial={id:'qa-import',actor:'owner@example.test',items:[],cancel_requested:false,state:'QUEUED'} as unknown as IImportJob;
   const jobs={get:vi.fn(async()=>initial),save:vi.fn(async(_client,job,state,message,items)=>({...job,state,message,items}))},sources={get:vi.fn()},blobs={importAsset:vi.fn()},client={query:vi.fn(async()=>({rows:[{enabled:true,is_main_admin:true}]}))};
   const worker=new AssetImportWorker({} as Pool,jobs as unknown as AssetImportRepository,sources as never,blobs as never,{} as never);
   await (worker as unknown as {process(job:IImportJob,client:PoolClient,signal:AbortSignal):Promise<void>}).process(initial,client as unknown as PoolClient,new AbortController().signal);

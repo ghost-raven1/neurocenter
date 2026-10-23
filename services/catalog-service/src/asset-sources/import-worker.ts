@@ -16,10 +16,12 @@ import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import type { IImportItem, IImportJob, ISourceReceipt } from './import-types';
 import { publicationHash } from '../publication/publication-validation';
 import {assertBridgeHead} from './bridge-source-head';
+import {normalizeEmail} from '../access/access.model';
 
 /** Проверяется и перед supply, и под SQL row lock перед публикацией. Отзыв прав не обходится фоновой задачей. */
 export async function authorizeImportActor(client:Pick<PoolClient,'query'>,actor:string,lock=false):Promise<void> {
-    const {rows}=await client.query<{is_main_admin:boolean;enabled:boolean}>('SELECT is_main_admin,enabled FROM platform_users WHERE email=$1'+(lock?' FOR SHARE':''),[actor]);
+    let email:string;try{email=normalizeEmail(actor);}catch{throw new ForbiddenException('Нужна действующая почта главного администратора.');}
+    const {rows}=await client.query<{is_main_admin:boolean;enabled:boolean}>('SELECT is_main_admin,enabled FROM platform_users WHERE email=$1'+(lock?' FOR SHARE':''),[email]);
     if(!rows[0]?.enabled||!rows[0].is_main_admin){throw new ForbiddenException('Права главного администратора отозваны. Импорт остановлен.');}
 }
 const failureMessage=(error:unknown):string=>error instanceof HttpException?String(error.message).slice(0,1000):'Сервер не подтвердил этап импорта. Проверенные файлы сохранены; повтор продолжит эту операцию.';

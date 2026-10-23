@@ -1,7 +1,8 @@
-import { ConflictException, HttpException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { toSkillCreate, type ResolvedAsset, type SkillAsset } from '@neurocenter/asset-contract';
 import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
 import { importDependencyContext } from './tool-adapter';
+import {normalizeEmail} from '../access/access.model';
 
 export interface ISkillSnapshot extends INativeAssetPin {name?:string;archivedAt?:string;payloadHash?:string;importRequestKey?:string;archive?:{requestKey:string;previousHash:string;payloadHash:string;version:number;restore:boolean}}
 /** Только internal gateway-to-service вызовы; браузер не задаёт target URL или исполнителя. */
@@ -43,7 +44,8 @@ export class SkillAssetAdapter {
     }
     async publish(item:IImportItem,actor:string):Promise<INativeAssetPin>{
         if(item.action==='conflict'||!item.payload){throw new ConflictException('План не разрешает публикацию скилла.');}
-        return this.client.call<INativeAssetPin>('publish',{input:item.payload,requestKey:item.requestKey,actor,
+        let email:string;try{email=normalizeEmail(actor);}catch{throw new ForbiddenException('Требуется действующая почта исполнителя импорта.');}
+        return this.client.call<INativeAssetPin>('publish',{input:item.payload,requestKey:item.requestKey,actor:email,
             ...(item.expected?{expected:{id:item.expected.id,version:item.expected.version,hash:item.expected.hash}}:{})});
     }
 }
