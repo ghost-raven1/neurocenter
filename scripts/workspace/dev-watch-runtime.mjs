@@ -7,12 +7,18 @@ import {devProcessIdentity,ownsDevProcess} from './dev-processes.mjs';
 import {stopWatchGroup} from './dev-watch-owned.mjs';
 import {entryGeneration,pruneWatchGenerations,writeWatchFile} from './dev-watch-files.mjs';
 export async function saveWatchProcesses(root,records){const file=path.join(root,'.run/processes.json'),temporary=file+'.watch-'+process.pid;await fs.writeFile(temporary,JSON.stringify(records,null,2)+'\n',{mode:0o600});await fs.rename(temporary,file);}
+/** Mutable help and prepared delivery assets belong to the original checkout, outside disposable generations. */
+export function watchServiceEnvironment(root,service,environment){
+    if(service.name==='gateway')return {...environment,BRIDGE_TEMPLATES_DIR:environment.BRIDGE_TEMPLATES_DIR||path.join(root,'bridge-dist'),NODE_TLS_REJECT_UNAUTHORIZED:environment.NODE_TLS_REJECT_UNAUTHORIZED??'0'};
+    if(service.name==='catalog')return {...environment,HELP_CONTENT_DIR:environment.HELP_CONTENT_DIR||path.join(root,'services/catalog-service/content/help')};
+    return environment;
+}
 /** Environment stays in this process; public process records contain identity and runtime paths only. */
 export class WatchRuntime {
     constructor(config,guardian){this.config=config;this.guardian=guardian;this.active=new Map();this.closed=false;this.mcpEntry=null;}
     async persist(){const records=[this.config.watcherRecord,...[...this.active.values()].map(item=>item.record)];this.persisting=(this.persisting??Promise.resolve()).then(()=>saveWatchProcesses(this.config.root,records));await this.persisting;}
     async launch(service,entry,environment){
-        if(this.closed)throw Error('WATCH_STOPPED');const logFile=path.join(this.config.logDir,'neurocenter-'+service.name+'.log'),log=await fs.open(logFile,'a',0o600);
+        if(this.closed)throw Error('WATCH_STOPPED');environment=watchServiceEnvironment(this.config.root,service,environment);const logFile=path.join(this.config.logDir,'neurocenter-'+service.name+'.log'),log=await fs.open(logFile,'a',0o600);
         let child;try{child=spawn(this.config.node,[path.join(this.config.root,'scripts/workspace/dev-watch-child.mjs')],{cwd:path.join(this.config.root,service.dir),env:{PATH:path.dirname(this.config.node)+path.delimiter+'/usr/bin:/bin'},detached:true,stdio:['ignore',log.fd,log.fd,'ipc']});await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});}finally{await log.close();}
         const record={name:service.name,pid:child.pid,identity:devProcessIdentity(child.pid),entry,...this.mcpEntry&&servicePackages[service.name]?{mcpEntry:this.mcpEntry}:{}};
         if(!record.identity){child.kill('SIGKILL');throw Error('WATCH_PROCESS_IDENTITY');}

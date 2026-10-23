@@ -8,6 +8,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {nativeWatchFixture,until} from './dev-watch-native.fixture.mjs';
 import {stopWatchGroup} from '../workspace/dev-watch-owned.mjs';
 import {devProcessIdentity,discoverDevProcesses} from '../workspace/dev-processes.mjs';
+import {watchServiceEnvironment} from '../workspace/dev-watch-runtime.mjs';
+import {startDevWatch} from '../workspace/dev-watch-control.mjs';
 import {runBuildProcess} from '../workspace/isolated-build-process.mjs';
 const selected=[['catalog-service','services/catalog-service','main.js']];
 test('real compiler owner forwards a successful exit and cleans its complete group',async t=>{
@@ -23,8 +25,9 @@ test('a reused/foreign PID identity is refused without killing that process',asy
     const f=await nativeWatchFixture(t),command=path.join(f.root,'hold.cjs');await fs.writeFile(command,'setInterval(()=>{},1000);');const own=await f.owner([command]);await assert.rejects(stopWatchGroup({...own.record,identity:'another command'}),/PID_REUSED/);assert.ok(devProcessIdentity(own.record.pid));await stopWatchGroup(own.record);
 });
 test('successful generation restarts only the affected service, preserves environment privately, and prunes unused outputs',async t=>{
-    const f=await nativeWatchFixture(t),runtime=await f.runtime(),one=await f.generation('one');await runtime.start(one);for(const item of runtime.active.values())await runtime.ready(item);const oldCatalog=runtime.active.get('catalog').record.pid,oldGateway=runtime.active.get('gateway').record.pid,two=await f.generation('two');await runtime.publish(two,selected);
+    const f=await nativeWatchFixture(t),runtime=await f.runtime(),one=await f.generation('one');await fs.mkdir(path.join(f.root,'bridge-dist'));await fs.writeFile(path.join(f.root,'bridge-dist/install.sh'),'original installer');const help=path.join(f.root,'services/catalog-service/content/help');await fs.mkdir(help,{recursive:true});await fs.writeFile(path.join(help,'fixture.md'),'edited help');await runtime.start(one);for(const item of runtime.active.values())await runtime.ready(item);const oldCatalog=runtime.active.get('catalog').record.pid,oldGateway=runtime.active.get('gateway').record.pid,two=await f.generation('two');await runtime.publish(two,selected);
     assert.notEqual(runtime.active.get('catalog').record.pid,oldCatalog);assert.equal(runtime.active.get('gateway').record.pid,oldGateway);assert.deepEqual(await(await fetch('http://127.0.0.1:'+runtime.active.get('catalog').service.port+'/version')).json(),{value:'two'});
+    assert.deepEqual(await(await fetch('http://127.0.0.1:'+runtime.active.get('gateway').service.port+'/templates')).json(),{text:'original installer',tls:'0'});assert.deepEqual(await(await fetch('http://127.0.0.1:'+runtime.active.get('catalog').service.port+'/help')).json(),{text:'edited help'});
     const metadata=await fs.readFile(path.join(f.root,'.run/processes.json'),'utf8');assert.doesNotMatch(metadata,/NEVER_IN_METADATA|PRIVATE_FIXTURE_SECRET/);assert.equal((await fs.stat(path.join(f.root,'.run/processes.json'))).mode&0o777,0o600);
     const discovered=discoverDevProcesses(f.root,[...runtime.config.services]);assert.ok(discovered.some(record=>record.pid===runtime.active.get('catalog').record.pid));await runtime.close();assert.deepEqual(await fs.readdir(path.join(f.root,'.run/dev-watch/generations')),[]);
 });
@@ -33,4 +36,15 @@ test('failed new runtime restores the previous immutable runtime/shared bytes',a
 });
 test('stop during a compiler run removes npm-style descendants and reports cancellation',async t=>{
     const f=await nativeWatchFixture(t),file=path.join(f.root,'build.cjs');await fs.writeFile(file,`const {spawn}=require('node:child_process');spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'inherit'});process.on('SIGTERM',()=>{});setInterval(()=>{},1000);`);const abort=new AbortController();let pid;const pending=runBuildProcess({node:process.execPath,args:[file],cwd:f.root,env:{PATH:process.env.PATH},ownerFile:path.join(f.root,'scripts/workspace/dev-watch-child.mjs'),logFile:path.join(f.root,'cancel.log'),signal:abort.signal,onSpawn:value=>pid=value,timeoutMs:10000});await until(()=>pid);await delay(100);abort.abort();const result=await pending;assert.equal(result.failure.code,'CANCELLED');assert.equal(f.groupAlive(pid),false);
+});
+
+test('delivery/help defaults preserve manual settings and existing development TLS environment',()=>{
+    const root='/private/source checkout',manual={BRIDGE_TEMPLATES_DIR:'./manual-delivery',HELP_CONTENT_DIR:'/private/manual-help',NODE_TLS_REJECT_UNAUTHORIZED:'0'};
+    assert.deepEqual(watchServiceEnvironment(root,{name:'gateway'},manual),manual);assert.deepEqual(watchServiceEnvironment(root,{name:'catalog'},manual),manual);
+    assert.equal(watchServiceEnvironment(root,{name:'catalog'},{}).HELP_CONTENT_DIR,path.join(root,'services/catalog-service/content/help'));
+    assert.equal(watchServiceEnvironment(root,{name:'gateway'},{NODE_TLS_REJECT_UNAUTHORIZED:'1'}).NODE_TLS_REJECT_UNAUTHORIZED,'1');
+});
+test('failed initial process registry persistence stops the newly spawned guardian',async t=>{
+    const f=await nativeWatchFixture(t),sources=new URL('../workspace/',import.meta.url);for(const name of ['dev-watch-guardian.mjs','dev-watch-owned.mjs','dev-processes.mjs','dev-watch-files.mjs','dev-watch-plan.mjs','isolated-build-source.mjs'])await fs.copyFile(new URL(name,sources),path.join(f.root,'scripts/workspace',name));
+    await fs.mkdir(path.join(f.root,'.run/processes.json'));await assert.rejects(startDevWatch({root:f.root,node:process.execPath,logDir:path.join(f.root,'.run/logs'),services:[]}));await until(()=>discoverDevProcesses(f.root,[{name:'source-watch',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'}]).length===0);
 });
