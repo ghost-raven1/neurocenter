@@ -168,5 +168,31 @@
     "dev readiness gap remains",
     "frontend Docker image not accepted"
   ],
-  "at": "2026-10-23T21:41:25.753Z"
+  "at": "2026-10-23T21:41:25.753Z",
+  "application": {
+    "sourceHead": "341352666e5c087312c0c9a56d78dae403df694e",
+    "mainPushed": true,
+    "schemaVersion": 30,
+    "watchBuildPassed": true,
+    "installedBridge": {
+      "version": "0.9.18",
+      "buildId": "dde61fd39fa147c8296dd68263121b95872bd3de18dae3cf89905794dd795f58",
+      "preservationChecks": 15
+    },
+    "archive": {
+      "target": "darwin-arm64",
+      "sha256": "b35efb658fa282d32e4ec5dc907041208cd7d1611fa0ff0536cf45b392b87421",
+      "passedCases": 6,
+      "externalInferenceAccepted": false
+    },
+    "receipts": {
+      ".run/module-reliability/integration-main.json": "455f3d7cdded7711248a2f4665fd869b40a05205fb5ab01bdb2ae2a9cbca65ea",
+      ".run/module-reliability/foreign-after.json": "13f7430b93c850b6d1c1492dccba042a2f5ea55e22379eeb1c39c2fb1fa1b55f",
+      ".run/module-reliability/runtime-proof.json": "58ed203666668fe7d2c9438288de5bdd4b2c73290bc4d19721e2d0298ec4f757",
+      ".run/module-reliability/applied-postgres-policy.json": "d10ebf9947a851d28705ba8888e4184a58999e76f7504c37bd730a81b9915da0",
+      ".run/continuation-20261024/applied-codex-bridge-module-reliability.json": "50bece357407d007d908997e60ea5a047c677f9f5486f8186e1a9e2386d403da",
+      ".run/continuation-20261024/installed-module-reliability-after.json": "1ace55f62f8bbd4b51eaa0e58f8a12a21db809a71408724f92b25aa543c939c1",
+      ".run/continuation-20261024/archive-acceptance-FKwXeH/receipt.json": "85912e755de23dc906baf0f80b1ad510b72c70f9fc8e775e5b3bf59046cf16a8"
+    }
+  }
 }

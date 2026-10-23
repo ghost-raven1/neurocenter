@@ -30,15 +30,24 @@
 
 [Предложение по ролям](system-agent-roles-design-2026-10-24.md) описывает ответственность четырёх текущих агентов, передачу точного плана действующему сервису и проверяемый результат. Две новые роли предложены как отдельные последующие изменения: Куратор знаний и Контролёр качества. Проектные квоты, расширение tools и автоматическое применение не объявляются реализованными.
 
+## Применение на рабочем Mac
+
+- `main` и `origin/main` обновлены до `3413526`. Все 75 файлов соседней незавершённой работы сохранили исходные байты и mode. Перед применением активных заданий и inference calls не было.
+- Source watch успешно пересобрал и обновил семь сервисов/мост. Работающий Catalog использует schema30; Catalog, Auth, Flags и RAG прошли passive readiness. Gateway/Skills в этом снимке проверены по принадлежности процессов и liveness: их readiness может создавать данные и отдельно не вызывался.
+- Рабочему PostgreSQL применена `unless-stopped` без пересоздания контейнера и изменения `StartedAt`. Reboot Docker Desktop этим не проверен.
+- Установленный мост 0.9.18 обновлён до build `dde61fd39fa147c8296dd68263121b95872bd3de18dae3cf89905794dd795f58`, получен свежий heartbeat. Проверки сохранности настроек, устройства, credentials, workspace и pins: 15/15; предыдущая установка сохранена для отката.
+- Новый архив `neurocenter-asset-sync-darwin-arm64-0.9.18.tgz`, SHA256 `b35efb658fa282d32e4ec5dc907041208cd7d1611fa0ff0536cf45b392b87421`, прошёл 6/6 сценариев установки: собственный HOME с пробелами/кириллицей, отсутствие системных Node/npm/curl, сохранение ручных настроек, повтор установки и отказ на неверном SHA. Запуск bundled OpenCode/tool stream использовал локальный HTTP fixture; реальным ответом Codex он не считается.
+
 ## Что ещё требует завершения
 
 1. A7: автоматическое восстановление PG и честное отражение readiness в dev status/watch. Restart policy добавлена в `1d33198`; применение и runtime receipt фиксируются ниже. Правки dev-инструментов из другого чата сохраняются отдельно; перевод их проверок с liveness на readiness ещё не завершён.
-3. Применение готовых изменений в `main`, миграция/обновление работающих сервисов, новая сборка установленного моста и повторная приёмка соответствующего архива.
-4. Реальный Codex: доверенный connector → публикация/установка → import → ответ в чатах и агентах → native OpenCode. Повторный браузерный scan читает восемь моделей, но import по-прежнему блокируется отсутствием опубликованного connector. Последняя сборка была прервана перезапуском; предшествующая остановилась на резерве диска.
-5. Живая цепочка quirks → reported experience → approval → overlay/Memory → revoke cleanup. Сохранность ручных Memory observations обязательна.
+2. Реальный Codex: доверенный connector → публикация/установка → import → ответ в чатах и агентах → native OpenCode. Повторный браузерный scan читает восемь моделей, но import блокируется отсутствием опубликованного connector. После освобождения проверенного generated cache новая сборка `66d1fdf6-a8fc-4e43-a838-a0be929ad1b5` дошла до sandbox, где проверка вызвала служебную `createManagedCodexPlugin` как обычную SDK factory. Её default export намеренно возвращает пустые hooks; одного изменения выбора export недостаточно. Исправление контракта проверяется отдельно, сетевые и process ограничения не отключались.
+3. Живая цепочка quirks → reported experience → approval → overlay/Memory → revoke cleanup. Сохранность ручных Memory observations обязательна.
 
 ## Локальные свидетельства
 
 Raw JSON/logs и receipts для этого среза сохраняются в `.run/module-reliability/`; они игнорируются Git. A3: `rag-authorization/summary.json`; A4: `memory-handoff/`; root: `retry-red.json`, `retry-final.json`, `storage-causal-red.json`, `storage-native-final.json`, `deadline-{red,green}.json`, `nginx-syntax.json`. Манифест исходников и хешей доказательств фиксируется после итоговой интеграции. `codex-import-gate.png` — повторный наблюдаемый отказ мастера импорта, не успешное подключение.
 
 `integrated-final/receipt.json` содержит итог объединённой серии; первый timeout сохранён в `integrated/`. `upgrade-rehearsal.json` и `postgres-restart.json` относятся к собственным одноразовым средам. При подготовке restart fixture первый контейнер оказался auto-remove, а следующая попытка использовала меняющийся ephemeral host port; эти попытки не приняты как product evidence. Итоговый проверенный fixture использовал постоянное отображение свободного loopback-порта и отключённый auto-remove.
+
+Применение: `integration-main.json`, `foreign-after.json`, `runtime-proof.json`, `applied-postgres-policy.json`. Установленный мост: `.run/continuation-20261024/applied-codex-bridge-module-reliability.json`; новая установка из архива: `.run/continuation-20261024/archive-acceptance-FKwXeH/receipt.json`.
