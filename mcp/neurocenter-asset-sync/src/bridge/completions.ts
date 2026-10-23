@@ -3,6 +3,8 @@ import path from 'node:path';
 import { api, stateDir, readState, type Credentials } from './state.js';
 import { atomicText, syncDirectory } from './atomic-file.js';
 import { readBoundedUtf8 } from './read-bounded.js';
+import {DEVICE_CODEX_PROTOCOL} from '../features/device-codex-inference/contract.js';
+import {acknowledgeCodexReceipt,codexDeliveryResult} from '../features/device-codex-inference/receipts.js';
 
 export interface Completion {
     id: string;
@@ -75,9 +77,14 @@ export async function deliverCompletions(
             const archive = path.join(directory(), 'previous-devices');
             await fs.mkdir(archive, { recursive: true, mode: 0o700 });
             await fs.rename(path.join(directory(), item.id + '.json'), path.join(archive, item.id + '.json'));
+            if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
             continue;
         }
-        await send(item);
+        const delivered=item.result.protocol===DEVICE_CODEX_PROTOCOL
+            ? {...item,result:await codexDeliveryResult(item.id,item.deviceId,String(item.result.callId))}
+            : item;
+        await send(delivered);
+        if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
         await fs.rm(path.join(directory(), item.id + '.json'), { force: true });
     }
 }

@@ -43,6 +43,19 @@ describe('Private native model compilation and cross-scope namespace',()=>{
   const mappings=await projectAgentMappings(p,f.root,async()=>undefined);expect(mappings).toEqual([expect.objectContaining({provider,runtime:'remote-ollama',model:'qwen3:8b',baseUrl:'http://127.0.0.1:11434'})]);
   expect(compileProjectAgents(p,mappings).mappings).toEqual(mappings);
  });
+ it.each(['exact','model','url','options','transport','selector'])('catalog device Codex %s keeps the catalogue pin and exact native source selector',async issue=>{
+  const provider=issue==='selector'?'other-codex':'codexbridge';
+  await fs.writeFile(global(),JSON.stringify({provider:{[provider]:{npm:issue==='transport'?'@ai-sdk/openai-compatible':'@ai-sdk/openai',options:{baseURL:issue==='url'?'https://another.example.test/v1':'https://chatgpt.com/backend-api/codex'},models:{alias:{id:issue==='model'?'wrong-model':'qa-codex',options:{reasoningEffort:issue==='options'?'low':'high',store:false}}}}}}));
+  const p=createProjectAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[agent],modelRequirements:[{
+   kind:'catalog',agentId:agent.id,catalogModelId:'model-chat',modelPin:'d'.repeat(64),runtime:'device-codex',runtimeModel:'qa-codex',baseUrl:'https://chatgpt.com/backend-api/codex',options:{apiFormat:'responses',reasoningEffort:'high',store:false},capability:'chat',sourceSelector:'codexbridge/alias',
+  }]});
+  if(issue!=='exact'){await expect(projectAgentMappings(p,f.root,async()=>undefined)).rejects.toHaveProperty('code','OPENCODE_AGENT_MODEL_SETUP_REQUIRED');return;}
+  const mappings=await projectAgentMappings(p,f.root,async()=>undefined);expect(mappings).toEqual([expect.objectContaining({provider:'codexbridge',configKey:'alias',runtime:'remote-openai',model:'qa-codex'})]);
+  expect(compileProjectAgents(p,mappings).mappings).toEqual(mappings);
+  await configureProjectAgents(p,async()=>undefined,async()=>undefined,async value=>compileProjectAgents(p,value));
+  expect(await fs.readFile(path.join(f.root,agentFile(agent.slug)),'utf8')).toContain('"model": "codexbridge/alias"');
+  expect(p.agents[0]!.model).toBe('neurocenter/model-chat');expect(p.modelRequirements[0]).toHaveProperty('modelPin','d'.repeat(64));
+ });
  it('an unknown native SDK parameter is diagnosed without exporting its value or pretending compilation succeeded',async()=>{
   const privateValue='PRIVATE_NATIVE_PARAMETER';
   await fs.writeFile(global(),JSON.stringify({provider:{codexbridge:{npm:'@ai-sdk/openai',options:{baseURL:'https://chatgpt.com/backend-api/codex'},models:{alias:{options:{custom:{value:privateValue}}}}}}}));

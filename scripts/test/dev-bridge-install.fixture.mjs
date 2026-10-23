@@ -24,6 +24,7 @@ async function fixture(action,{paired=true,legacy=false}={}){
         await fs.writeFile(path.join(content,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version,type:'module'}));
         const requiredModules=[...modules];
         if((await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8')).includes('../features/opencode-providers/contract.js'))requiredModules.push('features/opencode-providers/contract.js','shared/opencode-providers.cjs');
+        if((await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8')).includes('../features/device-codex-inference/contract.js'))requiredModules.push('features/device-codex-inference/contract.js','shared/device-codex-inference.cjs');
         for(const module of requiredModules){const to=path.join(content,'dist',module);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(bridge,'dist',module),to);}
         await fs.writeFile(path.join(content,'dist/bridge/connect.js'),'export async function connectBridge(){throw Error("pair/connect forbidden in updater fixture");}\n');
         // A tiny wrapper avoids copying/compressing a native Node binary per unit case; model its installed execPath explicitly.

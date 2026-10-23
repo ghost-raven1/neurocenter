@@ -25,10 +25,11 @@ WORKDIR /app
 # --- MCP-мост neurocenter-asset-sync: нужен rag-sync-service для in-container restore_rag_db ---
 # В репо только исходники; node_modules/dist не копируются (.dockerignore) и собираются в образе.
 COPY mcp/neurocenter-asset-sync/package.json mcp/neurocenter-asset-sync/package-lock.json mcp/neurocenter-asset-sync/
+COPY mcp/neurocenter-asset-sync/vendor/ mcp/neurocenter-asset-sync/vendor/
 WORKDIR /app/mcp/neurocenter-asset-sync
 # Lock содержит Linux GNU-биндинги обеих архитектур. Проверяем загрузку сразу,
 # без повторного npm install, который пересчитывал версии вне lock-файла.
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
+RUN npm ci --install-links=true --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
 COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts \
@@ -36,6 +37,9 @@ COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.c
     services/shared/rag-ui-contract.cjs services/shared/rag-ui-contract.d.cts \
     services/shared/opencode-model-scan.cjs services/shared/opencode-model-scan.d.cts \
     services/shared/opencode-providers.cjs services/shared/opencode-providers.d.cts \
+    services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \
+    services/shared/device-codex-inference.cjs services/shared/device-codex-inference.d.cts \
+    services/shared/codex-connector-pin.json \
     services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts \
     services/shared/project-agents.cjs services/shared/project-agents.d.cts \
     services/shared/project-configuration.cjs services/shared/project-configuration.d.cts \

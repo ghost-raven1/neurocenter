@@ -63,6 +63,9 @@ import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 import { connectHostedRag, startHostedRagConnections, stopHostedRagConnections, type HostedSelection } from '../features/rag-hosted/index.js';
 import {synchronizeLearningObservations} from '../features/project-learning/observation-sync.js';
 import { synchronizeOpenCodeModels } from './opencode-model-sync.js';
+import {DEVICE_CODEX_JOB} from '../features/device-codex-inference/contract.js';
+import {runDeviceCodexJob} from '../features/device-codex-inference/executor.js';
+import {recoverCodexCompletions} from '../features/device-codex-inference/receipts.js';
 
 interface Job {
     id: string;
@@ -144,6 +147,7 @@ export async function runWorker(): Promise<void> {
             await recoverPendingWorkspaceIdentity();
             await recoverFileJobs();
             await recoverRuntimePreparations();
+            await recoverCodexCompletions(saveCompletion);
             await recoverRagRestores();
             await startHostedRagConnections();
             await deliverCompletions();
@@ -184,6 +188,14 @@ export async function runWorker(): Promise<void> {
                     }).catch(() => undefined);
                 }, 30000);
                 try {
+                    if(current.kind===DEVICE_CODEX_JOB){
+                        const completed=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runDeviceCodexJob(current,deviceId,authorize));
+                        clearInterval(renew);
+                        await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});
+                        await deliverCompletions();
+                        await heartbeat();
+                        continue;
+                    }
                     await authorize();
                     let result: unknown;
                     if(current.kind===PROJECT_CONFIGURATION_JOB){
@@ -327,6 +339,7 @@ export async function runWorker(): Promise<void> {
                     await deliverCompletions();
                 } catch (error) {
                     clearInterval(renew);
+                    if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
                     // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
                     if (current.kind !== 'inspect-installation') { await recoverFileJobs(); }

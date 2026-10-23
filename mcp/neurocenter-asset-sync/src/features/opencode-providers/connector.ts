@@ -1,5 +1,6 @@
 import path from 'node:path';
 import os from 'node:os';
+import {createRequire} from 'node:module';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {verify,type Package} from '../../bridge/package.js';
 import {resolvePreparedRuntimeArtifact} from '../runtime-artifacts/cache.js';
@@ -8,6 +9,10 @@ import type {ProviderContext} from './context.js';
 export interface CodexModel {id:string;name:string;inputModalities:string[]}
 export interface CodexLogin {url:string;finished:Promise<void>;close:()=>Promise<void>}
 interface CodexSetup {readCodexModels:(options?:{signal?:AbortSignal})=>Promise<{models:CodexModel[];defaultModel:string}>;beginCodexSetupLogin:(options?:{signal?:AbortSignal})=>Promise<CodexLogin>}
+interface CodexSession {accessToken:string;accountId:string;expiresAt:number}
+interface CodexAuthSession {createSessionReader:(load:(refresh:boolean)=>Promise<CodexSession>)=>(refresh?:boolean)=>Promise<CodexSession>;loadSession:(refresh:boolean,options:{env:NodeJS.ProcessEnv})=>Promise<CodexSession>}
+interface CodexAuthProvider {createCodexFetch:(read:(refresh:boolean,signal?:AbortSignal)=>Promise<CodexSession>,transport:typeof fetch)=>typeof fetch}
+const trustedPin=createRequire(import.meta.url)(fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'../../../../../services/shared/codex-connector-pin.json':'../../shared/codex-connector-pin.json',import.meta.url))) as {sourceCommit:string;version:string;sdkVersion:string};
 export const loginRequired=()=>Object.assign(new Error('Войдите в Codex на этом компьютере.'),{code:'CODEX_LOGIN_REQUIRED'});
 /** Only the server-approved full package and pinned auth-only recipe may enter the existing runtime cache. */
 export function connectorPackage(descriptor:OpenCodeProviderDescriptor,input:unknown):Package{
@@ -26,6 +31,27 @@ export async function loadConnector(context:ProviderContext):Promise<{setup:Code
     const {setupModule,pluginModule}=await resolveConnector(context),setup=await import(setupModule) as CodexSetup;
     if(typeof setup.readCodexModels!=='function'||typeof setup.beginCodexSetupLogin!=='function')throw new Error('Неподдерживаемый интерфейс коннектора.');
     return {setup,pluginModule};
+}
+/** Device inference loads the pinned Responses transport, without executing an OpenCode plugin or agent. */
+export function deviceCodexConnectorPackage(input:unknown):Package{
+    const pkg=structuredClone(input) as Package;
+    try{verify(pkg);}catch{throw new Error('Не подтверждена поставка коннектора Codex.');}
+    const metadata=pkg.config?.extra?.codexConnector as Record<string,unknown>|undefined;
+    if(pkg.plugin.kind!=='plugin'||!metadata||Object.keys(metadata).sort().join(',')!=='authOnly,schemaVersion,sdkVersion,sourceCommit,version'
+        ||metadata.schemaVersion!==1||metadata.authOnly!==true||metadata.sourceCommit!==trustedPin.sourceCommit||metadata.version!==trustedPin.version||metadata.sdkVersion!==trustedPin.sdkVersion)throw new Error('Коннектор Codex не соответствует закреплённому источнику.');
+    return pkg;
+}
+export async function loadDeviceCodexTransport(input:unknown,authorize:()=>Promise<unknown>,transport:typeof fetch):Promise<typeof fetch>{
+    const pkg=deviceCodexConnectorPackage(input),resolved=await resolvePreparedRuntimeArtifact(pkg);
+    if(!resolved)throw new Error('Подготовьте готовый комплект коннектора Codex.');
+    await authorize();
+    const auth=await import(pathToFileURL(path.join(resolved.root,'upstream/auth-session.js')).href) as CodexAuthSession;
+    const provider=await import(pathToFileURL(path.join(resolved.root,'upstream/auth-provider.js')).href) as CodexAuthProvider;
+    if(typeof auth.createSessionReader!=='function'||typeof auth.loadSession!=='function'||typeof provider.createCodexFetch!=='function')throw new Error('Неподдерживаемый интерфейс коннектора Codex.');
+    const codexHome=process.env.CODEX_HOME?path.resolve(process.env.CODEX_HOME):path.join(os.homedir(),'.codex');
+    const read=auth.createSessionReader(refresh=>auth.loadSession(refresh,{env:{...process.env,CODEX_HOME:codexHome}}));
+    await authorize();
+    return provider.createCodexFetch(async(refresh,signal)=>{signal?.throwIfAborted();await authorize();const session=await read(refresh);signal?.throwIfAborted();await authorize();return session;},transport);
 }
 export async function codexModels(context:ProviderContext,signal?:AbortSignal){
     signal?.throwIfAborted();const {setup}=await loadConnector(context),value=await setup.readCodexModels({signal});signal?.throwIfAborted();await context.assertCurrent();

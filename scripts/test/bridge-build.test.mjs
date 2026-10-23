@@ -36,6 +36,7 @@ async function fixture(source) {
     const root = path.join(workspace, 'mcp/neurocenter-asset-sync');
     await fs.mkdir(root, { recursive: true });
     await fs.mkdir(path.join(workspace, 'services/shared'), { recursive: true });
+    for(const name of ['device-codex-inference.cjs','codex-connector-pin.json','adapter-parameters.cjs'])await fs.copyFile(path.join(bridge,'../../services/shared',name),path.join(workspace,'services/shared',name));
     await fs.copyFile(shared, path.join(workspace, 'services/shared/runtime-artifacts.cjs'));
     await fs.copyFile(ragContract, path.join(workspace, 'services/shared/rag-index-contract.cjs'));
     await fs.copyFile(ragUiContract, path.join(workspace, 'services/shared/rag-ui-contract.cjs'));
@@ -47,6 +48,8 @@ async function fixture(source) {
     await fs.copyFile(path.join(bridge, '../../services/shared/opencode-model-scan.cjs'), path.join(workspace, 'services/shared/opencode-model-scan.cjs'));
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
+    await fs.cp(path.join(bridge,'vendor'),path.join(root,'vendor'),{recursive:true});
+    await fs.copyFile(path.join(bridge,'package-lock.json'),path.join(root,'package-lock.json'));
     await fs.copyFile(path.join(bridge, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'));
     await fs.writeFile(path.join(root, 'package.json'), '{"version":"0.2.0","type":"module"}');
     await fs.writeFile(path.join(root, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","outDir":"dist","rootDir":"src","skipLibCheck":true},"include":["src"]}');
