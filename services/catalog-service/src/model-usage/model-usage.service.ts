@@ -73,7 +73,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
         if (req.headers['x-neurocenter-device-id']) throw new ForbiddenException('Журнал доступен пользователю в интерфейсе.');
         const actor = await this.models.actor(req), filter = modelUsageFilter(query); await requireFeaturesEnabled(['model_usage']);
         if (!['Главный админ', 'Админ проекта', 'Разработчик'].includes(actor.activeRole)) throw new ForbiddenException('Для просмотра журнала нужна рабочая роль.');
-        const scope: UsageScope = { all: actor.activeRole === 'Главный админ', actor: actor.activeRole === 'Разработчик' ? actor.email : null,
+        const scope: UsageScope = { all: actor.activeRole === 'Главный админ', actor: actor.activeRole === 'Разработчик' ? actor.email : null, viewerEmail: actor.email,
             projectIds: actor.claims.projects.filter(project => projectLevel(actor.claims, actor.activeRole, project.projectId) >= (actor.activeRole === 'Админ проекта' ? 3 : 2)).map(project => project.projectId) };
         if (filter.projectId) {
             if (scope.all) filter.projectId = await this.repository.canonicalProject(filter.projectId);
@@ -84,8 +84,10 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
             }
         }
         if (scope.actor && filter.actorEmail !== undefined && filter.actorEmail !== scope.actor) throw new ForbiddenException('Можно просматривать только собственные операции.');
-        const result = await this.repository.report(scope, filter), current = await this.models.actor(req);
+        const result = await this.repository.report(scope, filter);
+        const current = await this.models.actor(req);
         if (current.email !== actor.email || current.activeRole !== actor.activeRole || JSON.stringify(current.claims.projects) !== JSON.stringify(actor.claims.projects)) throw new ForbiddenException('Права изменились. Обновите журнал.');
+        await this.repository.assertPrivateAudience(scope.viewerEmail, result.privateRooms);
         const to = new Date(result.windowTo), from = new Date(to.getTime() - filter.days * 86400000);
         return { scope: {kind: scope.all ? 'all' : scope.actor ? 'self' : 'projects', actorEmail: scope.actor, projectIds: scope.projectIds},
             facets: result.facets, byActor: result.byActor, byProject: result.byProject, byEndpoint: result.byEndpoint, byAgent: result.byAgent, series: result.series,

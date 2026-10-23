@@ -17,7 +17,7 @@ const configuration = (detail: ProjectChatDetail): string => JSON.stringify([det
 
 /** Only shared-room agents are configured here; project membership remains managed by its own screen. */
 export function ProjectChatParticipants({projectId, detail, saving, error, onClose, onSave}: Props): JSX.Element {
-    const {captureOwner} = useAuthRequestOwner(), flags = useFeatureAvailability('project_chat', 'group_chat'), models = useModelCatalog(projectId);
+    const {captureOwner} = useAuthRequestOwner(), flags = useFeatureAvailability('project_chat', 'group_chat', ...(detail.room.id && detail.room.id !== '00000000-0000-0000-0000-000000000000' ? ['project_chat_dialogs' as const] : [])), models = useModelCatalog(projectId);
     const [modelId, setModelId] = useState(detail.room.modelId ?? ''), [selected, setSelected] = useState(detail.room.agentIds);
     const [items, setItems] = useState<IModelChatParticipant[]>(detail.agents), [loading, setLoading] = useState(false), [loadError, setLoadError] = useState(''), [attempt, setAttempt] = useState(0);
     const [base, setBase] = useState(() => configuration(detail));
@@ -47,7 +47,7 @@ export function ProjectChatParticipants({projectId, detail, saving, error, onClo
     };
     return <section className="project-chat__settings" aria-label="Настройка агентов команды">
         <div className="project-chat__settings-heading"><Typography.Title level={5}>Агенты команды</Typography.Title><Button disabled={saving} onClick={onClose}>Закрыть настройку</Button></div>
-        <Typography.Paragraph type="secondary">Люди проекта уже в чате. Выберите модель и агентов, если хотите спрашивать их здесь. Обычное сообщение коллегам не вызывает модель.</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">{detail.room.visibility === 'PRIVATE' ? 'Доступ имеют только выбранные люди диалога.' : 'Люди проекта уже в чате.'} Выберите модель и агентов, если хотите спрашивать их здесь. Обычное сообщение коллегам не вызывает модель.</Typography.Paragraph>
         <label>Базовая модель<Select aria-label="Базовая модель агентов команды" value={modelId || undefined} placeholder="Выберите готовую модель проекта" showSearch optionFilterProp="label" loading={models.loading} disabled={saving || !flags.enabled || !detail.canConfigure}
             options={availableModels.map(value => ({value: value.id, label: value.name}))} onChange={value => {setModelId(value); setModelTouched(true); setLoadError('');}}/></label>
         {models.error && <Alert type="error" showIcon message={models.error} action={<Button onClick={() => {void models.refresh();}}>Повторить проверку моделей</Button>}/>}

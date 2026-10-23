@@ -1,3 +1,5 @@
+import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
+import {PROJECT_CHAT_DIALOGS_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat-dialogs.schema-verification';
 import {PROJECT_CHAT_SCHEMA_SQL} from '../project-chat/project-chat.schema';
 import {PROJECT_CHAT_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat.schema-verification';
 import {MODEL_RATE_LIMITS_SCHEMA_SQL} from '../model-rate-limits/model-rate-limits.schema';
@@ -66,4 +68,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:22,name:'help-and-catalog-discussions',sql:DISCUSSIONS_SCHEMA_SQL+'\n'+DISCUSSIONS_SCHEMA_ASSERT_SQL},
     {version:23,name:'shared-project-team-chat',sql:PROJECT_CHAT_SCHEMA_SQL+'\n'+PROJECT_CHAT_SCHEMA_ASSERT_SQL},
     {version:24,name:'per-model-api-rate-limits-and-usage-detail',sql:MODEL_RATE_LIMITS_SCHEMA_SQL+'\n'+MODEL_USAGE_DETAILS_SCHEMA_SQL+'\n'+MODEL_RATE_LIMITS_SCHEMA_ASSERT_SQL},
+    {version:25,name:'public-and-private-project-dialogues',sql:PROJECT_CHAT_DIALOGS_SCHEMA_SQL+'\n'+PROJECT_CHAT_DIALOGS_SCHEMA_ASSERT_SQL},
 ];

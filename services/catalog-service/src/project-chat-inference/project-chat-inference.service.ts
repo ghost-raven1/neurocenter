@@ -13,6 +13,8 @@ import { ModelRuntime } from '../models/model-runtime';
 import { modelInferenceBody } from '../models/inference.controller';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import type { IModel } from '../models/model.types';
+import {assertProjectChatRoomAccess} from '../project-chat/project-chat-room-access';
+import {DEFAULT_PROJECT_CHAT_ROOM} from '../project-chat/project-chat.types';
 import type { ProjectChatDb, ProjectChatInference, ProjectChatMessageRow, ProjectChatRoomRow } from '../project-chat/project-chat.types';
 import { projectChatContext } from './project-chat-context';
 import { projectChatModels } from './project-chat-models';
@@ -58,16 +60,20 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     }
     async infer({ req, projectId, source, response, signal }: Parameters<ProjectChatInference['infer']>[0]) {
         const snapshot = response.snapshot;
-        if (!snapshot || source.project_id !== projectId || response.project_id !== projectId || response.source_message_id !== source.id) throw new ConflictException('Ответ относится к другому сообщению проекта.');
+        if (!snapshot || source.project_id !== projectId || response.project_id !== projectId || response.source_message_id !== source.id || (source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM) !== (response.room_id ?? DEFAULT_PROJECT_CHAT_ROOM)) throw new ConflictException('Ответ относится к другому сообщению проекта.');
         const actor = await this.models.actor(req);
         if (actor.email !== source.author_email) throw new ConflictException('Автор принятого запроса изменился.');
         const learning = await this.groups.learning.prepare(req, { project_id: projectId, owner_email: actor.email }, snapshot.agentId, signal);
+        let privateRoomId: string | undefined;
         const authorize = async (beforeCall = true) => {
             signal.throwIfAborted(); await this.assert(req, projectId, snapshot);
             if (beforeCall) await learning.beforeInference(); else await learning.assertAuthorized();
-            const room = (await this.models.pool.query<{ agent_ids: string[] }>('SELECT agent_ids FROM project_chat_rooms WHERE project_id=$1', [projectId])).rows[0];
+            const room = (await this.models.pool.query<ProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [projectId, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM])).rows[0];
+            if (!room) throw new ConflictException('Диалог недоступен.');
+            await assertProjectChatRoomAccess(this.models.pool, room, actor.email);
+            privateRoomId = room.visibility === 'PRIVATE' ? source.room_id : undefined;
             if (!room?.agent_ids.includes(snapshot.agentId)) throw new ConflictException('Агент исключён из общей комнаты. Готовые ответы сохранены.');
-            const active = await this.models.pool.query(`SELECT 1 FROM project_chat_messages s JOIN project_chat_messages r ON r.project_id=s.project_id AND r.source_message_id=s.id
+            const active = await this.models.pool.query(`SELECT 1 FROM project_chat_messages s JOIN project_chat_messages r ON r.project_id=s.project_id AND r.room_id=s.room_id AND r.source_message_id=s.id
                 WHERE s.project_id=$1 AND s.id=$2 AND r.id=$3 AND s.generation=$4 AND r.generation=$4
                 AND s.status='running' AND r.status='running' AND s.lease_until>now() AND r.lease_until>now()`,
                 [projectId, source.id, response.id, response.generation]);
@@ -81,8 +87,8 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const options = { ...(snapshot.definition.temperature === undefined ? {} : { temperature: snapshot.definition.temperature }),
             ...(snapshot.definition.topP === undefined ? {} : { top_p: snapshot.definition.topP }),
             ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) };
-        const result = await withModelUsage({ purpose: 'agent', actorEmail: actor.email, projectId, agentId: snapshot.agentId,
-            turnId: source.id, operationId: response.id, requiredFeatures: ['project_chat', ...learning.requiredFeatures], beforeInference: () => authorize() },
+        const result = await withModelUsage({ purpose: 'agent', privateProjectChatRoomId: privateRoomId, actorEmail: actor.email, projectId, agentId: snapshot.agentId,
+            turnId: source.id, operationId: response.id, requiredFeatures: ['project_chat', 'group_chat', ...((source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM) === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]), ...learning.requiredFeatures], beforeInference: () => authorize() },
             () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
         await authorize(false);
         const message = result.message as Record<string, unknown> | undefined;
@@ -109,7 +115,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const rows: ProjectChatMessageRow[] = [], visited = new Set<string>(); let id = source.reply_to_id;
         while (id && visited.size < 8 && !visited.has(id)) {
             visited.add(id);
-            const row = (await this.models.pool.query<ProjectChatMessageRow>('SELECT * FROM project_chat_messages WHERE project_id=$1 AND id=$2 AND position<$3', [projectId, id, source.position])).rows[0];
+            const row = (await this.models.pool.query<ProjectChatMessageRow>('SELECT * FROM project_chat_messages WHERE project_id=$1 AND id=$2 AND position<$3 AND room_id=$4', [projectId, id, source.position, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM])).rows[0];
             if (!row) break;
             if (row.content && (row.kind === 'user' || row.kind === 'agent' && row.status === 'done')) rows.push(row);
             id = row.reply_to_id;

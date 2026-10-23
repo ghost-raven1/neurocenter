@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, ServiceUnav
 import type { Request } from 'express';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatRepository } from './project-chat.repository';
+import {DEFAULT_PROJECT_CHAT_ROOM} from './project-chat.types';
 import type { ProjectChatInference, ProjectChatJob, ProjectChatMessageRow, ProjectChatStatus } from './project-chat.types';
 
 const safeFailure = (error: unknown): string => error instanceof BadRequestException || error instanceof ConflictException || error instanceof ForbiddenException || error instanceof ServiceUnavailableException
@@ -56,16 +57,16 @@ export class ProjectChatRunner {
         }
     }
     private async execute(job: ProjectChatJob, signal: AbortSignal): Promise<void> {
-        const req = this.request(job), responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id);
+        const roomId = job.source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM, req = this.request(job), responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id, roomId);
         for (const response of responses.filter(row => row.kind === 'agent' && row.status !== 'done')) {
             signal.throwIfAborted();
             try {
-                await requireFeaturesEnabled(['project_chat', 'group_chat']);
+                await requireFeaturesEnabled(['project_chat', 'group_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const])]);
                 await this.repository.scoped(job.projectId, job.actor, 2, false, async (db, room) => {
                     await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
                     if (!room.agent_ids.includes(response.snapshot!.agentId)) throw new ConflictException('Агент исключён из состава чата. Уже полученные ответы сохранены.');
                     await this.inference.assert(req, job.projectId, response.snapshot!, db);
-                });
+                }, false, roomId);
                 const answer = await this.inference.infer({ req, projectId: job.projectId, source: job.source, response, signal });
                 signal.throwIfAborted();
                 if (!answer.content.trim() || Buffer.byteLength(answer.content) > 8 * 1024 ** 2) throw new BadRequestException('Агент вернул пустой или слишком большой ответ.');
@@ -76,7 +77,7 @@ export class ProjectChatRunner {
                     const changed = await db.query("UPDATE project_chat_messages SET status='done',content=$4,usage=$5::jsonb,error=NULL,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running' AND lease_until>now()", [job.projectId, response.id, job.generation, answer.content, answer.usage ? JSON.stringify(answer.usage) : null]);
                     if (!changed.rowCount) throw new ConflictException('Ответ уже остановлен или завершён.');
                     await this.inference.assert(req, job.projectId, response.snapshot!, db); await this.repository.bump(db, room);
-                });
+                }, false, roomId);
             } catch (error) {
                 signal.throwIfAborted();
                 if (error instanceof ForbiddenException) throw error;
@@ -84,22 +85,22 @@ export class ProjectChatRunner {
                     await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
                     await db.query("UPDATE project_chat_messages SET status='failed',error=$4,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running'", [job.projectId, response.id, job.generation, safeFailure(error)]);
                     await this.repository.bump(db, room);
-                });
+                }, false, roomId);
             }
         }
         await this.repository.scoped(job.projectId, job.actor, 2, true, async (db, room) => {
             signal.throwIfAborted(); await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
-            const children = await this.repository.children(db, job.projectId, job.source.id), complete = children.filter(row => row.kind === 'agent').every(row => row.status === 'done');
+            const children = await this.repository.children(db, job.projectId, job.source.id, roomId), complete = children.filter(row => row.kind === 'agent').every(row => row.status === 'done');
             await db.query("UPDATE project_chat_messages SET status=$4,content=$5,error=NULL,lease_until=NULL WHERE project_id=$1 AND source_message_id=$2 AND kind='summary' AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', projectChatSummary(job.source, children)]);
             await db.query("UPDATE project_chat_messages SET status=$4,error=$5,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', complete ? null : 'Не все агенты ответили. Готовые ответы сохранены; можно повторить недостающие.']);
             await this.repository.bump(db, room);
-        });
+        }, false, roomId);
     }
     /** Cleanup is allowed after revocation but can publish only a safe terminal status, never model output. */
     private async fail(job: ProjectChatJob, status: ProjectChatStatus, error: string): Promise<void> {
         await this.repository.transaction(async db => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['project-chat:' + job.projectId]);
-            const room = await this.repository.room(db, job.projectId, true); if (!room.revision) return;
+            const room = await this.repository.room(db, job.projectId, true, job.source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM); if (!room.revision) return;
             const changed = await db.query("UPDATE project_chat_messages SET status=$4,error=$5,lease_until=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, status, error]);
             if (changed.rowCount) await this.repository.bump(db, room);
         });

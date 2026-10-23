@@ -33,7 +33,9 @@ export interface ModelUsageQuery { days?: string; projectId?: string; modelId?: 
 export interface ModelUsageRecorder {
     observe(model: IModel, endpoint: 'chat' | 'embed', action: (signal: AbortSignal) => Promise<Record<string, unknown>>, signal?: AbortSignal): Promise<Record<string, unknown>>;
 }
-export interface UsageScope { all: boolean; actor: string | null; projectIds: string[] }
+export interface UsageScope { all: boolean; actor: string | null; projectIds: string[]; viewerEmail: string }
+/** Internal report authorization refs; never included in the public usage response. */
+export interface UsagePrivateRoom { projectId: string; roomId: string }
 export interface UsageFilter { days: number; projectId?: string; modelId?: string; purpose?: ModelUsagePurpose; status?: ModelUsageStatus; cursor?: { startedAt: string; id: string }; limit: number;
     actorEmail?: string | null; agentId?: string; endpoint?: 'chat' | 'embed'; provider?: string }
 export interface UsageTerminal { status: 'success' | 'error' | 'cancelled'; inputTokens: number | null; outputTokens: number | null; latencyMs: number;

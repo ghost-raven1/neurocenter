@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { ModelUsageItem, ModelUsageResult, UsageFilter, UsageScope } from './model-usage.types';
+import type { ModelUsageItem, ModelUsageResult, UsageFilter, UsagePrivateRoom, UsageScope } from './model-usage.types';
 
 const totals = `count(*) AS requests,count(*) FILTER(WHERE status='success') AS success,count(*) FILTER(WHERE status='error') AS error,
 count(*) FILTER(WHERE status='cancelled') AS cancelled,count(*) FILTER(WHERE status='interrupted') AS interrupted,count(*) FILTER(WHERE status='pending') AS pending,
@@ -10,7 +10,7 @@ sum(rate_wait_ms)::text AS "rateWaitMs",avg(provider_latency_ms)::float AS "aver
 
 /** Facets and every aggregate share one authorized period; user filters only narrow that relation. */
 export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): { sql: string; values: unknown[] } {
-    const values: unknown[] = [filter.days, scope.all, scope.actor, scope.projectIds], where: string[] = [];
+    const values: unknown[] = [filter.days, scope.all, scope.actor, scope.projectIds, scope.viewerEmail], where: string[] = [];
     const bind = (value: unknown): string => { values.push(value); return '$' + values.length; };
     for (const [column, value] of [['project_id', filter.projectId], ['model_id', filter.modelId], ['agent_id', filter.agentId], ['purpose', filter.purpose], ['status', filter.status], ['endpoint', filter.endpoint], ['provider', filter.provider]])
         if (value !== undefined) where.push(column + '=' + bind(value));
@@ -24,12 +24,20 @@ export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): {
     const facetModels = array(`SELECT model_id AS id,max(model_name) AS name FROM scoped GROUP BY model_id ORDER BY name,id`);
     const facetAgents = array(`SELECT agent_id AS id,coalesce(max(agent_name),'Агент проекта') AS name FROM scoped WHERE agent_id IS NOT NULL GROUP BY agent_id ORDER BY name,id`);
     const sql = `WITH scoped AS MATERIALIZED (
-        SELECT u.*,NULLIF(p.display_name,'') AS actor_name,j.name AS project_name,a.name AS agent_name
+        SELECT u.*,NULLIF(p.display_name,'') AS actor_name,j.name AS project_name,a.name AS agent_name,
+            coalesce(u.private_project_chat_room_id,private_room.id) AS protected_room_id
         FROM model_usage_calls u LEFT JOIN platform_users p ON p.email=u.actor_email LEFT JOIN projects j ON j.id=u.project_id LEFT JOIN agent_catalog a ON a.id=u.agent_id
+        LEFT JOIN project_chat_messages source ON source.project_id=u.project_id AND source.id=u.turn_id
+        LEFT JOIN project_chat_rooms private_room ON private_room.project_id=source.project_id AND private_room.id=source.room_id AND private_room.visibility='PRIVATE'
         WHERE u.started_at>=now()-($1::integer*86400*interval '1 second') AND u.started_at<=now()
         AND ($2 OR ($3::text IS NOT NULL AND u.actor_email=$3 AND (u.project_id IS NULL OR u.project_id=ANY($4::text[]))) OR ($3::text IS NULL AND u.project_id=ANY($4::text[])))
+        AND (coalesce(u.private_project_chat_room_id,private_room.id) IS NULL OR EXISTS(SELECT 1 FROM project_chat_rooms room
+            WHERE room.project_id=u.project_id AND room.id=coalesce(u.private_project_chat_room_id,private_room.id) AND room.visibility='PRIVATE'
+            AND (room.creator_email=$5::text OR EXISTS(SELECT 1 FROM project_chat_room_members member
+                WHERE member.project_id=room.project_id AND member.room_id=room.id AND member.email=$5::text))))
     ),filtered AS MATERIALIZED (SELECT * FROM scoped${where.length ? ' WHERE ' + where.join(' AND ') : ''})
     SELECT now() AS "windowTo",(SELECT to_jsonb(x) FROM (SELECT ${totals} FROM filtered) x) AS summary,
+        ${array('SELECT DISTINCT project_id AS "projectId",protected_room_id AS "roomId" FROM scoped WHERE protected_room_id IS NOT NULL ORDER BY "projectId","roomId"')} AS "privateRooms",
         ${array(`SELECT model_id AS "modelId",max(model_name) AS name,${totals} FROM filtered GROUP BY model_id ORDER BY count(*) DESC,model_id`)} AS "byModel",
         ${array(`SELECT purpose,${totals} FROM filtered GROUP BY purpose ORDER BY count(*) DESC,purpose`)} AS "byPurpose",
         ${array(`SELECT actor_email AS "actorEmail",coalesce(max(actor_name),actor_email,'Серверные задания') AS "displayName",${totals} FROM filtered GROUP BY actor_email ORDER BY count(*) DESC,actor_email NULLS LAST`)} AS "byActor",
@@ -46,7 +54,7 @@ export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): {
 }
 
 type ReportRow = Pick<ModelUsageResult, 'summary' | 'byModel' | 'byPurpose' | 'facets' | 'byActor' | 'byProject' | 'byEndpoint' | 'byAgent' | 'series'> & {
-    windowTo: Date; items: Array<ModelUsageItem & { cursorAt: string }>;
+    windowTo: Date; items: Array<ModelUsageItem & { cursorAt: string }>; privateRooms: UsagePrivateRoom[];
 };
 const iso = (value: unknown): string => new Date(value as string | Date).toISOString();
 

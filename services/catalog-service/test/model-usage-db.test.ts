@@ -41,6 +41,17 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
     const call = (counts: Record<string, unknown> = {}, email = 'owner@localhost', projectId: string | null = 'prj-a') => withModelUsage({ purpose: 'chat', actorEmail: email, projectId }, () => service.observe(model, 'chat', async () => output(counts)));
     const report = (request = req(), query = {}) => service.report(request, query);
     const rows = () => db.query('SELECT * FROM model_usage_calls ORDER BY started_at,id').then(result => result.rows);
+    const privateRoom = async () => {
+        const roomId = randomUUID(), sourceId = randomUUID(), member = `usage-member-${randomUUID()}@localhost`;
+        await db.query("INSERT INTO projects(id,name) VALUES('prj-a','A') ON CONFLICT(id) DO NOTHING");
+        await db.query('INSERT INTO platform_users(email) VALUES($1)', [member]);
+        await db.query(`INSERT INTO project_chat_rooms(project_id,id,title,visibility,creator_email,create_request_key,create_request_hash)
+            VALUES('prj-a',$1,'Private fixture','PRIVATE','owner@localhost',$2,$3)`, [roomId, randomUUID(), 'a'.repeat(64)]);
+        await db.query("INSERT INTO project_chat_room_members(project_id,room_id,email) VALUES('prj-a',$1,$2)", [roomId, member]);
+        await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,content,author_email,author_name,author_role,status,request_key,request_hash,generation)
+            VALUES($1,'prj-a',$2,'user','private source must stay out of usage','owner@localhost','Owner','Разработчик','done',$3,$4,$5)`, [sourceId, roomId, randomUUID(), 'b'.repeat(64), randomUUID()]);
+        return { roomId, sourceId, member, cleanup: async () => { await db.query("DELETE FROM projects WHERE id='prj-a'"); await db.query('DELETE FROM platform_users WHERE email=$1', [member]); } };
+    };
     beforeAll(async () => {
         const url = new URL(connection!); if (!['postgres:', 'postgresql:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.port === '5432' || url.pathname !== '/postgres' || url.search || url.hash) throw new Error('Use a disposable localhost PostgreSQL admin URL without query or fragment');
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 }); database = 'nc_usage_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database);
@@ -67,7 +78,7 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
         await withModelUsage({ purpose: 'agent', actorEmail: 'owner@localhost', projectId: 'prj-a', agentId: 'agent-reviewer', turnId }, () => runtime.infer(model, 'chat', { messages: [{ role: 'user', content: 'private prompt and key' }] }));
         expect(local.infer).toHaveBeenCalledOnce(); expect(remote.infer).not.toHaveBeenCalled(); const saved = await rows(); expect(saved).toHaveLength(1);
         expect(saved[0]).toMatchObject({ purpose: 'agent', actor_email: 'owner@localhost', project_id: 'prj-a', agent_id: 'agent-reviewer', turn_id: turnId, input_tokens: '0', output_tokens: '7' });
-        expect(JSON.stringify(saved)).not.toContain('private');
+        expect(JSON.stringify(saved)).not.toMatch(/private prompt and key|private answer must never be stored/);
     });
     it('does not invent zero tokens and aggregates reported integers without precision loss', async () => {
         await call(); await call({ prompt_eval_count: 0, eval_count: 0, usage_reported: true });
@@ -76,7 +87,7 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
     });
     it('stores safe failure status without provider error text, prompts, replies or keys', async () => {
         await expect(service.observe(model, 'chat', async () => { throw new Error('api-key=provider-secret; prompt=private'); })).rejects.toThrow('provider-secret');
-        expect((await rows())[0]).toMatchObject({ status: 'error', input_tokens: null, output_tokens: null }); expect(JSON.stringify(await rows())).not.toMatch(/provider-secret|private|api-key/);
+        expect((await rows())[0]).toMatchObject({ status: 'error', input_tokens: null, output_tokens: null }); expect(JSON.stringify(await rows())).not.toMatch(/provider-secret|prompt=private|api-key/);
     });
     it('aborts upstream and records cancellation rather than a synthetic success', async () => {
         const abort = new AbortController(); let began!: () => void; const started = new Promise<void>(resolve => { began = resolve; });
@@ -112,6 +123,55 @@ describe.skipIf(!connection)('Model usage ledger — disposable PostgreSQL', () 
         expect((await report(req('Разработчик', 'owner@localhost'))).summary.requests).toBe(2); revoked = true;
         expect((await report(req('Разработчик', 'owner@localhost'))).summary.requests).toBe(1);
         await expect(report(req('Наблюдатель'))).rejects.toBeInstanceOf(ForbiddenException); await expect(report(req('Админ проекта'), { projectId: 'prj-b' })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+    it('hides private usage from nonmembers in every aggregate and facet, preserving creator/member and legacy public history', async () => {
+        const f = await privateRoom();
+        try {
+            await call();
+            await withModelUsage({ purpose: 'chat', actorEmail: 'other@localhost', projectId: 'prj-a', turnId: randomUUID() }, () => service.observe(model, 'chat', async () => output()));
+            await withModelUsage({ purpose: 'agent', actorEmail: 'private-actor@localhost', projectId: 'prj-a', agentId: 'private-agent', turnId: f.sourceId, privateProjectChatRoomId: f.roomId },
+                () => service.observe({ ...model, id: 'private-model', name: 'private-model-name', runtime: 'remote-openai' }, 'chat', async () => output({ prompt_eval_count: 11, eval_count: 17 })));
+            const hidden = await report(); expect(hidden.summary.requests).toBe(2);
+            expect(JSON.stringify(hidden)).not.toMatch(/private-model|private-agent|private-actor|private source|remote-openai/);
+            expect((await report(req(), { actorEmail: 'private-actor@localhost' })).summary.requests).toBe(0);
+            expect((await report(req('Админ проекта', 'admin@localhost'))).summary.requests).toBe(2);
+            expect((await report(req('Разработчик', 'owner@localhost'))).summary.requests).toBe(1);
+            expect((await report(req('Главный админ', 'owner@localhost'))).summary.requests).toBe(3);
+            expect((await report(req('Админ проекта', f.member))).summary).toMatchObject({ requests: 3, inputTokens: '11', outputTokens: '17' });
+            expect((await rows()).find(row => row.purpose === 'agent')).toMatchObject({ private_project_chat_room_id: f.roomId });
+            await db.query("DELETE FROM projects WHERE id='prj-a'");
+            expect(await rows()).toHaveLength(3);
+            expect((await db.query('SELECT id FROM project_chat_messages WHERE id=$1', [f.sourceId])).rows).toEqual([]);
+            expect((await report(req('Главный админ', 'owner@localhost'))).summary.requests).toBe(2);
+            expect(JSON.stringify(await report())).not.toMatch(/private-model|private-agent|private-actor/);
+        } finally { await f.cleanup(); }
+    });
+    it('withholds facets outside the filtered history after private-room membership is revoked during the report', async () => {
+        const f = await privateRoom();
+        try {
+            await call();
+            await withModelUsage({ purpose: 'agent', actorEmail: 'owner@localhost', projectId: 'prj-a', turnId: f.sourceId, privateProjectChatRoomId: f.roomId }, () => service.observe(model, 'chat', async () => output()));
+            const original = service.repository.report.bind(service.repository);
+            vi.spyOn(service.repository, 'report').mockImplementation(async (...args) => {
+                const result = await original(...args); expect(result.privateRooms).toEqual([{ projectId: 'prj-a', roomId: f.roomId }]);
+                await db.query("DELETE FROM project_chat_room_members WHERE project_id='prj-a' AND room_id=$1 AND email=$2", [f.roomId, f.member]); return result;
+            });
+            await expect(report(req('Админ проекта', f.member), { purpose: 'chat', limit: '1' })).rejects.toBeInstanceOf(ForbiddenException);
+        } finally { await f.cleanup(); }
+    });
+    it('withholds private usage when membership is revoked while the final actor lookup waits', async () => {
+        const f = await privateRoom();
+        try {
+            await withModelUsage({ purpose: 'agent', actorEmail: 'owner@localhost', projectId: 'prj-a', turnId: f.sourceId, privateProjectChatRoomId: f.roomId }, () => service.observe(model, 'chat', async () => output()));
+            const original = models.actor.bind(models); let lookups = 0;
+            vi.spyOn(models, 'actor').mockImplementation(async request => {
+                const actor = await original(request);
+                if (++lookups === 2) await db.query("DELETE FROM project_chat_room_members WHERE project_id='prj-a' AND room_id=$1 AND email=$2", [f.roomId, f.member]);
+                return actor;
+            });
+            await expect(report(req('Админ проекта', f.member))).rejects.toBeInstanceOf(ForbiddenException);
+            expect(lookups).toBe(2);
+        } finally { await f.cleanup(); }
     });
     it('keeps cursors precise across PostgreSQL microseconds and applies every page scope', async () => {
         for (let n = 0; n < 7; n++) await call({}, n === 2 ? 'other@localhost' : 'owner@localhost');

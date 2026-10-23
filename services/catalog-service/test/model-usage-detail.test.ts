@@ -7,6 +7,7 @@ import { createModelDispatchMetrics, currentModelDispatchMetrics, withModelDispa
 import { modelUsageFilter } from '../src/model-usage/model-usage.query';
 import { modelUsageReportQuery, readModelUsageReport } from '../src/model-usage/model-usage-report';
 import { ModelUsageService } from '../src/model-usage/model-usage.service';
+import { withModelUsage } from '../src/model-usage/model-usage.context';
 import type { ModelsService } from '../src/models/models.service';
 import type { IModel } from '../src/models/model.types';
 import type { ModelUsageQuery, UsageTerminal } from '../src/model-usage/model-usage.types';
@@ -22,13 +23,13 @@ function fixture(activeRole = 'Главный админ') {
         projects: [project('prj-a', 'Админ проекта'), project('prj-b', 'Разработчик')], pluginIds: [], skillPaths: [] };
     const actor = vi.fn(async () => ({ email: claims.email, activeRole, claims }));
     const service = new ModelUsageService({ actor } as unknown as ModelsService);
-    vi.spyOn(service.repository, 'begin').mockResolvedValue(undefined);
+    const begin = vi.spyOn(service.repository, 'begin').mockResolvedValue(undefined);
     const finish = vi.spyOn(service.repository, 'finish').mockResolvedValue(undefined);
     const canonical = vi.spyOn(service.repository, 'canonicalProject').mockResolvedValue('prj-a');
     const report = vi.spyOn(service.repository, 'report').mockResolvedValue({ windowTo: '2026-10-23T00:00:00.000Z',
         summary: { requests: 0 }, byModel: [], byPurpose: [], byActor: [], byProject: [], byEndpoint: [], byAgent: [], series: [],
-        facets: { users: [], projects: [], models: [], agents: [], providers: [] }, items: [], hasMore: false, cursor: null } as never);
-    return { service, claims, actor, finish, report, canonical };
+        facets: { users: [], projects: [], models: [], agents: [], providers: [] }, privateRooms: [], items: [], hasMore: false, cursor: null } as never);
+    return { service, claims, actor, begin, finish, report, canonical };
 }
 
 describe('Detailed usage filters and scope', () => {
@@ -36,33 +37,44 @@ describe('Detailed usage filters and scope', () => {
         expect(modelUsageFilter({ actorEmail: 'OWNER@LOCALHOST', agentId: 'agent-planner', endpoint: 'embed', provider: 'remote-openai' })).toMatchObject({ actorEmail: 'owner@localhost', agentId: 'agent-planner', endpoint: 'embed', provider: 'remote-openai' });
         expect(modelUsageFilter({ actorEmail: '__system__' }).actorEmail).toBeNull();
     });
-    it.each([{ days: ['7'] }, { limit: 10 }, { provider: 'fake' }, { endpoint: 'images' }, { actorEmail: 'not-an-email' }, { agentId: 'bad\nvalue' }, { extra: 'scope' }])('refuses malformed HTTP filters %j', query => {
+    it.each([{ days: ['7'] }, { limit: 10 }, { provider: 'fake' }, { endpoint: 'images' }, { actorEmail: 'not-an-email' }, { agentId: 'bad\nvalue' }, { viewerEmail: 'other@localhost' }, { extra: 'scope' }])('refuses malformed HTTP filters %j', query => {
         expect(() => modelUsageFilter(query as ModelUsageQuery)).toThrow();
     });
     it('main admin sees all actors and resolves a project without accessing RAG or local files', async () => {
         const f = fixture(), result = await f.service.report(req, { projectId: 'Alpha' });
         expect(f.canonical).toHaveBeenCalledWith('Alpha');
-        expect(f.report).toHaveBeenCalledWith({ all: true, actor: null, projectIds: ['prj-a', 'prj-b'] }, expect.objectContaining({ projectId: 'prj-a' }));
+        expect(f.report).toHaveBeenCalledWith({ all: true, actor: null, projectIds: ['prj-a', 'prj-b'], viewerEmail: 'owner@localhost' }, expect.objectContaining({ projectId: 'prj-a' }));
         expect(result.scope?.kind).toBe('all'); expect(result.window.to).toBe('2026-10-23T00:00:00.000Z');
     });
     it('project admin sees every actor only in projects they administer, including actor filtering', async () => {
         const f = fixture('Админ проекта');
         const result = await f.service.report(req, { projectId: 'Alpha', actorEmail: 'other@localhost' });
-        expect(f.report).toHaveBeenCalledWith({ all: false, actor: null, projectIds: ['prj-a'] }, expect.objectContaining({ projectId: 'prj-a', actorEmail: 'other@localhost' }));
+        expect(f.report).toHaveBeenCalledWith({ all: false, actor: null, projectIds: ['prj-a'], viewerEmail: 'owner@localhost' }, expect.objectContaining({ projectId: 'prj-a', actorEmail: 'other@localhost' }));
         expect(result.scope?.kind).toBe('projects');
         f.report.mockClear(); await expect(f.service.report(req, { projectId: 'prj-b' })).rejects.toBeInstanceOf(ForbiddenException); expect(f.report).not.toHaveBeenCalled();
     });
     it('developer retains personal scope and cannot request other actors or server jobs', async () => {
         const f = fixture('Разработчик');
         await f.service.report(req, { actorEmail: 'owner@localhost' });
-        expect(f.report).toHaveBeenCalledWith({ all: false, actor: 'owner@localhost', projectIds: ['prj-a', 'prj-b'] }, expect.any(Object));
+        expect(f.report).toHaveBeenCalledWith({ all: false, actor: 'owner@localhost', projectIds: ['prj-a', 'prj-b'], viewerEmail: 'owner@localhost' }, expect.any(Object));
         for (const actorEmail of ['other@localhost', '__system__']) await expect(f.service.report(req, { actorEmail })).rejects.toBeInstanceOf(ForbiddenException);
     });
     it('withholds facets and completed details after a membership or active-role change', async () => {
         const f = fixture('Админ проекта');
         f.actor.mockResolvedValueOnce({ email: f.claims.email, activeRole: 'Админ проекта', claims: structuredClone(f.claims) });
-        f.report.mockImplementationOnce(async () => { f.claims.projects = []; return { windowTo: '2026-10-23T00:00:00.000Z' } as never; });
+        f.report.mockImplementationOnce(async () => { f.claims.projects = []; return { windowTo: '2026-10-23T00:00:00.000Z', privateRooms: [] } as never; });
         await expect(f.service.report(req, {})).rejects.toBeInstanceOf(ForbiddenException);
+    });
+    it('rechecks every private audience after the report snapshot and withholds the entire response after revocation', async () => {
+        const f = fixture(), privateRooms = [{ projectId: 'prj-a', roomId: '12345678-1234-4123-8123-123456789012' }];
+        f.report.mockResolvedValueOnce({ privateRooms } as never);
+        const verify = vi.spyOn(f.service.repository, 'assertPrivateAudience').mockRejectedValue(new ForbiddenException('private membership revoked'));
+        await expect(f.service.report(req, {})).rejects.toBeInstanceOf(ForbiddenException);
+        expect(verify).toHaveBeenCalledWith('owner@localhost', privateRooms);
+    });
+    it('keeps private audience bookkeeping out of the public report', async () => {
+        const f = fixture(), result = await f.service.report(req, {});
+        expect(result).not.toHaveProperty('privateRooms'); expect(result).not.toHaveProperty('viewerEmail');
     });
     it('rejects device and observer access before reading any user details', async () => {
         const f = fixture('Наблюдатель');
@@ -71,15 +83,16 @@ describe('Detailed usage filters and scope', () => {
         expect(f.report).not.toHaveBeenCalled();
     });
     it('binds filter values and keeps facets in the authorized unfiltered period', () => {
-        const hostile = "model-' OR true--", query = modelUsageReportQuery({ all: false, actor: null, projectIds: ['prj-a'] }, { days: 7, limit: 10, modelId: hostile, actorEmail: null });
+        const hostile = "model-' OR true--", query = modelUsageReportQuery({ all: false, actor: null, projectIds: ['prj-a'], viewerEmail: 'owner@localhost' }, { days: 7, limit: 10, modelId: hostile, actorEmail: null });
         expect(query.sql).not.toContain(hostile); expect(query.values).toContain(hostile);
         expect(query.sql).toContain('actor_email IS NULL'); expect(query.sql).toContain('FROM scoped GROUP BY actor_email');
         expect(query.sql).toContain('FROM filtered GROUP BY actor_email'); expect(query.values.slice(0, 4)).toEqual([7, false, null, ['prj-a']]);
+        expect(query.values[4]).toBe('owner@localhost');
     });
     it('keeps PostgreSQL microseconds in the next cursor and normalizes only display timestamps', async () => {
         const at = '2026-10-23T00:00:00.000123Z', id = '12345678-1234-4123-8123-123456789012';
-        const db = { query: vi.fn(async () => ({ rows: [{ windowTo: new Date('2026-10-23T01:00:00Z'), items: [{ id, startedAt: at, cursorAt: at, finishedAt: null, dispatchedAt: null }, { id: 'other', startedAt: at, cursorAt: at }] }] })) };
-        const result = await readModelUsageReport(db as never, { all: true, actor: null, projectIds: [] }, { days: 7, limit: 1 });
+        const db = { query: vi.fn(async () => ({ rows: [{ windowTo: new Date('2026-10-23T01:00:00Z'), privateRooms: [], items: [{ id, startedAt: at, cursorAt: at, finishedAt: null, dispatchedAt: null }, { id: 'other', startedAt: at, cursorAt: at }] }] })) };
+        const result = await readModelUsageReport(db as never, { all: true, actor: null, projectIds: [], viewerEmail: 'owner@localhost' }, { days: 7, limit: 1 });
         expect(result.hasMore).toBe(true); expect(result.items[0].startedAt).toBe('2026-10-23T00:00:00.000Z'); expect(result.cursor).toEqual({ startedAt: at, id });
         const cursor = Buffer.from(JSON.stringify(result.cursor)).toString('base64url'); expect(modelUsageFilter({ cursor }).cursor?.startedAt).toBe(at);
     });
@@ -94,6 +107,15 @@ describe('Detailed usage filters and scope', () => {
 });
 
 describe('Actual dispatch accounting', () => {
+    it('retains private provenance for nested compaction and explicitly clears it for a public operation', async () => {
+        const f = fixture(), roomId = '12345678-1234-4123-8123-123456789012';
+        await withModelUsage({ purpose: 'agent', projectId: 'prj-a', privateProjectChatRoomId: roomId }, async () => {
+            await withModelUsage({ purpose: 'compaction' }, () => f.service.observe(model, 'chat', async () => ({})));
+            await withModelUsage({ purpose: 'agent', privateProjectChatRoomId: undefined }, () => f.service.observe(model, 'chat', async () => ({})));
+        });
+        expect(f.begin.mock.calls[0][0]).toMatchObject({ purpose: 'compaction', privateProjectChatRoomId: roomId });
+        expect(f.begin.mock.calls[1][0].privateProjectChatRoomId).toBeUndefined();
+    });
     it('isolates concurrent operations and restores the outer metrics after nested work', async () => {
         const states = [createModelDispatchMetrics(), createModelDispatchMetrics()];
         await Promise.all(states.map((state, index) => withModelDispatchMetrics(state, async () => {

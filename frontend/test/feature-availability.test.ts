@@ -9,14 +9,15 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 29 ключей общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(29); expect(new Set(featureFlagKeys).size).toBe(29);
+    it('Проверяет все 30 ключей общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(featureFlagKeys).toHaveLength(30); expect(new Set(featureFlagKeys).size).toBe(30);
         expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
         expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
         expect(featureDefinitions.find(item => item.key === 'project_chat')).toMatchObject({defaultEnabled: true, dependsOn: []});
+        expect(featureDefinitions.find(item => item.key === 'project_chat_dialogs')).toMatchObject({defaultEnabled: true, dependsOn: ['project_chat']});
         expect(featureDefinitions.find(item => item.key === 'model_rate_limits')).toMatchObject({defaultEnabled: true, dependsOn: []});
         expect(requireEvaluatedFeatureFlags(evaluated())).toEqual(evaluated());
-        for (const key of ['opencode_providers', 'codex_connector', 'project_chat', 'model_rate_limits'] as const) {
+        for (const key of ['opencode_providers', 'codex_connector', 'project_chat', 'project_chat_dialogs', 'model_rate_limits'] as const) {
             for (const field of ['flags', 'configured', 'blockedBy'] as const) {
                 const data = evaluated(), incomplete = { ...data, [field]: Object.fromEntries(Object.entries(data[field]).filter(([item]) => item !== key)) };
                 expect(() => requireEvaluatedFeatureFlags(incomplete)).toThrow('полный список');

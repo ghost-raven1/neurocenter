@@ -30,6 +30,8 @@ export class LiveService implements OnModuleDestroy {
         data?: Record<string, unknown>,
         method?: string,
     ): void {
+        // Named dialogue activity is not broadcast to users outside its private audience; authorized clients poll.
+        if (/^\/api\/projects\/[^/]+\/team-chat\/rooms(?:\/|$)/.test(path)) return;
         if (/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(path)) {this.sections(['project_chat']);return;}
         if (/^\/api\/catalog-requests(?:\/|$)/.test(path)) {
             this.sections(['requests', 'audit']);

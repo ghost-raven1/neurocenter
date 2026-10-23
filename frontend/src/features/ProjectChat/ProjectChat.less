@@ -40,3 +40,9 @@
     max-width: min(360px, calc(100vw - 32px));
     .ant-mentions-dropdown-menu-item {white-space: normal; overflow-wrap: anywhere;}
 }
+
+.project-chat__dialogs {display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;padding:12px 18px;border-bottom:1px solid #dbe4ec;
+    > label {display:flex;flex-direction:column;gap:4px;flex:1 1 220px;min-width:0;} .ant-select {width:100%;}
+    @media(max-width:600px){padding:10px 12px; > .ant-space {width:100%;}}
+}
+.project-chat__dialog-field {display:flex;flex-direction:column;gap:4px;width:100%;.ant-select {width:100%;}}

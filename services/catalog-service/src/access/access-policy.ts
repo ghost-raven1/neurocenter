@@ -118,7 +118,13 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
 
 /** Route admission complements fresh executor membership and authorship checks. */
 function allowProjectChat(level:number,verb:string,suffix:string):boolean {
+    if(suffix==='team-chat/rooms')return ['GET','HEAD'].includes(verb)||verb==='POST'&&level>=2;
+    const dialog=/^team-chat\/rooms\/[a-f0-9-]{36}(?:\/(.*))?$/.exec(suffix);
+    if(dialog){
+        if(!dialog[1])return ['GET','HEAD'].includes(verb)||verb==='PUT'&&level>=2;
+        suffix='team-chat/'+dialog[1];
+    }
     if(suffix==='team-chat'||suffix==='team-chat/history')return ['GET','HEAD'].includes(verb);
-    if(suffix==='team-chat/participants')return verb==='PUT'&&level>=3;
+    if(suffix==='team-chat/participants')return verb==='PUT'&&level>=(dialog?2:3);
     return verb==='POST'&&level>=2&&(suffix==='team-chat/messages'||/^team-chat\/messages\/[a-f0-9-]{36}\/(retry|cancel)$/.test(suffix));
 }

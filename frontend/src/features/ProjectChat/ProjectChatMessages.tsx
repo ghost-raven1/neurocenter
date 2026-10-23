@@ -30,7 +30,7 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setNewMessages(false);}}>
         {hasMore && <Button className="project-chat__earlier" loading={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button>}
         {historyError && <Alert type="warning" showIcon message={historyError}/>}
-        {!messages.length && <Empty description="Это общий чат проекта. Напишите коллегам или явно выберите агентов для ответа."/>}
+        {!messages.length && <Empty description="В этом диалоге пока нет сообщений. Напишите участникам или явно выберите агентов для ответа."/>}
         {messages.map(message => {
             const parent = message.replyToId ? messages.find(value => value.id === message.replyToId) : undefined;
             const canQuote = message.kind === 'user' || message.kind === 'agent' && message.status === 'done' && !!message.content;

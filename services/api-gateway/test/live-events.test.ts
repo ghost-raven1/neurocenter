@@ -42,6 +42,9 @@ describe('Live invalidation without private payloads',()=>{
         expect((events[0].data as {sections:string[]}).sections).toContain('access');
     });
     it('keeps a nested deletion inside normal project invalidation',()=>{attach();live.mutation('/api/projects/id/assets/id','owner',undefined,'DELETE');expect(events.some(item=>item.event==='auth:changed')).toBe(false);});
+    it.each(['/api/projects/id/team-chat/rooms','/api/projects/id/team-chat/rooms/private','/api/projects/id/team-chat/rooms/private/messages','/api/projects/id/team-chat/rooms/private/participants'])('does not broadcast named dialogue activity outside its authorized audience: %s',path=>{
+        attach();live.mutation(path,'owner@example.test',{title:'PRIVATE',body:'PRIVATE'},'POST');expect(events).toEqual([]);
+    });
     it.each(['/api/devices/id','/api/device-pairs/id'])('sends device invalidation only to the owner room: %s',path=>{
         attach();live.mutation(path,'owner@example.test',{deviceId:'not-forwarded'});
         expect(events).toEqual([{room:'user:owner@example.test',event:'bridge:changed',data:{deviceId:undefined,jobId:undefined}}]);

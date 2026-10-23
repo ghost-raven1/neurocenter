@@ -1,5 +1,4 @@
-import {PROJECT_CHAT_SCHEMA_CONTRACT} from '../project-chat/project-chat.schema-contract';
-import {assertProjectChatSchema} from '../project-chat/project-chat.schema-verification';
+import {CURRENT_PROJECT_CHAT_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT,assertCurrentProjectChatSchema as assertProjectChatSchema} from '../project-chat/project-chat-dialogs.schema-verification';
 import {MODEL_RATE_LIMITS_SCHEMA_CONTRACT} from '../model-rate-limits/model-rate-limits.schema-contract';
 import {assertModelRateLimitsSchema} from '../model-rate-limits/model-rate-limits.schema-verification';
 import {DISCUSSIONS_SCHEMA_CONTRACT} from '../discussions/discussions.schema-contract';

@@ -54,7 +54,7 @@ describe('Общий чат: независимые вопросы и автор
     it('Закрытие прерывает транспорт без отмены сохранённой серверной очереди', async () => {
         const ack = deferred<ProjectChatReceipt>(); vi.mocked(projectChatApi.send).mockReturnValueOnce(ack.promise); const chat = await ready(); const pending = chat.send({requestKey: 'request', prompt: 'Долгий вопрос', targetAgentIds: ['developer']});
         const signal = vi.mocked(projectChatApi.send).mock.calls[0][2]; harness.dispose(); expect(signal.aborted).toBe(true); expect(projectChatApi.cancel).not.toHaveBeenCalled();
-        ack.resolve({message: projectMessage(), roomRevision: 2}); await pending;
+        ack.resolve({message: projectMessage(), roomRevision: 2}); await expect(pending).rejects.toThrow('Подтверждение отправки не применено');
     });
     it('Сортирует bigint-позиции без потери точности и history не деградирует текущий результат', () => {
         const current = projectMessage({id: 'large', position: '9007199254740993', content: 'Готово'}), before = projectMessage({id: 'before', position: '9007199254740992'});

@@ -5,7 +5,10 @@ import { LiveService } from '../src/live/live.service';
 
 const base = '/api/projects/prj-qa/team-chat', id = '12345678-1234-4234-8234-123456789abc';
 const routes = [['GET', base], ['GET', base + '/history'], ['PUT', base + '/participants'], ['POST', base + '/messages'],
-    ['POST', base + '/messages/' + id + '/retry'], ['POST', base + '/messages/' + id + '/cancel']];
+    ['POST', base + '/messages/' + id + '/retry'], ['POST', base + '/messages/' + id + '/cancel'],
+    ['GET', base + '/rooms'], ['POST', base + '/rooms'], ['PUT', base + '/rooms/' + id], ['GET', base + '/rooms/' + id],
+    ['GET', base + '/rooms/' + id + '/history'], ['PUT', base + '/rooms/' + id + '/participants'], ['POST', base + '/rooms/' + id + '/messages'],
+    ['POST', base + '/rooms/' + id + '/messages/' + id + '/retry'], ['POST', base + '/rooms/' + id + '/messages/' + id + '/cancel']];
 describe.sequential('Shared project chat HTTP boundary', () => {
     let f: Awaited<ReturnType<typeof proxyHttpFixture>>;
     beforeEach(async () => { vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN', 'qa-proxy-internal'); f = await proxyHttpFixture(); });
