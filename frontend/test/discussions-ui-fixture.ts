@@ -18,13 +18,14 @@ const harness = vi.hoisted(() => {
 const ui = vi.hoisted(() => ({
     buttons: new Map<string, () => void>(), inputs: new Map<string, {value: string; disabled?: boolean; onChange: (event: {target: {value: string}}) => void}>(),
     confirmations: [] as Array<() => void>, flags: new Map<string, boolean>(), owns: true, scope: 'actor-a',
+    drawerClose:undefined as (()=>void)|undefined,
 }));
 const owns = () => ui.owns, captureOwner = () => owns;
 export {harness, ui};
 vi.mock('react', async original => ({...await original<typeof import('react')>(), ...harness}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: ui.scope, captureOwner})}));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability', () => ({useFeatureAvailability: (...keys: string[]) => ({enabled: keys.every(key => ui.flags.get(key) !== false), reason: 'Функция выключена администратором'})}));
-vi.mock('../src/common/components/AccessibleDrawer', () => ({default: ({children, open}: {children?: ReactNode; open?: boolean}) => open ? children : null}));
+vi.mock('../src/common/components/AccessibleDrawer', () => ({default: ({children, open,onClose}: {children?: ReactNode; open?: boolean;onClose?:()=>void}) => {ui.drawerClose=onClose;return open ? children : null;}}));
 vi.mock('@ant-design/icons', () => Object.fromEntries(['PaperClipOutlined', 'SendOutlined', 'FileOutlined', 'UserOutlined', 'ReloadOutlined', 'HeartFilled', 'HeartOutlined', 'MessageOutlined', 'DownloadOutlined', 'UploadOutlined'].map(name => [name, () => null])));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => createElement('div', null, children);
@@ -49,6 +50,7 @@ vi.mock('antd', () => {
 
 export function renderUi(element: () => ReactElement): {element: ReactElement; html: string} {
     harness.begin(); ui.buttons.clear(); ui.inputs.clear(); ui.confirmations.length = 0;
+    ui.drawerClose=undefined;
     const value = element(), html = renderToStaticMarkup(value); harness.commit(); return {element: value, html};
 }
 export async function settleUi(element: () => ReactElement): Promise<ReturnType<typeof renderUi>> {

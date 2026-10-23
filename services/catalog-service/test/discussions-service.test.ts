@@ -28,6 +28,7 @@ describe('Discussion durable admission, replies and CAS', () => {
             if (sql.startsWith('INSERT INTO catalog_reactions')) { inserts++; liked = true; }
             if (sql.startsWith('DELETE FROM catalog_reactions')) { updates++; liked = false; }
             if (sql.startsWith('SELECT count(*) AS count FROM catalog_reactions')) return { rows: [{ count: liked ? '1' : '0' }], rowCount: 1 };
+            if (sql.startsWith('SELECT count(*) AS count FROM discussion_comments')) return { rows: [{ count: row && !row.deleted_at ? '1' : '0' }], rowCount: 1 };
             return { rows: [], rowCount: 0 };
         });
         target = vi.fn(async () => undefined);
@@ -72,7 +73,7 @@ describe('Discussion durable admission, replies and CAS', () => {
     it('does not return a loaded discussion after the target assignment is revoked under the same active role', async () => {
         const identity = { ...actor, claims: { ...actor.claims, projects: [{ projectId: 'prj-target', projectName: 'Target', role: 'Разработчик' }] } };
         const revoked = { ...actor, claims: { ...actor.claims, projects: [{ projectId: 'prj-other', projectName: 'Other', role: 'Разработчик' }] } };
-        const actorPolicy = vi.fn().mockResolvedValueOnce(identity).mockResolvedValueOnce(revoked);
+        const actorPolicy = vi.fn().mockResolvedValue(revoked).mockResolvedValueOnce(identity);
         const targetPolicy = vi.fn(async (_db: unknown, current: DiscussionActor) => { if (!current.claims.projects.some(row => row.projectId === 'prj-target')) throw new Error('assignment-revoked'); });
         const changed = new DiscussionsService(service.repository, { input: () => actor, actor: actorPolicy, target: targetPolicy } as unknown as DiscussionsPolicy, service.storage);
         await expect(changed.list({} as Request, { targetType: 'catalog', targetId: 'mcp:sample' })).rejects.toThrow('assignment-revoked');
@@ -96,10 +97,55 @@ describe('Discussion durable admission, replies and CAS', () => {
         expect(query.mock.calls.some(([sql]) => String(sql).includes("comment_id=NULL,state='DELETED'"))).toBe(true); expect(requireFeatureEnabled).not.toHaveBeenCalled();
     });
     it('uses desired-state hearts: a matching like and an unlike remain safe with the feature disabled', async () => {
-        expect(await service.reaction({} as Request, 'mcp:sample', true)).toEqual({ liked: true, count: 1 });
+        expect(await service.reaction({} as Request, 'mcp:sample', true)).toEqual({ liked: true, count: 1, commentCount: 0 });
         vi.mocked(requireFeatureEnabled).mockReset().mockRejectedValue(new Error('off'));
-        expect(await service.reaction({} as Request, 'mcp:sample', true)).toEqual({ liked: true, count: 1 }); expect(requireFeatureEnabled).not.toHaveBeenCalled();
-        expect(await service.reaction({} as Request, 'mcp:sample', false)).toEqual({ liked: false, count: 0 }); expect(requireFeatureEnabled).not.toHaveBeenCalled();
+        expect(await service.reaction({} as Request, 'mcp:sample', true)).toEqual({ liked: true, count: 1, commentCount: 0 }); expect(requireFeatureEnabled).not.toHaveBeenCalled();
+        expect(await service.reaction({} as Request, 'mcp:sample', false)).toEqual({ liked: false, count: 0, commentCount: 0 }); expect(requireFeatureEnabled).not.toHaveBeenCalled();
         await expect(service.reaction({} as Request, 'mcp:sample', true)).rejects.toThrow('off'); expect(inserts).toBe(1);
+    });
+    it('returns an authoritative target comment total independently of the loaded page', async () => {
+        const base = query.getMockImplementation()!;
+        query.mockImplementation(async (sql: string, values: unknown[] = []) => sql.startsWith('SELECT count(*) AS count FROM discussion_comments')
+            ? { rows: [{ count: '53' }], rowCount: 1 } : base(sql, values));
+        const page = await service.list({} as Request, { targetType: 'help', targetId: 'models' });
+        expect(page.items).toEqual([]); expect(page).toMatchObject({ totalCount: 53 });
+        expect(await service.reaction({} as Request, 'mcp:sample')).toEqual({ liked: false, count: 0, commentCount: 53 });
+        expect(requireFeatureEnabled).not.toHaveBeenCalled();
+    });
+    it('rechecks target access after reading counts and never returns revoked reaction metadata', async () => {
+        const base = query.getMockImplementation()!;
+        query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+            if (sql.startsWith('SELECT count(*) AS count FROM discussion_comments')) {
+                target.mockRejectedValue(new Error('assignment-revoked')); return { rows: [{ count: '53' }], rowCount: 1 };
+            }
+            return base(sql, values);
+        });
+        await expect(service.reaction({} as Request, 'mcp:sample')).rejects.toThrow('assignment-revoked');
+    });
+    it('uses the stored microsecond boundary without changing the public cursor format', async () => {
+        const base = query.getMockImplementation()!, at = '2026-10-23T00:00:00.123Z', boundary = '2026-10-23 00:00:00.123456+00';
+        query.mockImplementation(async (sql: string, values: unknown[] = []) => sql.startsWith('SELECT created_at,created_at::text AS boundary')
+            ? { rows: [{created_at: at, boundary}], rowCount: 1 } : base(sql, values));
+        const cursor = Buffer.from(JSON.stringify({at, id})).toString('base64url');
+        await service.list({} as Request, {targetType: 'catalog', targetId: 'mcp:sample', cursor});
+        expect(query).toHaveBeenCalledWith(expect.stringContaining('ORDER BY created_at,id LIMIT 51'), ['catalog', 'mcp:sample', boundary, id]);
+        expect(query).toHaveBeenCalledWith(expect.stringContaining('SELECT created_at,created_at::text AS boundary'), [id, 'catalog', 'mcp:sample']);
+    });
+    it('rejects a foreign or stale cursor before loading another page', async () => {
+        const cursor = Buffer.from(JSON.stringify({at: '2026-10-23T00:00:00.123Z', id})).toString('base64url');
+        await expect(service.list({} as Request, {targetType: 'help', targetId: 'models', cursor})).rejects.toMatchObject({status: 400});
+        expect(query.mock.calls.some(([sql]) => String(sql).includes('ORDER BY created_at,id LIMIT 51'))).toBe(false);
+    });
+    it.each(['list', 'read'] as const)('does not return %s after read access is revoked during the write-capability check', async operation => {
+        row = initial();
+        let entered!: () => void, release!: () => void, revoked = false;
+        const begun = new Promise<void>(resolve => {entered = resolve;}), held = new Promise<void>(resolve => {release = resolve;});
+        target.mockImplementation(async (_db: unknown, _actor: DiscussionActor, _target: unknown, write = false) => {
+            if (write) {entered(); await held; revoked = true;}
+            if (revoked) throw new Error('assignment-revoked');
+        });
+        const pending = operation === 'list' ? service.list({} as Request, {targetType: 'catalog', targetId: 'mcp:sample'}) : service.read({} as Request, id);
+        await begun; release();
+        await expect(pending).rejects.toThrow('assignment-revoked');
     });
 });

@@ -13,4 +13,4 @@
 
 Администратор управляет доступом, источниками поставок и доступностью функций в [настройках](/settings).
 
-Далее: [подключение компьютера](/help/connect-computer), [модели](/help/models).
+Далее: [установка OpenCode](/help/opencode-install), [работа с кодом: LSP](/help/opencode-lsp), [подключение компьютера](/help/connect-computer), [модели](/help/models).

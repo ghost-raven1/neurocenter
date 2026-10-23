@@ -16,6 +16,7 @@ function Feedback({catalogId, title}: {catalogId: string; title?: string}): JSX.
     const [reaction, setReaction] = useState<CatalogReaction>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [open, setOpen] = useState(false);
     const lock = useRef(false), sequence = useRef(0), pending = useRef<boolean>(), activated = useRef(false);
     const read = async (): Promise<void> => {
+        if (lock.current || pending.current !== undefined) return;
         const owns = captureOwner(), current = ++sequence.current; if (!owns()) return;
         try {const value = await discussionsApi.reaction(catalogId); if (owns() && current === sequence.current) {setReaction(value); setError('');}}
         catch (cause) {if (owns() && current === sequence.current) setError(errorMessage(cause, 'Не удалось загрузить отметки. Повторите проверку.'));}
@@ -33,13 +34,14 @@ function Feedback({catalogId, title}: {catalogId: string; title?: string}): JSX.
         }}
         finally {lock.current = false; if (owns()) setBusy(false);}
     };
+    const commentCount = reaction?.commentCount;
     return <div className="catalog-feedback" onClick={event => event.stopPropagation()}>
         <Space size={4} wrap><Tooltip title={reaction?.liked ? 'Убрать из понравившихся' : availability.enabled ? 'Мне нравится' : availability.reason}>
-            <span><Button type="text" size="small" icon={reaction?.liked ? <HeartFilled/> : <HeartOutlined/>} className={reaction?.liked ? 'catalog-feedback__liked' : ''} aria-label={reaction?.liked ? 'Убрать из понравившихся' : 'Мне нравится'} aria-pressed={reaction?.liked ?? false} loading={busy} disabled={!reaction || busy || !reaction.liked && !availability.enabled && pending.current === undefined} onClick={() => {void toggle();}}>{reaction?.count ?? '—'}</Button></span>
-        </Tooltip><Button type="text" size="small" icon={<MessageOutlined aria-hidden/>} onClick={() => {activated.current = true; setOpen(true);}}>Комментарии</Button></Space>
+            <span><Button type="text" size="small" icon={reaction?.liked ? <HeartFilled/> : <HeartOutlined/>} className={reaction?.liked ? 'catalog-feedback__liked' : ''} aria-label={reaction?.liked ? 'Убрать из понравившихся' : 'Мне нравится'} aria-pressed={reaction?.liked ?? false} loading={busy} disabled={!reaction || busy || !reaction.liked && !availability.enabled && pending.current === undefined} onClick={() => {void toggle();}}>{reaction ? reaction.count > 0 && <span className="catalog-feedback__count">{reaction.count}</span> : '—'}</Button></span>
+        </Tooltip><Button type="text" size="small" icon={<MessageOutlined aria-hidden/>} aria-label={commentCount !== undefined && commentCount > 0 ? 'Комментарии: ' + commentCount : 'Комментарии'} onClick={() => {activated.current = true; setOpen(true);}}>Комментарии{commentCount !== undefined && commentCount > 0 && <span className="catalog-feedback__count">{commentCount}</span>}</Button></Space>
         {error && <Alert type="warning" showIcon message={error} action={<Button size="small" onClick={() => {if (pending.current !== undefined) void toggle(); else void read();}}>Повторить</Button>}/>}
-        {activated.current && <AccessibleDrawer open={open} onClose={() => setOpen(false)} title={title ? 'Комментарии · ' + title : 'Комментарии к карточке'} width="min(680px, 100vw)" destroyOnClose>
-            {open && <DiscussionThread target={{type: 'catalog', id: catalogId}}/>}
+        {activated.current && <AccessibleDrawer open={open} onClose={() => {setOpen(false); void read();}} title={title ? 'Комментарии · ' + title : 'Комментарии к карточке'} width="min(680px, 100vw)" destroyOnClose>
+            {open && <DiscussionThread target={{type: 'catalog', id: catalogId}} onChanged={() => {void read();}}/>}
         </AccessibleDrawer>}
     </div>;
 }

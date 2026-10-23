@@ -12,6 +12,15 @@ async function settle() {for (let index = 0; index < 20; index++) await Promise.
 beforeEach(() => {vi.resetAllMocks(); ui.owns = true;});
 afterEach(() => harness.dispose());
 describe('Discussion pagination and authoritative denial', () => {
+    it('Обновляет точный totalCount после создания за первой страницей, сохраняя ACK и путь к незагруженным строкам',async()=>{
+        const accepted={...a,id:'accepted',createdAt:'2026-10-23T00:00:02Z'};
+        vi.mocked(discussionsApi.list).mockResolvedValueOnce({...page([a],'next-a'),...{totalCount:50}}).mockResolvedValueOnce(page([{...a,id:'b',createdAt:'2026-10-23T00:00:01Z'}]))
+            .mockResolvedValueOnce({...page([a],'next-a'),...{totalCount:52}});
+        render();let value=await settle();await value.load('next-a');value=await settle();value.saved(accepted);value=render();
+        await value.load(undefined,true);value=await settle();
+        expect(value.page?.items.map(item=>item.id)).toEqual(['a','b','accepted']);expect(value.page?.nextCursor).toBe('next-a');
+        expect(value.page?.totalCount).toBe(52);
+    });
     it('Preserves prior pages and a newer edit receipt while loading the next page', async () => {
         vi.mocked(discussionsApi.list).mockResolvedValueOnce(page([a], 'next-a')).mockResolvedValueOnce(page([{...a, id: 'b', createdAt: '2026-10-23T00:00:01Z'}]));
         render(); let value = await settle(); value.saved({...a, body: 'Новая версия', version: 3}); value = render(); await value.load(value.page!.nextCursor!); value = await settle();

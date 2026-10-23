@@ -11,7 +11,7 @@ export function useDiscussion(target: DiscussionTarget) {
     const {captureOwner} = useAuthRequestOwner();
     const [page, setPage] = useState<DiscussionPage>(), [loading, setLoading] = useState(false), [error, setError] = useState('');
     const sequence = useRef(0), revoked = useRef(false);
-    const load = useCallback(async (cursor?: string): Promise<void> => {
+    const load = useCallback(async (cursor?: string, preserveItems = false): Promise<void> => {
         const owns = captureOwner(), read = ++sequence.current;
         if (!owns()) return;
         setLoading(true); setError('');
@@ -19,7 +19,7 @@ export function useDiscussion(target: DiscussionTarget) {
             const value = await discussionsApi.list(target, cursor);
             if (owns() && sequence.current === read) {
                 revoked.current = false;
-                setPage(previous => cursor ? {...value, items: mergeComments(previous?.items ?? [], value.items)} : value);
+                setPage(previous => cursor || preserveItems ? {...value, nextCursor: preserveItems ? previous?.nextCursor ?? value.nextCursor : value.nextCursor, items: mergeComments(previous?.items ?? [], value.items)} : value);
             }
         } catch (cause) {
             if (owns() && sequence.current === read) {

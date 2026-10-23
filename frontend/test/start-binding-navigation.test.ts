@@ -25,6 +25,7 @@ const fixture = vi.hoisted(() => {
 vi.mock('react-router-dom', () => ({ useLocation: () => fixture.location,
     useHistory: () => ({ push: fixture.push, replace: fixture.replace }) }));
 vi.mock('../src/modules/Projects/useAvailableProjects', () => ({ useAvailableProjects: () => fixture }));
+vi.mock('../src/features/McpBridge/useBridgeInstaller',()=>({useBridgeInstaller:()=>({origin:'https://gateway.example.test',loading:false,error:'',reload:vi.fn()})}));
 vi.mock('react-redux',()=>({useSelector:(selector:(state:typeof fixture.state)=>unknown)=>selector(fixture.state),useStore:()=>fixture.store}));
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>{fixture.readBridge();return {devices:[],device:undefined,devicesReady:false,errors:{devices:'',jobs:'',installations:''},loading:false,reload:vi.fn()};}}));
 vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
@@ -66,6 +67,11 @@ beforeEach(() => {
 });
 
 describe('Выбор папки из начала работы сохраняет серверный проект', () => {
+    it('Короткий первый шаг ведёт к Markdown-помощи вместо встроенной подробной инструкции',()=>{
+        fixture.location.search='?step=0';const html=render();
+        expect(html).toContain('href="/help/opencode-install"');expect(html).not.toContain('Подробная инструкция по установке');expect(html).not.toContain('Копировать инструкцию');
+        expect(fixture.buttons.has('Продолжить')).toBe(true);expect(html).toContain('gateway.example.test/api/bridge/install_opencode.sh');
+    });
     it.each(['dossier-ko', 'prj-dossier-ko'])('Алиас или ID %s ведёт в мастер с каноническим ID', project => {
         fixture.location.search = `?step=2&p=${project}`;
         const html = render();

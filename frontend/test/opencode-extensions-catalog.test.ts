@@ -23,13 +23,18 @@ const ragCatalog = `/store?q=${encodeURIComponent('OpenCodeRAG (плагин)')}
 describe('Расширения OpenCode переходят в каталог', () => {
     beforeEach(() => { navigation.location.search = ''; vi.clearAllMocks(); });
 
+    it('Работа с кодом LSP открывается в Помощи, а не в локальной модалке инструкции',()=>{
+        navigation.location.search='?extension=lsp';const html=render();
+        expect(html).toContain('href="/help/opencode-lsp"');expect(html).not.toContain('Копировать для агента');expect(html).not.toContain('Подключение расширения');
+    });
+
     it('Основные действия RAG и snip открывают точные поисковые ссылки', () => {
         const html = render();
         expect(html).toContain(`href="${ragCatalog}"`);
         expect(html).toContain('href="/store?q=opencode-snip"');
         expect(html.match(/Открыть в каталоге/g)).toHaveLength(2);
-        expect(html).toContain('Встроено в OpenCode');
-        expect(html).toContain('Как пользоваться');
+        expect(html).toContain('href="/help/opencode-lsp"');
+        expect(html).not.toContain('Как пользоваться');
         expect(html).not.toContain('Копировать для агента');
     });
 
@@ -46,11 +51,12 @@ describe('Расширения OpenCode переходят в каталог', (
         expect(html).not.toContain('npm install');
     });
 
-    it('Встроенный LSP сохраняет справку для агента', () => {
+    it('Встроенный LSP имеет прямой путь к редактируемой статье Помощи', () => {
         navigation.location.search = '?extension=lsp';
         const html = render();
-        expect(html).toContain('LSP встроен в OpenCode');
-        expect(html).toContain('Копировать для агента');
+        expect(html).toContain('Работа с кодом: LSP — в Помощи');
+        expect(html).toContain('href="/help/opencode-lsp"');
+        expect(html).not.toContain('Копировать для агента');
     });
     it('Плагин разделяет серверную и локальную модель и ведёт к явному индексированию с сохранением проекта', () => {
         navigation.location.search = '?extension=rag&p=prj-knowledge';

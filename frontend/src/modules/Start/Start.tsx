@@ -1,13 +1,11 @@
-import { ApiOutlined, ArrowRightOutlined, CopyOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
-import { Button, Card, Collapse, Space, Steps, Typography, message } from 'antd';
+import { ApiOutlined, ArrowRightOutlined, FolderOpenOutlined, RocketOutlined } from '@ant-design/icons';
+import { Button, Card, Space, Steps, Typography, message } from 'antd';
 import { useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import {useSelector} from 'react-redux';
 
-import { CodeBlock } from '../../common/components/CodeBlock';
 import { PageHeading } from '../../common/components/PageHeading';
 import { useAvailableProjects } from '../Projects/useAvailableProjects';
-import installDoc from './docs/OPENCODE-INSTALL.md?raw';
 import OpenCodeExtensions from './OpenCodeExtensions';
 import './Start.less';
 import {BridgeSetup} from './BridgeSetup';
@@ -15,15 +13,14 @@ import { startQueryUrl, startStep } from './startQuery';
 import {StartProjectStep} from './StartProjectStep';
 import {useBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
-import {openCodeInstallerCommand} from '../../features/McpBridge/connectionCommands';
 import {isMainAdminRole} from '../../features/UserBlock/roles';
 import type {RootState} from '../../store';
 
 const { Title, Text, Paragraph } = Typography;
 
 /** Копирует готовую команду; установка остаётся явным действием пользователя в терминале. */
-async function copy(text: string, instruction = false): Promise<void> {
-    try { await navigator.clipboard.writeText(text); message.success(instruction ? 'Инструкция скопирована. Передайте её агенту OpenCode.' : 'Команда скопирована. Вставьте её в терминал.'); }
+async function copy(text: string): Promise<void> {
+    try { await navigator.clipboard.writeText(text); message.success('Команда скопирована. Вставьте её в терминал.'); }
     catch { message.error('Не удалось скопировать текст. Выделите его и скопируйте вручную.'); }
 }
 
@@ -43,9 +40,6 @@ const Start = () => {
     const installer=useBridgeInstaller(step<2);
     const canManageBridgeSource=useSelector((state:RootState)=>!!state.userBlock.user&&state.userBlock.user.userRoles.includes(state.userBlock.user.activeRole)&&isMainAdminRole(state.userBlock.user.activeRole));
     const windows = /Windows/i.test(navigator.userAgent);
-    const instructions = installer.origin?installDoc
-        .replace('__INSTALL_POSIX__',()=>openCodeInstallerCommand(installer.origin!,false))
-        .replace('__INSTALL_WINDOWS__',()=>openCodeInstallerCommand(installer.origin!,true)):'';
 
     useEffect(() => {
         if (!ready || error || requestedProject || projects.length !== 1) { return; }
@@ -73,8 +67,7 @@ const Start = () => {
                         <Paragraph type="secondary">Скопируйте команду и выполните её в терминале. Если OpenCode уже установлен, переходите к подключению.</Paragraph>
                         <BridgeInstallerCommand installer={installer} windows={windows} openCode onCopy={text=>{void copy(text);}}/>
                         <Paragraph type="secondary">Установщик сам определит систему и архитектуру. Поддерживаются macOS, Linux и Windows (PowerShell, WSL или Git Bash). Готовые пакеты скачиваются с этой площадки.</Paragraph>
-                        <Button type="primary" onClick={() => go(1)}>Продолжить <ArrowRightOutlined /></Button>
-                        {installer.origin&&<Collapse ghost><Collapse.Panel key="manual" header="Подробная инструкция по установке"><Button icon={<CopyOutlined />} onClick={() => { void copy(instructions, true); }}>Копировать инструкцию</Button><CodeBlock code={instructions} language="markdown" theme="dark" style={{maxHeight:320,overflow:'auto',marginTop:16}} /></Collapse.Panel></Collapse>}
+                        <Space wrap><Button type="primary" onClick={() => go(1)}>Продолжить <ArrowRightOutlined /></Button><Button type="link" href="/help/opencode-install">Установка и проверка OpenCode в Помощи</Button></Space>
                     </>}
                     {step === 1 && <>
                         <BridgeSetup origin={window.location.origin} installer={installer} windows={windows} projectId={selectedProject?.id} canManageSource={canManageBridgeSource} onCopy={text=>{void copy(text);}}/>

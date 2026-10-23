@@ -5,8 +5,8 @@ export interface DiscussionComment {
     version: number; createdAt: string; updatedAt: string; deleted: boolean;
     attachments: DiscussionAttachment[]; canEdit: boolean; canDelete: boolean;
 }
-export interface DiscussionPage {items: DiscussionComment[]; nextCursor: string | null; canComment: boolean; canAttach: boolean; attachmentsUnavailableReason?: string}
-export interface CatalogReaction {liked: boolean; count: number}
+export interface DiscussionPage {items: DiscussionComment[]; nextCursor: string | null; totalCount?: number; canComment: boolean; canAttach: boolean; attachmentsUnavailableReason?: string}
+export interface CatalogReaction {liked: boolean; count: number; commentCount?: number}
 export interface CommentIntent {body: string; parentId?: string; attachmentIds: string[]; requestKey: string}
 export interface DraftAttachment {
     key: string; file: File; uploaded?: DiscussionAttachment; progress: number; error?: string;

@@ -29,7 +29,7 @@
     &__computer-options.ant-collapse { margin-top: 0; border-top: 1px solid #edf1f5; .ant-collapse-header { padding-left: 0; } .ant-collapse-content-box { padding: 0 0 16px; } }
     &__project-notice { margin-bottom: 16px; }
     &__command { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 12px; padding: 16px; border-radius: 10px; background: #f1f5f8; code { overflow-wrap: anywhere; font-size: 12px; color: #244353; } }
-    &__guides { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; .ant-card-body { height: 100%; display: flex; flex-direction: column; } .ant-btn { margin-top: auto; padding-left: 0; text-align: left; height: auto; white-space: normal; } }
+    &__guides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; .ant-card-body { height: 100%; display: flex; flex-direction: column; } .ant-btn { margin-top: auto; padding-left: 0; text-align: left; height: auto; white-space: normal; } }
     &__extensions > h3.ant-typography { margin: 0 0 8px; font-size: 20px; }
     &__extensions > .ant-typography { margin-bottom: 20px; }
     &__extension-kind { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; font-size: 12px; .ant-tag { margin: 0; } }
@@ -37,19 +37,6 @@
 }
 .extension-instruction {
     .ant-modal-body { max-height: 65vh; overflow-y: auto; }
-    &__text { overflow-wrap: anywhere; line-height: 1.75; color: #34495e;
-        > :first-child { margin-top: 0; }
-        h1, h2, h3 { color: #14283d; line-height: 1.4; }
-        h1 { font-size: 22px; margin-bottom: 16px; } h2 { font-size: 18px; margin-top: 28px; padding-top: 20px; border-top: 1px solid @brand-border; } h3 { font-size: 16px; margin-top: 20px; }
-        p, ul, ol { margin-bottom: 14px; }
-        ul, ol { padding-left: 24px; li + li { margin-top: 7px; } }
-        :not(pre) > code { padding: 2px 5px; border-radius: 4px; background: #edf2f6; color: #244353; font-size: 12px; }
-        pre { overflow-x: auto; padding: 16px; margin: 16px 0; border: 1px solid @brand-border; border-radius: 8px; background: #f6f9fc; color: #244353; font-size: 12px; line-height: 1.7; }
-        blockquote { margin: 16px 0; padding: 10px 16px; border-left: 3px solid @brand-primary; background: @brand-surface; p:last-child { margin-bottom: 0; } }
-        table { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
-        th, td { min-width: 120px; padding: 8px; border: 1px solid @brand-border; }
-        th { background: @brand-surface; text-align: left; }
-    }
 }
 @media (max-width: 767px) { .start { gap: 18px; &__hero { padding: 20px; h2.ant-typography { font-size: 24px; } } &__setup .ant-card-body { padding: 18px; } &__command { flex-direction: column; align-items: flex-start; } &__guides { grid-template-columns: 1fr; } } }
 @media (max-width: 400px) { .start__setup .ant-steps-item-title { font-size: 12px; line-height: 1.5; } }

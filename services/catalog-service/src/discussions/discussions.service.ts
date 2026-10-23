@@ -16,6 +16,10 @@ const iso = (value: string | Date): string => new Date(value).toISOString();
 @Injectable()
 export class DiscussionsService {
     constructor(readonly repository: DiscussionsRepository, readonly policy: DiscussionsPolicy, readonly storage: DiscussionsStorage) {}
+    /** Counts every visible reply in this target, independently of pagination and deleted parent tombstones. */
+    private async commentCount(target: DiscussionTarget, db: Pick<PoolClient, 'query'> = this.repository.pool): Promise<number> {
+        return Number((await db.query<{ count: string }>('SELECT count(*) AS count FROM discussion_comments WHERE target_type=$1 AND target_id=$2 AND deleted_at IS NULL', [target.type, target.id])).rows[0].count);
+    }
     async view(row: CommentRow, actor: DiscussionActor, db: Pick<PoolClient, 'query'> = this.repository.pool): Promise<DiscussionComment> {
         const own = actor.email === row.author_email || actor.activeRole === 'Главный админ';
         const attachments = row.deleted_at ? [] : (await db.query<AttachmentRow>("SELECT * FROM discussion_attachments WHERE comment_id=$1 AND state='READY' ORDER BY created_at,id", [row.id])).rows;
@@ -31,24 +35,35 @@ export class DiscussionsService {
             try { if (typeof query.cursor !== 'string' || query.cursor.length > 200) throw Error(); cursor = JSON.parse(Buffer.from(query.cursor, 'base64url').toString()); if (!cursor || !Number.isFinite(Date.parse(cursor.at)) || new Date(cursor.at).toISOString() !== cursor.at) throw Error(); discussionUuid(cursor.id); }
             catch { throw new BadRequestException('Некорректная страница обсуждения.'); }
         }
+        // A JSON Date loses PostgreSQL microseconds. Recover the exact boundary from its target-bound immutable row.
+        let boundary: string | null = null;
+        if (cursor) {
+            const anchor = (await this.repository.pool.query<{ created_at: Date | string; boundary: string }>(
+                'SELECT created_at,created_at::text AS boundary FROM discussion_comments WHERE id=$1 AND target_type=$2 AND target_id=$3', [cursor.id, target.type, target.id])).rows[0];
+            if (!anchor || iso(anchor.created_at) !== cursor.at) throw new BadRequestException('Страница обсуждения недоступна. Обновите обсуждение.');
+            boundary = anchor.boundary;
+        }
         const rows = (await this.repository.pool.query<CommentRow>(`SELECT * FROM discussion_comments WHERE target_type=$1 AND target_id=$2
-            AND ($3::timestamptz IS NULL OR (created_at,id)>($3::timestamptz,$4::uuid)) ORDER BY created_at,id LIMIT 51`, [target.type, target.id, cursor?.at ?? null, cursor?.id ?? null])).rows;
+            AND ($3::timestamptz IS NULL OR (created_at,id)>($3::timestamptz,$4::uuid)) ORDER BY created_at,id LIMIT 51`, [target.type, target.id, boundary, cursor?.id ?? null])).rows;
         const visible = rows.slice(0, 50), last = visible.at(-1); let enabled = false, files = false;
         try { const state = await readFeatures(); enabled = state.flags.discussions; files = state.flags.discussion_attachments; } catch { /* History remains readable during flag-service outages. */ }
         const items: DiscussionComment[] = []; for (const row of visible) items.push(await this.view(row, actor));
-        const current = await this.policy.actor(this.repository.pool, this.policy.input(req)); await this.policy.target(this.repository.pool, current, target);
+        const totalCount = await this.commentCount(target);
+        const current = await this.policy.actor(this.repository.pool, this.policy.input(req));
         let writable = true;
         try { await this.policy.target(this.repository.pool, current, target, true); } catch { writable = false; }
+        const fresh = await this.policy.actor(this.repository.pool, this.policy.input(req)); await this.policy.target(this.repository.pool, fresh, target);
         if (!writable) for (const item of items) item.canEdit = false;
-        return { items, nextCursor: rows.length > 50 && last ? Buffer.from(JSON.stringify({ at: iso(last.created_at), id: last.id })).toString('base64url') : null,
+        return { items, totalCount, nextCursor: rows.length > 50 && last ? Buffer.from(JSON.stringify({ at: iso(last.created_at), id: last.id })).toString('base64url') : null,
             canComment: enabled && writable, canAttach: enabled && writable && files && !!this.storage.objects,
             ...(this.storage.unavailableReason ? { attachmentsUnavailableReason: this.storage.unavailableReason } : {}) };
     }
     async read(req: Request, id: string): Promise<DiscussionComment> {
         discussionUuid(id); const actor = await this.policy.actor(this.repository.pool, this.policy.input(req)), row = await this.row(id);
         const target: DiscussionTarget = { type: row.target_type, id: row.target_id }; await this.policy.target(this.repository.pool, actor, target);
-        const view = await this.view(row, actor), current = await this.policy.actor(this.repository.pool, this.policy.input(req)); await this.policy.target(this.repository.pool, current, target);
+        const view = await this.view(row, actor), current = await this.policy.actor(this.repository.pool, this.policy.input(req));
         try { await this.policy.target(this.repository.pool, current, target, true); } catch { view.canEdit = false; }
+        const fresh = await this.policy.actor(this.repository.pool, this.policy.input(req)); await this.policy.target(this.repository.pool, fresh, target);
         return view;
     }
     private async row(id: string, db: Pick<PoolClient, 'query'> = this.repository.pool, lock = false): Promise<CommentRow> {
@@ -96,7 +111,7 @@ export class DiscussionsService {
             return this.view(saved, actor, db);
         });
     }
-    async reaction(req: Request, targetId: string, desired?: boolean): Promise<{ liked: boolean; count: number }> {
+    async reaction(req: Request, targetId: string, desired?: boolean): Promise<{ liked: boolean; count: number; commentCount: number }> {
         const target = discussionTarget('catalog', targetId), identity = this.policy.input(req);
         return this.repository.transaction(async db => {
             const actor = await this.policy.actor(db, identity, desired !== undefined); await this.policy.target(db, actor, target);
@@ -105,7 +120,9 @@ export class DiscussionsService {
             if (desired === true && !liked) { await requireFeatureEnabled('catalog_reactions'); await this.policy.target(db, actor, target, true); await db.query('INSERT INTO catalog_reactions(target_id,actor_email) VALUES($1,$2) ON CONFLICT DO NOTHING', [target.id, actor.email]); }
             if (desired === false) await db.query('DELETE FROM catalog_reactions WHERE target_id=$1 AND actor_email=$2', [target.id, actor.email]);
             const count = Number((await db.query<{ count: string }>('SELECT count(*) AS count FROM catalog_reactions WHERE target_id=$1', [target.id])).rows[0].count);
-            return { liked: desired ?? liked, count };
+            const commentCount = await this.commentCount(target, db);
+            await this.policy.target(db, await this.policy.actor(db, identity), target);
+            return { liked: desired ?? liked, count, commentCount };
         });
     }
 }

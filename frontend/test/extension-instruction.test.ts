@@ -3,11 +3,16 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import ExtensionInstruction from '../src/modules/Start/ExtensionInstruction';
+import {SafeMarkdown} from '../src/features/Discussions/SafeMarkdown';
 
-const render = (content: string): string => renderToStaticMarkup(createElement(ExtensionInstruction, { content }));
+const render = (content: string): string => renderToStaticMarkup(createElement(SafeMarkdown, { body: content }));
+const lspArticle = new URL('../../services/catalog-service/content/help/opencode-lsp.md', import.meta.url);
 
-describe('Предпросмотр инструкции расширения', () => {
+describe('Инструкции OpenCode в Markdown-помощи', () => {
+    it('Статья установки ведёт к точной команде площадки и не содержит шаблонных команд',()=>{
+        const content=readFileSync(new URL('../../services/catalog-service/content/help/opencode-install.md',import.meta.url),'utf8');
+        expect(content).toContain('](/start?step=0)');expect(content).toContain('](/help/opencode-lsp)');expect(content).toContain('bash install_opencode.sh --binary');expect(content).not.toContain('__INSTALL_');
+    });
     it('Рисует Markdown-таблицу с заголовками, ячейками и форматированием', () => {
         const html = render('| Команда | Назначение |\n| --- | --- |\n| `rag search` | **Поиск** по коду |');
         expect(html).toContain('<table>');
@@ -18,15 +23,16 @@ describe('Предпросмотр инструкции расширения', (
         expect(html).not.toContain('| --- |');
     });
 
-    it.each(['OPENCODE-RAG.md', 'OPENCODE-LSP.md', 'OPENCODE-SNIP.md'])(
+    it.each(['OPENCODE-RAG.md', 'OPENCODE-SNIP.md'])(
         'Таблицы настоящего документа %s отображаются как таблицы', document => {
             const content = readFileSync(new URL(`../src/modules/Start/docs/${document}`, import.meta.url), 'utf8');
             expect(render(content)).toContain('<table>');
         },
     );
+    it('Статья LSP из Помощи сохраняет диагностическую таблицу',()=>{expect(render(readFileSync(lspArticle,'utf8'))).toContain('<table>');});
 
     it('Примеры LSP разбираются как JSON и используют совместимые формы false/объект', () => {
-        const content = readFileSync(new URL('../src/modules/Start/docs/OPENCODE-LSP.md', import.meta.url), 'utf8');
+        const content = readFileSync(lspArticle, 'utf8');
         const examples = [...content.matchAll(/```json\s*\n([\s\S]*?)```/g)].map(match => JSON.parse(match[1]) as Record<string, unknown>);
         expect(examples.length).toBeGreaterThanOrEqual(3);
         expect(examples.some(example => example.lsp === false)).toBe(true);
@@ -56,7 +62,7 @@ describe('Предпросмотр инструкции расширения', (
         expect(html).not.toContain('onerror');
         expect(html).not.toContain('javascript:');
         expect(html).not.toContain('https://example.test/image.png');
-        expect(html).toContain('<span>Схема</span>');
+        expect(html).toContain('Изображение: Схема');
     });
 
     it('Открывает обычные и GFM-ссылки безопасно в отдельной вкладке', () => {
