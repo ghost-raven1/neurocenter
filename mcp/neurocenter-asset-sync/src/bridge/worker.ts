@@ -81,7 +81,7 @@ interface Job {
     payload: {memory?:unknown} & ProjectLocalPayload & ConfigurationPayload & ProviderPayload & Partial<ProjectAgentsPayload> & { folderName?: string; package?: Package; installSet?: InstallSet; bindingId?: string; instanceId?: string;
         mode?: WorkspaceBindingMode; preparation?: WorkspaceBindingPreparation; installations?: Package[]; workspaceFailureVersion?: 1;ragProtocol?:string;
         expectedBindingId?: string; expectedInstanceId?: string; consentManifest?: string;snapshotId?:string;snapshotProtocol?:string;
-        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string;runtimeCachePolicy?:unknown };
+        changePlanId?: string; changePlanRevision?: 1; expectedChangeDigest?: string;configurationRevisions?:ConfigurationRevision[];embedding?:HostedSelection;reindex?:true;ragReindexProtocol?:string };
 }
 
 /** Один worker на профиль и площадку; WS будит очередь, heartbeat страхует разрыв транспорта. */
@@ -197,7 +197,7 @@ export async function runWorker(): Promise<void> {
                 }, 30000);
                 try {
                     if(current.kind===RUNTIME_CACHE_POLICY_JOB){
-                        const completed=await runRuntimeCachePolicyJob({id:current.id,lease:current.lease,payload:current.payload.runtimeCachePolicy},deviceId,authorize);
+                        const completed=await runRuntimeCachePolicyJob({id:current.id,lease:current.lease,payload:current.payload},deviceId,authorize);
                         clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();
                         await heartbeat().catch(()=>process.stderr.write('neurocenter bridge: присутствие компьютера после подтверждения настройки кэша не обновлено.\n'));continue;
                     }

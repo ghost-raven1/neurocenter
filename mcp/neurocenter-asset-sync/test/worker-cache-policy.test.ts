@@ -7,6 +7,7 @@ import * as privateStore from '../src/features/local-configuration/private-store
 import {runWorker} from '../src/bridge/worker.js';
 import {readRuntimeCachePolicy,runtimeCachePolicyKey,runtimeCacheReceiptKey} from '../src/features/runtime-artifacts/policy-store.js';
 import {providerFixture} from './opencode-provider.fixture.js';
+import {runtimeCacheJobPayload} from '../../../services/catalog-service/src/devices/runtime-cache-jobs.js';
 
 const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.fn()}));
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
@@ -28,10 +29,13 @@ afterEach(async()=>{
 });
 
 /** Only the queue/socket ports fail; the worker, policy CAS, receipts and ACK cleanup are real. */
-async function fixture(failFirstGenericSave:boolean){
+async function fixture(failFirstGenericSave:boolean,action:'set'|'inspect'='set'){
     signals=new Map(['SIGTERM','SIGINT'].map(signal=>[signal as NodeJS.Signals,new Set(process.listeners(signal))]));
     vi.clearAllMocks();local=await providerFixture();
-    const job={id:randomUUID(),lease:randomUUID(),kind:'runtime-cache-policy',payload:{runtimeCachePolicy:{schemaVersion:1,action:'set',expectedRevision:0,limitBytes:3*1024**3}}};
+    const runtimeCachePolicy=action==='inspect'?{schemaVersion:1,action}:{schemaVersion:1,action,expectedRevision:0,limitBytes:3*1024**3};
+    const request={deviceId:local.descriptor.deviceId,kind:'runtime-cache-policy',requestKey:randomUUID(),runtimeCachePolicy};
+    const device={id:request.deviceId,email:'fixture@example.test',role:'Главный админ',report:{capabilities:['runtime-cache-policy-v1']}};
+    const job={id:randomUUID(),lease:randomUUID(),kind:request.kind,payload:runtimeCacheJobPayload(device as never,request as never,'Главный админ')};
     socket.disconnect.mockReturnValue(socket);socket.connect.mockReturnValue(socket);
     vi.spyOn(process,'exit').mockImplementation((()=>undefined) as never);
     vi.spyOn(process.stderr,'write').mockReturnValue(true);
@@ -65,6 +69,12 @@ async function fixture(failFirstGenericSave:boolean){
 }
 
 describe('Policy worker never turns an acknowledged setting into a failed job',()=>{
+    it('reads the original policy from the exact queue payload compiled by Catalog',async()=>{
+        const f=await fixture(false,'inspect');
+        expect(f.sent).toHaveLength(1);expect(f.sent[0]).toMatchObject({state:'succeeded',result:{revision:0,limitBytes:2*1024**3}});
+        expect(await readRuntimeCachePolicy()).toBeUndefined();expect(f.writes.mock.calls.filter(([key])=>key===runtimeCachePolicyKey)).toHaveLength(0);
+        expect(f.read().claims).toBe(2);expect(f.network).not.toHaveBeenCalled();
+    });
     it.each([false,true])('heartbeat outage after ACK preserves success (generic persistence recovery: %s)',async failFirstGenericSave=>{
         const f=await fixture(failFirstGenericSave),observed=f.read();
         expect(observed.heartbeatFailures).toBe(1);
