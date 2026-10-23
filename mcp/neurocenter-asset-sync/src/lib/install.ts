@@ -69,7 +69,7 @@ export async function installBridgeGlobal(): Promise<{
             const stat=existing?await fs.stat(destination):undefined;
             if(stat&&stat.nlink!==1)throw new Error('Конфигурация OpenCode имеет несколько жёстких ссылок. Автоматическая замена остановлена; файл не изменён.');
             const handle=await fs.open(temporary,'wx',stat?stat.mode&0o777:0o600);
-            try{await handle.writeFile(out);await handle.sync();}finally{await handle.close();}
+            try{await handle.writeFile(out);if(stat)await handle.chmod(stat.mode&0o777);await handle.sync();}finally{await handle.close();}
             await assertUnchanged();
             if(snapshot){
                 backupPath=path.join(path.dirname(destination),'.neurocenter-opencode-'+randomUUID()+'.bak');

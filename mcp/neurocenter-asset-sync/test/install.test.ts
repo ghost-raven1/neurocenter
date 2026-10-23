@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { parse } from 'jsonc-parser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -51,6 +53,23 @@ describe('Подключение моста к OpenCode', () => {
         const result=await installBridgeGlobal();
         expect(result.created).toBe(true);
         expect(parse(await readFile(result.configPath,'utf8')).mcp['neurocenter-asset-sync'].enabled).toBe(true);
+    });
+
+    it.skipIf(process.platform==='win32')('Сохраняет режим существующего JSONC при настоящем umask 077 установщика',async()=>{
+        const original='// Ручные настройки\n{"model":"team/model","mcp":{"manual":{"type":"remote","url":"https://example.test/mcp"}}}\n';
+        await writeFile(config,original);await fs.chmod(config,0o640);
+        const source=new URL('../src/lib/install.ts',import.meta.url).href;
+        const script=`process.umask(0o077);const{installBridgeGlobal}=await import(${JSON.stringify(source)});const result=await installBridgeGlobal();console.log(JSON.stringify({umask:process.umask(),...result}));`;
+        const result=await promisify(execFile)(process.execPath,['--import','tsx','--input-type=module','--eval',script],{
+            cwd:path.resolve(import.meta.dirname,'..'),timeout:15000,killSignal:'SIGTERM',
+            env:{HOME:root,USERPROFILE:root,XDG_CONFIG_HOME:root,NEUROCENTER_URL:'https://install.fixture.test',NEUROCENTER_BRIDGE_HOME:path.join(root,'private')},
+        });
+        const report=JSON.parse(result.stdout);expect(report.umask).toBe(0o077);
+        expect((await fs.stat(config)).mode&0o777).toBe(0o640);
+        const saved=await readFile(config,'utf8');expect(saved).toContain('// Ручные настройки');
+        expect(parse(saved)).toMatchObject({model:'team/model',mcp:{manual:{url:'https://example.test/mcp'}}});
+        expect(await readFile(report.backupPath,'utf8')).toBe(original);
+        expect((await fs.stat(report.backupPath)).mode&0o777).toBe(0o600);
     });
 
     it('Правит актуальный JSONC после изменения при выборе реального файла',async()=>{
