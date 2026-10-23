@@ -132,7 +132,7 @@
     ".opencode/skills/neurocenter-task-flow/agents/openai.yaml": "5a82d2e29b45d0899198d45c2074908bf768d7390f8eb35e071723f21b445003",
     ".opencode/skills/neurocenter-task-flow/references/catalog.md": "2e775691113f2d0e79fa82a957e4624a58eb412d0cf44a1847f8aff98cb612f0",
     ".opencode/skills/neurocenter-task-flow/references/codex.md": "4fba96df0338ccbfb701069ac52feb0b8d109fe284ad299998000d40391c0859",
-    ".opencode/skills/neurocenter-task-flow/references/development-debugging.md": "42c726d26a78d9c8ee82e6e98f972a1d44b7eb295e42e0aa0ea8e25eb4161882",
+    ".opencode/skills/neurocenter-task-flow/references/development-debugging.md": "ff913b2ac85a1d611c1cda1b05e600986bdc0fac58a50dc1ca99222b486dfe4f",
     ".opencode/skills/neurocenter-task-flow/references/interface.md": "7ac67d571a7ac93507ab72965808e131568ff830cb1efdf3c9acd8cdc0039ab5",
     ".opencode/skills/neurocenter-task-flow/references/neurocenter.md": "88a50b31a93c5d1593237a52048c1598e0de35e5aa8db0b247dc484c29602832",
     ".opencode/skills/neurocenter-task-flow/references/opencode.md": "43595c01b5fab6367ca62f326380688e3d81539b6048279215f690746d59c647",
