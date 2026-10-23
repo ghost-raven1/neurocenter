@@ -26,7 +26,9 @@ const args = process.argv.slice(2), env = process.env;
 if (args[0] === '--version') {
     console.log('Docker fixture CLI'); process.exit(env.FIXTURE_CLI_FAIL === '1' ? 1 : 0);
 }
-if (args[0] === 'info') process.exit(env.FIXTURE_ENGINE_FAIL === '1' ? 1 : 0);
+if (args[0] === 'info') {
+    if(env.FIXTURE_ENGINE_HANG==='1'){process.on('SIGTERM',()=>{});setInterval(()=>{},1000);await new Promise(()=>{});}else process.exit(env.FIXTURE_ENGINE_FAIL === '1' ? 1 : 0);
+}
 if (args[0] !== 'compose') process.exit(1);
 const target = path.join(env.DOCKER_CONFIG, 'cli-plugins/docker-compose');
 if (existsSync(target) && env.FIXTURE_IGNORE_PLUGIN !== '1') {
@@ -184,5 +186,14 @@ test('Проверка готовности различает отсутств�
         delete env.FIXTURE_CLI_FAIL; assert.throws(() => checkCompose(env), /Нужен Compose v2/);
         await old(version, true); assert.doesNotThrow(() => checkCompose(env));
         env.FIXTURE_ENGINE_FAIL = '1'; assert.throws(() => checkCompose(env), /Docker Engine недоступен/);
+    });
+});
+
+ test('An unresponsive Docker daemon cannot block startup after the bounded probe', {timeout:25000}, async()=>{
+    await fixture(async({env,old})=>{
+        await old(version,true);env.FIXTURE_ENGINE_HANG='1';const started=Date.now();
+        assert.throws(()=>checkCompose(env),/Docker Engine недоступен/);
+        assert.ok(Date.now()-started>=9500,'the daemon fixture must remain blocked until timeout');
+        assert.ok(Date.now()-started<20000,'SIGKILL must bound a TERM-ignoring Docker CLI');
     });
 });

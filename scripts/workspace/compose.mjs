@@ -15,7 +15,7 @@ export function composeAsset(platform, arch, lock = composeLock) {
 }
 
 function docker(args, env) {
-    return spawnSync('docker', args, {env, encoding: 'utf8', timeout: 10000, maxBuffer: 65536, windowsHide: true});
+    return spawnSync('docker', args, {env, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 65536, windowsHide: true});
 }
 
 function requireDocker(env) {

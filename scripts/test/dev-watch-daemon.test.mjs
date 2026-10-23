@@ -9,9 +9,10 @@ import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {startDevWatch,stopDevWatch,devWatchStatus} from '../workspace/dev-watch-control.mjs';
 import {backendSelection} from '../workspace/dev-watch-plan.mjs';
+import {initialWatchGeneration} from '../workspace/dev-watch-files.mjs';
 import {until} from './dev-watch-native.fixture.mjs';
 const sources=fileURLToPath(new URL('../workspace/',import.meta.url));
-test('actual guardian/daemon builds current source, restarts it, keeps old runtime on compilation failure and stops',async t=>{
+for(const prepared of [false,true])test('actual guardian/daemon '+(prepared?'uses a prepared generation without mutable dist':'freezes the current dist')+', rebuilds, preserves a failed runtime and stops',async t=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-watch-daemon-')));let watcher;
  t.after(async()=>{if(watcher)await stopDevWatch(root,watcher.record).catch(()=>{});await fs.rm(root,{recursive:true,force:true});});
  await fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true});await fs.mkdir(path.join(root,'.run/logs'),{recursive:true});await fs.mkdir(path.join(root,'node_modules'));
@@ -24,7 +25,9 @@ test('actual guardian/daemon builds current source, restarts it, keeps old runti
  execFileSync('git',['init','-q'],{cwd:root});execFileSync('git',['add','.'],{cwd:root});execFileSync('git',['-c','user.name=Watch Fixture','-c','user.email=fixture@example.test','commit','-qm','owned fixture'],{cwd:root});
  const reserve=net.createServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const port=reserve.address().port;await new Promise(resolve=>reserve.close(resolve));
  const service={name:'catalog',label:'Fixture',dir:'services/catalog-service',port,entry:path.join(root,'services/catalog-service/dist/main.js'),environment:{PATH:process.env.PATH,PORT:String(port),PRIVATE_FIXTURE_SECRET:'DO_NOT_PERSIST'}};
- watcher=await startDevWatch({root,node:process.execPath,logDir:path.join(root,'.run/logs'),services:[service]});const version=async()=>fetch('http://127.0.0.1:'+port+'/version').then(r=>r.json(),()=>null);
+ const initialGeneration=prepared?await initialWatchGeneration(root):undefined;
+ if(prepared)for(const [,folder]of backendSelection)await fs.rm(path.join(root,folder,'dist'),{recursive:true});
+ watcher=await startDevWatch({root,node:process.execPath,logDir:path.join(root,'.run/logs'),services:[service],initialGeneration});const version=async()=>fetch('http://127.0.0.1:'+port+'/version').then(r=>r.json(),()=>null);
  await until(async()=>{const status=await devWatchStatus(root);return status?.phase==='watching'&&status.lastBuild?.ok;});assert.equal((await version()).value,'initial');
  await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"edited"');await until(async()=>(await version())?.value==='edited');const before=JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog').pid;
  await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"FAIL"');await until(async()=>(await devWatchStatus(root))?.phase==='build-failed');assert.equal((await version()).value,'edited');assert.equal(JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog').pid,before);
