@@ -236,7 +236,14 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
         if(!await this.models.isAssigned(row.project_id,row.data.modelId))throw new ConflictException('Модель больше не назначена этому проекту.');
         await requireFeaturesEnabled(['rag_sync','model_hosting']);
         const model=await readPinnedModel(this.models.pool,row.data.modelId,row.data.modelPin);if(!model)throw new ConflictException('Закреплённая модель недоступна.');
-        const result=await withModelUsage({purpose:'reindex',actorEmail:row.actor,projectId:row.project_id,operationId:row.id,requiredFeatures:['rag_sync']},()=>this.runtime.infer(model,'embed',{input:value.input,truncate:false},AbortSignal.timeout(105000)));
+        const signal=AbortSignal.timeout(105000),beforeInference=async()=>{
+            signal.throwIfAborted();const current=(await this.models.pool.query<IReindexRow>('SELECT * FROM project_reindex_plans WHERE id=$1 AND project_id=$2',[row.id,row.project_id])).rows[0];
+            if(!current||current.state!=='building'||!current.approved||ragRequestHash(current.data.profile)!==ragRequestHash(value.profile)||current.data.modelId!==row.data.modelId||current.data.modelPin!==row.data.modelPin)throw new ConflictException('Переиндексация отменена или её профиль изменился.');
+            await this.models.resolveProject(this.request(current),current.project_id,3);
+            if(!await this.models.isAssigned(current.project_id,current.data.modelId)||!await readPinnedModel(this.models.pool,current.data.modelId,current.data.modelPin))throw new ConflictException('Закреплённая модель недоступна.');
+            signal.throwIfAborted();
+        };
+        const result=await withModelUsage({purpose:'reindex',actorEmail:row.actor,projectId:row.project_id,operationId:row.id,requiredFeatures:['rag_sync'],beforeInference},()=>this.runtime.infer(model,'embed',{input:value.input,truncate:false},signal));
         const current=await this.models.pool.query('SELECT state FROM project_reindex_plans WHERE id=$1',[row.id]);if(current.rows[0]?.state!=='building')throw new ConflictException('Переиндексация отменена.');
         await this.models.resolveProject(this.request(row),row.project_id,3);return {embeddings:result.embeddings};
     }

@@ -4,6 +4,7 @@ import { isRemoteModel } from './remote-model.types';
 import { remoteModelBaseUrl } from './remote-model-validation';
 import { assertRemoteModelOptions, remoteModelOptions } from './remote-model-options';
 import type { IRemoteModelOptions } from './remote-model.types';
+import type { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -17,7 +18,7 @@ export class RemoteModelError extends Error {
 
 /** Клиент делает только inference зарегистрированной модели и никогда не следует редиректам. */
 export class RemoteModelClient {
-    constructor(private readonly options: { fetch?: typeof fetch; timeoutMs?: number; maximumBytes?: number } = {}) {}
+    constructor(private readonly options: { fetch?: typeof fetch; timeoutMs?: number; maximumBytes?: number; admission?: Pick<ModelApiAdmission, 'run'> } = {}) {}
 
     async infer(model: IModel, connection: IRemoteModelConnection, endpoint: 'embed' | 'chat', body: Json, signal?: AbortSignal): Promise<Json> {
         if (!isRemoteModel(model) || !model.modelVersion || connection.modelId !== model.id
@@ -34,7 +35,8 @@ export class RemoteModelClient {
         const payload = endpoint === 'embed' ? { model: model.model, input: texts, ...dimension, ...(openai ? { encoding_format: 'float' } : { truncate: false }) }
             : this.chatBody(model, body, openai, connection.options);
         const route = openai ? endpoint === 'embed' ? '/embeddings' : '/chat/completions' : '/api/' + endpoint;
-        const value = await this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
+        const request = () => this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
+        const value = await (this.options.admission ? this.options.admission.run(model, signal, request) : request());
         const responseModel = connection.options?.responseModel ?? model.model;
         if (value.model !== responseModel) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'
             + (openai ? ' Укажите точный идентификатор ответа в параметрах подключения, если провайдер использует алиас.' : '')); }

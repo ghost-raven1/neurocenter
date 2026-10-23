@@ -87,7 +87,7 @@ export class ChatResearchExecutor {
             try {
                 await scope.beforeInference?.();
                 const result=await withModelUsage({purpose:'research',actorEmail:scope.owner,projectId:scope.row.project_id,turnId:scope.turn.id,
-                    agentId:scope.agentId,requiredFeatures:flags()},()=>this.runtime.infer(scope.model,'chat',modelInferenceBody('chat',{messages,stream:false,
+                    agentId:scope.agentId,beforeInference:async()=>{await active();await scope.beforeInference?.();},requiredFeatures:flags()},()=>this.runtime.infer(scope.model,'chat',modelInferenceBody('chat',{messages,stream:false,
                         options:{...scope.options,num_predict:settings.reservedOutputTokens}}),scope.signal));
                 await current();const message=result.message as {role?:unknown;content?:unknown}|undefined;
                 if(message?.role!=='assistant'||typeof message.content!=='string'||result.done_reason!=='stop')throw new BadRequestException('Модель не завершила выбор шага исследования. Можно повторить сообщение.');
@@ -119,7 +119,7 @@ export class ChatResearchExecutor {
                     output=result.text;sources=result.sources;for(const source of result.sources)externalSources.set(source.url,source);
                 }else if(command.kind==='project_search'){
                     const result=await withModelUsage({purpose:'project-search',actorEmail:scope.owner,projectId:scope.row.project_id,turnId:scope.turn.id,
-                        agentId:scope.agentId,requiredFeatures:flags('project_search')},()=>this.projectContext.prepare(scope.req,scope.row.project_id,command.query,scope.signal));
+                        agentId:scope.agentId,beforeInference:async()=>{await active();await scope.beforeInference?.();},requiredFeatures:flags('project_search')},()=>this.projectContext.prepare(scope.req,scope.row.project_id,command.query,scope.signal));
                     if(!['ready','empty'].includes(result.evidence.status))throw new BadRequestException(result.evidence.message||'Поиск проекта не готов. Подготовьте индекс.');
                     checks.push(result.assertCurrent);for(const source of result.evidence.sources)found.set(source.id,source);
                     output=JSON.stringify(result.evidence.sources.map(({excerpt:_excerpt,...source})=>source));sources=[];

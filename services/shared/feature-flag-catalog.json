@@ -237,5 +237,13 @@
     "group": "agents",
     "dependsOn": [],
     "defaultEnabled": true
+  },
+  {
+    "key": "model_rate_limits",
+    "name": "Лимиты запросов моделей",
+    "description": "Ограничение обращений к API отдельно для каждой модели. Настройки и история остаются доступными.",
+    "group": "models",
+    "dependsOn": [],
+    "defaultEnabled": true
   }
 ]

@@ -74,6 +74,8 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/api\/models\/[^/]+\/ollama\//.test(route))return ['model_hosting'];
     if(/^\/api\/models\/[^/]+\/hosting$/.test(route))return input.action==='stop'?[]:['model_hosting'];
     if(route==='/api/models/import-opencode')return ['opencode_model_sync'];
+    // Enforcement can be disabled without losing its administrative settings.
+    if(/^\/api\/models\/[^/]+\/rate-limit$/.test(route))return [];
     if(/^\/api\/models(?:\/|$)/.test(route)||/^\/api\/projects\/[^/]+\/models(?:\/|$)/.test(route))return verb==='DELETE'?[]:['model_catalog'];
     if(/^\/api\/projects\/[^/]+\/embedding$/.test(route))return ['model_catalog','rag_sync'];
     if(/^\/api\/projects\/[^/]+\/embedding\/reindex(?:\/|$)/.test(route))return /\/cancel$/.test(route)?[]:['rag_sync'];

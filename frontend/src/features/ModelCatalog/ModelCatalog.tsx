@@ -141,7 +141,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         </Row> : <Empty description={query ? 'По этому запросу модели не найдены' : assignedOnly && projectId ? 'В проект пока не добавлены модели' : 'Пока нет доступных моделей'}>
             {(query || assignedOnly && canManage) && <Button onClick={() => { setQuery(''); setAssignedOnly(false); }}>Показать все модели</Button>}
         </Empty>)}
-        {viewing && <ModelDetails model={viewing} canManage={isMain && !loadError && !loading} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
+        {viewing && <ModelDetails model={viewing} projectId={projectId} canManage={isMain && !loadError && !loading} busy={!!busy} error={error} onClose={() => { if (!lock.current) setViewId(null); }}
             onEdit={() => { setEditing(viewing); setViewId(null); }} onRemove={archived} onConfigure={() => { setConnection(viewing); setViewId(null); }} />}
         {isMain && editing && <ModelEditModal key={typeof editing === 'string' ? editing : editing.id + ':' + editing.revision} model={typeof editing === 'string' ? undefined : editing} connectApi={editing === 'api'}
             onClose={() => setEditing(null)} onSaved={async saved => {

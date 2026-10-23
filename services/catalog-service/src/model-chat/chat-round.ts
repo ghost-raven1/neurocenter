@@ -14,6 +14,7 @@ import type { ChatResearchExecutor, ResearchRoundBudget } from './chat-research'
 import { researchEvidence } from './chat-research-evidence';
 import type { PreparedProjectContext } from './chat-project-context.types';
 import type { PreparedChatRound } from './chat-round-preflight';
+import { assertPendingChatInference } from './chat-inference-admission';
 
 export interface ChatRoundScope { owner: string; row: ConversationRow; model: IModel; authorize(pin?: boolean): Promise<IModel> }
 export interface ChatRoundHooks {
@@ -54,7 +55,9 @@ export async function executeChatRound(req: Request, scope: ChatRoundScope, turn
             });
             if (chatContext(messages, settings).exceeded) throw new BadRequestException('Сообщение и контекст проекта не помещаются в окно модели этого агента.');
             await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); await learning.beforeInference();
-            const result = await withModelUsage({ ...attribution, requiredFeatures: [...learning.requiredFeatures, ...(turn.research_request ? ['research_tools' as const] : [])] }, () => runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
+            const result = await withModelUsage({ ...attribution, beforeInference: async () => {
+                await researched.assertCurrent(); await learning.beforeInference(); await assertPendingChatInference(repository, scope.row.id, turn, signal, response.id);
+            }, requiredFeatures: [...learning.requiredFeatures, ...(turn.research_request ? ['research_tools' as const] : [])] }, () => runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
             signal.throwIfAborted(); await researched.assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;
             if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim()

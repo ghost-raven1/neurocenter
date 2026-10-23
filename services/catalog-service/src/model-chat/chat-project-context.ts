@@ -6,7 +6,7 @@ import { ProjectEmbeddingRepository } from '../models/project-embedding.reposito
 import { ProjectRagClient } from '../models/project-rag-client';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
-import { withModelUsage } from '../model-usage/model-usage.context';
+import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import {readFeatures,FeatureFlagError} from '../../../shared/feature-client.cjs';
 import { chatContext, type IChatContextSettings } from './chat-context';
 import type { ChatMessage } from './chat.types';
@@ -73,8 +73,10 @@ export class ModelChatProjectContext {
         await requireFeatureEnabled('model_hosting');
         let result: Record<string, unknown>;
         const embeddingModel = selected.model;
-        try { result = await withModelUsage({ purpose: 'project-search', projectId }, () => this.runtime.infer(embeddingModel, 'embed', { input: [prompt], truncate: false }, signal)); }
-        catch { signal.throwIfAborted(); throw new ServiceUnavailableException('Embedding-модель не выполнила поиск по проекту. Проверьте её подключение и повторите сообщение.'); }
+        const inherited=currentModelUsage().beforeInference;
+        const beforeInference=async()=>{await inherited?.();await assertCurrent();await beforeSearch?.();signal.throwIfAborted();};
+        try { result = await withModelUsage({ purpose: 'project-search', projectId, beforeInference }, () => this.runtime.infer(embeddingModel, 'embed', { input: [prompt], truncate: false }, signal)); }
+        catch(error) { signal.throwIfAborted(); if(error instanceof HttpException)throw error;throw new ServiceUnavailableException('Embedding-модель не выполнила поиск по проекту. Проверьте её подключение и повторите сообщение.'); }
         await assertCurrent();
         const vectors = result.embeddings;
         if (!Array.isArray(vectors) || vectors.length !== 1 || !Array.isArray(vectors[0]) || vectors[0].length !== selected.expectedDimension

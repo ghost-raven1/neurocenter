@@ -142,13 +142,33 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 250);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 309);
+    assert.equal(Object.keys(actual.paths).length, 251);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 311);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
     assert.equal(actual.paths['/api/feature-flags'].get['x-neurocenter-service'], 'feature-flags-service');
+});
+
+test('Each model rate policy has a browser-only independent CAS contract', () => {
+    const route=actual.paths['/api/models/{id}/rate-limit'];
+    assert.deepEqual(Object.keys(route).sort(),['get','put']);
+    for(const method of ['get','put'])assert.deepEqual(route[method].security,[{sessionCookie:[]}]);
+    const body=route.put.requestBody.content['application/json'].schema;
+    assert.deepEqual(body.required,['expectedRevision','requests','windowMs','enabled']);
+    const result=jsonResponse(route.get);
+    for(const name of ['modelId','revision','requests','windowMs','enabled','canManage','featureEnabled'])assert.ok(result.properties[name],name);
+    assert.equal(result.properties.requests.type,'number');assert.equal(result.properties.enabled.type,'boolean');
+});
+
+test('Usage documents actor and API filters with scoped detail rather than exposing a user directory', () => {
+    const operation=actual.paths['/api/model-usage'].get;
+    assert.deepEqual(operation.security,[{sessionCookie:[]}]);
+    for(const name of ['actorEmail','projectId','modelId','agentId','endpoint','provider'])assert.ok(operation.parameters.some(value=>value.in==='query'&&value.name===name),name);
+    const result=jsonResponse(operation);
+    for(const name of ['scope','facets','byActor','byProject','byAgent','byEndpoint','series'])assert.ok(result.properties[name],name);
+    for(const name of ['dispatchCount','dispatchedAt','rateWaitMs','providerLatencyMs','failureCode'])assert.ok(result.properties.items.items.properties[name],name);
 });
 
 test('Shared project chat documents browser membership, explicit recipients and short durable receipts', () => {

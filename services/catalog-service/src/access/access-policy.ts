@@ -74,6 +74,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
         if (new RegExp(`^${root}/${id}/turns/${id}$`).test(route)) return method === 'DELETE';
         return method === 'POST' && new RegExp(`^${root}/${id}/(?:attachments|context-preview|turns(?:/${id}/(?:retry|cancel|complete))?)$`).test(route);
     }
+    if (/^\/api\/models\/[^/]+\/rate-limit$/.test(route)) return read ? common : main && verb === 'PUT';
     if (route === '/api/models') { return read || main; }
     const model = /^\/api\/models\/[^/]+(?:\/(.*))?$/.exec(route);
     if (model) {

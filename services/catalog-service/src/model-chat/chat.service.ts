@@ -8,6 +8,7 @@ import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { modelInferenceBody } from '../models/inference.controller';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
+import { assertPendingChatInference } from './chat-inference-admission';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { extractChatDocument } from './chat-document-extractor';
 import { chatContext, chatUsage, managedChatContextWindow, type IChatContextSettings, type IChatContext } from './chat-context';
@@ -313,7 +314,8 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if (!active) return this.read(req, scope.row.id);
             await requireFeaturesEnabled([scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])]);
             const research = new ChatResearchExecutor(this.repository, this.runtime, this.researchTools, this.projectContext);
-            const model = await scope.authorize(true), prepareProject = () => withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
+            const beforeInference = async () => { await scope.authorize(true); await assertPendingChatInference(this.repository, scope.row.id, turn, combined); };
+            const model = await scope.authorize(true), prepareProject = () => withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, beforeInference, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
             if (scope.row.mode === 'group') {
                 const prepared = await prepareChatRound(req, scope, turn, combined, this.groups, this.repository, model => this.settings(this.pool, model), research);
                 if (!prepared.size) { await finishChatRound(scope, turn, combined, this.groups, this.repository); return this.read(req, scope.row.id); }
@@ -333,7 +335,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             await this.repository.owned(scope.owner, scope.row.id, researched.assertCurrent, (db, row) => this.repository.stage(db, row, turn, 'responding'));
             if (chatContext(messages, settings).exceeded) throw new BadRequestException('Контекст проекта и сообщение не помещаются в окно модели.');
             await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); combined.throwIfAborted();
-            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, ...(turn.research_request ? { requiredFeatures: ['research_tools' as const] } : {}) }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
+            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, beforeInference: async () => { await beforeInference(); await researched.assertCurrent(); }, ...(turn.research_request ? { requiredFeatures: ['research_tools' as const] } : {}) }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
                 ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { options: { num_ctx: this.localContextWindow } } : {}), stream: false }), combined));
             combined.throwIfAborted(); await researched.assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;
@@ -368,7 +370,9 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             const batch = compactionBatch(state.checkpoint, state.sources, state.settings, turn.id, overhead);
             await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await scope.authorize(true); await assertCurrent(); const model = selectedModel ?? await scope.authorize(true); signal.throwIfAborted(); budget.summaries++;
             await beforeInference?.();
-            const result = await withModelUsage({ purpose: 'compaction', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, requiredFeatures: [...(currentModelUsage().requiredFeatures ?? []), scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages: batch.messages, options: { num_predict: batch.maxOutputTokens,
+            const result = await withModelUsage({ purpose: 'compaction', actorEmail: scope.owner, projectId: scope.row.project_id, turnId: turn.id, beforeInference: async () => {
+                await scope.authorize(true); await assertCurrent(); await beforeInference?.(); await assertPendingChatInference(this.repository, scope.row.id, turn, signal, responseId);
+            }, requiredFeatures: [...(currentModelUsage().requiredFeatures ?? []), scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages: batch.messages, options: { num_predict: batch.maxOutputTokens,
                 ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) }, stream: false }), signal));
             signal.throwIfAborted(); await scope.authorize(true); await assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;

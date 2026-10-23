@@ -5,10 +5,11 @@ import { modelCatalogApi } from './api';
 import { modelCapabilityLabels } from './modelCatalogState';
 import type { ICatalogModel } from './types';
 import { ModelHosting } from './ModelHosting';
+import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
 
-interface IProps { model: ICatalogModel; canManage: boolean; busy: boolean; error: string; onClose: () => void; onEdit: () => void; onRemove: () => void; onConfigure?: () => void; }
+interface IProps { model: ICatalogModel; projectId?: string; canManage: boolean; busy: boolean; error: string; onClose: () => void; onEdit: () => void; onRemove: () => void; onConfigure?: () => void; }
 
-export function ModelDetails({ model, canManage, busy, error, onClose, onEdit, onRemove, onConfigure }: IProps): JSX.Element {
+export function ModelDetails({ model, projectId, canManage, busy, error, onClose, onEdit, onRemove, onConfigure }: IProps): JSX.Element {
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
     return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Space wrap>
         {canManage && !model.archivedAt && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>}
@@ -19,6 +20,7 @@ export function ModelDetails({ model, canManage, busy, error, onClose, onEdit, o
         {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
         <Typography.Paragraph>{model.description || 'Описание пока не добавлено.'}</Typography.Paragraph>
         <ModelHosting model={model} canManage={canManage && !model.archivedAt} onManage={onConfigure} />
+        <ModelRateLimits modelId={model.id} projectId={projectId}/>
         <Collapse ghost><Collapse.Panel key="technical" header="Технические сведения"><Descriptions layout="vertical" column={1} size="small" bordered>
             <Descriptions.Item label="Назначение">{modelCapabilityLabels[model.capability]}</Descriptions.Item>
             <Descriptions.Item label="Идентификатор"><Typography.Text code className="model-catalog__code">{model.model}</Typography.Text></Descriptions.Item>

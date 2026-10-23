@@ -68,6 +68,12 @@ test('Every real inference purpose maps to a business capability',()=>{
  for(const purpose of ['direct','verification','device-embedding','reindex'])assert.deepEqual(requiredInferenceFeatures(purpose),['model_hosting']);
  assert.deepEqual(requiredInferenceFeatures('chat'),['model_chat']);assert.deepEqual(requiredInferenceFeatures('agent'),['group_chat']);assert.deepEqual(requiredInferenceFeatures('compaction','agent-id'),['group_chat']);assert.deepEqual(requiredInferenceFeatures('project-search'),['project_search']);assert.deepEqual(requiredInferenceFeatures('learning'),['project_learning','model_hosting']);
 });
+test('Per-model policy stays configurable when enforcement or the catalog feature is disabled',()=>{
+ const state=evaluateFeatureFlags({...defaultFeatureFlags(),model_rate_limits:false,model_catalog:false});
+ assert.equal(state.flags.model_rate_limits,false);assert.equal(state.flags.model_catalog,false);
+ for(const method of ['GET','PUT'])assert.deepEqual(requiredRouteFeatures(method,'/api/models/model-a/rate-limit'),[]);
+ assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),model_hosting:false}).flags.model_rate_limits,true);
+});
 
 test('Research admission depends on selected sources; saved retry uses server snapshot',()=>{assert.deepEqual(requiredRouteFeatures('POST','/api/model-chats/id/turns',{research:{project:true,external:{assetId:'x'}}}),['model_chat','research_tools','project_search','tool_catalog']);assert.deepEqual(requiredRouteFeatures('GET','/api/model-chats/id/research-tools'),[]);assert.deepEqual(requiredRouteFeatures('POST','/internal/research-mcp/call',{}),['research_tools','tool_catalog']);});
 

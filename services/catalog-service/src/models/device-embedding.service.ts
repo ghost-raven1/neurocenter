@@ -1,4 +1,4 @@
-import {ConflictException,ForbiddenException,Inject,Injectable,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
+import {ConflictException,ForbiddenException,HttpException,Inject,Injectable,NotFoundException,ServiceUnavailableException} from '@nestjs/common';
 import {projectLevel} from '../access/access.model';
 import {DeviceStore,type Device} from '../devices/device-store';
 import {managedBinding} from '../devices/device-compatibility';
@@ -6,7 +6,7 @@ import {requireFeatureEnabled} from '../features/require-feature-enabled';
 import {withModelUsage} from '../model-usage/model-usage.context';
 import {ModelRuntime,type IModelInferenceRuntime} from './model-runtime';
 import {HostedRagGrantService} from './hosted-rag-grant.service';
-import {deviceEmbeddingInput} from './project-embedding.validation';
+import {deviceEmbeddingInput,projectEmbeddingPin} from './project-embedding.validation';
 import type {IConfiguredProjectEmbedding,IDeviceEmbeddingContext,IDeviceEmbeddingInput} from './project-embedding.types';
 
 /** Бюджет всего device-запроса оставляет запас до опубликованного клиентского лимита 120 секунд. */
@@ -54,8 +54,13 @@ export class DeviceEmbeddingService {
             await requireFeatureEnabled('model_hosting');signal.throwIfAborted();
             const texts=typeof input.input==='string'?[input.input]:input.input;
             let result:Record<string,unknown>;
-            try{result=await withModelUsage({purpose:'device-embedding',actorEmail:device.email,projectId:input.projectId},()=>this.runtime.infer(selected.model,'embed',{input:texts,truncate:false},signal));}
-            catch(cause){signal.throwIfAborted();if(cause instanceof ServiceUnavailableException)throw cause;throw new ServiceUnavailableException('Модель не выполнила embedding-запрос. Проверьте хостинг и повторите действие.');}
+            const beforeInference=async()=>{
+                const current=await this.current(device,input,signal);
+                if(projectEmbeddingPin(current.model)!==projectEmbeddingPin(selected.model))throw new ConflictException('Закреплённая модель изменилась. Перечитайте подключение.');
+                signal.throwIfAborted();
+            };
+            try{result=await withModelUsage({purpose:'device-embedding',actorEmail:device.email,projectId:input.projectId,beforeInference},()=>this.runtime.infer(selected.model,'embed',{input:texts,truncate:false},signal));}
+            catch(cause){signal.throwIfAborted();if(cause instanceof HttpException)throw cause;throw new ServiceUnavailableException('Модель не выполнила embedding-запрос. Проверьте хостинг и повторите действие.');}
             // Отзыв прав, назначения или папки во время inference не отдаёт векторы старому подключению.
             signal.throwIfAborted();await this.current(device,input,signal);
             const vectors=result.embeddings;

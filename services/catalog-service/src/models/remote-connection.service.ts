@@ -10,14 +10,17 @@ import { isRemoteModel } from './remote-model.types';
 import { notifyModelCatalogChange } from './model-events';
 import { ModelUsageService } from '../model-usage/model-usage.service';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { withModelUsage } from '../model-usage/model-usage.context';
+import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
+import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 
 /** Все запросы провайдеру выполняются сервером; bridge получает только Gateway API и project pin. */
 @Injectable()
 export class RemoteConnectionService {
     readonly repository: RemoteConnectionRepository;
-    private readonly client = new RemoteModelClient();
-    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService) { this.repository = new RemoteConnectionRepository(models.pool); }
+    private readonly client: RemoteModelClient;
+    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService, admission?: ModelApiAdmission) {
+        this.repository = new RemoteConnectionRepository(models.pool); this.client = new RemoteModelClient({ admission });
+    }
     private async remote(id: string): Promise<IModel> {
         const model = await this.models.get(id);
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите модель удалённого API.');
@@ -69,7 +72,13 @@ export class RemoteConnectionService {
                             ? connection.options.maxOutputTokens ?? 64 : Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
             };
             await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
-            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
+            const beforeInference = async () => {
+                signal?.throwIfAborted(); await authorize();
+                const current = await this.repository.head(model.id);
+                if (!current || current.revoked_at || Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите проверку.');
+                signal?.throwIfAborted();
+            };
+            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor, beforeInference }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
             if (model.capability === 'vision') {
                 let observed: Record<string, unknown>;
                 try { observed = JSON.parse((result.message as { content: string }).content); } catch { throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.'); }
@@ -89,7 +98,14 @@ export class RemoteConnectionService {
     async infer(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
         const row = await this.repository.pinned(model);
         try {
-            const result = await this.client.infer(model, this.repository.connection(row), endpoint, body, signal);
+            const context = currentModelUsage(), inherited = context.beforeInference;
+            const beforeInference = async () => {
+                await inherited?.(); signal?.throwIfAborted();
+                const fresh = await this.repository.pinned(model);
+                if (Number(fresh.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите действие.');
+                signal?.throwIfAborted();
+            };
+            const result = await withModelUsage({ purpose: context.purpose, beforeInference }, () => this.client.infer(model, this.repository.connection(row), endpoint, body, signal));
             signal?.throwIfAborted();
             const current = await this.repository.pinned(model);
             if (Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось во время запроса. Повторите действие.');

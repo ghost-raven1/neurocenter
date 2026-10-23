@@ -5,6 +5,14 @@ import {AccessDb} from '../src/access/access-db';
 const claims:IAccessClaims={email:'member@example.test',userRoles:['Админ проекта','Разработчик','Наблюдатель'],projects:[{projectId:'prj-a',projectName:'Мой проект',role:'Админ проекта'},{projectId:'prj-b',projectName:'Другой рабочий',role:'Разработчик'},{projectId:'prj-read',projectName:'Чтение',role:'Наблюдатель'}],pluginIds:['approved'],skillPaths:['common/approved']};
 const request=(method:string,path:string,body?:Record<string,unknown>,query?:Record<string,unknown>)=>({method,path,body,query});
 describe('Единая ролевая модель каталога',()=>{
+    it('Лимиты каждой модели изменяет главный админ; проектный админ только читает',()=>{
+        const path='/api/models/model-test/rate-limit',main={...claims,userRoles:['Главный админ']};
+        expect(allowRequest(main,'Главный админ',request('PUT',path))).toBe(true);
+        expect(allowRequest(claims,'Админ проекта',request('GET',path))).toBe(true);
+        expect(allowRequest(claims,'Админ проекта',request('PUT',path))).toBe(false);
+        for(const role of ['Разработчик','Наблюдатель'])expect(allowRequest(claims,role,request('GET',path))).toBe(false);
+        expect(allowRequest(main,'Главный админ',request('DELETE',path))).toBe(false);
+    });
     it('Источники и private traces чата читаются рабочей ролью, неизвестные маршруты не расширяют policy',()=>{
         const id='a'.repeat(8)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(4)+'-'+ 'a'.repeat(12);
         for(const path of ['/api/model-chats/research-tools',`/api/model-chats/${id}/research-tools`,`/api/model-chats/${id}/research-steps/${id}`]){

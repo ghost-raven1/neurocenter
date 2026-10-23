@@ -4,6 +4,7 @@ import type {IModel,IModelVerification} from './model.types';
 import {localModelAlias} from './local-model-alias';
 import {withModelUsage} from '../model-usage/model-usage.context';
 import type {ModelUsageRecorder} from '../model-usage/model-usage.types';
+import type {ModelApiAdmission} from '../model-api-admission/model-api-admission';
 
 export interface IModelProgress {stage:string;message:string;progress:number|null;}
 export interface IRuntimeModelStatus {
@@ -34,8 +35,9 @@ export class OllamaClient {
     private readonly fetch:typeof globalThis.fetch;
     private readonly environment:NodeJS.ProcessEnv;
     private readonly usage?:ModelUsageRecorder;
-    constructor(options:{fetch?:typeof globalThis.fetch;env?:NodeJS.ProcessEnv;usage?:ModelUsageRecorder}={}) {
-        this.fetch=options.fetch||globalThis.fetch;this.environment=options.env||process.env;this.usage=options.usage;
+    private readonly admission?:Pick<ModelApiAdmission,'run'>;
+    constructor(options:{fetch?:typeof globalThis.fetch;env?:NodeJS.ProcessEnv;usage?:ModelUsageRecorder;admission?:Pick<ModelApiAdmission,'run'>}={}) {
+        this.fetch=options.fetch||globalThis.fetch;this.environment=options.env||process.env;this.usage=options.usage;this.admission=options.admission;
     }
 
     async status(model:IModel):Promise<IRuntimeModelStatus> {
@@ -107,7 +109,8 @@ export class OllamaClient {
             ||endpoint==='chat'&&model.capability==='embedding')throw new Error('Протокол запроса не соответствует модели.');
         const installed=this.entry(await this.request('/api/tags',undefined,signal),model);
         if(!installed||!this.digestMatches(model,installed))throw new Error('Подготовленная версия модели недоступна.');
-        const value=await this.request('/api/'+endpoint,{...body,model:model.model,stream:false,keep_alive:'5m'},signal,600000,16*1024*1024);
+        const request=()=>this.request('/api/'+endpoint,{...body,model:model.model,stream:false,keep_alive:'5m'},signal,600000,16*1024*1024);
+        const value=await(this.admission?this.admission.run(model,signal,request):request());
         if(value.model!==model.model)throw new Error('Runtime вернул ответ другой модели.');
         if(endpoint==='embed') {
             const count=Array.isArray(body.input)?body.input.length:1;
@@ -164,7 +167,10 @@ export class OllamaClient {
 
     private async verifyInfer(model:IModel,endpoint:'chat'|'embed',body:JsonObject,signal:AbortSignal|undefined,validate:(value:JsonObject)=>void):Promise<JsonObject>{
         await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
-        const action=async(signal?:AbortSignal)=>{const value=await this.request('/api/'+endpoint,body,signal,endpoint==='chat'?600000:180000);validate(value);return value;};
+        const action=async(signal?:AbortSignal)=>{
+            const request=()=>this.request('/api/'+endpoint,body,signal,endpoint==='chat'?600000:180000);
+            const value=await(this.admission?this.admission.run(model,signal,request):request());validate(value);return value;
+        };
         return this.usage?withModelUsage({purpose:'verification'},()=>this.usage!.observe(model,endpoint,action,signal)):action(signal);
     }
 

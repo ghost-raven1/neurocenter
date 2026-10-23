@@ -11,6 +11,7 @@ import { RemoteConnectionService } from './remote-connection.service';
 import { isRemoteModel } from './remote-model.types';
 import { ModelBundleRuntime } from './model-bundle-runtime';
 import { withModelUsage } from '../model-usage/model-usage.context';
+import { projectEmbeddingPin } from './project-embedding.validation';
 
 const lock = "hashtextextended('neurocenter:model-hosting',0)";
 const actions: readonly string[] = ['start', 'stop', 'check'];
@@ -187,8 +188,12 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             if (isRemoteModel(model)) {
                 if (!this.remote) throw new Error('Сервис удалённых подключений не зарегистрирован.');
                 await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id }, () => this.remote!.check(model, row.actor, async () => {
+                    abort.signal.throwIfAborted();
                     const current = await this.access.claims(row.actor);
                     if (!current.userRoles.includes('Главный админ')) throw new Error('Права управления подключением отозваны.');
+                    const job = await this.repository.latest(model.id), live = await this.models.get(model.id);
+                    if (job?.id !== row.id || job.state !== 'running' || projectEmbeddingPin(live) !== projectEmbeddingPin(model)) throw new ConflictException('Операция или версия модели изменились. Повторите проверку.');
+                    abort.signal.throwIfAborted();
                 }, abort.signal));
             } else if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
             else {
@@ -196,7 +201,14 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
                     if (!this.bundles) throw new Error('Исполнитель проверенных поставок моделей не зарегистрирован.');
                     await this.bundles.prepare(model, progress, abort.signal);
                 }
-                const verified = await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id }, () => row.action === 'start' ? this.runtime.start(model, progress, abort.signal) : this.runtime.check(model, abort.signal));
+                const beforeInference = async () => {
+                    abort.signal.throwIfAborted(); const current = await this.access.claims(row.actor);
+                    if (!current.userRoles.includes('Главный админ')) throw new Error('Права управления хостингом отозваны.');
+                    const job = await this.repository.latest(model.id), live = await this.models.get(model.id);
+                    if (job?.id !== row.id || job.state !== 'running' || projectEmbeddingPin(live) !== projectEmbeddingPin(model)) throw new ConflictException('Операция или версия модели изменились. Повторите проверку.');
+                    abort.signal.throwIfAborted();
+                };
+                const verified = await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id, beforeInference }, () => row.action === 'start' ? this.runtime.start(model, progress, abort.signal) : this.runtime.check(model, abort.signal));
                 abort.signal.throwIfAborted();
                 await this.models.pinVerified(model, verified, row.actor, async () => {
                     abort.signal.throwIfAborted();

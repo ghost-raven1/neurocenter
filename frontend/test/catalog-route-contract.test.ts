@@ -30,4 +30,8 @@ describe('Active catalog route contract',()=>{
         expect(render('/model-usage',['model-usage']).html).toContain('Использование моделей');
         expect(render('/model-usage',['store']).context.url).toBe('/not-allowed');
     });
+    it('Usage typo alias retains query and anchor under the same route permission',()=>{
+        expect(render('/modal-usage?days=30#operations',['model-usage']).context.url).toBe('/model-usage?days=30#operations');
+        expect(render('/modal-usage?days=30',['store']).context.url).toBe('/not-allowed');
+    });
 });
