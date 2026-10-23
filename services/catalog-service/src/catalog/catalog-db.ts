@@ -1,6 +1,6 @@
 import {ensureCatalogSchema} from '../database/catalog-schema';
 import {listAuditHistory} from './audit-history';
-import {createPool} from '../database/pool';
+import {createPool,observeClientErrors} from '../database/pool';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
@@ -317,6 +317,7 @@ export class CatalogDb {
             return 0;
         }
         const client = new Client({ connectionString: url });
+        observeClientErrors(client,'catalog-storage-summary');
 
         try {
             await client.connect();
