@@ -3,6 +3,7 @@ import {constants} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 export const PREPARED_SOURCE_MAX_FILES=128;
@@ -24,7 +25,7 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     ...['codex-plugin.mjs','codex-setup.mjs','codex-executable.mjs'].map(name=>'scripts/catalog-plugins/recipes/adapters/'+name),
     ...['codex-connector-pin.json','codex-connector-source.cjs','codex-connector-source.d.cts'].map(name=>'services/shared/'+name),
     'scripts/catalog-plugins/recipes/rag-managed-pipeline.mjs','scripts/catalog-plugins/recipes/rag-web-ui.mjs','scripts/catalog-plugins/recipes/upstream.mjs',
-    ...['opencode-rag.mjs','rag-context.mjs','rag-errors.mjs','rag-hosted.mjs','rag-index-lock.mjs','rag-index-profile.mjs',
+    ...['opencode-rag.mjs','rag-context.mjs','rag-errors.mjs','rag-hosted.mjs','rag-index-lock.mjs','rag-index-profile.mjs','rag-index-corpus.mjs',
         'rag-local-runtime.mjs','rag-mcp.mjs','rag-plugin.mjs','rag-plugin-config.mjs','rag-plugin-errors.mjs',
         'rag-reindex.mjs','rag-reindex-source.mjs','rag-ui.mjs','rag-ui-config.mjs','rag-ui-guards.mjs','snip-plugin.mjs']
         .map(name=>'scripts/catalog-plugins/recipes/adapters/'+name),
@@ -44,6 +45,11 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'services/shared/python-runtime-pins.cjs','services/shared/python-runtime-pins.d.cts','services/shared/python-source-plan.cjs','services/shared/python-source-plan.d.cts',
 ].sort());
 const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
+
+/** Canonical RAG repository builds use the same local producer as its explicit prepared recipe. */
+export function preparedSourceAdapter(source){
+    return source.type==='prepared'?source.adapter:source.type==='repository'&&ragSource.isPreparedRagRepository(source)?'opencode-rag-plugin':undefined;
+}
 
 /** Retain the actual UTF-8 source bytes, with the same bounded public-file budget as local source snapshots. */
 export async function capturePreparedSource(repositoryRoot=root){

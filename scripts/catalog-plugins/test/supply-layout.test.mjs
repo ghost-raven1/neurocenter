@@ -9,6 +9,10 @@ import {publishCatalog} from '../publish.mjs';
 import {retainSupplyFiles} from '../retain-supply.mjs';
 import {exportCatalogRelease} from '../release.mjs';
 import {toolSourcePath,toolRuntimePath,TOOL_SOURCE_MAX_BYTES} from '../supply-layout.mjs';
+import {exportBuiltAsset} from '../source-envelope.mjs';
+import {preparedSourceFiles} from '../prepared-source-snapshot.mjs';
+import {validateRecipe} from '../recipe-schema.mjs';
+import {RAG_PLUGIN_SOURCE} from '../../../services/shared/opencode-rag-source.cjs';
 
 async function sourceFixture(t){
  const f=await builtAssetFixture(t),bytes=Buffer.alloc(17*1024**2,173);bytes[0]=0;bytes[1]=255;
@@ -65,4 +69,18 @@ test('Runtime layout cannot escape through a symlink directory or silently use a
 });
 test('Recipe reuse of the same exact runtime path and SHA is verified without conflicting roles',async t=>{
  const f=await builtAssetFixture(t);f.asset.recipe={path:toolRuntimePath(f.descriptor.sha256),sha256:f.descriptor.sha256};await f.save();const [tool]=await readyManifest(f.filename);assert.equal(tool.retainedFiles[0].archivePath,f.archive);assert.equal(tool.retainedFiles[0].sha256,f.descriptor.sha256);
+});
+test('Adapted producer source supply retains its versioned recipe and exact bytes through export and rejects tampering before retention',async t=>{
+ const f=await builtAssetFixture(t),recipe=validateRecipe({schemaVersion:1,key:'portable-adapted-rag',name:'Portable RAG',kind:'plugin',description:'Source transfer fixture',revision:'git-'+RAG_PLUGIN_SOURCE.commit,
+  source:{type:'repository',url:RAG_PLUGIN_SOURCE.url,commit:RAG_PLUGIN_SOURCE.commit,entrypoint:RAG_PLUGIN_SOURCE.entrypoint},targets:['darwin-arm64']});
+ const destination=path.join(f.root,'adapted');await fs.mkdir(path.join(destination,'artifacts'),{recursive:true});await fs.copyFile(f.archive,path.join(destination,toolRuntimePath(f.descriptor.sha256)));
+ const asset=await exportBuiltAsset({recipe,recipeDirectory:f.root,destination,publication:{...f.publication,origin:recipe.source.url},descriptors:[f.descriptor],sources:[],locks:[],preparedInputs:await preparedSourceFiles()});
+ const [built]=await readyManifest(asset),sourceBytes=await fs.readFile(built.sourceSnapshotPath),original=await fs.readFile(asset),retained=[];
+ const blobs={ingestLocal:async files=>{for(const file of files)retained.push(await fs.readFile(file.archivePath));return files;}};
+ await retainSupplyFiles(asset,publicationKey(built.asset.id,built.asset.version),{pool:{},blobs});assert.deepEqual(retained,[sourceBytes]);
+ const output=path.join(f.root,'exported'),result=await exportCatalogRelease({asset,release:'portable-rag-source-v2',output}),[exported]=await readyManifest(result.asset);
+ assert.deepEqual(await fs.readFile(exported.sourceSnapshotPath),sourceBytes);assert.deepEqual(await fs.readFile(asset),original);
+ assert.deepEqual(JSON.parse(sourceBytes).recipe,recipe);assert.equal(exported.asset.source.sha256,built.asset.source.sha256);
+ await fs.appendFile(exported.sourceSnapshotPath,'tampered');let writes=0;
+ await assert.rejects(retainSupplyFiles(result.asset,publicationKey(exported.asset.id,exported.asset.version),{pool:{},blobs:{ingestLocal:async()=>{writes++;}}}));assert.equal(writes,0);
 });

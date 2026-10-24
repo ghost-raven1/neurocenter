@@ -58,6 +58,12 @@ export function additionalSourceTargets(source) {
     if (source.type === 'repository' && source.runtimeSource) return runtimeSource.runtimeSourceTargets(source.runtimeSource);
 }
 
+/** Runtime preparation and retained project source must select the same public inputs. */
+export function ignoredProjectSource(name,entrypoint){
+    return ['node_modules','.git','coverage'].includes(name)||name.toLowerCase()==='.npmrc'
+        ||name==='dist'&&!entrypoint.split('/').includes('dist')||/^\.env(?:\.|$)/.test(name);
+}
+
 async function projectFiles(source, recipeDirectory, limits = { filesCount: 100, totalBytes: 5 * 1048576, fileBytes: 1048576 }) {
     const directory = path.resolve(recipeDirectory, source.directory);
     if (!within(recipeDirectory, directory)) throw new Error('Исходники выходят за папку рецепта.');
@@ -69,8 +75,7 @@ async function projectFiles(source, recipeDirectory, limits = { filesCount: 100,
     const files = []; let bytes = 0;
     async function read(prefix = '') {
         for (const item of await fs.readdir(path.join(directory, prefix), { withFileTypes: true })) {
-            if (['node_modules', '.git', 'coverage'].includes(item.name) || item.name.toLowerCase() === '.npmrc'
-                || item.name === 'dist' && !source.entrypoint.split('/').includes('dist') || /^\.env(?:\.|$)/.test(item.name)) continue;
+            if (ignoredProjectSource(item.name,source.entrypoint)) continue;
             const relative = prefix ? prefix + '/' + item.name : item.name;
             if (!runtime.portablePath(relative)) throw new Error('Недопустимый путь исходника: ' + relative);
             const filename = path.join(directory, relative); const stat = await fs.lstat(filename);

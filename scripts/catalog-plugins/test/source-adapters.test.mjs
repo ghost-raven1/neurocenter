@@ -113,6 +113,10 @@ await fs.writeFile(path.join(directory,'package-lock.json'),JSON.stringify({lock
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe: { ...recipe, source: { type: 'project', directory: 'source', entrypoint: 'index.js' } }, recipePath: path.join(root, 'recipe.json'), output });
         const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
+        const snapshot=JSON.parse(await fs.readFile(built.sourceSnapshotPath,'utf8'));
+        assert.deepEqual(snapshot.files.map(file=>file.path).sort(),['index.js','package.json']);
+        assert.ok(!snapshot.files.some(file=>file.content.includes('https://untrusted.example')||file.content.includes('ignore-scripts=false')));
+        assert.equal(await fs.readFile(path.join(root,'source/.npmrc'),'utf8'),'@fixture:registry=https://untrusted.example');
         const artifact = manifest.tools[0].artifacts[0];
         const descriptor = artifact.descriptor;
         assert.equal(descriptor.entrypoint, 'entrypoint.cjs.mjs');

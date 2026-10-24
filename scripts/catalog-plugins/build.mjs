@@ -9,7 +9,7 @@ import runtime from '../../services/shared/runtime-artifacts.cjs';
 import {toolRuntimePath} from './supply-layout.mjs';
 import { readyManifest } from './manifest.mjs';
 import {exportBuiltAsset} from './source-envelope.mjs';
-import {capturePreparedSource} from './prepared-source-snapshot.mjs';
+import {capturePreparedSource,preparedSourceAdapter} from './prepared-source-snapshot.mjs';
 import { packRuntime } from './pack.mjs';
 import { publishCatalog } from './publish.mjs';
 import { installDependencies } from './recipes/upstream.mjs';
@@ -185,7 +185,7 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
     const destination = await inspectBuildOutput(output);
     const files = await inspectRecipe(recipe, recipeDirectory, destination);
     if (dryRun) { return { ok: true, dryRun: true, key: recipe.key, kind: recipe.kind, targets: recipe.targets, output: destination }; }
-    const prepared=recipe.source.type==='prepared'?await capturePreparedSource():undefined,preparedInputs=prepared?.files;
+    const prepared=preparedSourceAdapter(recipe.source)?await capturePreparedSource():undefined,preparedInputs=prepared?.files;
     await fs.mkdir(destination, { recursive: true });
     if ((await fs.readdir(destination)).length) { throw new Error('Папка output перестала быть пустой.'); }
     const lockPath = path.join(destination, '.build-lock.json');
