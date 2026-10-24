@@ -27,17 +27,23 @@ export async function bridgeCliProfileFixture(kind:'http'|'https'|'proxy'='http'
     const visited=new Set<string>();
     async function compile(relative:string):Promise<void>{
         if(visited.has(relative))return;visited.add(relative);
-        const content=await fs.readFile(path.join(source,relative),'utf8'),destination=path.join(install,'dist',relative.replace(/\.ts$/,'.js'));
+        const filename=path.join(source,relative),destination=path.join(install,'dist',relative.replace(/\.ts$/,'.js'));
+        if(!filename.startsWith(source)||!destination.startsWith(path.join(install,'dist')+path.sep))throw Error('Fixture compiler paths must stay in the source and owned installation.');
+        const content=await fs.readFile(filename,'utf8');
         await fs.mkdir(path.dirname(destination),{recursive:true});
         await fs.writeFile(destination,ts.transpileModule(content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
         for(const imported of ts.preProcessFile(content).importedFiles){
-            if(imported.fileName.startsWith('.'))await compile(path.normalize(path.join(path.dirname(relative),imported.fileName.replace(/\.js$/,'.ts'))));
+            if(imported.fileName.startsWith('.')&&!imported.fileName.endsWith('.cjs'))await compile(path.normalize(path.join(path.dirname(relative),imported.fileName.replace(/\.js$/,'.ts'))));
         }
     }
     await compile('bridge-cli.ts');
     await fs.writeFile(path.join(install,'dist/index.js'),"throw Error('Worker fixture must never execute.');\n");
     await fs.mkdir(path.join(install,'dist/shared'),{recursive:true});
-    await fs.copyFile(fileURLToPath(new URL('../../../services/shared/opencode-providers.cjs',import.meta.url)),path.join(install,'dist/shared/opencode-providers.cjs'));
+    // The owned standalone fixture carries the same explicitly shipped contracts as scripts/build.mjs.
+    for(const name of ['device-codex-inference.cjs','runtime-cache-policy.cjs','codex-connector-pin.json','codex-connector-source.cjs',
+        'runtime-artifacts.cjs','rag-index-contract.cjs','rag-ui-contract.cjs','opencode-model-scan.cjs','adapter-parameters.cjs','opencode-providers.cjs',
+        'project-snapshot.cjs','project-agents.cjs','project-configuration.cjs','project-learning.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs'])
+        await fs.copyFile(fileURLToPath(new URL('../../../services/shared/'+name,import.meta.url)),path.join(install,'dist/shared',name));
     await fs.writeFile(path.join(install,'package.json'),JSON.stringify({type:'module',version:'0.9.18'}));
     await fs.mkdir(path.join(install,'bin'));await fs.symlink(process.execPath,path.join(install,'bin/node'));
     await fs.mkdir(path.join(install,'node_modules'),{recursive:true});
