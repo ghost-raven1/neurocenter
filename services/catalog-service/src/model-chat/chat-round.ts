@@ -29,7 +29,10 @@ export interface ChatRoundHooks {
 export async function executeChatRound(req: Request, scope: ChatRoundScope, turn: TurnRow, signal: AbortSignal, project: PreparedProjectContext,
     groups: ChatGroup, repository: ChatRepository, runtime: IModelInferenceRuntime, hooks: ChatRoundHooks): Promise<void> {
     const responses = await groups.responses(repository.pool, scope.row.id, [turn.id]), budget = { summaries: 0 };
-    for (const response of responses) {
+    const requiresBridge = (response: typeof responses[number]) => hooks.prepared.get(response.id)?.model.runtime === 'device-codex';
+    // Independent server replies commit before bridge waits; persisted participant order and shared budgets stay unchanged.
+    const execution = [...responses.filter(response => !requiresBridge(response)), ...responses.filter(requiresBridge)];
+    for (const response of execution) {
         if (response.status === 'done') continue;
         const prepared = hooks.prepared.get(response.id); if (!prepared) continue;
         signal.throwIfAborted(); await scope.authorize(true); await project.assertCurrent();
