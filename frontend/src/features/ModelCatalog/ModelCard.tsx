@@ -13,6 +13,7 @@ interface IProps {
     canHost: boolean; busy: boolean; onAssign: () => void; onView: () => void;
     disabled?: boolean; onEdit?: () => void; onRemove?: () => void; onConfigure?: () => void;
     assignmentUnavailableReason?: string;onConnect?:()=>void;connectionUnavailableReason?:string;
+    connectionStatus?: 'checking' | 'unknown' | 'connected';
     embeddingSetupHref?:string;
     onChat?: () => void; chatUnavailableReason?: string;
     onSetupProvider?: () => void;
@@ -20,7 +21,7 @@ interface IProps {
 }
 
 /** В карточке видны назначение, подключение и главное действие; технические сведения открываются отдельно. */
-export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,embeddingSetupHref,onChat,chatUnavailableReason,onSetupProvider, feedback }: IProps): JSX.Element {
+export function ModelCard({ model, assigned, projectSelected, canAssign, canHost, busy, disabled, assignmentUnavailableReason, onAssign, onView, onEdit, onRemove, onConfigure,onConnect,connectionUnavailableReason,connectionStatus,embeddingSetupHref,onChat,chatUnavailableReason,onSetupProvider, feedback }: IProps): JSX.Element {
     const remote = modelUsesApiConnection(model), deviceCodex = model.runtime === 'device-codex';
     return <article className={`model-card${assigned ? ' model-card_assigned' : ''}`} aria-label={model.name}>
         <div className="model-card__heading">
@@ -53,7 +54,9 @@ export function ModelCard({ model, assigned, projectSelected, canAssign, canHost
             {(model.runtime === 'remote-openai' || model.runtime === 'remote-ollama') && model.capability !== 'embedding' && projectSelected && canAssign && assigned && onSetupProvider && !model.archivedAt
                 && <Button disabled={busy || disabled} onClick={onSetupProvider}>Настроить в OpenCode</Button>}
             {projectSelected&&canAssign&&assigned&&onConnect&&eligibleEmbedding(model)&&!model.archivedAt&&<Tooltip title={connectionUnavailableReason}><span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason?0:undefined}>
-                <FeatureButton features={['model_catalog','rag_sync','model_hosting']} type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason} onClick={onConnect}>Подключить модель</FeatureButton>
+                <FeatureButton features={['model_catalog','rag_sync','model_hosting']} type="primary" loading={busy} disabled={busy||disabled||!!connectionUnavailableReason||!!connectionStatus} onClick={onConnect}>
+                    {connectionStatus === 'connected' ? 'Модель подключена' : connectionStatus === 'checking' ? 'Проверяем подключение' : connectionStatus === 'unknown' ? 'Подключение не проверено' : 'Подключить модель'}
+                </FeatureButton>
             </span></Tooltip>}
             {projectSelected && canAssign ? <Tooltip title={assignmentUnavailableReason}><span aria-label={assignmentUnavailableReason} tabIndex={assignmentUnavailableReason?0:undefined}><FeatureButton features={assigned ? [] : ['model_catalog']} type={assigned ? 'default' : 'primary'} loading={busy} disabled={busy || disabled || !!assignmentUnavailableReason || !!model.archivedAt && !assigned} onClick={onAssign}>
                 {assigned ? 'Убрать из проекта' : 'Добавить в проект'}

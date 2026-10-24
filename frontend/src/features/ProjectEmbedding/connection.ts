@@ -4,6 +4,7 @@ import { hasCurrentBinding, isPending } from '../McpBridge/installationHelpers';
 import { latestInstallationReport, runtimeFileBlocker, sameInstallation, uuid } from '../McpBridge/operationHelpers';
 import { bridgeOperationBlocker } from '../McpBridge/readiness';
 import { sameEmbeddingProfile, sha, type IProjectEmbedding } from './model';
+import type { IReindexConnectionTarget } from './reindex';
 
 export type IEmbeddingConnectionInput = Extract<IBridgeJobDraft, { kind: 'connect-rag-model' }>;
 /** Поддержка подтверждается закреплённым пакетом и сверенными файлами, а не названием инструмента. */
@@ -43,6 +44,13 @@ export function embeddingConnected(job: IBridgeJob | undefined, selection: IProj
         && result.modelPin === selection.modelPin && result.requiresRestart === true && !!selection.profile
         && !!result.profile && typeof result.profile === 'object'
         && sameEmbeddingProfile(result.profile as NonNullable<IProjectEmbedding['profile']>, selection.profile);
+}
+/** Успех соседнего компьютера, версии пакета или экземпляра папки не закрывает нужное подключение. */
+export function embeddingTargetConnected(jobs: IBridgeJob[], selection: IProjectEmbedding, target: IReindexConnectionTarget): boolean {
+    return jobs.some(job => job.kind === 'connect-rag-model' && job.projectId === selection.projectId && job.deviceId === target.deviceId
+        && job.assetId === target.assetId && job.assetKind === target.assetKind && Number(job.version) === target.version
+        && job.expectedManifest === target.expectedManifest && job.bindingId === target.expectedBindingId
+        && job.expectedInstanceId === target.expectedInstanceId && embeddingConnected(job, selection));
 }
 export function pendingEmbeddingAction(jobs: IBridgeJob[], deviceId: string, projectId: string, bindingId?: string): boolean {
     return jobs.some(job => isPending(job) && job.deviceId === deviceId && (job.kind === 'choose-root'

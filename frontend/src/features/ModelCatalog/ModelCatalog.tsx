@@ -7,7 +7,9 @@ import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
-import { eligibleEmbedding } from '../ProjectEmbedding/model';
+import { eligibleEmbedding, projectEmbeddingApi, selectedEmbeddingMatches, type IProjectEmbedding } from '../ProjectEmbedding/model';
+import { useProjectEmbeddingSelection } from '../ProjectEmbedding/useProjectEmbeddingSelection';
+import { embeddingTargetConnected } from '../ProjectEmbedding/connection';
 import { useProjectReindex } from '../ProjectEmbedding/useProjectReindex';
 import { ProjectReindexStatus } from '../ProjectEmbedding/ProjectReindexStatus';
 import { modelCatalogApi } from './api';
@@ -40,7 +42,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const { scope, captureOwner } = useAuthRequestOwner();
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
     const embeddingTarget=useEmbeddingTarget(projectId);
-    const reindex = useProjectReindex(projectId, () => { void refresh(); });
+    const embedding = useProjectEmbeddingSelection(projectId);
+    const reindex = useProjectReindex(projectId, () => { void refresh(); void embedding.refresh(); });
     const [query, setQuery] = useState('');
     const [assignedOnly, setAssignedOnly] = useState(!!embedded);
     const [viewId, setViewId] = useState<string | null>(null);
@@ -53,8 +56,15 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [connectionHint, setConnectionHint] = useState<IRemoteConnectionHint>();
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const lock = useRef(false), mutationVersion = useRef(0);
     const formScope = JSON.stringify([scope, projectId]), previousScope = useRef(formScope);
     const providerContext = useRef({formScope, canManage}); providerContext.current = {formScope, canManage};
+    const connectionTarget = JSON.stringify([embeddingTarget.mode, embeddingTarget.value]);
+    const connectionContext = useRef({ formScope, connectionTarget }); connectionContext.current = { formScope, connectionTarget };
+    useEffect(() => {
+        lock.current = false; setBusy(null); setError('');
+        return () => { mutationVersion.current++; };
+    }, [formScope, connectionTarget, canManage]);
     useEffect(() => {
         if (previousScope.current === formScope) return;
         previousScope.current = formScope;
@@ -75,7 +85,6 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
             if (!captureOwner()() || providerContext.current.formScope !== formScope || !providerContext.current.canManage || providerSetupRef.current !== providerSetup) return;
             embeddingTarget.bridge.choose(deviceId); setProviderSetup({...providerSetup, deviceId});
         }} : embeddingTarget.bridge;
-    const lock = useRef(false);
     const assigned = useMemo(() => new Set(catalog?.assignedModelIds ?? []), [catalog]);
     const shown = useMemo(() => catalog ? filterCatalogModels(catalog, query, !!projectId && assignedOnly) : [], [catalog, query, projectId, assignedOnly]);
     const viewing = catalog?.items.find(model => model.id === viewId);
@@ -98,18 +107,30 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         return (connecting||!assigned.has(model.id))&&eligibleEmbedding(model)&&embeddingTarget.blocked
             ?embeddingTarget.reason||'Выберите, куда подключить модель: сервер или конкретную установку OpenCodeRAG.':'';
     };
+    const connected = (model: ICatalogModel, selection: IProjectEmbedding | undefined = embedding.selection): boolean => selectedEmbeddingMatches(selection, model)
+        && (embeddingTarget.mode === 'server' || !!embeddingTarget.value && embeddingTarget.ready
+            && embeddingTargetConnected(embeddingTarget.bridge.jobs, selection, embeddingTarget.value));
+    const connectionStatus = (model: ICatalogModel): 'checking' | 'unknown' | 'connected' | undefined => embedding.loading ? 'checking'
+        : embedding.error || !embedding.selection ? 'unknown' : connected(model) ? 'connected' : undefined;
+    const currentConnectionContext = (): boolean => connectionContext.current.formScope === formScope
+        && connectionContext.current.connectionTarget === connectionTarget && providerContext.current.canManage;
     const connect = async (model:ICatalogModel):Promise<void>=>{
-        const owns=captureOwner();
-        if(!owns()||lock.current||loading||loadError||!catalog||reindex.pending||reindex.busy||reindex.plan?.state==='needs_input')return;
-        if(!projectId||!canManage||!assigned.has(model.id)||!eligibleEmbedding(model)||model.archivedAt||embeddingTarget.blocked)return;
+        const owns=captureOwner(), ticket=mutationVersion.current, current=()=>owns()&&ticket===mutationVersion.current&&currentConnectionContext();
+        if(!current()||lock.current||loading||loadError||!catalog||reindex.pending||reindex.busy||reindex.plan?.state==='needs_input')return;
+        if(!projectId||!canManage||!assigned.has(model.id)||!eligibleEmbedding(model)||model.archivedAt||embeddingTarget.blocked||connectionStatus(model))return;
         lock.current=true;setBusy(model.id);setError('');
-        try{await reindex.request(model,undefined,embeddingTarget.value);}
-        catch(cause){if(owns())setError(errorMessage(cause,'Не удалось подготовить подключение модели. Повторите попытку.'));}
-        finally{lock.current=false;if(owns())setBusy(null);}
+        try{
+            const selection = await projectEmbeddingApi.read(projectId);
+            if (!current()) return;
+            if (connected(model, selection)) { void embedding.refresh(); return; }
+            await reindex.request(model,undefined,embeddingTarget.value);
+        }
+        catch(cause){if(current())setError(errorMessage(cause,'Не удалось подготовить подключение модели. Повторите попытку.'));}
+        finally{if(ticket===mutationVersion.current){lock.current=false;if(current())setBusy(null);}}
     };
     const mutate = async (model: ICatalogModel): Promise<void> => {
-        const owns = captureOwner();
-        if (!owns() || lock.current || loading || loadError || !catalog || reindex.pending || reindex.busy || reindex.plan?.state==='needs_input') return;
+        const owns = captureOwner(), ticket=mutationVersion.current, current=()=>owns()&&ticket===mutationVersion.current&&currentConnectionContext();
+        if (!current() || lock.current || loading || loadError || !catalog || reindex.pending || reindex.busy || reindex.plan?.state==='needs_input') return;
         if (!projectId || !canManage) return;
         lock.current = true; setBusy(model.id); setError('');
         try {
@@ -117,15 +138,14 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
             if(adding&&eligibleEmbedding(model)&&embeddingTarget.blocked)throw new Error('Выберите, куда подключить модель: сервер или конкретную установку OpenCodeRAG.');
             const result = adding ? await modelCatalogApi.assign(projectId, model.id) : await modelCatalogApi.unassign(projectId, model.id);
             if (result.ok !== true) throw new Error('Сервер не подтвердил изменение каталога моделей.');
-            if (!owns()) return;
+            if (!current()) return;
             if (adding && eligibleEmbedding(model)) await reindex.request(model,undefined,embeddingTarget.value);
-            if (!owns()) return;
+            if (!current()) return;
             await refresh();
         } catch (cause) {
-            if (owns()) setError(errorMessage(cause, 'Не удалось изменить каталог моделей. Повторите попытку.'));
+            if (current()) setError(errorMessage(cause, 'Не удалось изменить каталог моделей. Повторите попытку.'));
         } finally {
-            lock.current = false;
-            if (owns()) setBusy(null);
+            if (ticket === mutationVersion.current) { lock.current = false; if (current()) setBusy(null); }
         }
     };
     return <div className="model-catalog">
@@ -141,13 +161,15 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
             {projectId && canManage && <Checkbox checked={assignedOnly} onChange={event => setAssignedOnly(event.target.checked)}>Только в каталоге проекта</Checkbox>}
-            <Button loading={loading} disabled={!!busy} onClick={() => { void refresh(); }}>Обновить</Button>
+            <Button loading={loading} disabled={!!busy} onClick={() => { void refresh(); void embedding.refresh(); }}>Обновить</Button>
         </Space>
         {loadError && <Alert className="model-catalog__notice" type={catalog ? 'warning' : 'error'} showIcon message={catalog ? 'Не удалось обновить модели — показаны предыдущие данные' : 'Каталог моделей не загружен'}
             description={loadError} action={<Button loading={loading} onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {error && !viewing && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
         {projectId&&<div className="model-catalog__embedding-target">
-            {canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={reindex.busy||reindex.pending}/>}
+            {embedding.error && <Alert type="warning" showIcon message="Подключение модели проекта не проверено" description={embedding.error}
+                action={<Button onClick={() => { void embedding.refresh(); }}>Обновить подключение модели</Button>} />}
+            {canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={!!busy||reindex.busy||reindex.pending}/>}
             <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />
         </div>}
         {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">
@@ -155,7 +177,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 <ModelCard model={model} assigned={assigned.has(model.id)} projectSelected={!!projectId} canAssign={canManage} assignmentUnavailableReason={assignmentReason(model)} feedback={<CatalogFeedback catalogId={'model:' + model.id} title={model.name}/>}
                     embeddingSetupHref={prepareEmbedding?projectRagCatalogUrl(projectId!):undefined}
                     canHost={isMain} busy={busy === model.id} disabled={!!busy || !!loadError || loading} onAssign={() => { void mutate(model); }} onView={() => { setError(''); setViewId(model.id); }}
-                    onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)}
+                    onConnect={()=>{void connect(model);}} connectionUnavailableReason={assignmentReason(model,true)} connectionStatus={connectionStatus(model)}
                     onEdit={() => setEditing(model)} onRemove={archived} onConfigure={() => setConnection(model)}
                     onSetupProvider={providerModelEligible(model) ? () => openProvider(model.id) : undefined}
                     onChat={() => setChatId(model.id)} chatUnavailableReason={modelChatUnavailableReason(model, canChat, !!projectId, assigned.has(model.id))} />

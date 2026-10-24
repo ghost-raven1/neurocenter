@@ -12,6 +12,14 @@ export const eligibleEmbedding = (model: ICatalogModel, dimension?: number): boo
     && Number.isSafeInteger(model.dimension)&&Number(model.dimension)>0&&Number(model.dimension)<=16000&&(dimension===undefined||model.dimension === dimension) && (model.runtime === 'ollama' ? sha(model.manifestSha256)
         : ['remote-openai', 'remote-ollama'].includes(model.runtime) && !!model.modelVersion && sha(model.verificationSha256));
 
+/** Только подтверждённый текущий pin и полный серверный снимок означают готовое подключение. */
+export function selectedEmbeddingMatches(selection: IProjectEmbedding | undefined, model: ICatalogModel): selection is IProjectEmbedding {
+    return !!selection && !selection.blocker && sha(selection.activeSnapshot) && sha(model.modelPin)
+        && selection.model?.id === model.id && selection.modelPin === model.modelPin && selection.revision > 0
+        && selection.expectedDimension === model.dimension && selection.profile?.dimension === model.dimension
+        && selection.profile?.provider === 'openai' && selection.profile.model === `neurocenter/${model.id}/sha256/${model.modelPin}`;
+}
+
 /** Неполный ответ не подменяет подтверждённый выбор пустой моделью. */
 export function requireProjectEmbedding(value: IProjectEmbedding, projectId: string): IProjectEmbedding {
     if (!value || value.projectId !== projectId || !Number.isSafeInteger(value.revision) || value.revision < 0
