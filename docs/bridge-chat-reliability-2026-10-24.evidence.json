@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "code": "789b9e8ae51fe6b2757d117781ae648318e5c50a",
+  "generatedAt": "2026-10-24T06:49:38.519Z",
+  "coverage": {
+    "profile": "unit-safe",
+    "sourceStable": true,
+    "complete": false,
+    "passed": 9968,
+    "failed": 0,
+    "skipped": 67,
+    "todo": 0,
+    "selectedFiles": 744,
+    "excludedFiles": 104,
+    "summary": {
+      "lines": {
+        "total": 38577,
+        "covered": 26797,
+        "skipped": 0,
+        "pct": 69.46
+      },
+      "statements": {
+        "total": 63166,
+        "covered": 41069,
+        "skipped": 0,
+        "pct": 65.01
+      },
+      "functions": {
+        "total": 13035,
+        "covered": 8146,
+        "skipped": 0,
+        "pct": 62.49
+      },
+      "branches": {
+        "total": 61565,
+        "covered": 40654,
+        "skipped": 0,
+        "pct": 66.03
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    },
+    "productionInventory": {
+      "total": 1646,
+      "represented": 1469,
+      "unrepresented": 166,
+      "unsupported": 11,
+      "unavailable": 0
+    }
+  },
+  "live": {
+    "schemaVersion": 32,
+    "sourceFilesVerified": 19,
+    "foreignFilesPreserved": 75,
+    "bridgeBuildId": "36a217c9d19d4694203fa3a9e032f4b4785fa3a040ee6902214a6eb4f46cd9ab"
+  },
+  "proof": [
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/final-live-applied.json",
+      "sha256": "8045eb8f83abb52ec94ef12718680beee5bcfe95ec9a106531eb27e3a52c5a83"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/services-passive-final.json",
+      "sha256": "6e1f063046eed50bdf58bda90a0525dd0ea2d15c066c26c2f4552e2261a06d3d"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/codex-live-acceptance.json",
+      "sha256": "dd1f1c59f5990044528658a450db1c1826a8b6defecd7b4d5e96ac3dcc98ca8d"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/codex-guard-races-final-proof.json",
+      "sha256": "824a22a9a5bc47c1d9b74ac0e8d01fd93e4647c5446eea13ba010034d9d47998"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/fixture-regressions-green.json",
+      "sha256": "0dca01e15a9ad2feb69ad8ac76c573bc364e60fd59c4ae915715e18d0043fd3a"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/bridge-fixtures-green-receipt.json",
+      "sha256": "d40a908098ac478dbfc7eff0eeff27afd8950db9ee1158c10264966cb16fc083"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/system-role-admission/manifest.json",
+      "sha256": "d2ea0330a3292ceea86ddee3175ba38ee28a54631163d15149c6fdc3369085c6"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/admission/project-chat-admission-final-manifest.json",
+      "sha256": "9e9dedea2468e31d07fa9e96e41a211f77688cc56c0294892585b702ee9f81dd"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/project-chat-isolation-final-manifest.json",
+      "sha256": "9a29d8123e1df53ade36e1c99a28bbd6718e7673ac98f5f200f10324c48f7743"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/project-chat-receipt-validated-manifest.json",
+      "sha256": "74f8a1f5e51205fe93ff4a8b2dde65eadd907ca5341e892b3441c866f6dc81d9"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/owned-pg-cleanup.json",
+      "sha256": "f33256394d31d66412f957a47ac7acb0ee70d2e57d0b8a9596dcd4d1ff99ef71"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/admission/owned-pg-cleanup.json",
+      "sha256": "74fc08836e764b9455bb7e7f3ff86ab54dd0573229eaf5cc4f62cffffaea42e7"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/final-source/catalog-typecheck.json",
+      "sha256": "6d5818c97fc867a14d8d7dde048577063cd2404b867ca1ec33d905e95eeb99e1"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/coverage-final-789b/manifest.json",
+      "sha256": "2981c2036c14bdd8c2d2cdce5a0199a5c5beca71d70182743eb691db7868db9d"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/coverage-final-789b-run.json",
+      "sha256": "f65606b63cb8fd089612cfb7ab3a58a4e1a640d6019394714d675fcb2937659b"
+    },
+    {
+      "path": ".run/continuation-20261024/bridge-incident-fixed-after.json",
+      "sha256": "236c1f76c568502aba76eb28b19ee93a135f7d8a051bf8dad1de4d0a1cffce5f"
+    },
+    {
+      "path": ".run/continuation-20261024/archive-acceptance-L0R6f1/receipt.json",
+      "sha256": "7f69cfbec281f93a93aea1a442c71d6aff67ada5939086dbf60a99ca40b54278"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/post-validation-live.json",
+      "sha256": "9a95197a2bedfeeadb1781c5d5ceb1e2fa3578d3826dd0a98ad37f5ea8b290f2"
+    },
+    {
+      "path": ".run/reliability-regressions-20261024-b0952ea0/coverage-final-789b-review.json",
+      "sha256": "b9c9892f9cedd6e2f541a35f5013de1036d6073a747bf4d0e633cdbb95a7aa0f"
+    }
+  ]
+}
