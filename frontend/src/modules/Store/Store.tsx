@@ -48,7 +48,9 @@ import { createProjectCatalogBatchController } from './projectCatalogBatch';
 import UnavailableProjectAssets from './UnavailableProjectAssets';
 import { unavailableProjectAssets } from './selectUnavailableProjectAssets';
 import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
-import { loadCompletePluginCatalog } from './loadCompletePluginCatalog';
+import { useToolCatalog } from './useToolCatalog';
+import { ToolCatalogStatus } from './ToolCatalogStatus';
+import { toolCatalogSource } from './toolCatalogController';
 import { CatalogTabs } from './CatalogTabs';
 import { catalogSection } from './catalogSection';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
@@ -88,7 +90,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const isMain = isMainAdminRole(user?.activeRole);
     const { projects, ready: projectsReady, loading: projectsLoading, error: projectLoadError, scope: accessKey, refresh: refreshProjects } = useAvailableProjects();
 
-    const [commonCatalog, setCatalog] = useState<IStoreApp[]>([]);
+    const { apps: commonCatalog, sources: catalogSources, refresh: loadCatalog } = useToolCatalog();
     const requestedTarget = presetTarget ?? storeProjectQuery(location.search);
     const selectedTarget = selectStoreTarget(projectsReady ? projects : [], requestedTarget, user);
     const targetProject = selectedTarget.project;
@@ -103,9 +105,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const query = storeSearchQuery(location.search);
     const [search, setSearch] = useState(() => query);
     const [installedOnly, setInstalledOnly] = useState(false);
-    const [loadError, setLoadError] = useState(false);
-    const catalogRequest = useRef(0);
-    const [loading, setLoading] = useState(true);
+    const loading = catalog.length === 0 && (catalogSources.plugins.loading || catalogSources.skills.loading);
+    const catalogIncomplete = !catalogSources.plugins.ready || !catalogSources.skills.ready
+        || !!catalogSources.plugins.error || !!catalogSources.skills.error;
     const [installing, setInstalling] = useState<string | null>(null);
 
     const [picker, setPicker] = useState<{ app: IStoreApp } | null>(null);
@@ -171,36 +173,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         }
     }, [projects, projectsReady, accessKey, embedded, presetTarget, requestedTarget, history, location.search, location.hash, user]);
 
-    const loadCatalog = useCallback(async (): Promise<void> => {
-        const isOwnerCurrent = captureOwner();
-        if (!isOwnerCurrent()) { return; }
-        const request = ++catalogRequest.current;
-        const isCurrent = (): boolean => request === catalogRequest.current && isOwnerCurrent();
-        setLoading(true);
-        setLoadError(false);
-        try {
-            const [plugins, skills] = await Promise.all([
-                loadCompletePluginCatalog(bffApi.listAiPlugins, isCurrent),
-                bffApi.listSkills({}),
-            ]);
-            if (!isCurrent() || plugins === null) { return; }
-            const nextCatalog = [
-                ...plugins.map(fromPlugin),
-                ...((skills ?? [])).map(fromSkill),
-            ];
-            setCatalog(nextCatalog);
-            setViewApp(previous => previous?.projectManifest?previous:previous ? (nextCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous) : null);
-        } catch {
-            if (isCurrent()) { setLoadError(true); setCatalog([]); }
-        } finally {
-            if (isCurrent()) { setLoading(false); }
-        }
-    }, [accessKey, captureOwner]);
-
     useEffect(() => {
-        void loadCatalog();
-        return () => { catalogRequest.current += 1; };
-    }, [ loadCatalog ]);
+        setViewApp(previous => previous?.projectManifest ? previous : previous
+            ? commonCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous : null);
+    }, [commonCatalog]);
 
     useSectionUpdates(['catalog'],()=>{void loadCatalog();void loadProject();});
 
@@ -353,7 +329,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
-            {loadError && <Alert type="error" showIcon message="Не удалось загрузить каталог" action={<Button size="small" onClick={() => { void loadCatalog(); }}>Повторить</Button>} style={{marginBottom:16}} />}
+            <ToolCatalogStatus sources={catalogSources} refresh={loadCatalog} />
             <Space style={{ marginBottom: 16 }} wrap>
                 <Radio.Group
                     optionType="button"
@@ -378,15 +354,18 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 {target && <Checkbox checked={installedOnly} onChange={event => setInstalledOnly(event.target.checked)}>Только в каталоге проекта</Checkbox>}
             </Space>
 
-            {!loading && !loadError && projectCatalogUsable && targetProject && <UnavailableProjectAssets
+            {projectCatalogUsable && targetProject && <UnavailableProjectAssets
                 key={JSON.stringify([accessKey, targetProject.id])} projectId={targetProject.id} canManage={canManage}
-                assets={unavailableProjectAssets(assets, catalog, targetProject.id)} onRemoved={loadProject}
+                assets={unavailableProjectAssets(assets.filter(asset => {
+                    const source = catalogSources[toolCatalogSource(asset.assetKind)];
+                    return source.ready && !source.loading && !source.error;
+                }), catalog, targetProject.id)} onRemoved={loadProject}
                 onRecheck={async () => { await Promise.all([loadCatalog(), loadProject()]); }} />}
 
             { loading
                 ? <Spin style={{ display: 'block', margin: '60px auto' }} />
                 : (shown.length === 0
-                    ? <Empty description={search || installedOnly ? 'По этим условиям ничего не найдено' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); }}>Сбросить фильтры</Button></Empty>
+                    ? <Empty description={catalogIncomplete ? 'Каталог загружен не полностью. Повторите загрузку недоступного источника.' : search || installedOnly ? 'По этим условиям ничего не найдено' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); }}>Сбросить фильтры</Button></Empty>
                     : (
                         <Row gutter={[12, 12]} align="stretch">
                             { shown.map(a => (
@@ -453,7 +432,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             }} />}
 
             <StoreDetailsModal onNewVersion={isMain&&viewApp?()=>newVersion(viewApp):undefined} viewApp={viewApp} onClose={() => setViewApp(null)} onEdit={viewApp && canEditTool(user, viewApp) ? () => { setEditApp(viewApp); setViewApp(null); } : undefined}
-                archiveAction={viewApp ? <StoreArchiveAction app={viewApp} common={commonCatalog} isMain={isMain} block={false} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} /> : undefined}
+                archiveAction={viewApp ? <StoreArchiveAction app={viewApp} common={commonCatalog} isMain={isMain} block={false}
+                    disabled={!catalogSources[toolCatalogSource(viewApp.kind)].ready || catalogSources[toolCatalogSource(viewApp.kind)].loading
+                        || !!catalogSources[toolCatalogSource(viewApp.kind)].error || !!installing || !!localBusy || projectLoading} onArchived={archived} /> : undefined}
                 projectName={target ?? undefined}
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}
