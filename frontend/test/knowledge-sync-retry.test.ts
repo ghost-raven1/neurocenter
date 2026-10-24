@@ -55,8 +55,9 @@ vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi', () => ({OpenCodeRagUi: 
 vi.mock('react-router-dom', () => ({Link: () => null}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children;
-    return {Space: content, Typography: {Text: content}, Alert: ({type, message, description}: {type: string; message: string; description?: string}) => {
-        if (type === 'error') ui.errors.push(message); if (type === 'warning') ui.warnings.push(message + ' ' + (description || '')); return null;},
+    return {Space: content, Typography: {Text: content}, Alert: ({type, role, message, description}: {type: string; role?: string; message: string; description?: string}) => {
+        if (type === 'error') ui.errors.push(message); if (type === 'warning') ui.warnings.push(message + ' ' + (description || ''));
+        return createElement('div', {role}, createElement('strong', null, message), description && createElement('p', null, description));},
         Modal: {confirm: (options: Omit<RestoreDialog, 'destroyed' | 'destroy'>) => {
             const dialog: RestoreDialog = {...options, destroyed: false, destroy: vi.fn()};
             dialog.destroy.mockImplementation(() => {dialog.destroyed = true;}); ui.dialogs.push(dialog); return dialog;
@@ -67,7 +68,7 @@ const sync = 'Синхронизировать с сервером', restore = '
 const job = (id: string, state: IBridgeJob['state'] = 'queued') => ({id, state, deviceId: ui.bridge.device.id, projectId: ui.projectId,
     kind: 'sync-rag', bindingId: ui.bridge.device.report.bindings.find(item => item.projectId === ui.projectId)!.bindingId,
     message: 'Ожидает моста', createdAt: '', updatedAt: ''}) as IBridgeJob;
-function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: ui.canWrite, serverReady: ui.serverReady})); hooks.commit();}
+function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; const markup = renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: ui.canWrite, serverReady: ui.serverReady})); hooks.commit(); return markup;}
 function click(label = sync, confirm = true) {const button = ui.buttons.get(label)!; expect(button.disabled).toBe(false); button.onClick(); if (label === restore && confirm) void ui.dialogs[ui.dialogs.length - 1]?.onOk();}
 async function flush() {for (let index = 0; index < 12; index++) await Promise.resolve();}
 function deferred() {
@@ -83,6 +84,44 @@ beforeEach(() => {
     ui.bridge.reload.mockResolvedValue(undefined);
 });
 afterEach(() => {hooks.dispose(); vi.unstubAllGlobals();});
+
+describe('Результат операции не выдаётся за свежую проверку локального индекса', () => {
+    const operations = [
+        {kind: 'sync-rag', heading: 'Результат последней синхронизации с сервером'},
+        {kind: 'restore-rag', heading: 'Результат последнего восстановления с сервера'},
+    ];
+    it.each(operations.flatMap(operation => ['failed', 'succeeded', 'cancelled'].map(state => ({...operation, state}))))(
+        '$kind / $state: прошлый результат обозначен отдельно, сообщение сохранено', ({kind, heading, state}) => {
+            const message = state === 'failed' ? 'Индекс не найден. Запустите OpenCodeRAG в связанной папке проекта.'
+                : state === 'succeeded' ? 'Операция завершена.' : 'Операция отменена.';
+            ui.bridge.jobs = [{...job('previous', state), kind, message}];
+            const markup = render();
+            expect(markup).toContain('<div role="status"><strong>' + heading + '</strong>');
+            expect(markup).toContain('<p>' + message + '</p>');
+            expect(ui.buttons.get(sync)!.disabled).toBe(false);
+            expect(ui.buttons.get(restore)!.disabled).toBe(false);
+            expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+        },
+    );
+
+    it.each(operations.flatMap(operation => ['queued', 'running', 'reconciling'].map(state => ({...operation, state}))))(
+        '$kind / $state: текущий прогресс сохраняется без подписи прошлого результата', ({kind, state}) => {
+            ui.bridge.jobs = [{...job('current', state), kind, message: 'Текущий прогресс операции'}];
+            const markup = render();
+            expect(markup).toContain('<div role="status"><strong>Текущий прогресс операции</strong>');
+            expect(markup).not.toContain('Результат последн');
+            expect(ui.buttons.get(sync)!.disabled).toBe(true);
+            expect(ui.buttons.get(restore)!.disabled).toBe(true);
+            expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+        },
+    );
+
+    it('Без операции не показывает результат или диагноз индекса', () => {
+        const markup = render();
+        expect(markup).not.toContain('Результат последн'); expect(markup).not.toContain('Индекс не найден');
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+    });
+});
 
 describe('Явное подтверждение замены локального RAG', () => {
     it('Восстановление не отправляется до явного подтверждения замены', async () => {

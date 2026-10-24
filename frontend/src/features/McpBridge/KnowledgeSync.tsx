@@ -197,7 +197,9 @@ export const KnowledgeSync: FC<{
                               : 'info'
                     }
                     showIcon
-                    message={job.message}
+                    message={pending ? job.message : job.kind === 'sync-rag'
+                        ? 'Результат последней синхронизации с сервером' : 'Результат последнего восстановления с сервера'}
+                    description={pending ? undefined : job.message}
                 />
             )}
             {accepted && pending && <>
