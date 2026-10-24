@@ -28,11 +28,11 @@ export function ChatComposer(props: Props): JSX.Element {
             } catch {props.onReject('Не удалось прочитать файлы. Выберите их кнопкой.');}
         }}>
         <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">Сообщение</label>
-        {targets && <Typography.Text id="model-chat-recipients" type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Всем участникам')}</Typography.Text>}
+        {targets && <Typography.Text id="model-chat-recipients" type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Команде')}</Typography.Text>}
         <details className="model-chat__file-picker"><summary>Прикрепить документы</summary><FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
             hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/></details>
         </div>
-        {props.participants ? <Mentions {...input} placeholder="Сообщение всем участникам или @имя для отдельных агентов…" onChange={props.onDraft} onPressEnter={enter} placement="top"
+        {props.participants ? <Mentions {...input} placeholder="Сообщение команде или @имя…" onChange={props.onDraft} onPressEnter={enter} placement="top"
             options={props.participants.filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`}))}
             filterOption={(search, option) => `${option.value} ${props.participants?.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}/>
             : <Input.TextArea {...input} placeholder="Задайте вопрос по документам или напишите сообщение…" onChange={event => props.onDraft(event.target.value)} onKeyDown={enter}/>}

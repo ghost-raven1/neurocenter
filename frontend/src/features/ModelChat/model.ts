@@ -1,5 +1,5 @@
 import type { ICatalogModel } from '../ModelCatalog/types';
-import type { IModelChatContext, IModelChatConversation, IModelChatDetail, IModelChatHistoryPage } from './types';
+import type { IModelChatContext, IModelChatConversation, IModelChatDetail, IModelChatHistoryPage, IModelChatTurn } from './types';
 
 /** One participant's compressible history cannot conceal another participant's oversized new input. */
 export function modelChatContextBlocked(context?: IModelChatContext): boolean {
@@ -15,10 +15,14 @@ export function modelChatUnavailableReason(model: ICatalogModel, canUse: boolean
     if (model.runtime === 'ollama' && !model.manifestSha256) return 'Сначала запустите или проверьте модель на сервере.';
     return '';
 }
+/** Automatic terminal discussions are immutable history; legacy failures still require recovery. */
+export function modelChatTurnUnresolved(turn: IModelChatTurn): boolean {
+    return turn.status === 'pending' || turn.status !== 'done' && turn.discussion?.mode !== 'automatic';
+}
 export function modelChatPromptError(prompt: string, attachmentIds: string[], detail: IModelChatDetail | null): string {
     if (!prompt.trim() && !attachmentIds.length) return 'Введите сообщение или прикрепите документ.';
     if (new TextEncoder().encode(prompt).byteLength > 128 * 1024) return 'Сообщение слишком большое: максимум 128 КиБ текста.';
-    if (detail?.turns.some(turn => turn.status !== 'done')) return 'Повторите или измените последнее сообщение.';
+    if (detail?.turns.some(modelChatTurnUnresolved)) return 'Повторите или измените последнее сообщение.';
     return '';
 }
 export function sortedModelChats(items: IModelChatConversation[], selected?: IModelChatConversation): IModelChatConversation[] {

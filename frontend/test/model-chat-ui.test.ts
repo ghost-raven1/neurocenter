@@ -41,7 +41,7 @@ const ui = vi.hoisted(() => ({
     context: undefined as ReturnType<typeof detail>['context'] | undefined,
     selectConversation: undefined as ((id: string) => void) | undefined, confirm: undefined as Confirmation | undefined, confirmCalls: vi.fn(), owner: 'alice', close: vi.fn(),
     chat: {items: [] as ReturnType<typeof detail>['conversation'][], detail: null as ReturnType<typeof detail> | null, turns: [] as IModelChatTurn[], uploads: [], attachments: [], activity: '', error: '', blocked: '', busy: false,
-        send: vi.fn(), retry: vi.fn(), stop: vi.fn(), stopOwn: vi.fn(), select: vi.fn(), refresh: vi.fn(), newChat: vi.fn(), rename: vi.fn(), remove: vi.fn(), editFailed: vi.fn(), addFiles: vi.fn(), cancelUploads: vi.fn(), removeUpload: vi.fn(), retryUpload: vi.fn(), removeAttachment: vi.fn(), historyLoading: false, historyError: '', loadEarlier: vi.fn(), configureParticipants: vi.fn(), complete: vi.fn(),
+        send: vi.fn(), retry: vi.fn(), stop: vi.fn(), select: vi.fn(), refresh: vi.fn(), newChat: vi.fn(), rename: vi.fn(), remove: vi.fn(), editFailed: vi.fn(), addFiles: vi.fn(), cancelUploads: vi.fn(), removeUpload: vi.fn(), retryUpload: vi.fn(), removeAttachment: vi.fn(), historyLoading: false, historyError: '', loadEarlier: vi.fn(), configureParticipants: vi.fn(), complete: vi.fn(),
         captureOwner: () => {const owner = ui.owner; return () => owner === ui.owner;}},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect, useLayoutEffect: hooks.effect}));
@@ -87,10 +87,10 @@ describe('Редактор: клавиатура, вставка файлов и
         const navigation={items:[other],loading:false,initialGroup:true,onSelect:open,onRefresh:vi.fn(),onChanged:vi.fn(),controls:()=>null};
         render(createElement(ChatWorkspace,{model,projectId:'prj-one',onClose:ui.close,navigation}));expect(ui.groupEditor?.inline).toBe(true);ui.selectConversation!('other');expect(open).toHaveBeenCalledWith(other);expect(ui.chat.select).not.toHaveBeenCalled();
     });
-    it('После подтверждения перехода к другой модели синхронно останавливает own request до prefetch, новый input заблокирован',()=>{
+    it('Переход к другой модели не останавливает принятый запрос и не требует подтверждения, новый input заблокирован',()=>{
         ui.chat.activity='sending';ui.chat.busy=true;const open=vi.fn(),other={...detail().conversation,id:'other',modelId:'another-model'};
         const navigation={items:[other],loading:false,opening:false,onSelect:open,onRefresh:vi.fn(),onChanged:vi.fn(),controls:()=>null};
-        render(createElement(ChatWorkspace,{model,projectId:'prj-one',onClose:ui.close,navigation}));ui.selectConversation!('other');expect(open).not.toHaveBeenCalled();ui.confirm!.onOk();expect(ui.chat.stopOwn).toHaveBeenCalledOnce();expect(ui.chat.stopOwn.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]);
+        render(createElement(ChatWorkspace,{model,projectId:'prj-one',onClose:ui.close,navigation}));ui.selectConversation!('other');expect(ui.confirmCalls).not.toHaveBeenCalled();expect(open).toHaveBeenCalledExactlyOnceWith(other);expect(ui.chat.stop).not.toHaveBeenCalled();
         ui.chat.activity='';ui.chat.busy=false;render(createElement(ChatWorkspace,{model,projectId:'prj-one',onClose:ui.close,navigation:{...navigation,opening:true}}));expect(ui.input!.disabled).toBe(true);expect(ui.buttons.get('Отправить')?.disabled).toBe(true);
     });
     it('Enter отправляет, Shift+Enter и IME-композиция сохраняют текст', () => {
@@ -214,13 +214,13 @@ describe('Сохранённый чат и подтверждения', () => {
         ui.chat.detail = detail({turns: [turn()]}); ui.chat.turns = [turn()]; render(createElement(ModelChatModal, {model, onClose: ui.close})); ui.modalClose!();
         expect(ui.close).toHaveBeenCalledOnce(); expect(ui.confirmCalls).not.toHaveBeenCalled();
     });
-    it('Закрытие не отменяет pending из другого окна, а свой HTTP останавливает синхронно', () => {
+    it('Закрытие скрывает чат с pending из любого окна без остановки и подтверждения', () => {
         ui.chat.busy = true; ui.chat.turns = [turn({status: 'pending', answer: undefined})];
         render(createElement(ModelChatModal, {model, onClose: ui.close})); ui.modalClose!(); expect(ui.confirmCalls).not.toHaveBeenCalled(); expect(ui.chat.stop).not.toHaveBeenCalled(); expect(ui.close).toHaveBeenCalledOnce();
-        ui.close.mockClear(); ui.chat.activity = 'sending'; render(createElement(ModelChatModal, {model, onClose: ui.close})); ui.modalClose!(); ui.confirm!.onOk(); expect(ui.chat.stopOwn).toHaveBeenCalledTimes(2); expect(ui.close).toHaveBeenCalledOnce(); expect(ui.chat.stop).not.toHaveBeenCalled();
+        ui.close.mockClear(); ui.chat.activity = 'sending'; render(createElement(ModelChatModal, {model, onClose: ui.close})); ui.modalClose!(); expect(ui.confirmCalls).not.toHaveBeenCalled(); expect(ui.close).toHaveBeenCalledOnce(); expect(ui.chat.stop).not.toHaveBeenCalled();
     });
-    it('Запрос закрытия при генерации требует подтверждения; старый owner не может его выполнить', () => {
-        ui.chat.busy = true; ui.chat.activity = 'sending'; ui.chat.turns = [turn({status: 'pending', answer: undefined})]; render(createElement(ModelChatModal, {model, onClose: ui.close}));
+    it('Подтверждение потери черновика не выполняется после смены owner', () => {
+        const panel = () => render(createElement(ModelChatModal, {model, onClose: ui.close})); panel(); ui.input!.onChange({target: {value: 'Личный черновик'}}); panel();
         ui.modalClose!(); ui.modalClose!(); expect(ui.confirmCalls).toHaveBeenCalledOnce(); expect(ui.close).not.toHaveBeenCalled(); ui.owner = 'bob'; ui.confirm!.onOk(); expect(ui.close).not.toHaveBeenCalled(); expect(ui.chat.stop).not.toHaveBeenCalled();
     });
 });
@@ -249,7 +249,7 @@ describe('Групповые ответы и контекст проекта', (
     });
     it('Группа с явным @ показывает адресата; неизвестный адрес не превращается в отправку всем', () => {
         const props = composer({participants: [participant()]}); let html = render(createElement(ChatComposer, props));
-        expect(html).toContain('Всем участникам'); expect(ui.mention!.options).toEqual([{value: 'nc-developer', label: 'Разработчик · @nc-developer'}]);
+        expect(html).toContain('Команде'); expect(ui.mention!.options).toEqual([{value: 'nc-developer', label: 'Разработчик · @nc-developer'}]);
         html = render(createElement(ChatComposer, {...props, draft: '@nc-developer вопрос'})); expect(html).toContain('Получат: Разработчик'); ui.mention!.onPressEnter(key()); expect(props.onSend).toHaveBeenCalledOnce();
         render(createElement(ChatComposer, {...props, draft: '@nc-typo вопрос'})); expect(ui.buttons.get('Отправить')!.disabled).toBe(true); ui.mention!.onPressEnter(key()); expect(props.onSend).toHaveBeenCalledOnce();
     });

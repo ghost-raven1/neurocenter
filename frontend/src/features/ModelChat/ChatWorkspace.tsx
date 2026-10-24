@@ -11,7 +11,7 @@ import {ChatParticipantsEditor} from './ChatParticipantsEditor';
 import {ChatProjectContext} from './ChatProjectContext';
 import {ChatMessages} from './ChatMessages';
 import {ConversationList} from './ConversationList';
-import {modelChatContextBlocked} from './model';
+import {modelChatContextBlocked, modelChatTurnUnresolved} from './model';
 import type {IChatWorkspaceNavigation,IModelChatProps} from './types';
 import {useChatContext} from './useChatContext';
 import {useModelChat} from './useModelChat';
@@ -41,8 +41,8 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     if (participantsEditor && !participantReturn.current) participantReturn.current = {scope: participantScope, root: participantRoot};
     const confirmation = useRef<{destroy: () => void}>();
     const context = useChatContext(chat.detail, draft, chat.attachments.map(file => file.id), availability.enabled);
-    const unresolved = chat.turns.some(turn => turn.status !== 'done'), disabled = !!chat.activity || unresolved || !!chat.blocked || !!navigation?.opening || !availability.enabled;
-    const hasDraft = !!draft.trim() || !!chat.uploads.length || research.enabled;
+    const unresolved = chat.turns.some(modelChatTurnUnresolved), disabled = !!chat.activity || unresolved || !!chat.blocked || !!navigation?.opening || !availability.enabled;
+    const hasDraft = !!draft.trim() || !!chat.uploads.length;
     useEffect(() => () => confirmation.current?.destroy(), []);
     useEffect(() => {navigation?.onChanged(chat.detail?.conversation ?? null);}, [chat.detail?.conversation, navigation?.onChanged]);
     useEffect(() => {
@@ -54,17 +54,17 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
         target?.focus();
     }, [participantsEditor, participantScope]);
     const confirm = (action: () => void, message: string): void => {
-        if (!hasDraft && chat.activity !== 'sending' && chat.activity !== 'uploading') {action(); return;}
+        if (!hasDraft && chat.activity !== 'uploading') {action(); return;}
         if (confirmation.current) return;
         const owns = chat.captureOwner();
-        confirmation.current = Modal.confirm({title: message, content: (chat.activity === 'sending' ? 'Запрос из этого окна будет остановлен. ' : chat.activity === 'uploading' ? 'Загрузка будет прервана. ' : '') + 'Неотправленный текст будет очищен. Сохранённые сообщения и документы останутся в диалоге.',
+        confirmation.current = Modal.confirm({title: message, content: (chat.activity === 'uploading' ? 'Загрузка будет прервана. ' : '') + (chat.uploads.length ? 'Выбранные файлы и неотправленный текст будут потеряны. ' : 'Неотправленный текст будет потерян. ') + 'Принятые запросы продолжат выполняться.',
             okText: 'Продолжить', cancelText: 'Отмена', onOk: () => {confirmation.current = undefined; if (owns()) action();}, onCancel: () => {confirmation.current = undefined;}});
     };
-    const close = (): void => confirm(() => {if (chat.activity === 'uploading') chat.cancelUploads(); else chat.stopOwn(); onClose();}, 'Закрыть чат?');
+    const close = (): void => confirm(() => {if (chat.activity === 'uploading') chat.cancelUploads(); onClose();}, 'Закрыть чат?');
     const newChat = (): void => confirm(() => {const owns = chat.captureOwner(); void chat.newChat().then(ok => {if (ok && owns()) {setDraft(''); research.reset(); setFileError(''); setPreview(undefined); setListOpen(false);}});}, 'Начать новый диалог?');
     const select = (id: string): void => {if (id === chat.detail?.conversation.id) {setListOpen(false); return;} confirm(() => {
         const item = navigation?.items.find(value => value.id === id);
-        if (item && item.modelId !== model.id) {if(chat.activity==='uploading')chat.cancelUploads();else chat.stopOwn();navigation?.onSelect(item);return;}
+        if (item && item.modelId !== model.id) {if(chat.activity==='uploading')chat.cancelUploads();navigation?.onSelect(item);return;}
         const owns = chat.captureOwner(); void chat.select(id).then(ok => {if (ok && owns()) {setDraft(''); research.reset(); setFileError(''); setPreview(undefined); setListOpen(false);}});
     }, 'Открыть другой диалог?');};
     const researchBlocked = research.enabled && (!researchAvailable.enabled || !research.request);

@@ -16,6 +16,7 @@ export interface IModelChatTurn {
     executionState?: 'waiting' | 'running' | null;
     processingStage?: 'compacting' | 'responding' | 'researching';
     targetAgentIds?: string[]; responses?: IModelChatResponse[]; research?: IChatResearchRequest; researchSteps?: IChatResearchStepSummary[];
+    discussion?: {mode: 'automatic'; callsStarted: number; maxCalls: number};
 }
 export interface IModelChatConversation {
     id: string; modelId: string; projectId: string | null; title: string; modelPin: string;

@@ -135,9 +135,28 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
         await start(); draft('Дорогой черновик'); const changed = vi.fn(); h.changeContext!(changed); h.confirmations[0].onCancel(); render(); expect(changed).not.toHaveBeenCalled(); expect(h.composer!.draft).toBe('Дорогой черновик');
         h.list!.onNew(); const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.create).mockReturnValueOnce(pending.promise); h.confirmations[1].onOk(); render(); expect(h.composer!.draft).toBe('Дорогой черновик'); pending.resolve(detail({conversation: {...detail().conversation, id: 'created'}})); await flushSetup(); render(); expect(h.composer!.draft).toBe(''); h.changeContext!(changed); expect(changed).toHaveBeenCalledOnce();
     });
-    it('switching to another model aborts an owned send synchronously before opening the new conversation', async () => {
+    it('switching to another model keeps the accepted HTTP until its old scope unmounts, without cancelling or asking about it', async () => {
         const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); const other = {...detail().conversation, id: 'other', modelId: 'model/other'}; props.navigation!.items = [other]; await start(); draft('Вопрос'); h.composer!.onSend(); await flushSetup(); render(); const signal = vi.mocked(modelChatApi.send).mock.calls[0][5];
-        h.list!.onSelect('other'); expect(props.navigation!.onSelect).not.toHaveBeenCalled(); h.confirmations[0].onOk(); expect(signal.aborted).toBe(true); expect(props.navigation!.onSelect).toHaveBeenCalledExactlyOnceWith(other); pending.resolve(detail({turns: [turn({answer: {content: 'LATE', finishReason: 'stop'}})]})); await flushSetup(); render(); expect(h.messages!.turns.some(value => value.answer?.content === 'LATE')).toBe(false);
+        h.list!.onSelect('other'); expect(h.confirmations).toHaveLength(0); expect(signal.aborted).toBe(false); expect(modelChatApi.cancel).not.toHaveBeenCalled(); expect(h.messages!.turns.at(-1)?.status).toBe('pending'); expect(props.navigation!.onSelect).toHaveBeenCalledExactlyOnceWith(other);
+        h.hooks.dispose(); expect(signal.aborted).toBe(true); props.model = {...model, id: other.modelId}; h.server = detail({conversation: other}); await start(); pending.resolve(detail({turns: [turn({answer: {content: 'LATE', finishReason: 'stop'}})]})); await flushSetup(); render(); expect(h.messages!.turns).toEqual([]);
+    });
+    it('a failed cross-model prefetch preserves the original HTTP and GET progress without resending or cancelling its task', async () => {
+        const pending = deferredSetup<IModelChatDetail>(), opening = deferredSetup<IModelChatDetail>(), other = {...detail().conversation, id: 'other', modelId: 'model/other'};
+        vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); props.navigation!.items = [other];
+        props.navigation!.onSelect = vi.fn(async item => {props.navigation!.opening = true; try {await modelChatApi.read(item.id, new AbortController().signal);} catch {props.navigation!.error = 'Диалог сейчас недоступен';} finally {props.navigation!.opening = false;}});
+        vi.mocked(modelChatApi.read).mockImplementation(async id => id === 'other' ? opening.promise : h.server); await start(); draft('Продолжай'); h.composer!.onSend(); await flushSetup(); render(); const sent = vi.mocked(modelChatApi.send).mock.calls[0];
+        const accepted = turn({id: 'accepted', requestId: sent[2], prompt: sent[3], status: 'pending', answer: undefined}); h.server = detail({turns: [accepted]}); h.list!.onSelect('other'); render();
+        expect(sent[5].aborted).toBe(false); await vi.advanceTimersByTimeAsync(1000); await flushSetup(); render(); expect(h.messages!.turns).toHaveLength(1); expect(h.messages!.turns[0]).toMatchObject({id: accepted.id, requestId: sent[2], prompt: sent[3], status: 'pending'});
+        opening.reject(Error('Чужой диалог недоступен')); await flushSetup(); expect(render()).toContain('Диалог сейчас недоступен'); expect(sent[5].aborted).toBe(false);
+        h.server = detail({turns: [{...accepted, status: 'done', answer: {content: 'Готово в прежнем диалоге', finishReason: 'stop'}}]}); await vi.advanceTimersByTimeAsync(2000); await flushSetup(); render();
+        expect(h.messages!.turns.at(-1)).toMatchObject({requestId: sent[2], status: 'done', answer: {content: 'Готово в прежнем диалоге'}}); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.retry).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled(); pending.resolve(h.server); await flushSetup();
+    });
+    it('a failed same-model read before the first poll reconciles the old accepted task and follows its result without resending', async () => {
+        const pending = deferredSetup<IModelChatDetail>(), opening = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); await start(); draft('Не потерять работу'); h.composer!.onSend(); await flushSetup(); render(); const sent = vi.mocked(modelChatApi.send).mock.calls[0];
+        const accepted = turn({id: 'accepted', requestId: sent[2], prompt: sent[3], status: 'pending', answer: undefined}); h.server = detail({turns: [accepted]}); vi.mocked(modelChatApi.read).mockImplementation(async id => id === 'chat-two' ? opening.promise : h.server);
+        h.list!.onSelect('chat-two'); render(); expect(h.messages!.turns.at(-1)).toMatchObject({requestId: sent[2], status: 'pending'}); opening.reject(Error('Другой диалог недоступен')); await flushSetup(); expect(render()).toContain('Другой диалог недоступен'); expect(h.messages!.turns).toEqual([accepted]);
+        h.server = detail({turns: [{...accepted, status: 'done', answer: {content: 'Сохранённый результат', finishReason: 'stop'}}]}); await vi.advanceTimersByTimeAsync(1000); await flushSetup(); render();
+        expect(h.messages!.turns.at(-1)).toMatchObject({requestId: sent[2], status: 'done', answer: {content: 'Сохранённый результат'}}); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.retry).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled(); pending.resolve(h.server); await flushSetup();
     });
     it('switching model during upload aborts the file reader before opening its new model scope', async () => {
         const reading = deferredSetup<string>(), other = {...detail().conversation, id: 'other', modelId: 'model/other'}; vi.mocked(chatFileBase64).mockReturnValueOnce(reading.promise); props.navigation!.items = [other]; await start(); h.composer!.onFiles([new File(['x'], 'notes.md')]); await flushSetup(); render(); h.list!.onSelect('other'); h.confirmations[0].onOk();
@@ -154,7 +173,31 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
         h.disabledFlags.clear(); render(); h.composer!.onFiles([new File(['x'], 'notes.md')]); await flushSetup(); expect(render()).not.toContain('Нужен текстовый документ'); expect(modelChatApi.upload).toHaveBeenCalledOnce(); h.attachments!.onPreview('file-one'); render(); expect(h.preview).toMatchObject({attachmentId: 'file-one', conversationId: 'chat-1'}); h.preview!.onClose(); render(); expect(h.preview).toBeUndefined();
         h.messages!.onPreview('file-one'); render(); expect(h.preview).toBeDefined(); h.preview!.onClose(); h.attachments!.onRemove('file-one'); await flushSetup(); render(); expect(modelChatApi.removeAttachment).toHaveBeenCalledOnce(); expect(h.attachments!.files).toEqual([]);
     });
-    it('close during file reading requires one confirmation and aborts upload, cleanup destroys a pending question', async () => {
+    it('closing an accepted pending turn only hides the UI; reopening reads its pending and final state without resending', async () => {
+        const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); await start(); draft('Продолжай без окна'); h.composer!.onSend(); await flushSetup(); render();
+        const sent = vi.mocked(modelChatApi.send).mock.calls[0], accepted = turn({id: 'accepted', requestId: sent[2], prompt: sent[3], status: 'pending', answer: undefined}); h.server = detail({turns: [accepted]});
+        h.research.enabled = true; render(); outer().onCancel(); expect(h.close).toHaveBeenCalledOnce(); expect(h.confirmations).toHaveLength(0); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+        h.hooks.dispose(); expect(sent[5].aborted).toBe(true); pending.resolve(detail({turns: [turn({requestId: sent[2], answer: {content: 'LATE HTTP', finishReason: 'stop'}})]})); await flushSetup();
+        props.navigation = undefined; vi.mocked(modelChatApi.list).mockResolvedValue([h.server.conversation]); await start(); expect(modelChatApi.read).toHaveBeenCalledWith('chat-1', expect.any(AbortSignal)); expect(h.messages!.turns).toEqual([accepted]);
+        h.server = detail({turns: [{...accepted, status: 'done', answer: {content: 'Сохранённый ответ', finishReason: 'stop'}}]}); await vi.advanceTimersByTimeAsync(1000); await flushSetup(); render();
+        expect(h.messages!.turns.at(-1)).toMatchObject({requestId: sent[2], status: 'done', answer: {content: 'Сохранённый ответ'}}); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.retry).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+    });
+    it('close with an unsent draft explains its loss and keeps the accepted request running after cancellation of the prompt', async () => {
+        h.server = detail({turns: [turn({status: 'pending', answer: undefined})]}); await start(); draft('Не потерять'); outer().onCancel();
+        expect(h.confirmations[0].content).toBe('Неотправленный текст будет потерян. Принятые запросы продолжат выполняться.'); h.confirmations[0].onCancel(); render();
+        expect(h.composer!.draft).toBe('Не потерять'); expect(h.close).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+    });
+    it('closing after a failed file read still confirms loss with an empty text draft; cancelling keeps the selected file', async () => {
+        vi.mocked(chatFileBase64).mockRejectedValueOnce(Error('Не удалось прочитать файл')); await start(); h.composer!.onFiles([new File(['x'], 'notes.md')]); await flushSetup(); render();
+        expect(h.composer!.draft).toBe(''); expect(h.composer!.uploading).toBe(false); expect(h.attachments!.uploads[0]).toMatchObject({name: 'notes.md', state: 'failed'}); outer().onCancel();
+        expect(h.confirmations).toHaveLength(1); expect(h.confirmations[0].content).toBe('Выбранные файлы и неотправленный текст будут потеряны. Принятые запросы продолжат выполняться.'); h.confirmations[0].onCancel(); render();
+        expect(h.attachments!.uploads[0]).toMatchObject({name: 'notes.md', state: 'failed'}); expect(h.close).not.toHaveBeenCalled(); expect(modelChatApi.upload).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+    });
+    it.each(['failed', 'cancelled'] as const)('allows composing the next task after an automatic %s discussion without altering its history', async status => {
+        const previous = turn({status, answer: undefined, responses: [response()], discussion: {mode: 'automatic', callsStarted: 3, maxCalls: 5}}); h.server = detail({turns: [previous]}); await start(); draft('Следующая задача');
+        expect(h.composer!.canSend).toBe(true); expect(h.messages!.turns).toEqual([previous]); h.composer!.onSend(); await flushSetup(); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.retry).not.toHaveBeenCalled(); expect(modelChatApi.complete).not.toHaveBeenCalled();
+    });
+    it('close during file reading requires one confirmation and aborts upload, cleanup destroys a pending confirmation', async () => {
         const reading = deferredSetup<string>(); vi.mocked(chatFileBase64).mockReturnValueOnce(reading.promise); await start(); h.composer!.onFiles([new File(['x'], 'notes.md')]); await flushSetup(); render(); outer().onCancel(); outer().onCancel(); expect(h.confirmations).toHaveLength(1); expect(h.confirmations[0].content).toContain('Загрузка будет прервана'); h.confirmations[0].onOk(); expect(vi.mocked(chatFileBase64).mock.calls[0][1].aborted).toBe(true); expect(h.close).toHaveBeenCalledOnce(); reading.resolve('eA=='); await flushSetup(); expect(modelChatApi.upload).not.toHaveBeenCalled();
         draft('Другой черновик'); outer().onCancel(); h.hooks.dispose(); expect(h.confirmations[1].destroy).toHaveBeenCalledOnce();
     });

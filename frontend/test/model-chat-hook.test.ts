@@ -159,8 +159,8 @@ describe('Группа: адресаты, частичные результат�
     it('Поллинг показывает сохранённый ответ одного участника, пока другой ещё работает', async () => {
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); await openGroup(); vi.useFakeTimers(); render().send('Всем'); await flush(); render();
         const requestId = vi.mocked(modelChatApi.send).mock.calls[0][2], responses = [response(), response({id: 'wait', agentId: 'review', name: 'Ревьюер', status: 'pending', answer: undefined})];
-        vi.mocked(modelChatApi.read).mockResolvedValue({...group(), turns: [turn({requestId, status: 'pending', answer: undefined, responses})]}); await vi.advanceTimersByTimeAsync(1000);
-        expect(render().turns.at(-1)?.responses).toEqual(responses); expect(render().busy).toBe(true); expect(modelChatApi.send).toHaveBeenCalledOnce();
+        const discussion = {mode: 'automatic' as const, callsStarted: 2, maxCalls: 5}; vi.mocked(modelChatApi.read).mockResolvedValue({...group(), turns: [turn({requestId, status: 'pending', answer: undefined, responses, discussion})]}); await vi.advanceTimersByTimeAsync(1000);
+        expect(render().turns.at(-1)?.responses).toEqual(responses); expect(render().turns.at(-1)?.discussion).toEqual(discussion); expect(render().busy).toBe(true); expect(modelChatApi.send).toHaveBeenCalledOnce();
         pending.resolve({...group(), turns: [turn({requestId, responses: [responses[0], {...responses[1], status: 'done', answer: response().answer}]})]}); await flush(); expect(render().busy).toBe(false);
     });
     it('Ошибка CAS состава не очищает историю, успешное завершение partial round сохраняет её', async () => {
@@ -169,6 +169,18 @@ describe('Группа: адресаты, частичные результат�
         const partial = {...group(), turns: [turn({status: 'failed', answer: undefined, responses: [response()]})]}; vi.mocked(modelChatApi.read).mockResolvedValue(partial); await render().refresh();
         vi.mocked(modelChatApi.complete).mockResolvedValue({...partial, turns: [{...partial.turns[0], status: 'done'}]}); await render().complete();
         expect(modelChatApi.complete).toHaveBeenCalledWith(expect.objectContaining({conversation: partial.conversation}), 'turn-1', expect.any(AbortSignal)); expect(render().turns[0].responses?.[0].answer?.content).toBe('Ответ'); expect(render().turns[0].status).toBe('done');
+    });
+    it.each(['failed', 'cancelled'] as const)('Автообсуждение %s остаётся неизменной историей и разрешает следующую задачу', async status => {
+        const previous = turn({status, answer: undefined, responses: [response()], discussion: {mode: 'automatic', callsStarted: 3, maxCalls: 5}}), saved = {...group(), turns: [previous]};
+        vi.mocked(modelChatApi.list).mockResolvedValue([saved.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(saved); let chat = await ready();
+        chat.retry(); await chat.complete(); expect(await chat.editFailed()).toBeUndefined(); expect(modelChatApi.retry).not.toHaveBeenCalled(); expect(modelChatApi.complete).not.toHaveBeenCalled(); expect(modelChatApi.deleteFailed).not.toHaveBeenCalled();
+        vi.mocked(modelChatApi.send).mockImplementationOnce(async (_detail, _model, requestId, prompt) => ({...saved, turns: [previous, turn({id: 'next', requestId, prompt})]}));
+        expect(chat.send('Следующая задача')).toBe(true); await flush(); chat = render(); expect(chat.turns[0]).toEqual(previous); expect(chat.turns[1].prompt).toBe('Следующая задача'); expect(modelChatApi.send).toHaveBeenCalledOnce();
+    });
+    it('Незавершённое автообсуждение и ошибка прежней группы требуют завершения перед новой задачей', async () => {
+        const saved = {...group(), turns: [turn({status: 'pending', answer: undefined, discussion: {mode: 'automatic' as const, callsStarted: 1, maxCalls: 5}})]};
+        vi.mocked(modelChatApi.list).mockResolvedValue([saved.conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(saved); await ready(); expect(render().send('Слишком рано')).toBe(false);
+        vi.mocked(modelChatApi.read).mockResolvedValue({...group(), turns: [turn({status: 'failed', answer: undefined})]}); await render().refresh(); expect(render().send('Прежняя ошибка')).toBe(false); expect(modelChatApi.send).not.toHaveBeenCalled();
     });
     it('Позднее сохранение состава прежнего владельца не применяется', async () => {
         await openGroup(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.participants).mockReturnValueOnce(pending.promise); const operation = render().configureParticipants(['agent-dev']);
@@ -189,11 +201,10 @@ describe('Отмена, переключение и владелец', () => {
         await render().stop(); expect(call[5].aborted).toBe(true); expect(modelChatApi.cancel).toHaveBeenCalledOnce();
         pending.resolve(detail({turns: [turn({requestId: call[2]})]})); await flush(); expect(render().turns[0].status).toBe('cancelled');
     });
-    it('Остановка своего запроса не ждёт дополнительного HTTP, чужой pending не трогает', async () => {
-        vi.mocked(modelChatApi.list).mockResolvedValue([detail().conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [turn({status: 'pending', answer: undefined})]}));
-        let chat = await ready(); expect(chat.stopOwn()).toBe(false); expect(modelChatApi.cancel).not.toHaveBeenCalled();
-        await chat.newChat(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); chat = render(); chat.send('Вопрос'); await flush();
-        const signal = vi.mocked(modelChatApi.send).mock.calls[0][5]; expect(render().stopOwn()).toBe(true); expect(signal.aborted).toBe(true); expect(modelChatApi.cancel).not.toHaveBeenCalled(); pending.resolve(detail()); await flush();
+    it('Новый диалог освобождает прежний HTTP без серверной отмены и не принимает его поздний ответ', async () => {
+        const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); (await ready()).send('Вопрос'); await flush(); const sent = vi.mocked(modelChatApi.send).mock.calls[0];
+        vi.mocked(modelChatApi.create).mockResolvedValueOnce(detail({conversation: {...detail().conversation, id: 'new-chat'}})); expect(await render().newChat()).toBe(true); expect(sent[5].aborted).toBe(true); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+        pending.resolve(detail({turns: [turn({requestId: sent[2]})]})); await flush(); expect(render().detail?.conversation.id).toBe('new-chat'); expect(render().turns).toEqual([]);
     });
     it('Если запрос завершился между чтением и Stop, принимает итог сервера вместо ложной отмены', async () => {
         vi.mocked(modelChatApi.list).mockResolvedValue([detail().conversation]); vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({turns: [turn({status: 'pending', answer: undefined})]}));
@@ -239,18 +250,18 @@ describe('Отмена, переключение и владелец', () => {
         expect(modelChatApi.cancel).toHaveBeenCalledExactlyOnceWith(initial, 'saved-a', expect.any(AbortSignal));
         expect(modelChatApi.read).toHaveBeenCalledTimes(3); expect(render().turns).toEqual(saved.turns); expect(render().busy).toBe(true); expect(render().error).toBe('');
     });
-    it('Смена диалога отменяет прежний запрос и не подмешивает его ответ', async () => {
+    it('Смена диалога отсоединяет прежний HTTP без отмены и не подмешивает его ответ', async () => {
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);
         (await ready()).send('Вопрос'); await flush(); const other = detail({conversation: {...detail().conversation, id: 'chat-2'}}); vi.mocked(modelChatApi.read).mockResolvedValue(other);
-        await render().select('chat-2'); pending.resolve(detail({turns: [turn()]})); await flush(); expect(render().detail?.conversation.id).toBe('chat-2'); expect(render().turns).toEqual([]);
+        await render().select('chat-2'); expect(modelChatApi.cancel).not.toHaveBeenCalled(); pending.resolve(detail({turns: [turn()]})); await flush(); expect(render().detail?.conversation.id).toBe('chat-2'); expect(render().turns).toEqual([]);
     });
     it('Смена owner до render не принимает поздний ответ', async () => {
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);
         (await ready()).send('Личный вопрос'); await flush(); owner.current = 'bob'; pending.resolve(detail({turns: [turn()]})); await flush(); expect(render(false).turns.some(value => value.answer)).toBe(false);
     });
-    it('Unmount отменяет незавершённый HTTP и не принимает поздний ответ', async () => {
+    it('Unmount освобождает HTTP без серверной отмены и не принимает поздний ответ', async () => {
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise);
-        (await ready()).send('Вопрос'); await flush(); const signal = vi.mocked(modelChatApi.send).mock.calls[0][5]; hooks.dispose(); expect(signal.aborted).toBe(true); pending.resolve(detail({turns: [turn()]})); await flush();
+        (await ready()).send('Вопрос'); await flush(); const signal = vi.mocked(modelChatApi.send).mock.calls[0][5]; hooks.dispose(); expect(signal.aborted).toBe(true); expect(modelChatApi.cancel).not.toHaveBeenCalled(); pending.resolve(detail({turns: [turn()]})); await flush();
     });
     it('Поздняя операция прежнего владельца не меняет диалог и не запускает запрос', async () => {
         const chat = await ready(); owner.current = 'bob'; expect(chat.send('Вопрос')).toBe(false); await chat.newChat(); await chat.select('other'); await chat.stop();
@@ -283,6 +294,13 @@ describe('Документы и сохранённые вложения', () => 
         const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.upload).mockReturnValueOnce(pending.promise);
         (await ready()).addFiles([new File(['test'], 'doc.txt')]); await flush(); const signal = vi.mocked(modelChatApi.upload).mock.calls[0][4]; render().cancelUploads();
         expect(signal.aborted).toBe(true); expect(render().uploads[0].state).toBe('failed'); pending.resolve(detail({attachments: [{id: 'file-1', name: 'doc.txt', bytes: 4, textBytes: 4, mediaType: 'text/plain', createdAt: ''}]})); await flush(); expect(render().attachments).toEqual([]);
+    });
+    it.each(['select', 'newChat'] as const)('Ошибка %s при чтении файла сохраняет его для повтора и игнорирует позднее чтение', async action => {
+        const reading = deferred<string>(); vi.mocked(chatFileBase64).mockReturnValueOnce(reading.promise); (await ready()).addFiles([new File(['test'], 'doc.txt')]); await flush(); const row = render().uploads[0], signal = vi.mocked(chatFileBase64).mock.calls[0][1];
+        if (action === 'select') vi.mocked(modelChatApi.read).mockRejectedValueOnce(Error('Диалог недоступен')); else vi.mocked(modelChatApi.create).mockRejectedValueOnce(Error('Диалог недоступен'));
+        expect(await (action === 'select' ? render().select('other') : render().newChat())).toBe(false); expect(signal.aborted).toBe(true); expect(render().uploads[0]).toMatchObject({id: row.id, name: 'doc.txt', state: 'failed'});
+        reading.resolve('dGVzdA=='); await flush(); expect(modelChatApi.upload).not.toHaveBeenCalled(); expect(render().uploads[0].state).toBe('failed'); render().retryUpload(row.id); await flush();
+        expect(modelChatApi.upload).toHaveBeenCalledOnce(); expect(vi.mocked(modelChatApi.upload).mock.calls[0][3]).toBe(row.id); expect(render().uploads).toEqual([]);
     });
 });
 
@@ -341,9 +359,18 @@ describe('Дополнительные action races: сохранение, во�
     it('При отмене до создания диалога не отправляет сообщение после позднего create', async () => {
         await ready(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.create).mockReturnValueOnce(pending.promise); render().send('Сохранить текст'); await flush(); const signal = vi.mocked(modelChatApi.create).mock.calls[0][2]; await render().stop(); pending.resolve(detail()); await flush(); expect(signal.aborted).toBe(true); expect(modelChatApi.send).not.toHaveBeenCalled(); expect(modelChatApi.cancel).not.toHaveBeenCalled(); expect(render().turns[0]).toMatchObject({status: 'cancelled', prompt: 'Сохранить текст'});
     });
-    it('Новый диалог прерывает own request; failed create оставляет отменённый prompt для восстановления', async () => {
-        await ready(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); render().send('Не потерять'); await flush(); const signal = vi.mocked(modelChatApi.send).mock.calls[0][5]; vi.mocked(modelChatApi.create).mockRejectedValueOnce(new Error('Create unavailable'));
-        expect(await render().newChat()).toBe(false); expect(signal.aborted).toBe(true); expect(render().turns[0]).toMatchObject({status: 'cancelled', prompt: 'Не потерять'}); pending.reject(new Error('Aborted old request')); await flush(); expect(render().error).toBe('Create unavailable');
+    it('Ошибка нового диалога перечитывает принятый запрос и продолжает GET без отмены или повтора', async () => {
+        vi.useFakeTimers(); await ready(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); render().send('Не потерять'); await flush(); const sent = vi.mocked(modelChatApi.send).mock.calls[0];
+        const accepted = turn({requestId: sent[2], prompt: sent[3], status: 'pending', answer: undefined}); vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [accepted]})); vi.mocked(modelChatApi.create).mockRejectedValueOnce(new Error('Create unavailable'));
+        expect(await render().newChat()).toBe(false); expect(sent[5].aborted).toBe(true); expect(render().turns).toEqual([accepted]); pending.reject(new Error('Aborted old request')); await flush(); expect(render().error).toBe('Create unavailable');
+        vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [{...accepted, status: 'done', answer: turn().answer}]})); await vi.advanceTimersByTimeAsync(1000); await flush();
+        expect(render().turns[0].status).toBe('done'); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.cancel).not.toHaveBeenCalled(); expect(modelChatApi.retry).not.toHaveBeenCalled();
+    });
+    it('Неподтверждённый исход после ошибки нового диалога сохраняет исходный requestId для явного безопасного повтора', async () => {
+        await ready(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); render().send('Не дублировать'); await flush(); const sent = vi.mocked(modelChatApi.send).mock.calls[0]; vi.mocked(modelChatApi.create).mockRejectedValueOnce(new Error('Create unavailable'));
+        expect(await render().newChat()).toBe(false); expect(render().turns[0]).toMatchObject({requestId: sent[2], status: 'failed', prompt: 'Не дублировать', error: 'Результат запроса не подтверждён. Можно безопасно повторить запрос.'}); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(modelChatApi.cancel).not.toHaveBeenCalled();
+        pending.reject(new Error('Aborted old request')); await flush(); expect(render().error).toBe('Create unavailable'); render().retry(); await flush();
+        expect(vi.mocked(modelChatApi.send).mock.calls[1][2]).toBe(sent[2]); expect(modelChatApi.send).toHaveBeenCalledTimes(2); expect(modelChatApi.retry).not.toHaveBeenCalled();
     });
     it('Изменение pin пока создаётся диалог не начинает inference с прежним ожиданием', async () => {
         await ready(); const pending = deferred<IModelChatDetail>(); vi.mocked(modelChatApi.create).mockReturnValueOnce(pending.promise); render().send('Вопрос'); await flush(); selected = {...model, modelPin: 'd'.repeat(64)}; render(false); pending.resolve(detail()); await flush(); expect(modelChatApi.send).not.toHaveBeenCalled(); expect(render().blocked).toContain('изменилось'); expect(render().turns[0].status).toBe('failed');

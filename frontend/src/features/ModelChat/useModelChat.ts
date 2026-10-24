@@ -4,7 +4,7 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import type { ICatalogModel } from '../ModelCatalog/types';
 import { modelChatApi } from './api';
 import { chatFileBase64, chatFileError, CHAT_FILE_MAX_COUNT } from './files';
-import { mergeModelChatDetail, modelChatPromptError, prependModelChatHistory, sortedModelChats } from './model';
+import { mergeModelChatDetail, modelChatPromptError, modelChatTurnUnresolved, prependModelChatHistory, sortedModelChats } from './model';
 import { chatRecipients } from './participants';
 import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversation, IChatResearchRequest } from './types';
 
@@ -58,10 +58,23 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             .finally(() => { if (active.current === request) { active.current = undefined; if (mounted.current && owner()) setActivity(''); } });
         return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; historyRequest.current?.abort(); historyRequest.current = undefined; };
     }, [scope, model.id, projectId]);
+    /** A failed navigation recovers the original submit without inventing cancellation or a new request key. */
+    const reconcileDetachedSubmission = async (previous: IModelChatTurn | null, selected: IModelChatDetail | null, signal: AbortSignal, owns: () => boolean): Promise<void> => {
+        if (previous?.status !== 'pending' || !owns()) return;
+        const unknown = {...previous, status: 'failed' as const, error: 'Результат запроса не подтверждён. Можно безопасно повторить запрос.'};
+        try {
+            const saved = selected && await modelChatApi.read(selected.conversation.id, signal);
+            if (owns()) {if (saved) accept(saved); updatePending(saved?.turns.some(turn => turn.requestId === previous.requestId) ? null : unknown);}
+        } catch {if (owns()) updatePending(unknown);}
+    };
     const select = async (id: string): Promise<boolean> => {
         if (!mounted.current || !captureOwner()()) return false;
-        abortActive(); abortHistory(); updatePending(null); updateUploads([]);
-        return run('loading', async (signal, owns) => { const value = await modelChatApi.read(id, signal); if (owns()) accept(value); });
+        const previous = pending.current, selected = current.current;
+        if (active.current?.kind === 'uploading') cancelUploads(); else abortActive(); abortHistory();
+        return run('loading', async (signal, owns) => {
+            try {const value = await modelChatApi.read(id, signal); if (owns()) {accept(value); updatePending(null); updateUploads([]);}}
+            catch (cause) {await reconcileDetachedSubmission(previous, selected, signal, owns); throw cause;}
+        });
     };
     const refresh = async (): Promise<void> => {
         await run('loading', async (signal, owns) => {
@@ -85,7 +98,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 accept(value);
                 if (pending.current) {
                     const saved = value.turns.find(turn => turn.requestId === pending.current!.requestId);
-                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, executionState: saved.executionState, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
+                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, discussion: saved.discussion, executionState: saved.executionState, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
                 }
                 again = !!sending || value.turns.some(turn => turn.status === 'pending');
             } catch (cause) {
@@ -116,9 +129,12 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     };
     const newChat = async (agentIds?: string[]): Promise<boolean> => {
         if (!mounted.current || !captureOwner()()) return false;
-        abortActive(); abortHistory();
-        if (pending.current?.status === 'pending') updatePending({...pending.current, status: 'cancelled', error: 'Запрос остановлен. Сообщение можно повторить.'});
-        return run('saving', async (signal, owns) => { const value = await modelChatApi.create(model, projectId, signal, agentIds); if (owns()) {accept(value); updatePending(null); updateUploads([]);} });
+        const previous = pending.current, selected = current.current;
+        if (active.current?.kind === 'uploading') cancelUploads(); else abortActive(); abortHistory();
+        return run('saving', async (signal, owns) => {
+            try {const value = await modelChatApi.create(model, projectId, signal, agentIds); if (owns()) {accept(value); updatePending(null); updateUploads([]);}}
+            catch (cause) {await reconcileDetachedSubmission(previous, selected, signal, owns); throw cause;}
+        });
     };
     const changed = !!detail && detail.conversation.modelPin !== model.modelPin;
     const blocked = changed ? 'Подключение модели изменилось. История сохранена; начните новый диалог.' : detail?.blockedReason || unavailableReason;
@@ -156,24 +172,19 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         return true;
     };
     const send = (prompt: string, research?: IChatResearchRequest): boolean => {
-        if (pending.current || fileRows.current.length) return false;
+        if ((pending.current && modelChatTurnUnresolved(pending.current)) || fileRows.current.length) return false;
         return generate(prompt, unusedIds(current.current), undefined, research);
     };
     const retry = (): void => {
         const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1];
-        if (tail && ['failed', 'cancelled'].includes(tail.status)) generate(tail.prompt, tail.attachmentIds, tail);
-    };
-    const stopOwn = (): boolean => {
-        if (!mounted.current || !captureOwner()() || active.current?.kind !== 'sending') return false;
-        abortActive();
-        if (pending.current) updatePending({...pending.current, status: 'cancelled', error: 'Запрос остановлен. Сообщение можно повторить.'});
-        return true;
+        if (tail && tail.discussion?.mode !== 'automatic' && ['failed', 'cancelled'].includes(tail.status)) generate(tail.prompt, tail.attachmentIds, tail);
     };
     const stop = async (): Promise<void> => {
         if (!mounted.current || !captureOwner()()) return;
         const previous = pending.current, selected = current.current;
         const requestId = previous?.requestId ?? selected?.turns[selected.turns.length - 1]?.requestId;
-        if (!stopOwn()) abortActive();
+        const ownSending = active.current?.kind === 'sending'; abortActive();
+        if (ownSending && previous) updatePending({...previous, status: 'cancelled', error: 'Запрос остановлен. Сообщение можно повторить.'});
         if (!selected) return;
         await run('saving', async (signal, owns) => {
             const saved = await modelChatApi.read(selected.conversation.id, signal); if (!owns()) return;
@@ -192,7 +203,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     };
     useEffect(() => { if (changed && active.current?.kind === 'sending') void stop(); }, [changed]);
     const editFailed = async (): Promise<string | undefined> => {
-        const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1]; if (!tail || !['failed', 'cancelled'].includes(tail.status)) return;
+        const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1]; if (!tail || tail.discussion?.mode === 'automatic' || !['failed', 'cancelled'].includes(tail.status)) return;
         let prompt: string | undefined;
         await run('saving', async (signal, owns) => {
             if (current.current) {
@@ -213,7 +224,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     });
     const complete = async (): Promise<void> => {
         const selected = current.current, tail = selected?.turns[selected.turns.length - 1];
-        if (!selected || !tail) return;
+        if (!selected || !tail || tail.discussion?.mode === 'automatic') return;
         await run('saving', async (signal, owns) => {const value = await modelChatApi.complete(selected, tail.id, signal); if (owns()) {accept(value); updatePending(null);}});
     };
     const remove = async (): Promise<boolean> => {
@@ -258,6 +269,6 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const turns = optimistic ? [...(detail?.turns.filter(turn => turn.id !== optimistic.id && turn.requestId !== optimistic.requestId) ?? []), optimistic] : detail?.turns ?? [];
     const used = new Set(turns.flatMap(turn => turn.attachmentIds));
     return {items, detail, turns, uploads, attachments: detail?.attachments.filter(file => !used.has(file.id)) ?? [], activity, error, blocked, historyLoading, historyError, loadEarlier,
-        busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, stopOwn, select, refresh, newChat, rename, remove, editFailed, configureParticipants, complete,
+        busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, select, refresh, newChat, rename, remove, editFailed, configureParticipants, complete,
         addFiles, cancelUploads, removeUpload, retryUpload, removeAttachment, captureOwner};
 }
