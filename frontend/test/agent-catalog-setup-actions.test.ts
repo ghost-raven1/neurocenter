@@ -38,6 +38,8 @@ vi.mock('../src/features/AgentCatalog/useAgentReadiness', () => ({useAgentReadin
 vi.mock('../src/features/AgentCatalog/AgentTrialModal', () => ({AgentTrialModal: (props: Parameters<typeof AgentTrialModal>[0]) => {h.trialModal = props; return 'Испытание агента';}}));
 vi.mock('../src/features/ModelChat/chatNavigation', () => ({openModelChat: h.chat}));
 vi.mock('../src/features/McpBridge/BridgeConnection', () => ({BridgeConnection: () => null}));
+// The local editor owns its hooks and is exercised in project-configuration.test.ts.
+vi.mock('../src/features/ProjectConfiguration/ProjectConfiguration', () => ({ProjectConfiguration: () => null}));
 vi.mock('../src/features/AgentCatalog/AgentCard', () => ({AgentCard: (props: Card) => { h.cards.push(props); return props.agent.name; }}));
 vi.mock('../src/features/AgentCatalog/AgentDetails', () => ({AgentDetails: (props: Details) => { h.detail = props; return 'Подробности агента'; }}));
 vi.mock('../src/features/AgentCatalog/AgentEditModal', () => ({AgentEditModal: (props: Editor) => { h.editor = props; return 'Редактор шаблона'; }}));

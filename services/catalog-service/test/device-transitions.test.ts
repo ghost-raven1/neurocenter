@@ -12,7 +12,7 @@ describe('Атомарность очереди и журнала операци
     const row={id:'job',device_id:'computer',project_id:'project',email:'owner@example.test',kind:'sync-rag',percent:37};
     beforeEach(()=>{
         vi.clearAllMocks();
-        direct.mockResolvedValue({rows:[{kind:'sync-rag'}]});
+        direct.mockResolvedValue({rows:[{kind:'sync-rag',state:'queued'}]});
         query.mockImplementation(async(sql:string)=>{
             if(sql.includes('INSERT INTO operations'))throw new Error('Журнал временно недоступен');
             return {rows:sql.startsWith('UPDATE')?[row]:[],rowCount:sql.startsWith('UPDATE')?1:0};
@@ -24,7 +24,8 @@ describe('Атомарность очереди и журнала операци
         await expect(jobs.cancel({email:row.email,activeRole:'Разработчик'},row.id)).rejects.toThrow('Журнал временно недоступен');
         expect(query.mock.calls.at(-1)?.[0]).toBe('ROLLBACK');
         expect(query.mock.calls.some(([sql])=>sql==='COMMIT')).toBe(false);
-        expect(direct).not.toHaveBeenCalled();
+        expect(direct).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^SELECT kind,state FROM bridge_jobs /),
+            [row.id,row.email,false,['project']]);
         expect(release).toHaveBeenCalledOnce();
         expect(fetch).not.toHaveBeenCalled();
     });

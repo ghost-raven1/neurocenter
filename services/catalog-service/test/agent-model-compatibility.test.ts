@@ -19,7 +19,7 @@ function fixture(options: Record<string, unknown>) {
 describe('OpenAI compatibility остаётся на сервере при настройке native агентов', () => {
     it('Передаёт только числовые generation options в проверяемый native contract', async () => {
         const { db, query } = fixture({ temperature: 0, topP: 0.9, maxOutputTokens: 4096, contextWindow: 128000,
-            responseModel: 'snapshot-v1', tokenLimitParameter: 'max_completion_tokens' });
+            responseModel: 'snapshot-v1', tokenLimitParameter: 'max_tokens' });
         const requirements = await agentModelRequirements(db, 'prj-fixture', [agent]);
         expect(requirements).toMatchObject([{ kind: 'catalog', runtimeModel: 'requested-alias', options: { temperature: 0, topP: 0.9, maxOutputTokens: 4096, contextWindow: 128000 } }]);
         const requirement = requirements[0];
@@ -40,5 +40,10 @@ describe('OpenAI compatibility остаётся на сервере при на�
     it('Продолжает отвергать повреждённые числовые настройки до выдачи задания', async () => {
         const { db } = fixture({ responseModel: 'snapshot-v1', temperature: '0' });
         await expect(agentModelRequirements(db, 'prj-fixture', [agent])).rejects.toMatchObject({ status: 400 });
+    });
+    it('Требует явную локальную настройку несовместимого max_completion_tokens до выдачи задания', async () => {
+        const {db} = fixture({temperature: 0, tokenLimitParameter: 'max_completion_tokens'});
+        await expect(agentModelRequirements(db, 'prj-fixture', [agent])).rejects.toMatchObject({status: 409,
+            response: {code: 'OPENCODE_AGENT_MODEL_SETUP_REQUIRED', action: 'sync-opencode-models'}});
     });
 });

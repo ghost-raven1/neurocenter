@@ -66,7 +66,8 @@ describe('Канал событий сайта отделён от доступ�
 
     it('Мобильное меню оставляет короткий заголовок без слогана', () => {
         const html = render(true, true, true);
-        expect(html).toContain('<section data-drawer="true">Нейроцентр');
+        expect(html).toContain('<section data-drawer="true"><span class="app__drawer-brand">');
+        expect(html).toContain('Нейроцентр</span>');
         expect(html).not.toContain('Рабочее пространство команды');
         expect(html).not.toContain('app__brand');
     });

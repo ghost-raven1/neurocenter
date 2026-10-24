@@ -35,9 +35,9 @@ describe('Состояние функций платформы', () => {
         const h = harness(); await h.controller.refresh(); const pending = deferred<IFeatureFlag>(); h.write.mockReturnValue(pending.promise);
         const saving = h.controller.save('model_hosting', false); await h.controller.save('model_hosting', false);
         expect(h.write).toHaveBeenCalledOnce(); expect(h.write).toHaveBeenCalledWith('model_hosting', false, 1);
-        expect(h.state.items?.[0].enabled).toBe(true); expect(h.state.rows.model_hosting.saving).toBe(true);
+        expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(true); expect(h.state.rows.model_hosting.saving).toBe(true);
         pending.resolve(flag('model_hosting', false, 2)); await saving;
-        expect(h.state.items?.[0].enabled).toBe(false); expect(h.state.rows.model_hosting).toMatchObject({ saving: false, saved: true, error: null });
+        expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(false); expect(h.state.rows.model_hosting).toMatchObject({ saving: false, saved: true, error: null });
     });
     it('Разные строки сохраняются независимо, поздний ответ не стирает соседнюю строку', async () => {
         const h = harness(); await h.controller.refresh(); const one = deferred<IFeatureFlag>(), two = deferred<IFeatureFlag>();
@@ -54,13 +54,13 @@ describe('Состояние функций платформы', () => {
         expect(h.read).toHaveBeenCalledOnce();
         h.read.mockResolvedValue(list(flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync')));
         pending.resolve(flag('model_hosting', false, 2)); await saving; await flush();
-        expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.[0].enabled).toBe(false);
+        expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(false);
     });
     it('Конфликт перечитывает значение и требует явного просмотра без автоповтора изменения', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(409));
         h.read.mockResolvedValue(list(flag('model_hosting', false, 3), flag('tool_builds'), flag('rag_sync')));
         await h.controller.save('model_hosting', false); await flush();
-        expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.[0]).toMatchObject({ enabled: false, revision: 3 });
+        expect(h.read).toHaveBeenCalledTimes(2); expect(h.state.items?.find(item => item.key === 'model_hosting')).toMatchObject({ enabled: false, revision: 3 });
         expect(h.state.rows.model_hosting.needsReview).toBe(true);
         await h.controller.save('model_hosting', true); expect(h.write).toHaveBeenCalledOnce();
         h.controller.useCurrent('model_hosting'); expect(h.write).toHaveBeenCalledOnce();
@@ -70,28 +70,28 @@ describe('Состояние функций платформы', () => {
     it('Ошибка записи не подменяет значение; проверка состояния позволяет безопасно повторить', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(new Error('Нет ответа'));
         await h.controller.save('tool_builds', false);
-        expect(h.state.items?.[1].enabled).toBe(true); expect(h.state.rows.tool_builds.error).toBe('Нет ответа');
+        expect(h.state.items?.find(item => item.key === 'tool_builds')?.enabled).toBe(true); expect(h.state.rows.tool_builds.error).toBe('Нет ответа');
         await h.controller.refresh(); expect(h.state.rows.tool_builds.error).toBeNull();
-        await h.controller.retryChoice('tool_builds'); expect(h.state.items?.[1].enabled).toBe(false);
+        await h.controller.retryChoice('tool_builds'); expect(h.state.items?.find(item => item.key === 'tool_builds')?.enabled).toBe(false);
     });
     it('503 сохраняет выбранное значение после перепроверки без автоматического PATCH и ложного успеха', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
         await h.controller.save('tool_builds', false);
-        expect(h.state.items?.[1]).toMatchObject({ enabled: true, revision: 1 });
+        expect(h.state.items?.find(item => item.key === 'tool_builds')).toMatchObject({ enabled: true, revision: 1 });
         expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: null }, saved: false, saving: false });
         h.read.mockResolvedValue(list(flag('tool_builds', true, 3))); await h.controller.refresh();
         expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: 3 }, saved: false });
         expect(h.write).toHaveBeenCalledExactlyOnceWith('tool_builds', false, 1);
         await h.controller.retryChoice('tool_builds');
         expect(h.write).toHaveBeenLastCalledWith('tool_builds', false, 3);
-        expect(h.state.items?.[1]).toMatchObject({ enabled: false, revision: 4 });
+        expect(h.state.items?.find(item => item.key === 'tool_builds')).toMatchObject({ enabled: false, revision: 4 });
         expect(h.state.rows.tool_builds).toMatchObject({ choice: undefined, saved: true });
     });
     it('GET после неизвестного ACK может совпасть с выбором, но не подтверждает PATCH и не повторяет его', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(503));
         await h.controller.save('tool_builds', false);
         h.read.mockResolvedValue(list(flag('tool_builds', false, 7))); await h.controller.refresh();
-        expect(h.state.items?.[1]).toMatchObject({ enabled: false, revision: 7 });
+        expect(h.state.items?.find(item => item.key === 'tool_builds')).toMatchObject({ enabled: false, revision: 7 });
         expect(h.state.rows.tool_builds).toMatchObject({ choice: { enabled: false, reviewedRevision: 7 }, saved: false });
         await h.controller.retryChoice('tool_builds'); expect(h.write).toHaveBeenCalledOnce();
         h.controller.useCurrent('tool_builds');
@@ -110,7 +110,7 @@ describe('Состояние функций платформы', () => {
         expect(h.state.readError).toBe('GET недоступен'); expect(h.write).toHaveBeenCalledOnce();
         h.read.mockResolvedValue(list(flag('rag_sync', true, 5))); await h.controller.refresh();
         h.controller.useCurrent('rag_sync'); expect(h.state.rows.rag_sync.choice).toBeUndefined();
-        expect(h.state.items?.[2]).toMatchObject({ enabled: true, revision: 5 }); expect(h.write).toHaveBeenCalledOnce();
+        expect(h.state.items?.find(item => item.key === 'rag_sync')).toMatchObject({ enabled: true, revision: 5 }); expect(h.write).toHaveBeenCalledOnce();
     });
     it('409 сохраняет выбор, а каждый явный повтор использует ревизию новой GET-перепроверки', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockRejectedValueOnce(httpError(409));
@@ -142,7 +142,7 @@ describe('Состояние функций платформы', () => {
         const read = deferred<unknown>(); h.read.mockReturnValueOnce(read.promise); const previous = h.controller.refresh();
         h.controller.dispose(); h.controller.activate(); h.read.mockResolvedValue(list()); await h.controller.refresh();
         read.resolve(list(flag('model_hosting', false, 9))); await previous;
-        expect(h.state.rows.model_hosting.choice).toBeUndefined(); expect(h.state.items?.[0]).toMatchObject({ enabled: true, revision: 1 });
+        expect(h.state.rows.model_hosting.choice).toBeUndefined(); expect(h.state.items?.find(item => item.key === 'model_hosting')).toMatchObject({ enabled: true, revision: 1 });
         await h.controller.retryChoice('model_hosting'); expect(h.write).toHaveBeenCalledOnce();
     });
     it('Конфликт с неудачной перечиткой нельзя принять до успешного обновления', async () => {
@@ -157,7 +157,7 @@ describe('Состояние функций платформы', () => {
     it('Не объявляет успех по некорректному подтверждению PATCH', async () => {
         const h = harness(); await h.controller.refresh(); h.write.mockResolvedValue(flag('model_hosting', false, 1));
         await h.controller.save('model_hosting', false);
-        expect(h.state.items?.[0].enabled).toBe(true); expect(h.state.rows.model_hosting.saved).toBe(false);
+        expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(true); expect(h.state.rows.model_hosting.saved).toBe(false);
         expect(h.state.rows.model_hosting.error).toContain('не подтвердил');
         expect(h.state.rows.model_hosting.choice).toEqual({ enabled: false, reviewedRevision: null });
     });
@@ -181,9 +181,9 @@ describe('Владелец запросов функций и StrictMode', () =>
         h.read.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
         const previous = h.controller.refresh(); h.controller.dispose(); h.controller.activate(); const current = h.controller.refresh();
         second.resolve(list(flag('model_hosting', false, 2), flag('tool_builds'), flag('rag_sync'))); await current;
-        expect(h.state.items?.[0].enabled).toBe(false); expect(h.state.loading).toBe(false);
+        expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(false); expect(h.state.loading).toBe(false);
         const before = h.changed.mock.calls.length; first.resolve(list()); await previous;
-        expect(h.changed).toHaveBeenCalledTimes(before); expect(h.state.items?.[0].enabled).toBe(false);
+        expect(h.changed).toHaveBeenCalledTimes(before); expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(false);
     });
     it('Закрытая панель не применяет GET и не повторяет queued refresh', async () => {
         const h = harness(); await h.controller.refresh(); const pending = deferred<IFeatureFlag>(); h.write.mockReturnValue(pending.promise);
@@ -201,6 +201,6 @@ describe('Владелец запросов функций и StrictMode', () =>
         expect(h.changed).toHaveBeenCalledTimes(before); expect(h.state.rows.model_hosting.saving).toBe(true);
         await h.controller.save('model_hosting', false); expect(h.write).toHaveBeenCalledTimes(2);
         second.resolve(flag('model_hosting', false, 2)); await current;
-        expect(h.state.rows.model_hosting.saving).toBe(false); expect(h.state.items?.[0].enabled).toBe(false);
+        expect(h.state.rows.model_hosting.saving).toBe(false); expect(h.state.items?.find(item => item.key === 'model_hosting')?.enabled).toBe(false);
     });
 });
