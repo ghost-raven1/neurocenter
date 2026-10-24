@@ -7,7 +7,8 @@ import {integrationConfiguration} from './profiles.mjs';
 
 export const ownedPgPackages=['catalog-service','rag-sync-service','feature-flags-service'];
 export const ownedPgAliases=['CATALOG_TEST_PG_URL','TEST_ADMIN_PG_URL','CHAT_OBJECT_STORAGE_TEST_PG_URL','MODEL_CHAT_FILES_TEST_PG_URL',
- 'MODEL_CHAT_GROUP_TEST_PG_URL','MODEL_CHAT_RESEARCH_TEST_PG_URL','AGENT_READINESS_TEST_PG_URL','MODEL_USAGE_TEST_PG_URL','OPENCODE_MODEL_SYNC_TEST_PG_URL','RAG_CONTRACT_TEST_PG_URL','LEARNING_TEST_ADMIN_PG_URL'];
+ 'MODEL_CHAT_GROUP_TEST_PG_URL','MODEL_CHAT_RESEARCH_TEST_PG_URL','AGENT_READINESS_TEST_PG_URL','MODEL_USAGE_TEST_PG_URL','OPENCODE_MODEL_SYNC_TEST_PG_URL','RAG_CONTRACT_TEST_PG_URL','LEARNING_TEST_ADMIN_PG_URL',
+ 'DEVICE_CODEX_GUARD_TEST_ADMIN_URL','SYSTEM_ROLE_QUEUE_TEST_ADMIN_URL','PROJECT_CHAT_LEARNING_TEST_ADMIN_URL','PERSONAL_GROUP_BRIDGE_TEST_PG_URL'];
 
 /** Full database suites run only against an explicit caller-owned server; all runtime fallbacks use our own random database. */
 export async function ownedPgConfiguration(environment,root){

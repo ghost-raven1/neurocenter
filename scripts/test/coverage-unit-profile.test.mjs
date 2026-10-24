@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {auditedUnits,validateAuditedUnit,validateUnitSafeProfile} from '../coverage/unit-safe-profile.mjs';
 import {externalSuite,focusedSelection} from '../coverage/focused-selection.mjs';
 import {safeEnvironment} from '../coverage/profiles.mjs';
+import {ownedPgAliases} from '../coverage/owned-pg.mjs';
 
 const repository=fileURLToPath(new URL('../../',import.meta.url));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -43,6 +44,13 @@ test('Eight real PostgreSQL fixtures and the runtime S3 candidate retain their i
  }
  // Existing owned fake-HTTP S3 coverage is not reclassified by a pg-type exemption.
  assert.equal(await externalSuite(path.join(repository,'services/catalog-service/test/s3-bucket-privacy.test.ts')),false);
+});
+
+test('Real PostgreSQL bridge and chat regressions stay outside the unit-safe profile',async()=>{
+ for(const name of ['device-codex-guard-races','system-role-queue-isolation','personal-group-bridge-isolation','project-chat-learning-receipt']){
+  assert.equal(await externalSuite(path.join(repository,'services/catalog-service/test',name+'-postgres.test.ts')),true,name);
+ }
+ for(const name of ['DEVICE_CODEX_GUARD_TEST_ADMIN_URL','SYSTEM_ROLE_QUEUE_TEST_ADMIN_URL','PROJECT_CHAT_LEARNING_TEST_ADMIN_URL','PERSONAL_GROUP_BRIDGE_TEST_PG_URL'])assert.ok(ownedPgAliases.includes(name),name);
 });
 
 for(const source of ["import type {Pool} from 'pg';", "import type Pg from 'pg';", "import type * as Pg from 'pg';", "import type Pg = require('pg');"]){
