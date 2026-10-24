@@ -15,7 +15,7 @@ describe.skipIf(!connection).sequential('RAG generation owner socket loss',()=>{
     const name='nc_rag_owner_'+randomUUID().replaceAll('-','');
     beforeAll(async()=>{
         const url=new URL(connection!);
-        if(!['postgres:','postgresql:'].includes(url.protocol)||url.hostname!=='127.0.0.1'||!url.port||url.port==='5432')throw Error('Use explicitly owned loopback PostgreSQL other than5432.');
+        if(!['postgres:','postgresql:'].includes(url.protocol)||url.hostname!=='127.0.0.1'||!url.port||url.port==='5432'||url.search||url.hash)throw Error('Use explicitly owned loopback PostgreSQL other than5432.');
         url.pathname='/postgres';admin=new Pool({connectionString:url.href,max:1});
         await admin.query('CREATE DATABASE '+name);created=true;url.pathname='/'+name;
         observer=new Pool({connectionString:url.href,max:1});db=new RagDb({url:url.href});
