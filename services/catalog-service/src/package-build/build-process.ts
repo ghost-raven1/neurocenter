@@ -77,7 +77,10 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     let recipeSource: Record<string, unknown>;
     if(config.source.type==='upload'){recipeSource=await stageUploadSource(config.source,stage);}
     else if (config.source.type === 'npm') {
-        const adapter = config.source.package === 'opencode-rag-plugin' ? 'opencode-rag' : config.source.package === 'opencode-snip' ? 'opencode-snip' : undefined;
+        // Only the pinned, canonical MCP entrypoint has the project-local Memory contract.
+        const memory = config.kind === 'mcp' && config.source.package === '@modelcontextprotocol/server-memory'
+            && config.source.version === '1.0.0' && config.source.entrypoint === 'dist/index.js';
+        const adapter = config.source.package === 'opencode-rag-plugin' ? 'opencode-rag' : config.source.package === 'opencode-snip' ? 'opencode-snip' : memory ? 'memory' : undefined;
         recipeSource = adapter ? {type: 'prepared', adapter} : {type: 'npm', package: config.source.package, version: config.source.version, entrypoint: config.source.entrypoint};
     }
     else if (config.source.type === 'repository') {recipeSource = {...config.source};}

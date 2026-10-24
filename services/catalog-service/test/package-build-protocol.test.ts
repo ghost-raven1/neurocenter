@@ -59,4 +59,25 @@ describe('Builder progress and failure protocol',()=>{
         const second=await fixture('',0,'',{...config,publication});await second.run();
         expect(JSON.parse(await fs.readFile(path.join(second.stage,'recipe.json'),'utf8'))).toEqual(old);
     });
+    it('A fresh supported MCP Memory build uses the project-local prepared adapter',async()=>{
+        const input:BuildConfiguration={...config,kind:'mcp',source:{type:'npm',specifier:'@modelcontextprotocol/server-memory@1.0.0',package:'@modelcontextprotocol/server-memory',version:'1.0.0',entrypoint:'dist/index.js'}};
+        const before=structuredClone(input),f=await fixture('',0,'',input);await f.run();
+        const recipe=JSON.parse(await fs.readFile(path.join(f.stage,'recipe.json'),'utf8'));
+        expect(recipe.source).toEqual({type:'prepared',adapter:'memory'});
+        expect(recipe.revision).toBe('1.0.0');expect(recipe.kind).toBe('mcp');
+        expect(input).toEqual(before);
+    });
+    it.each([
+        {kind:'mcp' as const,package:'@modelcontextprotocol/server-memory',version:'1.0.1',entrypoint:'dist/index.js'},
+        {kind:'mcp' as const,package:'@modelcontextprotocol/server-memory',version:'1.0.0-custom',entrypoint:'dist/index.js'},
+        {kind:'plugin' as const,package:'@modelcontextprotocol/server-memory',version:'1.0.0',entrypoint:'dist/index.js'},
+        {kind:'mcp' as const,package:'@modelcontextprotocol/server-memory',version:'1.0.0',entrypoint:'dist/custom.js'},
+        {kind:'mcp' as const,package:'@example/server-memory',version:'1.0.0',entrypoint:'dist/index.js'},
+    ])('Preserves the generic source for $kind $package@$version $entrypoint',async({kind,package:packageName,version,entrypoint})=>{
+        const input:BuildConfiguration={...config,kind,source:{type:'npm',specifier:packageName+'@'+version,package:packageName,version,entrypoint}};
+        const before=structuredClone(input),f=await fixture('',0,'',input);await f.run();
+        const recipe=JSON.parse(await fs.readFile(path.join(f.stage,'recipe.json'),'utf8'));
+        expect(recipe.source).toEqual({type:'npm',package:packageName,version,entrypoint});
+        expect(recipe.revision).toBe(version);expect(recipe.kind).toBe(kind);expect(input).toEqual(before);
+    });
 });

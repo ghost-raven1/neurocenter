@@ -688,5 +688,42 @@
       ".run/module-reliability/store-density-after.png": "29fcf7ca0a902581050adab7c09f7dad8a946939ab128aaa676931b37108c23e",
       ".run/module-reliability/store-management-mobile.png": "026bc67de7db90d87e28133eace8b1245208df355b9474224d90f17860538171"
     }
+  },
+  "memoryRecipeDelivery": {
+    "at": "2026-10-24T00:51:41.771Z",
+    "sourceBase": "9f98b9465c280378df37f2d54773d8a4d78ede4b",
+    "red": {
+      "failed": 1,
+      "passed": 5,
+      "unselected": 10
+    },
+    "green": {
+      "passed": 6,
+      "unselected": 10
+    },
+    "related": {
+      "passed": 16,
+      "skipped": 0,
+      "includesFocused": true
+    },
+    "node": "24.22.0",
+    "vitest": "4.1.12",
+    "realNpmBuild": false,
+    "realRuntime": false,
+    "review": "independent static PASS",
+    "sources": {
+      "services/catalog-service/src/package-build/build-process.ts": "dfb3bdba90010676f15e799c32e87079b166b6e6a34a9bb80fb7c3ef868a5fef",
+      "services/catalog-service/test/package-build-protocol.test.ts": "f4ef1e943d6cc70744f21473bbe7cc2b73957f691fef9d26cd1ac212e1e5c4ae"
+    },
+    "receipts": {
+      ".run/module-reliability/memory-recipe-routing/red.log": "a6b535061076b24c9c4decb8f5746985b1dc2e0a2706cdfd47c668b275250b8d",
+      ".run/module-reliability/memory-recipe-routing/red.exit": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      ".run/module-reliability/memory-recipe-routing/red.source.sha256": "63baf51ea4e33a649d6ee09cdaa027ddf59506165f68c9af33b77d5eb9a6d396",
+      ".run/module-reliability/memory-recipe-routing/green.log": "e40aba01a25b0ec493bb72b4d94415d3d3ca17bc0332bb4a76d62914cda4ebac",
+      ".run/module-reliability/memory-recipe-routing/green.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      ".run/module-reliability/memory-recipe-routing/green.source.sha256": "a937cfb7aa6f435d9c968f7b70709fdb47df9158889000fbe5021f505a105308",
+      ".run/module-reliability/memory-recipe-routing-related.json": "29f756e66382284cf1ab035e73e7e362e62556a11bef0b84d0b5f364e972d9dd",
+      ".run/module-reliability/memory-recipe-routing/receipt.json": "e6081c328db9c7f148a06332e1ca8a5e0028ea991ffe6bbcf3666016e10c33bb"
+    }
   }
 }
