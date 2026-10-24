@@ -5,6 +5,8 @@ import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../project-chat/project-chat-learning.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat-learning.schema-verification';
+import {PROJECT_CHAT_ISOLATION_SCHEMA_SQL} from '../project-chat/project-chat-isolation.schema';
+import {PROJECT_CHAT_ISOLATION_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat-isolation.schema-verification';
 import {CHAT_ACTIVITY_SCHEMA_SQL} from '../chat-activity/chat-activity.schema';
 import {CHAT_ACTIVITY_SCHEMA_ASSERT_SQL} from '../chat-activity/chat-activity.schema-verification';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat-dialogs.schema-verification';
@@ -85,4 +87,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:29,name:'private-device-codex-inference',sql:DEVICE_CODEX_SCHEMA_SQL},
     {version:30,name:'fresh-project-rag-write-authorization',sql:PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL+'\n'+PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL},
     {version:31,name:'project-team-chat-learning-receipts',sql:PROJECT_CHAT_LEARNING_SCHEMA_SQL+'\n'+PROJECT_CHAT_LEARNING_SCHEMA_ASSERT_SQL},
+    {version:32,name:'isolated-project-chat-room-execution',sql:PROJECT_CHAT_ISOLATION_SCHEMA_SQL+'\n'+PROJECT_CHAT_ISOLATION_SCHEMA_ASSERT_SQL},
 ];

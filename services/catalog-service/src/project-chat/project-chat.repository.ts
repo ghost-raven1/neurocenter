@@ -5,7 +5,7 @@ import type { IAccessActor } from '../access/access.model';
 import type { ChatAgentSnapshot } from '../model-chat/chat-group.types';
 import { ProjectChatPolicy, type ProjectChatActor } from './project-chat.policy';
 import {assertProjectChatRoomAccess} from './project-chat-room-access';
-import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, emptyProjectChatRoom, type ProjectChatDb, type ProjectChatMessageRow, type ProjectChatRoomRow } from './project-chat.types';
+import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, emptyProjectChatRoom, type ProjectChatDb, type ProjectChatMessageRow, type ProjectChatRoomRow, type ProjectChatRoomKey } from './project-chat.types';
 
 /** Short transactions serialize room state; inference never holds a connection or row lock. */
 export class ProjectChatRepository {
@@ -74,27 +74,31 @@ export class ProjectChatRepository {
     async children(db: ProjectChatDb, projectId: string, id: string, roomId = DEFAULT_PROJECT_CHAT_ROOM): Promise<ProjectChatMessageRow[]> {
         return (await db.query<ProjectChatMessageRow>('SELECT * FROM project_chat_messages WHERE project_id=$1 AND source_message_id=$2 AND room_id=$3 ORDER BY position', [projectId, id, roomId])).rows;
     }
-    async claim(projectId: string) {
+    async claim(projectId: string, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
         return this.transaction(async db => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['project-chat:' + projectId]);
-            if ((await db.query("SELECT 1 FROM project_chat_messages WHERE project_id=$1 AND kind='user' AND status='running'", [projectId])).rowCount) return null;
-            const source = (await db.query<ProjectChatMessageRow>("SELECT * FROM project_chat_messages WHERE project_id=$1 AND kind='user' AND status='queued' ORDER BY position LIMIT 1 FOR UPDATE", [projectId])).rows[0];
+            if ((await db.query("SELECT 1 FROM project_chat_messages WHERE project_id=$1 AND room_id=$2 AND kind='user' AND status='running'", [projectId, roomId])).rowCount) return null;
+            const source = (await db.query<ProjectChatMessageRow>("SELECT * FROM project_chat_messages WHERE project_id=$1 AND room_id=$2 AND kind='user' AND status='queued' ORDER BY position LIMIT 1 FOR UPDATE", [projectId, roomId])).rows[0];
             if (!source) return null;
             const room = await this.room(db, projectId, true, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM);
             const generation = randomUUID();
-            const updated = (await db.query<ProjectChatMessageRow>("UPDATE project_chat_messages SET status='running',lease_until=now()+interval '15 minutes',generation=$3,error=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND status='queued' RETURNING *", [projectId, source.id, generation])).rows;
+            const updated = (await db.query<ProjectChatMessageRow>("UPDATE project_chat_messages SET status='running',lease_until=now()+interval '15 minutes',generation=$3,error=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND room_id=$4 AND status='queued' RETURNING *", [projectId, source.id, generation, roomId])).rows;
             await this.bump(db, room); return { projectId, source: updated.find(row => row.id === source.id)!, actor: { email: source.author_email!, activeRole: source.author_role! }, generation };
         });
     }
     /** Expired attempts are failed, never replayed against a provider automatically. */
-    async recover(): Promise<string[]> {
+    async recover(): Promise<ProjectChatRoomKey[]> {
         const projects = (await this.pool.query<{ project_id: string }>("SELECT DISTINCT project_id FROM project_chat_messages WHERE status='running' AND lease_until<=now()")).rows;
         for (const { project_id: id } of projects) await this.transaction(async db => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['project-chat:' + id]);
             const expired = await db.query("UPDATE project_chat_messages SET status='failed',lease_until=NULL,error='Обработка прервана. Повторите ответ явно.' WHERE project_id=$1 AND status='running' AND lease_until<=now() RETURNING room_id", [id]);
             for (const roomId of new Set(expired.rows.map(row => row.room_id as string))) await this.bump(db, await this.room(db, id, true, roomId));
         });
-        return (await this.pool.query<{ project_id: string }>("SELECT DISTINCT project_id FROM project_chat_messages WHERE kind='user' AND status='queued'")).rows.map(row => row.project_id);
+        return this.queuedRooms();
+    }
+    async queuedRooms(projectId?: string): Promise<ProjectChatRoomKey[]> {
+        return (await this.pool.query<ProjectChatRoomKey>(`SELECT DISTINCT project_id AS "projectId",room_id AS "roomId" FROM project_chat_messages
+            WHERE kind='user' AND status='queued' AND ($1::text IS NULL OR project_id=$1) ORDER BY "projectId","roomId"`, [projectId ?? null])).rows;
     }
     async assertRunning(db: ProjectChatDb, projectId: string, sourceId: string, generation: string): Promise<void> {
         if (!(await db.query("SELECT 1 FROM project_chat_messages WHERE project_id=$1 AND id=$2 AND kind='user' AND generation=$3 AND status='running' AND lease_until>now()", [projectId, sourceId, generation])).rowCount) throw new ConflictException('Обработка сообщения уже остановлена или завершена.');

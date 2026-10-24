@@ -42,7 +42,7 @@ describe.skipIf(!adminUrl).sequential('Project chat learning migration31 — own
     it('preserves released history and old completed rows without fabricating learning provenance', async () => {
         const pool = await fixture(), sourceId = await source(pool), done = (await answer(pool, sourceId)).rows[0];
         const beforeHistory = await history(pool), beforeRows = (await pool.query('SELECT to_jsonb(m) AS row FROM project_chat_messages m ORDER BY position')).rows;
-        expect((await checkCatalogSchema(pool)).pending).toEqual([31]);
+        expect((await checkCatalogSchema(pool)).pending).toEqual([31, 32]);
         await ensureCatalogSchema(pool);
         expect((await history(pool)).filter(row => row.version <= 30)).toEqual(beforeHistory);
         expect((await pool.query("SELECT to_jsonb(m)-'learning' AS row FROM project_chat_messages m ORDER BY position")).rows).toEqual(beforeRows);

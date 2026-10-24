@@ -10,6 +10,8 @@ export const projectChatRoomId = (row: {id?: string}): string => row.id ?? DEFAU
 export type ProjectChatVisibility = 'PUBLIC' | 'PRIVATE';
 export type ProjectChatKind = 'user' | 'agent' | 'summary';
 export type ProjectChatStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+export type ProjectChatTransport = 'server' | 'device-codex';
+export interface ProjectChatRoomKey { projectId: string; roomId: string }
 export type ProjectChatDb = Pick<PoolClient, 'query'>;
 export interface ProjectChatRoom {
     projectId: string; id?: string; title?: string; visibility?: ProjectChatVisibility; creatorEmail?: string | null; memberEmails?: string[]; canManage?: boolean; revision: number; agentIds: string[]; modelId: string | null; modelPin: string | null;
@@ -55,6 +57,7 @@ export interface ProjectChatInference {
     roster(req: Request, projectId: string, room: ProjectChatRoomRow, db?: ProjectChatDb): Promise<ChatParticipant[]>;
     resolve(req: Request, projectId: string, room: ProjectChatRoomRow, agentIds: string[], db?: ProjectChatDb): Promise<ChatAgentSnapshot[]>;
     assert(req: Request, projectId: string, snapshot: ChatAgentSnapshot, db?: ProjectChatDb): Promise<void>;
+    transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot): Promise<ProjectChatTransport>;
     infer(input: { req: Request; projectId: string; source: ProjectChatMessageRow; response: ProjectChatMessageRow; signal: AbortSignal }): Promise<{ content: string; usage?: ChatUsage; learning: ChatLearningReceipt }>;
 }
 export interface ProjectChatJob {

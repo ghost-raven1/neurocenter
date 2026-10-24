@@ -111,7 +111,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             return this.receipt(db, room, current, source);
         }, true, roomId);
         // The receipt is already durable; disconnecting this HTTP request cannot discard accepted work.
-        this.runner.schedule(projectId); return result;
+        this.runner.schedule(projectId, roomId); return result;
     }
     async retry(req: Request, id: string, messageId: string, raw: unknown, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
         projectChatUuid(roomId); projectChatUuid(messageId); const input = projectChatBody(raw, ['requestKey']), key = projectChatUuid(input.requestKey), { actor, projectId } = await this.project(req, id);
@@ -146,7 +146,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             await this.repository.bump(db, room);
             return this.receipt(db, room, current, await this.repository.message(db, projectId, messageId, roomId));
         }, true, roomId);
-        this.runner.schedule(projectId); return result;
+        this.runner.schedule(projectId, roomId); return result;
     }
     async cancel(req: Request, id: string, messageId: string, raw: unknown, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
         projectChatUuid(roomId); projectChatUuid(messageId); projectChatBody(raw ?? {}, []); const { actor, projectId } = await this.project(req, id);

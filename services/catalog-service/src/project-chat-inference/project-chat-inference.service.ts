@@ -17,7 +17,7 @@ import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import type { IModel } from '../models/model.types';
 import {assertProjectChatRoomAccess} from '../project-chat/project-chat-room-access';
 import {DEFAULT_PROJECT_CHAT_ROOM} from '../project-chat/project-chat.types';
-import type { ProjectChatDb, ProjectChatInference, ProjectChatMessageRow, ProjectChatRoomRow } from '../project-chat/project-chat.types';
+import type { ProjectChatDb, ProjectChatInference, ProjectChatMessageRow, ProjectChatRoomRow, ProjectChatTransport } from '../project-chat/project-chat.types';
 import { projectChatContext } from './project-chat-context';
 import { projectChatModels } from './project-chat-models';
 
@@ -59,6 +59,9 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         await db.query('SELECT agent_id FROM project_agents WHERE project_id=$1 AND agent_id=$2 FOR SHARE', [projectId, snapshot.agentId]);
         const current = (await this.group(db).plan(req, this.scope(projectId, [snapshot.agentId], model), model, [snapshot.agentId], db))[0];
         if (!isDeepStrictEqual(current.snapshot, snapshot)) throw new ConflictException('Профиль или модель агента изменились. Проверьте настройки перед повтором.');
+    }
+    async transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot): Promise<ProjectChatTransport> {
+        return (await this.base(req, projectId, snapshot.modelId, snapshot.modelPin)).runtime === 'device-codex' ? 'device-codex' : 'server';
     }
     async infer({ req, projectId, source, response, signal }: Parameters<ProjectChatInference['infer']>[0]) {
         const snapshot = response.snapshot;

@@ -9,6 +9,8 @@ import type {ProjectChatInferenceService} from '../src/project-chat-inference/pr
 import {ProjectChatService} from '../src/project-chat/project-chat.service';
 import {PROJECT_CHAT_SCHEMA_SQL} from '../src/project-chat/project-chat.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../src/project-chat/project-chat-dialogs.schema';
+import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../src/project-chat/project-chat-learning.schema';
+import {PROJECT_CHAT_ISOLATION_SCHEMA_SQL} from '../src/project-chat/project-chat-isolation.schema';
 import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessageRow} from '../src/project-chat/project-chat.types';
 import {deviceCompletionFixture,ownedDeviceTestAdminUrl} from './device-completion-postgres.fixture';
 const flags=vi.hoisted(()=>({dialogs:true,project:true,group:true}));
@@ -39,6 +41,8 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
         await f.pool.query("INSERT INTO project_chat_rooms(project_id) VALUES($1)",[legacyProject]);
         await f.pool.query("INSERT INTO project_chat_messages(id,project_id,kind,content,author_email,author_name,author_role,status,request_key,request_hash,generation) VALUES($1,$2,'user','LEGACY PUBLIC HISTORY',$3,'Creator','Разработчик','done',$4,$5,$6)",[legacyMessage,legacyProject,a,randomUUID(),'a'.repeat(64),randomUUID()]);
         await f.pool.query(PROJECT_CHAT_DIALOGS_SCHEMA_SQL);
+        await f.pool.query(PROJECT_CHAT_LEARNING_SCHEMA_SQL);
+        await f.pool.query(PROJECT_CHAT_ISOLATION_SCHEMA_SQL);
         for(const email of [b,outsider,admin,main])await f.pool.query('INSERT INTO platform_users(email,is_main_admin) VALUES($1,$2)',[email,email===main]);
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',token);
     });
@@ -53,7 +57,7 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
             const grants=(await f.pool.query('SELECT project_id,role FROM project_members WHERE principal_name=$1',[input.email])).rows;
             return{...input,claims:{email:input.email,userRoles:[...new Set(grants.map(row=>row.role)),...(account.is_main_admin?['Главный админ']:[])],projects:grants.map(row=>({projectId:row.project_id,projectName:row.project_id,role:row.role})),pluginIds:[],skillPaths:[]}};
         };
-        service=new ProjectChatService({pool:f.pool,actor} as unknown as ModelsService,{roster:async()=>[],resolve:async()=>[{agentId:agent,name:'Agent',slug:'nc-rooms',modelId:'model-rooms',modelPin:pin,definition:{prompt:'Specialist'}}],assert:async(request:Request)=>{checked.push(JSON.parse(decodeURIComponent(String(request.headers['x-bridge-actor']))).email);},infer:async(input:{source:ProjectChatMessageRow})=>{calls.push(input.source.id);return infer(input);}} as unknown as ProjectChatInferenceService);
+        service=new ProjectChatService({pool:f.pool,actor} as unknown as ModelsService,{transport:async()=>'server',roster:async()=>[],resolve:async()=>[{agentId:agent,name:'Agent',slug:'nc-rooms',modelId:'model-rooms',modelPin:pin,definition:{prompt:'Specialist'}}],assert:async(request:Request)=>{checked.push(JSON.parse(decodeURIComponent(String(request.headers['x-bridge-actor']))).email);},infer:async(input:{source:ProjectChatMessageRow})=>{calls.push(input.source.id);return infer(input);}} as unknown as ProjectChatInferenceService);
     });
     afterEach(async()=>{await service.onApplicationShutdown();});
     afterAll(async()=>{if(!f)return;const cleanup=await f.dispose();if(process.env.PROJECT_CHAT_DIALOGS_TEST_RECEIPT)await writeFile(process.env.PROJECT_CHAT_DIALOGS_TEST_RECEIPT,JSON.stringify(cleanup,null,2)+'\n',{flag:'wx'});expect(cleanup).toMatchObject({dropped:true,newDatabasesRemaining:[],originalDatabasesPreserved:true});vi.unstubAllEnvs();});
