@@ -12,6 +12,13 @@ const render=(localState:string)=>{
     return renderToStaticMarkup(createElement(ProjectReindexStatus,{state,canManage:false}));
 };
 describe('One-click reindex outcome includes the selected computer',()=>{
+    it('Server-only completion names its scope without claiming a checked computer index',()=>{
+        const plan={state:'applied',message:'Server ready',data:{rowCount:0,requiredBytes:0}} as IProjectReindexPlan;
+        const state={plan,pending:false,busy:false,error:''} as ReturnType<typeof useProjectReindex>;
+        const html=renderToStaticMarkup(createElement(ProjectReindexStatus,{state,canManage:false}));
+        expect(html).toContain('Этот результат относится к серверному индексу.');
+        expect(html).not.toContain('Локальный индекс проверен и синхронизирован.');
+    });
     it.each(['pending','queued','running','reconciling'])('Server promotion with local %s is progress, never success',state=>{
         expect(render(state)).toContain('ant-alert-info');expect(render(state)).not.toContain('ant-alert-success');
     });
@@ -20,6 +27,7 @@ describe('One-click reindex outcome includes the selected computer',()=>{
     });
     it('Completed local reindex explains restart; pending or failed work does not claim a checked index',()=>{
         const complete=render('succeeded');expect(complete).toContain('Локальный индекс проверен и синхронизирован.');expect(complete).toContain('Перезапустите OpenCode, чтобы открытая сессия использовала новое подключение');
+        expect(complete).not.toContain('Этот результат относится к серверному индексу.');
         expect(complete).not.toContain('Прежний локальный индекс сохранится до проверки нового.');
         for(const state of ['pending','queued','running','reconciling','failed']){
             const html=render(state);expect(html).toContain('Прежний локальный индекс сохранится до проверки нового.');expect(html).not.toContain('Локальный индекс проверен и синхронизирован.');expect(html).not.toContain('Перезапустите OpenCode');

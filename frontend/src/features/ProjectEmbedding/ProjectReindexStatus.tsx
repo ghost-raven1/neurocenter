@@ -12,6 +12,7 @@ export function ProjectReindexStatus({state,canManage}:IProps):JSX.Element|null{
         {state.error&&<Alert type="error" showIcon message={state.error}/>}
         {plan&&<Alert showIcon type={failed?'warning':plan.state==='applied'&&!state.pending?'success':'info'} message={plan.local&&plan.state==='applied'?plan.local.message:plan.message}
             description={<Space direction="vertical" size={8} style={{width:'100%'}}>
+                {plan.state==='applied'&&!plan.data.connection&&<Typography.Text type="secondary">Этот результат относится к серверному индексу. OpenCodeRAG на компьютере подключается отдельно.</Typography.Text>}
                 {plan.data.connection&&<Typography.Text type="secondary">{plan.state==='applied'&&plan.local?.state==='succeeded'
                     ?'Локальный индекс проверен и синхронизирован. Перезапустите OpenCode, чтобы открытая сессия использовала новое подключение.'
                     :'Включено подключение и полная переиндексация выбранной установки OpenCodeRAG. Прежний локальный индекс сохранится до проверки нового.'}</Typography.Text>}
