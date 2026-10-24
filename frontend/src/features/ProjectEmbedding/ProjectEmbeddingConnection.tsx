@@ -1,8 +1,9 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Progress, Select, Space, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useBridge } from '../McpBridge/useBridge';
 import { useLocalJob } from '../McpBridge/useLocalJob';
+import type { IBridgeJob } from '../McpBridge/api';
 import { isPending } from '../McpBridge/installationHelpers';
 import { projectBindingUrl, projectRagCatalogUrl } from '../../modules/Projects/projectNavigation';
 import { embeddingConnected, embeddingConnectionBlocker, embeddingConnectionInput, embeddingInstallations, pendingEmbeddingAction, type IEmbeddingConnectionInput } from './connection';
@@ -10,7 +11,7 @@ import { sha, type IProjectEmbedding } from './model';
 import { uuid } from '../McpBridge/operationHelpers';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { embeddingInstallationKey, useEmbeddingInstallation } from './useEmbeddingInstallation';
-import { ragUiAnchorId, ragUiPreferenceKey, type IRagUiPreference } from '../McpBridge/ragUi/ragUiPreference';
+import type { IRagUiPreference } from '../McpBridge/ragUi/ragUiPreference';
 
 /** Подключение требует отдельного согласия; получение настроек никогда не запускает локальную операцию. */
 export function ProjectEmbeddingConnection({ selection, disabled, onPreferRagUi }: { selection: IProjectEmbedding; disabled: boolean; onPreferRagUi?:(value:IRagUiPreference)=>void }): JSX.Element {
@@ -55,44 +56,56 @@ export function ProjectEmbeddingConnection({ selection, disabled, onPreferRagUi 
 }
 const installationLabel = (row: {name: string; assetKind: string; version: number}): string => `${row.name} · ${row.assetKind === 'mcp' ? 'MCP' : 'плагин'} · версия ${row.version}`;
 
-export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent,onPreferRagUi}: {
+/** Новый запуск требует нового согласия; потерянный ACK проверяется прежним requestKey. */
+export function ConnectEmbeddingAction({input,selection,bridge,disabled,consent}: {
     input: IEmbeddingConnectionInput; selection: IProjectEmbedding; bridge: ReturnType<typeof useBridge>; disabled: boolean; consent: string; onPreferRagUi?:(value:IRagUiPreference)=>void;
 }): JSX.Element {
     const { scope:owner, captureOwner } = useAuthRequestOwner();
     const operation = useLocalJob(bridge);
-    const [confirmed, setConfirmed] = useState(false);
+    const scopeKey = JSON.stringify([owner,input]);
+    const currentScope = useRef({key:scopeKey,indexed:false});
+    if (currentScope.current.key !== scopeKey) currentScope.current = {key:scopeKey,indexed:false};
+    const scope = currentScope.current;
+    const [approval, setApproval] = useState<{scope:typeof scope;checked:boolean}>();
+    const confirmed = approval?.scope === scope && approval.checked;
     const pending = pendingEmbeddingAction(bridge.jobs, input.deviceId, input.projectId, input.expectedBindingId);
     const retrying = operation.canRetry(input);
-    const job = operation.job||(!retrying&&bridge.jobsReady?bridge.jobs.find(candidate=>candidate.kind==='connect-rag-model'&&candidate.deviceId===input.deviceId&&candidate.projectId===input.projectId
+    const sameTarget = (candidate:IBridgeJob):boolean => candidate.kind==='connect-rag-model'&&candidate.deviceId===input.deviceId&&candidate.projectId===input.projectId
         &&candidate.assetId===input.assetId&&candidate.assetKind===input.assetKind&&Number(candidate.version)===input.version&&candidate.expectedManifest===input.expectedManifest
-        &&candidate.bindingId===input.expectedBindingId&&candidate.expectedInstanceId===input.expectedInstanceId&&embeddingConnected(candidate,selection)):undefined);
+        &&candidate.bindingId===input.expectedBindingId&&candidate.expectedInstanceId===input.expectedInstanceId;
+    const local = operation.job && sameTarget(operation.job) ? operation.job : undefined;
+    const history = bridge.jobsReady ? bridge.jobs.filter(sameTarget) : [];
+    const verified = history.find(candidate=>embeddingConnected(candidate,selection));
+    if (verified || embeddingConnected(local,selection)) scope.indexed = true;
+    const job = retrying || operation.busy ? undefined : history.find(isPending) || local || verified;
     const success = embeddingConnected(job, selection);
-    const blocked = disabled || operation.busy || isPending(job) || pending;
-    const binding=bridge.device?.report.bindings?.find(item=>item.projectId===input.projectId&&item.valid!==false);
-    const preference:IRagUiPreference={owner,root:bridge.device?.report.root||'',request:{kind:'open-rag-ui',deviceId:input.deviceId,projectId:input.projectId,
-        assetKind:input.assetKind,assetId:input.assetId,version:input.version,expectedManifest:input.expectedManifest,
-        expectedBindingId:input.expectedBindingId,expectedInstanceId:input.expectedInstanceId}};
-    const preferenceKey=ragUiPreferenceKey(preference);
-    const currentTarget=bridge.device?.id===input.deviceId&&!!preference.root&&binding?.bindingId===input.expectedBindingId&&binding.instanceId===input.expectedInstanceId;
-    useEffect(()=>{
-        if(success&&!disabled&&currentTarget&&captureOwner()())onPreferRagUi?.(preference);
-    },[success,disabled,currentTarget,preferenceKey,onPreferRagUi,captureOwner]);
-    return <Space direction="vertical" size={12}>
-        {!success && <Checkbox checked={confirmed} disabled={blocked || retrying} onChange={event => setConfirmed(event.target.checked)}>{consent}</Checkbox>}
-        <FeatureButton features={retrying ? [] : ['rag_sync','computer_connections','model_hosting']} type="primary" loading={operation.busy || isPending(job)} disabled={blocked || !confirmed || success}
-            onClick={() => { if (captureOwner()() && !blocked && confirmed && !success) void operation.submit(input); }}>
-            {retrying ? 'Проверить отправленное подключение' : 'Подключить модель к OpenCodeRAG'}
+    const blocked = disabled || operation.busy || !bridge.jobsReady || !retrying && (isPending(job) || pending);
+    const reindex = job?.result?.reindex as {rowCount:number}|undefined;
+    return <Space id="project-index-actions" direction="vertical" size={12}>
+        <Typography.Text strong>Индекс проекта на выбранном компьютере</Typography.Text>
+        <Checkbox checked={!!confirmed} disabled={blocked || retrying}
+            onChange={event => { if (currentScope.current===scope) setApproval({scope,checked:event.target.checked}); }}>{consent}</Checkbox>
+        <FeatureButton features={retrying ? [] : ['rag_sync','computer_connections','model_hosting']} type="primary" loading={operation.busy || !retrying && isPending(job)} disabled={blocked || !retrying && !confirmed}
+            onClick={() => {
+                if (currentScope.current!==scope || !captureOwner()() || blocked || !retrying && !confirmed) return;
+                setApproval({scope,checked:false}); void operation.submit(input);
+            }}>
+            {operation.busy ? 'Передаём задание…' : retrying ? 'Проверить отправленную индексацию' : scope.indexed ? 'Обновить индекс' : 'Индексировать проект'}
         </FeatureButton>
+        {retrying && !operation.busy && <Alert role="status" type="warning" showIcon message="Ответ на запуск индексации не получен"
+            description="Проверьте отправленную индексацию: будет использован прежний запрос, без второго запуска." />}
         {job && !success && <Alert role="status" showIcon type={job.state === 'failed' ? 'error' : 'info'} message={job.message}
             description={job.state === 'succeeded' ? 'Подключение не подтверждено для текущей модели. Обновите сведения и повторите проверку.' : undefined} />}
         {isPending(job) && <Progress percent={job?.percent} status="active" />}
-        {pending && !isPending(job) && <Typography.Text type="secondary">Дождитесь завершения текущего действия с папкой. Если ответ был потерян, затем проверьте отправленное подключение.</Typography.Text>}
+        {pending && !isPending(job) && !retrying && <Typography.Text type="secondary">Дождитесь завершения текущего действия с папкой.</Typography.Text>}
+        {(isPending(job)||pending) && <Button href="/operations">Ход операции</Button>}
+        {job?.state==='queued' && <Typography.Text type="secondary">Ожидающее задание можно отменить в разделе «Операции».</Typography.Text>}
         {operation.error && <Alert role="alert" type="error" showIcon message={operation.error} />}
-        {success && <Alert role="status" type="info" showIcon message="Подключение модели проверено"
+        {success && <Alert role="status" type="success" showIcon message="Индекс проекта готов"
             description="Локальный индекс перестроен и синхронизирован с сервером. Перезапустите OpenCode, чтобы открытая сессия использовала новое подключение." />}
         {success && <>
-            <Typography.Paragraph type="secondary">Локальный поиск готов. Интерфейс выбранной установки показывает результаты индексирования и поиска.</Typography.Paragraph>
-            <Button type="link" href={'#'+ragUiAnchorId(input.projectId)}>Перейти к интерфейсу установки</Button>
+            <Typography.Paragraph type="secondary">Серверная копия обновлена. Фрагментов: {reindex?.rowCount}. После изменения файлов можно обновить индекс здесь.</Typography.Paragraph>
+            <Button type="link" href={`/projects/${encodeURIComponent(input.projectId)}?tab=rag`}>Серверная база знаний</Button>
         </>}
     </Space>;
 }

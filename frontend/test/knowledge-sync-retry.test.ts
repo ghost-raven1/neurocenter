@@ -9,6 +9,7 @@ interface RestoreDialog {
     title: ReactNode; content: ReactNode; okText: string; onOk: () => Promise<void>; onCancel: () => void;
     destroyed: boolean; destroy: ReturnType<typeof vi.fn>;
 }
+interface RecoveryClick {preventDefault():void;button:number;ctrlKey?:boolean;metaKey?:boolean;shiftKey?:boolean;altKey?:boolean}
 
 const hooks = vi.hoisted(() => {
     let cursor = 0, mounted = true, lateWrites = 0;
@@ -34,7 +35,7 @@ const hooks = vi.hoisted(() => {
 });
 const ui = vi.hoisted(() => ({
     projectId: 'project-a', owner: 'owner-a', canWrite: true, serverReady: true as boolean | undefined, owners: new Map<string, () => () => boolean>(), dialogs: [] as RestoreDialog[],
-    buttons: new Map<string, {disabled?: boolean; onClick: () => void}>(), errors: [] as string[], warnings: [] as string[],
+    buttons: new Map<string, {disabled?: boolean; onClick: () => void;href?:string}>(), links:new Map<string,{onClick?:(event:RecoveryClick)=>void}>(), errors: [] as string[], warnings: [] as string[],
     bridge: {device: {id: 'device-a', name: 'Компьютер', role: 'Разработчик', online: true, report: {
         root: '/fixture/root', protocolVersion: 2, capabilities: ['durable-completions', 'managed-installations', 'project-rag-generations-v1'],
         bindings: [{projectId: 'project-a', folderName: 'Локальный проект A', bindingId: 'a'.repeat(64), instanceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', valid: true}, {projectId: 'project-b', folderName: 'Локальный проект B', bindingId: 'b'.repeat(64), instanceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', valid: true}],
@@ -52,12 +53,12 @@ vi.mock('../src/features/McpBridge/api', () => ({bridgeApi: {create: vi.fn()}}))
 vi.mock('../src/features/McpBridge/useBridge', () => ({useBridge: () => ui.bridge}));
 vi.mock('../src/features/McpBridge/BridgeConnection', () => ({BridgeConnection: () => null}));
 vi.mock('../src/features/McpBridge/ragUi/OpenCodeRagUi', () => ({OpenCodeRagUi: () => null}));
-vi.mock('react-router-dom', () => ({Link: () => null}));
+vi.mock('react-router-dom', () => ({Link: (props:{to:string;children:ReactNode;onClick?:(event:RecoveryClick)=>void}) => {ui.links.set(String(props.children),props);return createElement('a',{href:props.to},props.children);}}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children;
-    return {Space: content, Typography: {Text: content}, Alert: ({type, role, message, description}: {type: string; role?: string; message: string; description?: string}) => {
+    return {Space: content, Typography: {Text: content}, Alert: ({type, role, message, description,action}: {type: string; role?: string; message: string; description?: string;action?:ReactNode}) => {
         if (type === 'error') ui.errors.push(message); if (type === 'warning') ui.warnings.push(message + ' ' + (description || ''));
-        return createElement('div', {role}, createElement('strong', null, message), description && createElement('p', null, description));},
+        return createElement('div', {role}, createElement('strong', null, message), description && createElement('p', null, description),action);},
         Modal: {confirm: (options: Omit<RestoreDialog, 'destroyed' | 'destroy'>) => {
             const dialog: RestoreDialog = {...options, destroyed: false, destroy: vi.fn()};
             dialog.destroy.mockImplementation(() => {dialog.destroyed = true;}); ui.dialogs.push(dialog); return dialog;
@@ -68,7 +69,7 @@ const sync = 'Синхронизировать с сервером', restore = '
 const job = (id: string, state: IBridgeJob['state'] = 'queued') => ({id, state, deviceId: ui.bridge.device.id, projectId: ui.projectId,
     kind: 'sync-rag', bindingId: ui.bridge.device.report.bindings.find(item => item.projectId === ui.projectId)!.bindingId,
     message: 'Ожидает моста', createdAt: '', updatedAt: ''}) as IBridgeJob;
-function render() {hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.warnings = []; const markup = renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: ui.canWrite, serverReady: ui.serverReady})); hooks.commit(); return markup;}
+function render() {hooks.begin(); ui.buttons.clear(); ui.links.clear(); ui.errors = []; ui.warnings = []; const markup = renderToStaticMarkup(createElement(KnowledgeSync, {projectId: ui.projectId, canWrite: ui.canWrite, serverReady: ui.serverReady})); hooks.commit(); return markup;}
 function click(label = sync, confirm = true) {const button = ui.buttons.get(label)!; expect(button.disabled).toBe(false); button.onClick(); if (label === restore && confirm) void ui.dialogs[ui.dialogs.length - 1]?.onOk();}
 async function flush() {for (let index = 0; index < 12; index++) await Promise.resolve();}
 function deferred() {
@@ -86,6 +87,33 @@ beforeEach(() => {
 afterEach(() => {hooks.dispose(); vi.unstubAllGlobals();});
 
 describe('Результат операции не выдаётся за свежую проверку локального индекса', () => {
+    it('offers explicit rebuilding in Neurocenter for an unverified old index without submitting another operation',()=>{
+        ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено. Обновите OpenCodeRAG и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.'}];
+        const markup=render();expect(markup).toContain('Пересоздайте индекс выбранной моделью в Нейроцентре');
+        expect(markup).not.toContain('через интерфейс OpenCodeRAG');
+        expect(markup).toContain('href="/projects/project-a?tab=rag#project-index-settings">Пересоздать индекс</a>');
+        expect(bridgeApi.create).not.toHaveBeenCalled();expect(ui.bridge.reload).not.toHaveBeenCalled();
+        ui.canWrite=false;expect(render()).not.toContain('>Пересоздать индекс</a>');
+    });
+    it('moves keyboard focus to existing settings only for the current project',()=>{
+        ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено.'}];
+        const settings={getAttribute:vi.fn(()=>ui.projectId),scrollIntoView:vi.fn(),focus:vi.fn()},preventDefault=vi.fn();
+        vi.stubGlobal('document',{getElementById:()=>settings});render();
+        ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0});
+        expect(preventDefault).toHaveBeenCalledOnce();expect(settings.scrollIntoView).toHaveBeenCalledOnce();expect(settings.focus).toHaveBeenCalledWith({preventScroll:true});
+        settings.getAttribute.mockReturnValue('other-project');preventDefault.mockClear();
+        ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0});
+        expect(preventDefault).not.toHaveBeenCalled();expect(settings.focus).toHaveBeenCalledOnce();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
+    it('preserves normal link behavior for modified clicks and another mouse button',()=>{
+        ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено.'}];
+        const getElementById=vi.fn();vi.stubGlobal('document',{getElementById});render();
+        for(const gesture of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}]){
+            const preventDefault=vi.fn();ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0,...gesture});
+            expect(preventDefault).not.toHaveBeenCalled();
+        }
+        expect(getElementById).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
+    });
     const operations = [
         {kind: 'sync-rag', heading: 'Результат последней синхронизации с сервером'},
         {kind: 'restore-rag', heading: 'Результат последнего восстановления с сервера'},

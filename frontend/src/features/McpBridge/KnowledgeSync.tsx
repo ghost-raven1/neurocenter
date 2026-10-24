@@ -44,6 +44,9 @@ export const KnowledgeSync: FC<{
     const accepted = submitted?.scope === scope && submitted.epoch === epoch ? submitted.job : undefined;
     const job = currentKnowledgeJob(bridge.jobs, bridge.device?.id, projectId, binding?.bindingId, accepted, bridge.jobsReady);
     const pending = isPending(job);
+    // Исторические квитанции старого моста содержат инструкцию открыть отдельный UI.
+    const indexUnconfirmed = job?.kind === 'sync-rag' && job.state === 'failed'
+        && job.message.startsWith('Происхождение векторов не подтверждено.');
     if (request.current?.accepted && !pending) { request.current = undefined; }
     const sequence = useRef(0);
     useEffect(() => {
@@ -160,7 +163,9 @@ export const KnowledgeSync: FC<{
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
             {binding && <Typography.Text type="secondary">Папка проекта: <Typography.Text code>{binding.folderName}</Typography.Text></Typography.Text>}
-            <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} preferred={preferred} />
+            <details><summary>Дополнительные инструменты OpenCodeRAG</summary>
+                <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} preferred={preferred} />
+            </details>
             {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && <Alert type="warning" showIcon message={bridgeError}
                 action={!bridge.device.report.capabilities?.includes('project-rag-generations-v1') ? <Button href="/start">Обновить мост</Button> : undefined} />}
             <Space wrap>
@@ -199,7 +204,16 @@ export const KnowledgeSync: FC<{
                     showIcon
                     message={pending ? job.message : job.kind === 'sync-rag'
                         ? 'Результат последней синхронизации с сервером' : 'Результат последнего восстановления с сервера'}
-                    description={pending ? undefined : job.message}
+                    description={pending ? undefined : indexUnconfirmed
+                        ? 'У прежнего индекса не подтверждена модель. Пересоздайте индекс выбранной моделью в Нейроцентре; после проверки он синхронизируется с сервером.' : job.message}
+                    action={indexUnconfirmed && canWrite ? <Link to={`/projects/${encodeURIComponent(projectId)}?tab=rag#project-index-settings`} onClick={event => {
+                        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                        const settings = document.getElementById('project-index-settings');
+                        if (settings?.getAttribute('data-project-id') !== projectId) return;
+                        event.preventDefault();
+                        settings.scrollIntoView({block:'start'});
+                        settings.focus({preventScroll:true});
+                    }}>Пересоздать индекс</Link> : undefined}
                 />
             )}
             {accepted && pending && <>

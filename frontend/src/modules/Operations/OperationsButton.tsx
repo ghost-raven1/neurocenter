@@ -30,7 +30,7 @@ const OperationsButton: FC<IOperationsButtonProps> = ({ open, onClick, triggerRe
             : 'Нет активных операций. Открыть историю и подробности.';
 
     return <>
-        <Tooltip title={<>{description}{updatedAt && <div>Обновлено: {updatedAt}</div>}</>}>
+        <Tooltip placement="bottom" autoAdjustOverflow={false} title={<>{description}{updatedAt && <div>Обновлено: {updatedAt}</div>}</>}>
             <Badge count={progress.count} size="small" className="operations-button-badge">
                 <Button
                     ref={triggerRef}

@@ -38,7 +38,7 @@ export function ProjectEmbeddingContent({projectId,indexProfile,serverHasData,ca
     const showTarget=canConnect&&(!!selected||!!selection?.model&&modelId===selection.model.id&&(state.catalogLoading||!!state.catalogError));
     const saveAction=canManage&&selection&&(!!modelId||dirty||mismatch)?<FeatureButton features={selected ? ['model_catalog','rag_sync','model_hosting'] : []} type="primary" loading={state.saving||reindex.busy} disabled={!(dirty||mismatch)||invalidDraft||state.loading||state.catalogLoading||reindex.pending||reindex.plan?.state==='needs_input'||!!state.readError||!!state.catalogError||!!modelId&&canConnect&&target.blocked}
         onClick={()=>{if(selected){if(canConnect&&target.blocked)return;void reindex.request(selected,selection.revision,canConnect?target.value:undefined);}else{void state.save();}}}>{modelId?'Подключить модель проекта':'Отключить модель проекта'}</FeatureButton>:null;
-    return <Card size="small" title="Модель эмбеддингов проекта" className="project-embedding"
+    return <Card id="project-index-settings" data-project-id={projectId} tabIndex={-1} role="region" aria-label="Настройка индекса проекта" size="small" title="Модель эмбеддингов проекта" className="project-embedding"
         extra={<Button type="link" loading={state.loading || state.catalogLoading} disabled={state.saving} onClick={() => { void state.refresh(); }}>Обновить сведения</Button>}>
         <Space direction="vertical" size={16} className="project-embedding__content">
             {state.readError && <Alert showIcon type="warning" message="Сведения о модели недоступны" description={state.readError}

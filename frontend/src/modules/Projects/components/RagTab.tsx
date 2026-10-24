@@ -62,15 +62,16 @@ const RagTab: FC<{ projectKey: string }> = ({ projectKey }) => {
 
             {error&&<Alert type="warning" showIcon message={summary?'Не удалось обновить сведения — показаны последние данные':'База знаний временно недоступна'} description={error} action={<Button onClick={load} loading={loading}>Повторить</Button>} />}
             <ProjectEmbedding projectId={projectKey} indexProfile={summary?.indexProfile} serverHasData={!!summary?.rowCount} onPreferRagUi={preferRagUi} />
-            <Card size="small" title="Подготовка локальных знаний" className="project-rag__setup">
+            <details className="project-rag__setup">
+                <summary>Как подготовить базу знаний</summary>
                 <ol className="project-rag__steps"><li>Установите OpenCodeRAG в папку проекта.</li><li>Выберите и подключите модель проекта.</li><li>Дождитесь проверки индекса и синхронизации.</li></ol>
                 {canWrite ? <Space wrap>
                     <Button type="primary" href={projectRagCatalogUrl(projectKey)}>Установить OpenCodeRAG</Button>
                     <Button href={projectRagSetupUrl(projectKey)}>Настройка модели и индекса</Button>
                 </Space> : <Text type="secondary">Попросите разработчика или администратора проекта подготовить локальный индекс.</Text>}
-                <details className="project-rag__help-details"><summary>Как проходит подготовка</summary><Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Выберите сервер и компьютер: Нейроцентр перестроит локальный индекс и синхронизирует его с сервером одним действием.</Paragraph>
-                    <Paragraph type="secondary">Прежний локальный индекс работает до проверки нового. Компьютер не в сети — действие дождётся моста в очереди. После завершения перезапустите OpenCode, чтобы открытая сессия использовала новое подключение. Установка файлов и диагностика запуска сами по себе не подтверждают готовность индекса.</Paragraph></details>
-            </Card>
+                <Paragraph>Установите OpenCodeRAG в связанную папку проекта и подключите модель выше. Выберите сервер и компьютер: Нейроцентр перестроит локальный индекс и синхронизирует его с сервером одним действием.</Paragraph>
+                <Paragraph type="secondary">Прежний локальный индекс работает до проверки нового. Компьютер не в сети — действие дождётся моста в очереди. После завершения перезапустите OpenCode, чтобы открытая сессия использовала новое подключение. Установка файлов и диагностика запуска сами по себе не подтверждают готовность индекса.</Paragraph>
+            </details>
             <Spin spinning={loading}>
                 {summary ? (
                     <div className="project-rag__content">
