@@ -63,7 +63,8 @@ const ragSlice = createSlice({
             })
             .addCase(authInit.rejected, (state, action) => {
                 if (state.authRequestId === action.meta.requestId) {
-                    return initialState;
+                    if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                    state.authRequestId = null;
                 }
             })
             .addCase(authLogout.fulfilled, (state, action) => {

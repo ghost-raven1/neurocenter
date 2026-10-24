@@ -5,7 +5,7 @@ import Start from '../src/modules/Start/Start';
 import type { IUserBlockState } from '../src/features/UserBlock/interfaces';
 
 const fixture = vi.hoisted(() => {
-    const userBlock: IUserBlockState = {isAuth:true,processing:false,error:'',request:null,policies:{},user:{
+    const userBlock: IUserBlockState = {isAuth:true,processing:false,error:'',authorizationUnconfirmed:false,request:null,policies:{},user:{
         id:'admin-navigation',principalName:'admin',email:'admin@example.test',displayName:'Администратор',
         activeRole:'Главный админ',userRoles:['Главный админ'],routePermissions:[],projectRoles:[],
     }};

@@ -5,7 +5,7 @@ import bffApi from '../../../core/api/bff';
 import type { IAuthMe } from '../../../core/interfaces';
 import type { IUserBlockState } from '../interfaces';
 
-type AuthThunkConfig = { state: { userBlock: IUserBlockState }; rejectValue: 'unauthorized' };
+type AuthThunkConfig = { state: { userBlock: IUserBlockState }; rejectValue: 'unauthorized' | 'forbidden' };
 
 /** Refresh и смена роли ждут завершения текущего изменения сессии. */
 function canStartSessionRequest(state: AuthThunkConfig['state']): boolean {
@@ -14,7 +14,7 @@ function canStartSessionRequest(state: AuthThunkConfig['state']): boolean {
 
 /**
  * Инициализация сессии: запрос данных пользователя и политик (GET /auth/me).
- * На 401 reducer завершает только ту сессию, которой принадлежит ответ.
+ * Только 401 и подтверждённый отказ назначений 403 завершают текущую сессию.
  */
 export const authInit = createAsyncThunk<IAuthMe, void, AuthThunkConfig>(
     'userBlock/init',
@@ -22,6 +22,7 @@ export const authInit = createAsyncThunk<IAuthMe, void, AuthThunkConfig>(
         try { return await bffApi.me(); }
         catch (error) {
             if (isAxiosError(error) && error.response?.status === 401) { return rejectWithValue('unauthorized'); }
+            if (isAxiosError(error) && error.response?.status === 403) { return rejectWithValue('forbidden'); }
             throw error;
         }
     },

@@ -7,6 +7,7 @@ const initialState: IUserBlockState = {
     isAuth: false,
     processing: false,
     error: '',
+    authorizationUnconfirmed: false,
     user: null,
     policies: {},
     request: null,
@@ -38,15 +39,19 @@ const userBlockSlice = createSlice({
                 state.user = action.payload.user;
                 state.policies = action.payload.policies;
                 state.error = '';
+                state.authorizationUnconfirmed = false;
             })
             .addCase(authInit.rejected, (state, action) => {
                 if (state.request?.id !== action.meta.requestId) { return; }
+                if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                    return { ...initialState, error: action.payload === 'forbidden' ? 'Доступ к рабочему пространству не подтверждён. Обратитесь к администратору.' : '' };
+                }
                 state.request = null;
                 state.processing = false;
-                state.isAuth = false;
-                state.user = null;
-                state.policies = {};
-                state.error = action.payload === 'unauthorized' ? '' : 'Не удалось подключиться к серверу. Проверьте соединение и повторите вход.';
+                state.authorizationUnconfirmed = state.isAuth && state.user !== null;
+                state.error = state.authorizationUnconfirmed
+                    ? 'Показаны последние подтверждённые данные. Действия по-прежнему проверяются сервером.'
+                    : 'Не удалось подключиться к серверу. Проверьте соединение и повторите вход.';
             })
             .addCase(authSwitchRole.pending, (state, action) => {
                 state.processing = true;
@@ -67,6 +72,7 @@ const userBlockSlice = createSlice({
                 state.error = '';
                 state.user = action.payload.user;
                 state.policies = action.payload.policies;
+                state.authorizationUnconfirmed = false;
             })
             .addCase(authLogout.pending, (state, action) => {
                 state.processing = true;

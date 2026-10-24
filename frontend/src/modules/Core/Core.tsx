@@ -1,6 +1,6 @@
 import { BrandMark } from '../../common/components/BrandMark';
 import { SettingOutlined, QuestionCircleOutlined, ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
-import { Button, Grid, Layout, Menu, Space, Typography } from 'antd';
+import { Alert, Button, Grid, Layout, Menu, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -60,7 +60,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
     const location = useLocation();
     const screens = Grid.useBreakpoint();
     const compact = !screens.lg;
-    const { isAuth, user } = useSelector((state: RootState) => state.userBlock);
+    const { isAuth, user, authorizationUnconfirmed, processing, error } = useSelector((state: RootState) => state.userBlock);
     useChatPresence(isAuth);
     const [menuOpen, setMenuOpen] = useState(false);
     const [opsOpen, setOpsOpen] = useState(false);
@@ -125,7 +125,12 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                         <UserInfo />
                     </Space>
                 </Layout.Header>
-                <Layout.Content id="main-content" tabIndex={-1} className="app__content"><div className="app__page">{children}</div></Layout.Content>
+                <Layout.Content id="main-content" tabIndex={-1} className="app__content"><div className="app__page">
+                    <div className="app__authorization-status">{authorizationUnconfirmed && <Alert showIcon type="warning"
+                        message="Не удалось проверить доступ" description={error}
+                        action={<Button size="small" loading={processing} disabled={processing} onClick={() => dispatch(authInit())}>Повторить проверку доступа</Button>} />}</div>
+                    {children}
+                </div></Layout.Content>
             </Layout>
             <AccessibleDrawer title={<span className="app__drawer-brand"><BrandMark/>Нейроцентр</span>} placement="left" width={280} open={compact && menuOpen} onClose={() => setMenuOpen(false)} className="app__mobile-menu">{menu}</AccessibleDrawer>
             <AccessibleDrawer title="Операции" width={compact ? '100%' : 960} open={operationsVisible} onClose={closeOperations}
