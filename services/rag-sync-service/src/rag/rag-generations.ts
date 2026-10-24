@@ -57,9 +57,9 @@ export async function generationSourceHash(db:Queryable,project:string,generatio
 /** Кандидаты содержат замороженные тексты. Единственный active pointer принадлежит каталогу. */
 export class RagGenerations {
     constructor(private readonly pool:Pool){}
-    async get(project:string,id:string):Promise<IRagGeneration>{
+    async get(project:string,id:string,db:Queryable=this.pool):Promise<IRagGeneration>{
         if(!generationId(id))throw new BadRequestException('Некорректное поколение индекса.');
-        const result=await this.pool.query('SELECT * FROM rag_generations WHERE id=$1 AND project_key=$2',[id,project]);
+        const result=await db.query('SELECT * FROM rag_generations WHERE id=$1 AND project_key=$2',[id,project]);
         if(!result.rows[0])throw new NotFoundException('Поколение индекса не найдено.');return map(result.rows[0]);
     }
     async source(project:string,generation:string):Promise<{hash:string;rows:number;bytes:number}>{
@@ -92,40 +92,43 @@ export class RagGenerations {
             await client.query('COMMIT');return this.get(project,id);
         }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw mapRagQuotaError(error);}finally{releaseCapacity();client.release();}
     }
-    /** Переиспользует уже подтверждённые батчи после restart; одна generation обрабатывается одним worker. */
+    /** Переиспользует уже подтверждённые батчи после restart; блокировка и все записи остаются на одной сессии PostgreSQL. */
     async build(project:string,id:string,embed:(texts:string[],profile:IIndexProfile)=>Promise<number[][]>):Promise<IRagGeneration>{
         const owner=await this.pool.connect();let locked=false,discard=true;
         try{
             const lock=await owner.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',['rag-reindex:'+id]);
-            locked=lock.rows[0].locked;discard=false;if(!locked)return this.get(project,id);
+            locked=lock.rows[0].locked;discard=false;if(!locked)return await this.get(project,id,owner);
             while(true){
-                const state=await this.get(project,id);if(state.state!=='building')return state;
-                const page=await this.pool.query(`SELECT ${columns} FROM rag_chunks WHERE project_key=$1 AND generation_id=$2 AND embedding IS NULL ORDER BY id LIMIT 32`,[project,id]);
-                if(!page.rows.length)return await this.finish(project,id);
+                const state=await this.get(project,id,owner);if(state.state!=='building')return state;
+                const page=await owner.query(`SELECT ${columns} FROM rag_chunks WHERE project_key=$1 AND generation_id=$2 AND embedding IS NULL ORDER BY id LIMIT 32`,[project,id]);
+                if(!page.rows.length)return await this.finish(project,id,owner);
                 const rows=page.rows.map(row),vectors=await embed(rows.map(item=>item.content),state.profile);
                 if(!Array.isArray(vectors)||vectors.length!==rows.length)throw new BadRequestException('Модель вернула неполный батч.');
                 const values=rows.map((item,index)=>({...item,embedding:vectors[index]}));requireUsableVectors(values,state.profile.dimension);
                 const releaseCapacity=await reserveCapacity({resource:'postgres',bytes:Math.max(16*1024**2,Buffer.byteLength(JSON.stringify(values))*6)});
-                const client=await this.pool.connect().catch(error=>{releaseCapacity();throw error;});
+                // The lock-owning session also writes: a disconnected worker cannot publish a late batch.
+                const client=owner;
                 try{
                     await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
                     const current=await client.query('SELECT state FROM rag_generations WHERE id=$1 AND project_key=$2 FOR UPDATE',[id,project]);
-                    if(current.rows[0]?.state!=='building'){await client.query('ROLLBACK');return this.get(project,id);}
+                    if(current.rows[0]?.state!=='building'){await client.query('ROLLBACK');return await this.get(project,id,owner);}
                     const prepared=values.map(value=>({...value,syncHash:rowFingerprint(value)})),write=buildUpsert(project,id,prepared);await client.query(write.sql,write.params);
                     await client.query(`UPDATE rag_generations SET processed_rows=processed_rows+$2,updated_at=now() WHERE id=$1`,[id,values.length]);
                     await client.query('COMMIT');
-                }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{releaseCapacity();client.release();}
+                }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{releaseCapacity();}
             }
         }catch(error){
-            await this.pool.query("UPDATE rag_generations SET state='failed',error=$2,updated_at=now() WHERE id=$1 AND state='building'",[id,'Переиндексация прервана. Действующий индекс сохранён.']);throw mapRagQuotaError(error);
+            // A lost owner cannot mark a replacement worker failed; preserve the original failure.
+            if(locked)await owner.query("UPDATE rag_generations SET state='failed',error=$2,updated_at=now() WHERE id=$1 AND state='building'",[id,'Переиндексация прервана. Действующий индекс сохранён.']).catch(()=>{discard=true;});
+            throw mapRagQuotaError(error);
         }finally{if(locked)await owner.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['rag-reindex:'+id]).catch(()=>{discard=true;});owner.release(discard);}
     }
-    private async finish(project:string,id:string):Promise<IRagGeneration>{
-        const candidate=await this.get(project,id);
+    private async finish(project:string,id:string,owner:PoolClient):Promise<IRagGeneration>{
+        const candidate=await this.get(project,id,owner);
         if(candidate.state!=='building')return candidate;
         // Candidate is never a write target before promotion; concurrent build leaves active ingest unlocked.
-        await ensureGenerationSearchIndex(this.pool,id,candidate.profile.dimension,true);
-        const client=await this.pool.connect();
+        await ensureGenerationSearchIndex(owner,id,candidate.profile.dimension,true);
+        const client=owner;
         try{
             await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
             const found=await client.query('SELECT * FROM rag_generations WHERE id=$1 AND project_key=$2 FOR UPDATE',[id,project]);const value=map(found.rows[0]);
@@ -137,8 +140,8 @@ export class RagGenerations {
             await sealIndex(client,project,id,{indexProfile:value.profile,snapshot:{hash:snapshot,rowCount:value.rowCount,complete:true}});
             const receipt=createHash('sha256').update(JSON.stringify({id,project,profile:value.profile,sourceGeneration:value.sourceGeneration,sourceSnapshot:value.sourceSnapshot,rowCount:value.rowCount,snapshot})).digest('hex');
             await client.query("UPDATE rag_generations SET state='ready',snapshot_hash=$2,receipt_hash=$3,updated_at=now() WHERE id=$1",[id,snapshot,receipt]);
-            await client.query('COMMIT');return this.get(project,id);
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+            await client.query('COMMIT');return await this.get(project,id,owner);
+        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}
     }
     async cancel(project:string,id:string,tombstone:{profile:unknown;sourceGeneration:string;sourceSnapshot:string|null}):Promise<IRagGeneration>{
         if(!generationId(id)||!generationId(tombstone.sourceGeneration))throw new BadRequestException('Некорректное поколение отмены.');
