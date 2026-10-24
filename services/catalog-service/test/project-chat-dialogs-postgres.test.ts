@@ -35,6 +35,8 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
             CREATE TABLE project_members(project_id text REFERENCES projects(id) ON DELETE CASCADE,user_id text,principal_name text,display_name text,role text,PRIMARY KEY(project_id,principal_name));`);
         await f.pool.query(PROJECT_CHAT_SCHEMA_SQL);
         await f.pool.query('CREATE TABLE model_usage_calls(id uuid PRIMARY KEY)');
+        await f.pool.query('CREATE TABLE model_catalog_versions(model_id text,revision integer,model_pin text,descriptor jsonb,PRIMARY KEY(model_id,revision))');
+        await f.pool.query('INSERT INTO model_catalog_versions VALUES($1,1,$2,$3)', ['model-rooms',pin,{runtime:'ollama'}]);
         await f.pool.query("INSERT INTO projects(id,name) VALUES($1,'Legacy')",[legacyProject]);
         await f.pool.query("INSERT INTO platform_users(email,is_main_admin) VALUES($1,false)",[a]);
         await f.pool.query("INSERT INTO project_members VALUES($1,$2,$2,'Creator','Разработчик')",[legacyProject,a]);
@@ -182,8 +184,17 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
             const rows=(await f.observer.query('SELECT content,status FROM project_chat_messages WHERE source_message_id=$1',[accepted.message.id])).rows;expect(rows.every(row=>!row.content.includes('LATE PRIVATE OUTPUT'))).toBe(true);
         }finally{release.resolve();}
     });
-    it('multiple rooms share the existing author queue cap; human-only posts remain usable',async()=>{
+    it('multiple rooms share the transport reserve and existing total author cap; human-only posts remain usable',async()=>{
         const left=await create('PRIVATE',[admin]),right=await create('PRIVATE',[admin]);await configure(left.id);await configure(right.id);const schedule=vi.spyOn(service.runner,'schedule').mockImplementation(()=>{});
-        try{for(let index=0;index<20;index++)await send(index%2?left.id:right.id,a,{targetAgentIds:[agent]});await expect(send(right.id,a,{targetAgentIds:[agent]})).rejects.toHaveProperty('status',409);expect((await send(right.id)).message.status).toBe('done');}finally{schedule.mockRestore();}
+        try{
+            for(let index=0;index<19;index++)await send(index%2?left.id:right.id,a,{targetAgentIds:[agent]});
+            await expect(send(right.id,a,{targetAgentIds:[agent]})).rejects.toHaveProperty('status',409);
+            const snapshot=(await f.pool.query<ProjectChatMessageRow>("SELECT * FROM project_chat_messages WHERE project_id=$1 AND kind='agent' LIMIT 1",[project])).rows[0].snapshot!;
+            // A previously accepted twentieth question stays accepted and still consumes the unchanged total cap.
+            await service.repository.scoped(project,{email:a,activeRole:'Разработчик'},2,true,(db,room,current)=>service.repository.add(db,room,current,{requestKey:randomUUID(),hash:pin,prompt:'Legacy accepted question',replyToId:null},[snapshot]),false,right.id);
+            expect(Number((await f.pool.query("SELECT count(*) AS total FROM project_chat_messages WHERE project_id=$1 AND kind='user' AND status='queued'",[project])).rows[0].total)).toBe(20);
+            await expect(send(right.id,a,{targetAgentIds:[agent]})).rejects.toThrow('Очередь ответов агентов заполнена.');
+            expect((await send(right.id)).message.status).toBe('done');
+        }finally{schedule.mockRestore();}
     });
 });

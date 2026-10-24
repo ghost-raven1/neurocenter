@@ -5,7 +5,7 @@ import type { IAccessActor } from '../access/access.model';
 import type { ChatAgentSnapshot } from '../model-chat/chat-group.types';
 import { ProjectChatPolicy, type ProjectChatActor } from './project-chat.policy';
 import {assertProjectChatRoomAccess} from './project-chat-room-access';
-import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, emptyProjectChatRoom, type ProjectChatDb, type ProjectChatMessageRow, type ProjectChatRoomRow, type ProjectChatRoomKey } from './project-chat.types';
+import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, emptyProjectChatRoom, type ProjectChatDb, type ProjectChatMessageRow, type ProjectChatRoomRow, type ProjectChatRoomKey, type ProjectChatTransport } from './project-chat.types';
 
 /** Short transactions serialize room state; inference never holds a connection or row lock. */
 export class ProjectChatRepository {
@@ -54,10 +54,25 @@ export class ProjectChatRepository {
     async prior(db: ProjectChatDb, projectId: string, actor: string, key: string, roomId = DEFAULT_PROJECT_CHAT_ROOM): Promise<ProjectChatMessageRow | undefined> {
         return (await db.query<ProjectChatMessageRow>('SELECT * FROM project_chat_messages WHERE project_id=$1 AND author_email=$2 AND request_key=$3 AND room_id=$4', [projectId, actor, key, roomId])).rows[0];
     }
-    /** First admission and explicit retries share the same bounded queue, under the room lock. */
-    async assertQueueCapacity(db: ProjectChatDb, projectId: string, author: string): Promise<void> {
-        const queued = (await db.query<{ total: string; own: string }>("SELECT count(*) AS total,count(*) FILTER(WHERE author_email=$2) AS own FROM project_chat_messages WHERE project_id=$1 AND kind='user' AND status IN ('queued','running')", [projectId, author])).rows[0];
+    /** The project transaction fence reserves one existing queue slot for the other transport. */
+    async assertQueueCapacity(db: ProjectChatDb, projectId: string, author: string, transports: readonly ProjectChatTransport[]): Promise<void> {
+        const queued = (await db.query<{ total: string; own: string; server: string; device: string; own_server: string; own_device: string }>(`WITH pending AS (
+            SELECT source.id,source.author_email,
+                bool_or(COALESCE(version.descriptor->>'runtime'<>'device-codex',true)) FILTER(WHERE child.id IS NOT NULL) AS server,
+                bool_or(COALESCE(version.descriptor->>'runtime' NOT IN ('ollama','remote-openai','remote-ollama'),true)) FILTER(WHERE child.id IS NOT NULL) AS device
+            FROM project_chat_messages source
+            LEFT JOIN project_chat_messages child ON child.project_id=source.project_id AND child.source_message_id=source.id AND child.kind='agent' AND child.status IN ('queued','running')
+            LEFT JOIN LATERAL (SELECT descriptor FROM model_catalog_versions WHERE model_id=child.snapshot->>'modelId' AND model_pin=child.snapshot->>'modelPin' ORDER BY revision DESC LIMIT 1) version ON true
+            WHERE source.project_id=$1 AND source.kind='user' AND source.status IN ('queued','running')
+            GROUP BY source.id,source.author_email
+        ) SELECT count(*) AS total,count(*) FILTER(WHERE author_email=$2) AS own,
+            count(*) FILTER(WHERE server) AS server,count(*) FILTER(WHERE device) AS device,
+            count(*) FILTER(WHERE server AND author_email=$2) AS own_server,count(*) FILTER(WHERE device AND author_email=$2) AS own_device FROM pending`, [projectId, author])).rows[0];
         if (Number(queued.total) >= 100 || Number(queued.own) >= 20) throw new ConflictException('Очередь ответов агентов заполнена. Дождитесь ответа или отправьте сообщение только людям.');
+        for (const transport of transports) {
+            const lane = transport === 'device-codex' ? 'device' : 'server';
+            if (Number(queued[lane]) >= 99 || Number(queued[`own_${lane}`]) >= 19) throw new ConflictException('Очередь этого подключения заполнена. Выберите агента с другим подключением, дождитесь ответа или отправьте сообщение только людям.');
+        }
     }
     async add(db: ProjectChatDb, room: ProjectChatRoomRow, actor: ProjectChatActor,
         input: { requestKey: string; hash: string; prompt: string; replyToId: string | null }, snapshots: ChatAgentSnapshot[]) {

@@ -57,7 +57,7 @@ export interface ProjectChatInference {
     roster(req: Request, projectId: string, room: ProjectChatRoomRow, db?: ProjectChatDb): Promise<ChatParticipant[]>;
     resolve(req: Request, projectId: string, room: ProjectChatRoomRow, agentIds: string[], db?: ProjectChatDb): Promise<ChatAgentSnapshot[]>;
     assert(req: Request, projectId: string, snapshot: ChatAgentSnapshot, db?: ProjectChatDb): Promise<void>;
-    transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot): Promise<ProjectChatTransport>;
+    transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot, db?: ProjectChatDb): Promise<ProjectChatTransport>;
     infer(input: { req: Request; projectId: string; source: ProjectChatMessageRow; response: ProjectChatMessageRow; signal: AbortSignal }): Promise<{ content: string; usage?: ChatUsage; learning: ChatLearningReceipt }>;
 }
 export interface ProjectChatJob {

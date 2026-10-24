@@ -13,6 +13,8 @@ import { resolveProjectChatProject } from './project-chat-project';
 import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId, projectChatRoomView, type ProjectChatDb, type ProjectChatDetail, type ProjectChatMessage, type ProjectChatMessageRow, type ProjectChatReceipt, type ProjectChatRoomRow } from './project-chat.types';
 import { projectChatBody, projectChatPage, projectChatParticipants, projectChatSend, projectChatUuid, projectChatWatch } from './project-chat.validation';
 import {ProjectChatActivityService} from '../chat-activity/project-chat-activity';
+import type {ChatAgentSnapshot} from '../model-chat/chat-group.types';
+import type {ProjectChatTransport} from './project-chat.types';
 
 /** Project membership shares a room; private model chats keep their existing owner boundary. */
 @Injectable()
@@ -51,6 +53,11 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
     private async receipt(db: ProjectChatDb, room: ProjectChatRoomRow, actor: ProjectChatActor, source: ProjectChatMessageRow): Promise<ProjectChatReceipt> {
         const slots = (await this.repository.children(db, room.project_id, source.id, projectChatRoomId(room))).slice(0, 9);
         return { message: this.view(source, actor), messages: [source, ...slots].map(row => this.view(row, actor)), roomRevision: Number(room.revision) };
+    }
+    private async assertQueueCapacity(req: Request, db: ProjectChatDb, projectId: string, author: string, snapshots: ChatAgentSnapshot[]): Promise<void> {
+        const transports = new Set<ProjectChatTransport>();
+        for (const snapshot of snapshots) transports.add(await this.inference.transport(req, projectId, snapshot, db));
+        await this.repository.assertQueueCapacity(db, projectId, author, [...transports]);
     }
     async read(req: Request, id: string, rawWatch?: string, roomId = DEFAULT_PROJECT_CHAT_ROOM): Promise<ProjectChatDetail> {
         projectChatUuid(roomId); const watch = projectChatWatch(rawWatch);
@@ -103,9 +110,9 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             }
             const targets = input.targetAgentIds ?? [];
             if (targets.some(agentId => !room.agent_ids.includes(agentId))) throw new BadRequestException('Выберите агентов из состава этого чата.');
-            if (targets.length) await this.repository.assertQueueCapacity(db, projectId, current.email);
             if (targets.length) await requireFeaturesEnabled(['group_chat']);
             const snapshots = targets.length ? await this.inference.resolve(req, projectId, room, targets, db) : [];
+            if (snapshots.length) await this.assertQueueCapacity(req, db, projectId, current.email, snapshots);
             await this.repository.ensure(db, room);
             const source = await this.repository.add(db, room, current, input, snapshots);
             return this.receipt(db, room, current, source);
@@ -128,7 +135,6 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             const unfinished = (await this.repository.children(db, projectId, messageId, roomId)).filter(row => row.kind === 'agent' && row.status !== 'done');
             if (!unfinished.length) throw new ConflictException('Все ответы уже получены.');
             if (unfinished.some(row => !row.snapshot || !room.agent_ids.includes(row.snapshot.agentId))) throw new ConflictException('Агент исключён из чата. Отправьте новый вопрос текущему составу; готовые ответы сохранены.');
-            await this.repository.assertQueueCapacity(db, projectId, source.author_email!);
             await requireFeaturesEnabled(['project_chat', 'group_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const])]);
             const executor={email:source.author_email!,activeRole:source.author_role!};
             try{
@@ -140,6 +146,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             }
             const executionRequest=this.policy.request(executor);
             for (const response of unfinished) await this.inference.assert(executionRequest, projectId, response.snapshot!, db);
+            await this.assertQueueCapacity(executionRequest, db, projectId, source.author_email!, unfinished.map(row => row.snapshot!));
             const generation = randomUUID();
             await db.query("UPDATE project_chat_messages SET status='queued',generation=$3,lease_until=NULL,error=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND (kind<>'agent' OR status<>'done')", [projectId, messageId, generation]);
             await db.query('INSERT INTO project_chat_retry_requests(project_id,actor_email,request_key,message_id,room_id) VALUES($1,$2,$3,$4,$5)', [projectId, actor.email, key, messageId, roomId]);

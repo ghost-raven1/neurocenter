@@ -60,8 +60,8 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const current = (await this.group(db).plan(req, this.scope(projectId, [snapshot.agentId], model), model, [snapshot.agentId], db))[0];
         if (!isDeepStrictEqual(current.snapshot, snapshot)) throw new ConflictException('Профиль или модель агента изменились. Проверьте настройки перед повтором.');
     }
-    async transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot): Promise<ProjectChatTransport> {
-        return (await this.base(req, projectId, snapshot.modelId, snapshot.modelPin)).runtime === 'device-codex' ? 'device-codex' : 'server';
+    async transport(req: Request, projectId: string, snapshot: ChatAgentSnapshot, db: ProjectChatDb = this.models.pool): Promise<ProjectChatTransport> {
+        return (await this.base(req, projectId, snapshot.modelId, snapshot.modelPin, db)).runtime === 'device-codex' ? 'device-codex' : 'server';
     }
     async infer({ req, projectId, source, response, signal }: Parameters<ProjectChatInference['infer']>[0]) {
         const snapshot = response.snapshot;
