@@ -175,4 +175,46 @@ describe('Heartbeat сохраняется во время длительной 
         expect(calls('jobs/claim')).toBe(1);
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it('Повторяемый 409 квитанции не делает работающий компьютер offline и не повторяет установку', async () => {
+        const originalApi = vi.mocked(state.api).getMockImplementation()!;
+        const completeRoute = `jobs/${jobId}/complete`;
+        vi.mocked(state.api).mockImplementation(async (...args) => {
+            if (args[0] === completeRoute) { throw new Error('HTTP 409: completion conflict'); }
+            return originalApi(...args);
+        });
+        gate.resolve(); await worker;
+        const completionFile = path.join(state.stateDir(), 'completions', jobId + '.json');
+        const bytes = await fs.readFile(completionFile);
+        const before = await fs.stat(completionFile, { bigint: true });
+        expect(JSON.parse(bytes.toString())).toMatchObject({ id: jobId, state: 'succeeded' });
+        const initialAttempts = calls(completeRoute);
+        for (let tick = 1; tick <= 6; tick++) {
+            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.waitFor(() => expect(calls(completeRoute)).toBeGreaterThanOrEqual(initialAttempts + tick));
+        }
+        expect(Date.now() - lastSeen).toBeLessThan(40_000);
+        expect(await fs.readFile(completionFile)).toEqual(bytes);
+        const after = await fs.stat(completionFile, { bigint: true });
+        expect([after.ino, after.mtimeNs, after.ctimeNs]).toEqual([before.ino, before.mtimeNs, before.ctimeNs]);
+        expect(prepareJobRuntimeArtifacts).toHaveBeenCalledOnce();
+        expect(install).toHaveBeenCalledOnce();
+        expect(calls('jobs/claim')).toBe(1);
+        expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('HTTP 409'));
+    });
+
+    it('Отказ восстановления до доставки не блокирует heartbeat простаивающего worker', async () => {
+        gate.resolve(); await worker;
+        const recovery = vi.spyOn(workspace, 'recoverPendingWorkspaceIdentity')
+            .mockRejectedValue(new Error('Controlled workspace recovery failure'));
+        const claims = calls('jobs/claim');
+        for (let tick = 1; tick <= 6; tick++) {
+            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.waitFor(() => expect(recovery).toHaveBeenCalledTimes(tick));
+        }
+        expect(Date.now() - lastSeen).toBeLessThan(40_000);
+        expect(calls('jobs/claim')).toBe(claims);
+        expect(install).toHaveBeenCalledOnce();
+        expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Controlled workspace recovery failure'));
+    });
 });

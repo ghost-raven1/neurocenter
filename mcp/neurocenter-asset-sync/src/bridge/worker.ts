@@ -410,10 +410,9 @@ export async function runWorker(): Promise<void> {
         }
     };
     const timer = setInterval(() => {
-        // Долгое задание сохраняет очередь последовательной, но не приостанавливает присутствие компьютера.
-        if (running) {
-            void heartbeat().catch(error => process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n'));
-        } else { void drain(); }
+        // Присутствие не зависит от длительности задания и ошибок восстановления или доставки квитанций.
+        void heartbeat().catch(error => process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n'));
+        if (!running) { void drain(); }
     }, 15000);
     socket.on('connect', () => {
         void drain();

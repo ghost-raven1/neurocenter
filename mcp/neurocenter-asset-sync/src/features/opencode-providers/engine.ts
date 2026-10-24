@@ -11,6 +11,7 @@ import {type ProviderContext,type Authorize,stale} from './context.js';
 import {providerConfig,providerProof,receiptFile,journalKey,conflict,type ProviderReceipt} from './receipt.js';
 import {resolveConnector,codexDefinition} from './connector.js';
 import {ollamaAdapterUrl} from './ollama-entry.js';
+import {jobContext} from '../../bridge/state.js';
 import type {IOpenCodeModelCandidate} from '../../../../../services/shared/opencode-model-scan.cjs';
 /** Local OAuth is expected only after the owned receipt, wrapper and immutable connector have been verified. */
 function matchesOwnedCodex(candidates:IOpenCodeModelCandidate[],models:string[]):boolean{
@@ -79,7 +80,8 @@ export async function providerStatus(context:ProviderContext,authorize:Authorize
 }
 /** Save only the owned provider entry, with the existing project transaction, CAS and recovery journal. */
 export async function saveProvider(context:ProviderContext,key:unknown,expectedRevision:string|null,authorizeSave:Authorize,beforeCommit:()=>void=()=>{},session?:{preparationId:string;setupJobId:string},signal?:AbortSignal):Promise<OpenCodeProviderStatus>{
-    return withProjectFiles(context.descriptor.projectId,async root=>{
+    // The wizard outlives the opening job; later saves own a file journal, never its completion.
+    return jobContext.exit(()=>withProjectFiles(context.descriptor.projectId,async root=>{
         if(root!==context.root)throw stale();await context.assertCurrent();await authorizeSave();beforeCommit();
         const proof=await providerProof(context);if((proof?.receipt.revision??null)!==expectedRevision)throw conflict();
         const plan=new InstallationPlan(root),raw=await plan.read(providerConfig),value=config(raw),receiptRaw=await plan.read(receiptFile(context.descriptor.providerId));
@@ -106,5 +108,5 @@ export async function saveProvider(context:ProviderContext,key:unknown,expectedR
         const verify=async()=>{await authorizeSave();await context.assertCurrent();beforeCommit();await plan.verifySnapshot();};
         await commitChanges(root,plan.changes(),{action:'install',assetKey:journalKey(context),manifest:context.descriptor.schemaDigest,result:providerReportIdentity(context.descriptor) as unknown as Record<string,unknown>},{verifySnapshot:verify});
         return providerStatus(context,async()=>{await context.assertCurrent();});
-    });
+    }));
 }
