@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRagContext,checkedWorkspacePath} from './rag-context.mjs';
 import {DEFAULT_CONFIG,findConfigFile,loadConfig} from './upstream/dist/core/config.js';
+import {normalizeExtensionKey} from './upstream/dist/core/parser-overrides.js';
+import {SUPPORTED_IMAGE_EXTENSIONS} from './upstream/dist/content/image.js';
 import {managedRagConfiguration,readProjectRagConfiguration} from './rag-plugin-config.mjs';
 import {runIndexPass} from './upstream/dist/indexer/pipeline.js';
 import {destroyAllPooledConnections} from './upstream/dist/embedder/http.js';
@@ -18,6 +20,10 @@ async function candidateConfiguration(root,input,profile){
     config.embedding={...config.embedding,...embedding};config.openCode={...config.openCode,autoIndex:{...config.openCode?.autoIndex,enabled:false}};
     config.indexing={...config.indexing,embedBatchSize:8,embedConcurrency:1};
     for(const name of ['description','imageDescription','decision','reranking'])config[name]={...config[name],enabled:false};
+    // This candidate indexes code and text: without vision upstream would read raster bytes as UTF-8 and bypass text chunking.
+    const textExtension=extension=>!SUPPORTED_IMAGE_EXTENSIONS.has(normalizeExtensionKey(extension));
+    config.indexing.includeExtensions=config.indexing.includeExtensions.filter(textExtension);
+    config.chunking={...config.chunking,parsers:Object.fromEntries(Object.entries(config.chunking?.parsers??{}).filter(([extension])=>textExtension(extension)))};
     return config;
 }
 
@@ -38,7 +44,7 @@ export async function buildManagedReindex(stage,raw){
     const source=await reindexSourceSnapshot(root,config);
     let context;
     try{
-        context=await createRagContext(root,config);context.embedder=protectedEmbedder(context.embedder);
+        context=await createRagContext(root,config);context.embedder=protectedEmbedder(context.embedder,config);
         const stats=requireSuccessfulIndex(await runIndexPass({cwd:root,storePath:stage,config,store:context.store,embedder:context.embedder,keywordIndex:context.keywordIndex,dimension:profile.dimension}));
         if(stats.skipped||stats.extractionFailures||stats.descriptionFailedFiles)throw new Error('Новый индекс построен не полностью.');
         if(await reindexSourceSnapshot(root,config)!==source)throw new Error('Исходные файлы изменились во время переиндексации. Прежний индекс сохранён.');

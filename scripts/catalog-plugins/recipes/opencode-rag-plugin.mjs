@@ -6,7 +6,7 @@ import { RAG_PLUGIN_SOURCE } from '../../../services/shared/opencode-rag-source.
 import { managedPipelineSource } from './rag-managed-pipeline.mjs';
 import { RAG_LOCAL_UI } from './rag-web-ui.mjs';
 
-export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.12`;
+export const RAG_PLUGIN_REVISION = `${RAG_VERSION}-plugin.pack.13`;
 export const RAG_PLUGIN_COMMIT = RAG_PLUGIN_SOURCE.commit;
 export const RAG_PLUGIN_DEPENDENCIES = Object.freeze({ ...RAG_DEPENDENCIES, '@opencode-ai/plugin': '1.14.48' });
 const original = 'const cfg = await getConfig(input.directory);';
@@ -16,7 +16,7 @@ const replacements = [
     ['const effectiveCfg = applyRuntimeOverrides(cfg, overrides);', 'const effectiveCfg = applyHostedRagConfiguration(applyRuntimeOverrides(cfg, overrides), input.directory);'],
     [original, managed],
     [persistDimension, 'void vectorDimension; // Размерность остаётся в памяти; конфиг проекта не изменяется.'],
-    ['const embedder = createEmbedder(effectiveCfg);', 'const embedder = protectedEmbedder(createEmbedder({ ...effectiveCfg, logging: { ...effectiveCfg.logging, level: "none" } }));'],
+    ['const embedder = createEmbedder(effectiveCfg);', 'const embedder = protectedEmbedder(createEmbedder({ ...effectiveCfg, logging: { ...effectiveCfg.logging, level: "none" } }), effectiveCfg);'],
     ['const store = createVectorStore(effectiveCfg, storePath, vectorDimension);', 'const store = protectedNativeStore(createVectorStore(effectiveCfg, storePath, vectorDimension), { storePath, config: effectiveCfg, dimension: vectorDimension, embedder });'],
     ['    retrieve,\n};', '    retrieve: strictRetriever(retrieve),\n};'],
     ['output: "Search failed. The index may need to be rebuilt.",', 'output: nativeSearchFailure(err),'],

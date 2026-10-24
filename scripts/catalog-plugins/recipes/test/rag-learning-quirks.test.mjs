@@ -6,6 +6,6 @@ import {supportsLearningQuirks,QUIRKS_SOURCE_SHA256} from '../../../../services/
 
 test('prepared RAG revisions explicitly declare the reviewed raw JSONL source schema',()=>{
     assert.deepEqual(RAG_LEARNING_QUIRKS,{schemaVersion:1,format:'opencode-rag-quirks-jsonl',sourceSha256:QUIRKS_SOURCE_SHA256});
-    assert.equal(RAG_REVISION,'2.4.4-mcp.pack.12');assert.equal(RAG_PLUGIN_REVISION,'2.4.4-plugin.pack.12');
+    assert.equal(RAG_REVISION,'2.4.4-mcp.pack.13');assert.equal(RAG_PLUGIN_REVISION,'2.4.4-plugin.pack.13');
     for(const kind of ['mcp','plugin'])assert.equal(supportsLearningQuirks({schemaVersion:5,plugin:{kind},config:{extra:{learningQuirks:RAG_LEARNING_QUIRKS}}}),true);
 });

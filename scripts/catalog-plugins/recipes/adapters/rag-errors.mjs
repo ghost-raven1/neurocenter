@@ -1,5 +1,18 @@
+const hostedIdentity = Symbol.for('neurocenter.hosted-rag');
+const permanentHostedFailure = Symbol('neurocenter.hosted-embedding-failure');
+const hostedInputBytes = 256 * 1024;
+const hostedInputCount = 64;
+
+function hostedFailure(message, cancelled = false) {
+    const error = new Error(`${message} (HTTP 422).`);
+    if (cancelled) error.name = 'AbortError';
+    Object.defineProperty(error, permanentHostedFailure, {value: true});
+    return error;
+}
+
 /** Ошибка провайдера не должна раскрывать тело ответа, URL или локальный API-ключ. */
 export function embeddingError(error) {
+    if (error?.[permanentHostedFailure]) return error;
     const message = error instanceof Error ? error.message : String(error);
     const status = message.match(/\((?:HTTP )?(\d{3})\)/)?.[1];
     const reason = /exceed_context_size|exceeds the available context size/i.test(message)
@@ -22,9 +35,58 @@ function observeMethods(target, onError) {
     } });
 }
 
-/** Не отдаёт upstream журналам ответ провайдера с возможными секретами. */
-export function protectedEmbedder(embedder) {
-    return observeMethods(embedder, embeddingError);
+/** Plans the full DTO-sized request before I/O; byte counts include JSON escaping and array punctuation. */
+function hostedBatches(texts) {
+    if (!Array.isArray(texts) || !texts.length) throw hostedFailure('Нужны непустые тексты для эмбеддингов');
+    const batches = []; let batch = [], bytes = 2;
+    for (const text of texts) {
+        if (typeof text !== 'string' || !text.trim()) throw hostedFailure('Нужны непустые тексты для эмбеддингов');
+        const size = Buffer.byteLength(JSON.stringify(text), 'utf8');
+        if (size + 2 > hostedInputBytes) throw hostedFailure('Один текст превышает 256 КиБ. Проверьте разбиение исходных текстов');
+        if (batch.length === hostedInputCount || bytes + size + (batch.length ? 1 : 0) > hostedInputBytes) {
+            batches.push(batch); batch = []; bytes = 2;
+        }
+        bytes += size + (batch.length ? 1 : 0); batch.push(text);
+    }
+    batches.push(batch); return batches;
+}
+
+function assertNotAborted(args) {
+    for (const argument of args) {
+        const signal = argument instanceof AbortSignal ? argument : argument?.signal;
+        if (signal?.aborted) throw hostedFailure('Запрос эмбеддингов отменён', true);
+    }
+}
+
+/** Hosted calls keep one vector per input; a partially sent composite must never be replayed by upstream retry. */
+function hostedEmbedder(embedder) {
+    return new Proxy(embedder, {get(object, key) {
+        const value = Reflect.get(object, key, object);
+        if (key !== 'embed' || typeof value !== 'function') return typeof value === 'function' ? value.bind(object) : value;
+        return async (texts, ...args) => {
+            assertNotAborted(args); const batches = hostedBatches(texts), vectors = [];
+            for (const batch of batches) {
+                try {
+                    assertNotAborted(args);
+                    const result = await value.call(object, batch, ...args);
+                    assertNotAborted(args);
+                    if (!Array.isArray(result) || result.length !== batch.length) throw hostedFailure('Модель не подтвердила все векторы подзапроса');
+                    vectors.push(...result);
+                } catch (error) {
+                    if (error?.[permanentHostedFailure]) throw error;
+                    if (error?.name === 'AbortError') throw hostedFailure('Запрос эмбеддингов отменён', true);
+                    if (vectors.length) throw hostedFailure('Составной запрос эмбеддингов не завершён. Частичный результат отброшен; повторите индексацию');
+                    throw error;
+                }
+            }
+            return vectors;
+        };
+    }});
+}
+
+/** Не отдаёт upstream журналам ответ провайдера; только закреплённый hosted-profile включает бюджет Нейроцентра. */
+export function protectedEmbedder(embedder, config) {
+    return observeMethods(typeof config?.[hostedIdentity] === 'string' ? hostedEmbedder(embedder) : embedder, embeddingError);
 }
 
 /** Возвращает подавленную upstream ошибку без повторного запроса к модели. */

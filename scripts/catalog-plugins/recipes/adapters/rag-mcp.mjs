@@ -27,7 +27,7 @@ async function getContext() {
         await enterManagedSession(await checkedWorkspacePath(root, config.vectorStore.path));
         return createRagContext(root, config);
     })().then(value => {
-        value.embedder = protectedEmbedder(value.embedder);
+        value.embedder = protectedEmbedder(value.embedder, value.config);
         return (context = value);
     }).catch(async error => { pendingContext = undefined; await leaveManagedSessions(); throw error; });
     return pendingContext;

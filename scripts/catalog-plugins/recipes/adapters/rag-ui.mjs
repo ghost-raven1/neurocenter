@@ -13,7 +13,7 @@ import { rememberUiConfig } from './rag-ui-config.mjs';
 
 /** Провайдер вызывается только по явному поиску или перестроению, а не при открытии dashboard. */
 export async function managedUiEmbedder(config, store) {
-    const embedder = protectedEmbedder(createEmbedder({ ...config, logging: { ...config.logging, level: 'none' } }));
+    const embedder = protectedEmbedder(createEmbedder({ ...config, logging: { ...config.logging, level: 'none' } }), config);
     const probe = await probeEmbeddingDimension(embedder);
     if (!probe.dimension) { throw new Error('Модель эмбеддингов недоступна. Проверьте локальное подключение.'); }
     config.embedding.vectorDimension = probe.dimension;
