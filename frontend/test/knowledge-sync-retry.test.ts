@@ -89,7 +89,7 @@ afterEach(() => {hooks.dispose(); vi.unstubAllGlobals();});
 describe('Результат операции не выдаётся за свежую проверку локального индекса', () => {
     it('offers explicit rebuilding in Neurocenter for an unverified old index without submitting another operation',()=>{
         ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено. Обновите OpenCodeRAG и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.'}];
-        const markup=render();expect(markup).toContain('Пересоздайте индекс выбранной моделью в Нейроцентре');
+        const markup=render();expect(markup).toContain('Можно пересоздать индекс выбранной моделью в Нейроцентре');
         expect(markup).not.toContain('через интерфейс OpenCodeRAG');
         expect(markup).toContain('href="/projects/project-a?tab=rag#project-index-settings">Пересоздать индекс</a>');
         expect(bridgeApi.create).not.toHaveBeenCalled();expect(ui.bridge.reload).not.toHaveBeenCalled();
@@ -115,8 +115,8 @@ describe('Результат операции не выдаётся за све�
         expect(getElementById).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     const operations = [
-        {kind: 'sync-rag', heading: 'Результат последней синхронизации с сервером'},
-        {kind: 'restore-rag', heading: 'Результат последнего восстановления с сервера'},
+        {kind: 'sync-rag', heading: 'Результат отдельной синхронизации с сервером'},
+        {kind: 'restore-rag', heading: 'Результат восстановления с сервера'},
     ];
     it.each(operations.flatMap(operation => ['failed', 'succeeded', 'cancelled'].map(state => ({...operation, state}))))(
         '$kind / $state: прошлый результат обозначен отдельно, сообщение сохранено', ({kind, heading, state}) => {
@@ -148,6 +148,17 @@ describe('Результат операции не выдаётся за све�
         const markup = render();
         expect(markup).not.toContain('Результат последн'); expect(markup).not.toContain('Индекс не найден');
         expect(bridgeApi.create).not.toHaveBeenCalled(); expect(ui.bridge.reload).not.toHaveBeenCalled();
+    });
+
+    it('keeps a loaded failed receipt in closed history instead of declaring the current ready index failed',()=>{
+        ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено.'}];
+        const markup=render();
+        expect(markup).toContain('<details><summary>История: синхронизация — ошибка</summary>');
+        expect(markup).not.toContain('<details open');
+        expect(markup).not.toContain('Результат последней синхронизации');
+        expect(markup).toContain('В этой попытке не удалось подтвердить модель');
+        expect(bridgeApi.create).not.toHaveBeenCalled();
+        expect(ui.buttons.get(sync)!.disabled).toBe(false);
     });
 });
 
@@ -343,7 +354,9 @@ describe('Повтор синхронизации сохраняет неопр�
     it('Подтверждённый терминальный итог не воскресает как queued после отказа чтения', async () => {
         const accepted = job('accepted'); vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
         render(); click(); await flush(); render();
-        ui.bridge.jobs = [{...accepted, state: 'succeeded'}]; render(); render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+        ui.bridge.jobs = [{...accepted, state: 'succeeded'}]; render(); const fresh=render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);
+        expect(fresh).toContain('Результат отдельной синхронизации с сервером');
+        expect(fresh).not.toContain('История: синхронизация');
         ui.bridge.jobsReady = false; ui.bridge.errors.jobs = 'Очередь временно недоступна'; ui.bridge.jobs = []; render();
         expect(ui.buttons.has('Обновить состояние задания')).toBe(false);
         ui.bridge.jobsReady = true; ui.bridge.errors.jobs = ''; render(); expect(ui.buttons.get(sync)!.disabled).toBe(false);

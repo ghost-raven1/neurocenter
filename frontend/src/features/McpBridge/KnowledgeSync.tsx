@@ -159,6 +159,25 @@ export const KnowledgeSync: FC<{
             if (current()) { lock.current = false; setBusy(false); }
         }
     };
+    const operationResult = job && <Alert
+        role="status"
+        type={job.state === 'failed' ? 'error' : job.state === 'succeeded' ? 'success' : 'info'}
+        showIcon
+        message={pending ? job.message : job.kind === 'sync-rag'
+            ? 'Результат отдельной синхронизации с сервером' : 'Результат восстановления с сервера'}
+        description={pending ? undefined : indexUnconfirmed
+            ? 'В этой попытке не удалось подтвердить модель локального индекса. Можно пересоздать индекс выбранной моделью в Нейроцентре; после проверки он синхронизируется с сервером.' : job.message}
+        action={indexUnconfirmed && canWrite ? <Link to={`/projects/${encodeURIComponent(projectId)}?tab=rag#project-index-settings`} onClick={event => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            const settings = document.getElementById('project-index-settings');
+            if (settings?.getAttribute('data-project-id') !== projectId) return;
+            event.preventDefault();
+            settings.scrollIntoView({block:'start'});
+            settings.focus({preventScroll:true});
+        }}>Пересоздать индекс</Link> : undefined}
+    />;
+    // Загруженная квитанция описывает прошлую операцию, а не состояние нынешнего индекса.
+    const historical = job && !pending && !accepted;
     return (
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
@@ -191,31 +210,7 @@ export const KnowledgeSync: FC<{
             {bridge.device && bridge.devicesReady && !binding && (
                 <span>Папка проекта ещё не связана с мостом. <Link to={projectBindingUrl(projectId)}>Связать папку проекта</Link></span>
             )}
-            {job && (
-                <Alert
-                    role="status"
-                    type={
-                        job.state === 'failed'
-                            ? 'error'
-                            : job.state === 'succeeded'
-                              ? 'success'
-                              : 'info'
-                    }
-                    showIcon
-                    message={pending ? job.message : job.kind === 'sync-rag'
-                        ? 'Результат последней синхронизации с сервером' : 'Результат последнего восстановления с сервера'}
-                    description={pending ? undefined : indexUnconfirmed
-                        ? 'У прежнего индекса не подтверждена модель. Пересоздайте индекс выбранной моделью в Нейроцентре; после проверки он синхронизируется с сервером.' : job.message}
-                    action={indexUnconfirmed && canWrite ? <Link to={`/projects/${encodeURIComponent(projectId)}?tab=rag#project-index-settings`} onClick={event => {
-                        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-                        const settings = document.getElementById('project-index-settings');
-                        if (settings?.getAttribute('data-project-id') !== projectId) return;
-                        event.preventDefault();
-                        settings.scrollIntoView({block:'start'});
-                        settings.focus({preventScroll:true});
-                    }}>Пересоздать индекс</Link> : undefined}
-                />
-            )}
+            {historical ? <details><summary>История: {job.kind === 'sync-rag' ? 'синхронизация' : 'восстановление'} — {job.state === 'failed' ? 'ошибка' : job.state === 'cancelled' ? 'отменено' : 'завершено'}</summary>{operationResult}</details> : operationResult}
             {accepted && pending && <>
                 {!bridge.jobsReady && <Alert type="warning" showIcon message="Задание принято, но состояние очереди недоступно"
                     description={bridge.errors?.jobs || 'Обновите сведения о задании. Повторный запуск пока заблокирован.'} />}
