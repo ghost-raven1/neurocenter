@@ -1,7 +1,7 @@
 import type { IModel } from '../models/model.types';
 
-export type SystemRoleId = 'agent-ai-admin' | 'agent-autoconfigurator' | 'agent-indexer' | 'agent-packager';
-export type SystemRoleFlag = 'system_ai_admin' | 'system_autoconfigurator' | 'system_indexer' | 'tool_build_agent';
+export type SystemRoleId = 'agent-ai-admin' | 'agent-autoconfigurator' | 'agent-indexer' | 'agent-packager' | 'agent-coordinator';
+export type SystemRoleFlag = 'system_ai_admin' | 'system_autoconfigurator' | 'system_indexer' | 'tool_build_agent' | 'system_coordinator';
 export type DiagnosticKind = 'health' | 'project' | 'bridge' | 'containers' | 'index';
 export type RoleTargetKind = 'prompt' | 'agent' | 'skill' | 'plugin-settings' | 'adapter' | 'public-chat' | 'package-source' | 'dialog-context';
 export type RoleRunState = 'queued' | 'running' | 'awaiting_review' | 'applying' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
@@ -21,7 +21,10 @@ export interface RoleResult {
     kind: 'diagnosis' | 'proposal'; summary: string;
     findings: Array<{ evidenceId: string; detail: string }>;
     nextSteps: string[]; changes: RoleChange[];
+    delegations?: RoleDelegationResult[];
 }
+/** Child answers belong to the same actor, consent, deadline and durable run; they cannot schedule more work. */
+export interface RoleDelegationResult { roleId: SystemRoleId; state: 'succeeded' | 'failed'; result?: Omit<RoleResult, 'delegations'>; message?: string; }
 export interface RoleStep { at: string; phase: string; message: string; }
 export interface RoleApplyReceipt { targetKey: string; version: number; pin: string; owner: string; }
 export interface RoleRunRow {

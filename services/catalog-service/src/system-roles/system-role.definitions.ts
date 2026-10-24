@@ -7,6 +7,9 @@ const contract = 'Ответь только JSON: {"kind":"diagnosis"|"proposal"
     + 'У тебя нет shell, сети, файловой записи, credentials или mutation tools. Для диагноза changes пуст. Предложения применяет человек после проверки версии. Не меняй невыбранные цели.';
 /** Server-owned role definitions select a bounded workflow, not an access-control role. */
 export const SYSTEM_ROLE_DEFINITIONS: readonly RoleDefinition[] = [
+    { id: 'agent-coordinator', name: 'Координатор', flag: 'system_coordinator', description: 'Делегирует выбранную задачу максимум трём системным агентам и собирает ответы. Ошибка одного агента сохраняется рядом с доступными результатами.',
+        prompt: 'Ты Координатор Нейроцентра. Раздели задачу между разрешёнными системными ролями и собери проверяемый ответ по их результатам. Используй только явно выбранные цели и измерения. Не выдавай советы за выполненные изменения. Самостоятельные изменения и повторная делегация недоступны. Итог — только diagnosis с пустым changes. ' + contract,
+        targets: ['prompt', 'agent', 'skill', 'plugin-settings', 'adapter', 'public-chat', 'package-source', 'dialog-context'], diagnostics: ['health', 'project', 'bridge', 'containers', 'index'] },
     { id: 'agent-packager', name: 'Упаковщик', flag: 'tool_build_agent', description: 'Объяснение доверенного рецепта и следующего шага упаковки. Сборку и публикацию выполняет отдельный мастер.',
         prompt: 'Ты Упаковщик Нейроцентра в режиме консультации. Объясняй только явно выбранные метаданные и вопросы пользователя. Не утверждай, что выполнил сборку, проверку или публикацию. Не предлагай новые команды, URL исходников, credentials или запись файлов. У тебя нет доступа к исполнителю сборки. Возвращай только diagnosis с пустым changes. Сборку выполняет существующий мастер после отдельного выбора pinned источника и подтверждения человеком. ' + contract,
         targets: ['prompt', 'public-chat', 'package-source', 'dialog-context'], diagnostics: ['project'] },
@@ -27,5 +30,8 @@ export function systemRole(id: string): RoleDefinition {
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
     ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, child]) => [key, canonical(child)])) : value;
 export const roleHash = (value: unknown): string => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
-export const roleDefinitionPin = (id: SystemRoleId): string => roleHash(systemRole(id));
-export const ROLE_BUDGET = Object.freeze({ calls: 2, diagnostics: 4, targets: 4, outputBytes: 16384, contextBytes: 65536, deadlineMs: 120000 });
+export const roleDefinitionPin = (id: SystemRoleId): string => roleHash(id === 'agent-coordinator'
+    ? { definition: systemRole(id), delegates: SYSTEM_ROLE_DEFINITIONS.filter(role => role.id !== id),
+        delegationBudget: { calls: ROLE_BUDGET.coordinatorCalls, fanout: ROLE_BUDGET.fanout, depth: ROLE_BUDGET.depth, delegateDeadlineMs: ROLE_BUDGET.delegateDeadlineMs } } : systemRole(id));
+export const ROLE_BUDGET = Object.freeze({ calls: 2, coordinatorCalls: 5, fanout: 3, depth: 1, delegateDeadlineMs: 20000, diagnostics: 4, targets: 4, outputBytes: 16384, contextBytes: 65536, deadlineMs: 120000 });
+export const roleCallBudget = (id: SystemRoleId): number => id === 'agent-coordinator' ? ROLE_BUDGET.coordinatorCalls : ROLE_BUDGET.calls;

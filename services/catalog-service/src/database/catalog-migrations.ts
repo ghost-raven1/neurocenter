@@ -2,6 +2,7 @@ import {PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL} from '../models/project-rag-author
 import {PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL} from '../models/project-rag-authorization.schema-verification';
 import {DEVICE_CODEX_SCHEMA_SQL} from '../models/device-codex.schema';
 import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
+import {SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL} from '../system-roles/system-role.coordinator.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../project-chat/project-chat-learning.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat-learning.schema-verification';
@@ -88,4 +89,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:30,name:'fresh-project-rag-write-authorization',sql:PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL+'\n'+PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL},
     {version:31,name:'project-team-chat-learning-receipts',sql:PROJECT_CHAT_LEARNING_SCHEMA_SQL+'\n'+PROJECT_CHAT_LEARNING_SCHEMA_ASSERT_SQL},
     {version:32,name:'isolated-project-chat-room-execution',sql:PROJECT_CHAT_ISOLATION_SCHEMA_SQL+'\n'+PROJECT_CHAT_ISOLATION_SCHEMA_ASSERT_SQL},
+    {version:33,name:'bounded-system-role-coordinator',sql:SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL},
 ];

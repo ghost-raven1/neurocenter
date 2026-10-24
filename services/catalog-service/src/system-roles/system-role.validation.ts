@@ -64,6 +64,6 @@ export function roleResult(content: string, prepared: RolePrepared, facts: Diagn
         || !targets.has(String(change.targetKey)) || ['public-chat','package-source','dialog-context'].includes(targets.get(String(change.targetKey))?.kind ?? '') || !text(change.replacement, 32768) || !text(change.explanation, 2048)) return invalid();
     if (new Set(value.changes.map(change => (change as { targetKey: string }).targetKey)).size !== value.changes.length
         || (value.kind === 'diagnosis' ? value.changes.length !== 0 : value.changes.length === 0)
-        || prepared.definitionPin === roleDefinitionPin('agent-packager') && value.kind !== 'diagnosis') return invalid();
+        || ['agent-packager', 'agent-coordinator'].some(id => prepared.definitionPin === roleDefinitionPin(id as SystemRoleId)) && value.kind !== 'diagnosis') return invalid();
     return value as unknown as RoleResult;
 }

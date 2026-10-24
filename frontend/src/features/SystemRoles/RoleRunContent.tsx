@@ -1,13 +1,14 @@
 import { Alert, Descriptions, List, Space, Tag, Typography } from 'antd';
-import { diagnosticNames, roleName, type RoleRun } from './types';
+import { diagnosticNames, roleCallBudget, roleName, type RoleRun } from './types';
 import { IndexerOwnerActions } from './IndexerOwnerActions';
-const phases: Record<string, string> = { queued: 'В очереди', collecting: 'Собирает измерения', validating_context: 'Проверяет контекст', model_step: 'Обращается к модели', awaiting_review: 'Ожидает проверки', applying: 'Применяет', rolling_back: 'Откатывает', completed: 'Завершено', applied: 'Сохранено владельцами', rolled_back: 'Откат подтверждён', cancelled: 'Отменено', failed: 'Не завершено', interrupted: 'Прервано', unconfirmed: 'Применение не подтверждено' };
+import { RoleDelegations } from './RoleDelegations';
+const phases: Record<string, string> = { queued: 'В очереди', collecting: 'Собирает измерения', validating_context: 'Проверяет контекст', model_step: 'Обращается к модели', delegating: 'Собирает ответы системных агентов', awaiting_review: 'Ожидает проверки', applying: 'Применяет', rolling_back: 'Откатывает', completed: 'Завершено', applied: 'Сохранено владельцами', rolled_back: 'Откат подтверждён', cancelled: 'Отменено', failed: 'Не завершено', interrupted: 'Прервано', unconfirmed: 'Применение не подтверждено' };
 export const rolePhaseLabel = (phase: string): string => phases[phase] ?? 'Обновляет состояние';
 
 /** Measured facts stay separate from interpretation; proposals show the exact selected version and full replacement. */
 export function RoleRunContent({ run }: { run: RoleRun }): JSX.Element {
     return <div className="system-role__result">
-        <Space wrap><Typography.Text strong>{roleName(run.agentId)}</Typography.Text><Tag>{rolePhaseLabel(run.phase)}</Tag><Typography.Text type="secondary">Зарезервировано шагов модели: {run.callsStarted} / 2</Typography.Text></Space>
+        <Space wrap><Typography.Text strong>{roleName(run.agentId)}</Typography.Text><Tag>{rolePhaseLabel(run.phase)}</Tag><Typography.Text type="secondary">Зарезервировано шагов модели: {run.callsStarted} / {roleCallBudget(run.agentId)}</Typography.Text></Space>
         <Alert showIcon type={['failed', 'interrupted'].includes(run.state) ? 'warning' : 'info'} message={run.message} />
         {run.agentId === 'agent-indexer' && <IndexerOwnerActions projectId={run.projectId} />}
         <Descriptions size="small" column={1}><Descriptions.Item label="Операция"><Typography.Text copyable>{run.operationId}</Typography.Text></Descriptions.Item>
@@ -22,6 +23,7 @@ export function RoleRunContent({ run }: { run: RoleRun }): JSX.Element {
                 {target && !target.editable && <Alert showIcon type="info" message="Готовый текст можно скопировать и применить в исходном редакторе. Автоматическое применение этой цели недоступно." />}
                 <div className="system-role__diff"><div><Typography.Text strong>До · v{target?.version}</Typography.Text><pre>{target?.content}</pre></div><div><Typography.Text strong>Предложение</Typography.Text><pre>{change.replacement}</pre><Typography.Paragraph copyable={{ text: change.replacement }}>Скопировать предложение</Typography.Paragraph></div></div>
             </section>; })}</>}
+        {!!run.result?.delegations?.length && <RoleDelegations delegations={run.result.delegations} />}
         {!!run.applied.length && <Alert type="success" showIcon message="Подтверждённые версии владельцев" description={run.applied.map(item => `${item.targetKey}: v${item.version}`).join('; ')} />}
         <details><summary>Этапы операции</summary><ul>{run.steps.map((step, index) => <li key={index}>{new Date(step.at).toLocaleTimeString('ru-RU')} · {step.message}</li>)}</ul></details>
     </div>;

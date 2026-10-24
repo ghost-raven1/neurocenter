@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { projectRoleOperation } from './system-role.operations';
-import { ROLE_BUDGET } from './system-role.definitions';
+import { ROLE_BUDGET, roleCallBudget } from './system-role.definitions';
 import type { RoleRunRow, RoleRunState, SystemRoleId } from './system-role.types';
 
 export type RoleDb = Pick<PoolClient, 'query'>;
@@ -68,7 +68,7 @@ export class SystemRoleRepository {
     }
     async reserveCall(id: string, lease: string, authorize: (db: RoleDb, row: RoleRunRow) => Promise<void>): Promise<RoleRunRow> {
         return this.fenced(id, lease, async (db, row) => {
-            await authorize(db, row); if (row.calls_started >= ROLE_BUDGET.calls) return lost();
+            await authorize(db, row); if (row.calls_started >= roleCallBudget(row.agent_id)) return lost();
             row.calls_started++; return this.change(db, row, 'running', 'model_step', 'Запускаем ограниченный вызов выбранной модели.');
         });
     }

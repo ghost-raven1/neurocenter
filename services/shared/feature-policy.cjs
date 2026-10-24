@@ -26,6 +26,7 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
 /** The native asset kind, never its display name, selects the publication dependency. */
 function requiredAssetFeatures(kind){return kind==='model'?['model_catalog']:kind==='agent'?['agents']:['mcp','plugin','skill'].includes(kind)?['tool_catalog']:[];}
 function requiredInferenceFeatures(purpose,agentId){
+    if(purpose==='agent'&&agentId==='agent-coordinator')return ['system_coordinator'];
     if(purpose==='agent'&&agentId==='agent-packager')return ['tool_build_agent'];
     if(purpose==='agent'&&agentId==='agent-ai-admin')return ['system_ai_admin'];
     if(purpose==='agent'&&agentId==='agent-autoconfigurator')return ['system_autoconfigurator'];
@@ -48,7 +49,7 @@ function requiredRouteFeatures(method,path,body){
         if(route==='/api/model-usage')return ['model_usage'];
         return [];
     }
-    const systemRole=/^\/api\/system-roles\/(agent-packager|agent-ai-admin|agent-autoconfigurator|agent-indexer)\/(?:prepare|runs\/[^/]+\/apply)$/.exec(route);
+    const systemRole=/^\/api\/system-roles\/(agent-packager|agent-ai-admin|agent-autoconfigurator|agent-indexer|agent-coordinator)\/(?:prepare|runs\/[^/]+\/apply)$/.exec(route);
     if(verb==='POST'&&systemRole)return requiredInferenceFeatures('agent',systemRole[1]);
     // Canonical role/chat executors check flags after accepted-request replay lookup.
     if(/^\/api\/system-role-chats(?:\/|$)/.test(route))return [];

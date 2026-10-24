@@ -21,7 +21,7 @@ export function toOperation(row: IOperationRow): IOperation {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         error: row.error,
-        ...(['agent-ai-admin', 'agent-autoconfigurator', 'agent-indexer', 'agent-packager'].includes(row.system_role_agent_id ?? '') ? {systemRole: {agentId: row.system_role_agent_id as 'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager', runId: row.resource_id, phase: row.system_role_phase ?? ''}} : {}),
+        ...(['agent-ai-admin', 'agent-autoconfigurator', 'agent-indexer', 'agent-packager', 'agent-coordinator'].includes(row.system_role_agent_id ?? '') ? {systemRole: {agentId: row.system_role_agent_id as 'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager'|'agent-coordinator', runId: row.resource_id, phase: row.system_role_phase ?? ''}} : {}),
         ...(retryPolicy ? { bridgeJob: { ...retryPolicy, retrySupported: retryPolicy.retrySupported && retryTargetExists } } : {}),
     };
 }

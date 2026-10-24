@@ -149,7 +149,7 @@ export interface IOperation {
     startedAt: string | null;
     finishedAt: string | null;
     error: string | null;
-    systemRole?: {agentId:'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager';runId:string;phase:string};
+    systemRole?: {agentId:'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager'|'agent-coordinator';runId:string;phase:string};
     bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
     actions?: {
         executor: 'bridge'|'rag-reindex'|'model-hosting'|'tool-build'|'system-role'|'history'; digest: string;

@@ -17,7 +17,7 @@ vi.mock('antd', async () => {
 });
 import { SystemRoleModal } from '../src/features/SystemRoles/SystemRoleModal';
 import { useSystemRole } from '../src/features/SystemRoles/useSystemRole';
-const render = (initialRunId?: string) => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(SystemRoleModal, { id: 'agent-ai-admin', projectId: 'prj-one', initialRunId, onClose: vi.fn() })); h.hooks.commit(); return html; };
+const render = (initialRunId?: string, id: 'agent-ai-admin' | 'agent-coordinator' = 'agent-ai-admin') => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(SystemRoleModal, { id, projectId: 'prj-one', initialRunId, onClose: vi.fn() })); h.hooks.commit(); return html; };
 const button = (text: string) => uiNode(h.ui, 'Button', text);
 beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.owner = 'alice'; h.values = {
     overview: { definitions: [{ id: 'agent-ai-admin', description: 'Diagnostics', targets: [], diagnostics: ['health'] }], models: [{ id: 'model-one', name: 'Model', pin: 'a'.repeat(64) }], targets: [] },
@@ -41,4 +41,15 @@ it('exact saved run can be reviewed and cancelled when new execution is disabled
     h.enabled = false; h.values.run = { id: 'selected-run', state: 'awaiting_review', canCancel: true };
     expect(render('selected-run')).toContain('История, отмена и откат'); expect(useSystemRole).toHaveBeenCalledWith('agent-ai-admin', 'prj-one', 'selected-run');
     button('Отменить запуск').onClick(); expect(h.values.action).toHaveBeenCalledWith('cancel'); expect(h.values.start).not.toHaveBeenCalled();
+});
+it('coordinator explains delegation and confirms the total model budget before explicit launch', () => {
+    h.values.overview.definitions = [{ id: 'agent-coordinator', description: 'Делегирует задачи системным агентам.', targets: [], diagnostics: [] }];
+    expect(render(undefined, 'agent-coordinator')).toContain('до трёх системных агентов');
+    uiNode(h.ui, 'Select').onChange('model-one'); uiNode(h.ui, 'TextArea').onChange({ target: { value: 'Проверь проект и настройки' } });
+    render(undefined, 'agent-coordinator'); button('Подготовить контекст').onClick();
+    expect(h.values.start).not.toHaveBeenCalled();
+    h.values.prepared = { preview: 'Выбранный контекст и разрешённые роли', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64) };
+    expect(render(undefined, 'agent-coordinator')).toContain('до 5 вызовов');
+    uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(undefined, 'agent-coordinator'); button('Запустить').onClick();
+    expect(h.values.start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ instruction: 'Проверь проект и настройки', modelId: 'model-one', consentDigest: 'b'.repeat(64) }));
 });

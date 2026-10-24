@@ -2,7 +2,7 @@ import {PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT} from '../models/project-rag-a
 import {assertProjectRagAuthorizationSchema} from '../models/project-rag-authorization.schema-verification';
 import {DEVICE_CODEX_SCHEMA_CONTRACT} from '../models/device-codex.schema-contract';
 import {assertDeviceCodexSchema} from '../models/device-codex.schema-verification';
-import {SYSTEM_ROLE_SCHEMA_CONTRACT} from '../system-roles/system-role.schema-contract';
+import {CURRENT_SYSTEM_ROLE_SCHEMA_CONTRACT as SYSTEM_ROLE_SCHEMA_CONTRACT} from '../system-roles/system-role.coordinator.schema-contract';
 import {assertSystemRoleSchema} from '../system-roles/system-role.schema-verification';
 import {CURRENT_PROJECT_CHAT_ISOLATION_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT} from '../project-chat/project-chat-isolation.schema-contract';
 import {assertProjectChatIsolationSchema as assertProjectChatSchema} from '../project-chat/project-chat-isolation.schema-verification';

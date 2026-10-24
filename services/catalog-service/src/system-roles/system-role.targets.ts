@@ -12,6 +12,7 @@ import { ROLE_BUDGET, roleDefinitionPin, roleHash } from './system-role.definiti
 import { restoreRoleProjection, roleProjection, type PrivateProjection } from './system-role.privacy';
 import { readRolePackageSource } from './system-role.package-source';
 import { readRoleDialogContext } from './system-role.dialog-context';
+import { coordinatorContext } from './system-role.coordinator';
 import type { RoleApplyReceipt, RolePrepared, RoleSelection, RoleTargetSelection, RoleTargetSnapshot, SystemRoleId } from './system-role.types';
 
 type Skill = { body: string; meta: { version: number; [key: string]: unknown } };
@@ -109,7 +110,8 @@ export class SystemRoleTargets {
         const targets: RoleTargetSnapshot[] = [];
         for (const target of selection.targets) targets.push(await this.read(req, selection, target));
         const preview = JSON.stringify({ instruction: roleProjection(selection.instruction).content, diagnostics: selection.diagnostics,
-            targets: targets.map(target => ({ key: target.key, kind: target.kind, version: target.version, content: target.modelContent })) }, null, 2);
+            targets: targets.map(target => ({ key: target.key, kind: target.kind, version: target.version, content: target.modelContent })),
+            ...(id === 'agent-coordinator' ? { delegation: coordinatorContext({ selection, targets }) } : {}) }, null, 2);
         if (Buffer.byteLength(preview) > ROLE_BUDGET.contextBytes) throw new ConflictException('Общий выбранный контекст больше 64 КиБ. Уменьшите выбор.');
         const definitionPin = roleDefinitionPin(id), consentDigest = roleHash({ definitionPin, selection, targets: targets.map(({ key, pin, modelContent }) => ({ key, pin, modelContent })) });
         return { selection, definitionPin, consentDigest, preview, targets };
