@@ -725,5 +725,817 @@
       ".run/module-reliability/memory-recipe-routing-related.json": "29f756e66382284cf1ab035e73e7e362e62556a11bef0b84d0b5f364e972d9dd",
       ".run/module-reliability/memory-recipe-routing/receipt.json": "e6081c328db9c7f148a06332e1ca8a5e0028ea991ffe6bbcf3666016e10c33bb"
     }
+  },
+  "toolImportDeadlineApplication": {
+    "at": "2026-10-24T01:08:40Z",
+    "sourceHead": "e8980096092ca5144fdfa987a5ece79bb1b2491f",
+    "mainPushed": true,
+    "route": "/api/tool-builds/imports",
+    "synchronousResponsePreserved": true,
+    "budgetsMs": {
+      "catalog": 480000,
+      "gateway": 540000,
+      "publisherNativeHttp": 550000
+    },
+    "cancellation": {
+      "singleScopeBeginsBeforeFirstArchive": true,
+      "signalThroughArchivesStagingAndVerifier": true,
+      "preVerifierRegistryTransactionsBounded": true,
+      "publicationGuardAfterRecordLocalBeforeCommit": true,
+      "retainStageAndReservationWhenReapingOrCleanupUnconfirmed": true,
+      "sentCommitAckUncertaintySolved": false,
+      "durableCapacityLedgerImplemented": false
+    },
+    "preparedSource": {
+      "exactClosureFiles": 107,
+      "producerOnlyFileLimit": 128,
+      "arbitraryUserSourceFileLimit": 100,
+      "explicitAllowlistPreserved": true,
+      "perFileAndTotalByteLimitsPreserved": true
+    },
+    "verification": {
+      "causalRed": "red-behavior.log",
+      "setupFailureOnly": "red.log",
+      "selectedPassed": 33,
+      "catalog": 18,
+      "gateway": 4,
+      "nodeTransportAndRuntime": 5,
+      "preparedClosure": 4,
+      "containerLayout": 1,
+      "retainedCompiler": 1,
+      "typesPassed": [
+        "catalog",
+        "gateway"
+      ],
+      "sourcesUnchanged": true,
+      "sourceFiles": 30,
+      "independentReview": "PASS",
+      "realRuntime": false,
+      "realDatabase": false
+    },
+    "application": {
+      "foreignFilesPreserved": 75,
+      "idleBeforeMerge": {
+        "operations": 0,
+        "jobs": 0,
+        "snapshots": 0,
+        "calls": 0
+      },
+      "sourceWatchBuildsPassed": 7,
+      "conventionalBuildsPassed": [
+        "catalog-service",
+        "oauth2-bridge",
+        "feature-flags-service",
+        "api-gateway",
+        "bridge"
+      ],
+      "passiveReadiness": {
+        "ownedProcesses": 7,
+        "dependencyReady": [
+          "catalog",
+          "auth-bridge",
+          "flags",
+          "rag"
+        ],
+        "skipped": [
+          "skills",
+          "gateway"
+        ],
+        "frontendPartial": true
+      }
+    },
+    "liveLearning": {
+      "fixtureNoncePrefix": "04407699",
+      "status": "in-progress-at-documentation-snapshot",
+      "importDeadlineRuntimeAccepted": false,
+      "fullQuirksApprovalNativeContextMemoryRevokeAccepted": false,
+      "workingFlagsEnabled": false,
+      "gitRecipesAutomaticallyUpdatePublishedOrInstalledPackages": false
+    },
+    "wholeProjectCoverageComplete": false,
+    "ciAccepted": false,
+    "productionAccepted": false,
+    "receipts": {
+      ".run/module-reliability/tool-import-deadline/receipt.json": "fc1d575c02a50141efe200f055216e82662e5f51544d48345183cdfcf7d503de",
+      ".run/module-reliability/tool-import-deadline/green.source.sha256": "3da98db5e87537db8012416fedfa16e72a673d0b55675c5d8787b6f7dece5331",
+      ".run/module-reliability/tool-import-deadline/red-behavior.log": "4c87fb3a63fa1d92b8356dcb8e1e2a72caab2ef3de7fc57e7f0804113ee2e295",
+      ".run/module-reliability/tool-import-deadline/red.log": "9ccbc3cbcc469de0df3a9c69b8f63fac7521dce1cbe304023fcb3201f3a1840b",
+      ".run/module-reliability/toolimport-integration-main.json": "63556d5820505e0b74f7fa11ed1c92ab52c75e5ab1126177f9a571a0b9786be9",
+      ".run/module-reliability/learning-live/qa-build-steps-v2.json": "015a80fa283f6f24fd91e55ac253c577213224360db1098cb3aad9d583b00d37"
+    }
+  },
+  "learningLiveAcceptance": {
+    "sourceHead": "e8980096092ca5144fdfa987a5ece79bb1b2491f",
+    "nonce": "04407699-5104-441d-8d88-fc6b325d88ee",
+    "startedAt": "2026-10-24T01:11:27.879Z",
+    "finishedAt": "2026-10-24T01:16:25.800Z",
+    "ok": true,
+    "passedCases": 11,
+    "independentEvidenceReview": "PASS; 3101 frozen files checked",
+    "frozenFiles": 3101,
+    "frozenSourceCopy": ".run/module-reliability/learning-live/frozen-04407699-5104-441d-8d88-fc6b325d88ee/",
+    "real": [
+      "Catalog",
+      "OAuth dev-login",
+      "Gateway",
+      "feature flags",
+      "paired worker",
+      "RAG plugin/tool/LanceDB/JSONL",
+      "explicit native MCP context",
+      "installed MCP Memory"
+    ],
+    "synchronousImports": {
+      "route": "/api/tool-builds/imports",
+      "throughFrontendAndGateway": true,
+      "clientDeadlineMs": 550000,
+      "memory": {
+        "status": 201,
+        "elapsedMs": 18752
+      },
+      "rag": {
+        "status": 201,
+        "elapsedMs": 64391
+      }
+    },
+    "quirks": {
+      "actualTool": "add_quirk",
+      "controlledEmbeddingStatuses": [
+        503,
+        200
+      ],
+      "failedEmbeddingCreatedNoQuirk": true,
+      "embeddingRequests": 2,
+      "keepaliveSockets": 1,
+      "canonicalNonceRecords": 1,
+      "sourceUnchanged": true
+    },
+    "experience": {
+      "trust": "reported",
+      "outcome": "unknown",
+      "databaseRows": 1,
+      "firstImported": 1,
+      "repeatImported": 0
+    },
+    "approval": {
+      "qaUserSession": true,
+      "freshCas": true,
+      "checkMethod": "human_review",
+      "expertHumanJudgmentProven": false,
+      "nativeExplicitContextEqualsServer": true,
+      "automaticPromptOverlayProven": false
+    },
+    "memory": {
+      "ownedObservationOccurrences": 1,
+      "repeatSyncNoDuplicate": true,
+      "manualMarkers": 2,
+      "seededEntities": 2,
+      "manualRelations": 1,
+      "revokeNativeContextEmpty": true,
+      "cleanupWithBothQaFlagsOff": true,
+      "cleanupOwnedObservationRemoved": 1,
+      "expectedCanonicalGraphDigest": "1f85d8f4dc3098fdec219ee9931028fddcf00d14108cc6fa6304c0fea2d44d07",
+      "observedCanonicalGraphDigest": "1f85d8f4dc3098fdec219ee9931028fddcf00d14108cc6fa6304c0fea2d44d07",
+      "expectedDigestIndependentlyCalculated": true,
+      "rawGraphPersisted": false,
+      "repeatCleanupGraphUnchanged": true,
+      "repeatCleanupFileBytesInodeTimesUnchanged": true,
+      "repeatCleanupReportedRemoved": 1,
+      "repeatCleanupCounterSemantics": "cumulative completed-plan replay; not a new mutation delta",
+      "actualSecondDeleteRpcAbsenceMeasured": false,
+      "scope": "Exact seeded QA graph of two entities, two manual observations and one relation"
+    },
+    "cleanup": {
+      "nativeMcpClosed": true,
+      "embeddingFixtureClosed": true,
+      "serviceProcessGroupsReaped": true,
+      "ownerCleanupComplete": true,
+      "rootRemoved": true,
+      "containerRemoved": true,
+      "volumeRemoved": true
+    },
+    "limits": {
+      "localTarget": "darwin-arm64",
+      "mockEmbedding": true,
+      "embeddingDimension": 8,
+      "realEmbeddingModel": false,
+      "semanticQualityProven": false,
+      "ordinaryOpenCodeHostUiAccepted": false,
+      "automaticPromptOverlayAccepted": false,
+      "globalMemoryUsed": false,
+      "workingProjectRollout": false,
+      "workingFlagsEnabled": false,
+      "otherPlatformsAccepted": false,
+      "ciAccepted": false,
+      "productionAccepted": false
+    },
+    "receipts": {
+      ".run/module-reliability/learning-live/result-04407699-5104-441d-8d88-fc6b325d88ee.json": "1dabaae6e19510475ca88eb386bed28aa805e5dc1f4bf36a4aae7de494294894",
+      ".run/module-reliability/learning-live/cleanup-04407699-5104-441d-8d88-fc6b325d88ee.json": "0099516f6b80c51bde14dfcd80c401db690da1ca504362165ada8181e1450a6d",
+      ".run/module-reliability/learning-live/prepared-04407699-deps2.json": "e7ddf64580f970178b17aaac930edf923b0a7110981eac971902ab65257131c3",
+      ".run/module-reliability/learning-live/memory-cleanup-expectation-04407699-5104-441d-8d88-fc6b325d88ee.json": "aacb1f5935adca6c1b76b819ecbf51dc21640ae9bf158d76816ac7400bfdc381"
+    }
+  },
+  "bridgeToolImportApplication": {
+    "sourceHead": "e8980096092ca5144fdfa987a5ece79bb1b2491f",
+    "version": "0.9.18",
+    "buildId": "ea92b401ea5ed783f2b98dfbb985679d1124d451a35ecfe594c8ee00155fa986",
+    "installed": true,
+    "preservationChecksPassed": 15,
+    "freshHeartbeat": true,
+    "archive": {
+      "sha256": "0367f120a026e001e46f817a7952f38cf747e4f66325a9ff589c57af885e91db",
+      "target": "darwin-arm64",
+      "passedCases": 6,
+      "temporaryProfileRemoved": true,
+      "actualNativeOpenCodeToolAndStream": true,
+      "provider": "controlled Ollama HTTP fixture",
+      "actualOllamaDaemonOrModel": false,
+      "newActualCodexGeneration": false,
+      "noSystemNodeNpmCurlInstallation": true
+    },
+    "receipts": {
+      ".run/continuation-20261024/applied-codex-bridge-toolimport.json": "6d34370ef126f86fe48bf8c72d899ab5fa03410836106c0d5e59ec71aabb6ac3",
+      ".run/continuation-20261024/installed-toolimport-after.json": "f0c51c52b67f7c304f1a6c14feed321a2b615f43a7a98da5daeb61b27656c02e",
+      ".run/continuation-20261024/archive-acceptance-2mtWh0/receipt.json": "1fb6029602499d83a8043615c52c1109544b311816a7081e4ccaa2d25e1ea0cf"
+    }
+  },
+  "learningWorkingDeliveryAudit": {
+    "workingStore": {
+      "ragPlugin": {
+        "version": "2.4.4-plugin.pack.9",
+        "revision": 7
+      },
+      "memory": {
+        "version": "1.0.0",
+        "revision": 1
+      },
+      "learningQuirksFlag": false,
+      "learningMemoryFlag": false
+    },
+    "canonicalBuildPaths": {
+      "memory": {
+        "kind": "mcp",
+        "npm": "@modelcontextprotocol/server-memory@1.0.0",
+        "entrypoint": "dist/index.js",
+        "preparedAdapter": "memory"
+      },
+      "ragPlugin": {
+        "repository": "https://github.com/mrdoe/opencoderag",
+        "commit": "4fb269c6f23a99701c7ac70fcc3f3e483c9f13ff",
+        "entrypoint": "src/plugin.ts",
+        "preparedAdapter": "opencode-rag-plugin",
+        "learningQuirks": true
+      },
+      "ragNpmPath": "MCP adapter intentionally"
+    },
+    "uiGap": {
+      "targetsSelectorAvailable": true,
+      "ragDefaultTargetsCount": 7,
+      "apiCanSelectOnlyDarwinArm64": true,
+      "resourceConsequence": "Omitting targets retains all supported defaults; explicit selection narrows the requested platforms",
+      "resolvedBySourceHead": "4e5edf19b0499046d6e56448a950fc7ce713fb86",
+      "explicitDarwinArm64AvailableInUi": true,
+      "defaultTargetsOmittedFromRequest": true,
+      "savedExactRequestRetainsTargets": true,
+      "sameSourceMetadataRefreshPreservesChoice": true,
+      "previousSnapshot": {
+        "targetsSelectorAvailable": false,
+        "ragDefaultTargetsCount": 7,
+        "apiCanSelectOnlyDarwinArm64": true,
+        "resourceConsequence": "Default RAG build uses all seven supported platforms"
+      }
+    },
+    "remaining": [
+      "Publish new working Store versions without replacing historical pins",
+      "Update intended project installations and accept the actual working flow",
+      "Accept automatic prompt overlay and ordinary OpenCode host/UI separately"
+    ],
+    "workingRolloutAccepted": false
+  },
+  "approvedLearningInferenceWiringSourceAudit": {
+    "kind": "source-only-wiring-audit",
+    "auditedSourceHead": "e8980096092ca5144fdfa987a5ece79bb1b2491f",
+    "checkedAgainstHead": "4e5edf19b0499046d6e56448a950fc7ce713fb86",
+    "hashedSourceFiles": 8,
+    "hashedSourcesIdenticalToAuditedHead": true,
+    "independentExplorerReview": true,
+    "sourceVerificationByDocumentationAgent": true,
+    "newTestsExecuted": 0,
+    "modelCalls": 0,
+    "networkRequests": 0,
+    "privateDataRead": false,
+    "automaticOutboundPayloadRuntimeAccepted": false,
+    "matrix": [
+      {
+        "path": "personal-model-chat",
+        "projectIdDoesNotEnableApprovedLearning": true,
+        "automaticApprovedLearning": false,
+        "references": [
+          "services/catalog-service/src/model-chat/chat.service.ts:332",
+          "services/catalog-service/test/chat-learning-context.test.ts:45"
+        ]
+      },
+      {
+        "path": "personal-group-model-chat",
+        "automaticApprovedLearning": true,
+        "filter": "project-common entries and exact targetAgentId recipient",
+        "placement": "user-data messages; definition system prompt preserved",
+        "learningReceiptPersisted": "answer.learning",
+        "freshAdmission": [
+          "project ACL",
+          "recipient identity",
+          "learning feature flag",
+          "recipient context digest",
+          "model pin",
+          "agent snapshot pin"
+        ],
+        "references": [
+          "services/catalog-service/src/model-chat/chat-round-preflight.ts:32",
+          "services/catalog-service/src/model-chat/chat-learning-context.ts:21",
+          "services/catalog-service/src/model-chat/chat-round.ts:58"
+        ]
+      },
+      {
+        "path": "team-project-chat",
+        "automaticApprovedLearning": true,
+        "sameRecipientLearningPreparation": true,
+        "freshAdmissionChecksPresent": true,
+        "learningReceiptPersisted": false,
+        "references": [
+          "services/catalog-service/src/project-chat-inference/project-chat-inference.service.ts:63",
+          "services/catalog-service/src/project-chat-inference/project-chat-inference.service.ts:68",
+          "services/catalog-service/src/project-chat-inference/project-chat-inference.service.ts:88"
+        ]
+      },
+      {
+        "path": "system-agent-roles",
+        "automaticApprovedLearning": false,
+        "context": [
+          "definition.prompt",
+          "explicit consented preview",
+          "requested measurements"
+        ],
+        "guards": [
+          "consent digest",
+          "definition pin",
+          "model pin",
+          "project ACL",
+          "role and source feature flags"
+        ],
+        "references": [
+          "services/catalog-service/src/system-roles/system-role.runner.ts:53",
+          "services/catalog-service/src/system-roles/system-role.policy.ts:36"
+        ]
+      },
+      {
+        "path": "ordinary-opencode-managed-agents",
+        "automaticApprovedServerPromptTransform": false,
+        "generatedLearningPlugin": "observation collector only",
+        "hooks": [
+          "tool.execute.after",
+          "event"
+        ],
+        "definitionPromptRenderedSeparately": true,
+        "references": [
+          "mcp/neurocenter-asset-sync/src/features/project-learning/collector-plugin.ts:44",
+          "mcp/neurocenter-asset-sync/src/features/project-agents/index.ts:47",
+          "services/shared/project-agents.cjs:43"
+        ]
+      },
+      {
+        "path": "explicit-native-mcp-project_learning_context",
+        "explicitRead": true,
+        "returns": "entire approved project bundle",
+        "v2BindingCheckedBeforeAndAfter": true,
+        "freshServerProjectAuthorization": true,
+        "projectIdentityAndDigestValidated": true,
+        "targetAgentIdFiltering": "caller contract; personalization is not an extra ACL boundary",
+        "references": [
+          "mcp/neurocenter-asset-sync/src/features/project-learning/tools.ts:34",
+          "services/catalog-service/src/learning/device-learning-auth.ts:21"
+        ]
+      }
+    ],
+    "confirmedGap": {
+      "area": "team-project-chat durable learning receipt",
+      "inferenceReturnFields": [
+        "content",
+        "usage"
+      ],
+      "learningRevisionDigestAndRefsPersisted": false,
+      "references": [
+        "services/catalog-service/src/project-chat-inference/project-chat-inference.service.ts:99",
+        "services/catalog-service/src/project-chat/project-chat.runner.ts:71"
+      ],
+      "fixed": false,
+      "runtimeRegressionExecuted": false
+    },
+    "nearestExistingTests": [
+      {
+        "path": "services/catalog-service/test/chat-learning-context.test.ts",
+        "scope": "PostgreSQL with fake inference",
+        "executedInThisSlice": false
+      },
+      {
+        "path": "services/catalog-service/test/project-chat-context.test.ts",
+        "scope": "context assembly; room suites mock infer",
+        "executedInThisSlice": false
+      },
+      {
+        "path": "mcp/neurocenter-asset-sync/test/project-learning-tools.test.ts",
+        "scope": "explicit MCP and nearby collector tests",
+        "executedInThisSlice": false
+      },
+      {
+        "path": "services/catalog-service/test/system-role-runner.test.ts",
+        "scope": "system role guards",
+        "executedInThisSlice": false
+      }
+    ],
+    "teamRealInferLearningAclRaceTestFound": false,
+    "pendingAcceptance": {
+      "observeOutboundRecipientsIn": [
+        "personal-group-model-chat",
+        "team-project-chat"
+      ],
+      "entryClasses": [
+        "project-common approved",
+        "recipient-targeted approved",
+        "unapproved",
+        "foreign project"
+      ],
+      "revokeDuringAdmission": [
+        "project ACL",
+        "approved knowledge",
+        "feature flag"
+      ],
+      "newInferenceAfterAdmissionRevocationExpected": 0,
+      "preserveCompletedPaidAnswer": true,
+      "explicitProductPolicyNeededFor": [
+        "personal-model-chat",
+        "system-agent-roles",
+        "automatic native OpenCode overlay"
+      ]
+    },
+    "existingElevenLiveCasesProveAutomaticOutbound": false,
+    "workingDeliveryStatusChangedByThisAudit": false,
+    "wholeProjectCoverageMeasured": false,
+    "sources": {
+      "services/catalog-service/src/model-chat/chat.service.ts": "cf688feb48a7d65de2d591eb835b38e0f6b7f5ee013d0d7ae59661cb7dc44044",
+      "services/catalog-service/src/model-chat/chat-learning-context.ts": "9b802a2a8a3c60ecc61ab892a7719e68002e728af0b9a0fbfc1586da253be237",
+      "services/catalog-service/src/project-chat-inference/project-chat-inference.service.ts": "cc6dabb694591f4eef90cfdf510a46737b977089a7c7cb8dd5763d25bc88ff35",
+      "services/catalog-service/src/project-chat/project-chat.runner.ts": "2f8bcb0460171cf3a890141943c1a9277869684bb2d5eebd5911a93c27f87d14",
+      "services/catalog-service/src/system-roles/system-role.runner.ts": "94d3d74795cba7d90bd44ad8d0c662795ea6289586df55deab9fe866b08f6a6e",
+      "mcp/neurocenter-asset-sync/src/features/project-learning/collector-plugin.ts": "24de5ad68b8776338e7af121844af017ac0fc9461421d2cca6513929a6c446c3",
+      "mcp/neurocenter-asset-sync/src/features/project-learning/tools.ts": "9ec693e7a6d9e1716019633e9297c60751f6c7b639d5a86405228dfccdc51422",
+      "services/catalog-service/src/learning/device-learning-auth.ts": "75a54659af3e3c25ce421549dc8ac2f2bdacaa476bb6443f8c8e9b5501797d75"
+    }
+  },
+  "packagingTargetsApplication": {
+    "sourceHead": "4e5edf19b0499046d6e56448a950fc7ce713fb86",
+    "mainPushed": true,
+    "scope": "frontend packaging platform selector; working delivery pending",
+    "ui": {
+      "explicitDarwinArm64Available": true,
+      "defaultOmitsTargets": true,
+      "exactSavedRequestRetainsTargetsAndUuid": true,
+      "sameSourceForcedMetadataRefreshPreservesSelection": true,
+      "savedRetryRestoresTargets": true
+    },
+    "causalRed": {
+      "initialUi": {
+        "exitCode": 1,
+        "failed": 10,
+        "passed": 1,
+        "reason": "Old modal has no platforms chooser"
+      },
+      "draft": {
+        "exitCode": 1,
+        "failed": 1,
+        "unselected": 59,
+        "reason": "Old stored request validator rejects targets"
+      },
+      "realMetadataRefresh": {
+        "exitCode": 1,
+        "failed": 2,
+        "unselected": 14,
+        "reason": "Real metadata-hook forced refresh loses explicit darwin-arm64 selection"
+      }
+    },
+    "checks": {
+      "relatedFiles": 10,
+      "relatedPassed": 313,
+      "targetUiCasesIncluded": 16,
+      "actualMetadataHookCasesIncluded": 2,
+      "includedCountsAreNotAdditive": true,
+      "typesPassed": true,
+      "viteBuildPassed": true,
+      "existingBuildWarning": "chunks exceed 500 kB",
+      "independentReview": "PASS after P2 refresh-context fix",
+      "sourceHashesVerified": 9,
+      "copiedEvidenceHashesVerified": 6,
+      "backendChanged": false,
+      "dependenciesChanged": false
+    },
+    "browser": {
+      "accepted": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "dialog": {
+        "left": 12,
+        "right": 378,
+        "width": 366
+      },
+      "horizontalOverflow": false,
+      "defaultOmissionShown": true,
+      "sameSourceRecheckPreservedMac": true,
+      "viewportReset": {
+        "height": 720,
+        "width": 1280
+      },
+      "screenshot": "/Users/aleksejstarodubcev/Downloads/neurocenter/.run/module-reliability/packaging-targets-mobile-native.png"
+    },
+    "workingBuilds": {
+      "first": {
+        "requestKey": "1421af25-9daf-47fd-b21b-77303e6c581b",
+        "buildId": "2fccc13b-4b73-48c5-813c-bb994cadf11e",
+        "observedStates": [
+          "QUEUED",
+          "FAILED"
+        ],
+        "targets": [
+          "darwin-arm64"
+        ],
+        "failureBoundary": "capacity guard before builder; 4 GiB staging plus 1 GiB reserve",
+        "builderStarted": false,
+        "selectedTargetPreserved": true,
+        "publishedVersionChanged": false
+      },
+      "latestAttemptSnapshot": {
+        "requestKey": "5c5c18c6-6b77-464d-8327-e90276bd21b7",
+        "state": "RUNNING",
+        "percent": 30,
+        "source": "primary-agent status observation; terminal proof not accepted",
+        "terminalSuccessAccepted": false
+      },
+      "workingRolloutAccepted": false,
+      "capacityGuardsWeakened": false
+    },
+    "sources": {
+      "frontend/src/modules/Store/packaging/ToolPackagingModal.tsx": "be451ee1baadf67f3b45571710864556ef0acd9c19db22482364fcc93ff8c0b6",
+      "frontend/src/modules/Store/packaging/types.ts": "503ec88bbca47acb00920a4fe03c9b41a4946c0b9026362a19876e48656bdf8b",
+      "frontend/src/modules/Store/packaging/buildDraftStore.ts": "d944bbf68202e3a5fa77584107a7d3faf8c55f14879a683857981240c879046a",
+      "frontend/src/modules/Store/packaging/BuildTargetChoice.tsx": "a28f4a44af27b6ecf2b340a544d3a14637590600d933a8a854d16f23358cba74",
+      "frontend/src/modules/Store/packaging/buildTargets.ts": "15e4892cf7b61bac7f46e58840386257d1359ad0f2e42b1852a76fdf78d9e26c",
+      "frontend/src/modules/Store/packaging/useBuildTargets.ts": "f64814531ceae76601e616147592d393da1794853bd6c7d2e6e40c6ee01ff325",
+      "frontend/test/store-packaging-targets.test.ts": "51079ec99aaf0938e9365772e33fdef394b356d50d577aeb60805ec478944806",
+      "frontend/test/store-packaging-draft.test.ts": "83fb21913a981525dcf56e457417c86e0132c7ef019d2ddebd1900b939a2d827",
+      "frontend/test/store-packaging-submit-owner.test.ts": "a683e0be04265c6071ba7fe28958ec21924e340c45f2eedb692372a1a2e01c97"
+    },
+    "receipts": {
+      ".run/module-reliability/packaging-targets/receipt.json": "bc40ce5053a17b614ffb5cabe7f9716042857d78a94f46b511aa8c0b0bbf8997",
+      ".run/module-reliability/packaging-targets-browser.json": "a4ec62330f385b46044f8403f86aaf4a4179525677611625fc50d507185cd534"
+    },
+    "limits": {
+      "relatedSelectedSuitesOnly": true,
+      "otherPlatformsAccepted": false,
+      "ciAccepted": false,
+      "productionAccepted": false,
+      "workingPublicationAccepted": false
+    }
+  },
+  "learningWorkingPublication": {
+    "sourceHead": "4e5edf19b0499046d6e56448a950fc7ce713fb86",
+    "observedAt": "2026-10-24T01:46:46.371Z",
+    "scope": "Actual UI publication of existing cards and submitted installation; final helper and flags acceptance pending",
+    "supersedesSnapshots": [
+      "learningWorkingDeliveryAudit.workingStore",
+      "packagingTargetsApplication.workingBuilds.latestAttemptSnapshot"
+    ],
+    "agentModelSelected": false,
+    "memory": {
+      "catalogId": "ai-plug-386b4935-7ea1-4594-8dc1-5135d31ef03a",
+      "requestKey": "5c5c18c6-6b77-464d-8327-e90276bd21b7",
+      "buildId": "f1ce4a2f-58d1-4197-b99c-c76907056abb",
+      "published": true,
+      "nativeCatalogVersion": 2,
+      "runtimeValidation": {
+        "target": "darwin-arm64",
+        "toolCount": 9,
+        "hookCount": 0,
+        "finishedAt": "2026-10-24T01:40:25.754Z"
+      },
+      "manifestSha256": "06aaf35d8756d23bcb49385f4e4dcf9a3421807f913611036d620d19497253da",
+      "runtimeArchiveSha256": "ac792738c458abdf1db2b3713a7046f0189fae4273f5e54363b39f5097c24c2c",
+      "projectPinVersion": 2,
+      "installationSubmitted": true
+    },
+    "rag": {
+      "catalogId": "ai-plug-d715612e-124a-4ec2-a0d5-308be4bb10ae",
+      "requestKey": "2565e40f-c4e6-421a-9523-0675402bc15c",
+      "buildId": "faf58a4e-837f-4fa7-ae64-3e2835f13ec3",
+      "observedState": "SUCCEEDED",
+      "observedProgress": 100,
+      "published": true,
+      "nativeCatalogVersion": 8,
+      "runtimeValidation": {
+        "target": "darwin-arm64",
+        "toolCount": 9,
+        "hookCount": 13,
+        "finishedAt": "2026-10-24T01:44:36.361Z"
+      },
+      "manifestSha256": "43131ebbf09672ad0e695055ce16241df96253432eadf2ffbfb35632039f29ab",
+      "runtimeArchiveSha256": "0e9b4fd1e1a6b286b488f32dfe8b4a338fc564d33aec68fdac80c714d2c5099f",
+      "runtimeArchiveMatchesEarlierIsolatedQa": true,
+      "projectPinVersion": 8,
+      "installationSubmitted": true
+    },
+    "projectId": "prj-7956b28a-6743-4266-bbb7-d65386a4bab8",
+    "installationApprovalObservedByPrimary": true,
+    "uiWorkerInspection": {
+      "source": "primary-agent UI observation",
+      "memoryState": "synced",
+      "ragState": "synced",
+      "launchCheckAvailable": true,
+      "memoryUiFileCheckPerformed": true,
+      "separateFromFinalReadonlyHelper": true
+    },
+    "preservation": {
+      "readOnly": true,
+      "fixedPathsCompared": 4,
+      "sameProjectAndInstance": true,
+      "allRecordedMetadataEqual": true,
+      "unchanged": true,
+      "remainedAbsent": [
+        ".opencode/rag_db/quirks.jsonl",
+        ".opencode/neurocenter-memory/memory.jsonl",
+        ".opencode/opencode-rag.json"
+      ],
+      "existingMarker": {
+        "relative": ".opencode/neurocenter.json",
+        "bytes": 171,
+        "sha256": "77a9edbc5cbcabb1484a765c46bdcbc224c2a51116621fadb89bcdac52f7e0e1",
+        "mode": 384,
+        "inodeAndTimesUnchanged": true
+      },
+      "rawContentPersisted": false,
+      "scope": "Four exact fixed paths only; no general all-project-data or nonempty manual graph preservation claim"
+    },
+    "pending": {
+      "finalInstalledReadonlyHelperAccepted": false,
+      "helperBoundary": "Memory expected-path check needs the correct workspaceNode context; not a runtime failure established by this document",
+      "finalFeatureFlagStateAccepted": false,
+      "modelAndIndexReadinessAccepted": false,
+      "fullWorkingFlowAccepted": false
+    },
+    "limits": {
+      "target": "darwin-arm64",
+      "otherPlatformsAccepted": false,
+      "ciAccepted": false,
+      "productionAccepted": false
+    },
+    "receipts": {
+      ".run/module-reliability/learning-working-builds-published.json": "20937c852dae0bb911bc65921010cb3855e44300a3fc565ec218e3d90721fce1",
+      ".run/module-reliability/learning-working-before.json": "4ac885bae6a7cced7c5a56a1a2f5e1820befac09934513b6ba737b3d43988eef",
+      ".run/module-reliability/learning-working-after.json": "ce38ce12238f25a02909b36a6deae90038b923f2b8bd403f319814d1049da9df",
+      ".run/module-reliability/learning-working-builds-started.json": "8df806f46031e97614fc6a7db89a2c6a67a9687d883a83b7c25ce0f07e9e9b4b"
+    }
+  },
+  "currentLearningStatusProperty": "learningWorkingReadiness",
+  "learningWorkingReadiness": {
+    "sourceHead": "4e5edf19b0499046d6e56448a950fc7ce713fb86",
+    "observedAt": "2026-10-24T01:49:24.400Z",
+    "scope": "Working project package installation, platform feature enablement and empty-state UI readiness; no private data import or sync submitted",
+    "supersedesPendingSnapshots": [
+      "toolImportDeadlineApplication.liveLearning.workingFlagsEnabled",
+      "learningWorkingDeliveryAudit.workingStore",
+      "packagingTargetsApplication.workingBuilds.latestAttemptSnapshot",
+      "learningWorkingPublication.pending.finalInstalledReadonlyHelperAccepted",
+      "learningWorkingPublication.pending.finalFeatureFlagStateAccepted"
+    ],
+    "completedDelivery": {
+      "memoryPublishedNativeVersion": 2,
+      "ragPublishedNativeVersion": 8,
+      "projectPinsUpdated": true,
+      "installationApprovedAndCompleted": true,
+      "installedInspectionAccepted": true,
+      "bothCapabilitiesSupported": true,
+      "bothInstallationsSynced": true,
+      "platformFeatureFlagsEnabled": true
+    },
+    "projectId": "prj-7956b28a-6743-4266-bbb7-d65386a4bab8",
+    "bindingId": "ab8fef47ded523b7cbf508942c8bf177a61ba328580064612fea7ea5dff41e39",
+    "instanceId": "692aaa9a-bc84-46ef-9c5f-c28f3da85122",
+    "installedHelper": {
+      "accepted": true,
+      "executionUsesInstalledBridgeNode": true,
+      "sourceSha256": "4cf8872a3dd124a28b7dd0624426c31f88b3a8378713199afd4ee8a91fe326aa",
+      "guard": "realpath(process.execPath) equals installed bridge bin/node",
+      "independentSourceReview": "PASS; reported by primary agent",
+      "readOnly": true,
+      "modelCalls": 0,
+      "mcpProcessesStarted": 0,
+      "bothProjectPinsMatch": true,
+      "bothLocalReceiptsMatch": true,
+      "bothManifestRuntimeAndBindingIdentitiesMatch": true,
+      "bothWholeRuntimeCachesVerified": true,
+      "memoryRuntimeFiles": 3659,
+      "ragRuntimeFiles": 11223
+    },
+    "firstHelperAttempt": {
+      "accepted": false,
+      "receiptRetained": true,
+      "cause": "wrong workspaceNode expected-path context for Memory",
+      "confirmedProductBug": false,
+      "finalInstalledNodeAttemptAccepted": true
+    },
+    "flags": {
+      "scope": "platform",
+      "project_learning_memory": true,
+      "project_learning_quirks": true,
+      "serverConfirmationObserved": true
+    },
+    "ui": {
+      "approvedEntries": 0,
+      "learningRevision": 0,
+      "memorySelectedInstalledVersion": 2,
+      "memoryNoBlocker": true,
+      "memorySyncEnabled": true,
+      "memoryCleanupEnabled": true,
+      "quirksAutomaticallySelectedInstalledVersion": 8,
+      "quirksNoBlocker": true,
+      "quirksCollectEnabled": true,
+      "memorySyncSubmitted": false,
+      "quirksImportSubmitted": false
+    },
+    "dataBoundary": {
+      "privateUserRecordsImported": false,
+      "globalMemoryRead": false,
+      "globalMemoryWrite": false,
+      "rawContentPersisted": false,
+      "earlierFourFixedPathPreservationRetained": true
+    },
+    "separateQaAcceptance": {
+      "passedCases": 11,
+      "publicQaNonceOnly": true,
+      "controlledEmbedding": true,
+      "doesNotProveWorkingProjectPrivateDataFlow": true
+    },
+    "sourceHashRecheck": {
+      "files": 17,
+      "wiringSources": 8,
+      "packagingUiSources": 9,
+      "unchanged": true,
+      "helperSourceSha256": "4cf8872a3dd124a28b7dd0624426c31f88b3a8378713199afd4ee8a91fe326aa",
+      "newTestsOrBuildsRun": false
+    },
+    "passiveHealth": {
+      "observedAt": "2026-10-24T01:50:17.517Z",
+      "ownedProcesses": 7,
+      "dependencyReady": [
+        "catalog",
+        "auth-bridge",
+        "flags",
+        "rag"
+      ],
+      "sideEffectfulReadinessSkipped": [
+        "skills",
+        "gateway"
+      ],
+      "frontendCompilationPartial": true
+    },
+    "remaining": [
+      "Working project private data import and sync require their own explicit scenario acceptance",
+      "Model and index readiness",
+      "Automatic native OpenCode prompt overlay and ordinary host/UI acceptance",
+      "Group/team outbound recipient and admission-revocation acceptance",
+      "Team project-chat durable learning receipt",
+      "Durable project quota ledger; new system role designs are not implementations",
+      "Codex team chat and remaining system roles acceptance"
+    ],
+    "limits": {
+      "modelAndIndexReadinessAccepted": false,
+      "nativeHostAutomaticLearningAccepted": false,
+      "workingProjectPrivateDataIngestAccepted": false,
+      "fullWorkingPrivateDataFlowAccepted": false,
+      "otherPlatformsAccepted": false,
+      "wholeProjectCoverageComplete": false,
+      "ciAccepted": false,
+      "productionAccepted": false
+    },
+    "receipts": {
+      ".run/module-reliability/learning-working-inspection-after-installed-node.json": "16fe16e8111e44e4df76b678aa7e6e5034c64007cf8d8ef2a975bbdc8f5e3abd",
+      ".run/module-reliability/learning-working-flags-enabled.json": "18ccdcd2c1f22fcad19c9880ff9014fbab024de5b657b66fa52b1617ae5adb31",
+      ".run/module-reliability/learning-working-ui-ready.json": "a30540983efe7851fb4b9c4c55c7dede76ce7b5eb463253d87974ce5637e574b",
+      ".run/module-reliability/learning-working-inspection-after.json": "3452987aee7be549f4e4519d61a1fc8c7ba998c7980e90c08e044887b24b0d48",
+      ".run/module-reliability/inspect-learning-working.mjs": "4cf8872a3dd124a28b7dd0624426c31f88b3a8378713199afd4ee8a91fe326aa",
+      ".run/module-reliability/learning-final-health.json": "c51a598d9e48e63d182af92434724d49678a2c354e51538cb6c356c046951081",
+      ".run/module-reliability/learning-working-flags-enabled.png": "f02adf840227bd7fb14775338a60c26b37493d034c5baa410e42716da30e1725",
+      ".run/module-reliability/learning-working-ready.png": "434c91a67ae281ddf3c72e227026092d043e2d30d24657afc7988f31da78cc39",
+      ".run/module-reliability/learning-working-memory-ready.png": "d87b608d88f3776d4ce19f1e92df1190c3cfe3d2b22537a949a6a21fefc9659b",
+      ".run/module-reliability/learning-working-quirks-ready.png": "339a45d7d48837f81c290d3e022a138e95ebd0e927b61d5b02fa9ca44da08150"
+    }
   }
 }
