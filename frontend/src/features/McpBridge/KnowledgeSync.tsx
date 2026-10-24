@@ -159,9 +159,11 @@ export const KnowledgeSync: FC<{
             if (current()) { lock.current = false; setBusy(false); }
         }
     };
+    // Загруженная квитанция описывает прошлую операцию, а не состояние нынешнего индекса.
+    const historical = job && !pending && !accepted;
     const operationResult = job && <Alert
         role="status"
-        type={job.state === 'failed' ? 'error' : job.state === 'succeeded' ? 'success' : 'info'}
+        type={historical ? 'info' : job.state === 'failed' ? 'error' : job.state === 'succeeded' ? 'success' : 'info'}
         showIcon
         message={pending ? job.message : job.kind === 'sync-rag'
             ? 'Результат отдельной синхронизации с сервером' : 'Результат восстановления с сервера'}
@@ -174,10 +176,8 @@ export const KnowledgeSync: FC<{
             event.preventDefault();
             settings.scrollIntoView({block:'start'});
             settings.focus({preventScroll:true});
-        }}>Пересоздать индекс</Link> : undefined}
+        }}>{historical ? 'Настройки индекса' : 'Пересоздать индекс'}</Link> : undefined}
     />;
-    // Загруженная квитанция описывает прошлую операцию, а не состояние нынешнего индекса.
-    const historical = job && !pending && !accepted;
     return (
         <Space direction="vertical" style={{ width: '100%' }}>
             {connection && <BridgeConnection bridge={bridge} compact />}
@@ -210,7 +210,9 @@ export const KnowledgeSync: FC<{
             {bridge.device && bridge.devicesReady && !binding && (
                 <span>Папка проекта ещё не связана с мостом. <Link to={projectBindingUrl(projectId)}>Связать папку проекта</Link></span>
             )}
-            {historical ? <details><summary>История: {job.kind === 'sync-rag' ? 'синхронизация' : 'восстановление'} — {job.state === 'failed' ? 'ошибка' : job.state === 'cancelled' ? 'отменено' : 'завершено'}</summary>{operationResult}</details> : operationResult}
+            {historical ? <details><summary>История: {job.kind === 'sync-rag' ? 'синхронизация' : 'восстановление'} — {job.state === 'failed' ? 'ошибка' : job.state === 'cancelled' ? 'отменено' : 'завершено'}</summary>
+                <Space direction="vertical" style={{width:'100%'}}><Typography.Text type="secondary">Это запись прошлой операции, а не текущая проверка индекса.</Typography.Text>{operationResult}</Space>
+            </details> : operationResult}
             {accepted && pending && <>
                 {!bridge.jobsReady && <Alert type="warning" showIcon message="Задание принято, но состояние очереди недоступно"
                     description={bridge.errors?.jobs || 'Обновите сведения о задании. Повторный запуск пока заблокирован.'} />}

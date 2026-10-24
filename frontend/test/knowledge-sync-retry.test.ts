@@ -91,25 +91,25 @@ describe('Результат операции не выдаётся за све�
         ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено. Обновите OpenCodeRAG и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.'}];
         const markup=render();expect(markup).toContain('Можно пересоздать индекс выбранной моделью в Нейроцентре');
         expect(markup).not.toContain('через интерфейс OpenCodeRAG');
-        expect(markup).toContain('href="/projects/project-a?tab=rag#project-index-settings">Пересоздать индекс</a>');
+        expect(markup).toContain('href="/projects/project-a?tab=rag#project-index-settings">Настройки индекса</a>');
         expect(bridgeApi.create).not.toHaveBeenCalled();expect(ui.bridge.reload).not.toHaveBeenCalled();
-        ui.canWrite=false;expect(render()).not.toContain('>Пересоздать индекс</a>');
+        ui.canWrite=false;expect(render()).not.toContain('>Настройки индекса</a>');
     });
     it('moves keyboard focus to existing settings only for the current project',()=>{
         ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено.'}];
         const settings={getAttribute:vi.fn(()=>ui.projectId),scrollIntoView:vi.fn(),focus:vi.fn()},preventDefault=vi.fn();
         vi.stubGlobal('document',{getElementById:()=>settings});render();
-        ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0});
+        ui.links.get('Настройки индекса')?.onClick?.({preventDefault,button:0});
         expect(preventDefault).toHaveBeenCalledOnce();expect(settings.scrollIntoView).toHaveBeenCalledOnce();expect(settings.focus).toHaveBeenCalledWith({preventScroll:true});
         settings.getAttribute.mockReturnValue('other-project');preventDefault.mockClear();
-        ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0});
+        ui.links.get('Настройки индекса')?.onClick?.({preventDefault,button:0});
         expect(preventDefault).not.toHaveBeenCalled();expect(settings.focus).toHaveBeenCalledOnce();expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('preserves normal link behavior for modified clicks and another mouse button',()=>{
         ui.bridge.jobs=[{...job('old-index','failed'),message:'Происхождение векторов не подтверждено.'}];
         const getElementById=vi.fn();vi.stubGlobal('document',{getElementById});render();
         for(const gesture of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}]){
-            const preventDefault=vi.fn();ui.links.get('Пересоздать индекс')?.onClick?.({preventDefault,button:0,...gesture});
+            const preventDefault=vi.fn();ui.links.get('Настройки индекса')?.onClick?.({preventDefault,button:0,...gesture});
             expect(preventDefault).not.toHaveBeenCalled();
         }
         expect(getElementById).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
@@ -157,8 +157,20 @@ describe('Результат операции не выдаётся за све�
         expect(markup).not.toContain('<details open');
         expect(markup).not.toContain('Результат последней синхронизации');
         expect(markup).toContain('В этой попытке не удалось подтвердить модель');
+        expect(markup).toContain('Это запись прошлой операции, а не текущая проверка индекса.');
+        expect(ui.errors).toEqual([]);
         expect(bridgeApi.create).not.toHaveBeenCalled();
         expect(ui.buttons.get(sync)!.disabled).toBe(false);
+    });
+    it('keeps a newly accepted failure visible as the current operation result',async()=>{
+        const accepted=job('fresh');vi.mocked(bridgeApi.create).mockResolvedValue(accepted);
+        render();click();await flush();render();
+        ui.bridge.jobs=[{...accepted,state:'failed',message:'Происхождение векторов не подтверждено.'}];
+        render();const markup=render();
+        expect(ui.errors).toContain('Результат отдельной синхронизации с сервером');
+        expect(markup).not.toContain('Это запись прошлой операции');
+        expect(markup).not.toContain('История: синхронизация');
+        expect(bridgeApi.create).toHaveBeenCalledOnce();
     });
 });
 
