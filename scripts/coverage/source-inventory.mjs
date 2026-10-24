@@ -16,6 +16,7 @@ function ownership(file){
     if(file.startsWith('bridge-dist/'))return{role:'production',kind:'installer',generated:true,reason:'Versioned shipped installers remain production even when generated.'};
     if(file.endsWith('.sql'))return{role:'production',kind:'sql-source',reason:'SQL script/migration is unmeasured; executing a TypeScript SQL string does not verify SQL semantics.'};
     if(coveragePackages.some(([,folder])=>file.startsWith(folder+'/native/')))return{role:'production',kind:'native-helper',reason:'Native helper shipped with a configured package; requires separate runtime measurement.'};
+    if(file==='mcp/neurocenter-asset-sync/vendor/ollama-runtime/index.js')return{role:'production',kind:'native-adapter',reason:'Shipped Ollama runtime adapter imported by the bridge and included in its build identity.'};
     if(file==='mcp/neurocenter-asset-sync/scripts/probe-store.mjs')return{role:'production',kind:'operator-cli',reason:'Operator CLI inspecting the local LanceDB store.'};
     if(file==='mcp/neurocenter-asset-sync/scripts/build.mjs')return{role:'tooling',kind:'package-build',reason:'Package compiler and distribution staging, outside production runtime.'};
     if(file==='mcp/neurocenter-asset-sync/scripts/test-local-configuration-smoke.mjs')return{role:'verification',kind:'build-smoke',reason:'Local-configuration smoke verification on disposable data.'};

@@ -30,7 +30,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/codex-connector-build.test.ts": {
-  "sha256": "7574492d1a0a3ed6b02140622eec9743707ec7d74a2e1b6603b3e2970348955f",
+  "sha256": "eb8cf62f4d652f309f07cc73dd6e005c5c7dd60f455619052ae217180b6b046a",
   "helpers": {}
  },
  "services/catalog-service/test/device-completion-scope.test.ts": {
@@ -82,7 +82,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/opencode-providers.test.ts": {
-  "sha256": "ba049e43ddc12acf0e899d6030755349f9e71ec47c07770a72bfc77dc487ecec",
+  "sha256": "1985f63520208ac9279cb0f2d79f08928faafeec288b6f138c2072444179bfb8",
   "helpers": {}
  },
  "services/catalog-service/test/operation-bridge-capabilities.test.ts": {
@@ -90,7 +90,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/package-build-admission.test.ts": {
-  "sha256": "34d385934ce13099f36b0950700c9a4abf6c8ae33834045280d72006cbc3265c",
+  "sha256": "8be9128304d3bed7af1bdfea83cf9831610b20afa3d35ee693dd6c3115a80d92",
   "helpers": {}
  },
  "services/catalog-service/test/package-build-cancellation-control.test.ts": {
