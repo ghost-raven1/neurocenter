@@ -389,6 +389,16 @@
     "defaultEnabled": true
   },
   {
+    "key": "system_role_mcp",
+    "name": "MCP системных агентов",
+    "description": "Явный доступ системных ролей к выбранным обнаруженным инструментам проекта. История и закрытие сессий доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "tool_catalog"
+    ],
+    "defaultEnabled": true
+  },
+  {
     "key": "device_codex_inference",
     "name": "Codex на компьютере",
     "description": "Запросы чатов и агентов через личный мост. Авторизация остаётся на компьютере.",

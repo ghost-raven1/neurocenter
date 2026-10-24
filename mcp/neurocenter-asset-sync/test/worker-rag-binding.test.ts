@@ -10,33 +10,40 @@ import {artifactFixture} from '../../../scripts/test/runtime-artifact-fixture.cj
 import {canonicalV4,type Package} from '../src/bridge/package.js';
 import {ensureRuntimeArtifact} from '../src/features/runtime-artifacts/cache.js';
 import {runtimeArtifactTarget} from '../src/features/runtime-artifacts/model.js';
-import {probeInstalledRagMcp} from '../src/features/rag-ui/mcp-startup.js';
+import {probeInstalledRagMcp} from '../src/features/rag-core/mcp-startup.js';
+import {idleSystemRoleMcpLane} from './worker-control-lane.fixture.js';
 
 const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.fn()}));
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
 vi.mock('../src/bridge/state.js',async original=>({...await original<typeof import('../src/bridge/state.js')>(),api:vi.fn()}));
 vi.mock('../src/bridge/rag-worker.js',()=>({runRagBridgeJob:vi.fn()}));
-vi.mock('../src/features/rag-ui/mcp-startup.js',()=>({probeInstalledRagMcp:vi.fn()}));
+vi.mock('../src/features/rag-core/mcp-startup.js',()=>({probeInstalledRagMcp:vi.fn()}));
 
 describe('Worker не переносит задание знаний на другую привязку папки',()=>{
     let fixture:Awaited<ReturnType<typeof workspaceFixture>>;
     let signals:Map<NodeJS.Signals,Set<(...args:unknown[])=>void>>;
     let bindingId:string;
+    let controlLane:ReturnType<typeof idleSystemRoleMcpLane>;
     const id='11111111-1111-1111-1111-111111111111';
     beforeEach(async()=>{
         fixture=await workspaceFixture();vi.clearAllMocks();
         signals=new Map(['SIGTERM','SIGINT'].map(signal=>[signal as NodeJS.Signals,new Set(process.listeners(signal))]));
         await state.writeState('credentials',{token:'fixture',deviceId:'33333333-3333-3333-3333-333333333333',email:'fixture@example.test'});
+        controlLane=idleSystemRoleMcpLane(state.apiHub(),'fixture');vi.stubGlobal('fetch',controlLane.network);
         bindingId=await workspace.projectBindingId('test-project');
         vi.spyOn(workspace,'workspaceReport').mockResolvedValue({} as never);
         vi.spyOn(process.stderr,'write').mockReturnValue(true);vi.spyOn(process,'exit').mockImplementation((()=>undefined) as never);
         socket.disconnect.mockReturnValue(socket);socket.connect.mockReturnValue(socket);
     });
     afterEach(async()=>{
-        const stop=process.listeners('SIGTERM').find(listener=>!signals.get('SIGTERM')!.has(listener));stop?.();
-        if(stop) await vi.waitFor(()=>expect(process.exit).toHaveBeenCalled());
-        for(const [signal,previous] of signals) for(const listener of process.listeners(signal)) if(!previous.has(listener)) process.off(signal,listener);
-        vi.restoreAllMocks();vi.unstubAllEnvs();await fs.rm(fixture.temporary,{recursive:true,force:true});
+        try{
+            const stop=process.listeners('SIGTERM').find(listener=>!signals.get('SIGTERM')!.has(listener));stop?.();
+            if(stop) await vi.waitFor(()=>expect(process.exit).toHaveBeenCalled());
+            expect(controlLane.unexpected).toEqual([]);
+        }finally{
+            for(const [signal,previous] of signals) for(const listener of process.listeners(signal)) if(!previous.has(listener)) process.off(signal,listener);
+            vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals();await fs.rm(fixture.temporary,{recursive:true,force:true});
+        }
     });
     function queue(kind:'sync-rag'|'restore-rag',binding:string|undefined) {
         let claimed=false;

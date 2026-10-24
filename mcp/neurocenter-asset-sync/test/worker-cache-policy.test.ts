@@ -8,6 +8,8 @@ import {runWorker} from '../src/bridge/worker.js';
 import {readRuntimeCachePolicy,runtimeCachePolicyKey,runtimeCacheReceiptKey} from '../src/features/runtime-artifacts/policy-store.js';
 import {providerFixture} from './opencode-provider.fixture.js';
 import {runtimeCacheJobPayload} from '../../../services/catalog-service/src/devices/runtime-cache-jobs.js';
+import * as codexInference from '../src/features/device-codex-inference/executor.js';
+import {idleSystemRoleMcpLane} from './worker-control-lane.fixture.js';
 
 const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.fn()}));
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
@@ -38,9 +40,11 @@ async function fixture(failFirstGenericSave:boolean,action:'set'|'inspect'='set'
     const job={id:randomUUID(),lease:randomUUID(),kind:request.kind,payload:runtimeCacheJobPayload(device as never,request as never,'Главный админ')};
     socket.disconnect.mockReturnValue(socket);socket.connect.mockReturnValue(socket);
     vi.spyOn(process,'exit').mockImplementation((()=>undefined) as never);
-    vi.spyOn(process.stderr,'write').mockReturnValue(true);
+    const stderr=vi.spyOn(process.stderr,'write').mockReturnValue(true);
     vi.spyOn(workspace,'workspaceReport').mockResolvedValue(await workspace.workspaceReport());
-    const network=vi.fn(async()=>{throw new Error('External network must not run.');});vi.stubGlobal('fetch',network);
+    const controlLane=idleSystemRoleMcpLane(state.apiHub(),'DEVICE_TOKEN_MUST_STAY_PRIVATE');
+    vi.stubGlobal('fetch',controlLane.network);
+    const inference=vi.spyOn(codexInference,'runDeviceCodexJob');
     const writes=vi.spyOn(privateStore,'writePrivateConfiguration');
     const actualSave=completions.saveCompletion;let saveAttempts=0;
     vi.spyOn(completions,'saveCompletion').mockImplementation(async value=>{
@@ -65,7 +69,15 @@ async function fixture(failFirstGenericSave:boolean,action:'set'|'inspect'='set'
         return {} as never;
     });
     worker=runWorker();await worker;
-    return {job,writes,sent,network,read:()=>({claims,heartbeatFailures,saveAttempts,atFailedHeartbeat})};
+    return {job,writes,sent,controlLane,inference,stderr,read:()=>({claims,heartbeatFailures,saveAttempts,atFailedHeartbeat})};
+}
+
+/** Policy jobs may coexist with idle MCP claims, but must never invoke a model or disclose the device token. */
+function expectNoModelSideEffects(f:Awaited<ReturnType<typeof fixture>>){
+    expect(f.controlLane.unexpected).toEqual([]);
+    expect(f.inference).not.toHaveBeenCalled();
+    expect(f.stderr.mock.calls.flat().join('')).not.toContain('DEVICE_TOKEN_MUST_STAY_PRIVATE');
+    expect(JSON.stringify(f.sent)).not.toContain('DEVICE_TOKEN_MUST_STAY_PRIVATE');
 }
 
 describe('Policy worker never turns an acknowledged setting into a failed job',()=>{
@@ -73,7 +85,7 @@ describe('Policy worker never turns an acknowledged setting into a failed job',(
         const f=await fixture(false,'inspect');
         expect(f.sent).toHaveLength(1);expect(f.sent[0]).toMatchObject({state:'succeeded',result:{revision:0,limitBytes:2*1024**3}});
         expect(await readRuntimeCachePolicy()).toBeUndefined();expect(f.writes.mock.calls.filter(([key])=>key===runtimeCachePolicyKey)).toHaveLength(0);
-        expect(f.read().claims).toBe(2);expect(f.network).not.toHaveBeenCalled();
+        expect(f.read().claims).toBe(2);expectNoModelSideEffects(f);
     });
     it.each([false,true])('heartbeat outage after ACK preserves success (generic persistence recovery: %s)',async failFirstGenericSave=>{
         const f=await fixture(failFirstGenericSave),observed=f.read();
@@ -87,6 +99,6 @@ describe('Policy worker never turns an acknowledged setting into a failed job',(
         expect(await privateStore.readPrivateConfiguration(runtimeCacheReceiptKey(f.job.id))).toEqual(policy?.lastChange);
         expect(f.writes.mock.calls.filter(([key])=>key===runtimeCachePolicyKey)).toHaveLength(1);
         expect(observed.saveAttempts).toBe(failFirstGenericSave?2:1);
-        expect(observed.claims).toBe(2);expect(f.network).not.toHaveBeenCalled();
+        expect(observed.claims).toBe(2);expectNoModelSideEffects(f);
     });
 });

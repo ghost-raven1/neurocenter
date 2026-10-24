@@ -12,6 +12,12 @@ export interface HostedMcpClaim {
     session?:HostedMcpSession;
     /** Internal research requests use a private, short-lived child; never serialized into public tickets. */
     researchSessionId?:string;
+    /** Private role sessions are never serialized into public device tickets. */
+    operationSessionId?:string;
+    /** Pinned remote endpoints belong to private role sessions and never enter public host tickets. */
+    operationRemote?:{url:string;headers:Record<string,string>};
+    /** Literal arguments come only from the same immutable catalogue package or its proven producer ABI. */
+    operationArgs?:string[];
     exp: number;
 }
 export interface HostedMcpSession {deviceId:string;projectId:string;assetId:string;version:number;manifest:string;}

@@ -29,12 +29,12 @@ export class SystemRoleRepository {
         return (await this.pool.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE actor=$1 AND agent_id=$2 AND project_id IS NOT DISTINCT FROM $3 ORDER BY created_at DESC,id DESC LIMIT 20', [actor, agent, project])).rows;
     }
     async create(input: Pick<RoleRunRow, 'agent_id' | 'project_id' | 'actor' | 'actor_role' | 'request_id' | 'request_hash' | 'request' | 'snapshot' | 'model'>,
-        authorize: (db: RoleDb) => Promise<void>): Promise<RoleRunRow> {
+        authorize: (db: RoleDb) => Promise<void>, accepted?: (db: RoleDb, row: RoleRunRow) => Promise<void>): Promise<RoleRunRow> {
         return this.transaction(async db => {
             await authorize(db);
             await db.query("SELECT pg_advisory_xact_lock(hashtextextended('system-role-create',0))");
             const old = await this.existing(input.actor, input.request_id, db);
-            if (old) { if (old.request_hash !== input.request_hash) throw new ConflictException('Ключ запроса относится к другому запуску.'); return old; }
+            if (old) { if (old.request_hash !== input.request_hash) throw new ConflictException('Ключ запроса относится к другому запуску.'); await accepted?.(db, old); return old; }
             if ((await db.query("SELECT 1 FROM system_role_runs WHERE actor=$1 AND agent_id=$2 AND project_id IS NOT DISTINCT FROM $3 AND state IN ('queued','running','applying')", [input.actor, input.agent_id, input.project_id])).rowCount) throw new ConflictException('Дождитесь или отмените предыдущий запуск этого агента.');
             const lane: RoleExecutionLane = input.model.runtime === 'device-codex' ? 'device-codex' : 'server';
             // Keep one place for the other transport within the shared eight-intent budget.
@@ -47,7 +47,7 @@ export class SystemRoleRepository {
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,now()+($13::int*interval '1 millisecond'),$14,$15::jsonb) RETURNING *`,
             [randomUUID(), input.agent_id, input.project_id, input.actor, input.actor_role, input.request_id, input.request_hash, JSON.stringify(input.request), JSON.stringify(input.snapshot),
                 JSON.stringify(input.model), this.instance, randomUUID(), ROLE_BUDGET.deadlineMs, step.message, JSON.stringify([step])])).rows[0];
-            await projectRoleOperation(db, row); return row;
+            await accepted?.(db, row); await projectRoleOperation(db, row); return row;
         });
     }
     async claim(lanes: readonly RoleExecutionLane[] = ['server', 'device-codex']): Promise<RoleRunRow | null> {
@@ -68,7 +68,7 @@ export class SystemRoleRepository {
     }
     async reserveCall(id: string, lease: string, authorize: (db: RoleDb, row: RoleRunRow) => Promise<void>): Promise<RoleRunRow> {
         return this.fenced(id, lease, async (db, row) => {
-            await authorize(db, row); if (row.calls_started >= roleCallBudget(row.agent_id)) return lost();
+            await authorize(db, row); if (row.calls_started >= roleCallBudget(row.agent_id,!!row.request.mcp?.length)) return lost();
             row.calls_started++; return this.change(db, row, 'running', 'model_step', 'Запускаем ограниченный вызов выбранной модели.');
         });
     }
