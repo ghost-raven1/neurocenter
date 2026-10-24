@@ -30,10 +30,18 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     const [draft, setDraft] = useState(''), [fileError, setFileError] = useState(''), [preview, setPreview] = useState<string>();
     const [listOpen, setListOpen] = useState(false), [renaming, setRenaming] = useState(false), [title, setTitle] = useState('');
     const [actionsOpen, setActionsOpen] = useState(false);
+    const [toolPanel, setToolPanel] = useState<{pane: 'context' | 'research' | 'files'; scope: string; owns: () => boolean}>();
     const actionTrigger = useRef<HTMLButtonElement>(null);
     const [configuration, setConfiguration] = useState({id: navigation?.initialDetail?.conversation.id, open: !navigation?.initialDetail?.turns.length});
     const [participantsEditor, setParticipantsEditor] = useState<'create' | 'edit' | undefined>(navigation?.initialGroup ? 'create' : undefined);
     const participantScope = JSON.stringify([projectId, model.id, chat.detail?.conversation.id]), participantRoot = JSON.stringify([projectId, model.id]);
+    const activeTool = toolPanel?.scope === participantScope && toolPanel.owns() ? toolPanel.pane : undefined;
+    const openTool = (pane: 'context' | 'research' | 'files', open: boolean): void => {
+        const owns = chat.captureOwner();
+        if (!owns() || participantScope !== liveParticipantScope.current.scope) return;
+        if (open) setToolPanel({pane, scope: participantScope, owns});
+        else setToolPanel(current => current?.pane === pane && current.scope === participantScope ? undefined : current);
+    };
     const liveParticipantScope = useRef({scope: participantScope, root: participantRoot}); liveParticipantScope.current = {scope: participantScope, root: participantRoot};
     const participantReturn = useRef<{scope: string; root: string; trigger?: HTMLElement; created?: boolean; owns?: () => boolean}>();
     const participantFocus = useRef<{scope: string; owns: () => boolean; trigger?: HTMLElement}>();
@@ -44,6 +52,7 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     const unresolved = chat.turns.some(modelChatTurnUnresolved), disabled = !!chat.activity || unresolved || !!chat.blocked || !!navigation?.opening || !availability.enabled;
     const hasDraft = !!draft.trim() || !!chat.uploads.length;
     useEffect(() => () => confirmation.current?.destroy(), []);
+    useEffect(() => {setToolPanel(undefined);}, [participantScope]);
     useEffect(() => {navigation?.onChanged(chat.detail?.conversation ?? null);}, [chat.detail?.conversation, navigation?.onChanged]);
     useEffect(() => {
         const pending = participantFocus.current; if (participantsEditor || !pending) return;
@@ -147,13 +156,13 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                         onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview} hasEarlier={chat.detail?.history?.hasMore ?? false} historyLoading={chat.historyLoading} historyError={chat.historyError} onLoadEarlier={() => {void chat.loadEarlier();}} onComplete={() => {void chat.complete();}}/>}
                 <ChatAttachments files={chat.attachments} uploads={chat.uploads} disabled={!!chat.activity || unresolved} onPreview={setPreview} onRemove={id => {void chat.removeAttachment(id);}}
                     onRetryUpload={chat.retryUpload} onRemoveUpload={chat.removeUpload}/>
-                <div className={'model-chat__tools' + (research.enabled ? ' model-chat__tools_research-open' : '')}>
-                    <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'}/>
-                    <ChatResearchControls value={research} disabled={disabled} projectId={projectId}/>
+                <div className="model-chat__tools">
+                    <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'} open={activeTool === 'context'} onOpenChange={open => openTool('context', open)}/>
+                    <ChatResearchControls value={research} disabled={disabled} projectId={projectId} open={activeTool === 'research'} onOpenChange={open => openTool('research', open)}/>
                 </div>
                 <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !contextBlocked && !researchBlocked && (!!draft.trim() || !!chat.attachments.length)}
                     sending={chat.busy} uploading={chat.activity === 'uploading'} onDraft={setDraft} onSend={send} onStop={() => {void chat.stop();}} onCancelUpload={chat.cancelUploads}
-                    onFiles={files => {if(availability.enabled){setFileError(''); chat.addFiles(files);}}} onReject={setFileError} participants={group ? chat.detail?.participants ?? [] : undefined}/>
+                    onFiles={files => {if(availability.enabled){setFileError(''); chat.addFiles(files);}}} onReject={setFileError} participants={group ? chat.detail?.participants ?? [] : undefined} filesOpen={activeTool === 'files'} onFilesOpenChange={open => openTool('files', open)}/>
                 </>}
             </main>
             {listOpen && <Button className="model-chat__mobile-list-close" onClick={() => setListOpen(false)}>Вернуться к чату</Button>}

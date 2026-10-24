@@ -5,8 +5,9 @@ import {FileDropZone} from '../../common/components/FileDropZone/FileDropZone';
 import {CHAT_FILE_ACCEPT} from './files';
 import {chatRecipients} from './participants';
 import type {IModelChatParticipant} from './types';
+import {ChatToolPopover} from './ChatToolPopover';
 
-interface Props {draft: string; disabled: boolean; canSend: boolean; sending: boolean; uploading: boolean; onDraft: (value: string) => void; onSend: () => void; onStop: () => void; onCancelUpload: () => void; onFiles: (files: File[]) => void; onReject: (message: string) => void; participants?: IModelChatParticipant[];}
+interface Props {draft: string; disabled: boolean; canSend: boolean; sending: boolean; uploading: boolean; onDraft: (value: string) => void; onSend: () => void; onStop: () => void; onCancelUpload: () => void; onFiles: (files: File[]) => void; onReject: (message: string) => void; participants?: IModelChatParticipant[]; filesOpen?: boolean; onFilesOpenChange?: (open: boolean) => void;}
 
 export function ChatComposer(props: Props): JSX.Element {
     const composing = useRef(false);
@@ -15,7 +16,7 @@ export function ChatComposer(props: Props): JSX.Element {
         if (event.defaultPrevented) return;
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) {event.preventDefault(); if (props.canSend && !targets?.error) props.onSend();}
     };
-    const input = {id: 'model-chat-message', 'aria-describedby': `model-chat-keyboard-hint${targets ? ' model-chat-recipients' : ''}`, value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
+    const input = {id: 'model-chat-message', 'aria-describedby': `model-chat-keyboard-hint model-chat-context-status${targets ? ' model-chat-recipients' : ''}`, value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
         onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => {const files = Array.from(event.clipboardData.files); if (files.length) props.onFiles(files);},
         onCompositionStart: () => {composing.current = true;}, onCompositionEnd: () => {composing.current = false;}};
     return <div className="model-chat__composer" onDragOver={event => {if (Array.from(event.dataTransfer.types).includes('Files')) event.preventDefault();}}
@@ -29,8 +30,10 @@ export function ChatComposer(props: Props): JSX.Element {
         }}>
         <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">Сообщение</label>
         {targets && <Typography.Text id="model-chat-recipients" type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Команде')}</Typography.Text>}
-        <details className="model-chat__file-picker"><summary>Прикрепить документы</summary><FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
-            hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/></details>
+        <div className="model-chat__file-picker"><ChatToolPopover label="Прикрепить документы" open={props.filesOpen ?? false} onOpenChange={props.onFilesOpenChange ?? (() => undefined)} disabled={props.disabled}>
+            <FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
+            hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/>
+        </ChatToolPopover></div>
         </div>
         {props.participants ? <Mentions {...input} placeholder="Сообщение команде или @имя…" onChange={props.onDraft} onPressEnter={enter} placement="top"
             options={props.participants.filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`}))}

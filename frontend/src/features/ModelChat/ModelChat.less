@@ -44,7 +44,7 @@
     &__project-context { flex-shrink: 0; margin-bottom: 8px; font-size: 11px; summary { cursor: pointer; } summary:focus-visible { outline: 2px solid @brand-primary; outline-offset: 3px; } .ant-typography { font-size: 11px; } }
     &__project-context-body { margin-top: 6px; padding: 8px; background: #f6f8fb; border-radius: 6px; overflow-wrap: anywhere; p { margin: 4px 0; } ol { padding-left: 20px; margin: 8px 0 0; } li + li { margin-top: 10px; } blockquote { margin: 5px 0 0; white-space: pre-wrap; } }
     &__source-path { display: block; overflow-wrap: anywhere; }
-    &__participant-budgets { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; > div { padding: 8px; background: #f6f8fb; border-radius: 6px; } }
+    &__participant-budgets { display: flex; flex-direction: column; gap: 8px; > section { padding: 8px; background: #f6f8fb; border-radius: 6px; } }
     &__recipients { display: block; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
     &__loading { padding: 40px; flex: 1; text-align: center; }
     &__history-wrap { flex: 1; min-height: 90px; display: flex; position: relative; }
@@ -60,24 +60,34 @@
     &__table { max-width: 100%; overflow-x: auto; }
     &__pending { display: flex; align-items: center; gap: 8px; color: #617387; }
     &__retry { margin-top: 10px; }
-    &__context { flex-shrink: 0; padding: 8px 0; border-top: 1px solid #edf1f5; font-size: 11px; .ant-typography { font-size: 11px; } .ant-progress { display: block; line-height: 1; margin: 4px 0; } summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; } summary:focus-visible { outline: 2px solid @brand-primary; outline-offset: 3px; } }
-    &__context-status { display: inline-flex; align-items: center; gap: 7px; }
-    &__context-more { color: @brand-primary; flex-shrink: 0; }
-    &__context-details { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 9px 10px; border-radius: 6px; background: #f6f8fb; line-height: 1.5; }
-    &__context-error { display: block; margin-top: 6px; }
-    &__tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 16px; flex-shrink: 0; border-top: 1px solid #edf1f5; > .model-chat__context { min-width: 0; flex: 1 1 220px; border-top: 0; padding: 4px 0; } > .model-chat__research-controls { flex: 0 1 auto; padding: 4px 0; } .model-chat__context-details, .model-chat__participant-budgets { max-height: min(180px, 25dvh); overflow-y: auto; } }
-    &__tools_research-open { > .model-chat__research-controls { flex-basis: 100%; } .model-chat__research-settings { max-height: min(240px, 30dvh); overflow-y: auto; } }
+    &__context { min-width: 0; font-size: 12px; .ant-typography { font-size: 12px; } .ant-spin { margin-left: 6px; } }
+    &__context-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    &__context-details { display: flex; flex-direction: column; gap: 6px; line-height: 1.5; .ant-progress { display: block; line-height: 1; margin: 4px 0; } }
+    &__context-error { display: block; margin: 3px 0 5px; }
+    &__tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; flex-shrink: 0; border-top: 1px solid #edf1f5; padding: 2px 0; > .model-chat__context { flex: 1 1 auto; } }
+    &__tool-trigger.ant-btn { padding: 2px 0; height: auto; min-height: 28px; color: @brand-primary; white-space: normal; text-align: left; }
     &__attachments { list-style: none; padding: 0; margin: 0; max-height: 135px; overflow-y: auto; flex-shrink: 0; > li { display: flex; align-items: flex-start; gap: 8px; padding: 7px 9px; margin-bottom: 6px; background: #f6f8fb; border: 1px solid #e2e8f0; border-radius: 7px; > .anticon { margin-top: 5px; } } }
     &__attachment-text { min-width: 0; flex: 1; display: flex; flex-direction: column; > .ant-btn { text-align: left; padding: 0; height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; } > .ant-typography { font-size: 11px; overflow-wrap: anywhere; } }
-    &__research-controls { flex-shrink: 0; padding: 6px 0 9px; font-size: 12px; > .ant-typography { display: block; font-size: 11px; } .ant-checkbox-wrapper { font-size: 12px; } }
-    &__research-settings { display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-top: 6px; background: #f6f8fb; border-radius: 6px; .ant-typography { font-size: 11px; } > label:not(.ant-checkbox-wrapper) { display: flex; flex-direction: column; gap: 4px; min-width: 0; .ant-select { width: 100%; } } > .ant-btn { align-self: flex-start; padding: 0; } summary { cursor: pointer; color: @brand-primary; } .ant-typography { margin-bottom: 0; } }
+    &__research-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; font-size: 12px; .ant-checkbox-wrapper { font-size: 12px; } }
+    &__research-warning { flex-basis: 100%; font-size: 12px; }
+    &__research-settings { display: flex; flex-direction: column; gap: 10px; > label:not(.ant-checkbox-wrapper) { display: flex; flex-direction: column; gap: 4px; min-width: 0; .ant-select { width: 100%; } } > .ant-btn { align-self: flex-start; padding: 0; } summary { cursor: pointer; color: @brand-primary; } .ant-typography { margin-bottom: 0; } }
     &__research-activity { margin-top: 10px; font-size: 11px; summary { cursor: pointer; overflow-wrap: anywhere; } > div { padding: 8px; background: #f6f8fb; border-radius: 6px; > details + details { margin-top: 7px; } } }
     &__research-step { margin: 6px 0; pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; } }
     &__composer { flex-shrink: 0; border-top: 1px solid #edf1f5; padding-top: 5px; }
     &__composer-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 4px; > .model-chat__recipients { margin-top: 0; font-size: 12px; } }
-    &__file-picker { margin-left: auto; > summary { cursor: pointer; color: @brand-primary; font-size: 12px; width: fit-content; } &[open] { flex-basis: 100%; margin-left: 0; } summary:focus-visible { outline: 2px solid @brand-primary; outline-offset: 2px; } .file-drop-zone { margin-top: 8px; padding: 10px; gap: 5px; min-height: auto; font-size: 12px; } .file-drop-zone__icon { display: none; } .file-drop-zone .ant-typography { font-size: 11px; } }
+    &__file-picker { margin-left: auto; }
     &__label { display: block; font-weight: 500; font-size: 12px; }
     &__composer-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 5px; > .ant-typography { font-size: 12px; } > .ant-btn { flex-shrink: 0; } }
+}
+.model-chat-tool-popover { max-width: calc(100vw - 24px); z-index: 1060;
+    .ant-popover-inner-content { padding: 0; }
+    &__panel { position: relative; width: min(420px, calc(100vw - 24px)); max-height: min(360px, 55vh); max-height: min(360px, 55dvh); display: flex; flex-direction: column; outline: none; }
+    &__heading { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #edf1f5; font-size: 13px; }
+    &__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 12px; font-size: 12px;
+        .ant-typography, .ant-checkbox-wrapper { font-size: 12px; }
+        .file-drop-zone { padding: 10px; gap: 6px; min-height: auto; font-size: 12px; }
+        .file-drop-zone__icon { display: none; }
+    }
 }
 .model-chat-preview { max-width: calc(100vw - 24px); .ant-modal-title { padding-right: 20px; overflow-wrap: anywhere; } pre { max-height: 60vh; overflow: auto; padding: 12px; border: 1px solid #e2e8f0; background: #f6f8fb; white-space: pre-wrap; overflow-wrap: anywhere; } }
 @media (max-width: 768px) {
@@ -99,4 +109,21 @@
     .model-chat_workspace .ant-modal-content { height: calc(100dvh - 16px); }
     .model-chat__main { padding: 6px 12px; }
     .model-chat__group-bar { margin-bottom: 4px; }
+}
+@media (max-height: 480px) {
+    // Trim secondary chrome; exceptionally tall warnings keep the main area's existing scroll fallback.
+    .model-chat_workspace {
+        .ant-modal-header { padding: 8px 16px; }
+        .model-chat__configuration-summary { padding-top: 1px; padding-bottom: 1px; }
+        .model-chat__main { padding-top: 4px; padding-bottom: 4px; }
+        .model-chat__scope { padding-bottom: 2px; }
+        .model-chat__metadata { margin-bottom: 4px; }
+        .model-chat__group-bar { margin-bottom: 0; }
+        .model-chat__tools { padding-top: 0; padding-bottom: 0; }
+        .model-chat__tool-trigger.ant-btn { min-height: 24px; font-size: 12px; }
+        .model-chat__history-wrap { min-height: 40px; }
+        .model-chat__attachments { max-height: 48px; }
+        .model-chat__composer-actions > .ant-btn { height: 28px; padding-top: 0; padding-bottom: 0; }
+        #model-chat-message { max-height: 72px !important; overflow-y: auto !important; }
+    }
 }

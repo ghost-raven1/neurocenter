@@ -13,6 +13,7 @@ type Editor = Parameters<typeof import('../src/features/ModelChat/ChatParticipan
 type Preview = Parameters<typeof import('../src/features/ModelChat/AttachmentPreview').AttachmentPreview>[0];
 type List = Parameters<typeof import('../src/features/ModelChat/ConversationList').ConversationList>[0];
 type Meter = Parameters<typeof import('../src/features/ModelChat/ChatContextMeter').ChatContextMeter>[0];
+type ResearchControls = Parameters<typeof import('../src/features/ModelChat/ChatResearchControls').ChatResearchControls>[0];
 type Research = ReturnType<typeof import('../src/features/ModelChat/useChatResearch').useChatResearch>;
 type Confirmation = {title: string; content: string; onOk: () => unknown; onCancel: () => void; destroy: ReturnType<typeof vi.fn>};
 const h = await vi.hoisted(async () => {
@@ -21,7 +22,7 @@ const h = await vi.hoisted(async () => {
     return {hooks: adminSetupHooks(), ui: modalUi(), owner, disabledFlags: new Set<TFeatureFlagKey>(), known: true, close: vi.fn(), focusTrigger: vi.fn(), server: null as unknown as IModelChatDetail,
         composer: undefined as Composer | undefined, messages: undefined as Messages | undefined, attachments: undefined as Attachments | undefined, editor: undefined as Editor | undefined,
         preview: undefined as Preview | undefined, list: undefined as List | undefined, meter: undefined as Meter | undefined, projectContext: undefined as unknown,
-        research: {} as Research, confirmations: [] as Confirmation[], changeContext: undefined as undefined | ((action: () => void) => void),
+        research: {} as Research, researchControls: undefined as ResearchControls | undefined, confirmations: [] as Confirmation[], changeContext: undefined as undefined | ((action: () => void) => void),
         context: {context: undefined as IModelChatDetail['context'] | undefined, loading: false, error: undefined as string | undefined, rejected: false},
         capture: () => { const key = owner.value; return () => owner.active && owner.value === key; }};
 });
@@ -40,7 +41,7 @@ vi.mock('../src/features/ModelChat/AttachmentPreview', () => ({AttachmentPreview
 vi.mock('../src/features/ModelChat/ConversationList', () => ({ConversationList: (props: List) => { h.list = props; return null; }}));
 vi.mock('../src/features/ModelChat/ChatContextMeter', () => ({ChatContextMeter: (props: Meter) => { h.meter = props; return null; }}));
 vi.mock('../src/features/ModelChat/ChatProjectContext', () => ({ChatProjectContext: ({evidence}: {evidence: unknown}) => { h.projectContext = evidence; return null; }}));
-vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: () => null}));
+vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: (props: ResearchControls) => {h.researchControls = props; return null;}}));
 vi.mock('antd', async () => ({...modalAntd(h.ui, (await import('react')).createElement), Tooltip: ({children}: {children?: ReactNode}) => children,
     Dropdown: (props: Record<string, unknown>) => {const trigger = props.children as {ref?: {current: unknown}}; if (trigger.ref) trigger.ref.current = {focus: h.focusTrigger}; h.ui.nodes.push({kind: 'Dropdown', props, text: ''}); return props.children as ReactNode;},
     Modal: Object.assign((props: Record<string, unknown>) => { h.ui.nodes.push({kind: 'Modal', props, text: typeof props.title === 'string' ? props.title : ''}); return createElement('section', null, props.title as ReactNode, props.children as ReactNode); },
@@ -79,6 +80,29 @@ beforeEach(() => {
 afterEach(() => { h.hooks.dispose(); vi.useRealTimers(); });
 
 describe('Workspace actions with the actual chat request/owner locks', () => {
+    it('context, research and document panels replace one another without changing the draft or consent', async () => {
+        await start(); draft('Вопрос, который нужно сохранить');
+        const context = h.meter!, research = h.researchControls!;
+        context.onOpenChange!(true); render(); expect(h.meter!.open).toBe(true); expect(h.researchControls!.open).toBe(false);
+        research.onOpenChange!(true); context.onOpenChange!(false); render();
+        expect(h.meter!.open).toBe(false); expect(h.researchControls!.open).toBe(true); expect(h.composer!.filesOpen).toBe(false);
+        h.composer!.onFilesOpenChange!(true); research.onOpenChange!(false); render();
+        expect(h.composer!.filesOpen).toBe(true); expect(h.researchControls!.open).toBe(false);
+        h.composer!.onFilesOpenChange!(false); render(); expect(h.composer!.filesOpen).toBe(false);
+        expect(h.composer!.draft).toBe('Вопрос, который нужно сохранить'); expect(h.composer!.canSend).toBe(true);
+        expect(h.research.setEnabled).not.toHaveBeenCalled(); expect(h.research.reset).not.toHaveBeenCalled(); expect(h.research.reload).not.toHaveBeenCalled();
+        expect(modelChatApi.send).not.toHaveBeenCalled(); expect(modelChatApi.upload).not.toHaveBeenCalled(); expect(h.close).not.toHaveBeenCalled();
+    });
+    it('panels hide immediately across an owner change and old project handlers cannot open the new scope', async () => {
+        await start(); const oldContext = h.meter!;
+        oldContext.onOpenChange!(true); render(); expect(h.meter!.open).toBe(true);
+        h.owner.value = 'bob'; render(); expect(h.meter!.open).toBe(false);
+        props.projectId = 'prj-two'; render(); oldContext.onOpenChange!(true); render(); expect(h.meter!.open).toBe(false);
+        h.meter!.onOpenChange!(true); render(); expect(h.meter!.open).toBe(true);
+        oldContext.onOpenChange!(false); render(); expect(h.meter!.open).toBe(true);
+        expect(modelChatApi.send).not.toHaveBeenCalled(); expect(h.research.setEnabled).not.toHaveBeenCalled();
+    });
+
     it('keeps saved history and a draft while configuration is collapsed, with project and model still identifiable', async () => {
         h.server = detail({turns: [turn()]});
         props.navigation!.controls = change => {h.changeContext = change; return createElement('div', {className: 'model-chat__workspace-controls'},

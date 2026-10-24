@@ -8,6 +8,7 @@ const h = await vi.hoisted(async () => {
     const {adminSetupHooks} = await import('./admin-setup-hooks.fixture');
     return {hooks: adminSetupHooks(), input: undefined as Input | undefined, mentions: undefined as Mentions | undefined, dropZone: undefined as Record<string, unknown> | undefined};
 });
+vi.mock('../src/features/ModelChat/ChatToolPopover', async () => ({ChatToolPopover: (await import('./chat-tool-popover.fixture')).chatToolPopoverDouble}));
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useRef: h.hooks.ref}));
 vi.mock('../src/common/components/FileDropZone/FileDropZone', () => ({FileDropZone: (props: Record<string, unknown>) => { h.dropZone = props; return null; }}));
 vi.mock('antd', () => ({Input: {TextArea: (props: Input) => { h.input = props; return null; }}, Mentions: (props: Mentions) => { h.mentions = props; return null; },
@@ -40,7 +41,7 @@ describe('Composer event boundary: full-area drop and text/mention editing', () 
         const {tree} = render(), broken = event({items: [{kind: 'file', webkitGetAsEntry: () => { throw Error('Browser denied transfer'); }}]}); tree.props.onDrop(broken); expect(props.onReject).toHaveBeenCalledExactlyOnceWith('Не удалось прочитать файлы. Выберите их кнопкой.'); expect(props.onFiles).not.toHaveBeenCalled(); expect(broken.stopPropagation).toHaveBeenCalledOnce();
     });
     it('plain textarea edits and paste use the same callbacks and file picker contract', () => {
-        render(); h.input!.onChange({target: {value: 'Новый вопрос'}}); expect(props.onDraft).toHaveBeenCalledExactlyOnceWith('Новый вопрос'); h.input!.onPaste({clipboardData: {files: []}}); expect(props.onFiles).not.toHaveBeenCalled(); const files = [new File(['x'], 'notes.txt')]; h.input!.onPaste({clipboardData: {files}}); expect(props.onFiles).toHaveBeenCalledExactlyOnceWith(files);
+        props.filesOpen = true; render(); h.input!.onChange({target: {value: 'Новый вопрос'}}); expect(props.onDraft).toHaveBeenCalledExactlyOnceWith('Новый вопрос'); h.input!.onPaste({clipboardData: {files: []}}); expect(props.onFiles).not.toHaveBeenCalled(); const files = [new File(['x'], 'notes.txt')]; h.input!.onPaste({clipboardData: {files}}); expect(props.onFiles).toHaveBeenCalledExactlyOnceWith(files);
         expect(h.dropZone).toMatchObject({multiple: true, disabled: false, busy: false, onFiles: props.onFiles, onReject: props.onReject});
     });
     it('mention search matches active display names and slugs, tolerates an unknown option and forwards edits', () => {

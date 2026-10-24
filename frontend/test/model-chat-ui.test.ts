@@ -53,6 +53,7 @@ vi.mock('../src/features/ModelChat/useModelChat', () => ({useModelChat: () => ui
 vi.mock('../src/features/ModelChat/useChatContext', () => ({useChatContext: () => ({context: ui.context ?? detail().context, loading: false, error: '', rejected: false})}));
 vi.mock('../src/common/components/FileDropZone/FileDropZone', () => ({FileDropZone: ({hint}: {hint: string}) => createElement('p', null, hint)}));
 vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: () => null}));
+vi.mock('../src/features/ModelChat/ChatToolPopover', async () => ({ChatToolPopover: (await import('./chat-tool-popover.fixture')).chatToolPopoverDouble}));
 vi.mock('../src/features/ModelChat/AttachmentPreview', () => ({AttachmentPreview: () => null}));
 vi.mock('../src/features/ModelChat/ChatParticipantsEditor', () => ({ChatParticipantsEditor: (props: GroupEditorProps) => {ui.groupEditor = props; return null;}}));
 vi.mock('antd', () => {
@@ -117,18 +118,17 @@ describe('Контекст: честная оценка и реальные да
     });
     it('В основном статусе нет технических лимитов; подробности закрыты по умолчанию', () => {
         const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false}));
-        const summary = html.slice(html.indexOf('<summary>'), html.indexOf('</summary>'));
-        expect(summary).toContain('Оценка контекста'); expect(summary).toContain('Подробнее'); expect(summary).not.toContain('токен'); expect(summary).not.toContain('КиБ'); expect(html).toContain('<details>'); expect(html).not.toContain('<details open');
+        expect(html).toContain('Оценка контекста'); expect(html).toContain('aria-expanded="false"'); expect(html).not.toContain('токен'); expect(html).not.toContain('КиБ'); expect(html).not.toContain('role="dialog"');
     });
     it('При неизвестном окне нет выдуманного процента и точного подсчёта', () => {
-        const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false})); expect(html).toContain('≈ 1 токенов'); expect(html).toContain('не сообщил размер окна модели'); expect(html).not.toContain('progressbar'); expect(html).not.toContain('по данным API');
+        const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false, open: true})); expect(html).toContain('≈ 1 токенов'); expect(html).toContain('не сообщил размер окна модели'); expect(html).not.toContain('progressbar'); expect(html).not.toContain('по данным API');
     });
     it('Учитывает резерв ответа при известном окне и отделяет лимит передачи', () => {
         const context = {...detail().context, contextWindowTokens: 1000, estimatedInputTokens: 400, reservedOutputTokens: 100};
-        const html = render(createElement(ChatContextMeter, {context, loading: false, usage: turn().answer!.usage})); expect(html).toContain('aria-valuenow="50"'); expect(html).toContain('Резерв ответа: 100'); expect(html).toContain('Предварительная оценка переписки и вложений:'); expect(html).toContain('по данным API');
+        const html = render(createElement(ChatContextMeter, {context, loading: false, usage: turn().answer!.usage, open: true})); expect(html).toContain('aria-valuenow="50"'); expect(html).toContain('Резерв ответа: 100'); expect(html).toContain('Предварительная оценка переписки и вложений:'); expect(html).toContain('по данным API');
     });
     it('Не превращает отсутствующий usage в измеренный ноль', () => {
-        const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false, usage: {inputTokens: null, outputTokens: null, totalTokens: null, reported: false}})); expect(html).not.toContain('по данным API');
+        const html = render(createElement(ChatContextMeter, {context: detail().context, loading: false, usage: {inputTokens: null, outputTokens: null, totalTokens: null, reported: false}, open: true})); expect(html).not.toContain('по данным API');
     });
     it('Сжатие показывает по фактической фазе и не обещает его без серверных данных', () => {
         let html = render(createElement(ChatContextMeter, {loading: false})); expect(html).not.toContain('Автосжатие включено'); expect(html).not.toContain('Сжимаем');
@@ -264,7 +264,7 @@ describe('Групповые ответы и контекст проекта', (
     });
     it('Показывает окна участников отдельно, неизвестному окну не придумывает процент', () => {
         const context = {...detail().context, participants: [{agentId: 'dev', name: 'Разработчик', modelId: 'small', modelName: 'Маленькая', context: {...detail().context, contextWindowTokens: 1000, reservedOutputTokens: 100, estimatedInputTokens: 400}}, {agentId: 'review', name: 'Ревьюер', modelId: 'unknown', modelName: 'Неизвестная', context: detail().context}]};
-        const html = render(createElement(ChatContextMeter, {context, loading: false})); expect(html).toContain('Контекст участников'); expect(html).toContain('Разработчик · Маленькая'); expect(html).toContain('Ревьюер · Неизвестная'); expect(html.match(/role="progressbar"/g)).toHaveLength(1); expect(html).toContain('aria-valuenow="50"'); expect(html).not.toContain('<details open');
+        const html = render(createElement(ChatContextMeter, {context, loading: false, open: true})); expect(html).toContain('Контекст участников'); expect(html).toContain('Разработчик · Маленькая'); expect(html).toContain('Ревьюер · Неизвестная'); expect(html.match(/role="progressbar"/g)).toHaveLength(1); expect(html).toContain('aria-valuenow="50"'); expect(html).not.toContain('<details open');
     });
     it('Сжимаемость одного участника не скрывает непомещающийся ввод другого', () => {
         const context = {...detail().context, exceeded: true, canCompact: true, participants: [{agentId: 'dev', name: 'Разработчик', modelId: 'small', modelName: 'Маленькая', context: {...detail().context, exceeded: true, canCompact: false}}, {agentId: 'review', name: 'Ревьюер', modelId: 'large', modelName: 'Большая', context: {...detail().context, exceeded: false, canCompact: true}}]};
