@@ -60,7 +60,7 @@ export async function applyHostedRuntimeCompatibility(directory) {
 /** Общие управляемые команды сохраняют одни настройки и блокировки MCP, плагина и Web UI. */
 export async function prepareManagedRagCommands(directory) {
     for (const name of ['opencode-rag.mjs', 'rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs',
-        'rag-ui.mjs', 'rag-reindex.mjs', 'rag-reindex-source.mjs', 'rag-ui-guards.mjs', 'rag-ui-config.mjs', 'rag-plugin-errors.mjs', 'rag-index-lock.mjs']) {
+        'rag-ui.mjs', 'rag-reindex.mjs', 'rag-reindex-source.mjs', 'rag-ui-guards.mjs', 'rag-ui-config.mjs', 'rag-plugin-errors.mjs', 'rag-index-lock.mjs', 'rag-index-corpus.mjs']) {
         await fs.copyFile(fileURLToPath(new URL('./adapters/' + name, import.meta.url)), path.join(directory, name));
     }
     for (const name of ['rag-index-profile.mjs', 'rag-plugin-config.mjs', 'rag-hosted.mjs']) {

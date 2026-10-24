@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { embeddingSignature } from '../../../../services/shared/rag-index-contract.cjs';
 import { withManagedIndexProfile, requireManagedIndexProfile } from '../adapters/rag-index-profile.mjs';
 import { acquireManagedIndexLock, releaseManagedIndexLock, enterManagedSession, leaveManagedSessions, preserveManagedSessionLock } from '../adapters/rag-index-lock.mjs';
 
@@ -26,6 +27,38 @@ test('Непроверенный существующий индекс пере�
     assert.equal((await sidecar()).state, 'ready');
     await withManagedIndexProfile(options, async next => { assert.equal(next.force, false); return success(); });
     await requireManagedIndexProfile(options.store, options.storePath, options.config, 4, options.embedder);
+}));
+
+test('Ручной disabled-vision проход получает text-only selection без изменения pin и config-файла', async () => fixture(async ({ options, success, storePath }) => {
+    const pin = Symbol.for('neurocenter.hosted-rag'), signature = embeddingSignature({ provider: 'ollama', model: 'fixture-a', dimension: 4 }, options.config.embedding.baseUrl);
+    options.config = { ...options.config, [pin]: signature, imageDescription: { enabled: false },
+        indexing: { includeExtensions: ['.ts', '.PNG', ' jpg ', 'diagram.png', '.svg', '.pdf', '.docx'] },
+        chunking: { parsers: { PNG: 'markdown', ' .JPEG ': 'markdown', '.custom': 'typescript' } } };
+    const before = JSON.stringify(options.config), file = path.join(storePath, 'opencode-rag.json');
+    await fs.writeFile(file, before);
+    await withManagedIndexProfile(options, async next => {
+        assert.deepEqual(next.config.indexing.includeExtensions, ['.ts', '.svg', '.pdf', '.docx']);
+        assert.deepEqual(next.config.chunking.parsers, { '.custom': 'typescript' });
+        assert.equal(next.config[pin], signature);
+        assert.equal(next.config.embedding, options.config.embedding);
+        return success();
+    });
+    assert.equal(JSON.stringify(options.config), before);
+    assert.equal(options.config[pin], signature);
+    assert.equal(await fs.readFile(file, 'utf8'), before);
+    await withManagedIndexProfile({ ...options, config: { ...options.config, indexing: {} } }, async next => {
+        assert.deepEqual(next.config.indexing.includeExtensions, []);
+        assert.deepEqual(next.config.chunking.parsers, { '.custom': 'typescript' });
+        return success();
+    });
+}));
+
+test('Enabled vision сохраняет исходный effective config и ручные parser overrides', async () => fixture(async ({ options, success }) => {
+    options.config = { ...options.config, imageDescription: { enabled: true, model: 'fixture-vision' },
+        indexing: { includeExtensions: ['.ts', '.PNG'] }, chunking: { parsers: { PNG: 'markdown' } } };
+    const before = JSON.stringify(options.config);
+    await withManagedIndexProfile(options, async next => { assert.equal(next.config, options.config); return success(); });
+    assert.equal(JSON.stringify(options.config), before);
 }));
 
 test('Другая модель той же размерности блокирует поиск до атомарного полного rebuild', async () => fixture(async ({ options, success }) => {

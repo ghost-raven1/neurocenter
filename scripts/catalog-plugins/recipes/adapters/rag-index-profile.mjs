@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { embeddingSignature, normalizeIndexProfile } from '../../../../services/shared/rag-index-contract.cjs';
+import { indexCorpusConfiguration } from './rag-index-corpus.mjs';
 
 const filename = 'neurocenter-index-profile.json';
 const indexError = () => new Error('Ошибка локального индекса. Модель или подключение изменились: перезапустите OpenCode и выполните полное индексирование инструментом index_project или через интерфейс OpenCodeRAG.');
@@ -47,7 +48,7 @@ export async function withManagedIndexProfile(options, run) {
         const verified = previous?.schemaVersion === 1 && previous.state === 'ready'
             && previous.embeddingSignature === record.embeddingSignature;
         await writeState(options.storePath, { ...record, state: 'indexing' });
-        const stats = await run({ ...options, dimension, force: options.force || existingCount > 0 && !verified });
+        const stats = await run({ ...options, config: indexCorpusConfiguration(options.config), dimension, force: options.force || existingCount > 0 && !verified });
         const manifest = await readJson(path.join(options.storePath, 'manifest.json'));
         if (stats.skipped || options.abortSignal?.aborted || stats.embeddingUnavailable || stats.embeddingFailures > 0
             || stats.extractionFailures > 0 || stats.descriptionFailedFiles > 0

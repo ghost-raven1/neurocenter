@@ -2,8 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRagContext,checkedWorkspacePath} from './rag-context.mjs';
 import {DEFAULT_CONFIG,findConfigFile,loadConfig} from './upstream/dist/core/config.js';
-import {normalizeExtensionKey} from './upstream/dist/core/parser-overrides.js';
-import {SUPPORTED_IMAGE_EXTENSIONS} from './upstream/dist/content/image.js';
+import {indexCorpusConfiguration} from './rag-index-corpus.mjs';
 import {managedRagConfiguration,readProjectRagConfiguration} from './rag-plugin-config.mjs';
 import {runIndexPass} from './upstream/dist/indexer/pipeline.js';
 import {destroyAllPooledConnections} from './upstream/dist/embedder/http.js';
@@ -20,11 +19,7 @@ async function candidateConfiguration(root,input,profile){
     config.embedding={...config.embedding,...embedding};config.openCode={...config.openCode,autoIndex:{...config.openCode?.autoIndex,enabled:false}};
     config.indexing={...config.indexing,embedBatchSize:8,embedConcurrency:1};
     for(const name of ['description','imageDescription','decision','reranking'])config[name]={...config[name],enabled:false};
-    // This candidate indexes code and text: without vision upstream would read raster bytes as UTF-8 and bypass text chunking.
-    const textExtension=extension=>!SUPPORTED_IMAGE_EXTENSIONS.has(normalizeExtensionKey(extension));
-    config.indexing.includeExtensions=config.indexing.includeExtensions.filter(textExtension);
-    config.chunking={...config.chunking,parsers:Object.fromEntries(Object.entries(config.chunking?.parsers??{}).filter(([extension])=>textExtension(extension)))};
-    return config;
+    return indexCorpusConfiguration(config);
 }
 
 /** Bridge builds an isolated candidate; this command never swaps or rewrites the active store. */
