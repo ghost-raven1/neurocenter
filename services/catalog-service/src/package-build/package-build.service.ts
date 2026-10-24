@@ -483,7 +483,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             cancellation.dispose();if(this.activeBuild?.id===row.id)this.activeBuild=undefined;
             try {if(unreaped){if(cancelled)await this.repository.cancellationAwaitingOwner(row.id);}else{if(row.execution_nonce)this.stoppedWorkers.add(row.execution_nonce);await fs.rm(stage, {recursive: true, force: true});if(cancelled){await acknowledgeBuildCleanup(root,row);await this.repository.completeCancellation(row.id);}await forgetBuildCleanup(root,row);if(row.execution_nonce)this.stoppedWorkers.delete(row.execution_nonce);}}
             catch(error){if(cancelled)await this.repository.cancellationCleanupFailed(row.id);throw error;}
-            finally {releaseDisk();}
+            // An unreaped producer can still grow its stage; keep its process-local reservation for operator recovery.
+            finally {if(!unreaped)releaseDisk();}
             void notifyDeviceOperations();
         }
     }

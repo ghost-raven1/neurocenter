@@ -85,6 +85,7 @@ export async function handoffFixture({reaped=true,required=false,remaining=4.9*G
     return{row,root,stageRoot,storeRoot,asset,archive,service,repository,importArchive,prepareLocal,blobs,reservations,outer,run,guard,failure,originalImport,onReserve:(callback:(request:CapacityRequest)=>Promise<void>)=>{afterReserve=callback;},
         cancel:()=>{row.state='CANCELLING';(service as unknown as{activeBuild:{cancellation:{cancel:()=>void}}}).activeBuild.cancellation.cancel();},
         async freshSample(){epoch+=1000;return guard({resource:'runtime-artifacts',bytes:1,path:stageRoot});},
+        async nextBuildSample(){freeBytes=Math.floor(5.4*GiB);epoch+=1000;return guard({resource:'runtime-artifacts',bytes:stagingLimit,path:stageRoot});},
         async noLeak(){freeBytes=Math.floor(5.4*GiB);epoch+=1000;const release=await guard({resource:'runtime-artifacts',bytes:stagingLimit,path:stageRoot});release();},
         unreaped:()=>new BuildProcessUnreapedError()};
 }

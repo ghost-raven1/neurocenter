@@ -46,11 +46,26 @@ describe('Build growth reservation hands off only after verified producer comple
         expect(f.row.state).toBe('FAILED');expect(f.prepareLocal).not.toHaveBeenCalled();expect(handoffMocks.publish).not.toHaveBeenCalled();
         expect(f.outer().release).toHaveBeenCalledOnce();await f.noLeak();
     });
-    it('an unreaped producer error never enters import or performs a phase handoff',async()=>{
-        const f=await handoffFixture({reaped:false}),build=handoffMocks.build.getMockImplementation()!;
+    it.each([false,true])('an unreaped producer retains future growth across a fresh snapshot (required=%s)',async required=>{
+        const f=await handoffFixture({reaped:false,required}),build=handoffMocks.build.getMockImplementation()!;
         handoffMocks.build.mockImplementation(async(...args)=>{await build(...args);throw f.unreaped();});await f.run();
-        expect(f.importArchive).not.toHaveBeenCalled();expect(f.prepareLocal).not.toHaveBeenCalled();expect(f.outer().release).toHaveBeenCalledOnce();
-        expect(await fs.stat(path.join(f.stageRoot,f.row.id))).toBeDefined();await f.noLeak();
+        expect(f.importArchive).not.toHaveBeenCalled();expect(f.prepareLocal).not.toHaveBeenCalled();expect(handoffMocks.publish).not.toHaveBeenCalled();
+        expect(await fs.stat(path.join(f.stageRoot,f.row.id))).toBeDefined();
+        await expect(f.nextBuildSample()).rejects.toMatchObject({code:'CAPACITY_LOW'});
+        expect(f.outer().release).not.toHaveBeenCalled();
+    });
+    it.each([false,true])('a failure before producer START frees the next snapshot admission (required=%s)',async required=>{
+        const f=await handoffFixture({required});handoffMocks.build.mockRejectedValue(new Error('Controlled failure before producer start'));await f.run();
+        expect(f.row.state).toBe('FAILED');expect(f.importArchive).not.toHaveBeenCalled();expect(f.outer().release).toHaveBeenCalledOnce();
+        const release=await f.nextBuildSample();release();
+        await expect(fs.stat(path.join(f.stageRoot,f.row.id))).rejects.toMatchObject({code:'ENOENT'});
+    });
+    it.each([false,true])('a reaped producer failure frees the next snapshot admission (required=%s)',async required=>{
+        const f=await handoffFixture({required}),build=handoffMocks.build.getMockImplementation()!;
+        handoffMocks.build.mockImplementation(async(...args)=>{await build(...args);throw new Error('Controlled failure after producer reap');});await f.run();
+        expect(f.row.state).toBe('FAILED');expect(f.importArchive).not.toHaveBeenCalled();expect(f.outer().release).toHaveBeenCalledOnce();
+        const release=await f.nextBuildSample();release();
+        await expect(fs.stat(path.join(f.stageRoot,f.row.id))).rejects.toMatchObject({code:'ENOENT'});
     });
     it('cancel during runtime verification cannot release the active envelope into an import',async()=>{
         const f=await handoffFixture(),hold=deferred();
