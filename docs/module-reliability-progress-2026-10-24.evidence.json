@@ -596,5 +596,97 @@
       ".run/module-reliability/native-codex-contract-fixtures-v3.json": "420dee1a04aac009b6fec3eca5abc029fd6d83dfcf8fd1f6e8201dddd6294eb4",
       ".run/module-reliability/native-codex-bdc14ae6-e145-489b-a080-1e52df4f930c-cleanup.json": "57da99ea6f8139d3a59086248f47e653daefafe6e1a16320981ae0c103cc3e10"
     }
+  },
+  "catalogCompactApplication": {
+    "at": "2026-10-24T00:04:44.678Z",
+    "sourceHead": "6f5eb4506df0db03a6cd7f917b25a4562e306105",
+    "mainPushed": true,
+    "foreignFilesPreserved": 75,
+    "focusedPassed": 52,
+    "relatedPassed": 149,
+    "relatedIncludesFocused": true,
+    "typesPassed": true,
+    "buildPassed": true,
+    "independentReview": "PASS after rebind fix",
+    "sourcesUnchanged": true,
+    "browserAccepted": true,
+    "browser": {
+      "at": "2026-10-24T00:03:41.263Z",
+      "sourceHead": "6f5eb4506df0db03a6cd7f917b25a4562e306105",
+      "projectId": "prj-7956b28a-6743-4266-bbb7-d65386a4bab8",
+      "installationCount": 8,
+      "before": {
+        "horizontalOverflow": false,
+        "search": {
+          "documentY": 3410.25,
+          "height": 22,
+          "top": 3410.25
+        },
+        "viewport": {
+          "height": 844,
+          "width": 390
+        }
+      },
+      "after": {
+        "horizontalOverflow": false,
+        "search": {
+          "documentY": 1042.5390625,
+          "height": 22,
+          "top": 1042.5390625
+        },
+        "viewport": {
+          "height": 844,
+          "width": 390
+        }
+      },
+      "reductionPixels": 2367.7109375,
+      "reductionPercent": 69.4292482222711,
+      "keyboard": {
+        "closedSummaryTabSkipsHiddenList": true,
+        "toggleSpaceOpensAndCloses": true,
+        "managementEnterOpensExistingDetails": true,
+        "escapeRestoresManagementFocus": true
+      },
+      "managementDialog": {
+        "horizontalOverflow": false,
+        "left": 8,
+        "right": 382,
+        "viewportWidth": 390,
+        "width": 374
+      },
+      "searchFilterCodexMatchesSingleCard": true,
+      "viewportReset": true,
+      "searchCleared": true,
+      "mutatingButtonsInvoked": false,
+      "limitations": [
+        "Search remains below initial mobile viewport",
+        "Pending cancellation, rebind failure and retained removal confirmation covered by selected tests; no live dependency failure or removal triggered"
+      ]
+    },
+    "wholeProjectCoverageComplete": false,
+    "readiness": {
+      "ownedProcesses": 7,
+      "dependencyReady": [
+        "catalog",
+        "bridge",
+        "flags",
+        "rag"
+      ],
+      "skipped": [
+        "skills",
+        "gateway"
+      ],
+      "frontendPartial": true
+    },
+    "bridgeReinstalledForUiOnlyChange": false,
+    "receipts": {
+      ".run/module-reliability/catalog-compact-v2/receipt.json": "cf6d062e4047bd9b8810e9945550fcdfbe4085f5c744a76dae601de838514311",
+      ".run/module-reliability/catalogcompact-integration-main.json": "c9cd5a4d2eea1bfbc4e949ed1c8b967d03e13fd24c20ea4aeb391a2d3f6355d6",
+      ".run/module-reliability/catalogcompact-health-after.json": "8a913c75fec1d82b5002d546c316073f74e6ab12bf898b43097053928ab46970",
+      ".run/module-reliability/store-density-browser-acceptance.json": "33770412676f53a5803d02e10b50dc4e4f229ed68a7829d0a85b245cf5949d3c",
+      ".run/module-reliability/store-density-before.png": "dccae693423fdeef8eea26a7287a2ce7760551ffcc65e2e1dc013264c97bafa1",
+      ".run/module-reliability/store-density-after.png": "29fcf7ca0a902581050adab7c09f7dad8a946939ab128aaa676931b37108c23e",
+      ".run/module-reliability/store-management-mobile.png": "026bc67de7db90d87e28133eace8b1245208df355b9474224d90f17860538171"
+    }
   }
 }
