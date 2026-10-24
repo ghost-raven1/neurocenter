@@ -111,8 +111,25 @@ export class RemoteConnectionRepository {
             await securityEvent(db, { actor, action: 'model.connection.revoke', resourceId: id, before: { revision: Number(head.revision) }, after: { revoked: true } });
         });
     }
+    /** Health is optional: bound checkout plus SQL, discard only our waiting client, and return a late checkout unused. */
     async failure(row: IRemoteConnectionRow, message: string | null): Promise<void> {
-        await this.pool.query('UPDATE model_remote_connections SET failure_message=$3 WHERE model_id=$1 AND revision=$2 AND revoked_at IS NULL', [row.model_id, row.revision, message]);
+        await new Promise<void>((resolve, reject) => {
+            let client: PoolClient | undefined, expired = false, released = false;
+            const release = (destroy = false) => { if (client && !released) { released = true; client.release(destroy); } };
+            const timer = setTimeout(() => { expired = true; release(true); reject(new Error('Remote health write deadline exceeded')); }, 500);
+            Promise.resolve().then(() => this.pool.connect()).then(async db => {
+                if (expired) { db.release(); return; }
+                client = db;
+                try {
+                    await db.query('BEGIN');
+                    await db.query("SET LOCAL statement_timeout='250ms'; SET LOCAL lock_timeout='150ms'");
+                    await db.query('UPDATE model_remote_connections SET failure_message=$3 WHERE model_id=$1 AND revision=$2 AND revoked_at IS NULL', [row.model_id, row.revision, message]);
+                    await db.query('COMMIT');
+                    resolve();
+                } catch (error) { release(true); reject(error); }
+                finally { clearTimeout(timer); release(); }
+            }, error => { clearTimeout(timer); reject(error); });
+        });
     }
     private audit(row: IRemoteConnectionRow) {
         // Arbitrary private JSON, URL, env values and ciphertext never enter the shared audit.

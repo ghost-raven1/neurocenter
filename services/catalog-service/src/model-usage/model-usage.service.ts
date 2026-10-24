@@ -16,7 +16,9 @@ import { type ModelUsageQuery, type ModelUsageRecorder, type ModelUsageResult, t
 /** A pending receipt precedes paid work; failed terminal write-back never repeats a completed provider call. */
 @Injectable()
 export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnApplicationShutdown {
-    readonly pool = createPool({ connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 5 }, 'model-usage');
+    // Server limits cancel lock/execution waits; pg-pool discards a client after its later read deadline.
+    readonly pool = createPool({ connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 5,
+        connectionTimeoutMillis: 1000, lock_timeout: 500, statement_timeout: 2000, query_timeout: 2500 }, 'model-usage');
     readonly repository = new ModelUsageRepository(this.pool);
     readonly workerId = randomUUID();
     private readonly shutdown = new AbortController();
@@ -26,7 +28,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
     private maintenance?: Promise<void>;
     constructor(private readonly models: ModelsService) {}
     async onModuleInit(): Promise<void> {
-        await this.models.ready(); await this.repository.recover();
+        await this.models.ready(); await this.repository.recover().catch(() => undefined);
         this.timer = setInterval(() => { if (!this.maintenance) this.maintenance = this.maintain().catch(() => undefined).finally(() => { this.maintenance = undefined; }); }, 30000); this.timer.unref();
     }
     async onApplicationShutdown(): Promise<void> {
@@ -34,10 +36,33 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
         let timer: NodeJS.Timeout | undefined;
         try { await Promise.race([Promise.allSettled([...this.active.values()]), new Promise(resolve => { timer = setTimeout(resolve, 5000); })]); }
         finally { if (timer) clearTimeout(timer); }
-        await this.flush().catch(() => undefined); await this.repository.interrupt(this.workerId).catch(() => undefined); await this.pool.end();
+        await this.drainWritebacks(); await this.repository.interrupt(this.workerId).catch(() => undefined); await this.pool.end();
     }
-    private async flush(): Promise<void> { for (const [id, value] of this.writebacks) { await this.repository.finish(id, this.workerId, value); if (this.writebacks.get(id) === value) this.writebacks.delete(id); } }
-    private async maintain(): Promise<void> { await this.flush(); await this.repository.renew(this.workerId); await this.repository.recover(); }
+    /** One unavailable receipt stays queued without preventing the other known outcomes from being recorded. */
+    private async flush(deadline = Infinity): Promise<void> {
+        const batch: [string, UsageTerminal][] = [];
+        for (const entry of this.writebacks) { batch.push(entry); if (batch.length === 5) break; }
+        for (const [id, value] of batch) {
+            if (performance.now() >= deadline) break;
+            try { await this.repository.finish(id, this.workerId, value); if (this.writebacks.get(id) === value) this.writebacks.delete(id); }
+            catch {
+                // Keep the bounded batch fair when an early receipt remains locked; retry only its journal write.
+                if (this.writebacks.get(id) === value) { this.writebacks.delete(id); this.writebacks.set(id, value); }
+            }
+        }
+    }
+    /** Shutdown drains healthy known outcomes; a full pass without progress or its deadline stops receipt-only retries. */
+    private async drainWritebacks(): Promise<void> {
+        const deadline = performance.now() + 5000;
+        while (this.writebacks.size && performance.now() < deadline) {
+            const pending = this.writebacks.size;
+            for (let remaining = pending; remaining > 0 && performance.now() < deadline; remaining -= 5) await this.flush(deadline);
+            if (this.writebacks.size >= pending) break;
+        }
+    }
+    private async maintain(): Promise<void> {
+        await this.repository.renew(this.workerId).catch(() => undefined); await this.repository.recover().catch(() => undefined); await this.flush();
+    }
     async observe(model: IModel, endpoint: 'chat' | 'embed', action: (signal: AbortSignal) => Promise<Record<string, unknown>>, signal?: AbortSignal): Promise<Record<string, unknown>> {
         const combined = AbortSignal.any([this.shutdown.signal, ...(signal ? [signal] : [])]); combined.throwIfAborted();
         const context = currentModelUsage(), id = randomUUID();

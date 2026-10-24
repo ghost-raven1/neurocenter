@@ -91,7 +91,7 @@ export class RemoteConnectionService {
             await this.repository.verify(model, connection.revision, digest, dimension, actor, async () => { signal?.throwIfAborted(); await authorize(); signal?.throwIfAborted(); });
             await notifyModelCatalogChange();
         } catch (cause) {
-            if (cause instanceof RemoteModelError) await this.repository.failure(row, cause.message);
+            if (cause instanceof RemoteModelError) await this.repository.failure(row, cause.message).catch(() => undefined);
             throw cause;
         }
     }
@@ -109,12 +109,12 @@ export class RemoteConnectionService {
             signal?.throwIfAborted();
             const current = await this.repository.pinned(model);
             if (Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось во время запроса. Повторите действие.');
-            await this.repository.failure(row, null);
+            await this.repository.failure(row, null).catch(() => undefined);
             return result;
         } catch (cause) {
             signal?.throwIfAborted();
             if (cause instanceof RemoteModelError) {
-                await this.repository.failure(row, cause.message);
+                await this.repository.failure(row, cause.message).catch(() => undefined);
                 throw new ServiceUnavailableException(cause.message);
             }
             throw cause;

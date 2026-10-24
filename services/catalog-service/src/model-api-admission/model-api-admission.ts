@@ -32,13 +32,15 @@ export class ModelApiAdmission {
   signal?.throwIfAborted();
   if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
   const started=performance.now();let activeWrite:Promise<void>|undefined;
+  // Recorders own their SQL deadline; neither an async rejection nor a sync callback failure replaces paid work.
+  const progress=(active:boolean)=>Promise.resolve().then(()=>metrics?.progress?.(active)).catch(()=>undefined);
   try {
-   const request=action();activeWrite=metrics?.progress?.(true);return await request;
+   const request=action();activeWrite=progress(true);return await request;
   }
   finally {
    if (metrics) metrics.providerLatencyMs += Math.max(0, performance.now() - started);
    await activeWrite;
-   await metrics?.progress?.(false);
+   await progress(false);
   }
  }
 }

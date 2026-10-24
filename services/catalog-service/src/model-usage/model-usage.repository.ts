@@ -12,17 +12,32 @@ export class ModelUsageRepository {
             value.endpoint, value.purpose, value.actorEmail ?? null, value.projectId ?? null, value.agentId ?? null, value.turnId ?? null, value.operationId ?? null, value.privateProjectChatRoomId ?? null]);
     }
     async finish(id: string, worker: string, value: UsageTerminal): Promise<void> {
-        await this.pool.query(`UPDATE model_usage_calls SET status=$3,input_tokens=$4,output_tokens=$5,latency_ms=$6,dispatch_count=$7,dispatched_at=$8,rate_wait_ms=$9,provider_latency_ms=$10,failure_code=$11,finished_at=now(),lease_until=NULL
+        await this.metadata(`UPDATE model_usage_calls SET status=$3,input_tokens=$4,output_tokens=$5,latency_ms=$6,dispatch_count=$7,dispatched_at=$8,rate_wait_ms=$9,provider_latency_ms=$10,failure_code=$11,finished_at=now(),lease_until=NULL
             WHERE id=$1 AND worker_id=$2 AND status IN ('pending','interrupted')`, [id, worker, value.status, value.inputTokens, value.outputTokens, value.latencyMs, value.dispatchCount ?? null, value.dispatchedAt ?? null, value.rateWaitMs ?? null, value.providerLatencyMs ?? null, value.failureCode ?? null]);
     }
     /** A settled transport is no longer generating an answer, even while terminal accounting is retried. */
     async dispatchProgress(id: string, worker: string, count: number, at: string | null, latency: number | null): Promise<void> {
-        await this.pool.query(`UPDATE model_usage_calls SET dispatch_count=$3,dispatched_at=$4,provider_latency_ms=$5
+        await this.metadata(`UPDATE model_usage_calls SET dispatch_count=$3,dispatched_at=$4,provider_latency_ms=$5
             WHERE id=$1 AND worker_id=$2 AND status='pending' AND lease_until>now()`, [id,worker,count,at,latency]);
     }
-    async recover(): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET status='interrupted',finished_at=now(),lease_until=NULL WHERE status='pending' AND lease_until<=now()"); }
-    async renew(worker: string): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET lease_until=now()+interval '2 minutes' WHERE worker_id=$1 AND status='pending' AND lease_until>now()", [worker]); }
-    async interrupt(worker: string): Promise<void> { await this.pool.query("UPDATE model_usage_calls SET status='interrupted',finished_at=now(),lease_until=NULL WHERE worker_id=$1 AND status='pending'", [worker]); }
+    async recover(): Promise<void> {
+        await this.metadata(`WITH eligible AS (SELECT id FROM model_usage_calls WHERE status='pending' AND lease_until<=now() FOR UPDATE SKIP LOCKED)
+            UPDATE model_usage_calls receipt SET status='interrupted',finished_at=now(),lease_until=NULL FROM eligible WHERE receipt.id=eligible.id`);
+    }
+    async renew(worker: string): Promise<void> {
+        await this.metadata(`WITH eligible AS (SELECT id FROM model_usage_calls WHERE worker_id=$1 AND status='pending' AND lease_until>now() FOR UPDATE SKIP LOCKED)
+            UPDATE model_usage_calls receipt SET lease_until=now()+interval '2 minutes' FROM eligible WHERE receipt.id=eligible.id`, [worker]);
+    }
+    async interrupt(worker: string): Promise<void> {
+        await this.metadata(`WITH eligible AS (SELECT id FROM model_usage_calls WHERE worker_id=$1 AND status='pending' FOR UPDATE SKIP LOCKED)
+            UPDATE model_usage_calls receipt SET status='interrupted',finished_at=now(),lease_until=NULL FROM eligible WHERE receipt.id=eligible.id`, [worker]);
+    }
+    /** A total client deadline complements per-lock GUCs; pool.query discards the timed-out active client. */
+    private async metadata(text: string, values?: unknown[]): Promise<void> {
+        // pg-pool can open a new client ahead of queued checkouts; optional writes must yield to existing work.
+        if (this.pool.waitingCount > 0) throw new Error('Usage metadata deferred while database work is queued');
+        await this.pool.query({ text, values, query_timeout: 500 });
+    }
     async canonicalProject(idOrName: string): Promise<string> {
         const row = (await this.pool.query<{ id: string }>("SELECT id FROM projects WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'prj-%') ORDER BY (id=$1) DESC LIMIT 1", [idOrName])).rows[0];
         return row?.id ?? idOrName;
