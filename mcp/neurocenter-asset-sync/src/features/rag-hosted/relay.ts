@@ -46,12 +46,22 @@ export async function createHostedRelay(profile:HostedProfile):Promise<HostedRel
         if(busy){send(429,'Дождитесь завершения предыдущего запроса.');return;}
         busy=true;const controller=new AbortController();active.add(controller);const disconnected=()=>controller.abort();res.on('close',disconnected);
         try{
-            const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>budget)throw new Error('Слишком большой запрос.');chunks.push(chunk);}
-            const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {model?:unknown;input?:unknown;input_type?:unknown};const inputs=Array.isArray(body.input)?body.input:[body.input];
+            const chunks:Buffer[]=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>budget)throw Object.assign(new Error('Слишком большой запрос.'),{status:413});chunks.push(chunk);}
+            let body:{model?:unknown;input?:unknown;input_type?:unknown};
+            try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(400,'Проверьте формат входных данных.');return;}
+            if(!body||typeof body!=='object'||Array.isArray(body)){send(400,'Проверьте формат входных данных.');return;}
+            const inputs=Array.isArray(body.input)?body.input:[body.input];
             if(body.model!==profile.selection.profile.model||!inputs.length||inputs.length>64||inputs.some(input=>typeof input!=='string'||!input.trim())||Object.keys(body).some(key=>!['model','input','input_type'].includes(key))) {send(400,'Проверьте модель и входные данные.');return;}
+            // Match Catalog's encoded input budget before inference; upstream treats HTTP 422 as permanent.
+            if(Buffer.byteLength(JSON.stringify(inputs),'utf8')>256*1024){send(422,'Входные тексты превышают 256 КиБ. Проверьте разбиение текста.');return;}
             assertCurrent();const result=await inferHosted(profile,body.input as string|string[],AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]));
             await assertHostedInstallation(profile);assertCurrent();if(!res.destroyed){res.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(result));}
-        }catch(error){send((error as {status?:number}).status===409?409:503,'Модель недоступна. Проверьте подключение и настройку проекта.');}
+        }catch(error){
+            const status=(error as {status?:number}).status;
+            // Upstream retries HTTP 413, so rejected payloads use its permanent validation status.
+            if(status===400||status===413||status===422)send(status===413?422:status,'Проверьте размер и формат входных текстов.');
+            else send(status===409?409:503,'Модель недоступна. Проверьте подключение и настройку проекта.');
+        }
         finally{res.off('close',disconnected);active.delete(controller);busy=false;}
     });
     server.requestTimeout=125000;server.headersTimeout=10000;server.maxConnections=4;

@@ -1,4 +1,4 @@
-import {afterEach,expect,it,vi} from 'vitest';
+import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createHostedRelay,inferHosted} from '../src/features/rag-hosted/relay.js';
 import {requestProfile,type HostedProfile} from '../src/features/rag-hosted/profile.js';
 const state=vi.hoisted(()=>({assert:vi.fn()}));
@@ -66,4 +66,44 @@ it('Удаление установки во время inference проверя
  const sent=broker(),first=profile();let calls=0;state.assert.mockImplementation(async()=>{if(++calls>1)throw new Error('Установка удалена');});const relay=await createHostedRelay(first);
  try{const response=await nativeFetch(`http://127.0.0.1:${first.relay.port}/v1/embeddings`,{method:'POST',headers:{authorization:'Bearer '+first.grants[0]!.key},body:JSON.stringify({model:first.grants[0]!.selection.profile.model,input:'request-A'})});expect(response.status).toBe(503);expect(sent).toHaveLength(1);expect(calls).toBe(2);
  }finally{await relay.close();}
+});
+
+describe('Постоянная ошибка входа не превращается во временный отказ модели',()=>{
+ const request=(first:HostedProfile,input:unknown)=>nativeFetch(`http://127.0.0.1:${first.relay.port}/v1/embeddings`,{method:'POST',headers:{authorization:'Bearer '+first.grants[0]!.key},body:JSON.stringify({model:first.grants[0]!.selection.profile.model,input})});
+ it.each([400,413,422])('HTTP%s сервера возвращает безопасную permanent ошибку и освобождает relay',async status=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker();let rejected=false;
+  const accepted=globalThis.fetch;vi.stubGlobal('fetch',vi.fn(async(...args:Parameters<typeof fetch>)=>{if(!rejected){rejected=true;return new Response('private-provider-body https://secret.fixture?key=private-key',{status});}return accepted(...args);}));
+  const relay=await createHostedRelay(first);
+  try{const response=await request(first,'rejected input');expect(response.status).toBe(status===413?422:status);const body=await response.text();expect(body).not.toMatch(/private-provider-body|secret\.fixture|private-key/);expect((await request(first,'valid input')).status).toBe(200);expect(sent).toHaveLength(1);expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(2);}
+  finally{await relay.close();}
+ });
+ it('JSON-escaped input превышающий256КиБ отклоняется до provider и не блокирует следующий запрос',async()=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker(),relay=await createHostedRelay(first);
+  try{const input='\\'.repeat(131071),boundary=input.slice(1);expect(Buffer.byteLength(JSON.stringify([input]))).toBeGreaterThan(256*1024);expect((await request(first,[input])).status).toBe(422);expect(sent).toHaveLength(0);expect(Buffer.byteLength(JSON.stringify([boundary]))).toBe(256*1024);expect((await request(first,boundary)).status).toBe(200);expect(sent).toHaveLength(1);expect(sent[0]?.input).toBe(boundary);}
+  finally{await relay.close();}
+ });
+ it.each([null,[],0,'text'])('JSON%s без input object отклоняется до provider',async body=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker(),relay=await createHostedRelay(first);
+  try{const response=await nativeFetch(`http://127.0.0.1:${first.relay.port}/v1/embeddings`,{method:'POST',headers:{authorization:'Bearer '+first.grants[0]!.key},body:JSON.stringify(body)});expect(response.status).toBe(400);expect(sent).toHaveLength(0);expect((await request(first,'valid input')).status).toBe(200);expect(sent).toHaveLength(1);}
+  finally{await relay.close();}
+ });
+ it.each([false,true])('Превышение transport budget (chunked=%s) не вызывает модель и возвращает permanent ответ',async chunked=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker(),relay=await createHostedRelay(first);
+  const bytes=Buffer.from(JSON.stringify({model:first.grants[0]!.selection.profile.model,input:'x'.repeat(1024*1024)}));
+  const options:RequestInit&{duplex?:'half'}={method:'POST',headers:{authorization:'Bearer '+first.grants[0]!.key},signal:AbortSignal.timeout(5000),body:bytes};
+  if(chunked){options.body=new ReadableStream({start(controller){for(let offset=0;offset<bytes.length;offset+=65536)controller.enqueue(bytes.subarray(offset,offset+65536));controller.close();}});options.duplex='half';}
+  try{const response=await nativeFetch(`http://127.0.0.1:${first.relay.port}/v1/embeddings`,options);expect(response.status).toBe(422);expect(sent).toHaveLength(0);expect(await response.text()).not.toContain('x'.repeat(128));expect((await request(first,'valid input')).status).toBe(200);expect(sent).toHaveLength(1);}
+  finally{await relay.close();}
+ });
+ it('Некорректный JSON не вызывает модель и оставляет relay доступным',async()=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker(),relay=await createHostedRelay(first);
+  try{const response=await nativeFetch(`http://127.0.0.1:${first.relay.port}/v1/embeddings`,{method:'POST',headers:{authorization:'Bearer '+first.grants[0]!.key},body:'{"input":'});expect(response.status).toBe(400);expect(sent).toHaveLength(0);expect((await request(first,'valid input')).status).toBe(200);expect(sent).toHaveLength(1);}
+  finally{await relay.close();}
+ });
+ it('Временный503 остаётся временным и не блокирует следующий запрос',async()=>{
+  state.assert.mockResolvedValue(undefined);const first=profile(),sent=broker();let rejected=false;
+  const accepted=globalThis.fetch;vi.stubGlobal('fetch',vi.fn(async(...args:Parameters<typeof fetch>)=>{if(!rejected){rejected=true;return new Response('private-temporary-body',{status:503});}return accepted(...args);}));const relay=await createHostedRelay(first);
+  try{const response=await request(first,'temporary failure');expect(response.status).toBe(503);expect(await response.text()).not.toContain('private-temporary-body');expect((await request(first,'valid input')).status).toBe(200);expect(sent).toHaveLength(1);}
+  finally{await relay.close();}
+ });
 });
