@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {createElement, type ReactNode} from 'react';
+import {createElement, useState, type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {deferredSetup, flushSetup} from './admin-setup-hooks.fixture';
 import {modalAntd, uiNode} from './modal-actions.fixture';
@@ -13,6 +13,7 @@ const h = await vi.hoisted(async () => {
         capture: () => { const key = owner.value; return () => owner.active && owner.value === key; }};
 });
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: h.hooks.state, useEffect: h.hooks.effect}));
+vi.mock('../src/features/ModelChat/ChatToolPopover', async () => ({ChatToolPopover: (await import('./chat-tool-popover.fixture')).chatToolPopoverDouble}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({captureOwner: h.capture})}));
 vi.mock('../src/features/ModelChat/api', () => ({modelChatApi: {agents: vi.fn(), researchChoices: vi.fn(), send: vi.fn(), researchStep: vi.fn()}}));
 vi.mock('antd', async () => ({...modalAntd(h.ui, (await import('react')).createElement), Tooltip: ({children}: {children: ReactNode}) => children}));
@@ -34,7 +35,11 @@ const render = (node: ReactNode) => {
     h.hooks.commit(); return html;
 };
 const roster = () => render(createElement(ChatParticipantsEditor, props));
-function ResearchHarness() { research = useChatResearch('model-one', projectId, 'chat-one', h.capture); return createElement(ChatResearchControls, {value: research, disabled, projectId}); }
+function ResearchHarness() {
+    research = useChatResearch('model-one', projectId, 'chat-one', h.capture);
+    const [open, setOpen] = useState(false);
+    return createElement(ChatResearchControls, {value: research, disabled, projectId, open, onOpenChange: setOpen});
+}
 const controls = () => render(createElement(ResearchHarness));
 const checkbox = (label: string) => uiNode(h.ui, 'Checkbox', label);
 const button = (label: string) => uiNode(h.ui, 'Button', label);
@@ -89,7 +94,8 @@ describe('Chat participant setup: retry, saved roster recovery and ownership', (
 
 describe('Research controls with the real selection hook: explicit consent and metadata-only setup', () => {
     it('opt-in reads only metadata; source callbacks create an exact per-message pin without inference or tool calls', async () => {
-        controls(); expect(modelChatApi.researchChoices).not.toHaveBeenCalled(); checkbox('Исследовать источники').onChange({target: {checked: true}}); controls(); await flushSetup(); controls();
+        const closed = controls(); expect(closed).not.toContain('role="dialog"'); expect(closed).not.toContain('Пределы и доступ к источникам');
+        expect(modelChatApi.researchChoices).not.toHaveBeenCalled(); checkbox('Исследовать источники').onChange({target: {checked: true}}); controls(); await flushSetup(); expect(controls()).toContain('role="dialog"');
         expect(modelChatApi.researchChoices).toHaveBeenCalledExactlyOnceWith('model-one', 'project-one', expect.any(AbortSignal), 'chat-one'); expect(research.request).toEqual({project: true});
         checkbox('База знаний проекта').onChange({target: {checked: false}}); expect(controls()).toContain('Выберите хотя бы один источник'); expect(research.request).toBeUndefined();
         const select = uiNode(h.ui, 'Select'); expect(select.options.find((option: {value: string}) => option.value === 'old')).toMatchObject({disabled: true, title: 'Снят с проекта'}); select.onChange('exa'); controls();

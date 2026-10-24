@@ -1,4 +1,4 @@
-import {createElement,type ReactNode} from 'react';
+import {Children,createElement,isValidElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {FeatureAvailabilityContext,FeatureButton} from '../src/features/FeatureFlags/FeatureAvailability';
@@ -6,7 +6,7 @@ import {featureFlagKeys} from '../src/features/FeatureFlags/types';
 import type {IEvaluatedFeatureFlags} from '../src/features/FeatureFlags/types';
 import {ConversationList} from '../src/features/ModelChat/ConversationList';
 import {ModelHosting} from '../src/features/ModelCatalog/ModelHosting';
-import {model} from './model-chat-fixtures';
+import {detail,model} from './model-chat-fixtures';
 
 const ui=vi.hoisted(()=>({buttons:new Map<string,{disabled?:boolean;onClick?:(event:unknown)=>void}>(),operate:vi.fn(),refresh:vi.fn()}));
 vi.mock('antd',async original=>({...await original<typeof import('antd')>(),Button:(props:import('antd').ButtonProps)=>{
@@ -34,10 +34,25 @@ describe('Отключённые функции сохраняют чтение 
         render(createElement(FeatureButton,{features:[],onClick:action},'Отменить'),null);expect(ui.buttons.get('Отменить')?.disabled).toBe(false);
         ui.buttons.get('Отменить')?.onClick?.({});expect(action).toHaveBeenCalledOnce();
     });
-    it('Group off запрещает новую группу, но сохраняет модельный чат, список и refresh',()=>{
+    it('Group off сохраняет личный чат, историю группы и refresh без отдельной кнопки создания группы',()=>{
         const data=flags(true);data.flags.group_chat=false;data.configured.group_chat=false;
-        render(createElement(ConversationList,{items:[],disabled:false,loading:false,onNew:vi.fn(),onNewGroup:vi.fn(),onSelect:vi.fn(),onRefresh:vi.fn()}),data);
-        expect(ui.buttons.get('Группа агентов')?.disabled).toBe(true);expect(ui.buttons.get('Новый диалог')?.disabled).toBe(false);expect(ui.buttons.get('Обновить диалоги')?.disabled).toBe(false);
+        const onNew=vi.fn(),onSelect=vi.fn(),onRefresh=vi.fn(),group={...detail().conversation,mode:'group' as const,title:'Сохранённая дискуссия'};
+        type NativeButton={children?:ReactNode;'aria-current'?:string;disabled?:boolean;onClick?:()=>void};
+        let historyButton:NativeButton|undefined;
+        const capture=(node:ReactNode):void=>{
+            if(!isValidElement<NativeButton>(node))return;
+            if(node.type==='button'&&node.props['aria-current']==='page')historyButton=node.props;
+            Children.forEach(node.props.children,capture);
+        };
+        // Retain the real native history button's callback, as the AntD double does for its buttons.
+        function History(){const view=ConversationList({items:[group],selected:group.id,disabled:false,loading:false,onNew,onSelect,onRefresh});capture(view);return view;}
+        const html=render(createElement(History),data);
+        expect(html).toContain('Сохранённая дискуссия');expect(html).toContain('aria-current="page"');
+        expect(ui.buttons.has('Группа агентов')).toBe(false);expect(ui.buttons.get('Новый диалог')?.disabled).toBe(false);expect(ui.buttons.get('Обновить диалоги')?.disabled).toBe(false);
+        expect(onNew).not.toHaveBeenCalled();expect(onSelect).not.toHaveBeenCalled();expect(onRefresh).not.toHaveBeenCalled();
+        expect(historyButton).toBeDefined();expect(historyButton?.disabled).toBe(false);historyButton?.onClick?.();expect(onSelect).toHaveBeenCalledExactlyOnceWith(group.id);
+        ui.buttons.get('Обновить диалоги')?.onClick?.({});expect(onRefresh).toHaveBeenCalledOnce();expect(onNew).not.toHaveBeenCalled();
+        ui.buttons.get('Новый диалог')?.onClick?.({});expect(onNew).toHaveBeenCalledOnce();expect(onSelect).toHaveBeenCalledOnce();
     });
     it('Hosting off блокирует start/check, сохраняя stop и чтение статуса',()=>{
         render(createElement(ModelHosting,{model:{...model,runtime:'ollama'},canManage:true}),flags(false));

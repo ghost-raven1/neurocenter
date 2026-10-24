@@ -35,11 +35,25 @@ beforeEach(()=>{
     fixture.job=current.job({kind:'connect-rag-model',state:'succeeded',result:{status:'connected',revision:1,modelPin:pin,profile:fixture.selection.profile,requiresRestart:true,reindex:{complete:true,serverSynced:true,rowCount:3,snapshotHash:fixture.selection.activeSnapshot}}});
 });
 
-describe('Единственный запуск интерфейса знаний на странице проекта',()=>{
-    it('После успешного подключения модели настоящая вкладка показывает один запуск окна и не создаёт автоматических заданий',()=>{
+describe('Первый SSR-рендер вкладки знаний: единственный запуск интерфейса',()=>{
+    it('После успешного подключения показывает готовый индекс и один запуск окна без вызова обработчиков операций',()=>{
         const html=renderToStaticMarkup(createElement(RagTab,{projectKey:'prj-one'}));
-        expect(html).toContain('Подключение модели проверено');
+        expect(html).toContain('Индекс проекта готов');
+        expect(html).toContain('Локальный индекс перестроен и синхронизирован с сервером');
+        expect(html).toContain('Серверная копия обновлена. Фрагментов: 3');
         expect(html).toContain('Локальная база знаний через мост');
+        expect(html.match(/Открыть OpenCodeRAG в отдельном окне/g)).toHaveLength(1);
+        expect(fixture.create).not.toHaveBeenCalled();expect(fixture.save).not.toHaveBeenCalled();expect(fixture.open).not.toHaveBeenCalled();
+    });
+    it.each([
+        ['неполная индексация',(job:IBridgeJob)=>({...job,result:{...job.result,reindex:{...(job.result!.reindex as object),complete:false}}})],
+        ['нет синхронизации',(job:IBridgeJob)=>({...job,result:{...job.result,reindex:{...(job.result!.reindex as object),serverSynced:false}}})],
+        ['другая модель',(job:IBridgeJob)=>({...job,result:{...job.result,modelPin:'e'.repeat(64)}})],
+        ['другой компьютер',(job:IBridgeJob)=>({...job,deviceId:'other-device'})],
+    ] as const)('Квитанция «%s» не выдаётся за готовый индекс и при SSR не вызывает обработчики восстановления',(_name,change)=>{
+        fixture.job=change(fixture.job!);
+        const html=renderToStaticMarkup(createElement(RagTab,{projectKey:'prj-one'}));
+        expect(html).not.toContain('Индекс проекта готов');expect(html).not.toContain('Серверная копия обновлена');
         expect(html.match(/Открыть OpenCodeRAG в отдельном окне/g)).toHaveLength(1);
         expect(fixture.create).not.toHaveBeenCalled();expect(fixture.save).not.toHaveBeenCalled();expect(fixture.open).not.toHaveBeenCalled();
     });
