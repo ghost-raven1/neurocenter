@@ -15,7 +15,7 @@ import type {IModelChatTurn} from '../src/features/ModelChat/types';
 
 interface Keyboard {key: string; shiftKey: boolean; keyCode: number; nativeEvent: {isComposing: boolean}; defaultPrevented?: boolean; preventDefault: () => void;}
 interface TextArea {value: string; onChange: (event: {target: {value: string}}) => void; disabled?: boolean; onKeyDown: (event: Keyboard) => void; onPaste: (event: {clipboardData: {files: File[]}}) => void; onCompositionStart: () => void; onCompositionEnd: () => void;}
-interface ButtonProps {children?: ReactNode; disabled?: boolean; onClick?: () => void; 'aria-label'?: string;}
+interface ButtonProps {children?: ReactNode; disabled?: boolean; onClick?: (event?: {currentTarget: HTMLElement}) => void; 'aria-label'?: string;}
 interface Confirmation {onOk: () => void; onCancel: () => void;}
 type GroupEditorProps = Parameters<typeof import('../src/features/ModelChat/ChatParticipantsEditor').ChatParticipantsEditor>[0];
 const hooks = vi.hoisted(() => {
@@ -259,7 +259,7 @@ describe('Групповые ответы и контекст проекта', (
     });
     it('Агентов можно добавить прямо к сохранённому проектному диалогу', async () => {
         ui.chat.detail = detail({turns: [turn()]}); ui.chat.turns = [turn()]; const panel = () => render(createElement(ModelChatModal, {model, projectId: 'prj-one', onClose: ui.close})); expect(panel()).toContain('Участники');
-        ui.buttons.get('Участники')!.onClick!(); panel(); expect(ui.groupEditor?.joining).toBe(true); await ui.groupEditor!.onSave(['agent-dev']);
+        ui.buttons.get('Участники')!.onClick!({currentTarget: {isConnected: true, matches: () => false, focus: vi.fn()} as HTMLElement}); panel(); expect(ui.groupEditor?.joining).toBe(true); await ui.groupEditor!.onSave(['agent-dev']);
         expect(ui.chat.configureParticipants).toHaveBeenCalledWith(['agent-dev']); expect(ui.chat.newChat).not.toHaveBeenCalled(); expect(ui.chat.turns).toEqual([turn()]);
     });
     it('Показывает окна участников отдельно, неизвестному окну не придумывает процент', () => {

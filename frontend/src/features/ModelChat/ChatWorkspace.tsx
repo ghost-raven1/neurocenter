@@ -1,5 +1,5 @@
 import {DeleteOutlined, EditOutlined, MenuOutlined, MoreOutlined, PlusOutlined, TeamOutlined} from '@ant-design/icons';
-import {Alert, Button, Dropdown, Input, Modal, Space, Spin, Typography} from 'antd';
+import {Alert, Button, Dropdown, Input, Modal, Space, Spin, Tooltip, Typography} from 'antd';
 import {useEffect, useRef, useState} from 'react';
 import {AttachmentPreview} from './AttachmentPreview';
 import {ChatAttachments} from './ChatAttachments';
@@ -119,11 +119,11 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
             <main className="model-chat__main">
                 <div className="model-chat__scope"><div className="model-chat__dialog-title"><Typography.Text strong title={chat.detail?.conversation.title || 'Новый диалог'}>{chat.detail?.conversation.title || 'Новый диалог'}</Typography.Text>{!navigation && <Typography.Text type="secondary">{model.model}</Typography.Text>}</div>
                     <Space size={4}><Button className="model-chat__mobile-menu" icon={<MenuOutlined/>} aria-expanded={listOpen} aria-controls="model-chat-conversations" onClick={() => setListOpen(!listOpen)}>Диалоги</Button>
-                        <Dropdown autoFocus trigger={['click']} placement="bottomRight" open={actionsOpen} onOpenChange={setActionsOpen} dropdownRender={menu => <div onKeyDownCapture={closeActionsOnEscape}>{menu}</div>} menu={{onClick: () => setActionsOpen(false), items: [
+                        <Tooltip title="Действия диалога" placement="bottom" trigger={['hover','focus']} open={actionsOpen ? false : undefined}><span className="model-chat__action-tooltip"><Dropdown autoFocus trigger={['click']} placement="bottomRight" open={actionsOpen} onOpenChange={setActionsOpen} dropdownRender={menu => <div onKeyDownCapture={closeActionsOnEscape}>{menu}</div>} menu={{onClick: () => setActionsOpen(false), items: [
                             {key: 'new', label: 'Новый диалог', icon: <PlusOutlined/>, disabled: !newConversationAvailable.enabled || !!chat.activity && !chat.busy, onClick: newChat},
                             {key: 'rename', label: 'Переименовать', icon: <EditOutlined/>, disabled: !chat.detail || !!chat.activity || chat.busy, onClick: () => {setTitle(chat.detail?.conversation.title || ''); setRenaming(true);}},
                             {key: 'delete', label: 'Удалить диалог', icon: <DeleteOutlined/>, danger: true, disabled: !chat.detail || !!chat.activity || chat.busy, onClick: remove},
-                        ]}}><Button ref={actionTrigger} type="text" icon={<MoreOutlined/>} aria-label="Действия диалога" aria-haspopup="menu" aria-expanded={actionsOpen} onKeyDown={closeActionsOnEscape} title="Действия диалога"/></Dropdown></Space>
+                        ]}}><Button ref={actionTrigger} className="model-chat__icon-action" type="text" icon={<MoreOutlined/>} aria-label="Действия диалога" aria-haspopup="menu" aria-expanded={actionsOpen} onKeyDown={closeActionsOnEscape}/></Dropdown></span></Tooltip></Space>
                 </div>
                 <div ref={metadata} className="model-chat__metadata">
                 {projectId && group && <div className="model-chat__group-bar">

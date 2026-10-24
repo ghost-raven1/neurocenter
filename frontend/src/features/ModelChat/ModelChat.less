@@ -28,6 +28,7 @@
     &__privacy.ant-typography { font-size: 11px; line-height: 1.5; }
     &__main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; padding: 10px 16px; overflow-y: auto; }
     &__scope { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding-bottom: 6px; flex-shrink: 0; }
+    &__action-tooltip { display: inline-flex; }
     &__dialog-title { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; > .ant-typography { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; } > .ant-typography-secondary { font-size: 11px; } }
     &__mobile-menu.ant-btn, &__mobile-list-close.ant-btn { display: none; }
     &__notice { margin-bottom: 10px; flex-shrink: 0; }
@@ -80,6 +81,7 @@
 }
 .model-chat-preview { max-width: calc(100vw - 24px); .ant-modal-title { padding-right: 20px; overflow-wrap: anywhere; } pre { max-height: 60vh; overflow: auto; padding: 12px; border: 1px solid #e2e8f0; background: #f6f8fb; white-space: pre-wrap; overflow-wrap: anywhere; } }
 @media (max-width: 768px) {
+    .model-chat__icon-action.ant-btn { min-width: 44px; min-height: 44px; }
     .model-chat_workspace .ant-modal-content { height: calc(100dvh - 16px); }
     .model-chat__configuration-summary { gap: 4px; padding: 4px 8px; }
     .model-chat_global .model-chat__layout { height: calc(100dvh - 265px); min-height: 240px; }
