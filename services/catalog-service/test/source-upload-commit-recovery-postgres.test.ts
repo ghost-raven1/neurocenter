@@ -1,7 +1,7 @@
 import {BadRequestException,ConflictException} from '@nestjs/common';
 import {Pool,type PoolClient} from 'pg';
 import {afterAll,afterEach,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
-import {createHash,randomUUID} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,10 +11,9 @@ import {SourceUploads} from '../src/source-upload/source-upload.service';
 import type {UploadBuildSource} from '../src/source-upload/source-upload.model';
 import {ownedAccessTestAdminUrl} from './access-write-postgres.fixture';
 import {inspectUploadArchive} from '../../shared/upload-inspection.cjs';
+import {executable,intent} from './source-upload.fixture';
 
 const connection=process.env.CATALOG_TEST_PG_URL,actor={email:'upload-ack-owner@example.test',activeRole:'Главный админ'};
-function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfacf);bytes.writeUInt32LE(0x100000c,4);bytes.writeUInt32LE(2,12);bytes.writeUInt32LE(1,16);bytes.writeUInt32LE(24,20);bytes.writeUInt32LE(0x32,32);bytes.writeUInt32LE(24,36);bytes.writeUInt32LE(1,40);return bytes;}
-const intent=(bytes=executable())=>({requestKey:randomUUID(),name:'program',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 function barrier(){let release!:()=>void;return {promise:new Promise<void>(resolve=>{release=resolve;}),release:()=>release()};}
 
 /** Real PostgreSQL COMMIT/ROLLBACK and files; only delivery of the selected COMMIT acknowledgement is faulted. */

@@ -5,8 +5,8 @@ import path from 'node:path';
 import fixture from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import {inspectUploadArchive} from '../../shared/upload-inspection.cjs';
 import {uploadRuntime} from '../src/source-upload/source-upload.model';
+import {executable} from './source-upload.fixture';
 
-function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfacf);bytes.writeUInt32LE(0x100000c,4);bytes.writeUInt32LE(2,12);bytes.writeUInt32LE(1,16);bytes.writeUInt32LE(24,20);bytes.writeUInt32LE(0x32,32);bytes.writeUInt32LE(24,36);bytes.writeUInt32LE(1,40);return bytes;}
 async function inspect(files:Array<{path:string;content:string|Buffer}>){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-upload-description-'));
  try{const filename=path.join(root,'source.upload');await fs.writeFile(filename,fixture.artifactFixture(files).archive);return await inspectUploadArchive(filename,{name:'source.tar.gz',format:'tar.gz'});}

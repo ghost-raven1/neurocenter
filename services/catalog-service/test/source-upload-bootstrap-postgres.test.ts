@@ -3,7 +3,7 @@ import {Controller,Get,Module,type INestApplication} from '@nestjs/common';
 import {NestFactory} from '@nestjs/core';
 import {Pool} from 'pg';
 import {afterAll,afterEach,beforeAll,beforeEach,describe,expect,it,vi} from 'vitest';
-import {createHash,randomUUID} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,11 +13,10 @@ import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {SourceUploadController} from '../src/source-upload/source-upload.controller';
 import {SourceUploads,SourceUploadService} from '../src/source-upload/source-upload.service';
 import {ownedAccessTestAdminUrl} from './access-write-postgres.fixture';
+import {executable,intent} from './source-upload.fixture';
 
 const connection=process.env.CATALOG_TEST_PG_URL,actor={email:'upload-owner@example.test',activeRole:'Главный админ'};
 const token='owned-upload-bootstrap-fixture',route='/api/tool-builds/uploads';
-function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfacf);bytes.writeUInt32LE(0x100000c,4);bytes.writeUInt32LE(2,12);bytes.writeUInt32LE(1,16);bytes.writeUInt32LE(24,20);bytes.writeUInt32LE(0x32,32);bytes.writeUInt32LE(24,36);bytes.writeUInt32LE(1,40);return bytes;}
-const intent=(bytes=executable())=>({requestKey:randomUUID(),name:'program',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 class Metadata {read(){return {ok:true,name:'independent metadata'};}}
 Controller('metadata')(Metadata);Get()(Metadata.prototype,'read',Object.getOwnPropertyDescriptor(Metadata.prototype,'read')!);
 

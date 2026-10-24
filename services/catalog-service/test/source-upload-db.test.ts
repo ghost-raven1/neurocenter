@@ -1,6 +1,6 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {Pool} from 'pg';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,12 +9,11 @@ import {SourceUploads} from '../src/source-upload/source-upload.service';
 import {type PinnedUploadSource} from '../src/source-upload/source-upload.model';
 import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {reserveCapacity} from '../../shared/capacity.cjs';
+import {executable,intent} from './source-upload.fixture';
 const capacityPolicy=await vi.importActual<typeof import('../../shared/capacity.cjs')&{createCapacityGuard(options:{required:()=>boolean;statfs:()=>Promise<unknown>}):typeof reserveCapacity}>('../../shared/capacity.cjs');
 vi.mock('../../shared/capacity.cjs',async original=>{const policy=await original<typeof import('../../shared/capacity.cjs')>();return {...policy,reserveCapacity:vi.fn(policy.reserveCapacity)};});
 const connectionString=process.env.CATALOG_TEST_PG_URL;
 const actor={email:'admin@example.test',activeRole:'Главный админ'},other={email:'other@example.test',activeRole:'Главный админ'};
-const sha=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
-function executable(){const bytes=Buffer.alloc(64);bytes.writeUInt32LE(0xfeedfacf);bytes.writeUInt32LE(0x100000c,4);bytes.writeUInt32LE(2,12);bytes.writeUInt32LE(1,16);bytes.writeUInt32LE(24,20);bytes.writeUInt32LE(0x32,32);bytes.writeUInt32LE(24,36);bytes.writeUInt32LE(1,40);return bytes;}
 describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem',()=>{
  let admin:Pool,pool:Pool,root:string,database:string,uploads:SourceUploads;
  beforeEach(async()=>{
@@ -27,7 +26,6 @@ describe.skipIf(!connectionString)('Durable source upload: real PG + filesystem'
   uploads=new SourceUploads(pool,root);await uploads.setup();
  });
  afterEach(async()=>{uploads?.stop();await pool?.end();if(admin){await admin.query('DROP DATABASE '+database);await admin.end();}if(root)await fs.rm(root,{recursive:true,force:true});});
- const intent=(bytes=executable())=>({requestKey:randomUUID(),name:'program',sha256:sha(bytes),bytes:bytes.length});
  async function ready(){const bytes=executable(),request=intent(bytes),upload=await uploads.create(actor,request);const result=await uploads.content(actor,upload.id,Readable.from([bytes]),bytes.length);return {request,upload:result,bytes};}
  it('Exact actor request is idempotent; changed bytes and another actor cannot adopt its handle',async()=>{
   const request=intent(),first=await uploads.create(actor,request);expect(await uploads.create(actor,request)).toEqual(first);
