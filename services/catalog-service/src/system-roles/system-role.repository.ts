@@ -36,7 +36,12 @@ export class SystemRoleRepository {
             const old = await this.existing(input.actor, input.request_id, db);
             if (old) { if (old.request_hash !== input.request_hash) throw new ConflictException('Ключ запроса относится к другому запуску.'); return old; }
             if ((await db.query("SELECT 1 FROM system_role_runs WHERE actor=$1 AND agent_id=$2 AND project_id IS NOT DISTINCT FROM $3 AND state IN ('queued','running','applying')", [input.actor, input.agent_id, input.project_id])).rowCount) throw new ConflictException('Дождитесь или отмените предыдущий запуск этого агента.');
-            if (Number((await db.query<{ count: string }>("SELECT count(*) FROM system_role_runs WHERE state IN ('queued','running','applying')")).rows[0].count) >= 8) throw new ConflictException('Системные агенты заняты. Повторите запуск позднее.');
+            const lane: RoleExecutionLane = input.model.runtime === 'device-codex' ? 'device-codex' : 'server';
+            // Keep one place for the other transport within the shared eight-intent budget.
+            const pending = (await db.query<{ total: string; lane: string }>(`SELECT count(*) AS total,
+                count(*) FILTER (WHERE CASE WHEN model->>'runtime'='device-codex' THEN 'device-codex' ELSE 'server' END=$1) AS lane
+                FROM system_role_runs WHERE state IN ('queued','running','applying')`, [lane])).rows[0];
+            if (Number(pending.total) >= 8 || Number(pending.lane) >= 7) throw new ConflictException('Системные агенты заняты. Повторите запуск позднее.');
             const now = new Date().toISOString(), step = { at: now, phase: 'queued', message: 'Явный запуск системного агента принят.' };
             const row = (await db.query<RoleRunRow>(`INSERT INTO system_role_runs(id,agent_id,project_id,actor,actor_role,request_id,request_hash,request,snapshot,model,runner_instance,lease_token,lease_until,message,steps)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,now()+($13::int*interval '1 millisecond'),$14,$15::jsonb) RETURNING *`,
