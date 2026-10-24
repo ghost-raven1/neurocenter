@@ -38,6 +38,12 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             author: row.author_email ? { email: row.author_email, displayName: row.author_name || row.author_email } : null,
             agent: row.snapshot ? { id: row.snapshot.agentId, name: row.snapshot.name, slug: row.snapshot.slug, modelId: row.snapshot.modelId, modelPin: row.snapshot.modelPin } : null,
             replyToId: row.reply_to_id, sourceMessageId: row.source_message_id, status: row.status,
+            ...(row.kind === 'agent' && row.status === 'done' && row.learning ? { learning: {
+                status: row.learning.status, projectId: row.learning.projectId, agentId: row.learning.agentId,
+                ...(row.learning.revision === undefined ? {} : { revision: row.learning.revision }),
+                ...(row.learning.digest === undefined ? {} : { digest: row.learning.digest }),
+                entries: row.learning.entries.map(({ id, key, version, sha256 }) => ({ id, key, version, sha256 })),
+            } } : {}),
             ...(row.error ? { error: row.error } : {}), createdAt: new Date(row.created_at).toISOString(),
             canRetry: manage && actor.writable && row.target_agent_ids.length > 0 && ['failed', 'cancelled'].includes(row.status),
             canCancel: manage && ['queued', 'running'].includes(row.status) };

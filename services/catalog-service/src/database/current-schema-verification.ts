@@ -4,7 +4,8 @@ import {DEVICE_CODEX_SCHEMA_CONTRACT} from '../models/device-codex.schema-contra
 import {assertDeviceCodexSchema} from '../models/device-codex.schema-verification';
 import {SYSTEM_ROLE_SCHEMA_CONTRACT} from '../system-roles/system-role.schema-contract';
 import {assertSystemRoleSchema} from '../system-roles/system-role.schema-verification';
-import {CURRENT_PROJECT_CHAT_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT,assertCurrentProjectChatSchema as assertProjectChatSchema} from '../project-chat/project-chat-dialogs.schema-verification';
+import {CURRENT_PROJECT_CHAT_LEARNING_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT} from '../project-chat/project-chat-learning.schema-contract';
+import {assertProjectChatLearningSchema as assertProjectChatSchema} from '../project-chat/project-chat-learning.schema-verification';
 import {CHAT_ACTIVITY_SCHEMA_CONTRACT} from '../chat-activity/chat-activity.schema-contract';
 import {assertChatActivitySchema} from '../chat-activity/chat-activity.schema-verification';
 import {MODEL_RATE_LIMITS_SCHEMA_CONTRACT} from '../model-rate-limits/model-rate-limits.schema-contract';

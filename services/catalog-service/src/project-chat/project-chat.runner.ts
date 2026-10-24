@@ -68,7 +68,7 @@ export class ProjectChatRunner {
                     signal.throwIfAborted(); await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
                     if (!room.agent_ids.includes(response.snapshot!.agentId)) throw new ConflictException('Агент исключён из состава чата. Уже полученные ответы сохранены.');
                     await this.inference.assert(req, job.projectId, response.snapshot!, db);
-                    const changed = await db.query("UPDATE project_chat_messages SET status='done',content=$4,usage=$5::jsonb,error=NULL,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running' AND lease_until>now()", [job.projectId, response.id, job.generation, answer.content, answer.usage ? JSON.stringify(answer.usage) : null]);
+                    const changed = await db.query("UPDATE project_chat_messages SET status='done',content=$4,usage=$5::jsonb,learning=$6::jsonb,error=NULL,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running' AND lease_until>now()", [job.projectId, response.id, job.generation, answer.content, answer.usage ? JSON.stringify(answer.usage) : null, answer.learning ? JSON.stringify(answer.learning) : null]);
                     if (!changed.rowCount) throw new ConflictException('Ответ уже остановлен или завершён.');
                     await this.inference.assert(req, job.projectId, response.snapshot!, db); await this.repository.bump(db, room);
                 }, false, roomId);

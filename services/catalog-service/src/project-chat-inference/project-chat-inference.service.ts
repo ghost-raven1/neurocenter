@@ -96,7 +96,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const message = result.message as Record<string, unknown> | undefined;
         if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim()
             || Buffer.byteLength(message.content) > 128 * 1024 || !['stop', 'length'].includes(String(result.done_reason))) throw new BadRequestException('Агент не вернул допустимый ответ. Остальные ответы и сообщения сохранены.');
-        return { content: message.content + (result.done_reason === 'length' ? '\n\n[Ответ ограничен лимитом модели. Можно задать уточняющий вопрос.]' : ''), usage: chatUsage(result) };
+        return { content: message.content + (result.done_reason === 'length' ? '\n\n[Ответ ограничен лимитом модели. Можно задать уточняющий вопрос.]' : ''), usage: chatUsage(result), learning: learning.receipt };
     }
     private group(db: ProjectChatDb): ChatGroup { return new ChatGroup(projectChatModels(this.models, db), this.assignments); }
     private async base(req: Request, projectId: string, id: string, pin: string, db: ProjectChatDb = this.models.pool): Promise<IModel> {

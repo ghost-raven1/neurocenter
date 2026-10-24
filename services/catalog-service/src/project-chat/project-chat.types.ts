@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import type { IAccessActor } from '../access/access.model';
 import type { ChatAgentSnapshot, ChatParticipant } from '../model-chat/chat-group.types';
 import type { ChatUsage } from '../model-chat/chat.types';
+import type { ChatLearningReceipt } from '../model-chat/chat-learning-context.types';
 
 export const DEFAULT_PROJECT_CHAT_ROOM = '00000000-0000-0000-0000-000000000000';
 export const projectChatRoomId = (row: {id?: string}): string => row.id ?? DEFAULT_PROJECT_CHAT_ROOM;
@@ -22,6 +23,7 @@ export interface ProjectChatMessage {
     agent: { id: string; name: string; slug: string; modelId: string; modelPin: string } | null;
     replyToId: string | null; sourceMessageId: string | null; status: ProjectChatStatus;
     error?: string; createdAt: string; canRetry: boolean; canCancel: boolean;
+    learning?: ChatLearningReceipt;
 }
 export interface ProjectChatMessageRow {
     id: string; project_id: string; room_id?: string; position: string; kind: ProjectChatKind; content: string;
@@ -29,7 +31,7 @@ export interface ProjectChatMessageRow {
     reply_to_id: string | null; source_message_id: string | null; status: ProjectChatStatus;
     request_key: string | null; request_hash: string | null; target_agent_ids: string[];
     snapshot: ChatAgentSnapshot | null; generation: string; lease_until: Date | string | null;
-    error: string | null; usage: ChatUsage | null; created_at: Date | string;
+    error: string | null; usage: ChatUsage | null; learning: ChatLearningReceipt | null; created_at: Date | string;
 }
 export interface ProjectChatDetail {
     room: ProjectChatRoom; members: Array<{ email: string; displayName: string; role: string }>;
@@ -53,7 +55,7 @@ export interface ProjectChatInference {
     roster(req: Request, projectId: string, room: ProjectChatRoomRow, db?: ProjectChatDb): Promise<ChatParticipant[]>;
     resolve(req: Request, projectId: string, room: ProjectChatRoomRow, agentIds: string[], db?: ProjectChatDb): Promise<ChatAgentSnapshot[]>;
     assert(req: Request, projectId: string, snapshot: ChatAgentSnapshot, db?: ProjectChatDb): Promise<void>;
-    infer(input: { req: Request; projectId: string; source: ProjectChatMessageRow; response: ProjectChatMessageRow; signal: AbortSignal }): Promise<{ content: string; usage?: ChatUsage }>;
+    infer(input: { req: Request; projectId: string; source: ProjectChatMessageRow; response: ProjectChatMessageRow; signal: AbortSignal }): Promise<{ content: string; usage?: ChatUsage; learning: ChatLearningReceipt }>;
 }
 export interface ProjectChatJob {
     projectId: string; source: ProjectChatMessageRow; actor: IAccessActor; generation: string;
