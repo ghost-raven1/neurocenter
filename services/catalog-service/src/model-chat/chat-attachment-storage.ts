@@ -7,11 +7,12 @@ type Db = Pick<PoolClient, 'query'>;
 export interface ChatStagedObject { id: string }
 interface ObjectRow extends ChatObjectReference { id: string; state: 'STAGING' | 'LIVE' | 'DELETE' | 'DELETED'; attempts: number }
 interface StageInput { ownerEmail: string; projectId: string | null; conversationId: string; bytes: Buffer; mediaType: string }
-const unavailable = (): ServiceUnavailableException => new ServiceUnavailableException('Хранилище файлов чата ещё не готово. Проверьте подключение закрытого Ceph/S3 и повторите загрузку; история доступна.');
+const unavailable = (reason?: string): ServiceUnavailableException => new ServiceUnavailableException(reason || 'Хранилище файлов чата ещё не готово. Проверьте подключение закрытого Ceph/S3 и повторите загрузку; история доступна.');
 
 /** A durable write intent precedes S3 PUT; deletion outbox survives attachment/project cascades. */
 export class ChatAttachmentStorage {
     private readonly objects: ChatObjectStorage | null;
+    private readonly unavailableReason?: string;
     private timer?: NodeJS.Timeout;
     private retry?: NodeJS.Timeout;
     private initializing?: Promise<void>;
@@ -19,8 +20,14 @@ export class ChatAttachmentStorage {
     private usable=false;
     private stopped=false;
     constructor(private readonly pool: Pool, options: { objectStorage?: ChatObjectStorage } = {}) {
-        const config = options.objectStorage ? null : chatS3Configuration();
-        this.objects = options.objectStorage ?? (config ? new ChatObjectStorage(config) : null);
+        try {
+            const config = options.objectStorage ? null : chatS3Configuration();
+            this.objects = options.objectStorage ?? (config ? new ChatObjectStorage(config) : null);
+        } catch {
+            // Invalid optional file settings must not stop text chat or weaken the S3 validators.
+            this.objects = null;
+            this.unavailableReason = 'Настройки хранилища файлов чата неполны или некорректны. Попросите администратора исправить закрытое подключение Ceph/S3 и перезапустить сервис. Текстовый чат и история доступны.';
+        }
     }
     /** Optional file storage recovers independently; its outage never blocks Catalog metadata startup. */
     start():void {
@@ -31,7 +38,7 @@ export class ChatAttachmentStorage {
         });
     }
     initialize():Promise<void>{
-        if(this.stopped)return Promise.reject(unavailable());
+        if(this.stopped)return Promise.reject(unavailable(this.unavailableReason));
         return this.initializing??=this.initializeOnce().finally(()=>{this.initializing=undefined;});
     }
     private async initializeOnce(): Promise<void> {
@@ -52,7 +59,7 @@ export class ChatAttachmentStorage {
     }
     /** Transfer recovery reuses its held session; the durable intent still precedes the attachment activation transaction. */
     async stage(input: StageInput, signal?: AbortSignal, db: Db = this.pool): Promise<ChatStagedObject> {
-        if (!this.objects||!this.usable) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable(this.unavailableReason);
         if (!input.ownerEmail || !/^[a-f0-9-]{36}$/i.test(input.conversationId) || !Buffer.isBuffer(input.bytes) || !input.bytes.length || input.bytes.length > 10 * 1024 ** 2) throw new ConflictException('Некорректная область или размер файла.');
         signal?.throwIfAborted();
         const id = randomUUID(), row: ObjectRow = { id, storage_id: this.objects.storageId,
@@ -70,7 +77,7 @@ export class ChatAttachmentStorage {
     }
     /** Called after attachment INSERT in its transaction, so a rolled-back DB commit leaves a collectible intent. */
     async activate(db: Db, object: ChatStagedObject): Promise<void> {
-        if (!this.objects||!this.usable) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable(this.unavailableReason);
         const result = await db.query(`UPDATE model_chat_objects SET state='LIVE',lease_until=NULL WHERE id=$1 AND storage_id=$2 AND state='STAGING' AND lease_until>now()
             AND EXISTS(SELECT 1 FROM model_chat_attachments a WHERE a.object_id=model_chat_objects.id AND a.deleted_at IS NULL AND a.storage_state='S3' AND a.bytes=model_chat_objects.bytes)
             RETURNING id`, [object.id, this.objects.storageId]);
@@ -80,7 +87,7 @@ export class ChatAttachmentStorage {
         await db.query("UPDATE model_chat_objects SET state='DELETE',lease_until=NULL,next_attempt_at=now() WHERE id=$1 AND state='STAGING' AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=$1)", [object.id]);
     }
     async read(objectId: string, signal?: AbortSignal): Promise<Buffer> {
-        if (!this.objects||!this.usable) throw unavailable();
+        if (!this.objects||!this.usable) throw unavailable(this.unavailableReason);
         const row = (await this.pool.query<ObjectRow>("SELECT * FROM model_chat_objects WHERE id=$1 AND state='LIVE'", [objectId])).rows[0];
         if (!row) throw new ServiceUnavailableException('Файл недоступен в хранилище.'); return this.objects.read(row, signal);
     }
