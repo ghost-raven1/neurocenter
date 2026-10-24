@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ownedTestPostgresAdmin } from '../../../scripts/test/owned-postgres.fixture.mjs';
+import { SystemRoleMcpRepository } from '../src/system-role-mcp/system-role-mcp.repository';
 import { SystemRoleMcpChannel } from '../src/system-role-mcp/system-role-mcp.channel';
 import { digest } from '../src/devices/device-store';
 
@@ -17,10 +18,11 @@ describe.skipIf(!connection).sequential('MCP private receipt SQL on caller-owned
         url.pathname = '/' + database; pool = new Pool({ connectionString: url.href, max: 1 });
         // Minimal physical join boundaries retain the production UUID session key and text job key.
         await pool.query(`CREATE TABLE bridge_devices(id uuid PRIMARY KEY,email text NOT NULL,token_hash text NOT NULL,revoked boolean NOT NULL,expires_at timestamptz NOT NULL);
-            CREATE TABLE system_role_mcp_sessions(id uuid PRIMARY KEY,owner_email text NOT NULL,job_id text NOT NULL,worker_lease uuid NOT NULL,claimed_at timestamptz NOT NULL,target jsonb NOT NULL)`);
+            CREATE TABLE system_role_mcp_sessions(id uuid PRIMARY KEY,owner_email text NOT NULL,job_id text NOT NULL,worker_lease uuid NOT NULL,claimed_at timestamptz NOT NULL,target jsonb NOT NULL,state text NOT NULL DEFAULT 'open',worker_closed_at timestamptz);
+            CREATE TABLE system_role_mcp_calls(id uuid PRIMARY KEY,session_id uuid,state text,completed_at timestamptz)`);
         await pool.query("INSERT INTO bridge_devices VALUES($1,$2,$3,true,now()-interval '1 day')", [deviceId, 'owner@test', digest(token)]);
-        await pool.query('INSERT INTO system_role_mcp_sessions VALUES($1,$2,$3,$4,now(),$5::jsonb)', [sessionId, 'owner@test', sessionId, lease, JSON.stringify({ runtime: 'device', deviceId })]);
-        channel = new SystemRoleMcpChannel({ pool } as never, { identity } as never, authority, async () => { throw new Error('Receipt cannot dispatch'); }, close);
+        await pool.query('INSERT INTO system_role_mcp_sessions(id,owner_email,job_id,worker_lease,claimed_at,target) VALUES($1,$2,$3,$4,now(),$5::jsonb)', [sessionId, 'owner@test', sessionId, lease, JSON.stringify({ runtime: 'device', deviceId })]);
+        channel = new SystemRoleMcpChannel(new SystemRoleMcpRepository(pool), { identity } as never, authority, async () => { throw new Error('Receipt cannot dispatch'); }, close);
     });
     afterAll(async () => {
         await pool?.end();
@@ -28,8 +30,9 @@ describe.skipIf(!connection).sequential('MCP private receipt SQL on caller-owned
     });
     it('accepts the matching UUID/text receipt after device revocation and token expiry without fresh ACL', async () => {
         const body = { jobId: sessionId, lease, state: 'succeeded', message: 'Session closed', result: { schemaVersion: 1, sessionId, closed: true } };
-        expect(await channel.complete(token, body)).toEqual({ ok: true, closed: true }); expect(close).toHaveBeenCalledExactlyOnceWith(sessionId);
+        expect(await channel.complete(token, body)).toEqual({ ok: true, closed: true }); expect(close).not.toHaveBeenCalled();
         expect(identity).not.toHaveBeenCalled(); expect(authority).not.toHaveBeenCalled();
+        expect((await pool!.query('SELECT state,worker_closed_at FROM system_role_mcp_sessions WHERE id=$1',[sessionId])).rows[0]).toMatchObject({state:'closed',worker_closed_at:expect.any(Date)});
     });
     it('rejects a foreign lease, token, source session or device target without closing another session', async () => {
         const previous = close.mock.calls.length, body = { jobId: sessionId, lease, result: { schemaVersion: 1, sessionId, closed: true } };

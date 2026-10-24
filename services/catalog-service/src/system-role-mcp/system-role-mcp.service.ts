@@ -37,7 +37,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
     private timer?: ReturnType<typeof setInterval>;
     constructor(private readonly models: ModelsService, devices: DeviceStore, installations: DeviceInstallations, plans: InstallPlans) {
         this.repository = new SystemRoleMcpRepository(models.pool); this.policy = new SystemRoleMcpPolicy(models, devices, installations, plans);
-        this.channel = new SystemRoleMcpChannel(this.repository, devices, (session, db) => this.authority(session, db), (id, fence) => this.dispatch(id, fence), (id, onlyUnclaimed) => this.closeSession(id, onlyUnclaimed), session => this.executionFeatures(session));
+        this.channel = new SystemRoleMcpChannel(this.repository, devices, (session, db) => this.authority(session, db), (id, fence) => this.dispatch(id, fence), (id, onlyUnclaimed) => this.closeSession(id, onlyUnclaimed), session => this.executionFeatures(session), id => { this.owned.delete(id); });
     }
     async onModuleInit(): Promise<void> {
         await this.models.ready(); await this.expire(); this.timer = setInterval(() => { void this.expire().catch(() => undefined); }, 2500); this.timer.unref();
@@ -191,6 +191,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
     }
     private async authority(session: McpSessionRow, db: Db = this.models.pool): Promise<void> {
         if (session.state !== 'open' || new Date(session.deadline_at).getTime() <= Date.now() || session.target.runtime === 'device' && session.claimed_at && (!session.worker_lease_until || new Date(session.worker_lease_until).getTime() <= Date.now())) throw new ConflictException('Сессия MCP завершена или потеряла аренду.');
+        if (!(await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [session.project_id])).rowCount) throw new ConflictException('Проект недоступен.');
         const current = session.run_id ? (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND actor=$2 AND lease_token=$3 AND state='running' AND lease_until>now() FOR NO KEY UPDATE", [session.run_id, session.owner_email, session.lease_token])).rows[0] : undefined;
         if (session.run_id && !current) throw new ConflictException('Задача системного агента отменена или завершена.');
         const req = { headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN ?? '', 'x-bridge-actor': encodeURIComponent(JSON.stringify({ email: session.owner_email, activeRole: session.actor_role })) } } as unknown as Request;

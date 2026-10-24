@@ -140,6 +140,9 @@ export async function createMcpFixture(connection: string | undefined) {
         };
         const reset = async () => {
             await pool.query('DELETE FROM device_model_calls'); await pool.query('DELETE FROM model_device_connections');
+            // This SQL-only fixture never starts a physical worker. Explicitly release its own exact leases before deleting history.
+            const pending = (await pool.query('SELECT s.id,s.worker_lease,d.token_hash FROM system_role_mcp_sessions s JOIN bridge_devices d ON d.id::text=s.target->>\'deviceId\' AND d.email=s.owner_email WHERE s.target->>\'runtime\'=\'device\' AND s.claimed_at IS NOT NULL AND s.worker_closed_at IS NULL')).rows;
+            for (const row of pending) await service.repository.acknowledgeDeviceClosed(row.id, row.worker_lease, row.token_hash);
             await pool.query('DELETE FROM system_role_mcp_sessions'); await pool.query('DELETE FROM system_role_runs'); await pool.query('DELETE FROM bridge_jobs'); await pool.query('DELETE FROM device_install_plans');
             await pool.query('UPDATE platform_users SET enabled=true'); await pool.query("UPDATE project_members SET role='Админ проекта'");
             await pool.query('UPDATE bridge_devices SET revoked=false,expires_at=now()+interval \'1 day\',report=$2::jsonb WHERE id=$1', [deviceId, JSON.stringify(report)]);

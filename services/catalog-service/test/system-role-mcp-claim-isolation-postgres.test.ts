@@ -48,7 +48,7 @@ describe.skipIf(!connection).sequential('Private MCP claim isolation on caller-o
             await fixture.pool.query("DELETE FROM bridge_jobs WHERE kind='get-mcp-configuration-status'");
         }
         const afterRevocation = (await fixture.pool.query('SELECT * FROM bridge_jobs ORDER BY id')).rows;
-        const claim = await fixture.service.channel.claim(token);
+        const claim = await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false});
         expect(claim).toMatchObject({ id: healthy.session.id, lease: healthy.session.worker_lease });
         const rejected = await fixture.service.repository.session(stale.session_id);
         expect(rejected.state).toBe('closed'); expect(rejected.claimed_at).toBeNull();
@@ -68,7 +68,7 @@ describe.skipIf(!connection).sequential('Private MCP claim isolation on caller-o
 
     it('preserves both queued receipts when global availability fails transiently', async () => {
         const { stale, healthy } = await siblings(); features.unavailable = true;
-        await expect(fixture.service.channel.claim(token)).rejects.toHaveProperty('status', 503);
+        await expect(fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false})).rejects.toHaveProperty('status', 503);
         for (const id of [stale.session_id, healthy.session.id]) {
             expect(await fixture.service.repository.session(id)).toMatchObject({ state: 'open', claimed_at: null });
         }
@@ -77,7 +77,7 @@ describe.skipIf(!connection).sequential('Private MCP claim isolation on caller-o
 
     it('retains readable failed discovery when new tool work is explicitly disabled', async () => {
         const { stale, healthy } = await siblings(); features.disabled = true;
-        expect(await fixture.service.channel.claim(token)).toBeNull();
+        expect(await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false})).toBeNull();
         for (const id of [stale.session_id, healthy.session.id]) expect(await fixture.service.repository.session(id)).toMatchObject({ state: 'closed', claimed_at: null });
         for (const id of [stale.call_id, healthy.call.id]) expect(await fixture.service.repository.call(id)).toMatchObject({ state: 'failed', dispatched_at: null });
         expect(await fixture.service.discovery(request(), stale.id)).toMatchObject({ state: 'failed', tools: [] });
@@ -93,7 +93,7 @@ describe.skipIf(!connection).sequential('Private MCP claim isolation on caller-o
             matched = true; entered.resolve((await event.client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
             await release.promise;
         });
-        const claiming = fixture.service.channel.claim(token); void claiming.catch(() => undefined);
+        const claiming = fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}); void claiming.catch(() => undefined);
         try {
             const blocker = await entered.promise; writer = await fixture.pool.connect();
             const waiting = (await writer.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;

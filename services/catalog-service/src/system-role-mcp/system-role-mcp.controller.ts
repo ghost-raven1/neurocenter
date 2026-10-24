@@ -17,7 +17,7 @@ export class SystemRoleMcpController {
     @Post('internal/system-role-mcp/context') context(@Req() req: Request, @Body() body: { callId: string }) { this.internal(req); return this.mcp.context(roleRequestId(body?.callId)); }
     @Post('internal/system-role-mcp/dispatch') dispatch(@Req() req: Request, @Body() body: unknown) { this.internal(req); return this.mcp.serverDispatch(body); }
     @Post('internal/system-role-mcp/result') result(@Req() req: Request, @Body() body: unknown) { this.internal(req); return this.mcp.serverResult(body); }
-    @Post('internal/device-channel/system-role-mcp/claim') claim(@Req() req: Request) { return this.mcp.channel.claim(this.token(req)); }
+    @Post('internal/device-channel/system-role-mcp/claim') claim(@Req() req: Request, @Body() body: unknown) { return this.mcp.channel.claim(this.token(req), body); }
     @Post('internal/device-channel/system-role-mcp/authorize') authorizeDevice(@Req() req: Request, @Body() body: unknown) { return this.mcp.channel.authorize(this.token(req), body); }
     @Post('internal/device-channel/system-role-mcp/context') deviceContext(@Req() req: Request, @Body() body: unknown) { return this.mcp.channel.context(this.token(req), body); }
     @Post('internal/device-channel/system-role-mcp/next') next(@Req() req: Request, @Body() body: unknown) { return this.mcp.channel.next(this.token(req), body); }

@@ -3,7 +3,7 @@ const {createHash}=require('node:crypto');
 const {localRagCore}=require('./rag-core-contract.cjs');
 
 const SYSTEM_ROLE_MCP_JOB='system-role-mcp-session';
-const SYSTEM_ROLE_MCP_CAPABILITY='system-role-mcp-v1';
+const SYSTEM_ROLE_MCP_CAPABILITY='system-role-mcp-v2';
 /** Initial verified execution bounds, shared by admission, transport and the role loop. */
 const SYSTEM_ROLE_MCP_LIMITS=Object.freeze({targets:2,selectedTools:8,discoveredTools:128,pages:8,calls:6,
  schemaBytes:16384,discoveryBytes:262144,argumentsBytes:16384,outputBytes:65536,contextBytes:32768,

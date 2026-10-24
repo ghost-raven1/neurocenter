@@ -17,11 +17,11 @@ describe('Canonical Catalog service-chat runtime on explicitly owned PostgreSQL'
     before(async()=>{f=await startSystemRoleChatRuntime(connection);});
     after(async()=>{await f?.close();});
 
-    it('boots the canonical module, applies migrations0–36 and exposes readiness with both new controllers',async()=>{
+    it('boots the canonical module, applies migrations0–37 and exposes readiness with both new controllers',async()=>{
         assert.ok(f.productPoolCount()>0,'The actual product PostgreSQL constructor guard was not exercised');
         const state=await f.schema();assert.equal(state.ready,true);assert.deepEqual(state.pending,[]);
         const versions=(await f.pool.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.map(row=>Number(row.version));
-        assert.deepEqual(versions,Array.from({length:37},(_,index)=>index));
+        assert.deepEqual(versions,Array.from({length:38},(_,index)=>index));
         assert.equal((await f.request(null,'/ready')).ok,true);
         assert.deepEqual(await f.request('owner',root+'?projectId='+f.project),[]);
         const mcp=await f.request('owner','/api/system-role-mcp?projectId='+f.project);

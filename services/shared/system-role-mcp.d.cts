@@ -1,5 +1,5 @@
 export const SYSTEM_ROLE_MCP_JOB:'system-role-mcp-session';
-export const SYSTEM_ROLE_MCP_CAPABILITY:'system-role-mcp-v1';
+export const SYSTEM_ROLE_MCP_CAPABILITY:'system-role-mcp-v2';
 export const SYSTEM_ROLE_MCP_LIMITS:Readonly<{targets:2;selectedTools:8;discoveredTools:128;pages:8;calls:6;schemaBytes:16384;discoveryBytes:262144;argumentsBytes:16384;outputBytes:65536;contextBytes:32768;sessionMs:120000;callMs:20000;connectMs:15000;discoveryTtlMs:300000}>;
 export interface RoleMcpToolSelection {name:string;schemaDigest:string}
 export interface RoleMcpConfigurationRevision {assetId:string;manifest:string;revision:string|null}

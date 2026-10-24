@@ -4,6 +4,7 @@ import {DEVICE_CODEX_SCHEMA_SQL} from '../models/device-codex.schema';
 import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
 import {SYSTEM_ROLE_CHAT_SCHEMA_SQL} from '../system-role-chat/system-role-chat.schema';
 import {SYSTEM_ROLE_MCP_SCHEMA_SQL} from '../system-role-mcp/system-role-mcp.schema';
+import {SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL} from '../system-role-mcp/system-role-mcp-maintenance.schema';
 import {SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL} from '../system-roles/system-role.coordinator.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../project-chat/project-chat-learning.schema';
@@ -97,4 +98,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:34,name:'bounded-private-group-discussions',sql:CHAT_DISCUSSION_SCHEMA_SQL+'\n'+CHAT_DISCUSSION_SCHEMA_ASSERT_SQL},
     {version:35,name:'private-system-role-service-chat',sql:SYSTEM_ROLE_CHAT_SCHEMA_SQL},
     {version:36,name:'bounded-system-role-mcp-execution',sql:SYSTEM_ROLE_MCP_SCHEMA_SQL},
+    {version:37,name:'durable-device-mcp-cleanup',sql:SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL},
 ];

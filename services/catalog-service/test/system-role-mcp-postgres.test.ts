@@ -142,7 +142,7 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
         const codexId = await fixture.job('infer-device-codex', { privateCallId: randomUUID() }, 'running');
         const before = (await fixture.pool.query('SELECT * FROM bridge_jobs ORDER BY id')).rows;
         await Promise.all([discovery(fixture.target('device')), discovery(fixture.target('device'))]);
-        const claims = await Promise.all([fixture.service.channel.claim(token), fixture.service.channel.claim(token), fixture.service.channel.claim(token)]);
+        const claims = await Promise.all([fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}), fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}), fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false})]);
         const accepted = claims.filter(value => value !== null); expect(accepted).toHaveLength(2); expect(new Set(accepted.map(value => value.id)).size).toBe(2);
         expect(claims.filter(value => value === null)).toHaveLength(1);
         expect((await fixture.pool.query('SELECT * FROM bridge_jobs ORDER BY id')).rows).toEqual(before);
@@ -156,13 +156,13 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
         expect((await fixture.service.repository.session(claimed.id)).state).toBe('closed');
         expect(await fixture.service.channel.next(token, body)).toEqual({ closed: true });
         await discovery(fixture.target('device'));
-        expect(await fixture.service.channel.claim(token)).toMatchObject({ kind: 'system-role-mcp-session' });
+        expect(await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false})).toMatchObject({ kind: 'system-role-mcp-session' });
         expect((await fixture.pool.query('SELECT * FROM bridge_jobs ORDER BY id')).rows).toEqual(before);
     });
 
     it('accepts only the same private device late receipt after revocation and cancellation, with no fresh authority', async () => {
         const target = fixture.target('device'), { row, journal } = await fixture.run(target), saved = await fixture.enqueue(row, target);
-        const claimed = (await fixture.service.channel.claim(token))!, body = { jobId: claimed.id, lease: claimed.lease, callId: saved.call.id };
+        const claimed = (await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}))!, body = { jobId: claimed.id, lease: claimed.lease, callId: saved.call.id };
         await fixture.service.channel.dispatch(token, body);
         await journal.fenced(row.id, row.lease_token, (db, current) => journal.change(db, current, 'cancelled', 'cancelled', 'Cancel private tool'));
         await fixture.service.close(row.id, row.lease_token); features.enabled = false;
@@ -236,12 +236,12 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
         await blockedWrite(sql => sql.includes('FROM bridge_devices') && sql.includes('FOR SHARE'), () => discovery(fixture.target('device')),
             db => db.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]));
         expect(await count('system_role_mcp_discoveries')).toBe(1);
-        await expect(fixture.service.channel.claim(token)).rejects.toHaveProperty('status', 401);
+        await expect(fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false})).rejects.toHaveProperty('status', 401);
         expect((await fixture.pool.query('SELECT state,dispatched_at FROM system_role_mcp_calls')).rows).toEqual([{ state: 'queued', dispatched_at: null }]);
     });
 
     it('holds the device lock until atomic dispatch commits, then rejects further work after revocation', async () => {
-        const target = fixture.target('device'), { row } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token))!;
+        const target = fixture.target('device'), { row } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}))!;
         const fence = { sessionId: claimed.id, lease: claimed.lease, deviceId };
         await blockedWrite(sql => sql === 'SELECT id FROM bridge_devices WHERE id=$1 FOR SHARE', () => fixture.service.dispatch(saved.call.id, fence),
             db => db.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]));
@@ -251,7 +251,7 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
 
     it('holds the existing configuration form through dispatch and fences its actual subsequent save permit', async () => {
         const formId = await fixture.configurationForm(), target = fixture.target('device', fixture.configured), { row } = await fixture.run(target), saved = await fixture.enqueue(row, target);
-        const claimed = (await fixture.service.channel.claim(token))!, fence = { sessionId: claimed.id, lease: claimed.lease, deviceId }, device = await fixture.devices.identity(token);
+        const claimed = (await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}))!, fence = { sessionId: claimed.id, lease: claimed.lease, deviceId }, device = await fixture.devices.identity(token);
         await blockedWrite(sql => sql.includes("kind='open-mcp-configuration'") && sql.includes('FOR SHARE'), () => fixture.service.dispatch(saved.call.id, fence), async db => {
             const boundStore = Object.assign(Object.create(DeviceStore.prototype), { pool: db, access: fixture.devices.access }) as DeviceStore;
             return authorizeMcpConfigurationSave(boundStore, fixture.installations, fixture.plans, device, { jobId: formId }, () => fixture.service.policy.roles.actor(request(), project));
@@ -264,7 +264,7 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
     });
 
     it('holds exact installed-plan approval through dispatch and rejects the next call after approval revocation', async () => {
-        const target = fixture.target('device'), { row } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token))!;
+        const target = fixture.target('device'), { row } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}))!;
         const fence = { sessionId: claimed.id, lease: claimed.lease, deviceId };
         await blockedWrite(sql => sql.includes('FROM device_install_plans') && sql.includes('FOR SHARE'), () => fixture.service.dispatch(saved.call.id, fence),
             db => db.query("UPDATE device_install_plans SET status='revoked' WHERE project_id=$1 AND asset_id=$2", [project, target.assetId]));
@@ -302,7 +302,7 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
     });
 
     it.each(['device revocation', 'role cancellation'])('does not hold SQL locks during dispatch feature I/O: %s', async change => {
-        const target = fixture.target('device'), { row, journal } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token))!;
+        const target = fixture.target('device'), { row, journal } = await fixture.run(target), saved = await fixture.enqueue(row, target), claimed = (await fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}))!;
         const fence = { sessionId: claimed.id, lease: claimed.lease, deviceId };
         await outsideFlagLocks(() => fixture.service.dispatch(saved.call.id, fence), () => change === 'device revocation'
             ? fixture.pool.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId])
@@ -313,7 +313,7 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
 
     it('does not hold the private device claim lock while external flags are pending', async () => {
         await discovery(fixture.target('device'));
-        await outsideFlagLocks(() => fixture.service.channel.claim(token), () => fixture.pool.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]));
+        await outsideFlagLocks(() => fixture.service.channel.claim(token,{requestId:randomUUID(),recoveryOnly:false}), () => fixture.pool.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]));
         expect((await fixture.pool.query('SELECT claimed_at FROM system_role_mcp_sessions')).rows).toEqual([{ claimed_at: null }]);
         expect((await fixture.pool.query('SELECT state,dispatched_at FROM system_role_mcp_calls')).rows).toEqual([{ state: 'queued', dispatched_at: null }]);
     });
@@ -340,8 +340,8 @@ describe.skipIf(!connection).sequential('System-role MCP on caller-owned Postgre
             await migrateCatalog(upgrade.pool, releasedMigrations());
             const before = (await upgrade.pool.query('SELECT * FROM catalog_schema_migrations ORDER BY version')).rows;
             const budget = (await upgrade.pool.query("SELECT pg_get_constraintdef(oid) AS value FROM pg_constraint WHERE conname='system_role_runs_calls_started_check'")).rows;
-            const migration = CATALOG_MIGRATIONS.find(item => item.version === 36)!, history = [...releasedMigrations(), migration];
-            expect((await checkCatalogSchema(upgrade.pool)).pending).toEqual([36]);
+            const migration = CATALOG_MIGRATIONS.find(item => item.version === 36)!, history = CATALOG_MIGRATIONS;
+            expect((await checkCatalogSchema(upgrade.pool)).pending).toEqual([36,37]);
             await expect(migrateCatalog(upgrade.pool, [...releasedMigrations(), { ...migration, sql: migration.sql + '; SELECT deliberately_missing_mcp36_function()' }])).rejects.toThrow();
             expect((await upgrade.pool.query('SELECT * FROM catalog_schema_migrations ORDER BY version')).rows).toEqual(before);
             expect((await upgrade.pool.query("SELECT to_regclass('system_role_mcp_sessions') AS sessions")).rows[0].sessions).toBeNull();

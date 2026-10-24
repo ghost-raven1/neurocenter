@@ -19,9 +19,17 @@ export class SystemRoleMcpChannel {
         private readonly authority: (session: McpSessionRow, db?: Db) => Promise<void>,
         private readonly dispatchCall: (callId: string, expectedChannel?: McpChannelFence) => Promise<unknown>,
         private readonly closeSession: (id: string, onlyUnclaimed?: boolean) => Promise<unknown>,
-        private readonly preflight?: (session: McpSessionRow) => Promise<void>) {}
+        private readonly preflight?: (session: McpSessionRow) => Promise<void>,
+        private readonly releaseDeviceSession: (id: string) => void = () => undefined) {}
 
-    async claim(token: unknown) {
+    async claim(token: unknown, input: unknown) {
+        if (!object(input) || Object.keys(input).sort().join(',') !== 'recoveryOnly,requestId' || !uuid(input.requestId)
+            || typeof input.recoveryOnly !== 'boolean') throw new BadRequestException('Нужны сохранённый идентификатор запроса и режим восстановления MCP.');
+        const requestId = input.requestId;
+        const recovered = await this.repository.transaction(db => this.recoverClaim(db, token, requestId, input.recoveryOnly as boolean));
+        if (recovered === false) return null;
+        if (recovered) { this.releaseDeviceSession(recovered.id); return recovered; }
+        if (input.recoveryOnly) return null;
         const device = await this.devices.identity(token);
         // A candidate is immutable. External availability checks finish before any row lock is taken.
         for (let attempt = 0; attempt < 32; attempt++) {
@@ -36,7 +44,12 @@ export class SystemRoleMcpChannel {
                 await this.closeSession(candidate.id, true); continue;
             }
             const result = await this.repository.transaction(async db => {
-                await this.currentDevice(db, device, token, true);
+                const repeated = await this.recoverClaim(db, token, requestId);
+                if (repeated === false) return null;
+                if (repeated) return repeated;
+                if (await this.currentDevice(db, device, token, true)) return null;
+                // Retirement owns the project before its cascades: never hold role/member/session locks while waiting for it.
+                if (!(await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [candidate.project_id])).rowCount) return null;
                 const occupied = await db.query<{ count: string }>(`SELECT count(*) FROM system_role_mcp_sessions
                     WHERE state='open' AND claimed_at IS NOT NULL AND deadline_at>clock_timestamp()
                     AND target->>'runtime'='device' AND target->>'deviceId'=$1 AND owner_email=$2`, [device.id, device.email]);
@@ -52,14 +65,15 @@ export class SystemRoleMcpChannel {
                     if (!(error instanceof ForbiddenException || error instanceof ConflictException)) throw error;
                     return false;
                 }
-                const claimed = (await db.query<McpSessionRow>(`UPDATE system_role_mcp_sessions SET claimed_at=clock_timestamp(),
+                const claimed = (await db.query<McpSessionRow>(`UPDATE system_role_mcp_sessions SET claimed_at=clock_timestamp(),worker_claim_request_id=$2,worker_claim_token_hash=$3,
                     worker_lease_until=LEAST(deadline_at,clock_timestamp()+interval '30 seconds')
-                    WHERE id=$1 AND state='open' AND claimed_at IS NULL AND deadline_at>clock_timestamp() RETURNING *`, [session.id])).rows[0];
+                    WHERE id=$1 AND state='open' AND claimed_at IS NULL AND deadline_at>clock_timestamp() RETURNING *`, [session.id, requestId, digest(token as string)])).rows[0];
                 if (!claimed) return conflict();
-                return { id: claimed.id, lease: claimed.worker_lease!, kind: SYSTEM_ROLE_MCP_JOB, project_id: claimed.project_id, payload: { sessionId: claimed.id } };
+                return { id: claimed.id, lease: claimed.worker_lease!, requestId, kind: SYSTEM_ROLE_MCP_JOB, project_id: claimed.project_id, payload: { sessionId: claimed.id } };
             });
             // Retire only the denied, still-unclaimed candidate; another worker may have won meanwhile.
             if (result === false) { await this.closeSession(candidate.id, true); continue; }
+            if (result && typeof result === 'object' && 'recoveryOnly' in result) this.releaseDeviceSession(result.id);
             if (result !== undefined) return result;
         }
         return null;
@@ -132,7 +146,8 @@ export class SystemRoleMcpChannel {
         const value = this.input(input, 'complete'), session = await this.receipt(token, value), result = value.result;
         if (!object(result) || Object.keys(result).sort().join(',') !== 'closed,schemaVersion,sessionId'
             || result.schemaVersion !== 1 || result.sessionId !== session.id || result.closed !== true) throw new BadRequestException('Нужно подтверждение закрытия этой сессии MCP.');
-        await this.closeSession(session.id);
+        await this.repository.acknowledgeDeviceClosed(session.id, value.lease, digest(token as string));
+        this.releaseDeviceSession(session.id);
         return { ok: true, closed: true };
     }
 
@@ -157,9 +172,26 @@ export class SystemRoleMcpChannel {
         if (session.state === 'open') await this.preflight?.(session);
     }
     private live(session: McpSessionRow): void { if (session.state !== 'open' || !future(session.deadline_at) || !future(session.worker_lease_until)) conflict(); }
-    private async currentDevice(db: Db, device: Device, token: unknown, exclusive = false): Promise<void> {
-        if (typeof token !== 'string' || !(await db.query(`SELECT id FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3
-            AND NOT revoked AND expires_at>clock_timestamp() FOR ${exclusive ? 'UPDATE' : 'SHARE'}`, [device.id, device.email, digest(token)])).rowCount) throw new UnauthorizedException('Подключение MCP истекло или отозвано.');
+    private async currentDevice(db: Db, device: Device, token: unknown, exclusive = false): Promise<boolean> {
+        const row = typeof token === 'string' ? (await db.query<{ paused: boolean }>(`SELECT id,paused_until>clock_timestamp() AS paused FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3
+            AND NOT revoked AND expires_at>clock_timestamp() FOR ${exclusive ? 'UPDATE' : 'SHARE'}`, [device.id, device.email, digest(token)])).rows[0] : undefined;
+        if (!row) throw new UnauthorizedException('Подключение MCP истекло или отозвано.');
+        return row.paused === true;
+    }
+    /** Replaying a durable preclaim intent retires execution; it never allocates work or asserts physical cleanup. */
+    private async recoverClaim(db: Db, token: unknown, requestId: string, retireUnknown = false) {
+        if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
+        const tokenHash = digest(token), device = (await db.query<{ id: string; email: string }>('SELECT id,email FROM bridge_devices WHERE token_hash=$1 FOR UPDATE', [tokenHash])).rows[0];
+        if (!device) throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
+        const session = (await db.query<McpSessionRow>(`SELECT * FROM system_role_mcp_sessions WHERE target->>'runtime'='device'
+            AND target->>'deviceId'=$1 AND owner_email=$2 AND worker_claim_request_id=$3 AND worker_claim_token_hash=$4
+            AND claimed_at IS NOT NULL FOR NO KEY UPDATE`, [device.id, device.email, requestId, tokenHash])).rows[0];
+        if (retireUnknown || session) await db.query(`INSERT INTO system_role_mcp_retired_claims(device_id,token_hash,request_id)
+            VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [device.id, tokenHash, requestId]);
+        if (!session) return (await db.query('SELECT 1 FROM system_role_mcp_retired_claims WHERE device_id=$1 AND token_hash=$2 AND request_id=$3', [device.id, tokenHash, requestId])).rowCount ? false : null;
+        await db.query("UPDATE system_role_mcp_sessions SET state='closed' WHERE id=$1", [session.id]);
+        await db.query("UPDATE system_role_mcp_calls SET state=CASE WHEN state='dispatched' THEN 'unknown' ELSE 'cancelled' END,completed_at=now() WHERE session_id=$1 AND state IN ('queued','dispatched')", [session.id]);
+        return { id: session.id, lease: session.worker_lease!, requestId, recoveryOnly: true as const, kind: SYSTEM_ROLE_MCP_JOB, project_id: session.project_id, payload: { sessionId: session.id } };
     }
     /** A stored token hash and immutable lease accept only receipts after revocation, never new execution. */
     private async receipt(token: unknown, value: LeaseInput): Promise<McpSessionRow> {

@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { SYSTEM_ROLE_MCP_LIMITS as limits, systemRoleMcpDigest, type RoleMcpExecutionResult, type RoleMcpTarget } from '../../../shared/system-role-mcp.cjs';
@@ -16,6 +16,11 @@ export class SystemRoleMcpRepository {
         const db = await this.pool.connect();
         try { await db.query('BEGIN'); const result = await work(db); await db.query('COMMIT'); return result; }
         catch (error) { await db.query('ROLLBACK').catch(() => undefined); throw error; } finally { db.release(); }
+    }
+    /** Device revocation precedes project retirement; child authority locks are taken only after both fences. */
+    private async lockScope(db: Db, project: string, target: RoleMcpTarget): Promise<void> {
+        if (target.runtime === 'device') await db.query('SELECT id FROM bridge_devices WHERE id=$1 FOR SHARE', [target.deviceId]);
+        if (!(await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [project])).rowCount) throw new ConflictException('Проект недоступен.');
     }
     async session(id: string, db: Db = this.pool, lock = false): Promise<McpSessionRow> {
         const row = (await db.query<McpSessionRow>('SELECT * FROM system_role_mcp_sessions WHERE id=$1' + (lock ? ' FOR NO KEY UPDATE' : ''), [id])).rows[0];
@@ -46,6 +51,7 @@ export class SystemRoleMcpRepository {
     }
     async discover(id: string, hash: string, input: SessionInput, authorize: (db: Db) => Promise<void>) {
         return this.transaction(async db => {
+            await this.lockScope(db, input.project, input.target);
             await db.query("SELECT pg_advisory_xact_lock(hashtextextended('system-role-mcp-discovery:'||$1,0))", [input.owner + ':' + id]);
             const old = await this.discovery(id, input.owner, db);
             if (old) { if (old.request_hash !== hash) throw new ConflictException('Ключ обнаружения относится к другому выбору.'); return { discovery: old, session: await this.session(old.session_id, db), call: await this.call(old.call_id, db), created: false }; }
@@ -61,6 +67,7 @@ export class SystemRoleMcpRepository {
     }
     async enqueue(input: SessionInput & { run: RoleRunRow }, tool: { key: string; name: string; digest: string; arguments: Record<string, unknown> }, authorize: (db: Db, current: RoleRunRow) => Promise<void>) {
         return this.transaction(async db => {
+            await this.lockScope(db, input.project, input.target);
             const current = (await db.query<RoleRunRow>("SELECT * FROM system_role_runs WHERE id=$1 AND lease_token=$2 AND state='running' AND lease_until>now() FOR NO KEY UPDATE", [input.run.id, input.run.lease_token])).rows[0];
             if (!current) throw new ConflictException('Запуск инструмента отменён или потерял аренду.'); await authorize(db, current);
             if (Number((await db.query<{ count: string }>("SELECT count(*) FROM system_role_mcp_calls WHERE run_id=$1 AND kind='call'", [current.id])).rows[0].count) >= limits.calls) throw new ConflictException('Лимит вызовов инструментов исчерпан.');
@@ -72,8 +79,7 @@ export class SystemRoleMcpRepository {
         return this.transaction(async db => {
             const observed = await this.call(id, db);
             const source = await this.session(observed.session_id, db);
-            // Claim and dispatch take the device lock before role/session locks so revocation is atomic without lock inversion.
-            if (source.target.runtime === 'device') await db.query('SELECT id FROM bridge_devices WHERE id=$1 FOR SHARE', [source.target.deviceId]);
+            await this.lockScope(db, source.project_id, source.target);
             if (observed.run_id) await db.query('SELECT id FROM system_role_runs WHERE id=$1 FOR NO KEY UPDATE', [observed.run_id]);
             const session = await this.session(observed.session_id, db, true), call = await this.call(id, db, true);
             if (session.state !== 'open' || new Date(session.deadline_at).getTime() <= Date.now() || new Date(call.deadline_at).getTime() <= Date.now() || call.state !== 'queued') throw new ConflictException('Отправка инструмента уже началась или отменена. Повтор не выполняется.');
@@ -98,6 +104,21 @@ export class SystemRoleMcpRepository {
             if (call.state === 'queued' && result.state === 'succeeded') throw new ConflictException('Отправка инструмента не подтверждена.');
             const state = call.state === 'queued' ? 'failed' : result.state;
             return (await db.query<McpCallRow>('UPDATE system_role_mcp_calls SET state=$2,result=$3::jsonb,completed_at=now() WHERE id=$1 RETURNING *', [id, state, JSON.stringify(result)])).rows[0];
+        });
+    }
+    /** A retained device token and exact lease can acknowledge cleanup without regaining execution authority. */
+    async acknowledgeDeviceClosed(id: string, lease: string, tokenHash: string): Promise<void> {
+        await this.transaction(async db => {
+            // Match maintenance/claim ordering: the device lock always precedes the session lock.
+            const device = (await db.query<{ id: string; email: string }>('SELECT id,email FROM bridge_devices WHERE token_hash=$1 FOR SHARE', [tokenHash])).rows[0];
+            if (!device) throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
+            const session = await this.session(id, db, true);
+            if (session.target.runtime !== 'device' || session.target.deviceId !== device.id || session.owner_email !== device.email
+                || session.job_id !== session.id || session.worker_lease !== lease || !session.claimed_at) throw new UnauthorizedException('Подтверждение MCP не принадлежит этой сессии.');
+            if (session.worker_claim_request_id && session.worker_claim_token_hash) await db.query(`INSERT INTO system_role_mcp_retired_claims(device_id,token_hash,request_id)
+                VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [device.id, session.worker_claim_token_hash, session.worker_claim_request_id]);
+            await db.query("UPDATE system_role_mcp_sessions SET state='closed',worker_closed_at=COALESCE(worker_closed_at,clock_timestamp()) WHERE id=$1", [id]);
+            await db.query("UPDATE system_role_mcp_calls SET state=CASE WHEN state='dispatched' THEN 'unknown' ELSE 'cancelled' END,completed_at=now() WHERE session_id=$1 AND state IN ('queued','dispatched')", [id]);
         });
     }
     /** Rejected queue candidates cannot close a session already leased by another worker. */
