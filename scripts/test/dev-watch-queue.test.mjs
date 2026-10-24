@@ -28,3 +28,23 @@ test('service inputs rebuild only their package, shared includes consumers and M
 test('bounded polling observes new/deleted source and ignores outputs, dependencies and links',async t=>{
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-watch-input-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const src=path.join(root,'services/catalog-service/src');await fs.mkdir(src,{recursive:true});await fs.writeFile(path.join(src,'main.ts'),'one');await fs.mkdir(path.join(src,'node_modules'));await fs.writeFile(path.join(src,'node_modules/ignore.ts'),'ignored');await fs.symlink(os.tmpdir(),path.join(src,'link'));const before=await watchSnapshot(root);await fs.rm(path.join(src,'main.ts'));await fs.writeFile(path.join(src,'new.ts'),'two');const after=await watchSnapshot(root);assert.deepEqual(changedWatchInputs(before,after).sort(),['services/catalog-service/src/main.ts','services/catalog-service/src/new.ts']);assert.equal([...after.keys()].some(name=>name.includes('node_modules')),false);
 });
+test('recipe and adapter edits refresh the Catalog producer without restarting unrelated services',async t=>{
+    const root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-watch producer исходники '));
+    t.after(()=>fs.rm(root,{recursive:true,force:true}));
+    const adapter='scripts/catalog-plugins/recipes/adapters/rag-reindex.mjs';
+    await fs.mkdir(path.dirname(path.join(root,adapter)),{recursive:true});
+    await fs.writeFile(path.join(root,adapter),'old');
+    const before=await watchSnapshot(root);
+    assert.equal(before.has(adapter),true);
+    await fs.writeFile(path.join(root,adapter),'new bounded adapter');
+    const helper='scripts/catalog-plugins/shared/source-adapters.mjs';
+    await fs.mkdir(path.dirname(path.join(root,helper)),{recursive:true});
+    await fs.writeFile(path.join(root,helper),'new helper');
+    for(const ignored of ['node_modules','test','.run']){
+        const folder=path.join(root,'scripts/catalog-plugins',ignored);
+        await fs.mkdir(folder,{recursive:true});await fs.writeFile(path.join(folder,'ignored.mjs'),'output');
+    }
+    const changed=changedWatchInputs(before,await watchSnapshot(root));
+    assert.deepEqual(changed.sort(),[adapter,helper].sort());
+    assert.deepEqual(affectedPackages(changed).map(([id])=>id),['catalog-service']);
+});

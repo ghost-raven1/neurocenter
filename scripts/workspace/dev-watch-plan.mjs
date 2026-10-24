@@ -16,11 +16,11 @@ export async function watchSnapshot(root){
         }
     };
     for(const [,folder]of backendSelection){for(const suffix of ['src','content'])await walk(folder+'/'+suffix);for(const name of ['package.json','package-lock.json','tsconfig.json','tsconfig.build.json','nest-cli.json','scripts/build.mjs']){const relative=folder+'/'+name;try{const s=await fs.lstat(path.join(root,relative),{bigint:true});if(s.isFile()&&!s.isSymbolicLink())result.set(relative,[s.ino,s.size,s.mtimeNs,s.ctimeNs].join(':'));}catch(error){if(error.code!=='ENOENT')throw error;}}}
-    await walk('services/shared');return result;
+    await walk('services/shared');await walk('scripts/catalog-plugins');return result;
 }
 export function changedWatchInputs(before,after){return [...new Set([...before.keys(),...after.keys()])].filter(name=>before.get(name)!==after.get(name));}
-/** Shared changes rebuild all known backend consumers; MCP also changes Catalog/RAG launchers. */
+/** Recipes belong to the Catalog producer; shared/MCP changes include their backend consumers. */
 export function affectedPackages(files){
-    const ids=new Set();for(const file of files){if(file.startsWith('services/shared/'))for(const [id]of backendSelection)ids.add(id);else for(const [id,folder]of backendSelection)if(file.startsWith(folder+'/'))ids.add(id);}
+    const ids=new Set();for(const file of files){if(file.startsWith('scripts/catalog-plugins/'))ids.add('catalog-service');else if(file.startsWith('services/shared/'))for(const [id]of backendSelection)ids.add(id);else for(const [id,folder]of backendSelection)if(file.startsWith(folder+'/'))ids.add(id);}
     if(ids.has('bridge')){ids.add('catalog-service');ids.add('rag-sync-service');}return backendSelection.filter(([id])=>ids.has(id));
 }
