@@ -24,6 +24,23 @@ function fixture() {
     const create = vi.spyOn(service.repository, 'create').mockImplementation(async (_input, authorize) => { await authorize({} as never); return row; });
     return { service, actor, infer, prepare, input, row, existing, create };
 }
+
+/** The public service owns admission, scheduling, failure persistence and the later historical read. */
+function executionFixture() {
+    const f = fixture(), definitionPin = roleDefinitionPin('agent-coordinator');
+    f.input.expectedDefinitionPin = definitionPin; f.row.agent_id = 'agent-coordinator'; f.row.request = f.input;
+    f.row.state = 'running'; f.row.lease_token = 'lease'; f.row.lease_until = new Date(Date.now() + 120000);
+    f.row.snapshot.definitionPin = definitionPin; f.prepare.mockResolvedValue(f.row.snapshot);
+    Object.assign(f.service.policy.models.pool, { query: vi.fn(async () => ({ rows: [] })) });
+    vi.spyOn(f.service.policy, 'current').mockResolvedValue(f.row.model);
+    vi.mocked(f.service.repository.claim).mockResolvedValueOnce(f.row);
+    vi.spyOn(f.service.repository, 'fenced').mockImplementation(async (_id, _lease, work) => work({} as never, f.row));
+    vi.spyOn(f.service.repository, 'reserveCall').mockImplementation(async (_id, _lease, authorize) => { await authorize({} as never, f.row); f.row.calls_started++; return f.row; });
+    vi.spyOn(f.service.repository, 'transaction').mockImplementation(async work => work({} as never));
+    vi.spyOn(f.service.repository, 'get').mockImplementation(async () => f.row);
+    vi.spyOn(f.service.repository, 'change').mockImplementation(async (_db, _row, state, phase, message, patch) => Object.assign(f.row, { state, phase, message, revision: f.row.revision + 1 }, patch));
+    return f;
+}
 describe('Explicit role service admission and free historical reads', () => {
     it('prepare is free and explicit start revalidates consent/model before one durable intent', async () => {
         features.mockResolvedValue(undefined); const f = fixture();
@@ -44,5 +61,33 @@ describe('Explicit role service admission and free historical reads', () => {
         features.mockResolvedValue(undefined); const f = fixture();
         await expect(f.service.start({ headers: {} } as never, 'agent-ai-admin', { ...f.input, consentDigest: 'c'.repeat(64) })).rejects.toThrow('Контекст изменился');
         expect(f.create).not.toHaveBeenCalled(); expect(f.infer).not.toHaveBeenCalled();
+    });
+});
+
+describe('Durable failures expose a safe next action', () => {
+    it('persists an actionable planning timeout without replay and preserves its historical receipt', async () => {
+        vi.useFakeTimers(); const f = executionFixture(); features.mockResolvedValue(undefined);
+        try {
+            let started!: () => void; const waiting = new Promise<void>(resolve => { started = resolve; });
+            f.infer.mockImplementation(async (_model, _endpoint, _body, signal: AbortSignal) => { started();
+                return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); });
+            await f.service.start({ headers: {} } as never, 'agent-coordinator', f.input); await waiting; await vi.advanceTimersByTimeAsync(40000);
+            const receipt = await f.service.detail({ headers: {} } as never, 'agent-coordinator', f.row.id);
+            expect(receipt).toMatchObject({ state: 'failed', callsStarted: 1 });
+            expect(receipt.message).toContain('Координатор не дождался плана');
+            expect(receipt.message).toContain('Проверьте подключение компьютера и доступность модели');
+            expect(receipt.message).toContain('явно запустите задачу снова'); expect(f.infer).toHaveBeenCalledOnce();
+        } finally { await f.service.onApplicationShutdown(); vi.useRealTimers(); }
+    });
+    it('keeps unknown provider failures generic and never persists their raw private message', async () => {
+        const f = executionFixture(); features.mockResolvedValue(undefined);
+        try {
+            f.infer.mockRejectedValue(new Error('private provider detail do-not-persist'));
+            await f.service.start({ headers: {} } as never, 'agent-coordinator', f.input);
+            await vi.waitFor(async () => expect(await f.service.detail({ headers: {} } as never, 'agent-coordinator', f.row.id)).toMatchObject({ state: 'failed', callsStarted: 1 }));
+            const receipt = await f.service.detail({ headers: {} } as never, 'agent-coordinator', f.row.id);
+            expect(receipt.message).toBe('Запуск не завершён: проверьте доступность, права, версии и выбранный контекст. Автоматического платного повтора нет.');
+            expect(receipt.message).not.toContain('private provider detail'); expect(receipt.result).toBeNull(); expect(f.infer).toHaveBeenCalledOnce();
+        } finally { await f.service.onApplicationShutdown(); }
     });
 });

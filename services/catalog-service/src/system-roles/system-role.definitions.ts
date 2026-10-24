@@ -32,6 +32,8 @@ const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(
 export const roleHash = (value: unknown): string => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 export const roleDefinitionPin = (id: SystemRoleId): string => roleHash(id === 'agent-coordinator'
     ? { definition: systemRole(id), delegates: SYSTEM_ROLE_DEFINITIONS.filter(role => role.id !== id),
-        delegationBudget: { calls: ROLE_BUDGET.coordinatorCalls, fanout: ROLE_BUDGET.fanout, depth: ROLE_BUDGET.depth, delegateDeadlineMs: ROLE_BUDGET.delegateDeadlineMs } } : systemRole(id));
-export const ROLE_BUDGET = Object.freeze({ calls: 2, coordinatorCalls: 5, fanout: 3, depth: 1, delegateDeadlineMs: 20000, diagnostics: 4, targets: 4, outputBytes: 16384, contextBytes: 65536, deadlineMs: 120000 });
+        delegationBudget: { calls: ROLE_BUDGET.coordinatorCalls, fanout: ROLE_BUDGET.fanout, depth: ROLE_BUDGET.depth,
+            delegateDeadlineMs: ROLE_BUDGET.delegateDeadlineMs, finalizationReserveMs: ROLE_BUDGET.finalizationReserveMs, planningWeight: 2 } } : systemRole(id));
+export const ROLE_BUDGET = Object.freeze({ calls: 2, coordinatorCalls: 5, fanout: 3, depth: 1, delegateDeadlineMs: 40000, finalizationReserveMs: 2000,
+    diagnostics: 4, targets: 4, outputBytes: 16384, contextBytes: 65536, deadlineMs: 120000 });
 export const roleCallBudget = (id: SystemRoleId): number => id === 'agent-coordinator' ? ROLE_BUDGET.coordinatorCalls : ROLE_BUDGET.calls;

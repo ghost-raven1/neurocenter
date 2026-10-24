@@ -15,7 +15,7 @@ import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, roleHash, syst
 import { SystemRoleRepository, type RoleExecutionLane } from './system-role.repository';
 import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
-import { SystemRoleRunner } from './system-role.runner';
+import { SystemRoleRunner, SystemRoleStepTimeout } from './system-role.runner';
 import { SystemRoleApplication } from './system-role.apply';
 import { notifyRoleOperations } from './system-role.operations';
 import { roleAction, roleRequestId, roleSelection, startRoleRun } from './system-role.validation';
@@ -179,15 +179,19 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         const req = { headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
             'x-bridge-actor': encodeURIComponent(JSON.stringify({ email: row.actor, activeRole: row.actor_role })) } } as unknown as Request;
         try { await this.runner.run(req, row, controller.signal); }
-        catch { await this.fail(row, controller.signal.aborted); }
+        catch (cause) { await this.fail(row, controller.signal.aborted, cause); }
         finally { clearTimeout(timeout); this.active.delete(row.id); void notifyRoleOperations(); }
     }
-    private async fail(row: RoleRunRow, interrupted: boolean): Promise<void> {
+    private async fail(row: RoleRunRow, interrupted: boolean, cause?: unknown): Promise<void> {
+        const message = interrupted ? 'Исполнение прервано. Новый вызов требует явного запуска.'
+            : cause instanceof SystemRoleStepTimeout && cause.phase === 'planning'
+                ? 'Координатор не дождался плана в отведённое время. Проверьте подключение компьютера и доступность модели, затем явно запустите задачу снова. Автоматического повтора нет.'
+                : 'Запуск не завершён: проверьте доступность, права, версии и выбранный контекст. Автоматического платного повтора нет.';
         await this.repository.transaction(async db => {
             const current = await this.repository.get(row.id, db, true);
             if (current?.state === 'running' && current.lease_token === row.lease_token) await this.repository.change(db, current,
                 interrupted ? 'interrupted' : 'failed', interrupted ? 'interrupted' : 'failed',
-                interrupted ? 'Исполнение прервано. Новый вызов требует явного запуска.' : 'Запуск не завершён: проверьте доступность, права, версии и выбранный контекст. Автоматического платного повтора нет.');
+                message);
         });
     }
 }

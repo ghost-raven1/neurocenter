@@ -14,7 +14,7 @@ import type { SystemRolePolicy } from './system-role.policy';
 import type { SystemRoleRepository } from './system-role.repository';
 import type { SystemRoleTargets } from './system-role.targets';
 import { roleResult } from './system-role.validation';
-import { coordinateRole } from './system-role.coordinator';
+import { coordinateRole, type CoordinatorStep } from './system-role.coordinator';
 import type { DiagnosticFact, RoleResult, RoleRunRow, SystemRoleId } from './system-role.types';
 
 async function abortable<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -24,6 +24,11 @@ async function abortable<T>(work: () => Promise<T>, signal: AbortSignal): Promis
     finally { if (aborted) signal.removeEventListener('abort', aborted); }
 }
 
+/** Only this internal classification can produce an actionable timeout; raw provider errors stay private. */
+export class SystemRoleStepTimeout extends Error {
+    constructor(readonly phase: CoordinatorStep['phase']) { super('Шаг координатора не ответил вовремя.'); }
+}
+
 /** One durable runner fences every model call; coordinator children use the same owner and a bounded role allowlist. */
 export class SystemRoleRunner {
     constructor(private readonly repository: SystemRoleRepository, private readonly policy: SystemRolePolicy, private readonly targets: SystemRoleTargets,
@@ -31,6 +36,7 @@ export class SystemRoleRunner {
         private readonly features = requireFeaturesEnabled, private readonly diagnostic = collectRoleDiagnostic) {}
     async run(req: Request, row: RoleRunRow, signal: AbortSignal): Promise<void> {
         const definition = systemRole(row.agent_id);
+        const deadline = row.lease_until ? new Date(row.lease_until).getTime() : Date.now() + ROLE_BUDGET.deadlineMs;
         const flags: FeatureFlagKey[] = [definition.flag, ...(row.request.sourceFeature ? [row.request.sourceFeature] : [])];
         const checkpoint = async () => {
             signal.throwIfAborted();
@@ -51,11 +57,16 @@ export class SystemRoleRunner {
         }
         await checkpoint();
         row = await this.repository.fenced(row.id, row.lease_token, (db, current) => this.repository.change(db, current, 'running', 'validating_context', 'Выбранные измерения сохранены.', { facts }));
-        const invoke = async (id: SystemRoleId, messages: ChatMessage[]): Promise<string> => {
+        const invoke = async (id: SystemRoleId, messages: ChatMessage[], step?: CoordinatorStep): Promise<string> => {
             const child = row.agent_id === 'agent-coordinator' ? new AbortController() : undefined;
-            const remaining = row.lease_until ? new Date(row.lease_until).getTime() - Date.now() - 1000 : ROLE_BUDGET.delegateDeadlineMs;
-            const timeout = child ? setTimeout(() => child.abort(new Error('Шаг координатора не ответил вовремя.')),
-                Math.max(1, Math.min(ROLE_BUDGET.delegateDeadlineMs, remaining))) : undefined;
+            const remaining = deadline - Date.now() - ROLE_BUDGET.finalizationReserveMs;
+            // Planning carries native startup/queue work. Later calls divide the exact remaining workflow fairly.
+            const fair = step?.phase === 'planning' ? Math.floor(remaining * 2 / (step.remainingSteps + 1))
+                : Math.floor(remaining / (step?.remainingSteps ?? 1));
+            const duration = Math.min(ROLE_BUDGET.delegateDeadlineMs, fair);
+            const phase = step?.phase ?? 'delegating';
+            if (child && duration < 1) throw new SystemRoleStepTimeout(phase);
+            const timeout = child ? setTimeout(() => child.abort(new SystemRoleStepTimeout(phase)), duration) : undefined;
             timeout?.unref();
             const callSignal = child ? AbortSignal.any([signal, child.signal]) : signal;
             try {

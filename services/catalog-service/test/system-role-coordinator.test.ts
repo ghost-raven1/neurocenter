@@ -103,6 +103,71 @@ describe('Coordinator delegates through the durable runtime', () => {
 });
 
 describe('Delegation failures and fresh authority', () => {
+    it('allows the native planning receipt persisted near twenty seconds to be consumed on the next poll', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = fixture([task('agent-ai-admin')]), normal = f.infer.getMockImplementation()!;
+            f.row.lease_until = new Date(Date.now() + 120000);
+            let started!: () => void, ready = false;
+            const waiting = new Promise<void>(resolve => { started = resolve; });
+            f.infer.mockImplementation(async (...args) => {
+                if (currentModelUsage().agentId === 'agent-coordinator' && !f.calls.length) {
+                    await currentModelUsage().beforeInference?.(); started();
+                    await new Promise<void>((resolve, reject) => {
+                        setTimeout(() => { ready = true; }, 19950);
+                        setTimeout(resolve, 20100);
+                        args[3]!.addEventListener('abort', () => reject(args[3]!.reason), { once: true });
+                    });
+                }
+                return normal(...args);
+            });
+            const outcome = f.run().then(() => undefined, cause => cause); await waiting; await vi.advanceTimersByTimeAsync(20100);
+            expect(ready).toBe(true); expect(await outcome).toBeUndefined();
+            expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 3, result: { delegations: [{ roleId: 'agent-ai-admin', state: 'succeeded' }] } });
+            expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-ai-admin', 'agent-coordinator']);
+        } finally { vi.useRealTimers(); }
+    });
+    it('shares a short remaining lease fairly and saves independent answers before durable finalization reserve', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = fixture([task('agent-ai-admin'), task('agent-indexer'), task('agent-packager')]), normal = f.infer.getMockImplementation()!;
+            const startedAt = Date.now(), deadline = startedAt + 30000; f.row.lease_until = new Date(deadline);
+            let waitingForChild!: () => void, independentAt = 0;
+            const waiting = new Promise<void>(resolve => { waitingForChild = resolve; });
+            f.infer.mockImplementation(async (...args) => {
+                const id = currentModelUsage().agentId;
+                if (id === 'agent-indexer') independentAt = Date.now();
+                if (id === 'agent-ai-admin' || id === 'agent-packager' || id === 'agent-coordinator' && f.calls.length) {
+                    await currentModelUsage().beforeInference?.(); if (id === 'agent-ai-admin') waitingForChild();
+                    return new Promise((_, reject) => args[3]!.addEventListener('abort', () => reject(args[3]!.reason), { once: true }));
+                }
+                return normal(...args);
+            });
+            const outcome = f.run().then(() => undefined, cause => cause); await waiting; await vi.advanceTimersByTimeAsync(28000);
+            expect(independentAt - startedAt).toBeLessThan(15000); expect(await outcome).toBeUndefined();
+            expect(f.row).toMatchObject({ state: 'succeeded', result: { delegations: [{ state: 'failed' }, { roleId: 'agent-indexer', state: 'succeeded' }, { state: 'failed' }] } });
+            expect(deadline - Date.now()).toBeGreaterThanOrEqual(2000);
+        } finally { vi.useRealTimers(); }
+    });
+    it('allows a delegate receipt after native queue and preparation exceed twenty seconds', async () => {
+        vi.useFakeTimers();
+        try {
+            const f = fixture([task('agent-ai-admin')]), normal = f.infer.getMockImplementation()!;
+            f.row.lease_until = new Date(Date.now() + 120000); let started!: () => void;
+            const waiting = new Promise<void>(resolve => { started = resolve; });
+            f.infer.mockImplementation(async (...args) => {
+                if (currentModelUsage().agentId === 'agent-ai-admin') {
+                    await currentModelUsage().beforeInference?.(); started();
+                    await new Promise<void>((resolve, reject) => { setTimeout(resolve, 22100); args[3]!.addEventListener('abort', () => reject(args[3]!.reason), { once: true }); });
+                }
+                return normal(...args);
+            });
+            const outcome = f.run().then(() => undefined, cause => cause); await waiting; await vi.advanceTimersByTimeAsync(22100);
+            expect(await outcome).toBeUndefined();
+            expect(f.row.result?.delegations).toMatchObject([{ roleId: 'agent-ai-admin', state: 'succeeded' }]);
+            expect(f.row.calls_started).toBe(3);
+        } finally { vi.useRealTimers(); }
+    });
     it('does not start new work when the coordinator flag was disabled after preparation', async () => {
         const f = fixture(); f.control.disabled.add('system_coordinator'); await expect(f.run()).rejects.toThrow('feature disabled');
         expect(f.calls).toEqual([]); expect(f.row.calls_started).toBe(0);
@@ -162,7 +227,7 @@ describe('Delegation failures and fresh authority', () => {
                     return new Promise((_, reject) => args[3]!.addEventListener('abort', () => reject(args[3]!.reason), { once: true })); }
                 return normal(...args);
             });
-            const work = f.run(); await waiting; await vi.advanceTimersByTimeAsync(20000); await work;
+            const work = f.run(); await waiting; await vi.advanceTimersByTimeAsync(40000); await work;
             expect(f.row.result?.delegations).toMatchObject([{ state: 'failed' }, { roleId: 'agent-indexer', state: 'succeeded' }]);
             expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-indexer', 'agent-coordinator']);
         } finally { vi.useRealTimers(); }
@@ -186,8 +251,22 @@ describe('Delegation failures and fresh authority', () => {
                 }
                 return normal(...args);
             });
-            const work = f.run(); await waiting; await vi.advanceTimersByTimeAsync(20000); await work;
+            const work = f.run(); await waiting; await vi.advanceTimersByTimeAsync(40000); await work;
             expect(f.row).toMatchObject({ state: 'succeeded', result: { summary: 'Получены ответы: 2 из 2.', delegations: [{ state: 'succeeded' }, { state: 'succeeded' }] } });
         } finally { vi.useRealTimers(); }
+    });
+    it('honors parent cancellation immediately while a delegate is waiting for its longer fair budget', async () => {
+        const f = fixture(), normal = f.infer.getMockImplementation()!; let started!: () => void;
+        const waiting = new Promise<void>(resolve => { started = resolve; });
+        f.infer.mockImplementation(async (...args) => {
+            if (currentModelUsage().agentId === 'agent-ai-admin') {
+                await currentModelUsage().beforeInference?.(); started();
+                return new Promise((_, reject) => args[3]!.addEventListener('abort', () => reject(args[3]!.reason), { once: true }));
+            }
+            return normal(...args);
+        });
+        const outcome = f.run().then(() => undefined, cause => cause); await waiting; f.controller.abort(new Error('Parent cancelled'));
+        expect((await outcome)?.message).toBe('Parent cancelled'); expect(f.infer).toHaveBeenCalledTimes(2);
+        expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator']); expect(f.row.result).toBeNull();
     });
 });
