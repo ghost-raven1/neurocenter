@@ -6,6 +6,7 @@ import { ROLE_BUDGET } from './system-role.definitions';
 import type { RoleRunRow, RoleRunState, SystemRoleId } from './system-role.types';
 
 export type RoleDb = Pick<PoolClient, 'query'>;
+export type RoleExecutionLane = 'server' | 'device-codex';
 const lost = (): never => { throw new ConflictException('Задание изменилось, отменено или потеряло lease. Обновите состояние.'); };
 type RolePatch = Partial<Pick<RoleRunRow, 'facts' | 'result' | 'applied'>>;
 /** One journal serves builtin roles; a new process never claims another process's paid work.
@@ -44,9 +45,12 @@ export class SystemRoleRepository {
             await projectRoleOperation(db, row); return row;
         });
     }
-    async claim(): Promise<RoleRunRow | null> {
+    async claim(lanes: readonly RoleExecutionLane[] = ['server', 'device-codex']): Promise<RoleRunRow | null> {
+        if (!lanes.length) return null;
         return this.transaction(async db => {
-            const row = (await db.query<RoleRunRow>(`SELECT * FROM system_role_runs WHERE runner_instance=$1 AND state='queued' AND lease_until>now() ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED`, [this.instance])).rows[0];
+            const row = (await db.query<RoleRunRow>(`SELECT * FROM system_role_runs WHERE runner_instance=$1 AND state='queued' AND lease_until>now()
+                AND CASE WHEN model->>'runtime'='device-codex' THEN 'device-codex' ELSE 'server' END=ANY($2::text[])
+                ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED`, [this.instance, lanes])).rows[0];
             return row ? this.change(db, row, 'running', 'collecting', 'Собираем выбранные диагностические сведения.') : null;
         });
     }
