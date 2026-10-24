@@ -26,8 +26,8 @@ function deferred<T>() {
     return { promise, resolve, reject };
 }
 
-function setup() {
-    let currentUser: IUserInfo | null = structuredClone(user);
+function setup(initialUser: IUserInfo = user) {
+    let currentUser: IUserInfo | null = structuredClone(initialUser);
     const dialogs: Array<{ confirm: () => Promise<void>; close: () => void; destroy: ReturnType<typeof vi.fn> }> = [];
     const options = {
         getUser: () => currentUser,
@@ -39,7 +39,7 @@ function setup() {
             dialogs.push(dialog);
             return dialog;
         }),
-        success: vi.fn(), error: vi.fn(), onBusyChange: vi.fn<(ids: ReadonlySet<string>) => void>(),
+        success: vi.fn(), error: vi.fn(), info: vi.fn(), onBusyChange: vi.fn<(ids: ReadonlySet<string>) => void>(),
         requestKey: vi.fn<() => string>().mockReturnValueOnce('key-first').mockReturnValue('key-next'),
     };
     const controller = createOperationActionsController(options);
@@ -234,5 +234,76 @@ describe('Действия очереди принадлежат текущем�
         expect(options.cancel).not.toHaveBeenCalled();
         await dialogs[1].confirm();
         expect(options.cancel).toHaveBeenCalledOnce();
+    });
+});
+
+describe('Ответ отмены показывает фактический исход исполнителя', () => {
+    const roleOperation: IOperation = {
+        ...operation, operationId: 'system-role-' + operation.resourceId, resourceType: 'system-role',
+        state: 'RUNNING', bridgeJob: undefined,
+        actions: {executor: 'system-role', digest: operation.actions!.digest, retry: {supported: false}, cancel: {supported: true}},
+    };
+
+    it.each([
+        {state: 'FAILED', message: 'Исполнитель завершился с ошибкой', notification: 'error', expected: 'Исполнитель завершился с ошибкой'},
+        {state: 'FAILED', message: '', notification: 'error', expected: 'Задание завершилось с ошибкой до отмены.'},
+        {state: 'SUCCEEDED', message: 'Результат сохранён', notification: 'info', expected: 'Задание завершилось до отмены. Результат сохранён'},
+        {state: 'SUCCEEDED', message: '', notification: 'info', expected: 'Задание завершилось до отмены.'},
+        {state: 'CANCELLED', message: 'Отмена сохранена исполнителем', notification: 'success', expected: 'Отмена сохранена исполнителем'},
+        {state: 'CANCELLED', message: '', notification: 'success', expected: 'Отмена задания подтверждена.'},
+    ] as const)('Отложенный $state с сообщением «$message» получает только $notification', async result => {
+        const pending = deferred<IOperationActionResult>();
+        const {controller, options, dialogs, busy} = setup();
+        options.cancel.mockReturnValueOnce(pending.promise);
+        controller.cancel(roleOperation);
+        const request = dialogs[0].confirm();
+        expect(busy()).toEqual([roleOperation.operationId]);
+        expect(options.reload).not.toHaveBeenCalled();
+        pending.resolve({operationId: roleOperation.operationId, state: result.state, message: result.message});
+        await request;
+        expect(options[result.notification]).toHaveBeenCalledExactlyOnceWith(result.expected);
+        for (const channel of ['success', 'error', 'info'] as const) {
+            if (channel !== result.notification) expect(options[channel]).not.toHaveBeenCalled();
+        }
+        expect(options.cancel).toHaveBeenCalledExactlyOnceWith(roleOperation.operationId, 'key-first', roleOperation.actions!.digest);
+        expect(options.reload).toHaveBeenCalledOnce();
+        expect(busy()).toEqual([]);
+    });
+
+    it.each(['QUEUED', 'RUNNING'] as const)('Отмена сборки с ответом %s остаётся неподтверждённой до остановки worker', async state => {
+        const pending = deferred<IOperationActionResult>();
+        const main = {...user, activeRole: 'Главный админ', userRoles: ['Главный админ']};
+        const {controller, options, dialogs, busy} = setup(main);
+        const build: IOperation = {...roleOperation, operationId: 'tool-build-' + operation.resourceId, resourceType: 'tool-build', projectId: null,
+            actions: {...roleOperation.actions!, executor: 'tool-build'}};
+        options.cancel.mockReturnValueOnce(pending.promise);
+        controller.cancel(build);
+        const request = dialogs[0].confirm();
+        pending.resolve({operationId: build.operationId, state, message: 'Останавливаем worker'});
+        await request;
+        expect(options.info).toHaveBeenCalledExactlyOnceWith('Отмена ещё не подтверждена. Останавливаем worker');
+        expect(options.success).not.toHaveBeenCalled();
+        expect(options.error).not.toHaveBeenCalled();
+        expect(options.cancel).toHaveBeenCalledOnce();
+        expect(options.reload).toHaveBeenCalledOnce();
+        expect(busy()).toEqual([]);
+    });
+
+    it.each(['FAILED', 'SUCCEEDED', 'RUNNING', 'CANCELLED'] as const)('Запоздалый %s после смены владельца не показывает уведомления', async state => {
+        const pending = deferred<IOperationActionResult>();
+        const {controller, options, dialogs, setUser} = setup();
+        options.cancel.mockReturnValueOnce(pending.promise);
+        controller.cancel(roleOperation);
+        const request = dialogs[0].confirm();
+        setUser({...user, id: 'other', email: 'other@example.test'});
+        const busyChanges = options.onBusyChange.mock.calls.length;
+        pending.resolve({operationId: roleOperation.operationId, state, message: 'Ответ прежнего владельца'});
+        await request;
+        expect(options.success).not.toHaveBeenCalled();
+        expect(options.error).not.toHaveBeenCalled();
+        expect(options.info).not.toHaveBeenCalled();
+        expect(options.reload).not.toHaveBeenCalled();
+        expect(options.cancel).toHaveBeenCalledOnce();
+        expect(options.onBusyChange).toHaveBeenCalledTimes(busyChanges);
     });
 });

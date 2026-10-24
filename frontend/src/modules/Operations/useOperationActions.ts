@@ -45,6 +45,7 @@ export function useOperationActions({ reload, enabled = true }: IOperationAction
         },
         success: text => { void message.success(text); },
         error: text => { void message.error(text); },
+        info: text => { void message.info(text); },
         onBusyChange: setBusy,
         requestKey: () => crypto.randomUUID(),
     }), [store, scope, enabled, cancelTitleId]);

@@ -12,6 +12,7 @@ interface IControllerOptions {
     confirmCancel: (confirm: () => Promise<void>, close: () => void,operation:IOperation) => { destroy: () => void };
     success: (text: string) => void;
     error: (text: string) => void;
+    info: (text: string) => void;
     onBusyChange: (operationIds: ReadonlySet<string>) => void;
     requestKey: () => string;
 }
@@ -117,7 +118,14 @@ export function createOperationActionsController(options: IControllerOptions) {
                     const result=await options.cancel(operation.operationId,key,operation.actions!.digest);
                     if(cancelKeys.get(id)===key)cancelKeys.delete(id);
                     if (!isCurrent()) { return; }
-                    options.success(result.message||'Запрос отмены передан исполнителю');
+                    if (result.state === 'CANCELLED') {
+                        options.success(result.message || 'Отмена задания подтверждена.');
+                    } else if (result.state === 'FAILED') {
+                        options.error(result.message || 'Задание завершилось с ошибкой до отмены.');
+                    } else {
+                        const status = result.state === 'SUCCEEDED' ? 'Задание завершилось до отмены.' : 'Отмена ещё не подтверждена.';
+                        options.info(result.message ? status + ' ' + result.message : status);
+                    }
                     await refresh(isCurrent);
                 } catch (failure) {
                     if (isCurrent()) { options.error(errorMessage(failure, 'Не удалось отменить задание.')); }
