@@ -28,18 +28,18 @@ for(const file of ['docker-compose.yml','compose.production.yml'])test(`${file}:
     assert.equal(service.build.dockerfile,'services/feature-flags-service/Dockerfile');
     assert.equal(service.environment.PORT,'4400');assert.equal(service.environment.CATALOG_SERVICE_URL,'http://catalog-service:4100');
     assert.ok(!service.ports?.length);assert.ok(!service.volumes?.length);
-    assert.equal(service.depends_on['catalog-service'].condition,'service_healthy');
+    assert.equal(service.depends_on['catalog-service'].condition,'service_started');
     assert.equal(service.depends_on.postgres.condition,'service_healthy');
     assert.equal(config.services['api-gateway'].environment.FEATURE_FLAGS_SERVICE_URL,'http://feature-flags-service:4400');
     assert.equal(config.services['catalog-service'].environment.FEATURE_FLAGS_SERVICE_URL,'http://feature-flags-service:4400');
     assert.ok(!Object.keys(config.services['catalog-service'].depends_on).includes('feature-flags-service'));
-    assert.ok(Object.keys(config.services['api-gateway'].depends_on).includes('feature-flags-service'));
+    assert.ok(!Object.keys(config.services['api-gateway'].depends_on||{}).includes('feature-flags-service'));
     assert.ok(service.healthcheck.test.join(' ').includes('4400/ready'));
     if(file==='compose.production.yml') {
         assert.equal(service.image,'neurocenter/feature-flags-service:fixture');
         assert.equal(service.environment.CATALOG_PG_URL_FILE,'/run/secrets/catalog_url');
         assert.deepEqual(service.secrets.map(secret=>secret.source).sort(),['catalog_url','internal_token','metrics_token']);
-        assert.deepEqual(Object.keys(config.volumes).sort(),['backups','capacity','model-weights','postgres','projects','runtime-artifacts','skills']);
+        assert.deepEqual(Object.keys(config.volumes).sort(),['backups','capacity','help-content','model-weights','postgres','projects','runtime-artifacts','skills']);
     } else assert.ok(new URL(service.environment.CATALOG_PG_URL).pathname==='/catalog');
 });
 

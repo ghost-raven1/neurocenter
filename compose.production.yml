@@ -154,8 +154,7 @@ services:
     secrets: [metrics_token, internal_token, catalog_url, backup_url, model_credential_key]
     volumes: [projects:/data/projects, backups:/app/backups, runtime-artifacts:/app/runtime-artifacts, capacity:/capacity:ro, model-weights:/data/models:rw, help-content:/app/content/help]
     depends_on:
-      model-runtime: {condition: service_healthy}
-      capacity-collector: {condition: service_healthy}
+      capacity-collector: {condition: service_started}
       postgres: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4100/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
@@ -179,7 +178,7 @@ services:
     secrets: [metrics_token, internal_token, catalog_url]
     depends_on:
       postgres: {condition: service_healthy}
-      catalog-service: {condition: service_healthy}
+      catalog-service: {condition: service_started}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4400/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -203,7 +202,7 @@ services:
     secrets: [metrics_token, internal_token]
     volumes: [skills:/app/data/skills, capacity:/capacity:ro]
     depends_on:
-      capacity-collector: {condition: service_healthy}
+      capacity-collector: {condition: service_started}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4200/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -235,9 +234,9 @@ services:
     secrets: [metrics_token, internal_token, rag_url, rag_provision_url]
     volumes: [projects:/data/projects, capacity:/capacity:ro]
     depends_on:
-      capacity-collector: {condition: service_healthy}
+      capacity-collector: {condition: service_started}
       postgres: {condition: service_healthy}
-      catalog-service: {condition: service_healthy}
+      catalog-service: {condition: service_started}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4300/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -263,7 +262,7 @@ services:
       CATALOG_SERVICE_URL: http://catalog-service:4100
     secrets: [metrics_token, internal_token, sso_client_secret]
     depends_on:
-      catalog-service: {condition: service_healthy}
+      catalog-service: {condition: service_started}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:22222/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -291,12 +290,6 @@ services:
       AUTH_SERVICE_URL: http://oauth2-bridge:22222
       FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
     secrets: [metrics_token, internal_token]
-    depends_on:
-      catalog-service: {condition: service_healthy}
-      skills-service: {condition: service_healthy}
-      rag-sync-service: {condition: service_healthy}
-      oauth2-bridge: {condition: service_healthy}
-      feature-flags-service: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -317,8 +310,8 @@ services:
     ports: ['80:8080', '443:8443']
     networks: [backend, edge]
     depends_on:
-      api-gateway: {condition: service_healthy}
-      oauth2-bridge: {condition: service_healthy}
+      api-gateway: {condition: service_started}
+      oauth2-bridge: {condition: service_started}
     healthcheck:
       test: [CMD, wget, --spider, --no-check-certificate, https://127.0.0.1:8443/ready]
       interval: 10s

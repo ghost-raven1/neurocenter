@@ -7,7 +7,10 @@ import {checkReadiness,httpReady} from '../../shared/readiness.cjs';
 @Controller()
 export class AppController {
     @Get('ready')
-    async ready():Promise<unknown>{const state=await checkReadiness(Object.fromEntries([
+    ready():{ok:true;checks:{gateway:'ready'}}{return {ok:true,checks:{gateway:'ready'}};}
+    /** Dependency diagnostics do not decide whether unrelated routes may receive traffic. */
+    @Get('ready/dependencies')
+    async dependencies():Promise<unknown>{const state=await checkReadiness(Object.fromEntries([
         ['catalog',process.env.CATALOG_SERVICE_URL||'http://localhost:4100'],['skills',process.env.SKILLS_SERVICE_URL||'http://localhost:4200'],
         ['rag',process.env.RAG_SERVICE_URL||'http://localhost:4300'],['auth',process.env.AUTH_SERVICE_URL||'http://localhost:22222'],
         ['featureFlags',process.env.FEATURE_FLAGS_SERVICE_URL||'http://localhost:4400'],

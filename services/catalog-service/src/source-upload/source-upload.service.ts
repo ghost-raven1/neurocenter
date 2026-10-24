@@ -12,6 +12,7 @@ import {CapacityError,reserveCapacity} from '../../../shared/capacity.cjs';
 import {inspectUploadArchive} from '../../../shared/upload-inspection.cjs';
 import {SourceUploadRepository} from './source-upload.repository';
 import {UploadFiles} from './source-upload.files';
+import {SourceUploadAvailability} from './source-upload.availability';
 import {uploadId,uploadView,uploadRuntime,validateUploadIntent,type UploadBuildSource,type UploadRow,type PinnedUploadSource} from './source-upload.model';
 
 /** Durable upload control plane; data streams hold a PostgreSQL session lease until bytes settle. */
@@ -29,7 +30,8 @@ export class SourceUploads{
   const user=rows[0];if(!user?.is_main_admin||!user.enabled||epoch&&epoch!==user.epoch)throw new ForbiddenException('Права или состояние учётной записи изменились. Загрузка остановлена. Выберите файл заново.');
   return user.epoch;
  }
- async create(actor:IAccessActor,raw:unknown){const epoch=await this.authorize(actor),input=validateUploadIntent(raw),row=await this.repository.create(normalizeEmail(actor.email),epoch,input);await this.authorize(actor,row.auth_epoch);return uploadView(row);}
+ protected requireFiles():void{}
+ async create(actor:IAccessActor,raw:unknown){const epoch=await this.authorize(actor);this.requireFiles();const input=validateUploadIntent(raw),row=await this.repository.create(normalizeEmail(actor.email),epoch,input);await this.authorize(actor,row.auth_epoch);return uploadView(row);}
  async get(actor:IAccessActor,id:string){await this.authorize(actor);if(!uploadId(id))throw new NotFoundException('Загрузка не найдена.');return uploadView(await this.repository.get(normalizeEmail(actor.email),id));}
  async lookup(actor:IAccessActor,key:string){await this.authorize(actor);if(!uploadId(key))throw new BadRequestException('Нужен UUID загрузки.');return uploadView(await this.repository.lookup(normalizeEmail(actor.email),key));}
  private usable(row:UploadRow){if(row.state==='CANCELLED')throw new ConflictException('Загрузка отменена. Выберите файл заново.');if(new Date(row.expires_at).getTime()<Date.now())throw new ConflictException('Срок загрузки истёк. Выберите файл заново.');}
@@ -39,7 +41,7 @@ export class SourceUploads{
  }
  private async receiveContent(actor:IAccessActor,id:string,input:Readable,declared:unknown,signal?:AbortSignal){
   if(!uploadId(id))throw new NotFoundException('Загрузка не найдена.');
-  id=id.toLowerCase();await this.authorize(actor);const email=normalizeEmail(actor.email),client=await this.pool.connect();
+  id=id.toLowerCase();await this.authorize(actor);this.requireFiles();const email=normalizeEmail(actor.email),client=await this.pool.connect();
   let durable=false;
   const controller=new AbortController(),abort=()=>{if(!durable)controller.abort(new Error('Передача файла отменена.'));};
   signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
@@ -85,6 +87,7 @@ export class SourceUploads{
  }
  async pin(actor:IAccessActor,source:UploadBuildSource):Promise<PinnedUploadSource>{
   const row=await this.repository.get(normalizeEmail(actor.email),source.uploadId);await this.authorize(actor,row.auth_epoch);
+  this.requireFiles();
   if(row.state!=='READY'||row.sha256!==source.sha256||Number(row.bytes)!==source.bytes)throw new ConflictException('Нужна завершённая загрузка с теми же SHA-256 и размером.');
   this.usable(row);const choice=row.metadata?.choices.find(item=>item.entrypoint===source.entrypoint);if(!choice)throw new BadRequestException('Выберите исполняемый файл из проверенного архива.');
   await this.files.hash(this.files.filename(row.id),source.bytes,source.sha256);
@@ -95,14 +98,15 @@ export class SourceUploads{
   const row=await this.repository.get(normalizeEmail(actor),source.uploadId,client,true);await this.authorize({email:actor,activeRole:'Главный админ'},row.auth_epoch,client);
   if(row.state!=='READY'||row.sha256!==source.sha256||Number(row.bytes)!==source.bytes)throw new ConflictException('Загрузка отменена или изменена перед началом сборки.');this.usable(row);
  }
- async assertRetained(actor:string,source:PinnedUploadSource){const row=await this.repository.get(normalizeEmail(actor),source.uploadId);await this.authorize({email:actor,activeRole:'Главный админ'},row.auth_epoch);await this.files.hash(this.files.filename(row.id),source.bytes,source.sha256);}
+ async assertRetained(actor:string,source:PinnedUploadSource){const row=await this.repository.get(normalizeEmail(actor),source.uploadId);await this.authorize({email:actor,activeRole:'Главный админ'},row.auth_epoch);this.requireFiles();await this.files.hash(this.files.filename(row.id),source.bytes,source.sha256);}
+ protected async removeCancelled(id:string){await this.files.remove(id);await this.pool.query("UPDATE tool_source_uploads SET cleaned_at=now() WHERE id=$1 AND state='CANCELLED'",[id]);}
  async cancel(actor:IAccessActor,id:string){
   await this.authorize(actor);if(!uploadId(id))throw new NotFoundException('Загрузка не найдена.');
   id=id.toLowerCase();const row=await this.repository.transaction(async client=>{
    const row=await this.repository.get(normalizeEmail(actor.email),id,client,true);
    if(await this.repository.referenced(client,id))throw new ConflictException('Исходник уже сохранён в сборке. Его нельзя удалить вместе с формой.');
    return (await client.query<UploadRow>("UPDATE tool_source_uploads SET state='CANCELLED',updated_at=now() WHERE id=$1 RETURNING *",[row.id])).rows[0];
-  });this.active.get(id)?.abort(new Error('Загрузка отменена.'));await this.files.remove(id);await this.pool.query("UPDATE tool_source_uploads SET cleaned_at=now() WHERE id=$1 AND state='CANCELLED'",[id]);return uploadView(row);
+  });this.active.get(id)?.abort(new Error('Загрузка отменена.'));await this.removeCancelled(id);return uploadView(row);
  }
  async cancelRequest(actor:IAccessActor,key:string){
   const epoch=await this.authorize(actor);if(!uploadId(key))throw new BadRequestException('Нужен UUID загрузки.');
@@ -111,7 +115,7 @@ export class SourceUploads{
    const result=await client.query<UploadRow>('SELECT * FROM tool_source_uploads WHERE actor=$1 AND request_key=$2 FOR UPDATE',[normalizeEmail(actor.email),key]),row=result.rows[0];
    if(await this.repository.referenced(client,row.id))throw new ConflictException('Исходник уже сохранён в сборке. Его нельзя удалить вместе с формой.');
    return (await client.query<UploadRow>("UPDATE tool_source_uploads SET state='CANCELLED',updated_at=now() WHERE id=$1 RETURNING *",[row.id])).rows[0];
-  });this.active.get(row.id)?.abort();await this.files.remove(row.id);await this.pool.query("UPDATE tool_source_uploads SET cleaned_at=now() WHERE id=$1 AND state='CANCELLED'",[row.id]);return uploadView(row);
+  });this.active.get(row.id)?.abort();await this.removeCancelled(row.id);return uploadView(row);
  }
  async cleanup(){
   const candidates=await this.pool.query<{id:string}>(`SELECT uploads.id FROM tool_source_uploads uploads LEFT JOIN platform_users users ON users.email=uploads.actor WHERE uploads.cleaned_at IS NULL AND (uploads.expires_at<now() OR uploads.state='CANCELLED' OR NOT COALESCE(users.enabled AND users.is_main_admin,false) OR uploads.auth_epoch<>users.source_upload_auth_epoch::text) ORDER BY uploads.cleanup_checked_at NULLS FIRST,uploads.created_at LIMIT 100`);
@@ -127,8 +131,14 @@ export class SourceUploads{
 
 @Injectable()
 export class SourceUploadService extends SourceUploads implements OnModuleInit,OnModuleDestroy{
- private timer?:ReturnType<typeof setInterval>;
+ private readonly availability=new SourceUploadAvailability(async()=>{await this.files.setup();await this.cleanup();});
  constructor(private readonly access:AccessDb){super(createPool({connectionString:process.env.CATALOG_PG_URL||'postgresql://rag:rag@localhost:5432/catalog',max:6},'source-uploads'),path.join(runtimeArtifactDirectory(),'.source-uploads'));}
- async onModuleInit(){await this.access.ready();await this.setup();await this.cleanup();this.timer=setInterval(()=>{void this.cleanup().catch(()=>undefined);},60000);this.timer.unref();}
- async onModuleDestroy(){if(this.timer)clearInterval(this.timer);this.stop();await this.pool.end();}
+ protected override requireFiles():void{this.availability.assertReady();}
+ protected override async removeCancelled(id:string){
+  if(!this.availability.ready)return;
+  try{await this.files.remove(id);}catch{this.availability.unavailable();return;}
+  await this.pool.query("UPDATE tool_source_uploads SET cleaned_at=now() WHERE id=$1 AND state='CANCELLED'",[id]);
+ }
+ async onModuleInit(){await this.access.ready();await ensureCatalogSchema(this.pool);this.availability.start();}
+ async onModuleDestroy(){this.stop();await this.availability.close();await this.pool.end();}
 }

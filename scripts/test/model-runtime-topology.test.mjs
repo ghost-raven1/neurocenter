@@ -26,7 +26,7 @@ for(const file of ['docker-compose.yml','compose.production.yml']) {
         assert.equal(catalog.environment.MODEL_RUNTIME_URL,'http://model-runtime:11434');
         assert.equal(catalog.environment.MODEL_CHAT_CONTEXT_WINDOW_TOKENS,runtime.environment.OLLAMA_CONTEXT_LENGTH);
         assert.equal(catalog.environment.MODEL_STORAGE_PATH,'/data/models');
-        assert.equal(catalog.depends_on['model-runtime'].condition,'service_healthy');
+        assert.equal(catalog.depends_on['model-runtime'],undefined);
         const weights=runtime.volumes.find(mount=>mount.target==='/root/.ollama');
         const probe=catalog.volumes.find(mount=>mount.target==='/data/models');
         assert.equal(weights.source,probe.source);assert.equal(probe.read_only,undefined);
