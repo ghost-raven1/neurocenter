@@ -47,6 +47,8 @@ import {CHAT_STORAGE_SCHEMA_SQL} from '../model-chat/chat-storage.schema';
 import {CHAT_STORAGE_SCHEMA_ASSERT_SQL} from '../model-chat/chat-storage.schema-verification';
 import {CHAT_GROUP_SCHEMA_SQL} from '../model-chat/chat-group.schema';
 import {CHAT_GROUP_SCHEMA_ASSERT_SQL} from '../model-chat/chat-group.schema-verification';
+import {CHAT_DISCUSSION_SCHEMA_SQL} from '../model-chat/chat-discussion.schema';
+import {CHAT_DISCUSSION_SCHEMA_ASSERT_SQL} from '../model-chat/chat-discussion.schema-verification';
 import {OPENCODE_MODEL_SYNC_SCHEMA_SQL} from '../models/opencode-model-sync.schema';
 import {OPENCODE_MODEL_SYNC_SCHEMA_ASSERT_SQL} from '../models/opencode-model-sync.schema-verification';
 import {MODEL_USAGE_SCHEMA_SQL} from '../model-usage/model-usage.schema';
@@ -90,4 +92,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:31,name:'project-team-chat-learning-receipts',sql:PROJECT_CHAT_LEARNING_SCHEMA_SQL+'\n'+PROJECT_CHAT_LEARNING_SCHEMA_ASSERT_SQL},
     {version:32,name:'isolated-project-chat-room-execution',sql:PROJECT_CHAT_ISOLATION_SCHEMA_SQL+'\n'+PROJECT_CHAT_ISOLATION_SCHEMA_ASSERT_SQL},
     {version:33,name:'bounded-system-role-coordinator',sql:SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL},
+    {version:34,name:'bounded-private-group-discussions',sql:CHAT_DISCUSSION_SCHEMA_SQL+'\n'+CHAT_DISCUSSION_SCHEMA_ASSERT_SQL},
 ];

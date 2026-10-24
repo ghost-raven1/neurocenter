@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, HttpException, ServiceUnavailab
 import type { Request } from 'express';
 import type { ModelsService } from '../models/models.service';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
+import type { IModel } from '../models/model.types';
 import { ProjectEmbeddingRepository } from '../models/project-embedding.repository';
 import { ProjectRagClient } from '../models/project-rag-client';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
@@ -37,7 +38,8 @@ export class ModelChatProjectContext {
     async overview(req: Request, projectId: string | null): Promise<ChatProjectEvidence> {
         return projectId ? (await this.state(req, projectId)).evidence : { ...NONE };
     }
-    async prepare(req: Request, projectId: string | null, prompt: string, signal: AbortSignal, beforeSearch?: () => Promise<void>): Promise<PreparedProjectContext> {
+    async prepare(req: Request, projectId: string | null, prompt: string, signal: AbortSignal, beforeSearch?: () => Promise<void>,
+        embedding?: (model: IModel, body: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>): Promise<PreparedProjectContext> {
         signal.throwIfAborted();
         if (!projectId) return this.prepared({ ...NONE }, async () => { signal.throwIfAborted(); });
         const initial = await this.state(req, projectId);
@@ -75,7 +77,9 @@ export class ModelChatProjectContext {
         const embeddingModel = selected.model;
         const inherited=currentModelUsage().beforeInference;
         const beforeInference=async()=>{await inherited?.();await assertCurrent();await beforeSearch?.();signal.throwIfAborted();};
-        try { result = await withModelUsage({ purpose: 'project-search', projectId, beforeInference }, () => this.runtime.infer(embeddingModel, 'embed', { input: [prompt], truncate: false }, signal)); }
+        try { result = await withModelUsage({ purpose: 'project-search', projectId, beforeInference }, () => embedding
+            ? embedding(embeddingModel, { input: [prompt], truncate: false }, signal)
+            : this.runtime.infer(embeddingModel, 'embed', { input: [prompt], truncate: false }, signal)); }
         catch(error) { signal.throwIfAborted(); if(error instanceof HttpException)throw error;throw new ServiceUnavailableException('Embedding-модель не выполнила поиск по проекту. Проверьте её подключение и повторите сообщение.'); }
         await assertCurrent();
         const vectors = result.embeddings;

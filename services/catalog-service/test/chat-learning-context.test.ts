@@ -157,15 +157,25 @@ describe.skipIf(!connection)('Approved learning in private agent rounds — actu
         expect(response.answer).toBeUndefined(); expect(search).not.toHaveBeenCalled(); expect(f.runtime.infer).not.toHaveBeenCalled();
         expect(JSON.stringify(failed)).not.toContain('Unavailable');
     });
-    it('cancels before shared retrieval when its signal changes after the first recipient snapshot', async () => {
-        const a = await f.agent('A'), b = await f.agent('B'), abort = new AbortController(), search = await f.configureRag();
+    it('explicit Stop during accepted learning preflight prevents shared retrieval and late answers', async () => {
+        const a = await f.agent('A'), b = await f.agent('B'), search = await f.configureRag();
+        let entered!: () => void, release!: () => void;
+        const started = new Promise<void>(resolve => { entered = resolve; }), held = new Promise<void>(resolve => { release = resolve; });
         const original = f.service.groups.learning.prepare.bind(f.service.groups.learning);
         vi.spyOn(f.service.groups.learning, 'prepare').mockImplementationOnce(async (...args) => {
-            const prepared = await original(...args); abort.abort(new Error('private-abort-reason')); return prepared;
+            const prepared = await original(...args); entered(); await held; return prepared;
         });
-        const cancelled = await f.send(await f.create([a.id, b.id]), undefined, crypto.randomUUID(), false, abort.signal);
-        expect(cancelled.turns[0].status).toBe('cancelled'); expect(cancelled.turns[0].responses!.every(response => response.status === 'cancelled' && !response.answer)).toBe(true);
-        expect(search).not.toHaveBeenCalled(); expect(f.runtime.infer).not.toHaveBeenCalled(); expect(JSON.stringify(cancelled)).not.toContain('private-abort-reason');
+        const initial = await f.create([a.id, b.id]), pending = f.send(initial);
+        try {
+            await started; const progress = await f.service.read(req(), initial.conversation.id);
+            const cancelled = await f.service.cancel(req(), initial.conversation.id, progress.turns[0].id, { expectedRevision: progress.conversation.revision });
+            expect(cancelled.turns[0].status).toBe('cancelled'); release(); await pending;
+            const reopened = await f.service.read(req(), initial.conversation.id);
+            expect(reopened.turns[0].status).toBe('cancelled');
+            expect(reopened.turns[0].responses!.every(response => response.status === 'cancelled' && !response.answer)).toBe(true);
+            expect((await f.pool.query('SELECT status,answer FROM model_chat_agent_responses')).rows).toEqual([{ status: 'cancelled', answer: null }, { status: 'cancelled', answer: null }]);
+            expect(search).not.toHaveBeenCalled(); expect(f.runtime.infer).not.toHaveBeenCalled();
+        } finally { release(); await pending.catch(() => undefined); }
     });
     it('retry uses fresh knowledge only for the failed sibling and never replays the completed response', async () => {
         const a = await f.agent('A'), b = await f.agent('B'); await f.knowledge('a', 'Стабильное знание A', a.id); const old = await f.knowledge('b', 'Прежнее знание B', b.id);

@@ -45,7 +45,7 @@ export async function chatLearningFixture() {
         vi.stubEnv('CATALOG_PG_URL', String(pool.options.connectionString)); vi.stubEnv('MODEL_CHAT_CONTEXT_WINDOW_TOKENS', String(contextWindow));
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN', 'chat-learning-test-only');
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(flagFailure ? { message: 'Unavailable' }
-            : evaluateFeatureFlags({ ...defaultFeatureFlags(), project_learning: enabled })), { status: flagFailure ? 503 : 200 })));
+            : evaluateFeatureFlags({ ...defaultFeatureFlags(), project_learning: enabled, group_discussions: false })), { status: flagFailure ? 503 : 200 })));
         await pool.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3::jsonb)', [model.id, model.name, JSON.stringify(model)]);
         await pool.query('INSERT INTO project_models(project_id,model_id,added_by) VALUES($1,$2,$3)', [projectId, model.id, developer.email]);
         runtime.infer.mockReset(); runtime.infer.mockImplementation(async (_model, _endpoint, body) => {

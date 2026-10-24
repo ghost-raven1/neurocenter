@@ -56,7 +56,7 @@ describe.skipIf(!connection)('Private project agent rounds — disposable Postgr
     };
     beforeAll(async () => {
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','group-test-only');
-        vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags(defaultFeatureFlags())),{status:200})));
+        vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags({...defaultFeatureFlags(),group_discussions:false})),{status:200})));
         const url = new URL(connection!); if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.port === '5432') throw new Error('Use an explicit disposable localhost PostgreSQL port other than 5432');
         url.pathname = '/postgres'; admin = new Pool({ connectionString: url.href, max: 1 }); database = 'nc_chat_group_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database);
         url.pathname = '/' + database; db = new Pool({ connectionString: url.href, max: 4 }); await ensureCatalogSchema(db);

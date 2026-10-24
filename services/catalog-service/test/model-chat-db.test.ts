@@ -133,12 +133,17 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         const tail = detail.turns[2]; detail = await service.removeTurn(request(), detail.conversation.id, tail.id, { expectedRevision: detail.conversation.revision }); expect(detail.turns).toHaveLength(2);
         await expect(send(detail, 'Изменить', [], tail.requestId)).rejects.toBeInstanceOf(ConflictException);
     });
-    it('cancels the upstream and records a terminal turn on browser abort', async () => {
-        let began!: () => void; const started = new Promise<void>(resolve => { began = resolve; });
-        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort: AbortSignal) => { began(); await new Promise((_, reject) => abort.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); return {} as never; });
+    it('keeps a durably accepted turn running after browser abort and reopens the saved result', async () => {
+        let began!: () => void, release!: () => void, providerSignal!: AbortSignal;
+        const started = new Promise<void>(resolve => { began = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
+        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort: AbortSignal) => { providerSignal = abort; began(); await gate;
+            return { message: { role: 'assistant', content: 'Server-owned result' }, done_reason: 'stop' } as never; });
         const abort = new AbortController(), created = await create(), pending = send(created, 'Wait', [], randomUUID(), request(), abort.signal);
-        await started; abort.abort(); const result = await pending;
-        expect(result.turns[0]).toMatchObject({ status: 'cancelled' }); expect(result.turns[0].answer).toBeUndefined();
+        try { await started; abort.abort(); expect(providerSignal.aborted).toBe(false);
+            expect((await service.read(request(), created.conversation.id)).turns[0].status).toBe('pending');
+            release(); await pending; const reopened = await service.read(request(), created.conversation.id);
+            expect(reopened.turns[0]).toMatchObject({ status: 'done', answer: { content: 'Server-owned result' } });
+        } finally { release(); await pending.catch(() => undefined); }
     });
     it('explicit cancellation survives late successful provider results', async () => {
         let release!: () => void, began!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { began = resolve; });

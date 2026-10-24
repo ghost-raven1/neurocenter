@@ -40,7 +40,8 @@ export class ChatRepository {
             if (!row) throw new NotFoundException('Диалог не найден.');
             await authorize(db);
             const expired = await db.query("UPDATE model_chat_turns SET status='cancelled',error='Запрос прерван. Можно повторить его.',lease_until=NULL WHERE conversation_id=$1 AND status='pending' AND lease_until<=now() RETURNING id", [id]);
-            if (expired.rowCount) { await db.query("UPDATE model_chat_agent_responses SET status='cancelled',error='Запрос прерван.',updated_at=now() WHERE turn_id=ANY($1::uuid[]) AND status='pending'", [expired.rows.map(turn => turn.id)]); await this.bump(db, row); }
+            if (expired.rowCount) { await db.query("UPDATE model_chat_agent_responses SET status='cancelled',error='Запрос прерван.',updated_at=now() WHERE turn_id=ANY($1::uuid[]) AND status='pending'", [expired.rows.map(turn => turn.id)]);
+                await db.query("UPDATE model_chat_discussion_steps SET status='cancelled',error='Обсуждение прервано.',finished_at=now() WHERE turn_id=ANY($1::uuid[]) AND status='pending'",[expired.rows.map(turn=>turn.id)]); await this.bump(db, row); }
             const result = await action(db, row); await authorize(db); return result;
         });
     }
@@ -48,7 +49,8 @@ export class ChatRepository {
         const cursor = before ? (await db.query<{ position: string }>('SELECT position FROM model_chat_turns WHERE id=$1 AND conversation_id=$2 AND removed_at IS NULL', [before, row.id])).rows[0] : null;
         if (before && !cursor) throw new NotFoundException('Страница истории не найдена в этом диалоге.');
         const candidates = (await db.query<{ id: string; bytes: string }>(`SELECT id,octet_length(to_jsonb(t)::text)-octet_length(input_text)+512+
-            COALESCE((SELECT sum(octet_length(COALESCE(r.answer::text,''))+2048) FROM model_chat_agent_responses r WHERE r.turn_id=t.id),0) AS bytes FROM model_chat_turns t
+            COALESCE((SELECT sum(octet_length(COALESCE(r.answer::text,''))+2048) FROM model_chat_agent_responses r WHERE r.turn_id=t.id),0)
+            +COALESCE((SELECT sum(octet_length(COALESCE(s.output,''))+2048) FROM model_chat_discussion_steps s WHERE s.turn_id=t.id),0) AS bytes FROM model_chat_turns t
             WHERE conversation_id=$1 AND removed_at IS NULL AND ($2::bigint IS NULL OR position<$2) ORDER BY position DESC LIMIT $3`, [row.id, cursor?.position ?? null, limit + 1])).rows;
         const selected: string[] = []; let bytes = 0;
         for (const turn of candidates.slice(0, limit)) { const size = Number(turn.bytes); if (selected.length && bytes + size > 4 * 1024 ** 2) break; selected.push(turn.id); bytes += size; }
@@ -63,19 +65,27 @@ export class ChatRepository {
         return { conversation: row, turns, attachments, history };
     }
     async checkpoint(db: ChatDb, id: string, pin?: string): Promise<ChatCheckpoint | null> { return (await db.query<ChatCheckpoint>('SELECT * FROM model_chat_compactions WHERE conversation_id=$1 AND ($2::text IS NULL OR model_pin=$2) ORDER BY created_at DESC,id DESC LIMIT 1', [id, pin ?? null])).rows[0] ?? null; }
-    /** Fetch a bounded oldest prefix plus the tail. Overflow prevents inference until checkpoints consume it. */
+    /** Context-only projection includes immutable partial discussion answers; terminal SQL history is never rewritten. Overflow fences inference. */
     async sources(db: ChatDb, id: string, checkpoint: ChatCheckpoint | null): Promise<ChatSourceRows> {
-        const result = await db.query<ChatSourceTurn & { omitted_bytes: string; omitted_request_bytes: string; omitted_messages: string }>(`WITH sizes AS (
-            SELECT id,position,octet_length(input_text)+octet_length(COALESCE(answer->>'content','')) AS bytes,
-                octet_length(to_jsonb(input_text)::text)+27+CASE WHEN status='done' THEN octet_length(to_jsonb(COALESCE(answer->>'content',''))::text)+32 ELSE 0 END AS request_bytes,
-                CASE WHEN status='done' THEN 2 ELSE 1 END AS messages
-            FROM model_chat_turns WHERE conversation_id=$1 AND removed_at IS NULL AND ($2::bigint IS NULL OR position>$2 OR position=$2 AND NOT $3)
+        const result = await db.query<ChatSourceTurn & { omitted_bytes: string; omitted_request_bytes: string; omitted_messages: string }>(`WITH source_turns AS (
+            SELECT turn.*,partial.content AS partial_content FROM model_chat_turns turn LEFT JOIN LATERAL (
+                SELECT string_agg(format('[Сохранённый частичный ответ %s (@%s); модель %s; pin %s; обсуждение прервано]\n%s',
+                    step.snapshot->>'name',step.snapshot->>'slug',step.snapshot->>'modelName',step.model_pin,CASE WHEN step.finish_reason='length' THEN '[Ответ обрезан моделью по лимиту; выводы неполные.]' || E'\n' || step.output ELSE step.output END),E'\n\n' ORDER BY step.sequence) AS content
+                FROM model_chat_discussion_steps step WHERE step.turn_id=turn.id AND step.status='done' AND step.phase IN ('response','critique')
+            ) partial ON turn.status IN ('failed','cancelled')
+            WHERE turn.conversation_id=$1 AND turn.removed_at IS NULL AND ($2::bigint IS NULL OR turn.position>$2 OR turn.position=$2 AND NOT $3)
+        ), sizes AS (
+            SELECT id,position,octet_length(input_text)+octet_length(COALESCE(answer->>'content',partial_content,'')) AS bytes,
+                octet_length(to_jsonb(input_text)::text)+27+CASE WHEN status='done' OR partial_content IS NOT NULL THEN octet_length(to_jsonb(COALESCE(answer->>'content',partial_content,''))::text)+32 ELSE 0 END AS request_bytes,
+                CASE WHEN status='done' OR partial_content IS NOT NULL THEN 2 ELSE 1 END AS messages FROM source_turns
         ), measured AS (SELECT *,CASE WHEN position=$2::bigint THEN 0 ELSE request_bytes END AS budget_bytes FROM sizes),
         budget AS (SELECT *,COALESCE(sum(budget_bytes) OVER(ORDER BY position ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS prior,
             row_number() OVER(ORDER BY position) AS ordinal,max(position) OVER() AS tail FROM measured),
         selected AS (SELECT id FROM budget WHERE prior+budget_bytes<=8388576 OR ordinal=1 OR position=tail),
         omitted AS (SELECT COALESCE(sum(bytes),0) AS omitted_bytes,COALESCE(sum(request_bytes),0) AS omitted_request_bytes,COALESCE(sum(messages),0) AS omitted_messages FROM budget WHERE id NOT IN(SELECT id FROM selected))
-        SELECT t.id,t.position,t.input_text,t.status,t.answer,omitted.* FROM model_chat_turns t CROSS JOIN omitted WHERE t.id IN(SELECT id FROM selected) ORDER BY t.position`, [id, checkpoint?.through_position ?? null, checkpoint?.through_complete ?? false]);
+        SELECT t.id,t.position,t.input_text,CASE WHEN t.partial_content IS NOT NULL THEN 'done' ELSE t.status END AS status,
+            COALESCE(t.answer,CASE WHEN t.partial_content IS NOT NULL THEN jsonb_build_object('content',t.partial_content) END) AS answer,
+            omitted.* FROM source_turns t CROSS JOIN omitted WHERE t.id IN(SELECT id FROM selected) ORDER BY t.position`, [id, checkpoint?.through_position ?? null, checkpoint?.through_complete ?? false]);
         const omittedBytes = Number(result.rows[0]?.omitted_bytes ?? 0), omittedRequestBytes = Number(result.rows[0]?.omitted_request_bytes ?? 0), omittedMessages = Number(result.rows[0]?.omitted_messages ?? 0);
         return { turns: result.rows, omittedBytes, omittedRequestBytes, omittedMessages, overflow: omittedMessages > 0 };
     }
@@ -132,6 +142,7 @@ export class ChatRepository {
             if (!row) return;
             const result = await db.query('UPDATE model_chat_turns SET status=$4,error=$5,lease_until=NULL WHERE conversation_id=$1 AND id=$2 AND request_id=$3 AND status=\'pending\' AND removed_at IS NULL', [conversation, turnId, requestId, status, message]);
             await db.query("UPDATE model_chat_agent_responses SET status=$4,error=$5,updated_at=now() WHERE conversation_id=$1 AND turn_id=$2 AND request_id=$3 AND status='pending'", [conversation, turnId, requestId, status, message]);
+            await db.query("UPDATE model_chat_discussion_steps SET status=$3,error=$4,finished_at=now() WHERE turn_id=$1 AND request_id=$2 AND status='pending'",[turnId,requestId,status,'Обсуждение прервано. Готовые ответы сохранены.']);
             if (result.rowCount) await this.bump(db, row);
         });
     }

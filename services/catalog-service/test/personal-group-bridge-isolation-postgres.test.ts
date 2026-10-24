@@ -10,7 +10,7 @@ describe.skipIf(!connection)('Personal group bridge isolation — disposable Pos
     let f: PersonalGroupBridgeFixture;
     beforeAll(async () => {
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN', 'personal-bridge-test-only');
-        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(evaluateFeatureFlags(defaultFeatureFlags())), { status: 200 })));
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(evaluateFeatureFlags({...defaultFeatureFlags(),group_discussions:false})), { status: 200 })));
         f = await personalGroupBridgeFixture();
     });
     afterEach(async () => { await f?.reset(); });

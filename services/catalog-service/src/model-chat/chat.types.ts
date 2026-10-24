@@ -18,6 +18,7 @@ export interface ChatTurn {
     research?: ChatResearchRequest; researchSteps?: ChatResearchStepSummary[];
     answer?: { content: string; finishReason: 'stop' | 'length'; usage: ChatUsage; evidence?: ChatProjectEvidence; learning?: ChatLearningReceipt; researchSources?: ResearchExternalSource[]; researchLimited?: boolean };
     targetAgentIds?: string[]; responses?: ChatAgentResponse[];
+    discussion?: { mode: 'automatic'; callsStarted: number; maxCalls: number };
     error?: string; createdAt: string;
 }
 export interface ChatAttachment { id: string; name: string; mediaType: string; bytes: number; textBytes: number; pages?: number; warning?: string; createdAt: string }

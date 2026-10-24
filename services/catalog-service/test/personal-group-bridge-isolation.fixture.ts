@@ -38,12 +38,12 @@ export async function personalGroupBridgeFixture() {
         manifestSha256: 'a'.repeat(64), dimension: null, source: 'custom', revision: 1, createdAt: '2026-10-24', updatedAt: '2026-10-24' };
     const codex: IModel = { ...server, id: 'model-personal-codex', name: 'Codex', runtime: 'device-codex', model: 'openai/gpt-test',
         manifestSha256: null, verificationSha256: 'b'.repeat(64), modelVersion: 'qa-1' };
-    let allowed = true, cards = new Map([[server.id, server], [codex.id, codex]]);
+    let allowed = true, activeRole = 'Разработчик', cards = new Map([[server.id, server], [codex.id, codex]]);
     const calls: Array<{ modelId: string; agentId: string | null | undefined }> = [];
     const runtime = { infer: vi.fn(async (model: IModel, _endpoint: string, _body: Record<string, unknown>, _signal?: AbortSignal) => reply(model.id)) };
-    let provider = async (model: IModel, _signal?: AbortSignal) => reply(model.id);
+    let provider = async (model: IModel, _signal?: AbortSignal, _body?: Record<string, unknown>) => reply(model.id);
     const models = { pool: undefined as unknown as Pool, ready: async () => undefined,
-        actor: async () => ({ email: 'owner@localhost', activeRole: 'Разработчик' }),
+        actor: async (req: Request) => ({ email: String(req.headers['x-owner'] ?? 'owner@localhost'), activeRole }),
         getUsable: vi.fn(async (id: string) => { if (!allowed || !cards.has(id)) throw new ForbiddenException('Доступ отозван'); return cards.get(id)!; }),
         resolveProject: vi.fn(async () => { if (!allowed) throw new ForbiddenException('Доступ отозван'); return { id: projectId, name: 'Bridge isolation', state: 'active', headRevision: 0 }; }),
         list: vi.fn(async () => ({ items: [...cards.values()], assignedModelIds: [...cards.keys()] })),
@@ -66,12 +66,13 @@ export async function personalGroupBridgeFixture() {
         runtime.infer.mockImplementation(async (model, _endpoint, _body, signal) => {
             await currentModelUsage().beforeInference?.();
             calls.push({ modelId: model.id, agentId: currentModelUsage().agentId });
-            return provider(model, signal);
+            return provider(model, signal, _body);
         });
         service = new ModelChatService(models as unknown as ModelsService, runtime as unknown as ModelRuntime);
-        return { db, service, server, codex, calls, runtime,
+        return { db, service, models: models as unknown as ModelsService, server, codex, calls, runtime,
             setProvider(value: typeof provider) { provider = value; },
             revokeAccess() { allowed = false; },
+            changeRole(value: string) { activeRole = value; },
             changeCodexPin() { cards.set(codex.id, { ...codex, verificationSha256: 'c'.repeat(64) }); },
             async agent(name: string, model = server) {
                 const id = 'agent-' + randomUUID(), card = await new AgentRepository(db!).write(db!, id, { slug: 'nc-' + randomUUID().slice(0, 8), name,
@@ -89,7 +90,7 @@ export async function personalGroupBridgeFixture() {
             cancel: (detail: ChatDetail) => service!.cancel(request(), detail.conversation.id, detail.turns.at(-1)!.id, { expectedRevision: detail.conversation.revision }),
             async reset() {
                 await db!.query('DELETE FROM model_chat_conversations'); await db!.query('DELETE FROM project_agents'); await db!.query('DELETE FROM project_agent_sets');
-                allowed = true; cards = new Map([[server.id, server], [codex.id, codex]]); calls.length = 0; provider = async model => reply(model.id);
+                allowed = true; activeRole = 'Разработчик'; cards = new Map([[server.id, server], [codex.id, codex]]); calls.length = 0; provider = async model => reply(model.id);
                 runtime.infer.mockClear();
             }, cleanup,
         };

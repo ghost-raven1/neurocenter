@@ -110,6 +110,16 @@ describe.skipIf(!connection)('Исследование: настоящий пр�
  it('Cancellation persists unfinished steps and retry uses a fresh attempt',async()=>{
   commands=[{kind:'external_search',query:'q',objective:'q'}];let began!:()=>void;const started=new Promise<void>(resolve=>{began=resolve;});vi.mocked(ChatResearchMcpClient.prototype.call).mockImplementationOnce(async(_pkg,_name,_args,signal)=>{began();await new Promise<void>((_done,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));return {text:'late',sources:[]};});let detail=await create();const pending=send(detail,{project:false,external});await started;detail=await service.read(req(),detail.conversation.id);expect(detail.turns[0].processingStage).toBe('researching');await service.cancel(req(),detail.conversation.id,detail.turns[0].id,{expectedRevision:detail.conversation.revision});await pending;detail=await service.read(req(),detail.conversation.id);expect(detail.turns[0].status).toBe('cancelled');expect(detail.turns[0].researchSteps?.[0].status).toBe('cancelled');commands=[{kind:'finish'}];detail=await retry(detail);expect(detail.turns[0].researchSteps?.[0].attempt).toBe(2);expect(detail.turns[0].status).toBe('done');
  });
+ it('Browser loss during an accepted MCP research step preserves its work and reopening never sends it again',async()=>{
+  commands=[{kind:'external_search',query:'q',objective:'q'},{kind:'finish'}];let began!:()=>void,release!:()=>void,providerSignal!:AbortSignal;
+  const entered=new Promise<void>(resolve=>{began=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+  vi.mocked(ChatResearchMcpClient.prototype.call).mockImplementationOnce(async(_pkg,_name,_args,signal)=>{providerSignal=signal;began();await held;return {text:'Retained MCP material',sources:[]};});
+  const initial=await create(),client=new AbortController(),requestId=randomUUID(),pending=send(initial,{project:false,external},requestId,client.signal);
+  try{await entered;client.abort();expect(providerSignal.aborted).toBe(false);expect((await service.read(req(),initial.conversation.id)).turns[0].status).toBe('pending');
+   release();await pending;const reopened=await service.read(req(),initial.conversation.id);expect(reopened.turns[0].status).toBe('done');expect(reopened.turns[0].researchSteps?.[0].status).toBe('done');
+   const calls=runtime.infer.mock.calls.length;await send(initial,{project:false,external},requestId);expect(ChatResearchMcpClient.prototype.call).toHaveBeenCalledOnce();expect(runtime.infer).toHaveBeenCalledTimes(calls);
+  }finally{release();await pending.catch(()=>undefined);}
+ });
  it('Six steps are explicit and lead to a limited answer, never an exhaustive-success claim',async()=>{
   commands=Array.from({length:6},()=>({kind:'project_search',query:'search query'}));const detail=await send(await create());expect(detail.turns[0].status).toBe('done');expect(detail.turns[0].answer?.researchLimited).toBe(true);expect(detail.turns[0].researchSteps).toHaveLength(6);expect(runtime.infer).toHaveBeenCalledTimes(7);const last=runtime.infer.mock.calls.at(-1)as unknown as [unknown,unknown,{messages:Array<{content:string}>}];expect(last[2].messages.at(-1)?.content).toContain('Достигнут предел');
  });
