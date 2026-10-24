@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {isValidElement,type ReactElement,type ReactNode} from 'react';
 import {learningDeferred,learningHooks,flushLearning} from './project-learning-hooks';
@@ -7,20 +8,20 @@ import {bridgeApi,type IBridgeJob} from '../src/features/McpBridge/api';
 
 const fixture=vi.hoisted(()=>({hooks:undefined as ReturnType<typeof learningHooks>|undefined,bridge:{} as Record<string,any>,scope:'admin',enabled:true}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:(...args:Parameters<ReturnType<typeof learningHooks>['useState']>)=>fixture.hooks!.useState(...args),
- useRef:(...args:Parameters<ReturnType<typeof learningHooks>['useRef']>)=>fixture.hooks!.useRef(...args),useEffect:(...args:Parameters<ReturnType<typeof learningHooks>['useEffect']>)=>fixture.hooks!.useEffect(...args)}));
+ useCallback:(...args:Parameters<ReturnType<typeof learningHooks>['useCallback']>)=>fixture.hooks!.useCallback(...args),useRef:(...args:Parameters<ReturnType<typeof learningHooks>['useRef']>)=>fixture.hooks!.useRef(...args),useEffect:(...args:Parameters<ReturnType<typeof learningHooks>['useEffect']>)=>fixture.hooks!.useEffect(...args)}));
 vi.mock('antd',()=>({Alert:'alert-fixture',Button:'button-fixture',Modal:'modal-fixture',Select:'select-fixture',Space:'space-fixture',Typography:{Paragraph:'p',Text:'span'}}));
 vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>fixture.bridge}));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability',()=>({useFeatureAvailability:()=>({enabled:fixture.enabled,reason:'Функция выключена'})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>{const captureOwner=()=>{const scope=fixture.scope;return()=>scope===fixture.scope;};return {useAuthRequestOwner:()=>({scope:fixture.scope,captureOwner})};});
 vi.mock('../src/features/ProjectLearning/learningMemorySyncApi',()=>({learningMemorySyncApi:{create:vi.fn(),context:vi.fn()}}));
-vi.mock('../src/features/McpBridge/api',()=>({bridgeApi:{cancel:vi.fn(async()=>({ok:true}))}}));
+vi.mock('../src/features/McpBridge/api',()=>({bridgeApi:{request:vi.fn(),cancel:vi.fn(async()=>({ok:true}))}}));
 vi.mock('../src/features/McpBridge/bridgeRequestKey',()=>({createBridgeRequestKey:()=> '11111111-1111-4111-8111-111111111111'}));
 
 const projectId='project-memory',bindingId='a'.repeat(64),instanceId='22222222-2222-4222-8222-222222222222',manifest='b'.repeat(64);
 const device={id:'device-fixture',name:'Рабочий Mac',online:true,report:{capabilities:['project-learning-memory-v1'],bindings:[{projectId,bindingId,instanceId}]}};
 const installed={deviceId:device.id,projectId,assetId:'memory',assetKind:'mcp',version:2,name:'MCP Memory',manifest,bindingId,isCurrentBinding:true,learningMemory:{supported:true}};
 const context={projectId,revision:2,digest:'c'.repeat(64),entries:[]};
-const job={id:'job-fixture',kind:'sync-learning-memory',projectId,deviceId:device.id,state:'queued',message:'В очереди'} as IBridgeJob;
+const job={id:'job-fixture',kind:'sync-learning-memory',projectId,deviceId:device.id,state:'queued',message:'В очереди',assetId:'memory',assetKind:'mcp',version:'2',bindingId,expectedInstanceId:instanceId,expectedManifest:manifest} as IBridgeJob;
 let props:{projectId:string;canManage:boolean;onClose:()=>void};
 type Element=ReactElement<Record<string,any>>;
 function elements(node:ReactNode):Element[]{
@@ -31,22 +32,28 @@ const render=()=>{fixture.hooks!.begin();const tree=LearningMemorySyncModal(prop
 const button=(tree:Element[],text:string)=>tree.find(item=>item.type==='button-fixture'&&item.props.children===text)!;
 async function ready(){render();await flushLearning();let tree=render();tree.find(item=>item.type==='select-fixture')!.props.onChange(JSON.stringify([device.id,installed.assetId,manifest]));return render();}
 beforeEach(()=>{
- vi.clearAllMocks();fixture.hooks=learningHooks();fixture.scope='admin';fixture.enabled=true;props={projectId,canManage:true,onClose:vi.fn()};
+ vi.clearAllMocks();vi.mocked(learningMemorySyncApi.create).mockReset();sessionStorage.clear();vi.stubGlobal('crypto',{subtle:{digest:async()=>new Uint8Array(32).buffer}});fixture.hooks=learningHooks();fixture.scope='admin';fixture.enabled=true;props={projectId,canManage:true,onClose:vi.fn()};
  fixture.bridge={devices:[structuredClone(device)],installations:[structuredClone(installed)],jobs:[],devicesReady:true,reload:vi.fn(async()=>{})};
+ vi.mocked(bridgeApi.request).mockResolvedValue({requestKey:'11111111-1111-4111-8111-111111111111',requestFingerprint:'0'.repeat(64),job});
  vi.mocked(learningMemorySyncApi.context).mockResolvedValue(context as any);vi.mocked(learningMemorySyncApi.create).mockResolvedValue(job);
 });
-afterEach(()=>fixture.hooks?.dispose());
+afterEach(()=>{fixture.hooks?.dispose();vi.unstubAllGlobals();});
 describe('Explicit approved project learning to Memory',()=>{
  it('selects exact installed device/pin and sends approved context revision with no learned text',async()=>{
   const tree=await ready();expect(button(tree,'Синхронизировать принятые знания').props.disabled).toBe(false);
   button(tree,'Синхронизировать принятые знания').props.onClick();await flushLearning();
   expect(learningMemorySyncApi.create).toHaveBeenCalledWith({kind:'sync-learning-memory',projectId,deviceId:device.id,requestKey:'11111111-1111-4111-8111-111111111111',assetId:'memory',assetKind:'mcp',version:2,expectedManifest:manifest,expectedBindingId:bindingId,expectedInstanceId:instanceId,expectedLearningRevision:2,expectedLearningDigest:context.digest,memoryMode:'sync'});
  });
- it('lost enqueue ACK keeps the exact request and allows its lookup replay after flag OFF',async()=>{
+ it('lost enqueue ACK keeps the exact request and only reads its receipt after flag OFF',async()=>{
   vi.mocked(learningMemorySyncApi.create).mockRejectedValueOnce(new Error('ACK lost')).mockResolvedValueOnce(job);
   button(await ready(),'Синхронизировать принятые знания').props.onClick();await flushLearning();fixture.enabled=false;
   const tree=render();expect(button(tree,'Синхронизировать принятые знания').props.disabled).toBe(true);button(tree,'Проверить отправку').props.onClick();await flushLearning();
-  expect(vi.mocked(learningMemorySyncApi.create).mock.calls[1]).toEqual(vi.mocked(learningMemorySyncApi.create).mock.calls[0]);
+  expect(learningMemorySyncApi.create).toHaveBeenCalledOnce();expect(bridgeApi.request).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
+ });
+ it('an unresolved request keeps its original target visible after installation pins change',async()=>{
+  vi.mocked(learningMemorySyncApi.create).mockRejectedValueOnce(new Error('ACK lost'));button(await ready(),'Синхронизировать принятые знания').props.onClick();await flushLearning();
+  fixture.bridge.installations[0].manifest='d'.repeat(64);const tree=render(),select=tree.find(item=>item.type==='select-fixture')!;
+  expect(select.props.value).toBe(JSON.stringify([device.id,installed.assetId,manifest]));expect(select.props.disabled).toBe(true);expect(select.props.options.some((item:{label:string})=>item.label.includes('Исходная установка MCP Memory · версия 2'))).toBe(true);expect(button(tree,'Синхронизировать принятые знания').props.disabled).toBe(true);
  });
  it.each(['offline','capability','binding','pin','role','flag'])('retained click refuses a revoked %s condition',async change=>{
   const action=button(await ready(),'Синхронизировать принятые знания').props.onClick;

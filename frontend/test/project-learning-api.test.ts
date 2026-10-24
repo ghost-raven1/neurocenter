@@ -2,6 +2,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {AxiosAdapter} from 'axios';
 import base from '../src/core/api/base';
 import {projectLearningApi} from '../src/features/ProjectLearning/api';
+import {bridgeApi} from '../src/features/McpBridge/api';
 import type {LearningCommand, LearningIntent} from '../src/features/ProjectLearning/types';
 import {experienceId, hypothesisId, candidateId, requestKey} from './project-learning-fixtures';
 const original = base.defaults.adapter;
@@ -10,6 +11,10 @@ function adapter() {const mock = vi.fn<AxiosAdapter>(async config => ({data: {},
 const makeIntent = (command: LearningCommand): LearningIntent => ({projectId: 'project/a b', expectedRevision: 7, requestKey, command});
 
 describe('Project learning HTTP boundaries', () => {
+    it('Bridge recovery reads the exact escaped request key with cancellation support and never posts',async()=>{
+        const capture=adapter(),controller=new AbortController();await bridgeApi.request('original/key ?x',controller.signal);
+        const config=capture.mock.calls[0][0];expect(config.url).toBe('/api/device-jobs/requests/original%2Fkey%20%3Fx');expect(config.method).toBe('get');expect(config.signal).toBe(controller.signal);expect(config.timeout).toBe(10000);expect(capture).toHaveBeenCalledOnce();
+    });
     it.each([
         [{kind: 'experience', value: {title: 'T', summary: 'S', outcome: 'unknown', evidence: []}}, '/experiences'],
         [{kind: 'hypothesis', value: {title: 'T', subject: 'agent', statement: 'S', rationale: 'R', verificationPlan: 'P', experienceIds: [experienceId]}}, '/hypotheses'],

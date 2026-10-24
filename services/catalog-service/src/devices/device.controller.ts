@@ -3,6 +3,7 @@ import {
     Controller,
     Delete,
     Get,
+    Header,
     Headers,
     Param,
     Query,
@@ -75,6 +76,9 @@ export class DeviceController {
     }
     @Get('api/device-jobs') listJobs(@Req() req: Request) {
         return this.jobs.list(this.actor(req));
+    }
+    @Get('api/device-jobs/requests/:requestKey') @Header('Cache-Control','no-store') jobReceipt(@Req() req: Request,@Param('requestKey') requestKey: string) {
+        return this.jobs.requestReceipt(this.actor(req),requestKey);
     }
     @Get('api/device-installations') listInstallations(@Req() req:Request){return this.installations.list(this.actor(req));}
     @Post('api/device-jobs') create(

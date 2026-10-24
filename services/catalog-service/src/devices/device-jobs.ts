@@ -28,6 +28,7 @@ import {InstallPlans} from './install-plans';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { enqueueDeviceJob } from './device-enqueue';
 import {findDeviceJobRequest} from './device-job-requests';
+import {readDeviceJobReceipt} from './device-job-receipt';
 import { assertManagedBridge, assertPackageBridge, assertInstallationSetBridge, assertInstallationInspectionBridge, assertExpectedBinding, managedBinding } from './device-compatibility';
 import {assertInstallablePackage,verifyInstallationSet,type IInstallationSet} from './installation-set';
 import { workspaceJobPayload, assertWorkspaceSource } from './workspace-jobs';
@@ -273,6 +274,10 @@ export class DeviceJobs {
         if (!claims.userRoles.includes(actor.activeRole)) { throw new ForbiddenException('Назначение активной роли отозвано.'); }
         return { email: claims.email, main: actor.activeRole === 'Главный админ',
             projects: claims.projects.filter(project => projectLevel(claims, actor.activeRole, project.projectId) > 0).map(project => project.projectId) };
+    }
+    /** Восстановление потерянного ответа использует свежий доступ и не меняет очередь. */
+    async requestReceipt(actor: IAccessActor, requestKey: string) {
+        return readDeviceJobReceipt(this.store.pool,view,await this.readScope(actor),requestKey);
     }
     async list(actor: IAccessActor) {
         const scope = await this.readScope(actor);

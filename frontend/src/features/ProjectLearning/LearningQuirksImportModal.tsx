@@ -16,17 +16,23 @@ function receipt(job:IBridgeJob):QuirksReceipt|undefined{
 }
 /** The user chooses named devices/installations; technical source paths never become editable import authority. */
 export function LearningQuirksImportModal({open,projectId,canManage,enabled=true,disabledReason,onClose,onImported}:Props):JSX.Element{
-    const bridge=useBridge(open),action=useLearningQuirksImport(projectId,bridge.reload);
+    const bridge=useBridge(open),action=useLearningQuirksImport(projectId,bridge.reload,canManage,enabled);
     const [computer,setComputer]=useState(''),[installation,setInstallation]=useState('');
     const notified=useRef(new Set<string>());
     useEffect(()=>{setComputer('');setInstallation('');notified.current.clear();},[projectId]);
-    const device=bridge.devices.find(item=>item.id===computer)??(bridge.devices.length===1?bridge.devices[0]:undefined);
+    useEffect(()=>{const input=action.intent;if(input){setComputer(input.deviceId);setInstallation(JSON.stringify([input.deviceId,input.assetKind,input.assetId,input.expectedManifest]));}},[action.intent]);
+    const device=bridge.devices.find(item=>item.id===computer)??(!action.intent&&bridge.devices.length===1?bridge.devices[0]:undefined);
     const options=(bridge.installations as LearningQuirksInstallation[]).filter(item=>item.projectId===projectId&&item.deviceId===device?.id&&item.ragUi?.supported);
-    const selected=options.find(item=>installationKey(item)===installation)??(options.length===1?options[0]:undefined);
+    const selected=options.find(item=>installationKey(item)===installation)??(!action.intent&&options.length===1?options[0]:undefined);
+    const computerOptions=bridge.devices.map(item=>({value:item.id,label:item.name+(item.online?'':' · не подключён')}));
+    const installationOptions=options.map(item=>({value:installationKey(item),label:item.name+' · версия '+item.version+(item.folderName?' · '+item.folderName:'')}));
+    const original=action.intent,originalInstallation=original?JSON.stringify([original.deviceId,original.assetKind,original.assetId,original.expectedManifest]):undefined;
+    if(original&&!computerOptions.some(item=>item.value===original.deviceId))computerOptions.push({value:original.deviceId,label:'Исходный компьютер'});
+    if(original&&originalInstallation&&!installationOptions.some(item=>item.value===originalInstallation))installationOptions.push({value:originalInstallation,label:'Исходная установка OpenCodeRAG · версия '+original.version});
     const binding=device?.report.bindings?.find(item=>item.projectId===projectId);
-    const jobs=bridge.jobs.filter(job=>job.kind==='import-learning-quirks'&&job.projectId===projectId);
     const submitted=action.submitted?.projectId===projectId?action.submitted:undefined;
-    if(submitted&&!jobs.some(job=>job.id===submitted.id))jobs.unshift(submitted);
+    const jobs=bridge.jobs.filter(job=>job.kind==='import-learning-quirks'&&job.projectId===projectId&&job.id!==submitted?.id);
+    if(submitted)jobs.unshift(submitted);
     useEffect(()=>{
         for(const job of jobs){if(!activeJob(job)&&receipt(job)&&!notified.current.has(job.id)){notified.current.add(job.id);onImported?.();}}
     },[jobs,onImported]);
@@ -43,22 +49,25 @@ export function LearningQuirksImportModal({open,projectId,canManage,enabled=true
     else if(selected.configurationSchemaDigest&&!selected.configuration?.ready)blocker='Задайте параметры RAG на компьютере и обновите статус настройки в установках.';
     else if(jobs.some(job=>activeJob(job)&&job.deviceId===device.id))blocker='Сбор на этом компьютере уже выполняется. Дождитесь результата или остановите его.';
     const submit=()=>{
-        if(blocker||!selected||!binding?.instanceId||!selected.bindingId||!device||!['mcp','plugin'].includes(selected.assetKind))return;
+        if(blocker||action.intent||action.loading||action.blocked||!selected||!binding?.instanceId||!selected.bindingId||!device||!['mcp','plugin'].includes(selected.assetKind))return;
         const input:LearningQuirksJobInput={kind:'import-learning-quirks',deviceId:device.id,projectId,assetId:selected.assetId,assetKind:selected.assetKind as 'mcp'|'plugin',version:selected.version,
             expectedManifest:selected.manifest,expectedBindingId:selected.bindingId,expectedInstanceId:binding.instanceId,
             expectedConfigurationRevisions:selected.configurationSchemaDigest?[{assetId:selected.assetId,manifest:selected.manifest,revision:selected.configuration?.revision??null}]:[]};
         void action.submit(input);
     };
-    return <Modal open={open} title="Собрать кварки RAG" onCancel={onClose} footer={<Space wrap><Button onClick={onClose}>Закрыть</Button><Button type="primary" disabled={!!blocker} loading={action.busy} onClick={submit}>Собрать кварки</Button></Space>} width={680}>
+    return <Modal open={open} title="Собрать кварки RAG" onCancel={onClose} footer={<Space wrap><Button onClick={onClose}>Закрыть</Button><Button type="primary" disabled={!!blocker||!!action.intent||action.loading||action.blocked} loading={action.busy} onClick={submit}>Собрать кварки</Button></Space>} width={680}>
         <div className="learning-quirks-import">
             <Alert type="info" showIcon message="Кварки станут сообщённым опытом" description="Кварки — наблюдения из RAG выбранного проекта. Они требуют проверки человеком перед применением. Повторный сбор одинаковых записей безопасен; исходная база RAG сохраняется." />
-            <Form layout="vertical"><Form.Item label="Компьютер"><Select aria-label="Компьютер для сбора кварков" value={device?.id} placeholder="Выберите компьютер" loading={bridge.loading}
-                options={bridge.devices.map(item=>({value:item.id,label:item.name+(item.online?'':' · не подключён')}))} onChange={value=>{setComputer(value);setInstallation('');}} /></Form.Item>
-                <Form.Item label="Установка OpenCodeRAG"><Select aria-label="Установка OpenCodeRAG" value={selected?installationKey(selected):undefined} placeholder="Выберите установку"
-                    options={options.map(item=>({value:installationKey(item),label:item.name+' · версия '+item.version+(item.folderName?' · '+item.folderName:'')}))} onChange={setInstallation} /></Form.Item></Form>
+            <Form layout="vertical"><Form.Item label="Компьютер"><Select aria-label="Компьютер для сбора кварков" value={original?.deviceId??device?.id} disabled={!!action.intent||action.loading} placeholder="Выберите компьютер" loading={bridge.loading}
+                options={computerOptions} onChange={value=>{setComputer(value);setInstallation('');}} /></Form.Item>
+                <Form.Item label="Установка OpenCodeRAG"><Select aria-label="Установка OpenCodeRAG" value={originalInstallation??(selected?installationKey(selected):undefined)} disabled={!!action.intent||action.loading} placeholder="Выберите установку"
+                    options={installationOptions} onChange={setInstallation} /></Form.Item></Form>
             {blocker&&<Alert role="status" type="warning" showIcon message={blocker} />}
-            {action.error&&<Alert role="alert" type="error" showIcon message={action.error} description="Выбор сохранён. Обновите состояние; повтор после потери ответа использует тот же запрос." />}
-            <Space><Typography.Title level={5}>История сборов</Typography.Title><Button size="small" loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Обновить</Button></Space>
+            {action.error&&<Alert role="alert" type="error" showIcon message={action.error} description={action.intent?'Исходный запрос и выбор сохранены. Проверка не запускает новый сбор.':'Выбор сохранён. Устраните причину и обновите состояние перед новой отправкой.'} />}
+            {action.intent&&<Alert role="status" type="warning" showIcon message="Исходный запрос сохранён" description={action.roleChanged?'Для повторной отправки вернитесь к роли исходной отправки. Проверка и история доступны.':'Пока результат не подтверждён, новый сбор недоступен. Исходная установка: '+action.intent.assetId+' · версия '+action.intent.version+'.'}
+                action={<Space wrap><Button loading={action.busy} onClick={()=>{void action.check();}}>Проверить отправку</Button>
+                    {action.missing&&<Button disabled={!canManage||!enabled||action.busy||action.blocked||action.roleChanged} onClick={()=>{void action.repeat();}}>Отправить исходный запрос</Button>}</Space>}/>}
+            <Space><Typography.Title level={5}>История сборов</Typography.Title><Button size="small" loading={bridge.loading} onClick={()=>{void bridge.reload();void action.check();}}>Обновить</Button></Space>
             {bridge.errors.jobs&&<Alert type="error" role="alert" message={bridge.errors.jobs} />}
             {!jobs.length&&!bridge.loading?<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Кварки ещё не собирали" />:jobs.slice(0,10).map(job=>{
                 const result=receipt(job),partial=result?.status==='partial',confirmed=!!result&&(result.imported+result.skipped)>0;

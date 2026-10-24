@@ -159,6 +159,8 @@ export const bridgeApi = {
         (await api.get<IBridgeDevice[]>('/api/devices',{signal,timeout:10000})).data,
     jobs: async (): Promise<IBridgeJob[]> =>
         (await api.get<IBridgeJob[]>('/api/device-jobs',{timeout:10000})).data,
+    request: async (requestKey:string,signal?:AbortSignal):Promise<{requestKey:string;requestFingerprint:string|null;job:IBridgeJob}> =>
+        (await api.get<{requestKey:string;requestFingerprint:string|null;job:IBridgeJob}>('/api/device-jobs/requests/'+encodeURIComponent(requestKey),{signal,timeout:10000})).data,
     installations: async (): Promise<IBridgeInstallation[]> =>
         (await api.get<IBridgeInstallation[]>('/api/device-installations',{timeout:10000}))
             .data,

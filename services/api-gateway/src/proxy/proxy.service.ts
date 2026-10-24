@@ -60,6 +60,8 @@ export class ProxyService {
      * @returns {Promise<void>}
      */
     public async forward(req: Request, res: Response): Promise<void> {
+        // A cached missing receipt could conceal a request accepted after the original response was lost.
+        if(/^\/api\/device-jobs\/requests(?:\/|$)/.test(canonicalAccessRoute(req.path)||''))res.setHeader('Cache-Control','no-store');
         if(req.method==='GET'&&req.path==='/api/ui/appearance'){
             res.setHeader('Cache-Control','no-store');res.json(await publicAppearance(this.http,this.featureFlagsUrl));return;
         }
