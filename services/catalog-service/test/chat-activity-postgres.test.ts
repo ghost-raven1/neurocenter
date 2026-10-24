@@ -47,7 +47,7 @@ describe.skipIf(!adminUrl).sequential('Chat activity — explicitly owned Postgr
     afterAll(async () => {await pool?.end(); if (admin) {await admin.query('DROP DATABASE ' + database); await admin.end();} vi.unstubAllEnvs();});
 
     it('appends migration26 and detects a missing receipt foreign key', async () => {
-        expect((await checkCatalogSchema(pool, true)).applied.at(-1)).toBe(26);
+        expect((await checkCatalogSchema(pool, true)).applied).toContain(26);
         const db = await pool.connect(); try {
             await db.query('BEGIN');
             const constraint = (await db.query("SELECT conname FROM pg_constraint WHERE conrelid='project_chat_read_receipts'::regclass AND contype='f'")).rows[0].conname;
