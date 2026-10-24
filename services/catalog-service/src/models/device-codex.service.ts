@@ -124,7 +124,7 @@ export class DeviceCodexService {
                         throw new ServiceUnavailableException('Вызов Codex остановлен или потерял подтверждение. Автоматический повтор не выполняется.');
                     if (Date.now() - checkedAt >= 1000) {
                         await context.beforeInference?.();
-                        await this.assertCall(call);
+                        await this.assertCall(call, this.models.pool, 'poll');
                         checkedAt = Date.now();
                     }
                     await delay(250, undefined, { signal });
@@ -150,7 +150,7 @@ export class DeviceCodexService {
             deviceCodexConflict();
         return call;
     }
-    private async assertCall(call: Call, db: Db = this.models.pool) {
+    private async assertCall(call: Call, db: Db = this.models.pool, mode: 'active' | 'poll' = 'active') {
         if (call.cancelled_at || call.result || !['queued', 'running'].includes(call.state) || new Date(call.deadline_at).getTime() <= Date.now())
             throw new ConflictException('Вызов Codex завершён, отменён или его срок истёк.');
         const payload = normalizeDeviceCodexPayload(call.payload), connection = await this.connections.read(call.model_id, db), model = await this.models.get(call.model_id);
@@ -162,15 +162,17 @@ export class DeviceCodexService {
    JOIN model_device_connections m ON m.model_id=c.model_id JOIN bridge_devices d ON d.id=c.device_id
    JOIN model_catalog model ON model.id=c.model_id JOIN platform_users u ON u.email=c.owner_email
    LEFT JOIN project_members member ON member.project_id=c.project_id AND lower(member.principal_name)=c.owner_email
-   WHERE c.job_id=$1 AND c.cancelled_at IS NULL AND c.result IS NULL AND c.deadline_at>clock_timestamp()
-   AND j.state IN ('queued','running') AND j.payload=$2::jsonb AND m.revision=c.connection_revision AND m.revoked_at IS NULL
+   WHERE c.job_id=$1 AND c.cancelled_at IS NULL AND c.deadline_at>clock_timestamp()
+   AND ((c.result IS NULL AND j.state IN ('queued','running')) OR ($3::boolean AND
+    ((j.state='succeeded' AND c.result ? 'response' AND c.dispatched_at IS NOT NULL) OR (j.state='failed' AND c.result ? 'error'))))
+   AND j.payload=$2::jsonb AND m.revision=c.connection_revision AND m.revoked_at IS NULL
    AND d.email=c.owner_email AND NOT d.revoked AND d.expires_at>clock_timestamp() AND model.archived_at IS NULL
    AND model.descriptor->>'verificationSha256'=m.semantic_sha AND u.enabled
    AND (CASE WHEN c.actor_role='Главный админ' THEN u.is_main_admin ELSE c.project_id IS NOT NULL
     AND c.actor_role IN ('Админ проекта','Разработчик') AND member.role IN ('Админ проекта','Разработчик') AND (c.actor_role<>'Админ проекта' OR member.role='Админ проекта') END)
    AND (CASE WHEN d.role='Главный админ' THEN u.is_main_admin ELSE member.role IN ('Админ проекта','Разработчик') AND d.role IN ('Админ проекта','Разработчик') END)
    AND (m.source->>'scope'='global' OR EXISTS(SELECT 1 FROM jsonb_array_elements(d.report->'bindings') b WHERE b->>'projectId'=c.project_id
-    AND b->>'bindingId'=m.source->>'bindingId' AND b->>'instanceId'=m.source->>'instanceId' AND b->>'valid' IS DISTINCT FROM 'false'))`, [call.job_id, JSON.stringify(payload)]);
+    AND b->>'bindingId'=m.source->>'bindingId' AND b->>'instanceId'=m.source->>'instanceId' AND b->>'valid' IS DISTINCT FROM 'false'))`, [call.job_id, JSON.stringify(payload), mode === 'poll']);
         if (!fresh.rows.length)
             throw new ConflictException('Права, подключение Codex или папка изменились во время проверки.');
     }
