@@ -15,7 +15,7 @@ export function ChatComposer(props: Props): JSX.Element {
         if (event.defaultPrevented) return;
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) {event.preventDefault(); if (props.canSend && !targets?.error) props.onSend();}
     };
-    const input = {id: 'model-chat-message', value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
+    const input = {id: 'model-chat-message', 'aria-describedby': `model-chat-keyboard-hint${targets ? ' model-chat-recipients' : ''}`, value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
         onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => {const files = Array.from(event.clipboardData.files); if (files.length) props.onFiles(files);},
         onCompositionStart: () => {composing.current = true;}, onCompositionEnd: () => {composing.current = false;}};
     return <div className="model-chat__composer" onDragOver={event => {if (Array.from(event.dataTransfer.types).includes('Files')) event.preventDefault();}}
@@ -27,7 +27,8 @@ export function ChatComposer(props: Props): JSX.Element {
                 const files = Array.from(event.dataTransfer.files); if (files.length) props.onFiles(files);
             } catch {props.onReject('Не удалось прочитать файлы. Выберите их кнопкой.');}
         }}>
-        <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">{props.participants ? 'Сообщение участникам' : 'Сообщение модели'}</label>
+        <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">Сообщение</label>
+        {targets && <Typography.Text id="model-chat-recipients" type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Всем участникам')}</Typography.Text>}
         <details className="model-chat__file-picker"><summary>Прикрепить документы</summary><FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
             hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/></details>
         </div>
@@ -35,8 +36,7 @@ export function ChatComposer(props: Props): JSX.Element {
             options={props.participants.filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`}))}
             filterOption={(search, option) => `${option.value} ${props.participants?.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}/>
             : <Input.TextArea {...input} placeholder="Задайте вопрос по документам или напишите сообщение…" onChange={event => props.onDraft(event.target.value)} onKeyDown={enter}/>}
-        {targets && <Typography.Text type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Получат все участники группы · @имя — выбрать адресатов')}</Typography.Text>}
-        <div className="model-chat__composer-actions"><Typography.Text type="secondary">Enter — отправить · Shift+Enter — новая строка</Typography.Text>
+        <div className="model-chat__composer-actions"><Typography.Text id="model-chat-keyboard-hint" type="secondary" className="model-chat__keyboard-hint">Enter — отправить · Shift+Enter — новая строка</Typography.Text>
             {props.sending ? <Button icon={<StopOutlined/>} onClick={props.onStop}>Остановить</Button> : props.uploading ? <Button onClick={props.onCancelUpload}>Отменить загрузку</Button> : <Button type="primary" icon={<SendOutlined/>} disabled={!props.canSend || !!targets?.error} onClick={props.onSend}>Отправить</Button>}</div>
     </div>;
 }

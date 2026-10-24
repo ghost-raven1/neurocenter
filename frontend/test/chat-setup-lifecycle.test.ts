@@ -47,16 +47,16 @@ afterEach(() => h.hooks.dispose());
 
 describe('Chat participant setup: retry, saved roster recovery and ownership', () => {
     it('failed roster load exposes a real retry, aborts its predecessor and permits an inline save after selection', async () => {
-        props.inline = true; vi.mocked(modelChatApi.agents).mockRejectedValueOnce(Error('Временный отказ')); roster(); await flushSetup(); expect(roster()).toContain('Временный отказ'); expect(button('Создать группу').disabled).toBe(true);
+        props.inline = true; vi.mocked(modelChatApi.agents).mockRejectedValueOnce(Error('Временный отказ')); roster(); await flushSetup(); expect(roster()).toContain('Временный отказ'); expect(button('Сохранить участников').disabled).toBe(true);
         const oldSignal = vi.mocked(modelChatApi.agents).mock.calls[0][2]; button('Повторить').onClick(); roster(); await flushSetup(); roster(); expect(oldSignal.aborted).toBe(true); expect(modelChatApi.agents).toHaveBeenCalledTimes(2);
-        checkbox('Разработчик').onChange({target: {checked: true}}); roster(); expect(button('Создать группу').disabled).toBe(false); button('Создать группу').onClick(); await flushSetup(); expect(h.save).toHaveBeenCalledExactlyOnceWith(['agent-dev']); expect(h.close).toHaveBeenCalledOnce();
+        checkbox('Разработчик').onChange({target: {checked: true}}); roster(); expect(button('Сохранить участников').disabled).toBe(false); button('Сохранить участников').onClick(); await flushSetup(); expect(h.save).toHaveBeenCalledExactlyOnceWith(['agent-dev']); expect(h.close).toHaveBeenCalledOnce();
     });
     it('joining requires at least one agent, while editing a saved empty group preserves history and permits an empty roster', async () => {
-        props = {...props, participants: [], joining: true}; roster(); await flushSetup(); expect(roster()).toContain('Добавить агентов в диалог'); expect(uiNode(h.ui, 'Modal').okButtonProps.disabled).toBe(true);
+        props = {...props, participants: [], joining: true}; roster(); await flushSetup(); expect(roster()).toContain('Участники диалога'); expect(uiNode(h.ui, 'Modal').okButtonProps.disabled).toBe(true);
         props.joining = false; expect(roster()).toContain('история сохранится даже без участников'); expect(uiNode(h.ui, 'Modal').okButtonProps.disabled).toBe(false); uiNode(h.ui, 'Modal').onOk(); await flushSetup(); expect(h.save).toHaveBeenCalledExactlyOnceWith([]);
     });
     it('inline cancel uses no mutation, the empty project explains where to add agents, and parent errors stay visible', async () => {
-        props.inline = true; props.error = 'Состав изменён на сервере'; vi.mocked(modelChatApi.agents).mockResolvedValueOnce([]); roster(); await flushSetup(); const html = roster(); expect(html).toContain('Новая группа агентов'); expect(html).toContain('В проект пока не добавлены агенты'); expect(html).toContain('Состав изменён на сервере'); button('Отмена').onClick(); expect(h.close).toHaveBeenCalledOnce(); expect(h.save).not.toHaveBeenCalled();
+        props.inline = true; props.error = 'Состав изменён на сервере'; vi.mocked(modelChatApi.agents).mockResolvedValueOnce([]); roster(); await flushSetup(); const html = roster(); expect(html).toContain('Участники диалога'); expect(html).toContain('В проект пока не добавлены агенты'); expect(html).toContain('Состав изменён на сервере'); button('Отмена').onClick(); expect(h.close).toHaveBeenCalledOnce(); expect(h.save).not.toHaveBeenCalled();
     });
     it('unavailable saved agents remain removable with honest default reasons; fresh server names override saved labels', async () => {
         props.participants = [participant({name: 'Старое имя'}), participant({agentId: 'disabled', name: 'Отключённый', status: 'disabled'}), participant({agentId: 'removed', name: 'Удалённый', status: 'removed'}), participant({agentId: 'blocked', name: 'Блокирован', status: 'blocked'})];

@@ -4,15 +4,14 @@ import {useState} from 'react';
 import type {IModelChatConversation} from './types';
 import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
 
-interface Props {items: IModelChatConversation[]; selected?: string; disabled: boolean; loading: boolean; onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void; onNewGroup?: () => void; newGroupDisabled?: boolean;}
+interface Props {items: IModelChatConversation[]; selected?: string; disabled: boolean; newDisabled?: boolean; loading: boolean; onSelect: (id: string) => void; onNew: () => void; onRefresh: () => void;}
 
-export function ConversationList({items, selected, disabled, loading, onSelect, onNew, onRefresh, onNewGroup, newGroupDisabled}: Props): JSX.Element {
+export function ConversationList({items, selected, disabled, newDisabled, loading, onSelect, onNew, onRefresh}: Props): JSX.Element {
     const [query, setQuery] = useState('');
     const shown = items.filter(value => value.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
     return <nav className="model-chat__conversations" aria-label="Личные диалоги">
         <div className="model-chat__list-heading"><Typography.Text strong>Мои диалоги</Typography.Text><Button size="small" type="text" icon={<ReloadOutlined/>} aria-label="Обновить диалоги" loading={loading} disabled={disabled} onClick={onRefresh}/></div>
-        <FeatureButton features={['model_chat']} block type="primary" icon={<PlusOutlined/>} disabled={disabled} onClick={onNew}>Новый диалог</FeatureButton>
-        {onNewGroup && <FeatureButton features={['group_chat']} block disabled={disabled || newGroupDisabled} onClick={onNewGroup}>Группа агентов</FeatureButton>}
+        <FeatureButton features={['model_chat']} block type="primary" icon={<PlusOutlined/>} disabled={disabled || newDisabled} onClick={onNew}>Новый диалог</FeatureButton>
         <Input.Search aria-label="Поиск диалогов" placeholder="Найти диалог" value={query} onChange={event => setQuery(event.target.value)} allowClear/>
         <div className="model-chat__conversation-items">{shown.map(value => <button key={value.id} type="button" className={'model-chat__conversation' + (value.id === selected ? ' model-chat__conversation_selected' : '')}
             aria-current={value.id === selected ? 'page' : undefined} disabled={disabled} onClick={() => onSelect(value.id)}>

@@ -30,19 +30,19 @@ function ChatScope({projectId,projects,projectsLoading,initialGroup,onTeam,onPro
     const canUse=!!user&&(projectId?projectRoleLevel(user,projectId)>=2:user.activeRole==='Главный админ');
     const models=useModelCatalog(projectId),index=useChatIndex(projectId,canUse);
     const [selection,setSelection]=useState<{model:ICatalogModel;detail?:IModelChatDetail;group?:boolean;key:number}>();
-    const [groupRequested,setGroupRequested]=useState(!!initialGroup),[opening,setOpening]=useState(false),[openError,setOpenError]=useState('');
+    const [opening,setOpening]=useState(false),[openError,setOpenError]=useState('');
     const sequence=useRef(0),request=useRef<AbortController>();
     useEffect(()=>()=>{request.current?.abort();},[]);
     const project=projects.find(value=>value.id===projectId),name=project?.name;
     const assigned=new Set(models.catalog?.assignedModelIds??[]);
     const available=models.catalog?.items.filter(model=>!modelChatUnavailableReason(model,canUse,!!projectId,assigned.has(model.id)))??[];
-    const selectModel=(id:string):void=>{const model=available.find(value=>value.id===id);if(!model||models.loading||models.error)return;request.current?.abort();setOpenError('');setSelection({model,group:groupRequested,key:++sequence.current});setGroupRequested(false);};
+    const selectModel=(id:string):void=>{const model=available.find(value=>value.id===id);if(!model||models.loading||models.error)return;request.current?.abort();setOpenError('');setSelection({model,group:!selection&&!!initialGroup,key:++sequence.current});};
     const openConversation=async(conversation:IModelChatConversation):Promise<void>=>{
         request.current?.abort();const controller=new AbortController();request.current=controller;const owns=captureOwner();setOpening(true);setOpenError('');
         try{const [detail,model]=await Promise.all([modelChatApi.read(conversation.id,controller.signal),modelCatalogApi.get(conversation.modelId)]);
             if(!owns()||controller.signal.aborted)return;
             if(detail.conversation.modelId!==model.id||detail.conversation.projectId!==(projectId??null))throw new Error('Диалог относится к другому проекту. Обновите список.');
-            setSelection({model,detail,key:++sequence.current});setGroupRequested(false);
+            setSelection({model,detail,key:++sequence.current});
         }catch(cause){if(owns()&&!controller.signal.aborted)setOpenError(errorMessage(cause,'Диалог сейчас недоступен. История не изменена.'));}
         finally{if(request.current===controller){request.current=undefined;if(owns())setOpening(false);}}
     };
@@ -62,8 +62,8 @@ function ChatScope({projectId,projects,projectsLoading,initialGroup,onTeam,onPro
         unavailableReason={modelChatUnavailableReason(currentModel,canUse,!!projectId,assigned.has(currentModel.id))}
         navigation={{items:index.items,loading:index.loading,opening,error:index.error,initialDetail:selection.detail,initialGroup:selection.group,controls,onSelect:value=>{void openConversation(value);},onRefresh:()=>{void index.refresh();},onChanged:index.changed}}/>;
     return <Modal open centered width={1280} className="model-chat model-chat_global" title={<div className="model-chat__title">Чат<Typography.Text type="secondary">Личные диалоги с моделями и агентами проекта</Typography.Text></div>} onCancel={()=>{request.current?.abort();onClose();}} footer={null} destroyOnClose>
-        {controls(action=>action())}<div className="model-chat__layout model-chat__layout_empty"><aside className="model-chat__sidebar"><ConversationList items={index.items} disabled={opening} loading={index.loading} onSelect={id=>{const item=index.items.find(value=>value.id===id);if(item)void openConversation(item);}} onNew={()=>setGroupRequested(false)} onRefresh={()=>{void index.refresh();}} onNewGroup={projectId?()=>setGroupRequested(true):undefined}/>{index.error&&<Alert type="error" showIcon message={index.error}/>}</aside>
-            <main className="model-chat__main model-chat__welcome"><Empty description={!canUse?'Выберите проект с доступом разработчика или администратора.':groupRequested?'Выберите базовую модель, затем добавьте агентов проекта.':models.loading?'Загружаем модели…':!available.length?'В этом контексте нет готовой модели для чата. Подключите модель или проверьте её API в каталоге.':'Выберите модель для нового диалога или откройте сохранённый диалог.'}/></main></div>
+        {controls(action=>action())}<div className="model-chat__layout model-chat__layout_empty"><aside className="model-chat__sidebar"><ConversationList items={index.items} disabled={opening} newDisabled={!canUse||models.loading||!!models.error||!available.length} loading={index.loading} onSelect={id=>{const item=index.items.find(value=>value.id===id);if(item)void openConversation(item);}} onNew={()=>{const model=available[0];if(model)selectModel(model.id);}} onRefresh={()=>{void index.refresh();}}/>{index.error&&<Alert type="error" showIcon message={index.error}/>}</aside>
+            <main className="model-chat__main model-chat__welcome"><Empty description={!canUse?'Выберите проект с доступом разработчика или администратора.':models.loading?'Загружаем модели…':!available.length?'В этом контексте нет готовой модели для чата. Подключите модель или проверьте её API в каталоге.':'Выберите модель или откройте сохранённый диалог. Участников можно добавить в настройках разговора.'}/></main></div>
     </Modal>;
 }
 

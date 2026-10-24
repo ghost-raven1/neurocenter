@@ -18,7 +18,7 @@ type Confirmation = {title: string; content: string; onOk: () => unknown; onCanc
 const h = await vi.hoisted(async () => {
     const {adminSetupHooks} = await import('./admin-setup-hooks.fixture'), {modalUi} = await import('./modal-actions.fixture');
     const owner = {value: 'alice', active: true};
-    return {hooks: adminSetupHooks(), ui: modalUi(), owner, disabledFlags: new Set<TFeatureFlagKey>(), known: true, close: vi.fn(), server: null as unknown as IModelChatDetail,
+    return {hooks: adminSetupHooks(), ui: modalUi(), owner, disabledFlags: new Set<TFeatureFlagKey>(), known: true, close: vi.fn(), focusTrigger: vi.fn(), server: null as unknown as IModelChatDetail,
         composer: undefined as Composer | undefined, messages: undefined as Messages | undefined, attachments: undefined as Attachments | undefined, editor: undefined as Editor | undefined,
         preview: undefined as Preview | undefined, list: undefined as List | undefined, meter: undefined as Meter | undefined, projectContext: undefined as unknown,
         research: {} as Research, confirmations: [] as Confirmation[], changeContext: undefined as undefined | ((action: () => void) => void),
@@ -26,7 +26,7 @@ const h = await vi.hoisted(async () => {
         capture: () => { const key = owner.value; return () => owner.active && owner.value === key; }};
 });
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: h.hooks.state, useRef: h.hooks.ref, useEffect: h.hooks.effect}));
-vi.mock('@ant-design/icons', () => ({DeleteOutlined: () => null, EditOutlined: () => null, MenuOutlined: () => null, PlusOutlined: () => null, TeamOutlined: () => null}));
+vi.mock('@ant-design/icons', () => ({DeleteOutlined: () => null, EditOutlined: () => null, MenuOutlined: () => null, MoreOutlined: () => null, PlusOutlined: () => null, TeamOutlined: () => null}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner.value, captureOwner: h.capture})}));
 vi.mock('../src/features/ModelChat/useChatContext', () => ({useChatContext: () => h.context}));
 vi.mock('../src/features/ModelChat/useChatResearch', () => ({useChatResearch: () => h.research}));
@@ -42,6 +42,7 @@ vi.mock('../src/features/ModelChat/ChatContextMeter', () => ({ChatContextMeter: 
 vi.mock('../src/features/ModelChat/ChatProjectContext', () => ({ChatProjectContext: ({evidence}: {evidence: unknown}) => { h.projectContext = evidence; return null; }}));
 vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: () => null}));
 vi.mock('antd', async () => ({...modalAntd(h.ui, (await import('react')).createElement), Tooltip: ({children}: {children?: ReactNode}) => children,
+    Dropdown: (props: Record<string, unknown>) => {const trigger = props.children as {ref?: {current: unknown}}; if (trigger.ref) trigger.ref.current = {focus: h.focusTrigger}; h.ui.nodes.push({kind: 'Dropdown', props, text: ''}); return props.children as ReactNode;},
     Modal: Object.assign((props: Record<string, unknown>) => { h.ui.nodes.push({kind: 'Modal', props, text: typeof props.title === 'string' ? props.title : ''}); return createElement('section', null, props.title as ReactNode, props.children as ReactNode); },
         {confirm: (options: Omit<Confirmation, 'destroy'>) => { const value = {...options, destroy: vi.fn()}; h.confirmations.push(value); return value; }})}));
 import {ChatWorkspace} from '../src/features/ModelChat/ChatWorkspace';
@@ -58,6 +59,7 @@ const navigation = (): IChatWorkspaceNavigation => ({items: [], loading: false, 
 const start = async () => { if (props.navigation) props.navigation.initialDetail = h.server; render(); await flushSetup(); return render(); };
 const draft = (value: string) => { h.composer!.onDraft(value); return render(); };
 const button = (label: string) => h.ui.nodes.find(node => node.kind === 'Button' && (node.text === label || node.props['aria-label'] === label))!.props;
+const action = (key: string) => uiNode(h.ui, 'Dropdown').menu.items.find((item: {key: string}) => item.key === key);
 const outer = () => h.ui.nodes.find(node => node.kind === 'Modal' && node.props.title !== 'Название диалога')!.props;
 const rename = () => uiNode(h.ui, 'Modal', 'Название диалога');
 beforeEach(() => {
@@ -83,23 +85,23 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
             createElement('label', null, 'Проект', createElement('input', {value: 'Проект', readOnly: true})),
             createElement('div', {className: 'model-chat__workspace-error', role: 'alert'}, 'Не удалось обновить модели'));};
         let html = await start();
-        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false);
-        expect(html).toContain('Личные диалоги · Проект · Чат-модель'); expect(html).toContain('Не удалось обновить модели');
+        expect(button('Настройки чата: проект, модель и режим')['aria-expanded']).toBe(false);
+        expect(html).toContain('Личный диалог · Чат-модель'); expect(html).toContain('Проект «Проект»'); expect(html).toContain('Не удалось обновить модели');
         draft('Неотправленный вопрос');
-        button('Проект, модель и режим').onClick({}); render();
-        expect(button('Проект, модель и режим')['aria-expanded']).toBe(true); expect(h.composer!.draft).toBe('Неотправленный вопрос');
-        button('Проект, модель и режим').onClick({}); html = render();
-        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false); expect(h.composer!.draft).toBe('Неотправленный вопрос');
+        button('Настройки чата: проект, модель и режим').onClick({}); render();
+        expect(button('Настройки чата: проект, модель и режим')['aria-expanded']).toBe(true); expect(h.composer!.draft).toBe('Неотправленный вопрос');
+        button('Настройки чата: проект, модель и режим').onClick({}); html = render();
+        expect(button('Настройки чата: проект, модель и режим')['aria-expanded']).toBe(false); expect(h.composer!.draft).toBe('Неотправленный вопрос');
         expect(h.messages!.turns).toHaveLength(1); expect(modelChatApi.send).not.toHaveBeenCalled(); expect(html).toContain('Не удалось обновить модели');
     });
     it('exposes essential configuration for an empty dialogue, and summarizes a group without changing its membership', async () => {
-        await start(); expect(button('Проект, модель и режим')['aria-expanded']).toBe(true);
+        await start(); expect(button('Настройки чата: проект, модель и режим')['aria-expanded']).toBe(true);
         h.hooks.dispose(); h.server = detail({conversation: {...detail().conversation, mode: 'group'}, turns: [turn()],
             participants: [participant(), participant({agentId: 'off', name: 'Отключённый агент', status: 'disabled'})]});
         const html = await start();
         expect(html).toContain('Участники · 2'); expect(html).toContain('Отключённый агент · отключён');
-        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false);
-        button('Участники').onClick({}); render(); expect(h.editor?.participants).toHaveLength(2);
+        expect(button('Настройки чата: проект, модель и режим')['aria-expanded']).toBe(false);
+        button('Изменить участников').onClick({}); render(); expect(h.editor?.participants).toHaveLength(2);
         expect(modelChatApi.participants).not.toHaveBeenCalled();
     });
     it('Enter/button repeated synchronously produce one real send; accepted send clears its draft and consent once', async () => {
@@ -114,15 +116,15 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
         h.server = detail({turns: [turn({status: 'failed', answer: undefined, research: {project: true}, prompt: 'Исходный вопрос'})]}); const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.retry).mockReturnValueOnce(pending.promise); await start(); h.messages!.onRetry(); h.messages!.onRetry(); await flushSetup(); expect(modelChatApi.retry).toHaveBeenCalledOnce(); pending.resolve(h.server); await flushSetup(); render(); h.messages!.onEdit(); await flushSetup(); render(); expect(modelChatApi.deleteFailed).toHaveBeenCalledOnce(); expect(h.composer!.draft).toBe('Исходный вопрос'); expect(h.research.restore).toHaveBeenCalledExactlyOnceWith({project: true});
     });
     it('rename failure keeps the modal and text; explicit retry trims the title and closes only after success', async () => {
-        await start(); button('Переименовать диалог').onClick({}); render(); expect(rename().open).toBe(true); uiNode(h.ui, 'Input').onChange({target: {value: '  Новое имя  '}}); render(); vi.mocked(modelChatApi.rename).mockRejectedValueOnce(Error('Запись недоступна')); rename().onOk(); await flushSetup(); expect(render()).toContain('Запись недоступна'); expect(rename().open).toBe(true);
-        rename().onOk(); await flushSetup(); render(); expect(modelChatApi.rename).toHaveBeenLastCalledWith('chat-1', 1, 'Новое имя', expect.any(AbortSignal)); expect(rename().open).toBe(false); button('Переименовать диалог').onClick({}); render(); rename().onCancel(); render(); expect(rename().open).toBe(false);
+        await start(); action('rename').onClick({}); render(); expect(rename().open).toBe(true); uiNode(h.ui, 'Input').onChange({target: {value: '  Новое имя  '}}); render(); vi.mocked(modelChatApi.rename).mockRejectedValueOnce(Error('Запись недоступна')); rename().onOk(); await flushSetup(); expect(render()).toContain('Запись недоступна'); expect(rename().open).toBe(true); expect(uiNode(h.ui, 'Input').value).toBe('  Новое имя  '); expect(uiNode(h.ui, 'Input').disabled).not.toBe(true);
+        rename().onOk(); await flushSetup(); render(); expect(modelChatApi.rename).toHaveBeenLastCalledWith('chat-1', 1, 'Новое имя', expect.any(AbortSignal)); expect(rename().open).toBe(false); action('rename').onClick({}); render(); rename().onCancel(); render(); expect(rename().open).toBe(false);
     });
     it('owner loss suppresses late rename/delete results and confirmation cannot act for a former owner', async () => {
-        await start(); draft('Не терять'); button('Удалить диалог').onClick({}); h.owner.value = 'bob'; await h.confirmations[0].onOk(); expect(modelChatApi.remove).not.toHaveBeenCalled(); h.owner.value = 'alice'; button('Переименовать диалог').onClick({}); render(); const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.rename).mockReturnValueOnce(pending.promise); rename().onOk(); h.owner.value = 'bob'; pending.resolve({...h.server, conversation: {...h.server.conversation, title: 'PRIVATE'}}); await flushSetup(); render(); expect(rename().open).toBe(true); expect(h.composer!.draft).toBe('Не терять');
+        await start(); draft('Не терять'); action('delete').onClick({}); h.owner.value = 'bob'; await h.confirmations[0].onOk(); expect(modelChatApi.remove).not.toHaveBeenCalled(); h.owner.value = 'alice'; action('rename').onClick({}); render(); const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.rename).mockReturnValueOnce(pending.promise); rename().onOk(); h.owner.value = 'bob'; pending.resolve({...h.server, conversation: {...h.server.conversation, title: 'PRIVATE'}}); await flushSetup(); render(); expect(rename().open).toBe(true); expect(h.composer!.draft).toBe('Не терять');
     });
     it('delete is explicit, cancellable and preserves a draft on transport failure before a successful retry', async () => {
-        await start(); draft('Черновик'); button('Удалить диалог').onClick({}); button('Удалить диалог').onClick({}); expect(h.confirmations).toHaveLength(1); h.confirmations[0].onCancel(); button('Удалить диалог').onClick({}); vi.mocked(modelChatApi.remove).mockRejectedValueOnce(Error('Удаление не подтверждено')); await h.confirmations[1].onOk(); render(); expect(h.composer!.draft).toBe('Черновик');
-        button('Удалить диалог').onClick({}); await h.confirmations[2].onOk(); render(); expect(h.composer!.draft).toBe(''); expect(h.research.reset).toHaveBeenCalledOnce();
+        await start(); draft('Черновик'); action('delete').onClick({}); action('delete').onClick({}); expect(h.confirmations).toHaveLength(1); h.confirmations[0].onCancel(); action('delete').onClick({}); vi.mocked(modelChatApi.remove).mockRejectedValueOnce(Error('Удаление не подтверждено')); await h.confirmations[1].onOk(); render(); expect(h.composer!.draft).toBe('Черновик');
+        action('delete').onClick({}); await h.confirmations[2].onOk(); render(); expect(h.composer!.draft).toBe(''); expect(h.research.reset).toHaveBeenCalledOnce();
     });
     it('same-dialog selection only closes the mobile list; a successful same-model read resets draft after confirmation', async () => {
         await start(); button('Диалоги').onClick({}); render(); h.list!.onSelect('chat-1'); render(); expect(button('Диалоги')['aria-expanded']).toBe(false); expect(modelChatApi.read).not.toHaveBeenCalled();
@@ -161,10 +163,59 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
         vi.mocked(modelChatApi.history).mockRejectedValueOnce(Error('Страница недоступна')); h.messages!.onLoadEarlier!(); h.messages!.onLoadEarlier!(); await flushSetup(); render(); expect(modelChatApi.history).toHaveBeenCalledOnce(); expect(h.messages!.historyError).toBe('Страница недоступна'); expect(h.messages!.turns).toHaveLength(1);
         vi.mocked(modelChatApi.history).mockResolvedValueOnce({turns: [turn({id: 'older', requestId: 'older'})], attachments: [], history: {hasMore: false, nextCursor: null}}); h.messages!.onLoadEarlier!(); await flushSetup(); render(); expect(h.messages!.turns.map(value => value.id)).toEqual(['older', 'turn-1']);
     });
-    it('project agents can join this existing dialogue or create a separate group without changing existing history implicitly', async () => {
-        await start(); button('Добавить агентов').onClick({}); render(); expect(h.editor).toMatchObject({joining: true, inline: true, participants: []}); const editor = h.editor!; expect(await editor.onSave(['agent-dev'])).toBe(true); editor.onClose(); render(); expect(modelChatApi.participants).toHaveBeenCalledOnce(); expect(h.messages!.group).toBe(true);
-        button('Участники').onClick({}); render(); expect(h.editor?.participants?.[0].agentId).toBe('agent-dev'); h.disabledFlags.add('group_chat'); render(); expect(await h.editor!.onSave([])).toBe(false); expect(modelChatApi.participants).toHaveBeenCalledOnce(); h.disabledFlags.clear(); h.editor!.onClose(); render();
-        h.list!.onNewGroup!(); render(); expect(h.editor?.participants).toBeUndefined(); expect(await h.editor!.onSave(['agent-new'])).toBe(true); expect(modelChatApi.create).toHaveBeenCalledWith(model, 'prj-one', expect.any(AbortSignal), ['agent-new']); h.editor!.onClose(); render(); expect(h.composer!.draft).toBe('');
+    it('project agents join this existing dialogue without changing its history or creating another conversation', async () => {
+        await start(); button('Участники').onClick({}); render(); expect(h.editor).toMatchObject({joining: true, inline: true, participants: []}); const editor = h.editor!; expect(await editor.onSave(['agent-dev'])).toBe(true); editor.onClose(); render(); expect(modelChatApi.participants).toHaveBeenCalledOnce(); expect(h.messages!.group).toBe(true);
+        button('Изменить участников').onClick({}); render(); expect(h.editor?.participants?.[0].agentId).toBe('agent-dev'); h.disabledFlags.add('group_chat'); render(); expect(await h.editor!.onSave([])).toBe(false); expect(modelChatApi.participants).toHaveBeenCalledOnce(); h.disabledFlags.clear(); h.editor!.onClose(); render();
+        expect(modelChatApi.create).not.toHaveBeenCalled();
+    });
+    it('participants are available before the first question and saving them preserves its draft without inference', async () => {
+        render(); await flushSetup(); render(); draft('Обсудите этот черновик');
+        button('Участники').onClick({}); render(); expect(h.editor).toMatchObject({inline: true, joining: false}); expect(h.editor?.participants).toBeUndefined();
+        expect(modelChatApi.create).not.toHaveBeenCalled(); expect(modelChatApi.send).not.toHaveBeenCalled();
+        expect(await h.editor!.onSave(['agent-dev'])).toBe(true); h.editor!.onClose(); render();
+        expect(modelChatApi.create).toHaveBeenCalledExactlyOnceWith(model, 'prj-one', expect.any(AbortSignal), ['agent-dev']);
+        expect(h.composer!.draft).toBe('Обсудите этот черновик'); expect(h.messages!.group).toBe(true); expect(modelChatApi.send).not.toHaveBeenCalled();
+    });
+    it('a failed initial participant save keeps the draft and editor available for an explicit retry', async () => {
+        render(); await flushSetup(); render(); draft('Не терять вопрос'); button('Участники').onClick({}); render();
+        vi.mocked(modelChatApi.create).mockRejectedValueOnce(Error('Состав не сохранён'));
+        expect(await h.editor!.onSave(['agent-dev'])).toBe(false); expect(render()).toContain('Состав не сохранён');
+        expect(h.editor).toBeDefined(); h.editor!.onClose(); render(); expect(h.composer!.draft).toBe('Не терять вопрос'); expect(modelChatApi.send).not.toHaveBeenCalled();
+    });
+    it.each(['cancel', 'save'] as const)('closing participants after %s returns focus to the current trigger and preserves its draft', async action => {
+        h.server = detail({conversation: {...detail().conversation, mode: 'group'}, participants: [participant()], turns: [turn()]});
+        await start(); draft('Черновик после состава'); const trigger = {isConnected: true, matches: vi.fn(() => false), focus: vi.fn()};
+        button('Изменить участников').onClick({currentTarget: trigger}); render();
+        if (action === 'save') expect(await h.editor!.onSave(['agent-dev'])).toBe(true);
+        h.editor!.onClose(); render(); expect(trigger.focus).toHaveBeenCalledOnce(); expect(h.composer!.draft).toBe('Черновик после состава'); expect(modelChatApi.send).not.toHaveBeenCalled();
+    });
+    it.each(['project', 'owner'] as const)('an old participant editor cannot return focus across a changed %s scope', async scope => {
+        await start(); const trigger = {isConnected: true, matches: vi.fn(() => false), focus: vi.fn()}; button('Участники').onClick({currentTarget: trigger}); render(); const old = h.editor!;
+        if (scope === 'project') props.projectId = 'other-project'; else h.owner.value = 'bob';
+        render(); old.onClose(); render(); expect(trigger.focus).not.toHaveBeenCalled(); expect(modelChatApi.send).not.toHaveBeenCalled();
+    });
+    it('conversation actions retain feature guards without blocking an existing group history', async () => {
+        h.server = detail({conversation: {...detail().conversation, mode: 'group'}, participants: [participant()], turns: [turn()]});
+        h.disabledFlags.add('model_chat'); await start();
+        expect(action('new').disabled).toBe(true); expect(action('rename').disabled).toBe(false); expect(action('delete').danger).toBe(true);
+        expect(h.messages!.turns).toHaveLength(1); expect(modelChatApi.create).not.toHaveBeenCalled();
+    });
+    it('Escape closes only the open actions menu and returns focus to its trigger without consuming navigation keys', async () => {
+        await start(); uiNode(h.ui, 'Dropdown').onOpenChange(true); render();
+        expect(button('Действия диалога')['aria-expanded']).toBe(true);
+        const arrow = {key: 'ArrowDown', preventDefault: vi.fn(), stopPropagation: vi.fn()}; uiNode(h.ui, 'Dropdown').dropdownRender(null).props.onKeyDownCapture(arrow);
+        expect(arrow.preventDefault).not.toHaveBeenCalled(); expect(arrow.stopPropagation).not.toHaveBeenCalled();
+        const escape = {key: 'Escape', preventDefault: vi.fn(), stopPropagation: vi.fn()}; uiNode(h.ui, 'Dropdown').dropdownRender(null).props.onKeyDownCapture(escape); render();
+        expect(uiNode(h.ui, 'Dropdown').open).toBe(false); expect(button('Действия диалога')['aria-expanded']).toBe(false);
+        expect(escape.preventDefault).toHaveBeenCalledOnce(); expect(escape.stopPropagation).toHaveBeenCalledOnce(); expect(h.focusTrigger).toHaveBeenCalledOnce();
+        expect(h.close).not.toHaveBeenCalled(); expect(rename().open).toBe(false); expect(modelChatApi.remove).not.toHaveBeenCalled();
+    });
+    it('menu selection and outside closing leave actions closed, while Escape on its trigger stays within chat', async () => {
+        await start(); uiNode(h.ui, 'Dropdown').onOpenChange(true); render(); action('rename').onClick(); uiNode(h.ui, 'Dropdown').menu.onClick(); render();
+        expect(rename().open).toBe(true); expect(uiNode(h.ui, 'Dropdown').open).toBe(false); rename().onCancel(); render();
+        uiNode(h.ui, 'Dropdown').onOpenChange(true); render(); uiNode(h.ui, 'Dropdown').onOpenChange(false); render(); expect(uiNode(h.ui, 'Dropdown').open).toBe(false);
+        uiNode(h.ui, 'Dropdown').onOpenChange(true); render(); const escape = {key: 'Escape', preventDefault: vi.fn(), stopPropagation: vi.fn()}; button('Действия диалога').onKeyDown(escape); render();
+        expect(uiNode(h.ui, 'Dropdown').open).toBe(false); expect(h.focusTrigger).toHaveBeenCalledOnce(); expect(escape.stopPropagation).toHaveBeenCalledOnce(); expect(h.close).not.toHaveBeenCalled();
     });
     it('group status, partial-answer completion and project_search off preserve honest context and usage', async () => {
         h.server = detail({conversation: {...detail().conversation, mode: 'group'}, participants: [participant(), participant({agentId: 'two', name: 'Два', status: 'disabled'}), participant({agentId: 'three', name: 'Три', status: 'removed'}), participant({agentId: 'four', name: 'Четыре', status: 'blocked'})], projectContext: evidence(), turns: [turn({status: 'failed', processingStage: 'researching', responses: [response(), response({id: 'bad', status: 'failed', answer: undefined})]})]}); h.disabledFlags.add('project_search'); const html = await start(); expect(html).toContain('Два · отключён'); expect(html).toContain('Три · удалён'); expect(html).toContain('Четыре · недоступен'); expect(h.projectContext).toMatchObject({status: 'metadata', sources: []}); expect(h.meter).toMatchObject({phase: 'researching', failed: true, usage: turn().answer!.usage});
@@ -174,7 +225,7 @@ describe('Workspace actions with the actual chat request/owner locks', () => {
         h.server = detail({turns: [turn()]}); props.unavailableReason = 'Модель временно недоступна'; props.navigation!.error = 'Список диалогов не обновился'; const html = await start(); expect(html).toContain('Модель временно недоступна'); expect(html).toContain('Список диалогов не обновился'); expect(h.messages!.turns).toHaveLength(1); expect(h.composer!.canSend).toBe(false); h.list!.onRefresh(); await flushSetup(); expect(props.navigation!.onRefresh).toHaveBeenCalledOnce();
     });
     it('non-global group entry uses a modal editor; loading, missing project and context guards remain explicit', async () => {
-        props.navigation = undefined; props.projectId = undefined; props.projectName = undefined; vi.mocked(modelChatApi.list).mockResolvedValueOnce([h.server.conversation]); await start(); expect(h.list!.onNewGroup).toBeUndefined(); h.context.rejected = true; draft('Вопрос'); expect(h.composer!.canSend).toBe(false); h.context.rejected = false; h.known = false; render(); expect(h.composer!.disabled).toBe(true);
-        h.hooks.dispose(); h.known = true; props.projectId = 'prj-one'; h.server = detail({conversation: {...detail().conversation, mode: 'group'}, participants: []}); vi.mocked(modelChatApi.list).mockResolvedValueOnce([h.server.conversation]); await start(); button('Участники').onClick({}); render(); expect(h.editor?.inline).toBe(false); expect(h.editor?.participants).toEqual([]);
+        props.navigation = undefined; props.projectId = undefined; props.projectName = undefined; vi.mocked(modelChatApi.list).mockResolvedValueOnce([h.server.conversation]); await start(); expect(h.ui.nodes.some(node => node.kind === 'Button' && node.text === 'Участники')).toBe(false); h.context.rejected = true; draft('Вопрос'); expect(h.composer!.canSend).toBe(false); h.context.rejected = false; h.known = false; render(); expect(h.composer!.disabled).toBe(true);
+        h.hooks.dispose(); h.known = true; props.projectId = 'prj-one'; h.server = detail({conversation: {...detail().conversation, mode: 'group'}, participants: []}); vi.mocked(modelChatApi.list).mockResolvedValueOnce([h.server.conversation]); await start(); button('Изменить участников').onClick({}); render(); expect(h.editor?.inline).toBe(false); expect(h.editor?.participants).toEqual([]);
     });
 });

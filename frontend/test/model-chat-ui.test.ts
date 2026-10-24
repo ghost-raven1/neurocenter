@@ -62,7 +62,7 @@ vi.mock('antd', () => {
     });
     const Modal = Object.assign(({children, onCancel, open, title}: {children?: ReactNode; onCancel: () => void; open?: boolean; title?: ReactNode}) => {if (!open) return null; ui.modalClose = onCancel; return createElement('dialog', null, title, children);}, {confirm: (props: Confirmation) => {ui.confirmCalls(); ui.confirm = props; return {destroy: vi.fn()};}});
     const Empty = Object.assign(({description}: {description?: string}) => createElement('p', null, description), {PRESENTED_IMAGE_SIMPLE: null});
-    return {Modal, Input, Mentions: (props: typeof ui.mention & {value: string; disabled?: boolean}) => {ui.mention = props!; return createElement('textarea', {value: props!.value, disabled: props!.disabled, readOnly: true});}, Empty, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
+    return {Modal, Input, Mentions: (props: typeof ui.mention & {value: string; disabled?: boolean}) => {ui.mention = props!; return createElement('textarea', {value: props!.value, disabled: props!.disabled, readOnly: true});}, Empty, Dropdown: ({children, menu}: {children?: ReactNode; menu: {items: Array<ButtonProps & {label: string}>}}) => {for (const item of menu.items) ui.buttons.set(item.label, item); return children;}, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
         Typography: {Text: content, Paragraph: content}, Alert: ({message}: {message?: string}) => createElement('p', {role: 'alert'}, message),
         Button: (props: ButtonProps) => {const key = props['aria-label'] ?? (typeof props.children === 'string' ? props.children : ''); if (key) ui.buttons.set(key, props); return createElement('button', {disabled: props.disabled, 'aria-label': props['aria-label']}, props.children);},
         Progress: ({percent}: {percent: number}) => createElement('div', {role: 'progressbar', 'aria-valuenow': percent}),
@@ -186,7 +186,12 @@ describe('История и файлы', () => {
     });
     it('Список диалогов показывает текущий и объясняет личное владение', () => {
         const html = render(createElement(ConversationList, {items: [detail().conversation], selected: 'chat-1', disabled: false, loading: false, onSelect: vi.fn(), onNew: vi.fn(), onRefresh: vi.fn()}));
-        expect(html).toContain('Первый диалог'); expect(html).toContain('aria-current="page"'); expect(html).toContain('доступны только вам'); expect(html).toContain('Поиск диалогов');
+        expect(html).toContain('Первый диалог'); expect(html).toContain('aria-current="page"'); expect(html).not.toContain('Группа агентов</button>'); expect(html).toContain('доступны только вам'); expect(html).toContain('Поиск диалогов');
+    });
+    it('Отсутствие модели блокирует только новый диалог, сохраняя доступ к истории и обновлению', () => {
+        const html = render(createElement(ConversationList, {items: [detail().conversation], selected: 'chat-1', disabled: false, newDisabled: true, loading: false, onSelect: vi.fn(), onNew: vi.fn(), onRefresh: vi.fn()}));
+        expect(ui.buttons.get('Новый диалог')?.disabled).toBe(true); expect(ui.buttons.get('Обновить диалоги')?.disabled).toBe(false);
+        const selected = html.match(/<button(?=[^>]*aria-current="page")[^>]*>/)?.[0]; expect(selected).toBeDefined(); expect(selected).not.toContain('disabled');
     });
 });
 
@@ -195,14 +200,14 @@ describe('Сохранённый чат и подтверждения', () => {
         ui.chat.detail = detail(); ui.chat.items = [detail().conversation];
         const panel = () => render(createElement(ModelChatModal, {model, onClose: ui.close}));
         panel(); ui.input!.onChange({target: {value: 'Сохранить черновик'}}); panel();
-        if (action === 'new') {ui.chat.newChat.mockResolvedValue(false); ui.buttons.get('Создать новый диалог')!.onClick!();}
+        if (action === 'new') {ui.chat.newChat.mockResolvedValue(false); ui.buttons.get('Новый диалог')!.onClick!();}
         else if (action === 'select') {ui.chat.select.mockResolvedValue(false); ui.selectConversation!('chat-2');}
         else {ui.chat.remove.mockResolvedValue(false); ui.buttons.get('Удалить диалог')!.onClick!();}
         await ui.confirm!.onOk(); await Promise.resolve(); panel(); expect(ui.input!.value).toBe('Сохранить черновик');
     });
     it('Успешный переход очищает черновик после подтверждения и ответа сервера', async () => {
         ui.chat.detail = detail(); const panel = () => render(createElement(ModelChatModal, {model, onClose: ui.close}));
-        panel(); ui.input!.onChange({target: {value: 'Черновик'}}); panel(); ui.buttons.get('Создать новый диалог')!.onClick!(); await ui.confirm!.onOk(); await Promise.resolve(); panel(); expect(ui.input!.value).toBe('');
+        panel(); ui.input!.onChange({target: {value: 'Черновик'}}); panel(); ui.buttons.get('Новый диалог')!.onClick!(); await ui.confirm!.onOk(); await Promise.resolve(); panel(); expect(ui.input!.value).toBe('');
     });
 
     it('Закрывает сохранённую историю без предупреждения о её потере', () => {
@@ -244,7 +249,7 @@ describe('Групповые ответы и контекст проекта', (
     });
     it('Группа с явным @ показывает адресата; неизвестный адрес не превращается в отправку всем', () => {
         const props = composer({participants: [participant()]}); let html = render(createElement(ChatComposer, props));
-        expect(html).toContain('Получат все участники'); expect(ui.mention!.options).toEqual([{value: 'nc-developer', label: 'Разработчик · @nc-developer'}]);
+        expect(html).toContain('Всем участникам'); expect(ui.mention!.options).toEqual([{value: 'nc-developer', label: 'Разработчик · @nc-developer'}]);
         html = render(createElement(ChatComposer, {...props, draft: '@nc-developer вопрос'})); expect(html).toContain('Получат: Разработчик'); ui.mention!.onPressEnter(key()); expect(props.onSend).toHaveBeenCalledOnce();
         render(createElement(ChatComposer, {...props, draft: '@nc-typo вопрос'})); expect(ui.buttons.get('Отправить')!.disabled).toBe(true); ui.mention!.onPressEnter(key()); expect(props.onSend).toHaveBeenCalledOnce();
     });
@@ -253,8 +258,8 @@ describe('Групповые ответы и контекст проекта', (
         ui.mention!.onPressEnter(key()); expect(props.onSend).toHaveBeenCalledOnce();
     });
     it('Агентов можно добавить прямо к сохранённому проектному диалогу', async () => {
-        ui.chat.detail = detail({turns: [turn()]}); ui.chat.turns = [turn()]; const panel = () => render(createElement(ModelChatModal, {model, projectId: 'prj-one', onClose: ui.close})); expect(panel()).toContain('Добавить агентов');
-        ui.buttons.get('Добавить агентов')!.onClick!(); panel(); expect(ui.groupEditor?.joining).toBe(true); await ui.groupEditor!.onSave(['agent-dev']);
+        ui.chat.detail = detail({turns: [turn()]}); ui.chat.turns = [turn()]; const panel = () => render(createElement(ModelChatModal, {model, projectId: 'prj-one', onClose: ui.close})); expect(panel()).toContain('Участники');
+        ui.buttons.get('Участники')!.onClick!(); panel(); expect(ui.groupEditor?.joining).toBe(true); await ui.groupEditor!.onSave(['agent-dev']);
         expect(ui.chat.configureParticipants).toHaveBeenCalledWith(['agent-dev']); expect(ui.chat.newChat).not.toHaveBeenCalled(); expect(ui.chat.turns).toEqual([turn()]);
     });
     it('Показывает окна участников отдельно, неизвестному окну не придумывает процент', () => {
@@ -275,6 +280,6 @@ describe('Групповые ответы и контекст проекта', (
     });
     it('Состав группы явно показывает отключённых и удалённых участников', () => {
         ui.chat.detail = detail({conversation: {...detail().conversation, mode: 'group'}, participants: [participant({status: 'disabled'}), participant({agentId: 'deleted', name: 'Тестировщик', status: 'removed'})]});
-        const html = render(createElement(ModelChatModal, {model, projectId: 'prj-one', onClose: ui.close})); expect(html).toContain('Разработчик · отключён'); expect(html).toContain('Тестировщик · удалён'); expect(ui.buttons.has('Участники')).toBe(true);
+        const html = render(createElement(ModelChatModal, {model, projectId: 'prj-one', onClose: ui.close})); expect(html).toContain('Разработчик · отключён'); expect(html).toContain('Тестировщик · удалён'); expect(ui.buttons.has('Изменить участников')).toBe(true);
     });
 });

@@ -65,7 +65,7 @@ describe('Header overlay: project/model selection and keyed private lifecycle', 
     it('project changes mount a fresh scope, common admin model choice stays explicit and connect closes before routing', () => {
         render(); select('Модель чата').onChange(model.id); render(); expect(h.workspace).toBeDefined(); select('Проект чата').onChange('prj-two'); render(); expect(h.workspace).toBeUndefined(); expect(select('Проект чата').value).toBe('prj-two');
         button('Подключить модель').onClick(); expect(h.close).toHaveBeenCalledOnce(); expect(h.push).toHaveBeenLastCalledWith('/store?tab=models&p=prj-two'); expect(h.close.mock.invocationCallOrder[0]).toBeLessThan(h.push.mock.invocationCallOrder[0]);
-        select('Проект чата').onChange(''); render(); expect(select('Проект чата').value).toBe(''); expect(h.list!.onNewGroup).toBeUndefined(); button('Подключить модель').onClick(); expect(h.push).toHaveBeenLastCalledWith('/store?tab=models');
+        select('Проект чата').onChange(''); render(); expect(select('Проект чата').value).toBe(''); expect(h.list!.onNew).toBeDefined(); button('Подключить модель').onClick(); expect(h.push).toHaveBeenLastCalledWith('/store?tab=models');
     });
     it('project selector lists only effective developer grants and retains an honest unavailable current-project label', () => {
         h.user = {activeRole: 'Разработчик', userRoles: ['Разработчик'], projectRoles: [{projectId: 'prj-one', projectName: 'Alpha', role: 'Разработчик'}, {projectId: 'prj-two', projectName: 'Beta', role: 'Наблюдатель'}]}; render(); expect(select('Проект чата').options).toEqual([{value: '', label: 'Выберите проект', disabled: true}, {value: 'prj-one', label: 'Alpha'}]);
@@ -79,9 +79,22 @@ describe('Header overlay: project/model selection and keyed private lifecycle', 
         props.projectId = undefined; h.modelsKnown = false; h.modelsLoading = true; render(); expect(select('Модель чата').options).toEqual([]); expect(h.workspace).toBeUndefined();
         h.modelsKnown = true; h.modelsLoading = false; h.models = []; h.assigned = []; const saved = {...conversation(), projectId: null}; vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({conversation: saved})); await open(saved); expect(h.workspace?.navigation?.initialDetail?.conversation.projectId).toBeNull(); expect(h.workspace?.model.id).toBe(model.id); expect(h.workspace?.projectId).toBeUndefined();
     });
-    it('new group/new model/new dialogue intents are explicit, and saved groups keep their own model/history', async () => {
-        render(); h.list!.onNewGroup!(); expect(render()).toContain('Выберите базовую модель'); h.list!.onNew(); expect(render()).toContain('Выберите модель для нового'); h.list!.onNewGroup!(); render(); select('Модель чата').onChange('other-model'); render(); expect(h.workspace?.navigation?.initialGroup).toBe(true); expect(h.workspace?.model.id).toBe('other-model'); expect(h.workspace?.navigation?.initialDetail).toBeUndefined();
+    it('legacy group deep links open participants only for the first model, and saved groups keep their own model/history', async () => {
+        props.group = true; render(); select('Модель чата').onChange('other-model'); render(); expect(h.workspace?.navigation?.initialGroup).toBe(true); expect(h.workspace?.model.id).toBe('other-model'); expect(h.workspace?.navigation?.initialDetail).toBeUndefined(); select('Модель чата').onChange(model.id); render(); expect(h.workspace?.navigation?.initialGroup).toBe(false);
         const saved = detail({conversation: {...conversation('saved', model.id), mode: 'group'}, turns: []}); vi.mocked(modelChatApi.read).mockResolvedValueOnce(saved); h.workspace!.navigation!.onSelect(saved.conversation); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail).toEqual(saved); expect(h.workspace?.navigation?.initialGroup).toBeUndefined(); expect(h.workspace?.model.id).toBe(model.id); h.workspace!.navigation!.onRefresh(); expect(h.indexRefresh).toHaveBeenCalledOnce(); expect(h.workspace!.navigation!.onChanged).toBe(h.changed);
+    });
+    it('one new-dialogue action opens a ready model without fetching or running a conversation', () => {
+        render(); h.list!.onNew(); render();
+        expect(h.workspace?.model.id).toBe(model.id); expect(h.workspace?.navigation?.initialDetail).toBeUndefined(); expect(h.workspace?.navigation?.initialGroup).toBe(false);
+        expect(modelChatApi.read).not.toHaveBeenCalled(); expect(modelCatalogApi.get).not.toHaveBeenCalled();
+    });
+    it.each(['loading', 'error', 'empty'] as const)('new dialogue is unavailable for %s models while saved history can still be opened', async state => {
+        h.items = [conversation()];
+        if (state === 'loading') h.modelsLoading = true;
+        else if (state === 'error') h.modelsError = 'Модели недоступны';
+        else {h.models = []; h.assigned = [];}
+        render(); expect(h.list!.newDisabled).toBe(true); expect(h.list!.disabled).toBe(false);
+        h.list!.onSelect('chat-1'); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail?.conversation.id).toBe('chat-1'); expect(modelChatApi.read).toHaveBeenCalledOnce();
     });
     it('missing saved IDs do no read; opening freezes controls until both conversation and exact model resolve', async () => {
         render(); h.list!.onSelect('missing'); expect(modelChatApi.read).not.toHaveBeenCalled(); const pending = deferredSetup<IModelChatDetail>(), found = deferredSetup<ICatalogModel>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); vi.mocked(modelCatalogApi.get).mockReturnValueOnce(found.promise); h.items = [conversation()]; render(); h.list!.onSelect('chat-1'); expect(render()).toContain('Открываем диалог'); expect(select('Проект чата').disabled).toBe(true); expect(select('Модель чата').disabled).toBe(true); expect(h.list!.disabled).toBe(true);

@@ -24,7 +24,7 @@ export function ChatParticipantsEditor({modelId, projectId, participants, joinin
     const roster = new Map([...participants ?? [], ...items].map(agent => [agent.agentId, agent]));
     const invalid = selected.some(id => roster.get(id)?.status !== 'active');
     const save = async (): Promise<void> => {if(!availability.enabled)return;const owns = captureOwner(); if (await onSave(selected) && owns()) onClose();};
-    const title=joining ? 'Добавить агентов в диалог' : participants ? 'Участники группы' : 'Новая группа агентов';
+    const title='Участники диалога';
     const disabled=!availability.enabled || loading || !!loadError || (!participants || joining) && selected.length < 1 || selected.length > 8 || invalid || saving;
     const content=<>
         {inline&&<h3>{title}</h3>}
@@ -41,8 +41,8 @@ export function ChatParticipantsEditor({modelId, projectId, participants, joinin
                 })}</div>}
         {invalid && <Typography.Paragraph type="warning">Уберите недоступных участников, чтобы сохранить состав группы.</Typography.Paragraph>}
     </>;
-    return inline ? <section aria-label={title}>{content}<div className="model-chat__participant-actions"><Button disabled={saving} onClick={onClose}>Отмена</Button><Button type="primary" loading={saving} disabled={disabled} onClick={()=>{void save();}}>{participants ? 'Сохранить участников' : 'Создать группу'}</Button></div></section>
+    return inline ? <section aria-label={title}>{content}<div className="model-chat__participant-actions"><Button disabled={saving} onClick={onClose}>Отмена</Button><Button type="primary" loading={saving} disabled={disabled} onClick={()=>{void save();}}>Сохранить участников</Button></div></section>
         : <Modal open title={title} onCancel={saving ? undefined : onClose} closable={!saving} maskClosable={!saving} keyboard={!saving}
-            okText={participants ? 'Сохранить участников' : 'Создать группу'} cancelText="Отмена" confirmLoading={saving}
+            okText="Сохранить участников" cancelText="Отмена" confirmLoading={saving}
             okButtonProps={{disabled}} cancelButtonProps={{disabled:saving}} onOk={()=>{void save();}}>{content}</Modal>;
 }
