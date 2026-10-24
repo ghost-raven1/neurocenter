@@ -46,7 +46,7 @@ export class SourceUploads{
   const controller=new AbortController(),abort=()=>{if(!durable)controller.abort(new Error('Передача файла отменена.'));};
   signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
   const deadline=setTimeout(()=>controller.abort(new Error('Истекло время загрузки.')),10*60*1000);deadline.unref();
-  let locked=false,token='',ready=false,release=()=>{},timer:ReturnType<typeof setInterval>|undefined;
+  let locked=false,token='',ready=false,cleanupConfirmed=false,release=()=>{},timer:ReturnType<typeof setInterval>|undefined;
   try{
    const lock=await client.query<{locked:boolean}>('SELECT pg_try_advisory_lock(hashtextextended($1,72465401)) AS locked',[id]);locked=!!lock.rows[0]?.locked;
    if(!locked)throw new ConflictException('Этот файл уже загружается. Проверьте состояние загрузки.');
@@ -55,9 +55,13 @@ export class SourceUploads{
    this.usable(row);
    if(declared!==undefined&&(!/^\d+$/.test(String(declared))||Number(declared)!==Number(row.bytes)))throw new BadRequestException('Размер потока не совпадает с подтверждённым файлом.');
    release=await reserveCapacity({resource:'runtime-artifacts',bytes:Number(row.bytes)+1024**3,path:this.files.root});
-   // The recovered session lease owns this unfinished UUID; a crashed writer cannot retain old partial files.
-   await this.files.remove(id);
-   token=randomUUID();await client.query("UPDATE tool_source_uploads SET state='UPLOADING',lease_token=$2,updated_at=now() WHERE id=$1 AND state<>'CANCELLED'",[id,token]);
+   // A lost commit acknowledgement may leave this exact checked blob; validate it before deciding to replace bytes.
+   let reused=false;
+   try{await this.files.hash(this.files.filename(id),Number(row.bytes),row.sha256);reused=true;}
+   catch(error){if(!(error instanceof ConflictException)&&(error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+   token=randomUUID();const claimed=await client.query("UPDATE tool_source_uploads SET state='UPLOADING',lease_token=$2,updated_at=now() WHERE id=$1 AND state IN ('WAITING','UPLOADING') RETURNING id",[id,token]);
+   if(!claimed.rowCount){const current=await this.repository.get(email,id,client);if(current.state==='READY'){ready=true;await this.authorize(actor,current.auth_epoch,client);await this.files.hash(this.files.filename(id),Number(current.bytes),current.sha256);input.resume();return uploadView(current);}this.usable(current);throw new ConflictException('Состояние загрузки изменилось. Проверьте её перед повтором.');}
+   if(!reused)await this.files.remove(id);
    this.active.set(id,controller);
    let checking:Promise<void>|undefined;
    const check=():Promise<void>=>checking??=Promise.resolve().then(async()=>{
@@ -65,7 +69,7 @@ export class SourceUploads{
     const current=await this.repository.get(email,id);if(current.state!=='UPLOADING'||current.lease_token!==token)throw new ConflictException('Загрузка отменена или передана другой попытке.');
    }).finally(()=>{checking=undefined;});
    timer=setInterval(()=>{void check().catch(error=>controller.abort(error));},500);timer.unref();
-   await this.files.receive(input,id,token,Number(row.bytes),row.sha256,controller.signal,check);
+   if(reused){input.resume();}else await this.files.receive(input,id,token,Number(row.bytes),row.sha256,controller.signal,check);
    durable=true;
    await check();const metadata=await this.inspect(this.files.filename(id),{name:row.name,format:row.format});await check();
    const updated=await this.repository.transaction(async transaction=>{
@@ -74,14 +78,18 @@ export class SourceUploads{
     return (await transaction.query<UploadRow>("UPDATE tool_source_uploads SET state='READY',metadata=$2,lease_token=NULL,updated_at=now() WHERE id=$1 RETURNING *",[id,JSON.stringify(metadata)])).rows[0];
    });ready=true;return uploadView(updated);
   }catch(error){
-   if(token)await client.query("UPDATE tool_source_uploads SET state=CASE WHEN state='CANCELLED' THEN state ELSE 'WAITING' END,lease_token=NULL,updated_at=now() WHERE id=$1 AND lease_token=$2",[id,token]).catch(()=>undefined);
+   if(token){
+    await client.query("UPDATE tool_source_uploads SET state=CASE WHEN state='CANCELLED' THEN state ELSE 'WAITING' END,lease_token=NULL,updated_at=now() WHERE id=$1 AND lease_token=$2",[id,token]).catch(()=>undefined);
+    // The held upload lease and a fresh row lock settle any in-flight COMMIT; failed reconciliation keeps bytes.
+    try{ready=(await this.repository.get(email,id,client,true)).state==='READY';cleanupConfirmed=true;}catch{}
+   }
    if(error instanceof CapacityError)throw new HttpException(error.message,error.statusCode);
    if(error instanceof BadRequestException||error instanceof ConflictException||error instanceof ForbiddenException||error instanceof NotFoundException)throw error;
    if(error instanceof Error&&!('code' in error)&&!/https?:|\/tmp\/|\/var\/|postgres|password|token|secret/i.test(error.message)&&!controller.signal.aborted)throw new BadRequestException(error.message.slice(0,500));
    throw new BadRequestException(controller.signal.aborted?'Передача файла отменена. Можно повторить тот же файл.':'Архив повреждён или не содержит готовой поддерживаемой поставки.');
   }finally{
    clearTimeout(deadline);if(timer)clearInterval(timer);signal?.removeEventListener('abort',abort);if(this.active.get(id)===controller)this.active.delete(id);
-   if(token&&!ready)await this.files.remove(id).catch(()=>undefined);
+   if(token&&!ready&&cleanupConfirmed)await this.files.remove(id).catch(()=>undefined);
    release();if(locked)await client.query('SELECT pg_advisory_unlock(hashtextextended($1,72465401))',[id]).catch(()=>undefined);client.release();
   }
  }
