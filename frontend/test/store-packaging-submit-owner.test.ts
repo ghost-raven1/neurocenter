@@ -112,8 +112,10 @@ describe('POST упаковки принадлежит durable запросу и
         expect(second.requestKey).not.toBe(first.requestKey);expect(second.source).toEqual(first.source);expect(first.publication?.expectedVersion).toBe(7);expect(second.publication?.expectedVersion).toBe(8);
     });
     it('Неизвестный ACK новой версии повторяет exact CAS и прежний UUID после reload',async()=>{
-        await ready();const original={...body(),publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};io.create.mockRejectedValueOnce(Error('Lost ACK'));await current.submit(original);const record=records.get('alice')!;
+        await ready();const original={...body(),targets:['darwin-arm64'],publication:{catalogId:'native-tool',expectedVersion:7,expectedSourceHash:'b'.repeat(64)}};io.create.mockRejectedValueOnce(Error('Lost ACK'));await current.submit(original);const record=records.get('alice')!;
+        const bytes=JSON.stringify(record.request);original.targets.push('linux-x64-glibc');
         hooks.dispose();io.resume.mockRejectedValue(new BuildRequestUnresolvedError());await ready();await flush();render();await current.retrySaved();
+        expect(current.draft?.request.targets).toEqual(['darwin-arm64']);expect(JSON.stringify(io.create.mock.lastCall?.[0])).toBe(bytes);
         expect(io.create.mock.lastCall?.[0]).toEqual(record.request);expect(io.create.mock.calls[1][0].publication).toEqual(original.publication);expect(io.create.mock.calls[1][0].requestKey).toBe(record.request.requestKey);
     });
     it('Явный первый HTTP400 допускает исправление формы с новым UUID',async()=>{

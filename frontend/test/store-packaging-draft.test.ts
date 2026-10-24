@@ -8,6 +8,28 @@ const request=():ToolBuildRequest=>({requestKey:key,kind:'mcp',name:'Тесто�
 beforeEach(()=>vi.stubGlobal('indexedDB',new IDBFactory()));
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 
+describe('Платформы в точном сохранённом запросе',()=>{
+    it('Сохраняет порядок платформ, восстанавливает exact bytes и не меняет targets под прежним UUID',async()=>{
+        const exact={...request(),targets:['darwin-arm64','linux-x64-glibc']};
+        await saveStoredBuildDraft('platforms',exact);const restored=await readStoredBuildDraft('platforms');
+        expect(JSON.stringify(restored!.request)).toBe(JSON.stringify(exact));
+        await expect(saveStoredBuildDraft('platforms',{...exact,targets:['linux-x64-glibc','darwin-arm64']})).rejects.toThrow('Уже сохранён другой запрос');
+        expect((await readStoredBuildDraft('platforms'))!.request).toEqual(exact);
+    });
+    it.each([[],['unknown'],['darwin-arm64','darwin-arm64'],null,'darwin-arm64'])('Отклоняет повреждённый набор %j без сохранения',async targets=>{
+        await expect(saveStoredBuildDraft('invalid-targets',{...request(),targets} as ToolBuildRequest)).rejects.toThrow('повреждён');
+        expect(await readStoredBuildDraft('invalid-targets')).toBeUndefined();
+    });
+    it('Чтение повреждённого targets не делает запрос пригодным для повтора',async()=>{
+        await saveStoredBuildDraft('damaged',request());await rawRecord({scope:'damaged',schemaVersion:1,requestJSON:JSON.stringify({...request(),targets:['unknown']})});
+        await expect(readStoredBuildDraft('damaged')).rejects.toThrow('повреждён');
+    });
+    it('Старый запрос без targets остаётся валидным, а скилл с платформами отклоняется',async()=>{
+        await saveStoredBuildDraft('legacy',request());expect((await readStoredBuildDraft('legacy'))!.request).not.toHaveProperty('targets');
+        await expect(saveStoredBuildDraft('skill',{...request(),kind:'skill',targets:['darwin-arm64'],source:{type:'files',entrypoint:'SKILL.md',files:[{path:'SKILL.md',content:'---\nname: test\ndescription: Test\n---\nTest'}]}})).rejects.toThrow('повреждён');
+    });
+});
+
 async function rawRecord(value:unknown):Promise<void>{
     const database=await new Promise<IDBDatabase>((resolve,reject)=>{const open=indexedDB.open('neurocenter-tool-builds',3);open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error);});
     try{await new Promise<void>((resolve,reject)=>{const tx=database.transaction('requests','readwrite');tx.objectStore('requests').put(value);tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error);});}

@@ -23,7 +23,7 @@ export interface ToolBuildRuntimeVerification {
 }
 export interface ToolBuildAgentStep { attempt: number; stage: 'propose' | 'review'; state: 'STARTED' | 'SUCCEEDED' | 'FAILED'; recipe?: unknown; diagnostics?: unknown }
 export interface ToolBuildRequest {
-    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource; publication?: ToolBuildPublication; agent?: ToolBuildAgent;
+    requestKey: string; kind: PackagingKind; name: string; description: string; source: PackagingSource; targets?: string[]; publication?: ToolBuildPublication; agent?: ToolBuildAgent;
 }
 export interface ToolBuild {
     id: string; operationId: string; requestKey: string; publicationStartedAt: string | null;
