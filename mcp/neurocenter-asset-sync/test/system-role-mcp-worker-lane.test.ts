@@ -13,9 +13,9 @@ vi.mock('socket.io-client',()=>({io:()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),
 vi.mock('../src/features/device-codex-inference/executor.js',()=>({runDeviceCodexJob:async(...args:unknown[])=>{
  controls.codex(...args);return {state:'succeeded',message:'Synthetic model dispatch completed',result:{}};
 }}));
-vi.mock('../src/features/system-role-mcp/worker.js',()=>({runSystemRoleMcpJob:async(_job:unknown,_device:unknown,_authorize:unknown,_deps:unknown,signal:AbortSignal)=>{
+vi.mock('../src/features/system-role-mcp/worker.js',()=>({runSystemRoleMcpJob:async(job:{id:string},_device:unknown,_authorize:unknown,_deps:unknown,signal:AbortSignal)=>{
  controls.entered?.();await new Promise<void>(resolve=>signal.addEventListener('abort',()=>{controls.mcpStopped=true;resolve();},{once:true}));
- return {state:'failed',message:'Cancelled fixture transport',result:{closed:true}};
+ return {state:'failed',message:'Cancelled fixture transport',result:{schemaVersion:1,sessionId:job.id,closed:true}};
 }}));
 
 describe('ordinary worker dispatch remains independent of a stalled MCP transport lease',()=>{
@@ -32,9 +32,10 @@ describe('ordinary worker dispatch remains independent of a stalled MCP transpor
   signals=new Map(['SIGTERM','SIGINT'].map(signal=>[signal as NodeJS.Signals,new Set(process.listeners(signal))]));
   const deviceId=randomUUID(),sessionId=randomUUID(),lease=randomUUID(),modelId=randomUUID();let sessionClaimed=false,modelClaimed=false;
   server=http.createServer(async(req,res)=>{
-   const route=req.url!.replace('/api/device-channel/','');for await(const _chunk of req){/* Drain bounded fixture body. */}
+   const route=req.url!.replace('/api/device-channel/','');let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw||'{}');
    expect(req.headers.authorization).toBe('Bearer fixture');let value:unknown={};
-   if(route==='system-role-mcp/claim'){value=sessionClaimed?null:{id:sessionId,lease,kind:'system-role-mcp-session',project_id:'test-project',payload:{sessionId}};sessionClaimed=true;}
+   if(route==='system-role-mcp/claim'){value=sessionClaimed?null:{id:sessionId,lease,requestId:body.requestId,kind:'system-role-mcp-session',project_id:'test-project',payload:{sessionId}};sessionClaimed=true;}
+   if(route==='system-role-mcp/complete')value={ok:true,closed:true};
    if(route==='jobs/claim'){
     await browserEntered;
     value=modelClaimed?null:{id:modelId,lease,kind:DEVICE_CODEX_JOB,payload:{},project_id:'test-project'};modelClaimed=true;

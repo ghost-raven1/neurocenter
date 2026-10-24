@@ -13,9 +13,10 @@ import {readMcpConfiguration,parseLocalConfiguration} from '../local-configurati
 import {packageEnvironment} from '../runtime-probe/profile.js';
 import {systemRoleMcpDigest,roleMcpProducer,type RoleMcpSessionContext} from './contract.js';
 import type {RoleMcpLaunch} from './client.js';
+import type {RoleMcpLocalSession} from './local-session.js';
 
 /** Only inspected catalogue bytes and private parameters belonging to this exact folder may become a launch. */
-export async function roleMcpTarget(context:RoleMcpSessionContext,deviceId:string,authorize:()=>Promise<void>){
+export async function roleMcpTarget(context:RoleMcpSessionContext,deviceId:string,authorize:()=>Promise<void>,ownership?:RoleMcpLocalSession){
  const {target,projectId}=context,pkg=context.package as Package,set=context.installSet as InstallSet|undefined;
  verify(pkg);const producer=roleMcpProducer(pkg);if(target.runtime!=='device'||target.deviceId!==deviceId||!producer||producer.assetKind!==(target.assetKind??'mcp')||pkg.plugin.id!==target.assetId
   ||pkg.plugin.version!==target.version||pkg.manifest.sha256!==target.manifest)throw new Error('Нужен точный установленный MCP выбранного компьютера.');
@@ -39,13 +40,15 @@ export async function roleMcpTarget(context:RoleMcpSessionContext,deviceId:strin
  const local=parseLocalConfiguration(pkg)?await readMcpConfiguration(projectId,pkg,set,authorize):{env:{},headers:{}};
  const runtime=await resolvePreparedRuntimeArtifact(pkg),entry=producer.assetKind==='plugin'&&runtime?path.join(runtime.root,producer.entrypoint!):runtime?.entrypoint??(producer.entrypoint?path.join(root,assetBase(pkg),producer.entrypoint):undefined);
  if(pkg.config?.transport!=='remote'&&(!entry||!runtime&&!['node',process.execPath].includes(pkg.config?.command??'')))throw new Error('Исполняемый комплект MCP не подготовлен. Обновите управляемую установку.');
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'neurocenter-role-mcp-'));await fs.chmod(home,0o700);
+ const temporary=ownership?await ownership.home():undefined;
+ const home=temporary?.path??await fs.mkdtemp(path.join(os.tmpdir(),'neurocenter-role-mcp-'));await fs.chmod(home,0o700);
+ const clean=temporary?.close??(()=>fs.rm(home,{recursive:true,force:true}));
  try{
   const env=packageEnvironment(pkg,{PATH:process.env.PATH??'/usr/bin:/bin',HOME:home,USERPROFILE:home,TMPDIR:home,
    XDG_CONFIG_HOME:home,XDG_CACHE_HOME:home,LANG:'C.UTF-8',NO_COLOR:'1',DO_NOT_TRACK:'1'});
   const executable=producer.assetKind==='mcp'&&runtime?.executable;
-  const launch:RoleMcpLaunch={pkg,cwd:root,env:{...env,...local.env},headers:{...pkg.config?.headers,...local.headers},
+  const launch:RoleMcpLaunch={pkg,cwd:root,env:{...env,...local.env},headers:{...pkg.config?.headers,...local.headers},...(ownership?{ownership:ownership.process}:{}),
    ...(entry?{command:executable?entry:process.execPath,args:[...(executable?[]:[entry]),...producer.args]}:{})};
-  return {launch,check,async close(){await fs.rm(home,{recursive:true,force:true});}};
- }catch(error){await fs.rm(home,{recursive:true,force:true});throw error;}
+  return {launch,check,close:clean};
+ }catch(error){await clean();throw error;}
 }

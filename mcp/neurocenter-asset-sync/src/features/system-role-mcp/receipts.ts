@@ -1,54 +1,56 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {stateDir,hash} from '../../bridge/state.js';
-import {atomicText} from '../../bridge/atomic-file.js';
-import {readBoundedUtf8} from '../../bridge/read-bounded.js';
-import {readPrivateConfiguration,writePrivateConfiguration,removePrivateConfiguration,enforcePrivateWindowsAcl,assertPrivateWindowsAcl} from '../local-configuration/private-store.js';
+import {syncDirectory,atomicText} from '../../bridge/atomic-file.js';
+import {readBoundedSnapshot} from '../../bridge/read-bounded.js';
 import {systemRoleMcpDigest,normalizeRoleMcpResult} from './contract.js';
-import {roleMcpApi} from './api.js';
+import {roleMcpApi,captureRoleMcpIdentity,type RoleMcpIdentity} from './api.js';
+import {sessionDirectory} from './session-journal.js';
 
-interface Pointer {id:string;jobId:string;lease:string;deviceId:string;kind:'list'|'call';digest:string}
+interface ResultBody {jobId:string;lease:string;callId:string;result:unknown}
+type Scope=Omit<RoleMcpIdentity,'profile'>;
+interface Receipt {schemaVersion:2;identity:Scope;kind:'list'|'call';body:ResultBody;digest:string}
 const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
-const directory=()=>path.join(stateDir(),'system-role-mcp-receipts');
-const key=(id:string)=>hash('system-role-mcp-receipt:'+id);
-async function root(){
- const dir=directory();await fs.mkdir(dir,{recursive:true,mode:0o700});const stat=await fs.lstat(dir);
- if(!stat.isDirectory()||stat.isSymbolicLink()||process.platform!=='win32'&&(stat.mode&0o077)!==0)throw new Error('Небезопасный каталог квитанций MCP.');
- await enforcePrivateWindowsAcl(dir,true);return dir;
+const scope=({profile:_,...value}:RoleMcpIdentity)=>value;
+const matches=(identity:RoleMcpIdentity,item:Receipt)=>Object.entries(scope(identity)).every(([key,value])=>item.identity?.[key as keyof Scope]===value);
+async function current(identity:RoleMcpIdentity){const actual=await captureRoleMcpIdentity();if(Object.keys(actual).some(key=>actual[key as keyof RoleMcpIdentity]!==identity[key as keyof RoleMcpIdentity]))throw new Error('Подключение результата MCP изменилось.');}
+async function read(identity:RoleMcpIdentity,file:string){
+ const info=await fs.lstat(file);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.uid!==process.getuid!()||(info.mode&0o077)!==0)throw new Error('Небезопасная квитанция результата MCP.');
+ const snapshot=await readBoundedSnapshot(file,8*1024*1024),item=JSON.parse(snapshot.bytes.toString('utf8'))as Receipt;
+ // Legacy pointers and their private values are retained, never silently adopted
+ // into a different API or credential epoch by the v2 recovery lane.
+ if(item.schemaVersion!==2)return undefined;
+ if(Object.keys(item).sort().join(',')!=='body,digest,identity,kind,schemaVersion'||!['list','call'].includes(item.kind)
+  ||!item.identity||Object.keys(item.identity).sort().join(',')!=='apiUrl,credentialHash,deviceId,profileKey,siteUrl'||!item.body
+  ||![item.body.jobId,item.body.lease,item.body.callId].every(uuid)||path.basename(file)!==item.body.callId+'.json'
+  ||systemRoleMcpDigest(item.body)!==item.digest)throw new Error('Повреждена квитанция результата MCP.');
+ normalizeRoleMcpResult(item.body.result,item.kind);return {item,snapshot,file};
 }
-function pointer(raw:unknown):Pointer {
- const value=raw as Pointer;
- if(!value||Object.keys(value).sort().join(',')!=='deviceId,digest,id,jobId,kind,lease'||![value.id,value.jobId,value.lease,value.deviceId].every(uuid)
-  ||!['list','call'].includes(value.kind)||!/^[a-f0-9]{64}$/.test(value.digest))throw new Error('Повреждена квитанция MCP.');return value;
+/** Exact scope and normalized result are fsynced before any network delivery. */
+export async function saveRoleMcpResult(body:ResultBody,deviceId:string,kind:'list'|'call',identity=undefined as RoleMcpIdentity|undefined){
+ const exact=identity??await captureRoleMcpIdentity();await current(exact);if(exact.deviceId!==deviceId)throw new Error('Результат MCP относится к другому компьютеру.');
+ if(![body.jobId,body.lease,body.callId].every(uuid))throw new Error('Некорректная квитанция результата MCP.');
+ const normalized={...body,result:normalizeRoleMcpResult(body.result,kind)},directory=await sessionDirectory(exact,'system-role-mcp-receipts'),file=path.join(directory,body.callId+'.json');
+ const record:Receipt={schemaVersion:2,identity:scope(exact),kind,body:normalized,digest:systemRoleMcpDigest(normalized)};
+ const files=(await fs.readdir(directory)).filter(name=>name.endsWith('.json'));if(files.length>=200&&!files.includes(body.callId+'.json'))throw new Error('Доставьте сохранённые квитанции MCP перед новыми действиями.');
+ try{const prior=await read(exact,file);if(!prior||!matches(exact,prior.item)||JSON.stringify(prior.item)!==JSON.stringify(record))throw new Error('Результат MCP уже сохранён иначе.');return prior.item;}
+ catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+ await current(exact);await atomicText(file,JSON.stringify(record),0o600);return record;
 }
-/** The durable private result is fixed before its public pointer, then only that exact acknowledgement is retried. */
-export async function saveRoleMcpResult(body:{jobId:string;lease:string;callId:string;result:unknown},deviceId:string,kind:'list'|'call'){
- const result=normalizeRoleMcpResult(body.result,kind),value={...body,result},dir=await root(),files=await fs.readdir(dir);
- if(files.filter(file=>file.endsWith('.json')).length>=200&&!files.includes(body.callId+'.json'))throw new Error('Доставьте сохранённые квитанции MCP перед новыми действиями.');
- const before=await readPrivateConfiguration(key(body.callId));
- if(before&&systemRoleMcpDigest(before)!==systemRoleMcpDigest(value))throw new Error('Результат вызова MCP уже зафиксирован иначе.');
- if(!before)await writePrivateConfiguration(key(body.callId),value,undefined);
- const item=pointer({id:body.callId,jobId:body.jobId,lease:body.lease,deviceId,kind,digest:systemRoleMcpDigest(value)});
- await atomicText(path.join(dir,item.id+'.json'),JSON.stringify(item),0o600);
+async function deliver(identity:RoleMcpIdentity,item:Receipt,signal?:AbortSignal){
+ if(!matches(identity,item))return;const file=path.join(await sessionDirectory(identity,'system-role-mcp-receipts'),item.body.callId+'.json'),before=await read(identity,file);
+ if(!before||JSON.stringify(before.item)!==JSON.stringify(item))throw new Error('Квитанция результата MCP изменена.');
+ const ack=await roleMcpApi<{ok?:boolean}>('result',item.body,signal,identity);if(ack?.ok!==true)throw new Error('Результат MCP не подтверждён.');
+ const after=await readBoundedSnapshot(file,8*1024*1024);if(after.fingerprint!==before.snapshot.fingerprint||!after.bytes.equals(before.snapshot.bytes))throw new Error('Квитанция результата MCP заменена.');
+ await fs.unlink(file);await syncDirectory(path.dirname(file));
 }
-export async function sendRoleMcpResult(body:{jobId:string;lease:string;callId:string;result:unknown},deviceId:string,kind:'list'|'call',signal?:AbortSignal){
- await saveRoleMcpResult(body,deviceId,kind);
- try{await roleMcpApi('result',body,signal);}catch{return;}
- const value=await readPrivateConfiguration(key(body.callId));
- await fs.rm(path.join(await root(),body.callId+'.json'),{force:true});if(value)await removePrivateConfiguration(key(body.callId),value);
+export async function sendRoleMcpResult(body:ResultBody,deviceId:string,kind:'list'|'call',signal?:AbortSignal,identity?:RoleMcpIdentity){
+ const exact=identity??await captureRoleMcpIdentity(),item=await saveRoleMcpResult(body,deviceId,kind,exact);
+ try{await deliver(exact,item,signal);}catch{/* Uncertain results remain private and never replay the tool. */}
 }
-/** Recovery sends receipts only: it never reconnects a tool or replays a mutation. */
+/** Recovery retries results only within their original physical profile and credential epoch. */
 export async function deliverRoleMcpResults(deviceId:string,signal?:AbortSignal){
- const dir=await root(),files=(await fs.readdir(dir)).filter(file=>/^[a-f0-9-]{36}\.json$/.test(file));
- if(files.length>200)throw new Error('Превышен предел сохранённых квитанций MCP.');
- for(const file of files){
-  try{
-  const destination=path.join(dir,file);await assertPrivateWindowsAcl(destination);
-  const item=pointer(JSON.parse(await readBoundedUtf8(destination,4096)));if(item.id+'.json'!==file||item.deviceId!==deviceId)continue;
-  const value=await readPrivateConfiguration<{jobId:string;lease:string;callId:string;result:unknown}>(key(item.id));
-  if(!value||systemRoleMcpDigest(value)!==item.digest)throw new Error('Содержимое квитанции MCP изменилось.');
-  normalizeRoleMcpResult(value.result,item.kind);
-  await roleMcpApi('result',value,signal);await fs.rm(destination,{force:true});await removePrivateConfiguration(key(item.id),value);
-  }catch{signal?.throwIfAborted();/* One disconnected or revoked receipt never blocks independent sessions. */}
- }
+ const identity=await captureRoleMcpIdentity();if(identity.deviceId!==deviceId)return;
+ const directory=await sessionDirectory(identity,'system-role-mcp-receipts'),files=(await fs.readdir(directory)).filter(file=>/^[a-f0-9-]{36}\.json$/.test(file));
+ if(files.length>200)throw new Error('Превышен предел сохранённых результатов MCP.');
+ for(const name of files){try{const saved=await read(identity,path.join(directory,name));if(saved&&matches(identity,saved.item))await deliver(identity,saved.item,signal);}catch{signal?.throwIfAborted();}}
 }

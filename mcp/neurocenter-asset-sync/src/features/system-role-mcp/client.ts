@@ -4,18 +4,26 @@ import {AjvJsonSchemaValidator} from '@modelcontextprotocol/sdk/validation/ajv-p
 import type {Transport} from '@modelcontextprotocol/sdk/shared/transport.js';
 import type {Package} from '../../bridge/package.js';
 import {ProbeScope} from '../runtime-probe/process.js';
-import {ProbeStdioTransport} from '../runtime-probe/mcp-transport.js';
+import {OwnedRoleMcpTransport} from './owned-transport.js';
+import {RoleMcpCleanupError,type RoleMcpProcessJournal} from './owned-process.js';
 import {SYSTEM_ROLE_MCP_LIMITS as limits,normalizeRoleMcpDiscovery,normalizeRoleMcpOutput,boundedMcpJson,type RoleMcpTool,type RoleMcpOutput} from './contract.js';
 
-export interface RoleMcpLaunch {pkg:Package;command?:string;args?:string[];cwd:string;env:NodeJS.ProcessEnv;headers?:Record<string,string>}
+export interface RoleMcpLaunch {pkg:Package;command?:string;args?:string[];cwd:string;env:NodeJS.ProcessEnv;headers?:Record<string,string>;ownership?:RoleMcpProcessJournal}
 export interface RoleMcpPort {list():Promise<RoleMcpTool[]>;call(name:string,schemaDigest:string,args:Record<string,unknown>,dispatch:()=>Promise<void>):Promise<RoleMcpOutput>;close():Promise<void>}
 export const roleMcpOutput=normalizeRoleMcpOutput;
 
 /** A run owns one transport. Existing process-group primitives close all descendants on cancellation or loss of authority. */
 export async function connectRoleMcp(launch:RoleMcpLaunch,signal:AbortSignal,authorize:()=>Promise<void>):Promise<RoleMcpPort>{
  signal.throwIfAborted();const scope=new ProbeScope(limits.sessionMs),client=new Client({name:'neurocenter-system-role',version:'1'},{capabilities:{}});
- let transport:Transport;
- const abort=()=>scope.close();signal.addEventListener('abort',abort,{once:true});
+ let transport:Transport|undefined,closing:Promise<void>|undefined;
+ const close=()=>closing??=(async()=>{
+  signal.removeEventListener('abort',abort);scope.close();
+  // A remote server may be unreachable. Local HTTP readers are aborted and its
+  // bounded DELETE is best effort; no claim is made about remote side effects.
+  await Promise.race([client.close().catch(()=>{}),new Promise<void>(resolve=>{const timer=setTimeout(resolve,1000);timer.unref();})]);
+  await transport?.close();
+ })();
+ const abort=()=>{scope.close();void close().catch(()=>{});};signal.addEventListener('abort',abort,{once:true});
  const active=async()=>{signal.throwIfAborted();scope.remaining();await authorize();signal.throwIfAborted();};
  try{
   await active();
@@ -35,7 +43,7 @@ export async function connectRoleMcp(launch:RoleMcpLaunch,signal:AbortSignal,aut
     }});
   }else{
    if(!launch.command||!launch.args)throw new Error('Не подтверждён установленный комплект MCP.');
-   transport=new ProbeStdioTransport(scope,launch.command,launch.args,launch.cwd,launch.env,active);
+   transport=new OwnedRoleMcpTransport(launch.command,launch.args,launch.cwd,launch.env,active,signal,launch.ownership);
   }
   const callSignal=AbortSignal.any([signal,scope.controller.signal]);
   await scope.wait(client.connect(transport,{signal:callSignal,timeout:limits.connectMs}));
@@ -57,6 +65,6 @@ export async function connectRoleMcp(launch:RoleMcpLaunch,signal:AbortSignal,aut
    if(!validator.getValidator(tool.inputSchema)(args).valid)throw new Error('Аргументы не соответствуют обнаруженной схеме MCP.');
    await active();await dispatch();callSignal.throwIfAborted();
    return roleMcpOutput(await scope.wait(client.callTool({name,arguments:args},undefined,{signal:callSignal,timeout:limits.callMs})));
-  },async close(){signal.removeEventListener('abort',abort);scope.close();await client.close().catch(()=>{});await transport.close().catch(()=>{});}};
- }catch(error){signal.removeEventListener('abort',abort);scope.close();await client.close().catch(()=>{});throw error;}
+  },close};
+ }catch(error){try{await close();}catch(cleanup){throw new RoleMcpCleanupError(cleanup);}throw error;}
 }
