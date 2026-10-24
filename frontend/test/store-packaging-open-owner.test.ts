@@ -48,7 +48,7 @@ const ui = vi.hoisted(() => ({
     history: {location: {pathname: '/store', search: '?p=prj-a', hash: ''}, replace: vi.fn(), push: vi.fn()},
 }));
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.useState,
-    useRef: hooks.useRef, useEffect: hooks.useEffect, useMemo: hooks.useMemo, useCallback: hooks.useCallback,
+    useRef: hooks.useRef, useEffect: hooks.useEffect, useLayoutEffect: hooks.useEffect, useMemo: hooks.useMemo, useCallback: hooks.useCallback,
 }));
 vi.mock('react-router-dom', () => ({useLocation: () => ui.location, useHistory: () => ui.history}));
 vi.mock('react-redux', () => ({useSelector: (select: (state: unknown) => unknown) => select({userBlock: {user: {
@@ -130,6 +130,7 @@ describe('Переход к папке из карточки инструмен�
     it('Одно управление карточкой открывает существующие детали, новая версия использует native id',async()=>{
         ui.job=undefined;vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items:[{...plugin('listed-tool'),name:'Listed title',revision:'v-source-old',version:2}],page:1,size:100,total:1});
         render();await flush();render();
+        expect(bffApi.listAiPlugins).toHaveBeenCalledExactlyOnceWith({pageSize:100,page:1});
         expect(ui.buttons.has('Новая версия')).toBe(false);expect(ui.buttons.has('Редактировать')).toBe(false);
         click('Управление');render();expect(ui.view).toMatchObject({id:'listed-tool',version:2});
         expect(ui.publicationTarget).not.toHaveBeenCalled();expect(ui.newVersion).toBeTypeOf('function');
