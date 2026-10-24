@@ -26,6 +26,31 @@ describe('Owned one-click intent, retries and polling',()=>{
  it('Role/session changes during an awaited selection GET never post for the old owner',async()=>{render();await settle();const selection=deferred<any>();vi.mocked(api.get).mockReturnValueOnce(selection.promise);void current.request(model);owner.value='two';render();selection.resolve({data:{projectId:project,revision:1,expectedDimension:0,model:null,modelPin:null,profile:null,activeGeneration:generation,activeSnapshot:null,dataRevision:0}});await settle();expect(api.post).not.toHaveBeenCalled();});
  it('Late POST from the old owner never replaces a new owner plan',async()=>{render();await settle();const post=deferred<any>();vi.mocked(api.post).mockReturnValueOnce(post.promise);void current.request(model,1);owner.value='two';render();await settle();post.resolve({data:fixture({state:'applied'})});await settle();expect(current.plan).toBeUndefined();expect(applied).not.toHaveBeenCalled();});
  it('A stale poll cannot undo cancellation; next request gets a fresh intent',async()=>{render();await settle();await current.request(model,1);render();const poll=deferred<any>();vi.mocked(api.get).mockReturnValueOnce(poll.promise);await vi.advanceTimersByTimeAsync(1500);vi.mocked(api.post).mockResolvedValueOnce({data:fixture({state:'cancelled'})});await current.cancel();render();poll.resolve({data:fixture()});await settle();expect(current.plan?.state).toBe('cancelled');const original=vi.mocked(api.post).mock.calls[0][1] as any;await current.request(model,1);expect((vi.mocked(api.post).mock.calls.at(-1)![1] as any).requestKey).not.toBe(original.requestKey);});
+ it('Lost cancel ACK keeps uncertainty; idempotent cancel retries the same plan and held running poll cannot resurrect it',async()=>{
+  render();await settle();await current.request(model,1);render();
+  const held=deferred<any>();vi.mocked(api.get).mockReturnValueOnce(held.promise);await vi.advanceTimersByTimeAsync(1500);
+  let server=fixture();const cancellations:string[]=[];
+  vi.mocked(api.post).mockImplementation(async(url)=>{
+   cancellations.push(String(url));server=fixture({state:'cancelled',message:'Отмена подтверждена сервером.'});
+   if(cancellations.length===1)throw Error('cancel ACK delivery lost');
+   return{data:server};
+  });
+  await current.cancel();render();
+  expect(server.state).toBe('cancelled');expect(current.plan?.state).toBe('building');expect(current.error).toContain('cancel ACK delivery lost');
+  await current.cancel();render();expect(current.plan).toEqual(server);expect(current.error).toBe('');
+  expect(cancellations).toEqual([`/api/projects/${project}/embedding/reindex/${id}/cancel`,`/api/projects/${project}/embedding/reindex/${id}/cancel`]);
+  held.resolve({data:fixture({progress:77,message:'Stale running response'})});await settle();
+  expect(current.plan).toEqual(server);expect(current.pending).toBe(false);expect(applied).not.toHaveBeenCalled();
+  const count=vi.mocked(api.get).mock.calls.length;await vi.advanceTimersByTimeAsync(4500);expect(api.get).toHaveBeenCalledTimes(count);
+ });
+ it('Lost cancel ACK reconciles from the next GET without a second mutation and keeps the cancelled plan visible',async()=>{
+  render();await settle();await current.request(model,1);render();
+  const server=fixture({state:'cancelled',message:'Операция отменена.'});vi.mocked(api.post).mockRejectedValueOnce(Error('cancel ACK delivery lost'));
+  await current.cancel();render();expect(current.plan?.state).toBe('building');expect(current.error).toContain('cancel ACK delivery lost');
+  vi.mocked(api.get).mockResolvedValueOnce({data:server});await vi.advanceTimersByTimeAsync(1500);await settle();
+  expect(current.plan).toEqual(server);expect(current.pending).toBe(false);expect(current.error).toBe('');expect(api.post).toHaveBeenCalledTimes(2);
+  expect(applied).not.toHaveBeenCalled();
+ });
  it('Polling stops when the queued local job succeeds, even though server state remains applied',async()=>{render();await settle();vi.mocked(api.post).mockResolvedValueOnce({data:fixture({state:'applied',local:{jobId:id,state:'queued',message:'offline',percent:null}})});await current.request(model,1);render();vi.mocked(api.get).mockResolvedValueOnce({data:fixture({state:'applied',local:{jobId:id,state:'succeeded',message:'done',percent:100}})});await vi.advanceTimersByTimeAsync(1500);await settle();expect(current.pending).toBe(false);const count=vi.mocked(api.get).mock.calls.length;await vi.advanceTimersByTimeAsync(4500);expect(api.get).toHaveBeenCalledTimes(count);expect(applied).toHaveBeenCalledOnce();});
  it('Retry-local sends the existing plan ID without making another model plan',async()=>{render();await settle();vi.mocked(api.post).mockResolvedValueOnce({data:fixture({state:'applied',local:{jobId:id,state:'failed',message:'offline timeout',percent:null}})});await current.request(model,1);render();await current.retryLocal();expect(vi.mocked(api.post).mock.calls.at(-1)![0]).toContain('/'+id+'/local-retry');});
 });
