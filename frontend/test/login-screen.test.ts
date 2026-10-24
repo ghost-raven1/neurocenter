@@ -25,7 +25,7 @@ describe('Login redesign preserves the existing authentication action and feedba
         view.processing=true;renderToStaticMarkup(createElement(LoginScreen));expect(view.button.loading).toBe(true);
         view.processing=false;view.error='Сервис входа недоступен';
         const html=renderToStaticMarkup(createElement(LoginScreen));
-        expect(html).toContain('role="alert"');expect(html).toContain(view.error);expect(view.button.loading).toBe(false);
+        expect(html).toContain('role="alert"');expect(html).toContain(view.error);expect(html.match(/<button/g)).toHaveLength(1);expect(view.button.loading).toBe(false);
         view.button.onClick();expect(authLoginBlitz).toHaveBeenCalledOnce();
     });
 });
