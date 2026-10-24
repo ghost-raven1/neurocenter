@@ -167,12 +167,14 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param {string} idOrName - id или имя проекта.
      * @returns {Promise<IProjectDetail>}
      */
-    async getProject(idOrName: string): Promise<IProjectDetail> {
+    /** Internal identity reads may use stored sizes; the public detail endpoint requests live measurements by default. */
+    async getProject(idOrName: string, options: { includeLiveSizes?: boolean } = {}): Promise<IProjectDetail> {
         const found = await this.db.getProject(idOrName);
         if (!found) {
             throw new NotFoundException(`project not found: ${idOrName}`);
         }
-        await this.applyLiveSizes(found);
+        // Internal identity/ACL reads do not depend on optional RAG or filesystem measurements.
+        if (options.includeLiveSizes !== false) await this.applyLiveSizes(found);
         found.quota.currentBytesUsed = found.logicalBytes;
         found.quota.retentionBytesUsed = found.retainedBytes;
         return found;

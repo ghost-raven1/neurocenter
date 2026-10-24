@@ -64,7 +64,7 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
         if (typeof idOrName !== 'string' || !idOrName.trim() || idOrName.length > 256) { throw new BadRequestException('Выберите проект.'); }
         const current = actor ?? await this.actor(req);
         if (projectLevel(current.claims, current.activeRole, idOrName) < minimumLevel) { throw new ForbiddenException('Активная роль не разрешает это действие в выбранном проекте.'); }
-        const project = await this.catalog.getProject(idOrName);
+        const project = await this.catalog.getProject(idOrName, { includeLiveSizes: false });
         if (projectLevel(current.claims, current.activeRole, project.id) < minimumLevel) { throw new ForbiddenException('Нет доступа к выбранному проекту.'); }
         return project;
     }

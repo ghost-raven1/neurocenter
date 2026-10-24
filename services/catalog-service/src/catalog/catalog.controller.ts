@@ -275,21 +275,21 @@ export class CatalogController {
      */
     @Get('projects/:id/assets')
     public async listProjectAssets(@Param('id') id: string): Promise<IProjectAsset[]> {
-        const project = await this.catalog.getProject(id);
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
         return this.catalog.listProjectAssets(project.id);
     }
 
     /** Exact snapshots доступны участнику проекта, в том числе после архивирования общего head. */
     @Get('projects/:id/catalog')
     public async projectCatalog(@Param('id') id:string,@Req() req:IHttpRequest) {
-        const project=await this.catalog.getProject(id);
+        const project=await this.catalog.getProject(id, { includeLiveSizes: false });
         if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<1)throw new ForbiddenException('Нет доступа к каталогу проекта.');
         return this.catalog.projectCatalog(project.id);
     }
 
     @Patch('projects/:id/assets/pin')
     public async pinProjectAsset(@Param('id') id:string,@Body() body:{assetId?:string;assetKind?:string;version?:number;expectedVersion?:number|null;expectedManifest?:string|null},@Req() req:IHttpRequest) {
-        const project=await this.catalog.getProject(id);
+        const project=await this.catalog.getProject(id, { includeLiveSizes: false });
         if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<3)throw new ForbiddenException('Версию закрепляет админ проекта.');
         if(!body?.assetId||!body.assetKind)throw new BadRequestException('Выберите назначение проекта.');
         const {assetId,assetKind,...input}=body;
@@ -307,7 +307,7 @@ export class CatalogController {
         if (!body || !body.assetId || !body.assetKind) {
             throw new BadRequestException('assetId и assetKind обязательны');
         }
-        const project = await this.catalog.getProject(id);
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
         await this.catalog.addProjectAsset(project.id, body.assetId, body.assetKind as IProjectAsset['assetKind'], this.actor(req).email);
         return { ok: true };
     }
@@ -323,7 +323,7 @@ export class CatalogController {
         if (!body || !body.assetId || !body.assetKind) {
             throw new BadRequestException('assetId и assetKind обязательны');
         }
-        const project = await this.catalog.getProject(id);
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
         return { ok: await this.catalog.removeProjectAsset(project.id, body.assetId, body.assetKind, this.actor(req).email) };
     }
 
