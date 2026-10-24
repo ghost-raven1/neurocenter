@@ -14,7 +14,7 @@ import {packageEnvironment} from '../runtime-probe/profile.js';
 import {ProbeScope} from '../runtime-probe/process.js';
 import {readMcpConfiguration,parseLocalConfiguration} from '../local-configuration/index.js';
 import {closeOwnRagUi} from '../rag-ui/index.js';
-import {localRagUi} from '../rag-ui/contract.js';
+import {localRagCore} from '../rag-core/contract.js';
 import {locateStore} from '../../lib/store.js';
 import {readRagProjectIdentity,verifiedRagProjectIdentity} from '../../lib/rag-project-identity.js';
 import {openIndexSnapshot} from '../rag-index/snapshot.js';
@@ -31,7 +31,7 @@ import type {IHostedConnectionTransaction,IHostedReindexResult} from './index.js
 export async function reindexHostedRag(input:{projectId:string;bindingId:string;instanceId:string;pkg:Package},publication:IHostedConnectionTransaction,
     authorize:()=>Promise<void>,progress:(percent:number,message:string)=>Promise<unknown>):Promise<IHostedReindexResult>{
     const pkg=structuredClone(input.pkg);verify(pkg);
-    if((pkg.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1||!localRagUi(pkg))throw new Error('Обновите OpenCodeRAG для управляемой переиндексации.');
+    if((pkg.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1||!localRagCore(pkg))throw new Error('Обновите OpenCodeRAG для управляемой переиндексации.');
     const root=await projectFolder(input.projectId),identity=(await readRagProjectIdentity({project:root},root)).value;
     if(!verifiedRagProjectIdentity(identity,input.projectId)||identity.bindingId!==input.bindingId||identity.instanceId!==input.instanceId)throw new Error('Папка проекта изменилась.');
     const located=await locateStore(root,root,true),store=located.storePath;if(!store)throw new Error('Не определена папка индекса.');

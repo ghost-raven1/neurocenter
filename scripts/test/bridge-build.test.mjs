@@ -4,7 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {createRequire} from 'node:module';
 import { verifyBridgeBuild } from '../bridge-build-integrity.mjs';
 
 const bridge = fileURLToPath(new URL('../../mcp/neurocenter-asset-sync/', import.meta.url));
@@ -15,7 +16,13 @@ const snapshotContract = fileURLToPath(new URL('../../services/shared/project-sn
 const configurationContract = fileURLToPath(new URL('../../services/shared/project-configuration.cjs', import.meta.url));
 const agentsContract = fileURLToPath(new URL('../../services/shared/project-agents.cjs', import.meta.url));
 const learningContract = fileURLToPath(new URL('../../services/shared/project-learning.cjs', import.meta.url));
-const additionalSharedContracts=['adapter-parameters.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs','codex-connector-source.cjs','runtime-cache-policy.cjs'];
+const additionalSharedContracts=['rag-core-contract.cjs','bridge-update-cleanup.cjs','adapter-parameters.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs','codex-connector-source.cjs','runtime-cache-policy.cjs'];
+const {RUNTIME_USE_ENTRYPOINTS}=createRequire(import.meta.url)('../../services/shared/bridge-update-cleanup.cjs');
+const namedExports={
+    'dist/bridge/connect.js':['startWorker','connectBridge','watchPair'],
+    'dist/features/opencode-providers/authorization.js':['authorizeManagedProvider'],
+    'dist/features/opencode-providers/ollama-sdk.js':['createOllama'],
+};
 const providerContract = fileURLToPath(new URL('../../services/shared/opencode-providers.cjs', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
@@ -53,12 +60,18 @@ async function fixture(source) {
     await fs.cp(path.join(bridge,'vendor'),path.join(root,'vendor'),{recursive:true});
     await fs.copyFile(path.join(bridge,'package-lock.json'),path.join(root,'package-lock.json'));
     await fs.copyFile(path.join(bridge, 'scripts/build.mjs'), path.join(root, 'scripts/build.mjs'));
+    await fs.copyFile(path.join(bridge, 'scripts/runtime-bootstraps.mjs'), path.join(root, 'scripts/runtime-bootstraps.mjs'));
     await fs.writeFile(path.join(root, 'package.json'), '{"version":"0.2.0","type":"module"}');
     await fs.mkdir(path.join(root,'vendor/ollama-runtime'),{recursive:true});
     for(const name of ['package.json','index.js'])await fs.copyFile(path.join(bridge,'vendor/ollama-runtime',name),path.join(root,'vendor/ollama-runtime',name));
     await fs.copyFile(path.join(bridge,'package-lock.json'),path.join(root,'package-lock.json'));
-    await fs.writeFile(path.join(root, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","outDir":"dist","rootDir":"src","skipLibCheck":true},"include":["src"]}');
+    await fs.writeFile(path.join(root, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","outDir":"dist","rootDir":"src","skipLibCheck":true},"include":["src"]}');
     await fs.writeFile(path.join(root, 'src/index.ts'), source);
+    // Exercise every real public wrapper, including the three retained SDK exports.
+    for(const entry of RUNTIME_USE_ENTRYPOINTS.filter(value=>value!=='dist/index.js')){
+        const file=path.join(root,entry.replace(/^dist\//,'src/').replace(/\.js$/,'.ts'));await fs.mkdir(path.dirname(file),{recursive:true});
+        await fs.writeFile(file,(namedExports[entry]??[]).map(name=>`export const ${name}=()=>${JSON.stringify(name)};`).join('\n')||'export {};');
+    }
     await fs.writeFile(path.join(root, 'dist/removed-tool.js'), 'Старая реализация');
     return { root, run: () => spawnSync(process.execPath, [path.join(root, 'scripts/build.mjs')], { encoding: 'utf8' }) };
 }
@@ -76,6 +89,10 @@ test('Чистая сборка убирает удалённый инструм
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/project-learning.cjs'), 'utf8'), await fs.readFile(learningContract, 'utf8'));
     for(const name of additionalSharedContracts)assert.equal(await fs.readFile(path.join(f.root,'dist/shared',name),'utf8'),await fs.readFile(new URL('../../services/shared/'+name,import.meta.url),'utf8'));
     assert.equal(await fs.readFile(path.join(f.root, 'dist/shared/opencode-providers.cjs'), 'utf8'), await fs.readFile(providerContract, 'utf8'));
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.root,'dist/runtime-use.json'),'utf8')),{schemaVersion:1,entrypoints:RUNTIME_USE_ENTRYPOINTS});
+    const modules=RUNTIME_USE_ENTRYPOINTS.map(entry=>({entry,url:pathToFileURL(path.join(f.root,entry)).href,names:namedExports[entry]??[]}));
+    const loaded=spawnSync(process.execPath,['--input-type=module','-e',`const results=[];for(const item of ${JSON.stringify(modules)}){const m=await import(item.url);results.push([item.entry,item.names.map(name=>m[name]())]);}console.log(JSON.stringify(results));`],{encoding:'utf8'});
+    assert.equal(loaded.status,0,loaded.stderr);assert.deepEqual(JSON.parse(loaded.stdout),modules.map(item=>[item.entry,item.names]));
 });
 test('Ошибка компиляции сохраняет предыдущую рабочую сборку', async () => {
     const f = await fixture('export const value: number = "ошибка";'); assert.notEqual(f.run().status, 0);

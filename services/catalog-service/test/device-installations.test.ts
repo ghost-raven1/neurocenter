@@ -53,6 +53,36 @@ describe('Серверный список и удаление личных ус�
         expect(query.mock.calls[0][0]).toContain("state='succeeded'");
         expect(query.mock.calls[0][0]).toContain('NOT d.revoked');
     });
+    const ragCore={schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'};
+    const ragUi={...ragCore,args:['ui','--port','0','--no-open']};
+    const hostedEmbedding={schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1};
+    async function listedRag(extra:Record<string,unknown>){
+        query.mockResolvedValue({rows:[{deviceId:input.deviceId,projectId:input.projectId,assetId:'rag',assetKind:'plugin',version:9,manifest:pkg.manifest.sha256,bindingId:input.bindingId,
+            bindings:[{projectId:input.projectId,bindingId:input.bindingId,instanceId:'11111111-1111-4111-8111-111111111111',valid:true}],
+            installedConfig:{extra:{runtimeArtifacts:[{sha256:'c'.repeat(64)}],...extra}}}]});
+        const [value]=await service.list(actor);return value;
+    }
+    it('A core-only installed package exposes hosted reindex support without claiming a Web UI',async()=>{
+        const value=await listedRag({ragCore,hostedEmbedding});
+        expect(value).toMatchObject({assetId:'rag',version:9,manifest:pkg.manifest.sha256,bindingId:input.bindingId,isCurrentBinding:true,
+            hostedEmbedding:{supported:true,reindexSupported:true}});
+        expect(value).not.toHaveProperty('ragUi');expect(value).not.toHaveProperty('installedConfig');
+        expect(query.mock.calls[0][1]).toEqual([actor.email,false,['mine','read']]);
+    });
+    it.each([{...ragCore,entrypoint:'other.mjs'},{...ragCore,args:['reindex']},null])('Invalid explicit core metadata cannot borrow hosted support from a valid UI: %j',async ragCore=>{
+        const value=await listedRag({ragCore,localUi:ragUi,hostedEmbedding});
+        expect(value).not.toHaveProperty('hostedEmbedding');expect(value.ragUi).toEqual({supported:true,mode:'web'});
+    });
+    it('A core-only package with a different hosted ABI exposes neither hosted support nor a UI',async()=>{
+        const value=await listedRag({ragCore,hostedEmbedding:{...hostedEmbedding,reindexSchemaVersion:2}});
+        expect(value).not.toHaveProperty('hostedEmbedding');expect(value).not.toHaveProperty('ragUi');
+    });
+    it('Legacy UI and hosted metadata retain their previous independent reindex declaration',async()=>{
+        const value=await listedRag({localUi:ragUi,hostedEmbedding});
+        expect(value).toMatchObject({ragUi:{supported:true,mode:'web'},hostedEmbedding:{supported:true,reindexSupported:true}});
+        const legacy=await listedRag({localUi:ragUi,hostedEmbedding:{schemaVersion:1}});
+        expect(legacy).toMatchObject({ragUi:{supported:true,mode:'web'},hostedEmbedding:{supported:true}});expect(legacy.hostedEmbedding).not.toHaveProperty('reindexSupported');
+    });
     it('Отозванная роль не получает доступ к старым проектам', async () => {
         claim.mockResolvedValue({ ...claims, userRoles: ['Наблюдатель'] });
         await service.list(actor);

@@ -1,7 +1,7 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import type {Pool} from 'pg';
 import {completeDeviceJob} from '../src/devices/device-completion';
-import {buildPackage} from '../src/catalog/bundle-package';
+import {buildPackage,type IPackage} from '../src/catalog/bundle-package';
 import {installCompletion,ragDevice,ragInstallJob,ragInstallSet,ragPackage} from './rag-install-inspection.fixture';
 
 describe('RAG installation completion schedules a read-only bounded continuation',()=>{
@@ -29,6 +29,15 @@ describe('RAG installation completion schedules a read-only bounded continuation
     it('an unrelated package does not gain an automatic inspection',async()=>{
         const f=fixture('other');await completeDeviceJob(f.pool,f.device.id,f.job.id,installCompletion(f.job));
         expect(f.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO bridge_jobs'))).toBe(false);
+    });
+    it('core-only installation retains the same read-only continuation without launching a UI or indexing',async()=>{
+        const f=fixture(),old=f.job.payload.package as IPackage,{localUi,...extra}=old.config!.extra!;
+        f.job.payload.package=buildPackage(old.plugin,old.files,'',{...old.config,extra:{...extra,
+            ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}});
+        await completeDeviceJob(f.pool,f.device.id,f.job.id,installCompletion(f.job));
+        const inserts=f.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO bridge_jobs'));
+        expect(inserts).toHaveLength(1);expect(JSON.stringify(inserts[0])).toContain('inspect-installation');
+        expect(JSON.stringify(inserts[0])).not.toContain('open-rag-ui');expect(JSON.stringify(inserts[0])).not.toContain('connect-rag-model');
     });
     it('failed install and repeated accepted ACK do not schedule a continuation',async()=>{
         const f=fixture();await completeDeviceJob(f.pool,f.device.id,f.job.id,installCompletion(f.job,true));

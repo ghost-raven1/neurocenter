@@ -34,9 +34,11 @@ COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
 COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts \
     services/shared/runtime-cache-policy.cjs services/shared/runtime-cache-policy.d.cts \
+    services/shared/bridge-update-cleanup.cjs services/shared/bridge-update-cleanup.d.cts \
     services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \
     services/shared/rag-index-contract.cjs services/shared/rag-index-contract.d.cts \
     services/shared/rag-ui-contract.cjs services/shared/rag-ui-contract.d.cts \
+    services/shared/rag-core-contract.cjs services/shared/rag-core-contract.d.cts \
     services/shared/opencode-model-scan.cjs services/shared/opencode-model-scan.d.cts \
     services/shared/opencode-providers.cjs services/shared/opencode-providers.d.cts \
     services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \

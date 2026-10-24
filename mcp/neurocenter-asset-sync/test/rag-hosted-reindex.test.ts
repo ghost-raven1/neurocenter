@@ -36,6 +36,15 @@ describe('Selected-installation reindex: native LanceDB validation + real journa
  it('3→5 switches verified native rows and exact private grant together',async()=>{
   expect(await reindexHostedRag(input,publication,async()=>{},progress)).toMatchObject({complete:true,rowCount:1});expect(await rows()).toMatchObject({count:1,dimension:5,ids:[]});expect(await readPrivateConfiguration(publication.key)).toEqual(publication.after);
  });
+ it('A pinned core-only package reindexes without a local UI descriptor',async()=>{
+  const {localUi,...extra}=pkg.config!.extra!;
+  const core:Package={...pkg,config:{...pkg.config,extra:{...extra,ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'}}},manifest:{...pkg.manifest}};
+  core.manifest.sha256=hash(JSON.stringify(canonicalV4({schemaVersion:5,plugin:core.plugin,config:core.config,files:[]})));
+  await install('test-project',core,async()=>{},async()=>{});input={...input,pkg:core};
+  (publication.after as {grants:Array<{pkg:Package}>}).grants[0]!.pkg=core;
+  expect(await reindexHostedRag(input,publication,async()=>{},progress)).toMatchObject({complete:true,rowCount:1});
+  expect(await rows()).toMatchObject({count:1,dimension:5,ids:[]});expect(await readPrivateConfiguration(publication.key)).toEqual(publication.after);
+ });
  it('JSONB model/provider/dimension order accepts the same canonical native profile and commits its private grant',async()=>{
   const reordered={model:profile.model,provider:profile.provider,dimension:profile.dimension};publication.embedding.profile=reordered;
   (publication.after as {grants:Array<{selection:{profile:typeof profile}}>}).grants[0].selection.profile=reordered;

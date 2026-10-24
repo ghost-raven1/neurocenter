@@ -30,6 +30,11 @@ describe('Управляемый интерфейс RAG проверяет ус�
         await expect(ragUiJobPayload(installations,plans,{...device,report:{...device.report,capabilities:['workspace-instance-v1']}},input)).rejects.toHaveProperty('status',409);
         inspectionPackage.mockResolvedValue({...pkg,config:null});await expect(ragUiJobPayload(installations,plans,device,input)).rejects.toHaveProperty('status',409);
     });
+    it('A valid core-only package cannot authorize opening a UI',async()=>{
+        const {localUi,...extra}=pkg.config.extra;inspectionPackage.mockResolvedValue({...pkg,config:{extra:{...extra,
+            ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}});
+        await expect(ragUiJobPayload(installations,plans,device,input)).rejects.toHaveProperty('status',409);expect(approvedConfiguration).not.toHaveBeenCalled();
+    });
     it('Отозванное одобрение и обновлённая установка блокируются до выдачи или запуска',async()=>{
         const payload=await ragUiJobPayload(installations,plans,device,input);
         delivery.mockRejectedValueOnce(new Error('отозвано'));await expect(assertRagUiJob(installations,plans,device,{kind:'open-rag-ui',project_id:'project',payload:payload!})).rejects.toThrow('отозвано');

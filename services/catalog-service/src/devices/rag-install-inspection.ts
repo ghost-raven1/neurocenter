@@ -2,7 +2,7 @@ import {ConflictException} from '@nestjs/common';
 import {createHash,randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import type {PoolClient} from 'pg';
-import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
+import {localRagCore} from '../../../shared/rag-core-contract.cjs';
 import {verifyPackage,type IPackage} from '../catalog/bundle-package';
 import {supportsHostedRag} from './hosted-rag-jobs';
 import {verifyInstallationSet,type IInstallationSet} from './installation-set';
@@ -23,7 +23,7 @@ function packages(payload:Record<string,unknown>):IPackage[]{
     const set=payload.installSet as IInstallationSet|undefined,pkg=payload.package as IPackage|undefined;
     try{
         if(set?!verifyInstallationSet(set):!pkg||!verifyPackage(pkg))return [];
-        return (set?.packages??[pkg!]).filter(value=>['mcp','plugin'].includes(value.plugin.kind)&&supportsHostedRag(value)&&localRagUi(value))
+        return (set?.packages??[pkg!]).filter(value=>['mcp','plugin'].includes(value.plugin.kind)&&supportsHostedRag(value)&&localRagCore(value))
             .sort((left,right)=>{const a=left.plugin.kind+':'+left.plugin.id,b=right.plugin.kind+':'+right.plugin.id;return a===b?0:a<b?-1:1;});
     }catch{return [];}
 }

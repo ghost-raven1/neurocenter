@@ -53,6 +53,7 @@ import { deviceJobRetryPolicy } from './device-job-retry';
 import { assertRagJobBinding, assertRagJobProtocol, RAG_JOB_KINDS, RAG_GENERATION_PROTOCOL } from './rag-job-binding';
 import { isLegacyRagJob, RAG_UPGRADE_MESSAGE, RAG_UPGRADE_RESULT } from './rag-job-result';
 import {ragUiJobPayload,assertRagUiJob} from './rag-ui-jobs';
+import {ragInstallationJobPayload} from './rag-installation-authority';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {requiredJobFeatures} from '../../../shared/feature-policy.cjs';
 import { ProjectEmbeddingService } from '../models/project-embedding.service';
@@ -119,7 +120,7 @@ export class DeviceJobs {
     async validateReindexTarget(actor:IAccessActor,projectId:string,target:import('../models/project-reindex.types').IReindexConnectionTarget):Promise<void>{
         const device=await this.store.owned(actor,target.deviceId);await this.permission(device,actor.activeRole,projectId,2);
         assertManagedBridge(device.report);assertLocalFeature(device.report,'hosted-rag-reindex-v1');assertLocalFeature(device.report,'hosted-rag-profile-values-v1');
-        const approved=await ragUiJobPayload(this.installations,this.plans,device,{...target,projectId,kind:'open-rag-ui',requestKey:randomUUID()});
+        const approved=await ragInstallationJobPayload(this.installations,this.plans,device,{...target,projectId,kind:'connect-rag-model',requestKey:randomUUID()},'core');
         if((approved?.package.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1)throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
     }
     async create(actor: IAccessActor, input: JobInput) {

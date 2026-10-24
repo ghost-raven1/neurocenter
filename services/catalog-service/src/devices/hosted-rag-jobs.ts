@@ -7,7 +7,7 @@ import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
 import type { Job, JobInput } from './device-job.model';
 import { assertLocalFeature } from './local-change-jobs';
-import { ragUiJobPayload, assertRagUiJob } from './rag-ui-jobs';
+import {ragInstallationJobPayload,assertRagInstallation} from './rag-installation-authority';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 
 export const HOSTED_RAG_KIND = 'connect-rag-model';
@@ -35,7 +35,7 @@ export async function hostedRagJobPayload(embedding: ProjectEmbeddingService, in
     assertLocalFeature(device.report,'hosted-rag-profile-values-v1');
     await requireFeatureEnabled('model_hosting');
     const {expectedEmbeddingRevision,expectedEmbeddingPin,reindex,...rest} = input;
-    const approved = await ragUiJobPayload(installations, plans, device, {...rest,kind:'open-rag-ui'});
+    const approved = await ragInstallationJobPayload(installations,plans,device,rest,'core');
     if (!approved || !supportsHostedRag(approved.package)) {
         throw new ConflictException('Обновите OpenCodeRAG из каталога: эта версия ещё не поддерживает модель через мост.');
     }
@@ -53,7 +53,7 @@ export async function assertHostedRagJob(embedding: ProjectEmbeddingService, ins
     assertLocalFeature(device.report,'hosted-rag-grants-v1');
     assertLocalFeature(device.report,'hosted-rag-profile-values-v1');
     await requireFeatureEnabled('model_hosting');
-    await assertRagUiJob(installations, plans, device, {...job,kind:'open-rag-ui'});
+    await assertRagInstallation(installations,plans,device,job,'core');
     if (!supportsHostedRag(job.payload.package as Parameters<typeof supportsHostedRag>[0])) {
         throw new ConflictException('Версия OpenCodeRAG не поддерживает подключение через мост.');
     }

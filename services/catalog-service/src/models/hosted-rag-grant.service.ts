@@ -3,7 +3,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {DeviceStore,type Device} from '../devices/device-store';
 import {DeviceInstallations} from '../devices/device-installations';
 import {InstallPlans} from '../devices/install-plans';
-import {assertRagUiJob} from '../devices/rag-ui-jobs';
+import {assertRagInstallation} from '../devices/rag-installation-authority';
 import {readHostedRagGrant} from '../devices/hosted-rag-grants';
 import {backfillHostedRagGrants} from '../devices/hosted-rag-grant-backfill';
 import type {PoolClient} from 'pg';
@@ -26,13 +26,13 @@ export class HostedRagGrantService implements OnModuleInit{
         const account=(await db.query<{enabled:boolean;is_main_admin:boolean}>('SELECT enabled,is_main_admin FROM platform_users WHERE email=$1',[job.email])).rows[0];
         const members=await db.query<{role:string}>('SELECT role FROM project_members WHERE project_id=$1 AND lower(principal_name)=lower($2)',[job.project_id,job.email]);
         if(device.role!==job.role||!account?.enabled||(job.role==='Главный админ'?!account.is_main_admin:!['Разработчик','Админ проекта'].includes(job.role)||!members.rows.some(row=>row.role===job.role)))throw new ConflictException('Права прежнего подключения отозваны.');
-        await assertRagUiJob(this.installations,this.plans,device,{kind:'open-rag-ui',project_id:job.project_id,payload:job.payload},db);
+        await assertRagInstallation(this.installations,this.plans,device,{project_id:job.project_id,payload:job.payload},'core',db);
     }
     async onModuleInit(){await this.ready();}
     async require(device:Device,input:IDeviceEmbeddingContext):Promise<IConfiguredProjectEmbedding>{
         await this.ready();
         const grant=await readHostedRagGrant(this.devices.pool,device,input);
-        await assertRagUiJob(this.installations,this.plans,device,{kind:'open-rag-ui',project_id:input.projectId,payload:grant.payload});
+        await assertRagInstallation(this.installations,this.plans,device,{project_id:input.projectId,payload:grant.payload},'core');
         const model=await readPinnedModel(this.devices.pool,grant.model_id,grant.model_pin);
         const saved=grant.payload.embedding as IConfiguredProjectEmbedding;
         if(!model||!saved||!isDeepStrictEqual(saved.profile,{provider:'openai',model:`neurocenter/${model.id}/sha256/${grant.model_pin}`,dimension:model.dimension}))throw new ConflictException('Исторический профиль модели недоступен. Подключите модель повторно.');

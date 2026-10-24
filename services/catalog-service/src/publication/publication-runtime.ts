@@ -3,6 +3,7 @@ import type { IAiPluginConfig } from '../catalog/dto';
 import { parseLocalConfiguration } from '../devices/mcp-config-schema';
 import { normalizeRuntimeArtifacts, validateRuntimeArtifactEntrypoints, type RuntimeArtifact, type RuntimeArtifactEntry } from '../../../shared/runtime-artifacts.cjs';
 import {localRagUi} from '../../../shared/rag-ui-contract.cjs';
+import {localRagCore} from '../../../shared/rag-core-contract.cjs';
 import {MEMORY_RECIPE,memoryRecipeSupported} from '../../../shared/project-learning-memory-sync.cjs';
 import {supportsLearningQuirks} from '../../../shared/project-learning-quirks.cjs';
 const codexPin=require('../../../shared/codex-connector-pin.json') as {sourceCommit:string;version:string;sdkVersion:string};
@@ -11,7 +12,7 @@ const codexPin=require('../../../shared/codex-connector-pin.json') as {sourceCom
 export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', transport?: unknown): IAiPluginConfig['extra'] {
     if (value === undefined) { return undefined; }
     if (!value || typeof value !== 'object' || Array.isArray(value)
-        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'hostedEmbedding','hostedMcp','researchMcp','codexConnector','learningMemory','learningQuirks'].includes(key))) {
+        || Object.keys(value).some(key => !['runtimeArtifacts', 'localConfiguration', 'localUi', 'ragCore', 'hostedEmbedding','hostedMcp','researchMcp','codexConnector','learningMemory','learningQuirks'].includes(key))) {
         throw new BadRequestException('В extra поддерживаются декларации runtime, локальной настройки, Codex и совместимого самообучения. Зависимости задаются отдельно.');
     }
     const source = value as Record<string, unknown>;
@@ -32,6 +33,7 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
             ||source.hostedMcp!==true))throw new Error('researchMcp требует одобренные search/fetch инструменты Exa и hostedMcp: true.');
         const schema = parseLocalConfiguration({ plugin: { kind }, config: { transport, extra: source } });
         const ui=localRagUi({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
+        const core=localRagCore({schemaVersion:5,plugin:{kind},config:{transport,extra:{...source,runtimeArtifacts:artifacts}}});
         const declaration={schemaVersion:5,plugin:{kind},config:{transport,entrypoint:artifacts[0]?.entrypoint,extra:source}};
         const memory=source.learningMemory,quirks=source.learningQuirks as Record<string,unknown>|undefined;
         if(memory!==undefined&&(!artifacts.length||artifacts.some(item=>item.executable||item.entrypoint!=='entrypoint.mjs')||!memoryRecipeSupported(declaration)))
@@ -42,10 +44,11 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
         const marker = hosted as {schemaVersion?: unknown;profileSchemaVersion?: unknown;reindexSchemaVersion?:unknown}|undefined;
         if (hosted !== undefined && (!hosted || typeof hosted !== 'object' || Array.isArray(hosted)
             || Object.keys(hosted).some(key => !['schemaVersion','profileSchemaVersion','reindexSchemaVersion'].includes(key)) || marker?.schemaVersion !== 1 || marker?.reindexSchemaVersion !== undefined && marker.reindexSchemaVersion !== 1
-            || ('profileSchemaVersion' in hosted && marker?.profileSchemaVersion !== 2) || !ui)) {
-            throw new Error('hostedEmbedding требует schemaVersion: 1 и необязательный profileSchemaVersion: 2 в закреплённом OpenCodeRAG с localUi.');
+            || ('profileSchemaVersion' in hosted && marker?.profileSchemaVersion !== 2) || !core)) {
+            throw new Error('hostedEmbedding требует поддерживаемый протокол закреплённого ядра OpenCodeRAG.');
         }
         return { ...(artifacts.length ? { runtimeArtifacts: artifacts } : {}), ...(schema ? { localConfiguration: schema } : {}), ...(ui?{localUi:ui}:{}),
+            ...(source.ragCore!==undefined?{ragCore:core}:{}),
             ...(memory!==undefined?{learningMemory:{...MEMORY_RECIPE}}:{}),...(quirks?{learningQuirks:{...quirks}}:{}),
             ...(codex?{codexConnector:{schemaVersion:1,sourceCommit:codexPin.sourceCommit,version:codexPin.version,sdkVersion:codexPin.sdkVersion,authOnly:true}}:{}),
             ...(source.hostedMcp!==undefined?{hostedMcp:source.hostedMcp}:{}),...(research?{researchMcp:{adapter:'exa',tools:['web_search_exa','web_fetch_exa']}}:{}),
@@ -53,11 +56,11 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
     } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Некорректная декларация готового комплекта или локальной настройки.'); }
 }
 
-/** Дополнительная UI-точка обязана входить в проверенную SHA-опись каждого платформенного архива. */
+/** The fixed engine/UI entrypoint must physically belong to every verified platform archive. */
 export function assertLocalUiInventory(config:IAiPluginConfig|null|undefined,kind:string,entries:RuntimeArtifactEntry[]):void{
-    const ui=localRagUi({schemaVersion:5,plugin:{kind},config});
-    if(ui&&!entries.some(entry=>entry.path===ui.entrypoint&&entry.size>0)){
-        throw new BadRequestException('Точка входа localUi отсутствует или пуста в описи готового комплекта.');
+    const core=localRagCore({schemaVersion:5,plugin:{kind},config});
+    if(core&&!entries.some(entry=>entry.path===core.entrypoint&&entry.size>0)){
+        throw new BadRequestException('Точка входа OpenCodeRAG отсутствует или пуста в описи готового комплекта.');
     }
 }
 

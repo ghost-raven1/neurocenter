@@ -29,6 +29,44 @@ describe('Подключение модели использует точный 
         approvedConfiguration.mockImplementation(async (_project: string, installed: unknown) => ({package:installed,planId:'plan',planRevision:1,approvalRoot:{kind:'plugin',id:'rag',version:2},approvalManifest:manifest}));
         delivery.mockResolvedValue({package:pkg});
     });
+    const corePackage=()=>{const {localUi,...extra}=pkg.config.extra;return {...pkg,config:{extra:{...extra,
+        ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},
+        hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}};};
+    const coreDevice={...device,report:{...device.report,capabilities:[...(device.report.capabilities as string[]).filter(value=>value!=='opencode-rag-ui-v1'),'hosted-rag-core-v1']}};
+    it('Core-only descriptor uses the exact installed/approved model context without a UI capability',async()=>{
+        const core=corePackage();inspectionPackage.mockResolvedValue(core);delivery.mockResolvedValue({package:core});
+        const payload=await hostedRagJobPayload(embedding,installations,plans,coreDevice,input);
+        expect(payload).toMatchObject({package:core,bindingId,instanceId,embedding:selection,ragReindexProtocol:'hosted-rag-reindex-v1'});
+        await expect(assertHostedRagJob(embedding,installations,plans,coreDevice,{kind:input.kind,project_id:'project',payload:payload!})).resolves.toBeUndefined();
+        expect(requireCurrent).toHaveBeenCalledTimes(2);expect(delivery).toHaveBeenCalledWith('plan','project','plugin','rag',2,1,manifest);
+    });
+    it('Core-only queued authorization rejects revoked approval, changed package and model pin',async()=>{
+        const core=corePackage();inspectionPackage.mockResolvedValue(core);delivery.mockResolvedValue({package:core});
+        const payload=await hostedRagJobPayload(embedding,installations,plans,coreDevice,input),job={kind:input.kind,project_id:'project',payload:payload!};
+        delivery.mockRejectedValueOnce(new Error('approval revoked'));await expect(assertHostedRagJob(embedding,installations,plans,coreDevice,job)).rejects.toThrow('approval revoked');
+        inspectionPackage.mockResolvedValueOnce({...core,manifest:{sha256:'e'.repeat(64)}});await expect(assertHostedRagJob(embedding,installations,plans,coreDevice,job)).rejects.toHaveProperty('status',409);
+        requireCurrent.mockRejectedValueOnce(new Error('pin changed'));await expect(assertHostedRagJob(embedding,installations,plans,coreDevice,job)).rejects.toThrow('pin changed');
+    });
+    it.each([{entrypoint:'other.mjs'},{args:['reindex']},{schemaVersion:2}])('Invalid core descriptor cannot use a valid legacy UI fallback: %j',async changed=>{
+        const core=corePackage();inspectionPackage.mockResolvedValue({...core,config:{extra:{...core.config.extra,localUi:pkg.config.extra.localUi,ragCore:{...core.config.extra.ragCore,...changed}}}});
+        await expect(hostedRagJobPayload(embedding,installations,plans,coreDevice,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
+    });
+    it.each([{schemaVersion:1,profileSchemaVersion:1,reindexSchemaVersion:1},{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:2}])('Core-only protocol is exact: %j',async hostedEmbedding=>{
+        const core=corePackage();inspectionPackage.mockResolvedValue({...core,config:{extra:{...core.config.extra,hostedEmbedding}}});
+        await expect(hostedRagJobPayload(embedding,installations,plans,coreDevice,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
+    });
+    it('A core-only package is not admitted to a legacy bridge',async()=>{
+        inspectionPackage.mockResolvedValue(corePackage());await expect(hostedRagJobPayload(embedding,installations,plans,device,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
+    });
+    it('Reindex preflight captures a core-only installation without opening a UI job',async()=>{
+        inspectionPackage.mockResolvedValue(corePackage());
+        const current={...coreDevice,report:{...coreDevice.report,protocolVersion:2,capabilities:[...(coreDevice.report.capabilities as string[]),'durable-completions','managed-installations']}};
+        const permission=vi.fn(),owned=vi.fn().mockResolvedValue(current),service={store:{owned},permission,installations,plans} as unknown as DeviceJobs;
+        const {deviceId,assetId,assetKind,version,expectedManifest,expectedBindingId,expectedInstanceId}=input;
+        await expect(DeviceJobs.prototype.validateReindexTarget.call(service,{email:device.email,activeRole:device.role},'project',
+            {deviceId,assetId:assetId!,assetKind:assetKind as 'plugin',version:version!,expectedManifest:expectedManifest!,expectedBindingId:expectedBindingId!,expectedInstanceId:expectedInstanceId!})).resolves.toBeUndefined();
+        expect(permission).toHaveBeenCalledOnce();expect(approvedConfiguration).toHaveBeenCalledOnce();
+    });
     it('Закрепляет выбор, установленный SHA и одобрение без адресов и секретов', async () => {
         const payload=await hostedRagJobPayload(embedding,installations,plans,device,input);
         expect(payload).toMatchObject({package:pkg,bindingId,instanceId,embedding:selection});

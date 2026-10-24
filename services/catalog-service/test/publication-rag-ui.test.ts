@@ -13,6 +13,17 @@ const source=(kind:'mcp'|'plugin'='mcp')=>({name:'OpenCodeRAG',kind,description:
         ...(kind==='mcp'?{localConfiguration:configuration}:{})}}});
 
 describe('Публикация закреплённого интерфейса OpenCodeRAG',()=>{
+    it.each(['mcp','plugin'] as const)('Core-only %s publishes the exact fixed engine and requires its real archive entry',kind=>{
+        const input=source(kind),{localUi,...extra}=input.config.extra;
+        const result=validatePublication({...input,config:{...input.config,extra:{...extra,
+            ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},
+            hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}});
+        expect(result.config?.extra?.localUi).toBeUndefined();expect(result.config?.extra?.ragCore).toEqual({schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'});
+        expect(result.config?.extra?.hostedEmbedding).toEqual({schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1});
+        const entry={path:'opencode-rag.mjs',size:10,sha256:'b'.repeat(64),executable:false};
+        expect(()=>assertLocalUiInventory(result.config,kind,[entry])).not.toThrow();expect(()=>assertLocalUiInventory(result.config,kind,[])).toThrow('описи');
+        const pkg=buildPackage({id:'ai-plug-core',kind,name:result.name,version:1},[],'',result.config);expect(verifyPackage(pkg)).toBe(true);
+    });
     it.each(['mcp','plugin'] as const)('Принимает %s с полным descriptor и сохраняет остальные разрешённые extra',kind=>{
         const result=validatePublication(source(kind));
         expect(result.config?.extra?.localUi).toEqual(localUi);

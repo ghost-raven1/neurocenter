@@ -13,8 +13,8 @@ import {projectAgentsFailureResult} from '../features/project-agents/model-compi
 import {configureProjectAgents,projectAgentsFailureMessage} from '../features/project-agents/index.js';
 import {PROJECT_AGENTS_JOB,type ProjectAgentsPayload} from '../features/project-agents/contract.js';
 import {finalizeRagReindex,releaseRagReindex,recoverRagRestore} from '../features/rag-index/restore-recovery.js';
-import {probeInstalledRagMcp} from '../features/rag-ui/mcp-startup.js';
-import {localRagUi} from '../features/rag-ui/contract.js';
+import {probeInstalledRagMcp} from '../features/rag-core/mcp-startup.js';
+import {localRagCore} from '../features/rag-core/contract.js';
 import {openRagUi,closeRagUis,closeOwnRagUi} from '../features/rag-ui/index.js';
 import { PROJECT_LOCAL_KINDS, PROJECT_LOCAL_APPLIES, runProjectLocalJob, type ProjectLocalPayload } from './project-local-worker.js';
 import fs from 'node:fs/promises';
@@ -332,7 +332,7 @@ export async function runWorker(): Promise<void> {
                         for(const member of current.payload.installSet?.packages??(current.payload.package?[current.payload.package]:[])){
                             if(member.plugin.kind!=='mcp')continue;
                             try{
-                                if(!localRagUi(member))continue;
+                                if(!localRagCore(member))continue;
                                 await update(95,'Проверяем запуск opencode-rag mcp.');
                                 await probeInstalledRagMcp(current.project_id||'',current.payload.bindingId||'',member,async()=>{await authorize();});
                                 process.stderr.write('neurocenter bridge: подключение OpenCodeRAG MCP проверено; модель и индекс не проверялись.\n');
