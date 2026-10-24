@@ -15,7 +15,7 @@ export function ChatComposer(props: Props): JSX.Element {
         if (event.defaultPrevented) return;
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) {event.preventDefault(); if (props.canSend && !targets?.error) props.onSend();}
     };
-    const input = {id: 'model-chat-message', value: props.draft, autoSize: {minRows: 2, maxRows: 6}, disabled: props.disabled,
+    const input = {id: 'model-chat-message', value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
         onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => {const files = Array.from(event.clipboardData.files); if (files.length) props.onFiles(files);},
         onCompositionStart: () => {composing.current = true;}, onCompositionEnd: () => {composing.current = false;}};
     return <div className="model-chat__composer" onDragOver={event => {if (Array.from(event.dataTransfer.types).includes('Files')) event.preventDefault();}}
@@ -27,9 +27,10 @@ export function ChatComposer(props: Props): JSX.Element {
                 const files = Array.from(event.dataTransfer.files); if (files.length) props.onFiles(files);
             } catch {props.onReject('Не удалось прочитать файлы. Выберите их кнопкой.');}
         }}>
+        <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">{props.participants ? 'Сообщение участникам' : 'Сообщение модели'}</label>
         <details className="model-chat__file-picker"><summary>Прикрепить документы</summary><FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
             hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/></details>
-        <label htmlFor="model-chat-message" className="model-chat__label">{props.participants ? 'Сообщение участникам' : 'Сообщение модели'}</label>
+        </div>
         {props.participants ? <Mentions {...input} placeholder="Сообщение всем участникам или @имя для отдельных агентов…" onChange={props.onDraft} onPressEnter={enter} placement="top"
             options={props.participants.filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`}))}
             filterOption={(search, option) => `${option.value} ${props.participants?.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}/>

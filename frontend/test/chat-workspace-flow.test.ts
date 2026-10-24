@@ -77,6 +77,31 @@ beforeEach(() => {
 afterEach(() => { h.hooks.dispose(); vi.useRealTimers(); });
 
 describe('Workspace actions with the actual chat request/owner locks', () => {
+    it('keeps saved history and a draft while configuration is collapsed, with project and model still identifiable', async () => {
+        h.server = detail({turns: [turn()]});
+        props.navigation!.controls = change => {h.changeContext = change; return createElement('div', {className: 'model-chat__workspace-controls'},
+            createElement('label', null, 'Проект', createElement('input', {value: 'Проект', readOnly: true})),
+            createElement('div', {className: 'model-chat__workspace-error', role: 'alert'}, 'Не удалось обновить модели'));};
+        let html = await start();
+        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false);
+        expect(html).toContain('Личные диалоги · Проект · Чат-модель'); expect(html).toContain('Не удалось обновить модели');
+        draft('Неотправленный вопрос');
+        button('Проект, модель и режим').onClick({}); render();
+        expect(button('Проект, модель и режим')['aria-expanded']).toBe(true); expect(h.composer!.draft).toBe('Неотправленный вопрос');
+        button('Проект, модель и режим').onClick({}); html = render();
+        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false); expect(h.composer!.draft).toBe('Неотправленный вопрос');
+        expect(h.messages!.turns).toHaveLength(1); expect(modelChatApi.send).not.toHaveBeenCalled(); expect(html).toContain('Не удалось обновить модели');
+    });
+    it('exposes essential configuration for an empty dialogue, and summarizes a group without changing its membership', async () => {
+        await start(); expect(button('Проект, модель и режим')['aria-expanded']).toBe(true);
+        h.hooks.dispose(); h.server = detail({conversation: {...detail().conversation, mode: 'group'}, turns: [turn()],
+            participants: [participant(), participant({agentId: 'off', name: 'Отключённый агент', status: 'disabled'})]});
+        const html = await start();
+        expect(html).toContain('Участники · 2'); expect(html).toContain('Отключённый агент · отключён');
+        expect(button('Проект, модель и режим')['aria-expanded']).toBe(false);
+        button('Участники').onClick({}); render(); expect(h.editor?.participants).toHaveLength(2);
+        expect(modelChatApi.participants).not.toHaveBeenCalled();
+    });
     it('Enter/button repeated synchronously produce one real send; accepted send clears its draft and consent once', async () => {
         const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.send).mockReturnValueOnce(pending.promise); await start(); draft('Вопрос'); const send = h.composer!.onSend; send(); send(); await flushSetup(); render(); expect(modelChatApi.send).toHaveBeenCalledOnce(); expect(h.composer!.draft).toBe(''); expect(h.research.reset).toHaveBeenCalledOnce();
         const requestId = vi.mocked(modelChatApi.send).mock.calls[0][2]; pending.resolve(detail({turns: [turn({requestId})]})); await flushSetup(); render(); expect(h.messages!.turns).toHaveLength(1); expect(h.messages!.turns[0].status).toBe('done');

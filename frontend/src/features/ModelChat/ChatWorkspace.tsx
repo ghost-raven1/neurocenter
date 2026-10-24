@@ -28,6 +28,7 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     const research = useChatResearch(model.id, projectId, chat.detail?.conversation.id, chat.captureOwner);
     const [draft, setDraft] = useState(''), [fileError, setFileError] = useState(''), [preview, setPreview] = useState<string>();
     const [listOpen, setListOpen] = useState(false), [renaming, setRenaming] = useState(false), [title, setTitle] = useState('');
+    const [configuration, setConfiguration] = useState({id: navigation?.initialDetail?.conversation.id, open: !navigation?.initialDetail?.turns.length});
     const [participantsEditor, setParticipantsEditor] = useState<'create' | 'edit' | undefined>(navigation?.initialGroup ? 'create' : undefined);
     const confirmation = useRef<{destroy: () => void}>();
     const context = useChatContext(chat.detail, draft, chat.attachments.map(file => file.id), availability.enabled);
@@ -58,6 +59,7 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
             onOk: async () => {confirmation.current = undefined; if (owns()) {const ok = await chat.remove(); if (ok && owns()) {setDraft(''); research.reset(); setPreview(undefined);}}}, onCancel: () => {confirmation.current = undefined;}});
     };
     const lastTurn = chat.turns[chat.turns.length - 1], group = chat.detail?.conversation.mode === 'group';
+    const configurationOpen = configuration.id === chat.detail?.conversation.id ? configuration.open : !chat.turns.length;
     const lastAnswer = [...chat.turns].reverse().flatMap(turn => turn.responses?.map(response => response.answer).reverse() ?? [turn.answer]).find(answer => !!answer);
     const contextBlocked = context.rejected || modelChatContextBlocked(context.context);
     const saveParticipants = async (ids: string[]): Promise<boolean> => {
@@ -69,9 +71,14 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     };
     const editor = participantsEditor && projectId ? <ChatParticipantsEditor key={`${participantsEditor}:${chat.detail?.conversation.id || 'new'}`} modelId={model.id} projectId={projectId}
         participants={participantsEditor === 'edit' ? chat.detail?.participants ?? [] : undefined} joining={participantsEditor === 'edit' && !group} inline={!!navigation} saving={chat.activity === 'saving'} error={chat.error} onSave={saveParticipants} onClose={() => setParticipantsEditor(undefined)}/> : null;
-    return <Modal open centered width={1280} className={`model-chat${navigation?' model-chat_global':''}`} title={<div className="model-chat__title">{navigation ? 'Чат' : group ? 'Группа агентов' : `Чат · ${model.name}`}<Typography.Text type="secondary">{projectName ? `Проект «${projectName}»` : 'Общий каталог'} · личные диалоги</Typography.Text></div>}
+    return <Modal open centered width={1280} className={`model-chat${navigation?' model-chat_global model-chat_workspace':''}`} title={<div className="model-chat__title">{navigation ? 'Чат' : group ? 'Группа агентов' : `Чат · ${model.name}`}<Typography.Text type="secondary">{projectName ? `Проект «${projectName}»` : 'Общий каталог'} · личные диалоги</Typography.Text></div>}
         onCancel={close} footer={null} destroyOnClose>
-        {navigation?.controls(action => confirm(action, 'Открыть другой рабочий контекст?'))}
+        {navigation && <div className={'model-chat__configuration' + (!configurationOpen ? ' model-chat__configuration_collapsed' : '')}>
+            <div className="model-chat__configuration-summary"><Button type="text" size="small" aria-label="Проект, модель и режим" aria-expanded={configurationOpen} aria-controls="model-chat-configuration"
+                onClick={() => setConfiguration({id: chat.detail?.conversation.id, open: !configurationOpen})}>Проект, модель и режим <span aria-hidden="true">{configurationOpen ? '▴' : '▾'}</span></Button>
+                <Typography.Text type="secondary" className="model-chat__configuration-scope">{`${group ? 'Группа агентов' : 'Личные диалоги'} · ${projectName || 'Общий каталог'} · ${model.name}`}</Typography.Text></div>
+            <div id="model-chat-configuration">{navigation.controls(action => confirm(action, 'Открыть другой рабочий контекст?'))}</div>
+        </div>}
         <div className={'model-chat__layout' + (listOpen ? ' model-chat__layout_list-open' : '')}>
             <aside id="model-chat-conversations" className="model-chat__sidebar"><ConversationList items={navigation?.items ?? chat.items} selected={chat.detail?.conversation.id} disabled={!!navigation?.opening || !!chat.activity && !chat.busy} loading={navigation?.loading || chat.activity === 'loading'}
                 onSelect={select} onNew={newChat} onRefresh={() => {void chat.refresh(); navigation?.onRefresh();}} onNewGroup={projectId ? () => confirm(() => setParticipantsEditor('create'), 'Создать группу агентов?') : undefined} newGroupDisabled={!!chat.activity || chat.busy}/>
@@ -84,7 +91,9 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                         <Button type="text" danger icon={<DeleteOutlined/>} aria-label="Удалить диалог" disabled={!chat.detail || !!chat.activity || chat.busy} onClick={remove}/></Space>
                 </div>
                 {projectId && group && <div className="model-chat__group-bar">
-                    <Typography.Text type="secondary">Участники: {chat.detail?.participants?.map(agent => `${agent.name}${agent.status === 'active' ? ' · доступен для запросов' : ({disabled: ' · отключён', removed: ' · удалён', blocked: ' · недоступен'})[agent.status]}`).join(', ') || 'не выбраны'}</Typography.Text><FeatureButton features={['group_chat']} size="small" icon={<TeamOutlined/>} disabled={!!chat.activity || chat.busy} onClick={() => setParticipantsEditor('edit')}>Участники</FeatureButton>
+                    <details className="model-chat__group-details"><summary>Участники · {chat.detail?.participants?.length ?? 0}</summary>
+                        <Typography.Text type="secondary">{chat.detail?.participants?.map(agent => `${agent.name}${agent.status === 'active' ? ' · доступен для запросов' : ({disabled: ' · отключён', removed: ' · удалён', blocked: ' · недоступен'})[agent.status]}`).join(', ') || 'не выбраны'}</Typography.Text>
+                    </details><FeatureButton features={['group_chat']} size="small" icon={<TeamOutlined/>} disabled={!!chat.activity || chat.busy} onClick={() => setParticipantsEditor('edit')}>Участники</FeatureButton>
                 </div>}
                 {projectId && chat.detail && !group && <div className="model-chat__group-bar"><FeatureButton features={['group_chat']} size="small" icon={<TeamOutlined/>} disabled={!!chat.activity || chat.busy} onClick={() => setParticipantsEditor('edit')}>Добавить агентов</FeatureButton></div>}
                 <ChatProjectContext evidence={projectId && searchAvailable.known && !searchAvailable.enabled ? {status:'metadata',sources:[],project:chat.detail?.projectContext?.project,
@@ -96,10 +105,12 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                 {chat.activity === 'loading' && !chat.detail ? <div className="model-chat__loading" role="status"><Spin tip="Загружаем личные диалоги…"/></div>
                     : <ChatMessages key={chat.detail?.conversation.id || 'new'} turns={chat.turns} attachments={chat.detail?.attachments ?? []} modelName={model.name} conversationId={chat.detail?.conversation.id} blocked={!!chat.blocked} busy={!!chat.activity} group={group}
                         onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview} hasEarlier={chat.detail?.history?.hasMore ?? false} historyLoading={chat.historyLoading} historyError={chat.historyError} onLoadEarlier={() => {void chat.loadEarlier();}} onComplete={() => {void chat.complete();}}/>}
-                <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'}/>
                 <ChatAttachments files={chat.attachments} uploads={chat.uploads} disabled={!!chat.activity || unresolved} onPreview={setPreview} onRemove={id => {void chat.removeAttachment(id);}}
                     onRetryUpload={chat.retryUpload} onRemoveUpload={chat.removeUpload}/>
-                <ChatResearchControls value={research} disabled={disabled} projectId={projectId}/>
+                <div className={'model-chat__tools' + (research.enabled ? ' model-chat__tools_research-open' : '')}>
+                    <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'}/>
+                    <ChatResearchControls value={research} disabled={disabled} projectId={projectId}/>
+                </div>
                 <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !contextBlocked && !researchBlocked && (!!draft.trim() || !!chat.attachments.length)}
                     sending={chat.busy} uploading={chat.activity === 'uploading'} onDraft={setDraft} onSend={send} onStop={() => {void chat.stop();}} onCancelUpload={chat.cancelUploads}
                     onFiles={files => {if(availability.enabled){setFileError(''); chat.addFiles(files);}}} onReject={setFileError} participants={group ? chat.detail?.participants ?? [] : undefined}/>
