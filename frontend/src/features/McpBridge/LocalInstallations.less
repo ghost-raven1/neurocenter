@@ -2,10 +2,16 @@
     margin-bottom: 16px;
     min-width: 0;
     max-width: 100%;
+    .ant-card-head-wrapper { flex-wrap: wrap; gap: 8px; }
     .ant-card-head-title { white-space: normal; }
+    .ant-card-extra { padding: 8px 0; }
     .ant-space, .ant-space-item, .ant-list-item { min-width: 0; max-width: 100%; }
     .ant-tag { max-width: 100%; margin-right: 0; white-space: normal; overflow-wrap: anywhere; }
-    &__intro { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; min-width: 0; }
+    &__intro { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    &__content { margin-top: 12px; }
+    &__content[hidden] { display: none; }
+    &__toggle .anticon { font-size: 10px; transition: transform .18s; }
+    &__toggle[aria-expanded='true'] .anticon { transform: rotate(180deg); }
     &__grid .ant-list-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     &__grid .ant-list-item { padding: 0; align-items: stretch; }
     &__item {

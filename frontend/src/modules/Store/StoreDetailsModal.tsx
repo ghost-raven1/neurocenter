@@ -207,7 +207,7 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion,
         onCancel={onClose}
         destroyOnClose
         footer={<div className="store-details__footer">
-            <div className="store-details__secondary-actions">{onNewVersion&&<FeatureButton features={['tool_builds','tool_catalog']} disabled={!detail||!!loadError} onClick={onNewVersion}>Новая версия</FeatureButton>}{onEdit && <Button icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</Button>}{archiveAction}</div>
+            <div className="store-details__secondary-actions">{onNewVersion&&<FeatureButton features={['tool_builds','tool_catalog']} disabled={!detail||!!loadError} onClick={onNewVersion}>Новая версия</FeatureButton>}{onEdit && <FeatureButton features={['tool_catalog']} icon={<EditOutlined />} onClick={onEdit} disabled={!detail || !!loadError}>Редактировать</FeatureButton>}{archiveAction}</div>
             <div className="store-details__primary-actions">
                 {onAddToProject && <Button type="primary" loading={addingToProject} disabled={!detail || !!loadError || addingToProject} onClick={onAddToProject}>Добавить в проект</Button>}
                 {onChooseProjectFolder && <Button type="primary" onClick={onChooseProjectFolder}>Выбрать папку проекта</Button>}

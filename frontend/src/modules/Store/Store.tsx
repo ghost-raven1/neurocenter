@@ -204,7 +204,6 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     useSectionUpdates(['catalog'],()=>{void loadCatalog();void loadProject();});
 
-    const openEdit = (app: IStoreApp): void => setEditApp(app);
     const archived = (): void => {
         setViewApp(null); setEditApp(null); setPicker(null);
         void loadCatalog(); void loadProject();
@@ -280,7 +279,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     }, [ projectsReady, picker, pickerSelected, projects, user, targetProject, loadProject, captureOwner, pickerBatch ]);
 
 
-    // Детали — кликом по карточке (onView); кнопки действий — в одну строку, равной ширины.
+    /** Установка остаётся на карточке; управление использует те же разрешённые действия в подробностях. */
     const renderAction=(app:IStoreApp):ReactNode=>{
         const selected=isInProject(app);
         const referenceBlocker=projectSkillReferenceBlocker(app,targetProject?.id);
@@ -308,9 +307,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 <FeatureButton features={['tool_catalog']} size="small" block type="primary" disabled={!projectsReady||!!referenceBlocker} title={referenceBlocker ?? undefined} onClick={()=>setPicker({app})}>Добавить в проекты</FeatureButton>
                 {referenceBlocker && <Text type="secondary">{referenceBlocker}</Text>}
             </>}
-            {isMain && <FeatureButton features={['tool_builds','tool_catalog']} size="small" block onClick={()=>newVersion(app)}>Новая версия</FeatureButton>}
-            {canEditTool(user, app) && <FeatureButton features={['tool_catalog']} size="small" block onClick={()=>openEdit(app)}>Редактировать</FeatureButton>}
-            <StoreArchiveAction app={app} common={commonCatalog} isMain={isMain} disabled={loading || loadError || !!installing || !!localBusy || projectLoading} onArchived={archived} />
+            {(isMain || canEditTool(user, app)) && <Button size="small" type="text" block aria-label={`Управление: ${app.name}`} onClick={()=>setViewApp(app)}>Управление</Button>}
             {!canManage && !isMain && <Text type="secondary">Доступно в каталоге проекта</Text>}
         </Space>;
     };

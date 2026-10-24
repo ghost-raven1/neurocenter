@@ -39,10 +39,11 @@ const hooks = vi.hoisted(() => {
 interface ButtonProps {children?: ReactNode; disabled?: boolean; loading?: boolean; onClick?: () => void;}
 const ui = vi.hoisted(() => ({
     scope: 'admin-a', owners: new Map<string, () => () => boolean>(),
+    activeRole: 'Главный админ',
     location: {pathname: '/store', search: '?p=prj-a', hash: ''},
     buttons: new Map<string, ButtonProps>(), errors: [] as string[], form: false, open: false,
     job: undefined as ToolBuild | undefined, view: null as {id: string} | null, reset: vi.fn(),
-    bridgeDevice: undefined as IBridgeDevice | undefined, assets: [] as Array<{assetKind: 'mcp'; assetId: string}>,
+    bridgeDevice: undefined as IBridgeDevice | undefined, assets: [] as Array<{assetKind: 'mcp'; assetId: string; version?:number; manifest?:string; card?:IAiPlugin}>,
     chooseFolder: undefined as (() => void) | undefined,newVersion:undefined as (()=>void)|undefined,publicationTarget:vi.fn(),
     history: {location: {pathname: '/store', search: '?p=prj-a', hash: ''}, replace: vi.fn(), push: vi.fn()},
 }));
@@ -51,7 +52,7 @@ vi.mock('react', async original => ({...await original<typeof import('react')>()
 }));
 vi.mock('react-router-dom', () => ({useLocation: () => ui.location, useHistory: () => ui.history}));
 vi.mock('react-redux', () => ({useSelector: (select: (state: unknown) => unknown) => select({userBlock: {user: {
-    activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: [],
+    activeRole: ui.activeRole, userRoles: ['Главный админ', 'Наблюдатель'], projectRoles: [{projectId:'prj-a',projectName:'Проект A',role:'Наблюдатель'}],
 }}})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => {
     if (!ui.owners.has(ui.scope)) { const scope = ui.scope; ui.owners.set(scope, () => () => scope === ui.scope); }
@@ -95,7 +96,7 @@ vi.mock('antd', () => {
         Form: Object.assign(({children}: {children?: ReactNode}) => { ui.form = true; return children; }, {Item: content}),
         Input: Object.assign(input, {Search: input, TextArea: input}), Radio: {Group: () => null}, Select: input,
         Collapse: Object.assign(content, {Panel: content}), Checkbox: content, Col: content, Row: content, Empty: content,
-        Card:content,Tag:content,Tooltip:content,Space: content, Spin: () => null, Progress: () => null, Typography: {Text: content, Paragraph: content},
+        Card:({title,extra,children}:{title?:ReactNode;extra?:ReactNode;children?:ReactNode})=>createElement('section',null,title,extra,children),Tag:content,Tooltip:content,Space: content, Spin: () => null, Progress: () => null, Typography: {Text: content, Paragraph: content},
     };
 });
 
@@ -115,7 +116,7 @@ function click(label: string) { const button = ui.buttons.get(label)!; expect(bu
 function open() { render(); click('Упаковать инструмент'); render(); click('Открыть в каталоге'); render(); }
 
 beforeEach(() => {
-    vi.resetAllMocks(); ui.scope = 'admin-a'; ui.owners.clear(); ui.location = {pathname: '/store', search: '?p=prj-a', hash: ''};
+    vi.resetAllMocks(); ui.scope = 'admin-a'; ui.activeRole = 'Главный админ'; ui.owners.clear(); ui.location = {pathname: '/store', search: '?p=prj-a', hash: ''};
     ui.history.location = ui.location; ui.job = job('old-package'); ui.view = null;
     ui.publicationTarget.mockResolvedValue({catalogId:'listed-tool',kind:'mcp',name:'Live head',description:'Live',expectedVersion:9,expectedSourceHash:'b'.repeat(64),sourceSummaries:[],updateSupported:true});
     ui.bridgeDevice = undefined; ui.assets = []; ui.chooseFolder = undefined;
@@ -126,10 +127,23 @@ beforeEach(() => {
 afterEach(() => hooks.dispose());
 
 describe('Переход к папке из карточки инструмента', () => {
-    it('Новая версия карточки открывает упаковщик с native id, не с названием или source revision',async()=>{
+    it('Одно управление карточкой открывает существующие детали, новая версия использует native id',async()=>{
         ui.job=undefined;vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items:[{...plugin('listed-tool'),name:'Listed title',revision:'v-source-old',version:2}],page:1,size:100,total:1});
-        render();await flush();render();click('Новая версия');render();render();await flush();render();
+        render();await flush();render();
+        expect(ui.buttons.has('Новая версия')).toBe(false);expect(ui.buttons.has('Редактировать')).toBe(false);
+        click('Управление');render();expect(ui.view).toMatchObject({id:'listed-tool',version:2});
+        expect(ui.publicationTarget).not.toHaveBeenCalled();expect(ui.newVersion).toBeTypeOf('function');
+        ui.newVersion!();render();render();await flush();render();
         expect(ui.publicationTarget).toHaveBeenCalledWith({catalogId:'listed-tool',kind:'mcp'},expect.any(AbortSignal));expect(ui.open).toBe(true);
+    });
+    it('Наблюдатель читает карточку без вторичного управления или callback публикации',async()=>{
+        const assigned={...plugin('listed-tool'),name:'Listed title'},manifest='a'.repeat(64);
+        ui.activeRole='Наблюдатель';ui.job=undefined;ui.assets=[{assetKind:'mcp',assetId:assigned.id,version:assigned.version,manifest,card:assigned}];
+        vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items:[assigned],page:1,size:100,total:1});
+        render();await flush();render();
+        expect(ui.buttons.has('Управление')).toBe(false);expect(ui.buttons.has('Новая версия')).toBe(false);expect(ui.buttons.has('Редактировать')).toBe(false);
+        click('Listed title');render();expect(ui.view).toMatchObject({id:'listed-tool',projectManifest:manifest});expect(ui.newVersion).toBeUndefined();
+        expect(ui.publicationTarget).not.toHaveBeenCalled();
     });
     it('Новая версия из деталей закрывает детали и запрашивает свежую цель, не published pinned edition',async()=>{
         vi.mocked(bffApi.getAiPlugin).mockResolvedValue(plugin('listed-tool'));ui.job=job('listed-tool');open();await flush();render();expect(ui.newVersion).toBeTypeOf('function');ui.job=undefined;ui.newVersion!();render();render();await flush();render();

@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Collapse, List, Modal, Space, Tabs, Tag, Typography } from 'antd';
 import { ApiOutlined, AppstoreOutlined, DownOutlined, FileTextOutlined } from '@ant-design/icons';
-import { useEffect, useRef, useState, type FC } from 'react';
+import { useEffect, useId, useRef, useState, type FC } from 'react';
 import { bridgeApi, type IBridgeInstallation } from './api';
 import { useBridge } from './useBridge';
 import { hasCurrentBinding, installationIdentity, installationRequest, isPending, latestAssetJob, latestInspectionJob, removalSelection } from './installationHelpers';
@@ -36,6 +36,8 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
     const [removalBusy, setRemovalBusy] = useState(false);
     const [inspectionError, setInspectionError] = useState<{key: string; message: string}>();
     const [inspectionBusy, setInspectionBusy] = useState('');
+    const [expanded, setExpanded] = useState(false);
+    const contentId = useId();
     const removalLock = useRef(false);
     const inspectionLock = useRef(false);
     const removalKeys = useRef(new Map<string, string>());
@@ -52,6 +54,7 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
     const items = installations.filter(item => item.deviceId === device.id && item.projectId === projectId);
     const currentItems = items.filter(item => hasCurrentBinding(item, device));
     const historyItems = items.filter(item => !hasCurrentBinding(item, device));
+    const currentInspectionError = currentItems.some(item => installationIdentity(item) === inspectionError?.key) ? inspectionError : undefined;
     const nameFor = (item: IBridgeInstallation): string => catalog.find(app => app.id === item.assetId && app.kind === item.assetKind)?.name || item.name || 'Инструмент';
     const folderFor = (item: IBridgeInstallation): string => item.folderName || device.report.bindings?.find(binding =>
         binding.projectId === item.projectId && binding.bindingId === item.bindingId && !!item.bindingId)?.folderName
@@ -149,7 +152,7 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
                 {!approved.has(item.assetKind + ':' + item.assetId) && <Typography.Text type="secondary" className="local-installations__catalog-note">Убран из каталога проекта</Typography.Text>}
                 {inspecting && !mutationPending && <Typography.Text role="status">Проверка файлов: {inspectionJob?.message}</Typography.Text>}
                 {inspectionJob?.state === 'failed' && <Typography.Text type="warning">Проверка не завершена: {inspectionJob.message}</Typography.Text>}
-                {inspectionError?.key === key && <Alert role="alert" type="error" showIcon message={inspectionError.message} />}
+                {historical && inspectionError?.key === key && <Alert role="alert" type="error" showIcon message={inspectionError.message} />}
             </div>
             <details className="local-installations__details">
                 <summary>Сверка и запуск<DownOutlined aria-hidden="true"/></summary>
@@ -171,24 +174,40 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
             </Space>}
         </article></List.Item>;
     };
-    const currentFolder = device.report.bindings?.find(binding => binding.projectId === projectId && binding.valid !== false)?.folderName;
+    const currentBinding = device.report.bindings?.find(binding => binding.projectId === projectId && binding.valid !== false);
+    const currentFolder = currentBinding?.folderName;
+    /** Старые папки и ошибки до более нового результата не превращаются в текущую проблему. */
+    const currentJobs = jobs.filter(job => job.deviceId === device.id && job.projectId === projectId
+        && !!currentBinding?.bindingId && job.bindingId === currentBinding.bindingId);
+    const pendingJobs = currentJobs.filter(isPending);
+    const failedJobs = currentJobs.filter((job, index) => job.assetId && job.state === 'failed'
+        && !currentJobs.slice(0, index).some(previous => previous.assetId === job.assetId && previous.assetKind === job.assetKind));
+    const attentionItems = currentItems.map(item => ({item, next:installationProgress(latestInstallationReport(item,jobs),jobs)}))
+        .filter(({item, next}) => ['modified', 'help'].includes(next.state)
+            && !failedJobs.some(job => job.assetId === item.assetId && job.assetKind === item.assetKind));
+    const attentionCount = failedJobs.length + attentionItems.length + Number(!!currentInspectionError) + Number(!!removalError);
+    const jobName = (job: typeof jobs[number]): string => catalog.find(app => app.id === job.assetId && app.kind === job.assetKind)?.name
+        || items.find(item => item.assetId === job.assetId && item.assetKind === job.assetKind)?.name || job.assetId || 'Проект';
 
-    return <Card className="local-installations" size="small" title={<Space wrap size={8}><span>На этом компьютере</span><Tag>{currentItems.length}</Tag></Space>}>
+    return <Card className="local-installations" size="small" title={<Space wrap size={8}>
+        <span>На этом компьютере</span><Tag>Установок: {currentItems.length}</Tag>
+        {pendingJobs.length > 0 && <Tag color="processing">В работе: {pendingJobs.length}</Tag>}
+        {attentionCount > 0 && <Tag color="warning">Требуют внимания: {attentionCount}</Tag>}
+    </Space>} extra={<Button size="small" type="text" className="local-installations__toggle" aria-expanded={expanded} aria-controls={contentId}
+        icon={<DownOutlined aria-hidden="true"/>} onClick={() => setExpanded(value => !value)}>{expanded ? 'Скрыть установки' : 'Показать установки'}</Button>}>
         <div className="local-installations__intro">
             <Typography.Text strong ellipsis={{tooltip:currentFolder || 'Папка не связана'}} className="local-installations__folder">{currentFolder ? `Текущая папка: ${currentFolder}` : 'Текущая папка проекта не связана'}</Typography.Text>
-            {items.length > 0 && <Typography.Text type="secondary">Сверка файлов и диагностика запуска выполняются отдельно.</Typography.Text>}
+            {!expanded && items.length === 0 && <Typography.Text type="secondary">В этом проекте нет установленных через мост инструментов</Typography.Text>}
         </div>
-        <Tabs items={[{key:'managed',label:'Под управлением',children:<>
-        {canInspect && inspectNotice && <Alert type="info" showIcon message={inspectNotice} />}
-        {currentItems.length ? <List className="local-installations__grid" split={false} rowKey={installationIdentity} dataSource={currentItems} renderItem={item => renderInstallation(item)} />
-            : items.length ? <Typography.Text type="secondary">В текущей папке нет установок.</Typography.Text>
-            : <Typography.Text type="secondary" className="local-installations__empty">В этом проекте нет установленных через мост инструментов</Typography.Text>}
-        {historyItems.length > 0 && <Collapse ghost className="local-installations__history">
-            <Collapse.Panel key="previous-folders" header={`История других папок (${historyItems.length})`} forceRender>
-                <Typography.Paragraph type="secondary">Эти записи относятся к прежним или неизвестным папкам. Проверка и удаление доступны для текущей подтверждённой папки.</Typography.Paragraph>
-                <List size="small" rowKey={installationIdentity} dataSource={historyItems} renderItem={item => renderInstallation(item,true)} />
-            </Collapse.Panel>
-        </Collapse>}
+        {!expanded && <div className="local-installations__attention">
+            {pendingJobs.filter(job => job.id !== latestRemoval?.id).map(job => <Alert key={job.id} role="status" type="info" showIcon
+                message={`${jobName(job)}: ${job.message}`} action={job.state === 'queued' ? <Button size="small" aria-label={`Отменить действие: ${jobName(job)}`} onClick={() => {
+                    void bridgeApi.cancel(job.id).then(() => bridge.reload()).catch(cause => setRemovalError(errorMessage(cause, 'Не удалось отменить действие.')));
+                }}>Отменить</Button> : undefined} />)}
+            {failedJobs.filter(job => job.id !== latestRemoval?.id).map(job => <Alert key={job.id} role="alert" type="error" showIcon message={`${jobName(job)}: ${job.message}`} />)}
+            {attentionItems.map(({item, next}) => <Alert key={installationIdentity(item)} type="warning" showIcon message={`${nameFor(item)}: ${next.title}`} />)}
+        </div>}
+        {currentInspectionError && <Alert role="alert" type="error" showIcon message={currentInspectionError.message} />}
         {latestRemoval && <Alert role="status" showIcon type={latestRemoval.state === 'failed' ? 'error' : latestRemoval.state === 'succeeded' ? 'success' : 'info'}
             message={`Удаление «${removedName}» · ${new Date(latestRemoval.updatedAt).toLocaleString('ru-RU')}`}
             description={<>
@@ -200,7 +219,21 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
                 void bridgeApi.cancel(latestRemoval.id).then(() => bridge.reload()).catch(cause => setRemovalError(errorMessage(cause, 'Не удалось отменить удаление.')));
             }}>Отменить</Button> : undefined} />}
         {removalError && !selected && <Alert role="alert" type="error" showIcon message={removalError} />}
-        </>},{key:'discovered',label:'Найдено в проекте',children:<ProjectInventory bridge={bridge} projectId={projectId} canInspect={canInspect} canManage={canManage} catalog={catalog} />}]} />
+        <section id={contentId} className="local-installations__content" hidden={!expanded} aria-label="Установки и история">
+            {items.length > 0 && <Typography.Text type="secondary">Сверка файлов и диагностика запуска выполняются отдельно.</Typography.Text>}
+            <Tabs items={[{key:'managed',label:'Под управлением',children:<>
+            {canInspect && inspectNotice && <Alert type="info" showIcon message={inspectNotice} />}
+            {currentItems.length ? <List className="local-installations__grid" split={false} rowKey={installationIdentity} dataSource={currentItems} renderItem={item => renderInstallation(item)} />
+                : items.length ? <Typography.Text type="secondary">В текущей папке нет установок.</Typography.Text>
+                : <Typography.Text type="secondary" className="local-installations__empty">В этом проекте нет установленных через мост инструментов</Typography.Text>}
+            {historyItems.length > 0 && <Collapse ghost className="local-installations__history">
+                <Collapse.Panel key="previous-folders" header={`История других папок (${historyItems.length})`} forceRender>
+                    <Typography.Paragraph type="secondary">Эти записи относятся к прежним или неизвестным папкам. Проверка и удаление доступны для текущей подтверждённой папки.</Typography.Paragraph>
+                    <List size="small" rowKey={installationIdentity} dataSource={historyItems} renderItem={item => renderInstallation(item,true)} />
+                </Collapse.Panel>
+            </Collapse>}
+            </>},{key:'discovered',label:'Найдено в проекте',children:<ProjectInventory bridge={bridge} projectId={projectId} canInspect={canInspect} canManage={canManage} catalog={catalog} />}]} />
+        </section>
         <Modal open={!!selected} title={selected ? `Удалить «${nameFor(selected)}» с компьютера?` : ''}
             onCancel={() => { if (!removalLock.current) { setSelected(undefined); } }} onOk={() => { void removal(); }}
             okText="Удалить с компьютера" cancelText="Отмена"

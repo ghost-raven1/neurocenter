@@ -1,11 +1,10 @@
-import './feature-flags-enabled';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
-import {createElement} from 'react';
+import {createElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {deferredModal,flushModal,modalAntd,uiNode} from './modal-actions.fixture';
 const h=await vi.hoisted(async()=>{const f=await import('./modal-actions.fixture');return {hooks:f.modalHooks(),ui:f.modalUi(),small:true,live:()=>{},close:vi.fn(),edit:vi.fn(),install:vi.fn(),add:vi.fn(),choose:vi.fn()};});
 vi.mock('react',async original=>({...await original<typeof import('react')>(),useState:h.hooks.state,useEffect:h.hooks.effect}));
-vi.mock('antd',async()=>({...modalAntd(h.ui,(await import('react')).createElement),Grid:{useBreakpoint:()=>({sm:h.small})},message:{success:vi.fn(),error:vi.fn()}}));
+vi.mock('antd',async()=>({...modalAntd(h.ui,(await import('react')).createElement),Tooltip:({children}:{children:ReactNode})=>children,Grid:{useBreakpoint:()=>({sm:h.small})},message:{success:vi.fn(),error:vi.fn()}}));
 vi.mock('../src/core/api/bff',()=>({default:{getSkill:vi.fn(),getAiPlugin:vi.fn(),listAiPluginVersions:vi.fn()}}));
 vi.mock('../src/core/socket/useSectionUpdates',()=>({useSectionUpdates:(_sections:unknown,fn:()=>void)=>{h.live=fn;}}));
 vi.mock('../src/modules/Store/AppCard',()=>({KindBadge:({kind}:any)=>createElement('span',null,kind)}));
@@ -13,15 +12,18 @@ vi.mock('../src/modules/Store/StoreInstruction',()=>({default:({body}:any)=>crea
 vi.mock('../src/modules/Store/StoreBundleContent',()=>({StoreBundleContent:(props:any)=>{h.ui.nodes.push({kind:'Bundle',props,text:''});return createElement('div',null,props.plugin.name);}}));
 vi.mock('../src/modules/Store/StoreDetailsInstall',()=>({default:()=>null,StoreDetailsInstallButton:(props:any)=>{h.ui.nodes.push({kind:'Install',props,text:''});return null;}}));
 import StoreDetailsModal from '../src/modules/Store/StoreDetailsModal';
+import {FeatureAvailabilityContext} from '../src/features/FeatureFlags/FeatureAvailability';
+import {featureFlagKeys,type IEvaluatedFeatureFlags} from '../src/features/FeatureFlags/types';
 import bff from '../src/core/api/bff';
 import {message} from 'antd';
 const plugin={id:'tool',kind:'mcp',name:'Full Tool',description:'Full detail',version:7,tags:['RAG'],config:null,origin:'https://github.com/team/tool',revision:'v1.2.3',createdAt:'2026-10-01',updatedAt:'2026-10-02'} as any;
 const skill={path:'common/tool',body:'# Skill body',resources:[],meta:{name:'Full skill',description:'Skill summary',scope:'common',owner:'owner',version:3,tags:['skill'],projectId:'prj-test',specialization:'QA',updatedAt:'2026-10-01',mcp:['mcp-one'],plugins:['plugin-one'],history:[{version:2,at:'2026-09-01',author:'before',note:'Old'},{version:3,at:'2026-10-01',author:'now',note:'Current'}]}} as any;
-let app:any,props:any;
-function render(){h.hooks.begin();h.ui.nodes=[];const html=renderToStaticMarkup(createElement(StoreDetailsModal,{viewApp:app,onClose:h.close,...props}));h.hooks.commit();return html;}
+let app:any,props:any,catalogEnabled=true;
+const flags=():IEvaluatedFeatureFlags=>({flags:Object.fromEntries(featureFlagKeys.map(key=>[key,key!=='tool_catalog'||catalogEnabled])),configured:Object.fromEntries(featureFlagKeys.map(key=>[key,key!=='tool_catalog'||catalogEnabled])),blockedBy:Object.fromEntries(featureFlagKeys.map(key=>[key,[]]))})as IEvaluatedFeatureFlags;
+function render(){h.hooks.begin();h.ui.nodes=[];const html=renderToStaticMarkup(createElement(FeatureAvailabilityContext.Provider,{value:{data:flags(),loading:false,error:null,refresh:async()=>undefined}},createElement(StoreDetailsModal,{viewApp:app,onClose:h.close,...props})));h.hooks.commit();return html;}
 async function open(kind='mcp'){app={id:'tool',kind,name:'List Tool',version:2,...(kind==='skill'?{path:'common/tool'}:{})};render();await flushModal();return render();}
 const tab=(name:string)=>{uiNode(h.ui,'Tabs').onChange(name);return render();};
-beforeEach(()=>{h.hooks.dispose();vi.clearAllMocks();h.small=true;app=null;props={};vi.mocked(bff.getAiPlugin).mockResolvedValue(plugin);vi.mocked(bff.getSkill).mockResolvedValue(skill);vi.mocked(bff.listAiPluginVersions).mockResolvedValue([{version:6,createdAt:'bad'},{version:7,createdAt:'2026-10-01',author:'admin',note:'Current'}] as any);});
+beforeEach(()=>{h.hooks.dispose();vi.clearAllMocks();catalogEnabled=true;h.small=true;app=null;props={};vi.mocked(bff.getAiPlugin).mockResolvedValue(plugin);vi.mocked(bff.getSkill).mockResolvedValue(skill);vi.mocked(bff.listAiPluginVersions).mockResolvedValue([{version:6,createdAt:'bad'},{version:7,createdAt:'2026-10-01',author:'admin',note:'Current'}] as any);});
 afterEach(()=>{h.hooks.dispose();vi.unstubAllGlobals();});
 describe('Store detail actual modal lifecycle',()=>{
  it('uses fetched version for installation and only exposes optional actions supplied by authorized parent',async()=>{
@@ -29,6 +31,12 @@ describe('Store detail actual modal lifecycle',()=>{
  });
  it('Новая версия — отдельное действие от редактирования метаданных',async()=>{
   const update=vi.fn();props={onNewVersion:update,onEdit:h.edit};await open();expect(uiNode(h.ui,'Button','Новая версия').disabled).toBe(false);uiNode(h.ui,'Button','Новая версия').onClick();expect(update).toHaveBeenCalledOnce();expect(h.edit).not.toHaveBeenCalled();
+ });
+ it('Выключенный каталог блокирует редактирование в управлении, но сохраняет чтение и закрытие',async()=>{
+  props={onEdit:h.edit};catalogEnabled=false;await open();expect(render()).toContain('Full detail');
+  expect(uiNode(h.ui,'Button','Редактировать').disabled).toBe(true);uiNode(h.ui,'Button','Редактировать').onClick();expect(h.edit).not.toHaveBeenCalled();
+  uiNode(h.ui,'Button','Закрыть').onClick();expect(h.close).toHaveBeenCalledOnce();
+  catalogEnabled=true;render();expect(uiNode(h.ui,'Button','Редактировать').disabled).toBe(false);uiNode(h.ui,'Button','Редактировать').onClick();expect(h.edit).toHaveBeenCalledOnce();
  });
  it('refresh network failure preserves content but disables mutations, retry recovers',async()=>{
   props={onEdit:h.edit,onInstall:h.install};await open();vi.mocked(bff.getAiPlugin).mockRejectedValueOnce(Error('Offline'));h.live();render();await flushModal();expect(render()).toContain('Не удалось обновить данные');expect(render()).toContain('Full detail');expect(uiNode(h.ui,'Button','Редактировать').disabled).toBe(true);expect(uiNode(h.ui,'Install').disabled).toBe(true);uiNode(h.ui,'Button','Повторить').onClick();render();await flushModal();expect(render()).not.toContain('Не удалось обновить данные');expect(uiNode(h.ui,'Install').disabled).toBe(false);
