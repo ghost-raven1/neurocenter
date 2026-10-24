@@ -15,6 +15,7 @@ import { artifactFixture } from '../../../scripts/test/runtime-artifact-fixture.
 import { runtimeArtifactTarget } from '../src/features/runtime-artifacts/model.js';
 import { resolvePreparedRuntimeArtifact } from '../src/features/runtime-artifacts/cache.js';
 import { prepareJobRuntimeArtifacts } from '../src/bridge/job-runtime-artifacts.js';
+import { RuntimeArtifactCapacityError } from '../src/features/runtime-artifacts/capacity-error.js';
 
 const roots:string[]=[];
 async function fixture(origin='http://127.0.0.1:5173'){
@@ -85,5 +86,57 @@ describe('Устойчивое подтверждение подготовки �
         await expect(recoverRuntimePreparations()).rejects.toThrow(/Повреждено/);expect(await pendingCompletions()).toEqual([]);
         await fs.rm(folder,{recursive:true});const outside=path.join(f.root,'outside');await fs.mkdir(outside);await fs.symlink(outside,folder,'dir');
         await expect(recoverRuntimePreparations()).rejects.toThrow(/недоступен/);expect(await fs.readdir(outside)).toEqual([]);
+    });
+});
+
+describe('Безопасная причина отказа подготовки доходит до сервера без повторного выполнения',()=>{
+    const secret='provider-private-token https://provider.invalid/private?token=do-not-publish';
+    const cacheMessage='Недостаточно места в кэше готовых комплектов. Проверьте лимит и использование кэша в разделе «Мои компьютеры», затем повторите действие. Файлы проекта не изменены.';
+    const diskMessage='На диске недостаточно свободного места для готового комплекта. Освободите место и повторите действие. Файлы проекта не изменены.';
+
+    it.each([
+        {name:'runtime-cache-full',error:new RuntimeArtifactCapacityError('runtime-cache-full',secret),message:cacheMessage},
+        {name:'disk-full',error:new RuntimeArtifactCapacityError('disk-full',secret),message:diskMessage},
+        {name:'длинное сообщение типизированной ошибки',error:new RuntimeArtifactCapacityError('disk-full','x'.repeat(2000)+secret),message:diskMessage},
+        {name:'произвольная provider ошибка',error:new Error(secret),message:undefined},
+        {name:'поддельные имя и code ошибки',error:Object.assign(new Error(secret),{name:'RuntimeArtifactCapacityError',code:'disk-full'}),message:undefined},
+        {name:'произвольный объект вместо локального класса',error:{name:'RuntimeArtifactCapacityError',code:'runtime-cache-full',message:secret},message:undefined},
+    ])('$name: сохраняет и доставляет только безопасную квитанцию один раз',async scenario=>{
+        const received:Array<{url:string|undefined;body:unknown}>=[];
+        const server=http.createServer((req,res)=>{
+            void (async()=>{
+                const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
+                received.push({url:req.url,body:JSON.parse(Buffer.concat(chunks).toString('utf8'))});
+                res.writeHead(200,{'content-type':'application/json'});res.end('{"ok":true}');
+            })().catch(()=>{res.writeHead(400);res.end();});
+        });
+        await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+        try{
+            const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`,f=await fixture(origin);
+            vi.stubEnv('NEUROCENTER_API_URL',origin);
+            let calls=0;
+            await expect(withRuntimePreparationIntent(f.completion,async()=>{
+                calls++;expect(JSON.parse(await fs.readFile(f.file,'utf8')).completion).toEqual(f.completion);
+                throw scenario.error;
+            })).rejects.toBe(scenario.error);
+            const expected={...f.completion,message:scenario.message??f.completion.message};
+            expect(await pendingCompletions()).toEqual([expected]);
+            expect(expected.message.length).toBeLessThanOrEqual(1500);
+            await expect(fs.access(f.file)).rejects.toMatchObject({code:'ENOENT'});
+            await recoverRuntimePreparations();
+            await deliverCompletions();await deliverCompletions();
+            expect(received).toEqual([{url:`/api/device-channel/jobs/${f.job.id}/complete`,body:expected}]);
+            expect(JSON.stringify(received)).not.toContain(secret);
+            expect(calls).toBe(1);expect(await pendingCompletions()).toEqual([]);
+        }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+    });
+
+    it('Repair сохраняет прежнюю нормализацию сообщения и точную идентичность changePlan',async()=>{
+        const f=await fixture(),changePlanId=randomUUID();
+        const completion=runtimePreparationCompletion({...f.job,kind:'apply-local-change',payload:{...f.job.payload,changePlanId,expectedChangeDigest:'b'.repeat(64)}},f.deviceId);
+        const error=new RuntimeArtifactCapacityError('disk-full',secret);
+        await expect(withRuntimePreparationIntent(completion,async()=>{throw error;})).rejects.toBe(error);
+        expect(await pendingCompletions()).toEqual([{...completion,message:'Локальное действие не выполнено; предыдущее состояние сохранено.'}]);
+        await expect(fs.access(f.file)).rejects.toMatchObject({code:'ENOENT'});
     });
 });

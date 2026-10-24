@@ -6,6 +6,7 @@ import { readBoundedUtf8 } from './read-bounded.js';
 import { readState, stateDir, type Credentials } from './state.js';
 import { sortedRefs, type InstallSet } from './install-set.js';
 import type { Package } from './package.js';
+import { RuntimeArtifactCapacityError } from '../features/runtime-artifacts/capacity-error.js';
 
 interface Intent { schemaVersion: 1; pid: number; completion: Completion }
 interface PreparationJob { id: string; lease: string; kind: string; project_id?: string; payload: {
@@ -60,7 +61,15 @@ export async function withRuntimePreparationIntent(completion: Completion | unde
     if (await fs.lstat(file).then(() => true, error => {if (error.code === 'ENOENT') return false; throw error;})) throw new Error('Подготовка этого задания уже требует сверки.');
     await atomicText(file, JSON.stringify(intent), 0o600);
     try { await prepare(); }
-    catch (error) { await saveCompletion(completion); await remove(file); throw error; }
+    catch (error) {
+        let message = completion.message;
+        // Public receipts explain only known local capacity codes, never the original error text.
+        if (error instanceof RuntimeArtifactCapacityError) {
+            if (error.code === 'runtime-cache-full') message = 'Недостаточно места в кэше готовых комплектов. Проверьте лимит и использование кэша в разделе «Мои компьютеры», затем повторите действие. Файлы проекта не изменены.';
+            else if (error.code === 'disk-full') message = 'На диске недостаточно свободного места для готового комплекта. Освободите место и повторите действие. Файлы проекта не изменены.';
+        }
+        await saveCompletion({...completion, message}); await remove(file); throw error;
+    }
     await remove(file);
 }
 
