@@ -9,8 +9,9 @@ const evaluated = (): IEvaluatedFeatureFlags => ({ flags: Object.fromEntries(fea
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 
 describe('Единая доступность функций', () => {
-    it('Проверяет все 43 ключа общего реестра; старые три ключа и повреждённые зависимости не разрешают работу', () => {
-        expect(featureFlagKeys).toHaveLength(43); expect(new Set(featureFlagKeys).size).toBe(43);
+    it('Проверяет полный общий реестр; старые три ключа и повреждённые зависимости не разрешают работу', () => {
+        expect(new Set(featureFlagKeys).size).toBe(featureFlagKeys.length);
+        expect(featureDefinitions.find(item => item.key === 'system_coordinator')).toMatchObject({ defaultEnabled: true, dependsOn: ['agents', 'model_hosting'] });
         expect(featureDefinitions.find(item => item.key === 'opencode_providers')).toMatchObject({ defaultEnabled: false, dependsOn: ['computer_connections', 'model_catalog'] });
         expect(featureDefinitions.find(item => item.key === 'codex_connector')).toMatchObject({ defaultEnabled: false, dependsOn: ['opencode_providers'] });
         expect(featureDefinitions.find(item => item.key === 'project_chat')).toMatchObject({defaultEnabled: true, dependsOn: []});
@@ -29,7 +30,11 @@ describe('Единая доступность функций', () => {
         const conflict = evaluated(); conflict.configured.model_chat = false; expect(() => requireEvaluatedFeatureFlags(conflict)).toThrow('полный список');
     });
     it('Неизвестное состояние закрывает новые действия, но пустой набор требований сохраняет recovery', () => {
-        expect(featureAvailability(emptyAvailability(), ['agents'])).toMatchObject({ enabled: false, reason: 'Проверяем доступность функций…' });
+        for (const key of featureFlagKeys) {
+            expect(featureAvailability(emptyAvailability(), [key])).toMatchObject({ enabled: false, reason: 'Проверяем доступность функций…' });
+            const data = evaluated(); data.flags[key] = false; data.configured[key] = false;
+            expect(featureAvailability({ data, loading: false, error: null }, [key])).toMatchObject({ enabled: false, known: true });
+        }
         expect(featureAvailability({ ...emptyAvailability(), error: 'Offline' }, ['agents']).reason).toContain('не подтверждена');
         expect(featureAvailability(emptyAvailability(), []).enabled).toBe(true);
     });
@@ -44,6 +49,13 @@ describe('Единая доступность функций', () => {
         const withoutModels = items.map(item => ({ ...item, enabled: item.key !== 'model_catalog' }));
         expect(configuredBlockers('opencode_providers', withoutModels)).toEqual(['model_catalog']);
         expect(configuredBlockers('codex_connector', withoutModels)).toEqual(['model_catalog']);
+        for (const definition of featureDefinitions) {
+            for (const dependency of definition.dependsOn) {
+                const configured = items.map(item => ({ ...item, enabled: item.key !== dependency }));
+                expect(configuredBlockers(definition.key, configured), `${definition.key} depends on ${dependency}`).toContain(dependency);
+                expect(configured.find(item => item.key === definition.key)?.enabled).toBe(true);
+            }
+        }
     });
     it('Ошибка обновления снимает прежнее разрешение; восстановление требует нового полного ответа', async () => {
         let state = emptyAvailability(); const read = vi.fn(async (): Promise<unknown> => evaluated());
