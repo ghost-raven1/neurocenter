@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, QueryConfig } from 'pg';
 import { ForbiddenException } from '@nestjs/common';
 import {readModelUsageReport} from './model-usage-report';
 import type { UsageFilter, UsageInsert, UsagePrivateRoom, UsageScope, UsageTerminal } from './model-usage.types';
@@ -36,7 +36,8 @@ export class ModelUsageRepository {
     private async metadata(text: string, values?: unknown[]): Promise<void> {
         // pg-pool can open a new client ahead of queued checkouts; optional writes must yield to existing work.
         if (this.pool.waitingCount > 0) throw new Error('Usage metadata deferred while database work is queued');
-        await this.pool.query({ text, values, query_timeout: 500 });
+        const query: QueryConfig & { query_timeout: number } = { text, values, query_timeout: 500 };
+        await this.pool.query(query);
     }
     async canonicalProject(idOrName: string): Promise<string> {
         const row = (await this.pool.query<{ id: string }>("SELECT id FROM projects WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'prj-%') ORDER BY (id=$1) DESC LIMIT 1", [idOrName])).rows[0];
