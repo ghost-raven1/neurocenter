@@ -66,8 +66,41 @@ describe('Готовые платформенные комплекты без у
         const f=await fixture();const first=artifactFixture(undefined,runtimeArtifactTarget());const pkg=pkgFor(first.descriptor);const old=await ensureRuntimeArtifact(pkg,{download:async()=>Readable.from([first.archive])});await install('test-project',pkg,async()=>undefined,async()=>undefined);const before=await fs.readFile(path.join(f.root,'opencode.json'),'utf8');
         const next=artifactFixture([{path:'server.mjs',content:'новый runtime'}],runtimeArtifactTarget());await expect(ensureRuntimeArtifact(pkgFor(next.descriptor),{download:async()=>Readable.from([next.archive.subarray(0,4)])})).rejects.toThrow();expect(await fs.readFile(old!.entrypoint,'utf8')).toBe('export default {};');expect(await fs.readFile(path.join(f.root,'opencode.json'),'utf8')).toBe(before);
     });
-    it('Ограничивает отдельный кэш до 2 ГиБ до начала сети', async () => {
-        await fixture();const {descriptor}=artifactFixture(undefined,runtimeArtifactTarget());const directory=path.join(stateDir(),'runtime-artifacts');await fs.mkdir(directory,{recursive:true,mode:0o700});const budget=await fs.open(path.join(directory,'старый-комплект'),'wx');await budget.truncate(2*1024**3-128);await budget.close();const download=vi.fn();await expect(ensureRuntimeArtifact(pkgFor(descriptor),{download})).rejects.toThrow(/2 ГиБ/);expect(download).not.toHaveBeenCalled();
+    it('Готовит обновление сверх целевого объёма кэша, сохраняя прежний комплект и установку', async () => {
+        const f=await fixture(),first=artifactFixture(undefined,runtimeArtifactTarget()),pkg=pkgFor(first.descriptor);
+        const old=await ensureRuntimeArtifact(pkg,{download:async()=>Readable.from([first.archive])});await install('test-project',pkg,async()=>undefined,async()=>undefined);
+        const configFile=path.join(f.root,'opencode.json'),receiptFile=path.join(f.root,receiptPath(pkg));
+        const configBefore=await fs.readFile(configFile),receiptBefore=await fs.readFile(receiptFile);
+        const archiveFile=path.join(old!.root,'.neurocenter-runtime-archive.tar.gz'),indexFile=path.join(old!.root,'.neurocenter-runtime-index.json');
+        const archiveBefore=await fs.readFile(archiveFile),indexBefore=await fs.readFile(indexFile);
+        const retained=path.join(stateDir(),'runtime-artifacts','старый-комплект'),handle=await fs.open(retained,'wx',0o600);
+        try{await handle.writeFile('QA retained bytes');await handle.truncate(2*1024**3+4096);}finally{await handle.close();}
+        const retainedBefore=await fs.stat(retained),next=artifactFixture([{path:'runtime/server.mjs',content:'export default 2;'}],runtimeArtifactTarget());
+        const download=vi.fn(async()=>Readable.from([next.archive])),prepared=await ensureRuntimeArtifact(pkgFor(next.descriptor),{download});
+        expect(await fs.readFile(prepared!.entrypoint,'utf8')).toBe('export default 2;');expect(download).toHaveBeenCalledOnce();
+        expect(await fs.readFile(old!.entrypoint,'utf8')).toBe('export default {};');
+        expect(await fs.readFile(archiveFile)).toEqual(archiveBefore);expect(await fs.readFile(indexFile)).toEqual(indexBefore);
+        expect(await fs.readFile(configFile)).toEqual(configBefore);expect(await fs.readFile(receiptFile)).toEqual(receiptBefore);
+        expect(await fs.stat(retained)).toMatchObject({ino:retainedBefore.ino,size:retainedBefore.size,mode:retainedBefore.mode});
+        const retainedHandle=await fs.open(retained,'r');try{const bytes=Buffer.alloc(17);await retainedHandle.read(bytes,0,bytes.length,0);expect(bytes.toString()).toBe('QA retained bytes');}finally{await retainedHandle.close();}
+        expect((await fs.readdir(path.dirname(retained))).sort()).toEqual([first.descriptor.sha256,next.descriptor.sha256,'старый-комплект'].sort());
+    });
+    it('Отказывает до загрузки, если физически не хватает даже одного байта резерва',async()=>{
+        await fixture();const {archive,descriptor}=artifactFixture(undefined,runtimeArtifactTarget());
+        const required=descriptor.compressedBytes+descriptor.unpackedBytes+descriptor.filesCount*400+4096+128*1024**2;
+        const statfs=vi.spyOn(fs,'statfs').mockResolvedValue({bavail:BigInt(required-1),bsize:1n} as never),download=vi.fn(async()=>Readable.from([archive]));
+        await expect(ensureRuntimeArtifact(pkgFor(descriptor),{download})).rejects.toMatchObject({code:'disk-full'});expect(download).not.toHaveBeenCalled();
+        expect(await fs.readdir(path.join(stateDir(),'runtime-artifacts'))).toEqual([]);
+        statfs.mockResolvedValue({bavail:BigInt(required),bsize:1n} as never);
+        const prepared=await ensureRuntimeArtifact(pkgFor(descriptor),{download});expect(await fs.readFile(prepared!.entrypoint,'utf8')).toBe('export default {};');expect(download).toHaveBeenCalledOnce();
+    });
+    it.each(['symbolic','hard'])('Мягкий target не разрешает %s ссылку в существующем кэше',async kind=>{
+        const f=await fixture(),root=path.join(stateDir(),'runtime-artifacts'),outside=path.join(f.temporary,'retained.txt');
+        await fs.mkdir(root,{recursive:true,mode:0o700});await fs.writeFile(outside,'QA retained outside cache');
+        if(kind==='symbolic')await fs.symlink(outside,path.join(root,'unsafe'));else await fs.link(outside,path.join(root,'unsafe'));
+        const {archive,descriptor}=artifactFixture(undefined,runtimeArtifactTarget()),download=vi.fn(async()=>Readable.from([archive]));
+        await expect(ensureRuntimeArtifact(pkgFor(descriptor),{download})).rejects.toThrow(/Ссылки/);expect(download).not.toHaveBeenCalled();
+        expect(await fs.readFile(outside,'utf8')).toBe('QA retained outside cache');expect(await fs.readdir(root)).toEqual(['unsafe']);
     });
 });
 

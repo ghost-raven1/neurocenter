@@ -11,6 +11,7 @@ import {
     Res,
     StreamableFile,
     ConflictException,
+    ForbiddenException,
     Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -24,6 +25,9 @@ import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { approvedRuntimeArtifact } from './runtime-job-artifact';
 import {DeviceEmbeddingService} from '../models/device-embedding.service';
 import {DeviceCodexService} from '../models/device-codex.service';
+import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {runtimeCacheWorkRole} from './runtime-cache-jobs';
+import {BRIDGE_UPDATE_CLEANUP_CAPABILITY} from '../../../shared/runtime-cache-policy.cjs';
 
 /** Browser управляет только своими устройствами; channel принимает только секрет привязанного MCP. */
 @Controller()
@@ -125,6 +129,15 @@ export class DeviceController {
     @Post('internal/device-channel/worker/resume') async resume(@Req() req: Request) {
         assertInternal(req.headers['x-neurocenter-internal']);
         return this.devices.resume(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+    }
+    /** Every physical cleanup needs fresh device, role and feature authority; offline keeps backups. */
+    @Post('internal/device-channel/worker/update-cleanup/authorize') async cleanupAuthority(@Req() req:Request) {
+        const device=await this.device(req);
+        if(!runtimeCacheWorkRole(device.role)||!Array.isArray(device.report.capabilities)||!device.report.capabilities.includes(BRIDGE_UPDATE_CLEANUP_CAPABILITY))throw new ForbiddenException('Очистка обновлений недоступна этому мосту.');
+        await requireFeaturesEnabled(['bridge_storage_cleanup']);
+        const fresh=await this.device(req);
+        if(fresh.id!==device.id||fresh.role!==device.role||fresh.email!==device.email||!Array.isArray(fresh.report.capabilities)||!fresh.report.capabilities.includes(BRIDGE_UPDATE_CLEANUP_CAPABILITY))throw new ConflictException('Подключение моста изменилось.');
+        return {ok:true};
     }
     @Post('internal/device-channel/jobs/:id/authorize') async authorize(
         @Req() req: Request,

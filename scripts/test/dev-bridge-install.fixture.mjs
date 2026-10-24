@@ -23,8 +23,12 @@ async function fixture(action,{paired=true,legacy=false}={}){
         for(const folder of [install,path.join(content,'bin'),output,path.join(home,'.config/opencode'),path.join(home,'.local/bin')])await fs.mkdir(folder,{recursive:true});
         await fs.writeFile(path.join(content,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version,type:'module'}));
         const requiredModules=[...modules];
-        if((await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8')).includes('../features/opencode-providers/contract.js'))requiredModules.push('features/opencode-providers/contract.js','shared/opencode-providers.cjs');
-        if((await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8')).includes('../features/device-codex-inference/contract.js'))requiredModules.push('features/device-codex-inference/contract.js','shared/device-codex-inference.cjs');
+        if((await fs.readFile(path.join(bridge,'dist/bridge-cli.js'),'utf8')).includes('acquireForEntrypoint'))requiredModules.push('bridge-cli-main.js','shared/bridge-update-cleanup.cjs');
+        const protocol=await fs.readFile(path.join(bridge,'dist/bridge/protocol.js'),'utf8');
+        for(const [feature,shared] of [['opencode-providers','opencode-providers'],['device-codex-inference','device-codex-inference'],['project-learning-memory-sync','project-learning-memory-sync']]){
+            if(protocol.includes('../features/'+feature+'/contract.js'))requiredModules.push('features/'+feature+'/contract.js','shared/'+shared+'.cjs');
+        }
+        if(protocol.includes('../features/project-learning-memory-sync/contract.js'))requiredModules.push('shared/project-learning.cjs','shared/project-learning-quirks.cjs');
         for(const module of requiredModules){const to=path.join(content,'dist',module);await fs.mkdir(path.dirname(to),{recursive:true});await fs.copyFile(path.join(bridge,'dist',module),to);}
         await fs.writeFile(path.join(content,'dist/bridge/connect.js'),'export async function connectBridge(){throw Error("pair/connect forbidden in updater fixture");}\n');
         // A tiny wrapper avoids copying/compressing a native Node binary per unit case; model its installed execPath explicitly.
@@ -43,7 +47,7 @@ else if(process.argv[2]==='--worker'){
  process.once('SIGTERM',()=>{void fs.readFile(lock,'utf8').then(value=>value===String(process.pid)?fs.unlink(lock):undefined).finally(()=>process.exit(0));});
  setTimeout(()=>process.exit(98),15000);setInterval(()=>{},1000);
 }else throw Error('unexpected fixture CLI');\n`);
-        await fs.cp(path.join(bridge,'node_modules/jsonc-parser'),path.join(content,'node_modules/jsonc-parser'),{recursive:true});
+        await fs.cp(path.join(bridge,'node_modules/jsonc-parser'),path.join(content,'node_modules/jsonc-parser'),{recursive:true,dereference:true});
         // Pinned lock/inventory with synthetic package bodies exercises the actual SDK archive verifier.
         for(const [name,bytes] of (await bridgeSdkFixture(target)).files)if(name.startsWith('bin/opencode-sdk/')){
             const file=path.join(content,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,bytes);

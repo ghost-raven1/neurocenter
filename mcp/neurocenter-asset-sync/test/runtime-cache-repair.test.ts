@@ -107,11 +107,16 @@ describe('Явное восстановление готового кэша по
         expect(download).not.toHaveBeenCalled(); await expect(fs.stat(stage)).rejects.toThrow(); await expect(fs.stat(path.join(cache, quarantine))).rejects.toThrow();
     });
 
-    it('Карантин и новая копия входят в общий бюджет; нехватка места останавливает ремонт до сети', async () => {
-        const reserved = await fs.open(path.join(path.dirname(root), 'reserved'), 'wx'); await reserved.truncate(2 * 1024 ** 3); await reserved.close();
+    it('Мягкий target не блокирует ремонт; прежние байты остаются в карантине и другие комплекты не удаляются', async () => {
+        const before=await fs.readFile(path.join(fixture.root,'opencode.json')),retained=path.join(path.dirname(root),'reserved');
+        const reserved = await fs.open(retained, 'wx',0o600); await reserved.truncate(2 * 1024 ** 3); await reserved.close();const retainedBefore=await fs.stat(retained);
         const download = vi.fn(async () => Readable.from([archive]));
-        await expect(ensureRuntimeArtifact(pkg, { repairCorrupt: true, download })).rejects.toThrow(/2 ГиБ/);
-        expect(download).not.toHaveBeenCalled(); expect(await fs.readFile(entrypoint, 'utf8')).toBe('Ручные повреждённые байты кэша');
+        await ensureRuntimeArtifact(pkg, { repairCorrupt: true, download });
+        expect(download).toHaveBeenCalledOnce();expect(await fs.readFile(entrypoint,'utf8')).toBe('export default {};');
+        const quarantine=(await fs.readdir(path.dirname(root))).find(name=>name.startsWith('.quarantine-'));expect(quarantine).toBeTruthy();
+        expect(await fs.readFile(path.join(path.dirname(root),quarantine!,path.relative(root,entrypoint)),'utf8')).toBe('Ручные повреждённые байты кэша');
+        expect(await fs.stat(retained)).toMatchObject({ino:retainedBefore.ino,size:retainedBefore.size,mode:retainedBefore.mode});
+        expect(await fs.readFile(path.join(fixture.root,'opencode.json'))).toEqual(before);
     });
 
     it('Подмена runtimeRepairRequired в подготовленном плане не разрешает refetch', async () => {

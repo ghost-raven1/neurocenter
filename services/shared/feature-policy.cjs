@@ -6,7 +6,11 @@ const unique=keys=>[...new Set(keys)];
 /** Recovery/removal jobs remain usable when every business capability is disabled. */
 function requiredJobFeatures(kind,payload={},trustedPayload=false){
     const input=record(payload);
-    if(kind==='runtime-cache-policy')return record(trustedPayload?input:input.runtimeCachePolicy).action==='set'?['computer_connections']:[];
+    if(kind==='runtime-cache-policy'){
+        const policy=record(trustedPayload?input:input.runtimeCachePolicy);
+        if(policy.action==='set-cleanup')return record(policy.cleanup).enabled===true?['bridge_storage_cleanup']:[];
+        return policy.action==='set'?['computer_connections']:[];
+    }
     if(kind==='import-learning-quirks')return ['project_learning_quirks'];
     if(kind==='sync-learning-memory')return (trustedPayload?record(input.memory).mode:input.memoryMode)==='cleanup'?[]:['project_learning_memory'];
     if(['uninstall','restore-rag','inspect-installation','list-local-variants','prepare-local-restore','apply-local-restore','open-local-change-report','open-local-recovery-folder','get-mcp-configuration-status','get-opencode-provider-status'].includes(kind))return [];
@@ -64,6 +68,7 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/(?:api|internal)\/device-channel\//.test(route)){
         const suffix=route.replace(/^\/(?:api|internal)\/device-channel\//,'');
         if(suffix==='pair/start')return ['computer_connections'];
+        if(suffix==='worker/update-cleanup/authorize')return ['bridge_storage_cleanup'];
         if(['embedding','embedding/context'].includes(suffix))return ['model_hosting'];
         if(suffix.startsWith('opencode-models/'))return ['opencode_model_sync'];
         if(suffix==='agents/compile')return []; // Stateful authorize checks the trusted compiled snapshot, including cleanup.

@@ -80,6 +80,16 @@ import {
 
 const server = new McpServer({ name: 'neurocenter-asset-sync', version: BRIDGE_VERSION });
 const cwd = process.cwd();
+if(process.argv[2]==='--cleanup-updates'){
+    try{
+        const {readBridgeCleanupPolicy}=await import('./features/runtime-artifacts/policy-store.js');
+        const {cleanupInstalledBridge}=await import('./features/runtime-artifacts/update-cleanup.js');
+        const result=await cleanupInstalledBridge(await readBridgeCleanupPolicy());
+        if(result?.warnings.length)process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');
+        process.stdout.write(JSON.stringify({ok:true,removed:result?.removed.length??0,warnings:result?.warnings.length??0})+'\n');
+    }catch{process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');process.stdout.write(JSON.stringify({ok:true,deferred:true})+'\n');}
+    process.exit(0);
+}
 if (['--prepare-upgrade', '--finish-upgrade'].includes(process.argv[2] || '')) {
     try {
         let prepared: {paused?: boolean} = {};

@@ -37,15 +37,15 @@ describe('Computer runtime cache policy preserves packages and confirms writes',
         expect(value.result).toMatchObject({schemaVersion:1,revision:0,limitBytes:2*GiB,defaultBytes:2*GiB,minBytes:GiB,maxBytes:16*GiB});
         expect(await readRuntimeCachePolicy()).toBeUndefined();expect(await runtimeCacheLimit()).toBe(2*GiB);
     });
-    it('an explicit larger budget admits the same real archive and retains the previous sparse file',async()=>{
-        const f=await fixture(),root=await sparse(2*GiB-128),{archive,pkg}=artifact();
+    it('a saved legacy target is soft: a real archive exceeds it without changing the policy or previous files',async()=>{
+        const f=await fixture();await f.run(f.job('set',0,GiB));const policy=await readRuntimeCachePolicy();
+        const root=await sparse(GiB+4096),before=await fs.stat(path.join(root,'qa-existing')),{archive,pkg}=artifact();
         const download=vi.fn(async()=>Readable.from([archive]));
-        await expect(ensureRuntimeArtifact(pkg,{download})).rejects.toMatchObject({code:'runtime-cache-full'});expect(download).not.toHaveBeenCalled();
-        expect((await f.run(f.job())).result).toMatchObject({revision:1,limitBytes:3*GiB});
         const result=await ensureRuntimeArtifact(pkg,{download});expect(result?.entrypoint).toBeTruthy();expect(download).toHaveBeenCalledOnce();
-        expect((await fs.stat(path.join(root,'qa-existing'))).size).toBe(2*GiB-128);
+        expect(await fs.stat(path.join(root,'qa-existing'))).toMatchObject({ino:before.ino,size:before.size,mode:before.mode});
+        expect(await readRuntimeCachePolicy()).toEqual(policy);expect(await runtimeCacheLimit()).toBe(GiB);
     });
-    it('raising the cache limit retains the separate physical disk guard',async()=>{
+    it('a saved target retains the separate physical disk guard',async()=>{
         const f=await fixture();await f.run(f.job());const {archive,pkg}=artifact();
         vi.spyOn(fs,'statfs').mockResolvedValue({bavail:0n,bsize:4096n} as never);
         const download=vi.fn(async()=>Readable.from([archive]));

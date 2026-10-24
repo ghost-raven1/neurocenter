@@ -389,6 +389,9 @@ if [ -e "$INSTALL_DIR" ]; then
     fi
 fi
 context assert || fail 'Конфигурация OpenCode изменилась до замены MCP.'
+if [ -f "$STAGING_DIR/package/dist/runtime-use.json" ]; then
+    "$NODE" -e 'const fs=require("node:fs"),path=require("node:path");const root=process.argv[1],install=path.join(fs.realpathSync(path.dirname(process.argv[2])),path.basename(process.argv[2]));fs.writeFileSync(path.join(root,".neurocenter-update-owner.json"),JSON.stringify({schemaVersion:1,installRoot:install})+"\n",{flag:"wx",mode:0o600,flush:true});fs.writeFileSync(path.join(root,"installation.json"),JSON.stringify({schemaVersion:1,siteUrl:process.argv[3],apiUrl:process.argv[4]})+"\n",{flag:"wx",mode:0o600,flush:true});require(path.join(root,"dist/shared/bridge-update-cleanup.cjs")).writeInstalledRuntimeReceipt({installRoot:install,runtimeRoot:root}).catch(error=>{console.error(error.message);process.exitCode=1;});' "$STAGING_DIR/package" "$INSTALL_DIR" "$SITE_URL" "$NEUROCENTER_API_URL" || fail 'Не удалось сохранить принадлежность новой установки. Прежняя версия сохранена.'
+fi
 if [ -e "$INSTALL_DIR" ]; then
     PREVIOUS_DIR="$(mktemp -d "$INSTALL_PARENT/.neurocenter-previous.XXXXXX")"; rmdir "$PREVIOUS_DIR"
     mv "$INSTALL_DIR" "$PREVIOUS_DIR"
@@ -440,7 +443,15 @@ if ! "$NODE" "$INSTALL_DIR/dist/bridge-cli.js" --install-command > "$STAGING_DIR
 fi
 success 'Команда подключения готова: ~/.local/bin/neurocenter-bridge connect --open'
 if [ -n "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\n' "$PREVIOUS_DIR"; fi
+finish_update_cleanup() {
+    if [ ! -f "$INSTALL_DIR/dist/shared/bridge-update-cleanup.cjs" ]; then return; fi
+    if [ -n "$PREVIOUS_DIR" ]; then
+        "$NODE" -e 'const path=require("node:path"),root=process.argv[1];require(path.join(root,"dist/shared/bridge-update-cleanup.cjs")).writeSuccessfulBackupReceipt({installRoot:root,backupRoot:process.argv[2]}).catch(()=>{console.error("Очистка обновлений отложена; предыдущая версия сохранена.");});' "$INSTALL_DIR" "$PREVIOUS_DIR" || true
+    fi
+    context connect "$NODE" "$INSTALL_DIR/dist/index.js" --cleanup-updates >/dev/null || printf '  Очистка обновлений отложена; сохранённые копии доступны.\n'
+}
 if [ "$LOCAL_MODE" = '1' ]; then
+    finish_update_cleanup
     success 'Мост установлен из локального архива. Подключение выполните отдельно на странице «Начало работы».'
     exit 0
 fi
@@ -451,3 +462,4 @@ if ! context connect "$NODE" "$INSTALL_DIR/dist/index.js" "$CONNECT" > "$STAGING
     fail 'MCP установлен, но подключение не завершено. Причина указана выше; после её устранения повторите установку.'
 fi
 show_result connect "$STAGING_DIR/connect.json"
+finish_update_cleanup

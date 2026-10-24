@@ -61,6 +61,16 @@
     "defaultEnabled": true
   },
   {
+    "key": "bridge_storage_cleanup",
+    "name": "Очистка копий обновления моста",
+    "description": "Автоматическая очистка проверенных неиспользуемых копий обновления. Выключение очистки, история и восстановление доступны.",
+    "group": "platform",
+    "dependsOn": [
+      "computer_connections"
+    ],
+    "defaultEnabled": true
+  },
+  {
     "key": "tool_catalog",
     "name": "Каталог инструментов",
     "description": "Создание, изменение и назначение MCP, плагинов и скиллов.",

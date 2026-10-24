@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {Readable} from 'node:stream';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {artifactFixture} from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import {canonicalV4,type Package} from '../src/bridge/package.js';
@@ -10,6 +11,7 @@ import {codexDeliveryResult} from '../src/features/device-codex-inference/receip
 import {DEVICE_CODEX_PROTOCOL,type DeviceCodexContext,type DeviceCodexPayload} from '../src/features/device-codex-inference/contract.js';
 import {ensureRuntimeArtifact} from '../src/features/runtime-artifacts/cache.js';
 import * as runtimeCache from '../src/features/runtime-artifacts/cache.js';
+import * as artifactDownload from '../src/bridge/runtime-artifact-download.js';
 import {LIMITS,runtimeArtifactTarget} from '../src/features/runtime-artifacts/model.js';
 import {providerFixture,noop} from './opencode-provider.fixture.js';
 
@@ -23,7 +25,7 @@ afterEach(async()=>{
 async function fixture(){
     const local=await providerFixture();cleanup.push(local.cleanup);
     const pin=JSON.parse(await fs.readFile(new URL('../../../services/shared/codex-connector-pin.json',import.meta.url),'utf8'));
-    const {descriptor}=artifactFixture([{path:'codex-plugin.mjs',content:'export default async()=>({});'}],runtimeArtifactTarget());
+    const {archive,descriptor}=artifactFixture([{path:'codex-plugin.mjs',content:'export default async()=>({});'}],runtimeArtifactTarget());
     const pkg:Package={schemaVersion:5,plugin:{id:'qa-codex-capacity',name:'QA Codex',kind:'plugin',version:1},
         config:{extra:{runtimeArtifacts:[descriptor],codexConnector:{schemaVersion:1,authOnly:true,sourceCommit:pin.sourceCommit,version:pin.version,sdkVersion:pin.sdkVersion}}},
         files:[],manifest:{sha256:'',filesCount:0}};
@@ -35,7 +37,7 @@ async function fixture(){
     const transport=vi.fn(async()=>{throw new Error('Auth transport must not load.');});
     const deps={context:vi.fn(async()=>context),dispatch:vi.fn(async()=>({ok:true})),transport,checkLocal:vi.fn(noop)};
     const network=vi.fn(async()=>{throw new Error('Unexpected PRIVATE_NETWORK_ERROR');});vi.stubGlobal('fetch',network);
-    return {...local,pkg,payload,job,deps,network,run:()=>runDeviceCodexJob(job,local.descriptor.deviceId,noop,deps),
+    return {...local,archive,pkg,payload,job,deps,network,run:()=>runDeviceCodexJob(job,local.descriptor.deviceId,noop,deps),
         result:()=>codexDeliveryResult(job.id,local.descriptor.deviceId,payload.callId)};
 }
 
@@ -46,17 +48,17 @@ async function fillCache(){
 }
 
 async function capacityError(f:Awaited<ReturnType<typeof fixture>>){
-    await fillCache();
+    const statfs=vi.spyOn(fs,'statfs').mockResolvedValue({bavail:0n,bsize:4096n} as never);
     try{await ensureRuntimeArtifact(f.pkg,{download:async()=>{throw new Error('Download must not start.');}});}
     catch(error){return error;}
-    throw new Error('Expected real runtime preparation to reject the full cache.');
+    finally{statfs.mockRestore();}
+    throw new Error('Expected real runtime preparation to reject the full disk.');
 }
 
 describe('Codex runtime preparation preserves an actionable pre-dispatch failure',()=>{
-    it.each(['runtime-cache-full','disk-full'] as const)('%s crosses real default preparation without loading auth, dispatching or downloading',async code=>{
+    it('disk-full crosses real default preparation without loading auth, dispatching or downloading',async()=>{
         const f=await fixture();
-        if(code==='runtime-cache-full')await fillCache();
-        else vi.spyOn(fs,'statfs').mockResolvedValue({bavail:0n,bsize:4096n} as never);
+        vi.spyOn(fs,'statfs').mockResolvedValue({bavail:0n,bsize:4096n} as never);
         let preparationError:unknown;
         const actualEnsure=ensureRuntimeArtifact;
         const prepare=vi.spyOn(runtimeCache,'ensureRuntimeArtifact').mockImplementation(async(...args)=>{
@@ -64,13 +66,24 @@ describe('Codex runtime preparation preserves an actionable pre-dispatch failure
         });
         expect((await f.run()).state).toBe('failed');
         expect(prepare).toHaveBeenCalledOnce();
-        expect((preparationError as Error)?.message).toMatch(code==='runtime-cache-full'?/места в кэше 2 ГиБ/:/недостаточно свободного места/);
+        expect((preparationError as Error)?.message).toMatch(/недостаточно свободного места/);
         expect(f.deps.transport).not.toHaveBeenCalled();expect(f.deps.dispatch).not.toHaveBeenCalled();expect(f.network).not.toHaveBeenCalled();
-        expect(await f.result()).toEqual({protocol:DEVICE_CODEX_PROTOCOL,callId:f.payload.callId,error:{code}});
+        expect(await f.result()).toEqual({protocol:DEVICE_CODEX_PROTOCOL,callId:f.payload.callId,error:{code:'disk-full'}});
         expect((await f.run()).state).toBe('failed');
         expect(f.deps.context).toHaveBeenCalledOnce();expect(f.deps.transport).not.toHaveBeenCalled();expect(f.deps.dispatch).not.toHaveBeenCalled();expect(f.network).not.toHaveBeenCalled();
         const cache=await fs.readdir(path.join(stateDir(),'runtime-artifacts'));
-        expect(cache).toEqual(code==='runtime-cache-full'?['qa-sparse-prior-artifact']:[]);
+        expect(cache).toEqual([]);
+    });
+
+    it('default preparation admits a real archive above the soft target and reaches the controlled auth boundary once',async()=>{
+        const f=await fixture();await fillCache();
+        const retained=path.join(stateDir(),'runtime-artifacts','qa-sparse-prior-artifact'),before=await fs.stat(retained);
+        const download=vi.spyOn(artifactDownload,'downloadJobRuntimeArtifact').mockResolvedValue(Readable.from([f.archive]) as never);
+        expect((await f.run()).state).toBe('failed');expect(download).toHaveBeenCalledOnce();expect(f.deps.transport).toHaveBeenCalledOnce();
+        expect(await f.result()).toMatchObject({error:{code:'unavailable'}});expect(f.deps.dispatch).not.toHaveBeenCalled();expect(f.network).not.toHaveBeenCalled();
+        const prepared=await runtimeCache.resolvePreparedRuntimeArtifact(f.pkg);expect(await fs.readFile(prepared!.entrypoint,'utf8')).toBe('export default async()=>({});');
+        expect(await fs.stat(retained)).toMatchObject({ino:before.ino,size:before.size,mode:before.mode});
+        expect((await f.run()).state).toBe('failed');expect(download).toHaveBeenCalledOnce();expect(f.deps.transport).toHaveBeenCalledOnce();
     });
 
     it('does not classify an arbitrary thrown message or spoofed error code as a capacity failure',async()=>{

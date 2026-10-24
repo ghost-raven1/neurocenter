@@ -28,7 +28,7 @@ export async function installerLifecycleFixture(name,action){
         await fs.writeFile(path.join(install,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version:'0.9.17'}));await fs.writeFile(path.join(install,'previous.txt'),'owned old runtime');
         await fs.writeFile(path.join(content,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version,type:'module'}));
         await fs.writeFile(path.join(content,'bin/node'),'#!/bin/sh\nexec '+quote(process.execPath)+' "$@"\n',{mode:0o755});
-        await fs.cp(path.join(repository,'mcp/neurocenter-asset-sync/node_modules/jsonc-parser'),path.join(content,'node_modules/jsonc-parser'),{recursive:true});
+        await fs.cp(path.join(repository,'mcp/neurocenter-asset-sync/node_modules/jsonc-parser'),path.join(content,'node_modules/jsonc-parser'),{recursive:true,dereference:true});
         const entry=`import fs from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';import {createHash} from 'node:crypto';import jsonc from 'jsonc-parser';
 const mode=process.argv[2];await fs.appendFile(process.env.INSTALLER_FIXTURE_EVENTS,mode+'\\n');

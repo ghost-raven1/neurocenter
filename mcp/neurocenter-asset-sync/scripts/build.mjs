@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import {writeRuntimeBootstraps} from './runtime-bootstraps.mjs';
 
 // Архив не должен сохранять удалённые инструменты из предыдущей сборки dist.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -15,6 +16,7 @@ try {
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     await fs.copyFile(path.join(root, '../../services/shared/device-codex-inference.cjs'), path.join(stage, 'dist/shared/device-codex-inference.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-cache-policy.cjs'), path.join(stage, 'dist/shared/runtime-cache-policy.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/bridge-update-cleanup.cjs'), path.join(stage, 'dist/shared/bridge-update-cleanup.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-pin.json'), path.join(stage, 'dist/shared/codex-connector-pin.json'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-source.cjs'), path.join(stage, 'dist/shared/codex-connector-source.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-artifacts.cjs'), path.join(stage, 'dist/shared/runtime-artifacts.cjs'));
@@ -34,6 +36,7 @@ try {
     const adapter = createHash('sha256');
     for (const file of adapterFiles) { adapter.update(file + '\0'); adapter.update(await fs.readFile(path.join(root, file))); }
     await fs.writeFile(path.join(stage, 'dist/shared/ollama-runtime.json'), JSON.stringify({sourceSha256: adapter.digest('hex')}) + '\n');
+    await writeRuntimeBootstraps(path.join(stage,'dist'));
     const digest = createHash('sha256');
     const files = (await fs.readdir(path.join(stage, 'dist'), { recursive: true })).sort();
     for (const file of files) {

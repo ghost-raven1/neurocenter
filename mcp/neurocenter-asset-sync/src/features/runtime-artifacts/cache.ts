@@ -10,7 +10,6 @@ import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
 import { inspectRuntimeArchive, LIMITS, normalizeRuntimeArtifacts, portablePath, runtimeArtifactTarget, type RuntimeArtifact, type RuntimeArtifactEntry } from './model.js';
 import { RuntimeArtifactCapacityError } from './capacity-error.js';
-import { runtimeCacheLimit } from './policy-store.js';
 
 export interface RuntimeArtifactResolution { target: string; sha256: string; root: string; entrypoint: string; executable: boolean }
 export interface ArtifactDownloadOptions {
@@ -147,7 +146,7 @@ async function verified(root: string, artifact: RuntimeArtifact, folder = path.j
     return { target: artifact.target, sha256: artifact.sha256, root: folder, entrypoint: path.join(folder, artifact.entrypoint), executable: artifact.executable ?? false };
 }
 
-/** Сеть и распаковка заканчиваются до транзакции установки; прежний комплект остаётся неизменным. */
+/** Целевой объём кэша мягкий; физическое место проверяется до сети, прежний комплект не удаляется. */
 export async function ensureRuntimeArtifact(pkg: Package, options: ArtifactDownloadOptions): Promise<RuntimeArtifactResolution | undefined> {
     const artifact = selected(pkg); if (!artifact) { return undefined; }
     const root = options.cacheRoot ?? cacheRoot(); await directory(root); const unlock = await lock(root);
@@ -168,9 +167,8 @@ export async function ensureRuntimeArtifact(pkg: Package, options: ArtifactDownl
                 corrupt = true;
             }
         }
-        const limitBytes=await runtimeCacheLimit();
-        const currentBytes = await usage(root,limitBytes); const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
-        if (currentBytes + required > limitBytes) { throw new RuntimeArtifactCapacityError('runtime-cache-full','Для нового комплекта недостаточно места в кэше '+(limitBytes/1024**3)+' ГиБ. Прежняя установка сохранена.'); }
+        await measureRuntimeCache(root);
+        const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
         const disk = await fs.statfs(root, { bigint: true }); if (disk.bavail * disk.bsize < BigInt(required + 128 * 1024 ** 2)) { throw new RuntimeArtifactCapacityError('disk-full','На диске недостаточно свободного места для готового комплекта. Прежняя установка сохранена.'); }
         await fs.mkdir(stage, { mode: 0o700 });
         const ownerHandle = await fs.open(path.join(stage, '.owner.json'), 'wx', 0o600);

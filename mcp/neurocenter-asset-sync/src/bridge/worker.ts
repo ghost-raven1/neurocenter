@@ -72,6 +72,8 @@ import {runDeviceCodexJob} from '../features/device-codex-inference/executor.js'
 import {recoverCodexCompletions} from '../features/device-codex-inference/receipts.js';
 import {runRuntimeCachePolicyJob,recoverRuntimeCachePolicyCompletions} from '../features/runtime-artifacts/cache-policy.js';
 import {RUNTIME_CACHE_POLICY_JOB} from '../features/runtime-artifacts/policy-store.js';
+import {readBridgeCleanupPolicy} from '../features/runtime-artifacts/policy-store.js';
+import {cleanupInstalledBridge} from '../features/runtime-artifacts/update-cleanup.js';
 
 interface Job {
     id: string;
@@ -127,6 +129,7 @@ export async function runWorker(): Promise<void> {
         reconnection: true,
     });
     let heartbeatPending: Promise<void> | undefined;
+    let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
     let observationsPending:Promise<void>|undefined;
     const heartbeat = (): Promise<void> => {
         if (stopped) { return Promise.resolve(); }
@@ -140,7 +143,16 @@ export async function runWorker(): Promise<void> {
                 socket.disconnect().connect();
             }
             const report = await workspaceReport();
-            if (!stopped) { await api('heartbeat', report); void synchronizeOpenCodeModels(() => stopped).catch(() => undefined); }
+            if (!stopped) {
+                await api('heartbeat', report); void synchronizeOpenCodeModels(() => stopped).catch(() => undefined);
+                if(!cleanupPending&&Date.now()-lastCleanup>60*60_000){
+                    lastCleanup=Date.now();
+                    cleanupPending=readBridgeCleanupPolicy().then(cleanupInstalledBridge)
+                        .then(result=>{if(result?.warnings.length)process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n');})
+                        .catch(()=>process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n'))
+                        .finally(()=>{cleanupPending=undefined;});
+                }
+            }
         })().finally(() => { heartbeatPending = undefined; });
         return heartbeatPending;
     };

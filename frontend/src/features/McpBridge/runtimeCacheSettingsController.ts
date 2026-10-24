@@ -4,10 +4,14 @@ import { createBridgeRequestKey } from './bridgeRequestKey';
 import { errorMessage } from '../../common/utils/errorMessage';
 
 export const runtimeCacheMiB = 1024 ** 2;
+export const runtimeCacheTargetMaxMiB = Math.floor(Number.MAX_SAFE_INTEGER / runtimeCacheMiB);
 type Request = Extract<IBridgeJobInput, {kind: 'runtime-cache-policy'}>;
-interface Intent { request: Request; jobId?: string; draftMiB: number | null }
+type CleanupPolicy = Extract<RuntimeCachePolicyPayload, {action: 'set-cleanup'}>['cleanup'];
+interface CleanupDraft {enabled: boolean; keepPrevious: number | null; minAgeDays: number | null}
+interface Intent { request: Request; jobId?: string; draftMiB: number | null; dirty?: boolean; cleanupDraft?: CleanupDraft; cleanupDirty?: boolean }
 export interface RuntimeCacheSettingsState {
     draftMiB: number | null; dirty: boolean; status?: RuntimeCachePolicyResult;
+    cleanupDraft: CleanupDraft; cleanupDirty: boolean; cleanupPolicy?: CleanupPolicy;
     intent?: Intent; job?: IBridgeJob; busy: boolean; error: string;
 }
 interface Ports {
@@ -15,21 +19,36 @@ interface Ports {
     create: (request: Request) => Promise<IBridgeJob>; jobs: () => Promise<IBridgeJob[]>;
     storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
     inspectReason: () => string; setReason: () => string;
+    cleanupSupported?: () => boolean; cleanupReason?: (enabled: boolean) => string; targetSupported?: () => boolean;
     onChange: (state: RuntimeCacheSettingsState) => void;
 }
-export const initialRuntimeCacheSettings = (): RuntimeCacheSettingsState => ({draftMiB: 2048, dirty: false, busy: false, error: ''});
+export const initialRuntimeCacheSettings = (): RuntimeCacheSettingsState => ({draftMiB: 2048, dirty: false,
+    cleanupDraft: {enabled: true, keepPrevious: 2, minAgeDays: 7}, cleanupDirty: false, busy: false, error: ''});
 const terminal = (job: IBridgeJob) => ['succeeded', 'failed', 'cancelled'].includes(job.state);
-const validLimit = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1024 && value <= 16384;
+const validLimit = (value: unknown, version: 1 | 2): value is number => typeof value === 'number' && Number.isSafeInteger(value)
+    && value >= (version === 2 ? 1 : 1024) && value <= (version === 2 ? runtimeCacheTargetMaxMiB : 16384);
 const natural = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+const draftNumber = (value: unknown) => value === null || typeof value === 'number' && Number.isFinite(value);
+const cleanupDraft = (value: unknown): value is CleanupDraft => record(value) && exact(value, ['enabled', 'keepPrevious', 'minAgeDays'])
+    && typeof value.enabled === 'boolean' && draftNumber(value.keepPrevious) && draftNumber(value.minAgeDays);
+const validCleanup = (value: unknown): value is CleanupPolicy => cleanupDraft(value) && natural(value.keepPrevious) && value.keepPrevious >= 1 && value.keepPrevious <= 10
+    && natural(value.minAgeDays) && value.minAgeDays >= 1 && value.minAgeDays <= 90;
+const validPayload = (value: Record<string, unknown>) => value.action === 'inspect' && (value.schemaVersion === 1 || value.schemaVersion === 2) && exact(value, ['schemaVersion', 'action'])
+    || (value.schemaVersion === 1 || value.schemaVersion === 2) && value.action === 'set' && exact(value, ['schemaVersion', 'action', 'expectedRevision', 'limitBytes'])
+        && natural(value.expectedRevision) && value.expectedRevision < Number.MAX_SAFE_INTEGER && natural(value.limitBytes) && validLimit(value.limitBytes / runtimeCacheMiB, value.schemaVersion)
+    || value.schemaVersion === 2 && value.action === 'set-cleanup' && exact(value, ['schemaVersion', 'action', 'expectedRevision', 'cleanup'])
+        && natural(value.expectedRevision) && value.expectedRevision < Number.MAX_SAFE_INTEGER && validCleanup(value.cleanup);
 
 /** A succeeded job must contain the complete numeric receipt before it becomes displayed policy. */
 function receipt(value: unknown): RuntimeCachePolicyResult {
-    if (!record(value) || !exact(value, ['schemaVersion', 'revision', 'limitBytes', 'usedBytes', 'defaultBytes', 'minBytes', 'maxBytes', 'observedAt'])
-        || value.schemaVersion !== 1 || !natural(value.revision) || !natural(value.usedBytes) || !natural(value.limitBytes)
-        || !validLimit(value.limitBytes / runtimeCacheMiB) || value.defaultBytes !== 2048 * runtimeCacheMiB
-        || value.minBytes !== 1024 * runtimeCacheMiB || value.maxBytes !== 16384 * runtimeCacheMiB
+    if (!record(value) || !exact(value, ['schemaVersion', 'revision', 'limitBytes', 'usedBytes', 'defaultBytes', 'minBytes', 'maxBytes', 'observedAt', ...(value.schemaVersion === 2 ? ['cleanup'] : [])])
+        || value.schemaVersion !== 1 && value.schemaVersion !== 2 || value.schemaVersion === 2 && !validCleanup(value.cleanup)
+        || !natural(value.revision) || !natural(value.usedBytes) || !natural(value.limitBytes)
+        || !validLimit(value.limitBytes / runtimeCacheMiB, value.schemaVersion) || value.defaultBytes !== 2048 * runtimeCacheMiB
+        || value.minBytes !== (value.schemaVersion === 2 ? 1 : 1024) * runtimeCacheMiB
+        || value.maxBytes !== (value.schemaVersion === 2 ? runtimeCacheTargetMaxMiB : 16384) * runtimeCacheMiB
         || typeof value.observedAt !== 'string' || !Number.isFinite(Date.parse(value.observedAt)) || new Date(value.observedAt).toISOString() !== value.observedAt) {
         throw new Error('Мост не подтвердил настройки кэша. Обновите данные или проверьте сохранённый запрос.');
     }
@@ -48,11 +67,10 @@ export function createRuntimeCacheSettings(ports: Ports) {
             const request = saved.request, payload = request.runtimeCachePolicy;
             if (!exact(request, ['deviceId', 'kind', 'runtimeCachePolicy', 'requestKey']) || request.deviceId !== ports.deviceId || request.kind !== 'runtime-cache-policy'
                 || typeof request.requestKey !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(request.requestKey) || !record(payload)
-                || payload.schemaVersion !== 1 || !(payload.action === 'inspect' && exact(payload, ['schemaVersion', 'action'])
-                    || payload.action === 'set' && exact(payload, ['schemaVersion', 'action', 'expectedRevision', 'limitBytes'])
-                        && natural(payload.expectedRevision) && payload.expectedRevision < Number.MAX_SAFE_INTEGER && natural(payload.limitBytes) && validLimit(payload.limitBytes / runtimeCacheMiB))
+                || !validPayload(payload)
                 || saved.jobId !== undefined && typeof saved.jobId !== 'string'
-                || saved.draftMiB !== null && !(typeof saved.draftMiB === 'number' && Number.isFinite(saved.draftMiB))) return;
+                || !draftNumber(saved.draftMiB) || saved.dirty !== undefined && typeof saved.dirty !== 'boolean'
+                || saved.cleanupDraft !== undefined && !cleanupDraft(saved.cleanupDraft) || saved.cleanupDirty !== undefined && typeof saved.cleanupDirty !== 'boolean') return;
             return saved as unknown as Intent;
         } catch { return; }
     };
@@ -71,6 +89,8 @@ export function createRuntimeCacheSettings(ports: Ports) {
         const owns = ports.captureOwner(), captured = generation;
         return () => active && captured === generation && owns();
     };
+    const drafts = (intent: Intent) => ({draftMiB: intent.draftMiB, dirty: intent.dirty ?? intent.request.runtimeCachePolicy.action === 'set',
+        cleanupDraft: {...(intent.cleanupDraft ?? initialRuntimeCacheSettings().cleanupDraft)}, cleanupDirty: intent.cleanupDirty ?? intent.request.runtimeCachePolicy.action === 'set-cleanup'});
     const adopt = (job: IBridgeJob, intent: Intent) => {
         if (job.deviceId !== ports.deviceId || job.projectId !== null || job.kind !== 'runtime-cache-policy' || !job.id || intent.jobId && job.id !== intent.jobId) {
             throw new Error('Ответ относится к другому заданию. Проверьте сохранённый запрос.');
@@ -81,12 +101,21 @@ export function createRuntimeCacheSettings(ports: Ports) {
         if (job.state === 'succeeded') {
             const status = receipt(job.result);
             const command = intent.request.runtimeCachePolicy;
-            if (command.action === 'set' && (status.limitBytes !== command.limitBytes || status.usedBytes > status.limitBytes
+            if (status.schemaVersion !== command.schemaVersion) throw new Error('Мост не подтвердил выбранный формат настроек. Проверьте сохранённый запрос.');
+            if (command.action === 'set' && (status.limitBytes !== command.limitBytes || command.schemaVersion === 1 && status.usedBytes > status.limitBytes
                 || status.revision !== command.expectedRevision && status.revision !== command.expectedRevision + 1)) {
                 throw new Error('Квитанция не подтверждает выбранный лимит. Проверьте сохранённый запрос.');
             }
+            if (command.action === 'set-cleanup' && (status.schemaVersion !== 2 || status.cleanup.enabled !== command.cleanup.enabled
+                || status.cleanup.keepPrevious !== command.cleanup.keepPrevious || status.cleanup.minAgeDays !== command.cleanup.minAgeDays
+                || status.revision !== command.expectedRevision && status.revision !== command.expectedRevision + 1)) {
+                throw new Error('Квитанция не подтверждает выбранное хранение копий. Проверьте сохранённый запрос.');
+            }
             const replaceDraft = !state.dirty || intent.request.runtimeCachePolicy.action === 'set';
-            save(undefined); publish({status, intent: undefined, error: '', ...(replaceDraft ? {draftMiB: status.limitBytes / runtimeCacheMiB, dirty: false} : {})});
+            const replaceCleanupDraft = status.schemaVersion === 2 && (!state.cleanupDirty || command.action === 'set-cleanup');
+            save(undefined); publish({status, intent: undefined, error: '', ...(replaceDraft ? {draftMiB: status.limitBytes / runtimeCacheMiB, dirty: false} : {}),
+                ...(status.schemaVersion === 2 ? {cleanupPolicy: {...status.cleanup}} : {}),
+                ...(replaceCleanupDraft && status.schemaVersion === 2 ? {cleanupDraft: {...status.cleanup}, cleanupDirty: false} : {})});
         } else {
             save(undefined); publish({intent: undefined, error: job.message || 'Настройка кэша не применена. Обновите данные и повторите действие.'});
         }
@@ -120,30 +149,42 @@ export function createRuntimeCacheSettings(ports: Ports) {
             publish({error: errorMessage(cause, 'Приём запроса не подтверждён. Проверьте сохранённый запрос с прежним ключом.')});
         } finally { if (current()) publish({busy: false}); }
     }
-    async function start(action: 'inspect' | 'set') {
+    async function start(action: 'inspect' | 'set' | 'set-cleanup') {
         const current = own(); if (!current() || state.busy || state.intent) return;
         const saved = readIntent();
-        if (saved) { publish({intent: saved, draftMiB: saved.draftMiB, dirty: saved.request.runtimeCachePolicy.action === 'set', error: 'Сначала проверьте сохранённый запрос.'}); return; }
-        const reason = action === 'set' ? ports.setReason() : ports.inspectReason();
+        if (saved) { publish({intent: saved, ...drafts(saved), error: 'Сначала проверьте сохранённый запрос.'}); return; }
+        if (action === 'set-cleanup' && !ports.cleanupSupported?.()) {publish({error: 'Обновите мост, чтобы настроить хранение копий обновления.'}); return;}
+        const reason = action === 'set-cleanup' ? ports.cleanupReason?.(state.cleanupDraft.enabled) ?? ports.setReason()
+            : action === 'set' ? ports.setReason() : ports.inspectReason();
         if (reason) { publish({error: reason}); return; }
-        if (action === 'set' && (!state.status || !validLimit(state.draftMiB))) { publish({error: 'Обновите данные и введите целое число от 1024 до 16384 МиБ.'}); return; }
+        const limitVersion = ports.targetSupported?.() ? 2 : 1;
+        if (action === 'set' && (!state.status || !validLimit(state.draftMiB, limitVersion))) {
+            publish({error: limitVersion === 2 ? 'Обновите данные и введите положительное целое число МиБ; слишком большое значение уменьшите.'
+                : 'Обновите данные и введите целое число от 1024 до 16384 МиБ.'}); return;
+        }
+        if (action === 'set-cleanup' && (!state.status || !state.cleanupPolicy || !validCleanup(state.cleanupDraft))) {
+            publish({error: 'Обновите данные: храните от 1 до 10 копий и задайте срок от 1 до 90 целых дней.'}); return;
+        }
         try {
-            const payload: RuntimeCachePolicyPayload = action === 'inspect' ? {schemaVersion: 1, action} : {
-                schemaVersion: 1, action, expectedRevision: state.status!.revision, limitBytes: state.draftMiB! * runtimeCacheMiB,
+            const payload: RuntimeCachePolicyPayload = action === 'inspect' ? {schemaVersion: ports.cleanupSupported?.() || ports.targetSupported?.() ? 2 : 1, action}
+                : action === 'set-cleanup' ? {schemaVersion: 2, action, expectedRevision: state.status!.revision, cleanup: {...state.cleanupDraft} as CleanupPolicy} : {
+                schemaVersion: limitVersion, action, expectedRevision: state.status!.revision, limitBytes: state.draftMiB! * runtimeCacheMiB,
             };
-            await send({request: {deviceId: ports.deviceId, kind: 'runtime-cache-policy', runtimeCachePolicy: payload, requestKey: createBridgeRequestKey()}, draftMiB: state.draftMiB}, false);
+            await send({request: {deviceId: ports.deviceId, kind: 'runtime-cache-policy', runtimeCachePolicy: payload, requestKey: createBridgeRequestKey()},
+                draftMiB: state.draftMiB, dirty: state.dirty, cleanupDraft: {...state.cleanupDraft}, cleanupDirty: state.cleanupDirty}, false);
         } catch (cause) { if (current()) publish({error: errorMessage(cause, 'Не удалось подготовить запрос к мосту.')}); }
     }
     return {
         activate() {
             active = true; generation++;
             const intent = readIntent();
-            state = {...initialRuntimeCacheSettings(), ...(intent ? {intent, draftMiB: intent.draftMiB, dirty: intent.request.runtimeCachePolicy.action === 'set'} : {})};
+            state = {...initialRuntimeCacheSettings(), ...(intent ? {intent, ...drafts(intent)} : {})};
             ports.onChange(state); if (intent?.jobId) void refresh();
         },
         dispose() {active = false; generation++;},
-        inspect: () => start('inspect'), set: () => start('set'), refresh,
+        inspect: () => start('inspect'), set: () => start('set'), setCleanup: () => start('set-cleanup'), refresh,
         recover: () => state.intent ? send(state.intent, true) : Promise.resolve(),
         edit(value: number | null) {if (own()() && !state.busy && !state.intent) publish({draftMiB: value, dirty: true, error: ''});},
+        editCleanup(value: Partial<CleanupDraft>) {if (own()() && !state.busy && !state.intent) publish({cleanupDraft: {...state.cleanupDraft, ...value}, cleanupDirty: true, error: ''});},
     };
 }

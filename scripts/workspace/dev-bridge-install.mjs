@@ -163,6 +163,11 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
         try{const workerLock=await bridgeFileSnapshot(path.join(state,'worker.lock')),raw=Number(workerLock.bytes?.toString('utf8').trim()),marker=await json(path.join(state,'worker-version.json'));if(Number.isSafeInteger(raw)&&raw>1&&raw!==process.pid&&marker.pid===raw&&marker.version===old.version&&marker.buildId===JSON.parse(original.build.bytes).buildId&&await ownsRunningWorker(raw,installedEntry(install))){await assertBridgeSnapshot(workerLock);original.worker=raw;}}catch{/* Optional proof cannot be inferred from an absent or damaged worker marker. */}
         prepared=await prepare(staged);prepareConfirmed=true;
         await assertBridgeSnapshot(settings.config.snapshot);await assertBridgeSnapshot(launcherBefore);await assertBridgeSnapshot(settings.marker);
+        if(await exists(path.join(staged,'dist/runtime-use.json'))){
+            await fs.writeFile(path.join(staged,'.neurocenter-update-owner.json'),JSON.stringify({schemaVersion:1,installRoot:install})+'\n',{flag:'wx',mode:0o600,flush:true});
+            await fs.writeFile(path.join(staged,'installation.json'),JSON.stringify({schemaVersion:1,siteUrl:settings.siteUrl,apiUrl:settings.apiUrl})+'\n',{flag:'wx',mode:0o600,flush:true});
+            await createRequire(import.meta.url)(path.join(staged,'dist/shared/bridge-update-cleanup.cjs')).writeInstalledRuntimeReceipt({installRoot:install,runtimeRoot:staged});
+        }
         publication=await fs.lstat(staged);const previousPath=path.join(temporary,'previous');await fs.rename(install,previousPath);previous=previousPath;
         try{await fs.rename(staged,install);}catch(error){await fs.rename(previous,install);previous=undefined;throw error;}
         published=true;rollbackNeeded=true;resumeInstall=install;const located=await fs.lstat(install);
@@ -188,6 +193,13 @@ export async function updateInstalledDevBridge({root,archive,version,buildId,tar
         if(restart)await ready(start(install,settings.environment),state,version,buildId);
         rollbackNeeded=false;
         const retained=path.join(path.dirname(install),'.neurocenter-previous-'+path.basename(temporary));await fs.rename(previous,retained);previous=undefined;
+        try{
+            const helper=path.join(install,'dist/shared/bridge-update-cleanup.cjs');
+            if(await exists(helper)){
+                await createRequire(import.meta.url)(helper).writeSuccessfulBackupReceipt({installRoot:install,backupRoot:retained});
+                await cli(run,install,['--cleanup-updates'],settings.environment);
+            }
+        }catch{output?.warning?.('Очистка обновлений отложена; установленный мост и предыдущая версия сохранены.');}
         output?.success?.('Локальный мост обновлён; площадка, подключение и настройки сохранены.');
         return{updated:true,installDir:install,version,buildId,target,workerRestarted:restart,previousDir:retained};
     }catch(cause){

@@ -72,6 +72,33 @@ describe.skipIf(!adminUrl).sequential('Owner runtime cache policy through the ac
         });
         await expect(f.service.authorize(f.device,job.id,job.lease)).rejects.toMatchObject({status:cause==='role'?403:409});
     });
+    it.each(['inspect','set'] as const)('a fresh cleanup-only report preserves inspection but fences a target write: %s',async action=>{
+        const capabilities=[...f.device.report.capabilities as string[],'runtime-cache-target-v2','bridge-update-cleanup-v1'];
+        const device={...f.device,report:{...f.device.report,capabilities}};
+        await f.observer.query('UPDATE bridge_devices SET report=$2 WHERE id=$1',[device.id,device.report]);
+        const payload=action==='inspect'?{schemaVersion:2 as const,action}:{schemaVersion:2 as const,action,expectedRevision:0,limitBytes:1024**2};
+        const queued=await f.service.create(f.actor,f.input(payload)),job=await f.service.claim(device);expect(job?.id).toBe(queued.id);
+        vi.mocked(requireFeaturesEnabled).mockImplementationOnce(async()=>{
+            await f.observer.query("UPDATE bridge_devices SET report=jsonb_set(report,'{capabilities}',$2::jsonb) WHERE id=$1",[device.id,JSON.stringify(capabilities.filter(value=>value!=='runtime-cache-target-v2'))]);
+        });
+        const authorized=f.service.authorize(device,job!.id,job!.lease);
+        if(action==='inspect')await expect(authorized).resolves.toMatchObject({ok:true,projectId:null});
+        else await expect(authorized).rejects.toMatchObject({status:409});
+        expect(await f.row(job!.id)).toMatchObject({state:'running',result:null});
+    });
+    it('a soft target smaller than usage completes and replays the same receipt with the feature off',async()=>{
+        const device={...f.device,report:{...f.device.report,capabilities:[...f.device.report.capabilities as string[],'runtime-cache-target-v2']}};
+        await f.observer.query('UPDATE bridge_devices SET report=$2 WHERE id=$1',[device.id,device.report]);
+        const queued=await f.service.create(f.actor,f.input({schemaVersion:2,action:'set',expectedRevision:0,limitBytes:1024**2})),job=await f.service.claim(device);expect(job?.id).toBe(queued.id);
+        const {RUNTIME_CACHE_TARGET_LIMITS:bounds}=await import('../../shared/runtime-cache-policy.cjs');
+        const result={schemaVersion:2,revision:1,limitBytes:1024**2,usedBytes:2*1024**2,defaultBytes:bounds.defaultBytes,minBytes:bounds.minBytes,maxBytes:bounds.maxBytes,
+            observedAt:new Date().toISOString(),cleanup:{enabled:true,keepPrevious:2,minAgeDays:7}};
+        const input=completion(job!.lease,result);
+        await expect(completeDeviceJob(f.pool,device.id,job!.id,input)).resolves.toMatchObject({repeated:false});
+        f.enabled(false);await expect(completeDeviceJob(f.pool,device.id,job!.id,input)).resolves.toMatchObject({repeated:true});
+        expect(await f.row(job!.id)).toMatchObject({state:'succeeded',result});
+        expect((await f.observer.query('SELECT operation_id FROM operations')).rows).toHaveLength(1);
+    });
     it('foreign devices, project-shaped input, observers and old bridge capabilities cannot configure this cache',async()=>{
         await expect(f.service.create({...f.actor,email:'other@example.test'},f.input())).rejects.toMatchObject({status:403});
         await expect(f.service.create(f.actor,{...f.input(),projectId:'not-a-project'})).rejects.toMatchObject({status:400});

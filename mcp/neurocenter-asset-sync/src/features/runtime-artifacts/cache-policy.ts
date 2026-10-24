@@ -4,7 +4,8 @@ import type {Completion} from '../../bridge/completions.js';
 import {syncDirectory} from '../../bridge/atomic-file.js';
 import {readPrivateConfiguration,writePrivateConfiguration} from '../local-configuration/private-store.js';
 import {withRuntimeCacheLock,measureRuntimeCache} from './cache.js';
-import {RUNTIME_CACHE_POLICY_LIMITS,normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult,normalizeRuntimeCacheReceipt,readRuntimeCachePolicy,runtimeCachePolicyKey,runtimeCacheReceiptKey,type RuntimeCachePolicyReceipt} from './policy-store.js';
+import {RUNTIME_CACHE_POLICY_LIMITS,RUNTIME_CACHE_TARGET_LIMITS,normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult,normalizeRuntimeCacheReceipt,readRuntimeCachePolicy,runtimeCachePolicyKey,runtimeCacheReceiptKey,type RuntimeCachePolicyReceipt} from './policy-store.js';
+import {updateCleanup} from './update-cleanup.js';
 
 interface PolicyJob {id:string;lease:string;payload:unknown}
 const pendingIndex='runtime-cache-policy-pending';
@@ -45,11 +46,14 @@ export async function runRuntimeCachePolicyJob(job:PolicyJob,deviceId:string,aut
         await check();
         const currentRevision=policy?.revision??0,currentLimit=policy?.limitBytes??RUNTIME_CACHE_POLICY_LIMITS.defaultBytes;
         const usedBytes=await measureRuntimeCache(root);
-        if(payload.action==='set'&&payload.expectedRevision!==currentRevision)throw new Error('Лимит изменён в другом окне. Обновите состояние и проверьте введённое значение.');
-        if(payload.action==='set'&&payload.limitBytes<usedBytes)throw new Error('Новый лимит меньше занятого объёма. Комплекты сохранены; увеличьте значение.');
-        const changed=payload.action==='set'&&payload.limitBytes!==currentLimit;
-        const result=normalizeRuntimeCachePolicyResult({schemaVersion:1,revision:currentRevision+(changed?1:0),limitBytes:payload.action==='set'?payload.limitBytes:currentLimit,usedBytes,
-            defaultBytes:RUNTIME_CACHE_POLICY_LIMITS.defaultBytes,minBytes:RUNTIME_CACHE_POLICY_LIMITS.minBytes,maxBytes:RUNTIME_CACHE_POLICY_LIMITS.maxBytes,observedAt:new Date().toISOString()});
+        if(payload.action!=='inspect'&&payload.expectedRevision!==currentRevision)throw new Error('Настройки изменены в другом окне. Обновите состояние и проверьте введённое значение.');
+        if(payload.action==='set'&&payload.schemaVersion===1&&payload.limitBytes<usedBytes)throw new Error('Новый лимит меньше занятого объёма. Комплекты сохранены; обновите мост для целевого объёма кэша.');
+        const cleanup=policy?.cleanup??updateCleanup.normalizeCleanupPolicy();
+        const changed=payload.action==='set'&&payload.limitBytes!==currentLimit||payload.action==='set-cleanup'&&JSON.stringify(payload.cleanup)!==JSON.stringify(cleanup);
+        const bounds=payload.schemaVersion===2?RUNTIME_CACHE_TARGET_LIMITS:RUNTIME_CACHE_POLICY_LIMITS;
+        const result=normalizeRuntimeCachePolicyResult({schemaVersion:payload.schemaVersion,revision:currentRevision+(changed?1:0),limitBytes:payload.action==='set'?payload.limitBytes:currentLimit,usedBytes,
+            defaultBytes:bounds.defaultBytes,minBytes:bounds.minBytes,maxBytes:bounds.maxBytes,observedAt:new Date().toISOString(),
+            ...(payload.schemaVersion===2?{cleanup:payload.action==='set-cleanup'?payload.cleanup:cleanup}:{})});
         const receipt=normalizeRuntimeCacheReceipt({schemaVersion:1,jobId:job.id,lease:job.lease,deviceId,payloadHash,result});
         const pointers=await pending();
         if(pointers.some(item=>item.jobId===job.id))throw new Error('Восстановите подтверждение предыдущей настройки перед продолжением.');
@@ -58,7 +62,8 @@ export async function runRuntimeCachePolicyJob(job:PolicyJob,deviceId:string,aut
         await writeState(pendingIndex,[...pointers,receipt]);
         if(changed){
             let admitted=false;
-            try{await save(runtimeCachePolicyKey,{schemaVersion:1,revision:result.revision,limitBytes:result.limitBytes,lastChange:receipt},policy,async()=>{await check();admitted=true;});}
+            try{await save(runtimeCachePolicyKey,{schemaVersion:1,revision:result.revision,limitBytes:result.limitBytes,lastChange:receipt,
+                ...(result.schemaVersion===2?{cleanup:result.cleanup}:policy?.cleanup?{cleanup:policy.cleanup}:{})},policy,async()=>{await check();admitted=true;});}
             catch(error){
                 // Ошибка fsync/ACK после rename не разрешает объявить настройку неизменённой.
                 if(admitted)throw committed();
@@ -66,7 +71,7 @@ export async function runRuntimeCachePolicyJob(job:PolicyJob,deviceId:string,aut
             }
         }
         try{await save(runtimeCacheReceiptKey(job.id),receipt,undefined,changed?identity:check);}catch(error){if(changed)throw committed();throw error;}
-        return {state:'succeeded' as const,message:payload.action==='set'?'Лимит кэша подтверждён на компьютере.':'Состояние кэша получено с компьютера.',result:{...result}};
+        return {state:'succeeded' as const,message:payload.action==='set'?'Лимит кэша подтверждён на компьютере.':payload.action==='set-cleanup'?'Настройки очистки подтверждены на компьютере.':'Состояние кэша получено с компьютера.',result:{...result}};
     });
 }
 

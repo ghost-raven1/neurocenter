@@ -136,6 +136,10 @@ __BRIDGE_CONTEXT__
     }
     Invoke-BridgeContext assert | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Конфигурация OpenCode изменилась до замены MCP.' }
+    if (Test-Path -LiteralPath (Join-Path $Package 'dist/runtime-use.json')) {
+        & $Node -e 'const fs=require("node:fs"),path=require("node:path");const install=path.join(fs.realpathSync(path.dirname(process.argv[2])),path.basename(process.argv[2]));const root=process.argv[1];fs.writeFileSync(path.join(root,".neurocenter-update-owner.json"),JSON.stringify({schemaVersion:1,installRoot:install})+"\n",{flag:"wx",mode:0o600,flush:true});fs.writeFileSync(path.join(root,"installation.json"),JSON.stringify({schemaVersion:1,siteUrl:process.argv[3],apiUrl:process.argv[4]})+"\n",{flag:"wx",mode:0o600,flush:true});require(path.join(root,"dist/shared/bridge-update-cleanup.cjs")).writeInstalledRuntimeReceipt({installRoot:install,runtimeRoot:root}).catch(error=>{console.error(error.message);process.exitCode=1;});' $Package $InstallDir $HubUrl $ApiUrl
+        if ($LASTEXITCODE -ne 0) { throw 'Не удалось сохранить принадлежность новой установки. Прежняя версия сохранена.' }
+    }
     if (Test-Path -LiteralPath $InstallDir) {
         Move-Item -LiteralPath $InstallDir -Destination $Previous
     }
@@ -177,10 +181,20 @@ __BRIDGE_CONTEXT__
     & $Node (Join-Path $InstallDir 'dist/bridge-cli.js') --install-command | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Мост установлен, но короткая команда не зарегистрирована. Проверьте права в ~/.local/bin и повторите установку.' }
     Write-Host '  Команда подключения готова: ~/.local/bin/neurocenter-bridge.cmd connect --open'
-    if ($LocalMode) { Write-Host 'Мост установлен из локального архива. Подключение выполните отдельно на странице «Начало работы».'; return }
+    function Complete-UpdateCleanup {
+        if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'dist/shared/bridge-update-cleanup.cjs'))) { return }
+        try {
+            if (Test-Path -LiteralPath $Previous) {
+                & $Node -e 'const path=require("node:path"),root=process.argv[1];require(path.join(root,"dist/shared/bridge-update-cleanup.cjs")).writeSuccessfulBackupReceipt({installRoot:root,backupRoot:process.argv[2]}).catch(()=>{console.error("Очистка обновлений отложена; предыдущая версия сохранена.");});' $InstallDir $Previous
+            }
+            Invoke-BridgeContext connect $Node (Join-Path $InstallDir 'dist/index.js') --cleanup-updates | Out-Null
+        } catch { Write-Warning 'Очистка обновлений отложена; сохранённые копии доступны.' }
+    }
+    if ($LocalMode) { Complete-UpdateCleanup; Write-Host 'Мост установлен из локального архива. Подключение выполните отдельно на странице «Начало работы».'; return }
     Step 4 'Проверяем подключение к Нейроцентру'
     Invoke-BridgeContext connect $Node (Join-Path $InstallDir 'dist/index.js') $(if ($Reconnect) { '--reconnect-open' } else { '--connect-open' })
     if ($LASTEXITCODE -ne 0) { throw 'Подключение не завершено. Повторите установку после восстановления связи или завершения текущего задания.' }
+    Complete-UpdateCleanup
     Write-Host 'Если открылась страница подключения, подтвердите компьютер. Затем выберите папку на странице «Проекты».'
     Write-Host 'Перезапустите OpenCode для доступа к MCP-инструментам.'
 } finally {
