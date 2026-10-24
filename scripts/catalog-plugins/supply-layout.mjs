@@ -13,13 +13,15 @@ export async function supplyFile(directory,relative){
 }
 
 /** Verify opaque bytes with bounded memory; extension never implies UTF-8 or JSON. */
-export async function inspectSupplyBytes(directory,relative,sha256,maximum,expectedBytes){
+export async function inspectSupplyBytes(directory,relative,sha256,maximum,expectedBytes,signal){
+    signal?.throwIfAborted();
     const filename=await supplyFile(directory,relative),handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
     try{
         const before=await handle.stat();if(!before.isFile()||before.nlink!==1||before.size<1||before.size>maximum||expectedBytes!==undefined&&before.size!==expectedBytes)throw new Error('Source/recipe snapshot type/bytes не совпали или превышают предел поставки.');
         const hash=createHash('sha256');let bytes=0;
-        for await(const chunk of handle.createReadStream({autoClose:false})){bytes+=chunk.length;if(bytes>before.size)throw new Error('Source/recipe snapshot вырос при чтении.');hash.update(chunk);}
+        for await(const chunk of handle.createReadStream({autoClose:false,signal})){signal?.throwIfAborted();bytes+=chunk.length;if(bytes>before.size)throw new Error('Source/recipe snapshot вырос при чтении.');hash.update(chunk);}
         const after=await handle.stat(),named=await fs.lstat(filename);
+        signal?.throwIfAborted();
         if(bytes!==before.size||hash.digest('hex')!==sha256||before.size!==after.size||before.mtimeMs!==after.mtimeMs||before.ino!==named.ino||before.dev!==named.dev||named.isSymbolicLink())throw new Error('Source/recipe snapshot SHA/bytes изменились.');
         return {archivePath:filename,sha256,bytes,filename:path.posix.basename(relative)};
     }finally{await handle.close();}

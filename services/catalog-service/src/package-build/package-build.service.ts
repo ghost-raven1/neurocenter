@@ -9,8 +9,7 @@ import { inspectGithubReleaseAsset, inspectGithubRepository } from '../../../sha
 import { ConflictException, ForbiddenException, Injectable, Optional, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, BadRequestException, Logger } from '@nestjs/common';
 import { createRequire } from 'node:module';
 import type {ToolAsset,SkillAsset} from '@neurocenter/asset-contract';
-import {validateAsset,toToolPublication} from '@neurocenter/asset-contract';
-import {createHash} from 'node:crypto';
+import {validateAsset} from '@neurocenter/asset-contract';
 import {AssetSourcesService} from '../asset-sources/asset-sources.service';
 import {authorizeImportActor} from '../asset-sources/import-worker';
 import fs from 'node:fs/promises';
@@ -21,7 +20,6 @@ import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
 import { createPool } from '../database/pool';
 import { notifyDeviceOperations } from '../devices/device-operations';
-import { PluginRepository } from '../publication/plugin-repository';
 import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview} from './publication-target';
 import {publishBuiltTool} from './publish-built-tool';
 import {configureBuildPublicationTransaction,publicationDeadlineMessage} from './publication-deadline';
@@ -48,7 +46,8 @@ import {PackageAgentService} from './package-agent.service';
 import {buildVerifiedAttempts} from './build-attempts';
 import {assertRuntimeCandidate,verifyBuildRuntime} from './build-runtime';
 import {isSourceEntrypoint} from '../../../shared/source-entrypoint.cjs';
-import {withVerifiedToolImport} from './verify-imported-tool';
+import {withToolImportDeadline} from './tool-import-deadline';
+import {importToolAsset} from './import-tool-asset';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -255,30 +254,20 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     async exportSupply(actor:IAccessActor,id:string,signal:AbortSignal){const plan=await this.checkSupply(actor,id);signal.throwIfAborted();return createToolSupply(plan,this.sources.blobs,signal);}
 
     /** Импортирует тот же envelope и только проверяемые серверные SHA-файлы. */
-    async importAsset(actor:IAccessActor,raw:unknown){
+    async importAsset(actor:IAccessActor,raw:unknown,requestSignal?:AbortSignal){return withToolImportDeadline(async signal=>{
         await this.requireMain(actor);
+        signal.throwIfAborted();
         if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(key=>!['requestKey','asset'].includes(key)))throw new BadRequestException('Импорт принимает только requestKey и asset.');
         const input=raw as {requestKey:string;asset:unknown};if(!validId(input.requestKey))throw new BadRequestException('Нужен UUID ключа импорта.');
         let checked:ReturnType<typeof validateAsset>;try{checked=validateAsset(input.asset);}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный source asset.');}if(!['mcp','plugin','skill'].includes(checked.kind))throw new BadRequestException('Нужен MCP/plugin/skill asset.');
-        await requireFeaturesEnabled(buildFeatures({kind:checked.kind as 'mcp'|'plugin'|'skill',source:checked.source}));
+        await requireFeaturesEnabled(buildFeatures({kind:checked.kind as 'mcp'|'plugin'|'skill',source:checked.source}),undefined,undefined,signal);
         if(checked.dependencies?.length)throw new BadRequestException('Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.');
-        if(checked.kind==='skill')return this.importSkillAsset(actor,checked as SkillAsset,input.requestKey);
-        const asset=checked as ToolAsset,files=asset.delivery.artifacts.map(({descriptor})=>({archivePath:path.join(runtimeArtifactDirectory(),descriptor.sha256+'.tar.gz'),sha256:descriptor.sha256,bytes:descriptor.compressedBytes,filename:descriptor.sha256+'.tar.gz',target:descriptor.target}));
-        for(const [index,file]of files.entries()){
-            try{await this.artifacts.importArchive(file.archivePath,asset.delivery.artifacts[index].descriptor);}catch{throw new ConflictException('Проверенный архив поставки отсутствует или повреждён. Загрузите исходную поставку повторно.');}
-        }
-        const prepared=await this.sources.prepareLocal(asset,files,input.requestKey),bytes=createHash('sha256').update('neurocenter-source-asset\0'+asset.id+'\0'+asset.version).digest().subarray(0,16);
-        bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=bytes.toString('hex'),publicationKey=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-        return withVerifiedToolImport(prepared,this.sources.blobs,async runtimeVerification=>{
-            await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures({kind:asset.kind,source:asset.source}));
-            let result:unknown;
-            const saved=await new PluginRepository(this.pool).create({...toToolPublication(asset),publicationKey} as IAiPluginCreate,actor.email,async(client,card)=>{
-                await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures({kind:asset.kind,source:asset.source}));
-                const source=await this.sources.recordLocal(client,prepared,card,actor.email);result={catalogId:card.id,name:card.name,version:card.version,...source,runtimeVerification};
-            });
-            return result||{catalogId:saved.id,name:saved.name,version:saved.version,runtimeVerification};
-        });
-    }
+        if(checked.kind==='skill')return this.importSkillAsset(actor,checked as SkillAsset,input.requestKey,signal);
+        const asset=checked as ToolAsset;
+        return importToolAsset(this.pool,this.artifacts,this.sources,asset,input.requestKey,actor.email,async()=>{
+            signal.throwIfAborted();await this.requireMain(actor);await requireFeaturesEnabled(buildFeatures({kind:asset.kind,source:asset.source}),undefined,undefined,signal);signal.throwIfAborted();
+        },signal);
+    },requestSignal);}
 
     async publicationTarget(actor:IAccessActor,kind:unknown,catalogId:unknown){await this.requireMain(actor);const result=await publicationTargetPreview(this.pool,kind,catalogId);await this.requireMain(actor);return result;}
     async create(actor: IAccessActor, raw: unknown) {
@@ -526,8 +515,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         });
         await this.notifySkillPublication();
     }
-    private async importSkillAsset(actor:IAccessActor,asset:SkillAsset,requestKey:string){
-        return importBuiltSkill(this.pool,this.sources,asset,requestKey,actor.email,async()=>{await this.requireMain(actor);await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures('skill')]);},()=>this.notifySkillPublication());
+    private async importSkillAsset(actor:IAccessActor,asset:SkillAsset,requestKey:string,signal?:AbortSignal){
+        return importBuiltSkill(this.pool,this.sources,asset,requestKey,actor.email,async()=>{signal?.throwIfAborted();await this.requireMain(actor);await requireFeaturesEnabled(['tool_builds',...requiredAssetFeatures('skill')],undefined,undefined,signal);signal?.throwIfAborted();},()=>this.notifySkillPublication());
     }
     private async notifySkillPublication(){
         await fetch((process.env.API_GATEWAY_URL||'http://localhost:4000')+'/internal/events',{

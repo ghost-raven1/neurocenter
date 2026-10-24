@@ -13,7 +13,7 @@ import {runtimeReportFixture} from './package-build-runtime.fixture';
 const mocks=vi.hoisted(()=>({verify:vi.fn(),reserve:vi.fn(),release:vi.fn()}));
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:mocks.reserve}));
 vi.mock('../src/package-build/build-runtime',async()=>({...await vi.importActual('../src/package-build/build-runtime'),verifyBuildRuntime:mocks.verify}));
-import {withVerifiedToolImport} from '../src/package-build/verify-imported-tool';
+import {ToolImportCleanupPendingError,withVerifiedToolImport} from '../src/package-build/verify-imported-tool';
 
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex'),roots:string[]=[];
 beforeEach(()=>{vi.clearAllMocks();mocks.reserve.mockResolvedValue(mocks.release);});
@@ -61,5 +61,15 @@ describe('Imported tool uses the same byte-pinned runtime gate before publicatio
         const f=await fixture(),publish=vi.fn();await fs.appendFile(path.join(f.root,f.files[0].sha256+'.blob'),'modified');
         await expect(withVerifiedToolImport(f.prepared,f.blobs,publish)).rejects.toThrow();
         expect(mocks.verify).not.toHaveBeenCalled();expect(publish).not.toHaveBeenCalled();expect(mocks.release).toHaveBeenCalledOnce();
+    });
+    it('retains its stage and capacity when verifier process cleanup could not be confirmed',async()=>{
+        const f=await fixture(),publish=vi.fn();let stage='';
+        mocks.verify.mockImplementation(async(manifest:string,identity:string)=>{
+            stage=path.dirname(manifest);roots.push(stage);
+            return {...await runtimeReportFixture(manifest,identity,false),diagnostics:[{code:'cleanup-failed',message:'Owned verifier reap was not confirmed'}]};
+        });
+        await expect(withVerifiedToolImport(f.prepared,f.blobs,publish)).rejects.toBeInstanceOf(ToolImportCleanupPendingError);
+        expect(publish).not.toHaveBeenCalled();expect(mocks.release).not.toHaveBeenCalled();
+        expect((await fs.stat(stage)).isDirectory()).toBe(true);expect(await fs.readFile(path.join(stage,'asset.json'),'utf8')).toBe(serializeAsset(f.prepared.asset));
     });
 });

@@ -6,4 +6,4 @@ export function portablePath(value:unknown):boolean;
 export function normalizeRuntimeArtifacts(value:unknown):RuntimeArtifact[];
 /** Плагин допускает только импортируемую JS-точку входа. */
 export function validateRuntimeArtifactEntrypoints(kind:string,artifacts:RuntimeArtifact[]):void;
-export function inspectRuntimeArchive(filename:string,descriptor:RuntimeArtifact,options?:{destination?:string}):Promise<RuntimeArtifactEntry[]>;
+export function inspectRuntimeArchive(filename:string,descriptor:RuntimeArtifact,options?:{destination?:string;signal?:AbortSignal}):Promise<RuntimeArtifactEntry[]>;

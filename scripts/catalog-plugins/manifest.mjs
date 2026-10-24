@@ -18,16 +18,18 @@ export function publicationKey(key,version){
 }
 
 /** Старый ready/tools manifest не принимается; файл содержит ровно один source envelope. */
-export async function readyManifest(filename){
+export async function readyManifest(filename,{signal}={}){
+    signal?.throwIfAborted();
     const absolute=path.resolve(filename),handle=await open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
     let asset;
     try{const info=await handle.stat();if(!info.isFile()||info.nlink!==1||info.size<1||info.size>16*1024*1024)throw new Error('Нужен обычный asset.json до 16 МиБ.');const bytes=await handle.readFile(),after=await handle.stat();if(bytes.length!==info.size||after.mtimeMs!==info.mtimeMs)throw new Error('Asset изменился при чтении.');asset=validateAsset(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)));}
     finally{await handle.close();}
+    signal?.throwIfAborted();
     if(!['mcp','plugin','skill'].includes(asset.kind))throw new Error('Нужен MCP/plugin/skill source asset.');
     const directory=path.dirname(absolute);assertSupplyLayout(asset);const retainedFiles=[];
-    const sourceSnapshot=asset.source.type==='archive'?await inspectSupplyBytes(directory,toolSourcePath(asset.source.sha256),asset.source.sha256,TOOL_SOURCE_MAX_BYTES,asset.source.bytes):undefined;
+    const sourceSnapshot=asset.source.type==='archive'?await inspectSupplyBytes(directory,toolSourcePath(asset.source.sha256),asset.source.sha256,TOOL_SOURCE_MAX_BYTES,asset.source.bytes,signal):undefined;
     if(sourceSnapshot)retainedFiles.push(sourceSnapshot);
-    const recipe=asset.recipe?await inspectSupplyBytes(directory,asset.recipe.path,asset.recipe.sha256,1024*1024):undefined;if(recipe)retainedFiles.push(recipe);
+    const recipe=asset.recipe?await inspectSupplyBytes(directory,asset.recipe.path,asset.recipe.sha256,1024*1024,undefined,signal):undefined;if(recipe)retainedFiles.push(recipe);
     if(asset.kind==='skill'){
         if(asset.dependencies?.length||asset.recipe)throw new Error('Локальная публикация принимает самостоятельный inline skill без зависимостей или внешнего рецепта.');
         const publication=toSkillCreate(asset);
@@ -40,9 +42,10 @@ export async function readyManifest(filename){
     const {assertLocalUiInventory}=require('./dist/publication/publication-runtime.js');
     const publication=validatePublication(toToolPublication(asset)),artifacts=[];
     for(const supplied of asset.delivery.artifacts){
+        signal?.throwIfAborted();
         const [descriptor]=normalizeRuntimeArtifacts([supplied.descriptor]);
         const archivePath=await supplyFile(directory,toolRuntimePath(descriptor.sha256));
-        const entries=await inspectRuntimeArchive(archivePath,descriptor);assertLocalUiInventory(publication.config,publication.kind,entries);
+        const entries=await inspectRuntimeArchive(archivePath,descriptor,{signal});signal?.throwIfAborted();assertLocalUiInventory(publication.config,publication.kind,entries);
         artifacts.push({archivePath,descriptor});
     }
     return [{asset,filename:absolute,key:asset.id,publication:{...publication,publicationKey:publicationKey(asset.id,asset.version)},artifacts,retainedFiles,...(sourceSnapshot?{sourceSnapshotPath:sourceSnapshot.archivePath}:{})}];

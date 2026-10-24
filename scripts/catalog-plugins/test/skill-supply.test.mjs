@@ -79,7 +79,7 @@ test('Catalog container layout validates and dry-runs Skill supply without any S
     await fs.cp(path.join(repository,'services/shared'),shared,{recursive:true,verbatimSymlinks:true,filter:source=>path.basename(source)!=='node_modules'});
     await fs.symlink(path.join(app,'node_modules'),path.join(shared,'node_modules'));
     await fs.symlink(app,path.join(tools,'services/catalog-service'));await fs.symlink(shared,path.join(tools,'services/shared'));await fs.symlink(path.join(app,'node_modules'),path.join(tools,'node_modules'));
-    for(const file of ['manifest.mjs','supply-layout.mjs','publish.mjs'])await fs.copyFile(new URL('../'+file,import.meta.url),path.join(scripts,file));
+    for(const file of ['manifest.mjs','supply-layout.mjs','publish.mjs','tool-import-request.mjs'])await fs.copyFile(new URL('../'+file,import.meta.url),path.join(scripts,file));
     await assert.rejects(fs.access(path.join(tools,'services/skills-service')),{code:'ENOENT'});await assert.rejects(fs.access(path.join(app,'dist')),{code:'ENOENT'});
     const entry=`import {pathToFileURL} from 'node:url';
         globalThis.fetch=()=>{throw Error('Container validation must stay offline');};

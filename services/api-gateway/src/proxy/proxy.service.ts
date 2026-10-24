@@ -23,6 +23,8 @@ import {awaitEmbedding} from './embedding-deadline';
 import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
 import {forwardModelInference,modelInferenceRoute} from './model-inference-forward';
 import {publicAppearance} from '../features/public-appearance';
+import {forwardToolImport} from './tool-import-forward';
+import {TOOL_IMPORT_ROUTE} from '../../../shared/tool-import-deadline.cjs';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -163,7 +165,8 @@ export class ProxyService {
                 params: req.query,
                 data: req.body,
             };
-            const upstream = inference?await forwardModelInference(this.http,upstreamRequest,req,res):await this.http.request(upstreamRequest);
+            const upstream = inference?await forwardModelInference(this.http,upstreamRequest,req,res)
+                :method==='POST'&&supplyPath===TOOL_IMPORT_ROUTE?await forwardToolImport(this.http,upstreamRequest,req,res):await this.http.request(upstreamRequest);
             if(!upstream)return;
 
             res.status(upstream.status);

@@ -27,7 +27,12 @@ export class PackageBuildController {
     @Get('publication-target') publicationTarget(@Req() req:Request,@Query('kind') kind:string,@Query('catalogId') id:string){return this.builds.publicationTarget(this.actor(req),kind,id);}
     @Delete('requests/:requestKey') cancelRequest(@Req() req:Request,@Param('requestKey') key:string){return this.builds.cancelRequest(this.actor(req),key);}
     @Post('archive') archive(@Req() req: Request, @Body() input: unknown) {return this.builds.archiveSource(this.actor(req), input);}
-    @Post('imports') importAsset(@Req() req:Request,@Body() input:unknown){return this.builds.importAsset(this.actor(req),input);}
+    @Post('imports') async importAsset(@Req() req:Request,@Body() input:unknown,@Res({passthrough:true}) res:Response){
+        const abort=new AbortController(),disconnected=()=>{if(!res.writableEnded)abort.abort();};
+        req.on('aborted',disconnected);res.on('close',disconnected);
+        try{if(req.aborted||res.destroyed)abort.abort();return await this.builds.importAsset(this.actor(req),input,abort.signal);}
+        finally{req.off('aborted',disconnected);res.off('close',disconnected);}
+    }
     @Get(':id/asset') async asset(@Req() req:Request,@Param('id') id:string,@Res() res:Response){const asset=await this.builds.exportAsset(this.actor(req),id);res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');res.send(serializeAsset(asset));}
     @Head(':id/supply') async supplyReady(@Req() req:Request,@Param('id') id:string,@Res() res:Response){try{await this.builds.checkSupply(this.actor(req),id);res.setHeader('Cache-Control','no-store');res.status(204).end();}catch(error){supplyFailure(res,error);}}
     @Get(':id/supply') async supply(@Req() req:Request,@Param('id') id:string,@Res() res:Response){const actor=this.actor(req);await sendToolSupply(req,res,()=>this.builds.requireMain(actor),signal=>this.builds.exportSupply(actor,id,signal));}

@@ -5,12 +5,13 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
+export const PREPARED_SOURCE_MAX_FILES=128;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'package.json','package-lock.json',
     'scripts/catalog-plugins/archive-source.mjs','scripts/catalog-plugins/build.mjs','scripts/catalog-plugins/generic.mjs',
     'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/payload-description.mjs','scripts/catalog-plugins/prepare.mjs',
-    'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/recipe-schema.mjs',
+    'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/tool-import-request.mjs','scripts/catalog-plugins/recipe-schema.mjs',
     'scripts/catalog-plugins/release-inspection.mjs','scripts/catalog-plugins/repository-source.mjs',
     'scripts/catalog-plugins/python-runtime.mjs','scripts/catalog-plugins/python-dependencies.mjs','scripts/catalog-plugins/python-trusted-archive.mjs','scripts/catalog-plugins/python-inspection.mjs',
     'scripts/catalog-plugins/retain-supply.mjs','scripts/catalog-plugins/supply-layout.mjs',
@@ -34,11 +35,12 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
         'rag-ui-contract.cjs','repository-source.cjs','runtime-artifacts.cjs','source-candidates.cjs','source-entrypoint.cjs','tool-runtime-source.cjs']
         .map(name=>'services/shared/'+name),
     ...['dependency-pins.d.cts','rag-ui-contract.d.cts','runtime-artifacts.d.cts','source-entrypoint.d.cts'].map(name=>'services/shared/'+name),
+    ...['project-learning','project-learning-memory-sync','project-learning-quirks'].flatMap(name=>['cjs','d.cts'].map(extension=>'services/shared/'+name+'.'+extension)),
     'services/catalog-service/package.json','services/catalog-service/package-lock.json','services/catalog-service/tsconfig.json',
     'services/catalog-service/tsconfig.build.json','services/catalog-service/src/catalog/dto.ts',
     'services/catalog-service/src/devices/mcp-config-schema.ts','services/catalog-service/src/publication/publication-runtime.ts',
     'services/catalog-service/src/publication/publication-validation.ts',
-    'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/skill-source.mjs',
+    'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/tool-import-deadline.cjs','services/shared/skill-source.mjs',
     'services/shared/python-runtime-pins.cjs','services/shared/python-runtime-pins.d.cts','services/shared/python-source-plan.cjs','services/shared/python-source-plan.d.cts',
 ].sort());
 const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
@@ -46,7 +48,7 @@ const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].
 /** Retain the actual UTF-8 source bytes, with the same bounded public-file budget as local source snapshots. */
 export async function capturePreparedSource(repositoryRoot=root){
     const directory=await fs.realpath(repositoryRoot),files=[],seen=[];let total=0;
-    if(PREPARED_SOURCE_INPUTS.length>100)throw new Error('Prepared source snapshot превышает 100 публичных файлов.');
+    if(PREPARED_SOURCE_INPUTS.length>PREPARED_SOURCE_MAX_FILES)throw new Error(`Prepared source snapshot превышает ${PREPARED_SOURCE_MAX_FILES} публичных файлов.`);
     for(const relative of PREPARED_SOURCE_INPUTS){
         let current=directory;
         for(const segment of relative.split('/').slice(0,-1)){current=path.join(current,segment);const info=await fs.lstat(current);if(!info.isDirectory()||info.isSymbolicLink())throw new Error('Prepared source snapshot содержит ссылку или специальный путь.');}

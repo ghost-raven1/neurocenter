@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { readyManifest } from './manifest.mjs';
+import {TOOL_IMPORT_ROUTE} from '../../services/shared/tool-import-deadline.cjs';
+import {requestToolImport} from './tool-import-request.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const catalog = path.join(root, 'services/catalog-service');
@@ -53,8 +55,11 @@ async function operatorEnvironment() {
 async function administrativeSession(options, env) {
     let cookie = options.cookieFile ? (await readFile(options.cookieFile, 'utf8')).trim().replace(/^Cookie:\s*/i, '') : '';
     if (cookie.length > 8192 || /[\x00-\x1f\x7f]/.test(cookie)) { throw new Error('Некорректный файл cookie.'); }
-    const request = (route, init = {}) => fetch(options.baseUrl + route, { ...init, redirect: 'manual',
-        headers: { 'Content-Type': 'application/json', 'X-Neurocenter-Request': '1', ...(cookie ? { Cookie: cookie } : {}) }, signal: AbortSignal.timeout(30_000) });
+    const request = (route, init = {}) => {
+        const headers={ 'Content-Type': 'application/json', 'X-Neurocenter-Request': '1', ...(cookie ? { Cookie: cookie } : {}) };
+        return route===TOOL_IMPORT_ROUTE&&init.method==='POST'?requestToolImport(options.baseUrl+route,{headers,body:init.body})
+            :fetch(options.baseUrl+route,{...init,redirect:'manual',headers,signal:AbortSignal.timeout(30_000)});
+    };
     let profile = await request('/auth/me');
     let ownSession = false;
     if (profile.status === 401 && !options.cookieFile && env.SSO_DISABLE === 'true' && env.NODE_ENV !== 'production') {
@@ -111,7 +116,7 @@ export async function publishCatalog(options) {
         for (const tool of tools) {
             for (const artifact of tool.artifacts) { await importArtifact(artifact, env); }
             await retainSourceFiles(tool,env);
-            const response = await session.request('/api/tool-builds/imports',{method:'POST',body:JSON.stringify({requestKey:tool.publication.publicationKey,asset:tool.asset})});
+            const response = await session.request(TOOL_IMPORT_ROUTE,{method:'POST',body:JSON.stringify({requestKey:tool.publication.publicationKey,asset:tool.asset})});
             if (!response.ok) { throw new Error(`${tool.key}: публикация отклонена (HTTP ${response.status}). Повторите тот же manifest после исправления причины.`); }
             const saved = await response.json();
             published.push({ key: tool.key, id: saved.catalogId, name: saved.name, version: saved.version, assetId:saved.assetId,sourceVersion:saved.sourceVersion,sourceSha256:saved.sourceSha256 });

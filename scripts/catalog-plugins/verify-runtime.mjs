@@ -49,11 +49,13 @@ function hostTarget() {
     if(process.platform!=='linux')return `${process.platform}-${process.arch}`;
     return `linux-${process.arch}-${process.report?.getReport().header.glibcVersionRuntime?'glibc':'musl'}`;
 }
-async function pinnedManifest(filename) {
+async function pinnedManifest(filename,signal) {
+    signal?.throwIfAborted();
     const handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
     try {
         const before=await handle.stat();if(!before.isFile()||before.nlink!==1||before.size<1||before.size>16*1024*1024)throw new Error();
         const bytes=await handle.readFile(),after=await handle.stat();
+        signal?.throwIfAborted();
         if(bytes.length!==before.size||before.ino!==after.ino||before.mtimeMs!==after.mtimeMs)throw new Error();
         return {sha256:hash(bytes),asset:validateAsset(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)))};
     } finally {await handle.close();}
@@ -65,21 +67,23 @@ function packageEnvironment(config,base) {
     if(Object.values(env).some(value=>typeof value!=='string'||/\{env:|\$\{/.test(value)))throw new RuntimeVerificationError('configuration-required');
     return {...base,...env};
 }
-async function materialize(tool,root,target) {
+async function materialize(tool,root,target,signal) {
+    signal?.throwIfAborted();
     const directory=path.join(root,'package');await fs.mkdir(directory,{mode:0o700});
     if(tool.artifacts.length) {
         const selected=tool.artifacts.find(item=>item.descriptor.target===target);
         if(!selected)throw new RuntimeVerificationError('no-host-artifact');
-        await runtime.inspectRuntimeArchive(selected.archivePath,selected.descriptor,{destination:directory});
+        await runtime.inspectRuntimeArchive(selected.archivePath,selected.descriptor,{destination:directory,signal});
         return {entrypoint:path.join(directory,selected.descriptor.entrypoint),executable:!!selected.descriptor.executable,target};
     }
     const config=tool.publication.config,entrypoint=config?.entrypoint;
     if(!entrypoint||!runtime.portablePath(entrypoint)||!tool.publication.files.some(file=>file.path===entrypoint)
         ||!/[.](?:[cm]?js)$/i.test(entrypoint)||tool.publication.kind==='mcp'&&config.command!=='node')throw new RuntimeVerificationError('entrypoint-unsupported');
     for(const file of tool.publication.files) {
+        signal?.throwIfAborted();
         if(!runtime.portablePath(file.path))throw new RuntimeVerificationError('integrity-failed');
         const destination=path.join(directory,file.path);await fs.mkdir(path.dirname(destination),{recursive:true,mode:0o700});
-        await fs.writeFile(destination,file.content,{flag:'wx',mode:0o400});
+        await fs.writeFile(destination,file.content,{flag:'wx',mode:0o400,signal});
     }
     return {entrypoint:path.join(directory,entrypoint),executable:false,target};
 }
@@ -108,8 +112,8 @@ export async function verifyBuiltRuntime(manifestFile,{signal,timeoutMs=15000,in
     try {
         if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isSafeInteger(integrityTimeoutMs)||integrityTimeoutMs<1||integrityTimeoutMs>300000||!Number.isSafeInteger(maxOutputBytes)||maxOutputBytes<1024||maxOutputBytes>1048576)throw new RuntimeVerificationError('verification-failed');
         scope=new RuntimeVerificationScope({signal,timeoutMs:integrityTimeoutMs,maxOutputBytes});scope.remaining();
-        const filename=path.resolve(manifestFile),before=await pinnedManifest(filename);
-        const [tool]=await scope.wait(readyManifest(filename)),after=await pinnedManifest(filename);
+        const filename=path.resolve(manifestFile),ownedSignal=scope.controller.signal,before=await pinnedManifest(filename,ownedSignal);
+        const [tool]=await readyManifest(filename,{signal:ownedSignal});scope.remaining();const after=await pinnedManifest(filename,ownedSignal);
         if(before.sha256!==after.sha256||!isDeepStrictEqual(before.asset,tool.asset))throw new RuntimeVerificationError('integrity-failed');
         const asset=tool.asset;
         report.candidate={identity:typeof candidateIdentity==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(candidateIdentity)?candidateIdentity:`${asset.id}@${asset.version}`,
@@ -118,7 +122,7 @@ export async function verifyBuiltRuntime(manifestFile,{signal,timeoutMs=15000,in
         if(!['mcp','plugin'].includes(tool.publication.kind))throw new RuntimeVerificationError('unsupported-kind');
         if(tool.publication.kind==='mcp'&&tool.publication.config?.transport!=='stdio')throw new RuntimeVerificationError('entrypoint-unsupported');
         root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'neurocenter-package-runtime-')));await fs.chmod(root,0o700);
-        const selected=await materialize(tool,root,target),nodeExecutable=await fs.realpath(process.execPath);
+        const selected=await materialize(tool,root,target,ownedSignal),nodeExecutable=await fs.realpath(process.execPath);scope.remaining();
         if(!selected.executable&&!/[.](?:[cm]?js)$/i.test(selected.entrypoint)||tool.publication.kind==='plugin'&&selected.executable)throw new RuntimeVerificationError('entrypoint-unsupported');
         const profile=await configureRuntimeSandbox(root,nodeExecutable);profile.env=packageEnvironment(tool.publication.config,profile.env);
         scope.resetDeadline(timeoutMs);await assertRuntimeSandbox(profile,nodeExecutable,scope);
@@ -128,12 +132,13 @@ export async function verifyBuiltRuntime(manifestFile,{signal,timeoutMs=15000,in
         if(tool.publication.kind==='mcp')report.counts.tools=await verifyMcpRuntime(scope,profile,selected.executable?selected.entrypoint:nodeExecutable,
             [...(selected.executable?[]:[selected.entrypoint]),...(tool.publication.config.args??[])],report.checks);
         else {
-            const entrypoint=await scope.wait(codexRuntimeEntrypoint(tool,selected.entrypoint,profile,nodeExecutable));
+            const entrypoint=await codexRuntimeEntrypoint(tool,selected.entrypoint,profile,nodeExecutable);scope.remaining();
             report.counts=await verifyPluginRuntime(scope,profile,entrypoint,nodeExecutable,report.checks);
         }
         scope.remaining();report.ok=true;report.status='passed';
     } catch(error) {
-        const code=error instanceof RuntimeVerificationError?error.code:report.checks.integrity?'verification-failed':'integrity-failed';
+        const code=scope?.controller.signal.aborted?(scope.controller.signal.reason==='cancelled'?'cancelled':'timeout')
+            :error instanceof RuntimeVerificationError?error.code:report.checks.integrity?'verification-failed':'integrity-failed';
         report.status=code==='cancelled'?'cancelled':'failed';report.diagnostics=[{code,message:messages[code]??messages['verification-failed']}];
     } finally {
         try{await scope?.close();if(root)await fs.rm(root,{recursive:true,force:true,maxRetries:2});}
