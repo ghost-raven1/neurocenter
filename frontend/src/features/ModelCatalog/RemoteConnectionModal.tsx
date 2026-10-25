@@ -22,6 +22,7 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [pendingCheck, setPendingCheck] = useState(false);
+    const [checkAcknowledged, setCheckAcknowledged] = useState(false);
     const lock = useRef(false), mounted = useRef(false);
     const hasStoredKey = view?.credential === 'stored' && view.hasKey;
     const read = async (): Promise<void> => {
@@ -40,39 +41,42 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
         finally { if (owns() && mounted.current) setLoading(false); }
     };
     useEffect(() => { mounted.current = true; void read(); return () => { mounted.current = false; }; }, [model.id]);
-    const availability = useFeatureAvailability('model_hosting', ...(!pendingCheck ? ['model_catalog' as const] : []));
+    const availability = useFeatureAvailability(...(checkAcknowledged ? [] : ['model_hosting' as const, ...(!pendingCheck ? ['model_catalog' as const] : [])]));
     const submit = async (values: Values): Promise<void> => {
         if (!availability.enabled) return;
         const owns = captureOwner(); if (!view || !owns() || lock.current) return;
-        if (!pendingCheck && values.credential === 'stored' && (!view.canStoreKey || !hasStoredKey && !values.apiKey?.trim())) {
+        if (!checkAcknowledged && !pendingCheck && values.credential === 'stored' && (!view.canStoreKey || !hasStoredKey && !values.apiKey?.trim())) {
             setError(view.canStoreKey ? 'Введите API-ключ.' : 'Хранилище ключей не настроено. Выберите ключ из окружения сервера или API без ключа.');
             return;
         }
         const active = () => owns() && mounted.current;
         lock.current = true; setBusy(true); setError('');
-        let saved = pendingCheck;
+        let saved = pendingCheck, checkStarted = checkAcknowledged;
         try {
-            let selected = current;
-            if (!saved) {
-                const result = await modelCatalogApi.configure(model.id, { expectedRevision: view.revision, expectedModelRevision: selected.revision,
-                    baseUrl: values.baseUrl.trim(), requestDimensions: !!values.requestDimensions, credential: values.credential,
-                    options: remoteModelOptions(values.options, model), timeoutMs: values.timeoutMs ?? 90000,
-                    ...(values.credential === 'stored' && values.apiKey ? { apiKey: values.apiKey } : {}),
-                    ...(values.credential === 'environment' ? { credentialEnv: values.credentialEnv?.trim() } : {}) });
+            if (!checkStarted) {
+                let selected = current;
+                if (!saved) {
+                    const result = await modelCatalogApi.configure(model.id, { expectedRevision: view.revision, expectedModelRevision: selected.revision,
+                        baseUrl: values.baseUrl.trim(), requestDimensions: !!values.requestDimensions, credential: values.credential,
+                        options: remoteModelOptions(values.options, model), timeoutMs: values.timeoutMs ?? 90000,
+                        ...(values.credential === 'stored' && values.apiKey ? { apiKey: values.apiKey } : {}),
+                        ...(values.credential === 'environment' ? { credentialEnv: values.credentialEnv?.trim() } : {}) });
+                    if (!active()) return;
+                    setView(result); form.setFieldValue('apiKey', undefined);
+                    selected = { ...selected, revision: result.modelRevision, verificationSha256: null };
+                    setCurrent(selected); setPendingCheck(true); saved = true;
+                }
+                const fresh = await modelCatalogApi.get(model.id);
                 if (!active()) return;
-                setView(result); form.setFieldValue('apiKey', undefined);
-                selected = { ...selected, revision: result.modelRevision, verificationSha256: null };
-                setCurrent(selected); setPendingCheck(true); saved = true;
+                if (fresh.revision !== selected.revision) throw new Error('Карточка модели изменилась. Обновите каталог и откройте подключение снова.');
+                selected = fresh; setCurrent(selected);
+                await modelCatalogApi.operate(selected, 'check');
+                if (!active()) return;
+                checkStarted = true; setCheckAcknowledged(true);
             }
-            const fresh = await modelCatalogApi.get(model.id);
-            if (!active()) return;
-            if (fresh.revision !== selected.revision) throw new Error('Карточка модели изменилась. Обновите каталог и откройте подключение снова.');
-            selected = fresh; setCurrent(selected);
-            await modelCatalogApi.operate(selected, 'check');
-            if (!active()) return;
             await onSaved(); if (active()) onClose();
         } catch (cause) {
-            if (active()) setError((saved ? 'Настройки сохранены. Проверка не запущена: ' : '') + errorMessage(cause, 'Не удалось подключить модель.'));
+            if (active()) setError((checkStarted ? 'Проверка запущена. Не удалось обновить каталог: ' : saved ? 'Настройки сохранены. Проверка не запущена: ' : '') + errorMessage(cause, 'Не удалось подключить модель.'));
         } finally { lock.current = false; if (active()) setBusy(false); }
     };
     const revoke = async (): Promise<void> => {
@@ -93,7 +97,7 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
         onCancel={() => { if (!lock.current) onClose(); }} closable={!busy} maskClosable={!busy} keyboard={!busy}>
         {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" action={!view ? <Button onClick={() => { void read(); }}>Повторить</Button> : undefined} />}
         {loading ? <div role="status" aria-live="polite"><Spin tip="Читаем настройки…" /></div> : view && <Form form={form} layout="vertical" disabled={busy}
-            onValuesChange={() => setPendingCheck(false)} onFinish={values => { void submit(values); }}>
+            onValuesChange={() => {setPendingCheck(false); setCheckAcknowledged(false);}} onFinish={values => { void submit(values); }}>
             <Typography.Paragraph type="secondary">API-подключение общее для команды. «Сохранить и подключить» сохранит адрес и авторизацию и выполнит тестовый запрос к внешней модели. Добавьте модель в проект отдельно.</Typography.Paragraph>
             {hint?.hasKey && !view.baseUrl && <Alert type="info" showIcon message="Ключ OpenCode остался на компьютере" description="Введите API-ключ для Нейроцентра или выберите ключ из окружения сервера." className="model-catalog__notice" />}
             {hint && view.baseUrl && <Alert type="info" showIcon message="Сохранённое подключение уже настроено" description="Повторный импорт не заменяет адрес, авторизацию и параметры. Их можно изменить в этой форме." className="model-catalog__notice" />}
@@ -110,7 +114,7 @@ export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps)
             <RemoteModelParameters model={model} />
             <Space wrap className="model-catalog__form-actions">
                 {view.revision > 0 && view.baseUrl && <Popconfirm title="Отозвать все версии этого подключения?" onConfirm={() => { void revoke(); }} okText="Отозвать" cancelText="Отмена"><Button danger disabled={busy}>Удалить подключение</Button></Popconfirm>}
-                <Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={pendingCheck ? ['model_hosting'] : ['model_catalog','model_hosting']} type="primary" htmlType="submit" loading={busy} disabled={credential === 'stored' && !view.canStoreKey}>{pendingCheck ? 'Запустить проверку' : 'Сохранить и подключить'}</FeatureButton>
+                <Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={checkAcknowledged ? [] : pendingCheck ? ['model_hosting'] : ['model_catalog','model_hosting']} type="primary" htmlType="submit" loading={busy} disabled={!checkAcknowledged && credential === 'stored' && !view.canStoreKey}>{checkAcknowledged ? 'Обновить каталог' : pendingCheck ? 'Запустить проверку' : 'Сохранить и подключить'}</FeatureButton>
             </Space>
         </Form>}
     </Modal>;

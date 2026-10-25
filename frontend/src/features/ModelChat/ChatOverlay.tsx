@@ -72,13 +72,17 @@ export default function ChatOverlay({projectId:initialProject,group,team:initial
     const {scope}=useAuthRequestOwner(),projects=useAvailableProjects();
     const [projectId,setProjectId]=useState(initialProject);
     const [team,setTeam]=useState(!!initialTeam);
+    const [teamConfiguration,setTeamConfiguration]=useState(!initialProject);
     const user=useSelector((state:RootState)=>state.userBlock.user);
     const canonical=projects.projects.find(value=>value.id===projectId||value.name===projectId)?.id??projectId;
     useEffect(()=>{if(projects.ready&&canonical!==projectId)setProjectId(canonical);},[projects.ready,canonical,projectId]);
     if(projectId&&(!projects.ready||canonical!==projectId))return <Modal open centered width={1280} title="Чат" footer={null} onCancel={onClose}>{projects.error?<Alert type="error" message={projects.error} action={<Button onClick={()=>{void projects.refresh();}}>Повторить</Button>}/>:<Spin tip="Проверяем доступные проекты…"/>}</Modal>;
-    if(team)return <Modal open centered width={1280} className="model-chat model-chat_global" title="Чат" footer={null} onCancel={onClose} destroyOnClose>
-        <div className="model-chat__workspace-controls">{modeControls(true,setTeam)}<label>Проект<Select aria-label="Проект командного чата" value={projectId} placeholder="Выберите проект" loading={projects.loading} showSearch optionFilterProp="label"
-            options={projects.projects.filter(project=>projectRoleLevel(user,project.id)>=1).map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></label></div>
+    if(team)return <Modal open centered width={1280} className="model-chat model-chat_global model-chat_workspace project-chat-modal" title={<div className="model-chat__title">Чат<Typography.Text type="secondary">{projects.projects.find(project=>project.id===projectId)?.name ? `Проект «${projects.projects.find(project=>project.id===projectId)?.name}»` : 'Команда проекта'}</Typography.Text></div>} footer={null} onCancel={onClose} destroyOnClose>
+        <div className={'model-chat__configuration'+(!teamConfiguration?' model-chat__configuration_collapsed':'')}>
+            <div className="model-chat__configuration-summary"><Button type="text" size="small" aria-label="Настройки командного чата: проект и режим" aria-expanded={teamConfiguration} aria-controls="project-chat-configuration" onClick={()=>setTeamConfiguration(!teamConfiguration)}>Настройки <span aria-hidden="true">{teamConfiguration?'▴':'▾'}</span></Button><Typography.Text type="secondary" className="model-chat__configuration-scope">Команда проекта</Typography.Text></div>
+            <div id="project-chat-configuration"><div className="model-chat__workspace-controls">{modeControls(true,setTeam)}<label>Проект<Select aria-label="Проект командного чата" value={projectId} placeholder="Выберите проект" loading={projects.loading} showSearch optionFilterProp="label"
+                options={projects.projects.filter(project=>projectRoleLevel(user,project.id)>=1).map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></label></div></div>
+        </div>
         {projectId?<Suspense fallback={<Spin tip="Открываем команду…"/>}><ProjectChatWorkspace key={JSON.stringify([scope,projectId])} projectId={projectId} projectName={projects.projects.find(project=>project.id===projectId)?.name}/></Suspense>:<Empty description="Выберите проект для общей переписки с участниками и агентами."/>}
     </Modal>;
     return <ChatScope key={JSON.stringify([scope,projectId])} projectId={projectId} projects={projects.projects} projectsLoading={projects.loading} initialGroup={group} onTeam={()=>setTeam(true)} onProject={setProjectId} onClose={onClose}/>;

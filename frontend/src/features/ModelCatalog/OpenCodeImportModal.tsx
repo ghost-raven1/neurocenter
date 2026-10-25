@@ -44,6 +44,7 @@ export function OpenCodeImportModal({projectId,onClose,onImported,onConfigureCod
     const scan=result?.schemaVersion===2&&result.scope===scope&&Array.isArray(result.candidates)&&Array.isArray(result.warnings)
         &&typeof result.expiresAt==='string'&&Number.isFinite(Date.parse(result.expiresAt))
         &&(scope==='global'?result.deviceId===device?.id:result.projectId===projectId&&result.bindingId===binding?.bindingId&&result.instanceId===binding?.instanceId)?result:undefined;
+    const scanExpired=!!scan&&Date.parse(scan.expiresAt)<=Date.now();
     const start=async():Promise<void>=>{
         const owns=captureOwner(),current=():boolean=>alive.current&&owns()&&currentContext.current===context;
         if(!current()||!scanAvailability.enabled||!bridge.devicesReady||lock.current||!device||!device.online||!device.report.capabilities?.includes('opencode-model-scan-v2')
@@ -80,6 +81,8 @@ export function OpenCodeImportModal({projectId,onClose,onImported,onConfigureCod
         <Typography.Paragraph type="secondary">Мост прочитает модели, адреса API и поддерживаемые параметры. Импорт выполняется по кнопке и не передаёт ключи с компьютера. Автосинхронизация и перенос ключей настраиваются отдельно в настройках компьютера.</Typography.Paragraph>
         {error&&<Alert showIcon type="error" message={error} className="model-catalog__notice"/>}
         {bridge.errors.devices&&<Alert showIcon type="error" message={bridge.errors.devices} action={<Button onClick={()=>{void bridge.reload();}}>Повторить</Button>} className="model-catalog__notice"/>}
+        {bridge.devicesReady&&!bridge.errors.devices&&!bridge.devices.length&&<Alert showIcon type="info" message="Для импорта моделей подключите компьютер"
+            action={<Button href="/start">Подключить компьютер</Button>} className="model-catalog__notice"/>}
         <Space direction="vertical" className="model-opencode__source">
             <Select aria-label="Источник конфигурации OpenCode" value={scope} disabled={busy||active} onChange={value=>{setScope(value);setSubmitted(undefined);setError('');request.current=undefined;}}
                 options={[{value:'global',label:'Общая конфигурация компьютера'},{value:'project',label:'Итоговая конфигурация проекта',disabled:!projectId}]}/>
@@ -91,6 +94,7 @@ export function OpenCodeImportModal({projectId,onClose,onImported,onConfigureCod
         {active&&<div role="status" aria-live="polite"><Spin size="small"/> {job?.message||'Читаем настройки OpenCode…'} <Button type="link" onClick={()=>{void bridge.reload();}}>Обновить</Button></div>}
         {job?.state==='failed'&&<Alert type="error" showIcon message={job.message}/>}
         {result&&!scan&&<Alert type="warning" showIcon message="Снимок не соответствует выбранному источнику. Прочитайте OpenCode заново."/>}
+        {scanExpired&&<Alert type="warning" showIcon message="Снимок конфигурации устарел" description="Нажмите «Прочитать OpenCode», чтобы обновить список перед импортом." className="model-catalog__notice"/>}
         {scan&&<>
             {scan.candidates.some(localCodexCandidate)&&<Space direction="vertical" className="model-opencode__source">
                 <Alert showIcon type="info" message="Codex через этот компьютер"
@@ -122,7 +126,7 @@ export function OpenCodeImportModal({projectId,onClose,onImported,onConfigureCod
                     {candidate.blocker&&!localCodex&&<div><Typography.Text type="secondary">{blocker[candidate.blocker]||'Настройте API вручную'}</Typography.Text></div>}
                     </div>
                 <FeatureButton features={localCodex?['opencode_model_sync','codex_connector','device_codex_inference']:['opencode_model_sync']}
-                    disabled={busy||!bridge.devicesReady||!!candidate.blocker&&!(localCodex&&candidate.blocker==='codex-local-auth'&&localCodexAvailable)||Date.parse(scan.expiresAt)<=Date.now()}
+                    disabled={busy||!bridge.devicesReady||!!candidate.blocker&&!(localCodex&&candidate.blocker==='codex-local-auth'&&localCodexAvailable)||scanExpired}
                     onClick={()=>{void importCandidate(candidate);}}>{localCodex?'Подключить Codex':'Импортировать'}</FeatureButton>
             </List.Item>;}}/>
         </>}

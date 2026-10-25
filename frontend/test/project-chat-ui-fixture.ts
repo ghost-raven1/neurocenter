@@ -12,7 +12,7 @@ const harness = vi.hoisted(() => {
         useState<T>(initial: T | (() => T)) {const slot = slots[cursor++] ??= {value: typeof initial === 'function' ? (initial as () => T)() : initial}; return [slot.value, (next: T | ((old: T) => T)) => {slot.value = typeof next === 'function' ? (next as (old: T) => T)(slot.value as T) : next;}];},
         useRef<T>(initial: T) {return (slots[cursor++] ??= {value: {current: initial}}).value;},
         useCallback<T>(value: T, deps: unknown[]) {const index = cursor++, previous = slots[index]; if (!previous || !same(previous.deps, deps)) slots[index] = {value, deps}; return slots[index].value;},
-        useEffect(effect: () => void | (() => void), deps: unknown[]) {const index = cursor++, previous = slots[index]; if (previous && same(previous.deps, deps)) return; const slot = slots[index] = {deps}; effects.push(() => {previous?.cleanup?.(); slot.cleanup = effect() || undefined;});},
+        useEffect(effect: () => void | (() => void), deps: unknown[]) {const index = cursor++, previous = slots[index]; if (previous && same(previous.deps, deps)) return; const slot: typeof slots[number] = slots[index] = {deps}; effects.push(() => {previous?.cleanup?.(); slot.cleanup = effect() || undefined;});},
     };
 });
 const ui = vi.hoisted(() => ({
@@ -28,6 +28,8 @@ vi.mock('react', async original => ({...await original<typeof import('react')>()
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: ui.scope, captureOwner})}));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability', () => ({useFeatureAvailability: (...keys: string[]) => ({enabled: keys.every(key => ui.flags.get(key) !== false), reason: 'Функция выключена администратором'})}));
 vi.mock('../src/core/socket/useSectionUpdates', () => ({useSectionUpdates: () => undefined}));
+// Pure composer contracts inspect every recipient field; portal/focus persistence has its own real AntD DOM suite.
+vi.mock('../src/features/ProjectChat/ProjectChatPanel', () => ({ProjectChatPanel: ({children}: {children?: ReactNode}) => children}));
 vi.mock('@ant-design/icons', () => ({SendOutlined: () => null}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => createElement('div', null, children);
@@ -47,7 +49,7 @@ vi.mock('antd', () => {
             ui.mentions.set(props['aria-label'], props);
             // AntD Mentions emits a string, and delegates submission to onPressEnter only outside its popup.
             ui.inputs.set(props['aria-label'], {...props, onChange: event => props.onChange(event.target.value), onKeyDown: props.onPressEnter});
-            return createElement('textarea', {'aria-label': props['aria-label'], value: props.value, disabled: props.disabled, onChange: event => props.onChange(event.target.value)});
+            return createElement('textarea', {'aria-label': props['aria-label'], value: props.value, disabled: props.disabled, onChange: (event: import('react').ChangeEvent<HTMLTextAreaElement>) => props.onChange(event.target.value)});
         },
     };
 });
