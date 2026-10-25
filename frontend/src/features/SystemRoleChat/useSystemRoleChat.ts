@@ -6,6 +6,9 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { systemRoleChatsApi as api } from './api';
 import { clearServiceIntent, saveServiceIntent, serviceIntent, serviceIntentScope, serviceReceipt } from './intent';
 import type { ServiceDetail, ServiceDialog, ServiceIntent, ServicePreview, ServiceReceipt, ServiceTurn } from './types';
+import {useTabWatch} from '../TabNotifications/useTabWatch';
+import {serviceTabSnapshot, serviceTabSource} from '../TabNotifications/snapshots';
+import {tabNotifications} from '../TabNotifications/tracker';
 
 interface Prepared extends ServicePreview { agentId: SystemRoleId; dialogId: string; model: { id: string; pin: string }; }
 interface ChatState { owner: object; overview?: RoleOverview; dialogs: ServiceDialog[]; detail?: ServiceDetail; prepared?: Prepared; error: string; busy: boolean; loading: boolean; receipt?: ServiceReceipt; }
@@ -21,6 +24,8 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     const empty = (): ChatState => ({ owner, dialogs: [], error: '', busy: false, loading: true });
     const [state, setState] = useState<ChatState>(empty), current = useRef(state);
     current.current = state.owner === owner ? state : empty();
+    const activeDetail = current.current.detail;
+    useTabWatch(scope, activeDetail && activeDetail.dialog.projectId === (projectId ?? null) ? [serviceTabSnapshot(activeDetail)] : []);
     const busy = useRef(false), reads = useRef(0), previews = useRef(0), draftDialog = useRef<string>();
     const capture = (): (() => boolean) => {
         const auth = captureOwner(), generation = owner.generation;
@@ -120,9 +125,10 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         try { saveServiceIntent(intentScope, intent); }
         catch (cause) { update({ error: errorMessage(cause, 'Не удалось сохранить запрос для восстановления. Уменьшите контекст и повторите подготовку.') }); return; }
         update({ receipt: { dialogId: intent.dialogId, requestId: intent.input.requestId } });
+        const rejectExpected = tabNotifications.expect(scope, serviceTabSource(intent.dialogId, projectId), [intent.input.requestId]);
         await perform(async () => {
             try { return await api.start(intent.dialogId, intent.agentId, intent.input); }
-            catch (cause) { if (owns() && !replay && rejected(cause)) { forget(); update({ prepared: undefined }); } throw cause; }
+            catch (cause) { if (!replay && rejected(cause)) { rejectExpected(); if (owns()) { forget(); update({ prepared: undefined }); } } throw cause; }
         }, turn => { accept(intent.dialogId, turn); forget(); update({ prepared: undefined }); void refresh(); }, 'Подтверждение отправки потеряно. Проверьте сохранённый запрос перед следующей задачей.');
     };
     const start = async (modelId: string): Promise<void> => {
@@ -137,7 +143,11 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         if (!capture()() || busy.current || !selected || !run || !selected.turns.some(item => item.id === turn.id && item.run?.revision === run.revision)
             || action === 'apply' && !allowed.current || action === 'cancel' && !run.canCancel || action === 'apply' && !run.canApply || action === 'rollback' && !run.canRollback) return;
         reads.current++;
-        await perform(() => action === 'cancel' ? api.cancel(selected.dialog.id, turn, crypto.randomUUID()) : systemRolesApi.action(run, action, crypto.randomUUID()).then(value => ({ ...turn, run: value })),
+        const rejectExpected = tabNotifications.expect(scope, serviceTabSource(selected.dialog.id, projectId), [turn.id]);
+        await perform(async () => {
+            try {return await (action === 'cancel' ? api.cancel(selected.dialog.id, turn, crypto.randomUUID()) : systemRolesApi.action(run, action, crypto.randomUUID()).then(value => ({ ...turn, run: value })));}
+            catch (cause) {if (rejected(cause)) rejectExpected(); throw cause;}
+        },
             value => { accept(selected.dialog.id, value); void refresh(); }, 'Исход действия не подтверждён. Перечитайте состояние перед повтором.');
     };
     const value = state.owner === owner ? state : empty();

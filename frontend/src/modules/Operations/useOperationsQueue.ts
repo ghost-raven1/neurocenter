@@ -7,6 +7,8 @@ import { authDataScope } from '../../features/UserBlock/authDataScope';
 import type { RootState } from '../../store';
 
 import { createOperationsQueueController, initialOperationsQueueSnapshot } from './operationsQueueController';
+import {useTabWatch} from '../../features/TabNotifications/useTabWatch';
+import {operationTabSnapshot} from '../../features/TabNotifications/snapshots';
 
 /** Каждый экземпляр очереди принадлежит одному набору прав и выбранному проекту. */
 export function useOperationsQueue(projectId?: string) {
@@ -46,6 +48,7 @@ export function useOperationsQueue(projectId?: string) {
     }, [authScope, refreshVisible]);
 
     const value = snapshot.scope === scope && authScope ? snapshot.value : initialOperationsQueueSnapshot();
+    useTabWatch(authScope, [...new Map([...value.list, ...(value.selected ? [value.selected] : [])].map(operation => [operation.operationId, operation])).values()].map(operationTabSnapshot));
     return {
         ...value,
         setPage: controller.setPage,

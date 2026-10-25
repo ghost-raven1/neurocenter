@@ -11,6 +11,12 @@ it('history and exact-request recovery use read-only project-scoped endpoints', 
     await chats.read('dialog/one'); expect(api.get).toHaveBeenLastCalledWith('/api/system-role-chats/dialog%2Fone');
     await chats.request('dialog/one', 'request/one'); expect(api.get).toHaveBeenLastCalledWith('/api/system-role-chats/dialog%2Fone/requests/request%2Fone'); expect(api.post).not.toHaveBeenCalled();
 });
+it('background history and exact-request reads forward cancellation without starting a model run', async () => {
+    const signal = new AbortController().signal;
+    await chats.read('dialog/one', signal); expect(api.get).toHaveBeenLastCalledWith('/api/system-role-chats/dialog%2Fone', {signal});
+    await chats.request('dialog/one', 'request/one', signal); expect(api.get).toHaveBeenLastCalledWith('/api/system-role-chats/dialog%2Fone/requests/request%2Fone', {signal});
+    expect(api.post).not.toHaveBeenCalled();
+});
 it('preparation forwards explicit own-context consent and inference uses the supplied immutable request', async () => {
     const selection = { projectId: 'project-one', instruction: 'Check', diagnostics: [], targets: [] };
     await chats.prepare('dialog-one', 'agent-coordinator', selection, false); expect(api.post).toHaveBeenLastCalledWith('/api/system-role-chats/dialog-one/prepare', { agentId: 'agent-coordinator', selection, includeContext: false });
