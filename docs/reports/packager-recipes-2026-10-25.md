@@ -27,3 +27,9 @@ The existing supply suite also exposed a baseline missing rag-core-contract cjs/
 The trusted inspector uses a native CommonJS async-import bridge so the real ESM inspector works under the compiled service and the test VM. Catalog Docker delivery already copies the complete shared/scripts directories, so the new loader and source helpers are included. The v2 source pin and ESM bridge remain subject to final independent review; no live service or user plugin acceptance is claimed.
 
 Source inspection uses Node24 type transformation as data, not execution. The profile is fixed to Node24 because the upstream Node26 API removed transform mode: [Node24 module API](https://r2.nodejs.org/docs/latest-v24.x/api/module.html#modulestriptypescripttypescode-options).
+
+## C: bounded build-failure feedback
+
+Only an explicitly accepted v2 agent budget may continue after a typed, reparable source compilation/entrypoint failure. The next proposal receives its bounded stage, target, code and redacted reason. Unknown failures, infrastructure, cancellation, unreaped processes, provider/ACK failures and v1 jobs are not retried. An unchanged canonical recipe is stopped before repeating its build. The existing nonce rotation, authorization checks, runtime candidate identity and publication gate remain in place.
+
+The combined 80/80 focused Catalog receipt includes the new repair path, unchanged-plan stop, v1/budget preservation, nonrepairable refusal, API preflight, feature OFF and replay cases. These are controlled owned fixtures, not a repeat of the saved paid job. Final read-only review and integration remain with the parent task.
