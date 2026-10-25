@@ -37,6 +37,10 @@ export const auditedUnits=Object.freeze({
   "sha256": "4d5186877cff85ca33f93a18166aefb2bae4f9b54e36c7afeec9c94e14d489ed",
   "helpers": {}
  },
+ "services/catalog-service/test/dev-trace-transition-ack.test.ts": {
+  "sha256": "0806b95d8d6f323469c31fc66c532ac04f88a32005728b7697d73a4d8d8a2964",
+  "helpers": {}
+ },
  "services/catalog-service/test/device-completion.test.ts": {
   "sha256": "bd19d7a3bd78afec9c71cd2e093c474a57171732aa5c0857337800a7c2a0ff58",
   "helpers": {}
@@ -94,7 +98,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/package-build-admission.test.ts": {
-  "sha256": "8be9128304d3bed7af1bdfea83cf9831610b20afa3d35ee693dd6c3115a80d92",
+  "sha256": "10d76afdca78f81fd903e9823f12af0bc7fd162e85eb7a374f09fee56305bc40",
   "helpers": {}
  },
  "services/catalog-service/test/package-build-cancellation-control.test.ts": {

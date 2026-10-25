@@ -1,5 +1,6 @@
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
 import {randomUUID} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {ConflictException,ForbiddenException} from '@nestjs/common';
 import type {PoolClient} from 'pg';
@@ -28,6 +29,7 @@ describe('Приём сборки не переживает владельца �
     let destroyed:boolean;
     let repository:Record<'existing'|'enqueue'|'takeQueued'|'cancel'|'cancelRequest'|'evidence',ReturnType<typeof vi.fn>>;
     beforeEach(()=>{
+        vi.stubEnv('TOOL_BUILD_SCRIPT',fileURLToPath(new URL('../../../scripts/catalog-plugins/build.mjs',import.meta.url)));
         vi.clearAllMocks();mocks.pool.query.mockResolvedValue({rows:[]});mocks.reserve.mockResolvedValue(vi.fn());
         lease={query:vi.fn().mockResolvedValue({rows:[]})} as unknown as PoolClient;
         worker=deferred();unblock=()=>{};destroyed=false;
@@ -36,7 +38,7 @@ describe('Приём сборки не переживает владельца �
         repository={existing:vi.fn(),enqueue:vi.fn(),takeQueued:vi.fn(),cancel:vi.fn(),cancelRequest:vi.fn(),evidence:vi.fn(async()=>({runtimeVerification:null,runtimeVerificationAttempt:null,agentSteps:[]}))};
         Object.assign(service,{lease,repository,stagingRoot:async()=>'/unused-admission-stage',execute:vi.fn(()=>worker.promise)});
     });
-    afterEach(async()=>{unblock();worker.resolve();if(!destroyed)await service.onModuleDestroy();});
+    afterEach(async()=>{try{unblock();worker.resolve();if(!destroyed)await service.onModuleDestroy();}finally{vi.unstubAllEnvs();}});
     it('pins v2 source inventory once for a new explicit agent build',async()=>{
         const input={...request(),agent:{modelId:'model-fixture',expectedModelPin:'a'.repeat(64),maxAttempts:2}};
         repository.enqueue.mockImplementation(async(_actor,_key,_hash,config)=>({id:randomUUID(),state:'QUEUED',config}));
