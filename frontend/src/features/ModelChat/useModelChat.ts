@@ -7,6 +7,9 @@ import { chatFileBase64, chatFileError, CHAT_FILE_MAX_COUNT } from './files';
 import { mergeModelChatDetail, modelChatPromptError, modelChatTurnUnresolved, prependModelChatHistory, sortedModelChats } from './model';
 import { chatRecipients } from './participants';
 import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversation, IChatResearchRequest } from './types';
+import {useTabWatch} from '../TabNotifications/useTabWatch';
+import {modelTabSnapshot, modelTabSource} from '../TabNotifications/snapshots';
+import {tabNotifications} from '../TabNotifications/tracker';
 
 type Activity = '' | 'loading' | 'sending' | 'uploading' | 'saving';
 interface ActiveRequest { abort: AbortController; kind: Activity; }
@@ -22,6 +25,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const [activity, setActivity] = useState<Activity>('loading'), [error, setError] = useState('');
     const [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState('');
     const [optimistic, setOptimistic] = useState<IModelChatTurn | null>(null), [uploads, setUploads] = useState<IChatUpload[]>([]);
+    useTabWatch(scope, detail && detail.conversation.projectId === (projectId ?? null) ? [modelTabSnapshot(detail)] : []);
     const current = useRef(detail), list = useRef(items), pending = useRef(optimistic), fileRows = useRef(uploads);
     const mounted = useRef(false), active = useRef<ActiveRequest>(), liveModelPin = useRef(model.modelPin); liveModelPin.current = model.modelPin;
     const historyRequest = useRef<AbortController>();
@@ -153,6 +157,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             try {
                 value = await ensure(signal, owns); if (!owns()) return;
                 if (liveModelPin.current !== expectedPin) throw new Error('Модель изменилась. Начните новый диалог.');
+                tabNotifications.expect(scope, modelTabSource(value.conversation.id, projectId), [requestId]);
                 const result = previous && !previous.id.startsWith('client:')
                     ? await modelChatApi.retry(value, model, previous.id, requestId, signal)
                     : await modelChatApi.send(value, model, requestId, prompt, attachmentIds, signal, original?.conversation.mode === 'group' ? temporary.targetAgentIds : undefined, consent);

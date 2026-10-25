@@ -7,11 +7,15 @@ import {projectChatApi} from './api';
 import {mergeProjectMessages, projectChatAmbiguous, projectChatRequestKey} from './model';
 import {DEFAULT_PROJECT_CHAT_ROOM} from './types';
 import type {ProjectChatDetail, ProjectChatIntent, ProjectChatReceipt} from './types';
+import {useTabWatch} from '../TabNotifications/useTabWatch';
+import {projectTabSnapshot, projectTabSource} from '../TabNotifications/snapshots';
+import {tabNotifications} from '../TabNotifications/tracker';
 
 /** A room revision orders snapshots; posting waits only for its receipt, never for inference. */
 export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
     const {scope, captureOwner} = useAuthRequestOwner();
     const [detail, setDetail] = useState<ProjectChatDetail>(), [loading, setLoading] = useState(true), [error, setError] = useState('');
+    useTabWatch(scope, detail?.room.projectId === projectId && (detail.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId ? [projectTabSnapshot(detail)] : []);
     const [historyLoading, setHistoryLoading] = useState(false), [historyError, setHistoryError] = useState(''), [action, setAction] = useState<string>();
     const [retryPending, setRetryPending] = useState<string[]>([]), [accessDenied, setAccessDenied] = useState(false);
     const latest = useRef<ProjectChatDetail>(), sequence = useRef(0), active = useRef(true), reading = useRef<AbortController>(), historyRequest = useRef<AbortController>();
@@ -22,13 +26,15 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
     const serverTailIds = useRef(new Set<string>());
     const denied = (cause: unknown): boolean => isAxiosError(cause) && [401, 403, 404].includes(cause.response?.status ?? 0);
     const clearDenied = (): void => {
+        tabNotifications.forget(scope, projectTabSource(projectId, roomId));
         // A fresh denial supersedes every earlier authorized read, even before the parent unmounts this room.
         sequence.current++; reading.current?.abort(); historyRequest.current?.abort(); historyRequest.current = undefined; mutations.current.forEach(controller => controller.abort());
         latest.current = undefined; serverTailIds.current.clear(); retryKeys.current.clear();
         setDetail(undefined); setRetryPending([]); setLoading(false); setHistoryLoading(false); setAccessDenied(true);
     };
-    const accept = (value: ProjectChatDetail): void => {
+    const accept = (value: ProjectChatDetail, watchedIds?: readonly string[]): void => {
         if ((value.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) !== roomId || value.room.projectId !== projectId || latest.current && value.room.revision < latest.current.room.revision) return;
+        if (watchedIds) tabNotifications.accept(scope, projectTabSnapshot(value, watchedIds));
         // Watched older rows and local ACKs must not conceal an unobserved gap between server pages.
         const cursor = value.history.hasMore ? value.messages.find(message => message.id === value.history.nextCursor) : undefined;
         const tail = value.messages.filter(message => !value.history.hasMore || !!cursor && BigInt(message.position) >= BigInt(cursor.position)).map(message => message.id);
@@ -40,9 +46,11 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
     };
     const acceptReceipt = (receipt: ProjectChatReceipt): void => {
         if ([receipt.message, ...(receipt.messages ?? [])].some(message => (message.roomId ?? DEFAULT_PROJECT_CHAT_ROOM) !== roomId)) throw new Error('Подтверждение относится к другому диалогу. Проверьте отправку.');
+        tabNotifications.expect(scope, projectTabSource(projectId, roomId), [receipt.message, ...(receipt.messages ?? [])].filter(message => ['queued', 'running'].includes(message.status)).map(message => message.id));
         if (!latest.current) return;
         const stale = receipt.roomRevision < latest.current.room.revision;
         const next = {...latest.current, room: {...latest.current.room, revision: Math.max(receipt.roomRevision, latest.current.room.revision)}, messages: mergeProjectMessages(latest.current.messages, [receipt.message, ...(receipt.messages ?? [])], stale)};
+        tabNotifications.accept(scope, projectTabSnapshot(next));
         latest.current = next; setDetail(next);
     };
     const refresh = useCallback(async (): Promise<void> => {
@@ -54,7 +62,7 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
             const watch = ownerScope.current === ownerKey && latest.current?.room.projectId === projectId && (latest.current.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId
                 ? latest.current.messages.filter(message => ['queued', 'running'].includes(message.status)).slice(0, 50).map(message => message.id) : [];
             const value = await projectChatApi.read(projectId, controller.signal, watch.length ? watch : undefined, roomId);
-            if (owns() && active.current && !controller.signal.aborted && sequence.current === read) {accept(value); setError('');}
+            if (owns() && active.current && !controller.signal.aborted && sequence.current === read) {accept(value, watch); setError('');}
         } catch (cause) {
             if (owns() && active.current && !controller.signal.aborted && sequence.current === read) {
                 if (denied(cause)) clearDenied();
