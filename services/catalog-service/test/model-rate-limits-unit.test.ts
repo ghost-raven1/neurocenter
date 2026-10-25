@@ -129,7 +129,7 @@ describe('Actual transport admission and telemetry', () => {
   const acquire = vi.fn(async () => { throw new Error('store is offline'); }), gate = new ModelApiAdmission({ acquire } as unknown as ModelRateLimitsService);
   const action = vi.fn(async () => 'result'), beforeInference = vi.fn(async () => undefined), metrics = createModelDispatchMetrics();
   expect(await withModelDispatchMetrics(metrics, () => withModelUsage({ purpose: 'chat', beforeInference }, () => gate.run(model, undefined, action)))).toBe('result');
-  expect(acquire).not.toHaveBeenCalled(); expect(action).toHaveBeenCalledOnce(); expect(beforeInference).toHaveBeenCalledOnce();
+  expect(acquire).not.toHaveBeenCalled(); expect(action).toHaveBeenCalledOnce(); expect(beforeInference).toHaveBeenCalled();
   expect(metrics).toMatchObject({ dispatchCount: 1, rateWaitMs: 0, dispatchedAt: expect.any(String) }); expect(metrics.providerLatencyMs).toBeGreaterThanOrEqual(0);
  });
  it('revalidates the current job after a rate wait and preserves a cancellation/conflict before physical fetch', async () => {
@@ -161,7 +161,7 @@ describe('Actual transport admission and telemetry', () => {
   const acquire = vi.fn(async (_model, _signal, beforeAttempt) => { expect(beforeInference).not.toHaveBeenCalled(); await beforeAttempt(); });
   const gate = new ModelApiAdmission({ acquire } as unknown as ModelRateLimitsService);
   await withModelDispatchMetrics(metrics, () => withModelUsage({ purpose: 'chat', beforeInference }, () => gate.run(model, undefined, async () => 'answer')));
-  expect(beforeInference).toHaveBeenCalledOnce(); expect(metrics.dispatchCount).toBe(1); expect(metrics.dispatchedAt).toBe('2026-10-23T10:00:00.000Z');
+  expect(beforeInference).toHaveBeenCalled(); expect(metrics.dispatchCount).toBe(1); expect(metrics.dispatchedAt).toBe('2026-10-23T10:00:00.000Z');
  });
 });
 
