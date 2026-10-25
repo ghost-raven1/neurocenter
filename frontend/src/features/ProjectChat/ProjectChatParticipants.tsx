@@ -43,7 +43,13 @@ export function ProjectChatParticipants({projectId, detail, saving, error, onClo
         if (!canSave) return;
         const chosenModel = removal ? detail.room.modelId ?? undefined : model?.id, chosenPin = removal ? detail.room.modelPin ?? undefined : model?.modelPin;
         const owns = captureOwner(), ok = await onSave(selected, selected.length ? chosenModel : undefined, selected.length ? chosenPin : undefined, detail.room.revision);
-        if (ok && owns() && active.current) onClose();
+        if (ok && owns() && active.current) {
+            // Adopt this acknowledged submission only; a later external configuration still requires review.
+            const savedModel = selected.length ? chosenModel ?? null : null, savedPin = selected.length ? chosenPin ?? null : null;
+            setModelId(savedModel ?? ''); setModelTouched(false);
+            setBase(configuration({...detail, room: {...detail.room, agentIds: selected, modelId: savedModel, modelPin: savedPin}}));
+            onClose();
+        }
     };
     return <section className="project-chat__settings" aria-label="Настройка агентов команды">
         <div className="project-chat__settings-heading"><Typography.Title level={5}>Агенты команды</Typography.Title><Button disabled={saving} onClick={onClose}>Закрыть настройку</Button></div>
