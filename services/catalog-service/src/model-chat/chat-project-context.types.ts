@@ -1,6 +1,7 @@
 import type { ChatMessage } from './chat.types';
 import type { IChatContextSettings } from './chat-context';
 import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type {PoolClient} from 'pg';
 
 export interface ChatProjectSource {
     id: string; path: string; title?: string; startLine?: number; endLine?: number; score: number; excerpt: string;
@@ -14,7 +15,7 @@ export interface PreparedProjectContext {
     messages: ChatMessage[]; evidence: ChatProjectEvidence;
     requiredFeatures: readonly FeatureFlagKey[];
     /** Identity and access remain checked after a paid result; feature admission only precedes a new dispatch. */
-    assertCurrent(): Promise<void>;
+    assertCurrent(db?:Pick<PoolClient,'query'>): Promise<void>;
     beforeInference(): Promise<void>;
     fit(history: ChatMessage[], settings: IChatContextSettings, limits?: ProjectContextFit): { messages: ChatMessage[]; evidence: ChatProjectEvidence };
 }

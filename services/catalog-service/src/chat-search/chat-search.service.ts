@@ -1,5 +1,6 @@
 import {BadRequestException,ConflictException,Inject,Injectable,type OnModuleDestroy} from '@nestjs/common';
 import type {Request} from 'express';
+import type {PoolClient} from 'pg';
 import {ModelsService} from '../models/models.service';
 import {ModelRuntime,type IModelInferenceRuntime} from '../models/model-runtime';
 import {assertProjectEmbeddingModel,projectEmbeddingPin} from '../models/project-embedding.validation';
@@ -41,13 +42,16 @@ export class ChatSearchService implements OnModuleDestroy {
         if(created){const task=this.execute(req,row,input).catch(()=>undefined);this.tasks.add(task);void task.finally(()=>this.tasks.delete(task));}
         return this.get(req,project,row.id);
     }
-    async get(req:Request,projectId:string,id:string):Promise<ChatSearchJob>{
+    /** Final chat acceptance reuses its connection and retains current source locks through publication. */
+    async get(req:Request,projectId:string,id:string,existingDb?:Pick<PoolClient,'query'>):Promise<ChatSearchJob>{
         const project=this.project(projectId),actor=this.repository.chat.policy.input(req);this.id(id);
-        return this.repository.scoped(project,actor,1,async db=>{
-            await this.repository.expire(db,project,actor.email);const row=await this.repository.get(db,project,actor.email,id);
-            const results=row.kind==='search'&&row.state==='SUCCEEDED'?await this.repository.hydrate(db,row,row.result.hits??[]):undefined;
+        const read=async(db:Pick<PoolClient,'query'>)=>{
+            if(!existingDb)await this.repository.expire(db,project,actor.email);const row=await this.repository.get(db,project,actor.email,id);
+            const results=row.kind==='search'&&row.state==='SUCCEEDED'?await this.repository.hydrate(db,row,row.result.hits??[],!!existingDb):undefined;
             return {id:row.id,projectId:project,kind:row.kind,state:row.state,modelId:row.model_id,modelPin:row.model_pin,indexedChunks:row.result.indexedChunks??0,hasMore:row.result.hasMore??false,error:row.error,...(results?{results}:{})};
-        });
+        };
+        if(existingDb){await this.repository.chat.policy.authorize(existingDb,project,actor,1,true);return read(existingDb);}
+        return this.repository.scoped(project,actor,1,read);
     }
     async list(req:Request,projectId:string):Promise<{jobs:ChatSearchJob[]}>{
         const project=this.project(projectId),actor=this.repository.chat.policy.input(req);
