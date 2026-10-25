@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {createElement, type ReactElement} from 'react';
+import {Children, createElement, isValidElement, type ReactElement, type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {deferredSetup, flushSetup} from './admin-setup-hooks.fixture';
 import {modalAntd, uiNode} from './modal-actions.fixture';
@@ -38,7 +38,9 @@ import {modelCatalogApi} from '../src/features/ModelCatalog/api';
 let props: Parameters<typeof ChatOverlay>[0];
 /** Parent alias resolution and keyed private scopes commit separately, as React mounts them. */
 const render = () => {
-    h.ui.nodes = []; h.workspace = undefined; h.list = undefined; h.active = h.parent; h.parent.begin(); const tree = ChatOverlay(props) as ReactElement<Record<string, unknown>>; h.parent.commit();
+    h.ui.nodes = []; h.workspace = undefined; h.list = undefined; h.active = h.parent; h.parent.begin(); const overlay = ChatOverlay(props) as ReactElement<Record<string, unknown>>; h.parent.commit();
+    const scoped = Children.toArray(overlay.props.children as ReactNode).find(child => isValidElement<Record<string, unknown>>(child) && 'onProject' in child.props);
+    const tree = (scoped ?? overlay) as ReactElement<Record<string, unknown>>;
     if ('onProject' in tree.props) {
         if (h.childKey !== tree.key) { h.child.dispose(); h.childKey = tree.key; }
         h.active = h.child; h.child.begin(); const html = renderToStaticMarkup(tree); h.child.commit(); return html;
@@ -48,7 +50,12 @@ const render = () => {
 const select = (label: string) => h.ui.nodes.find(node => node.kind === 'Select' && node.props['aria-label'] === label)!.props;
 const button = (label: string) => uiNode(h.ui, 'Button', label);
 const conversation = (id = 'chat-1', modelId = model.id) => ({...detail().conversation, id, modelId});
-const open = async (value = conversation()) => { h.items = [value]; render(); h.list!.onSelect(value.id); await flushSetup(); return render(); };
+const selectConversation = (id: string) => {
+    const navigation = h.workspace?.navigation;
+    if (navigation) { const item = navigation.items.find(value => value.id === id); if (item) navigation.onSelect(item); }
+    else h.list!.onSelect(id);
+};
+const open = async (value = conversation()) => { h.items = [value]; render(); selectConversation(value.id); await flushSetup(); return render(); };
 beforeEach(() => {
     h.parent.dispose(); h.child.dispose(); vi.resetAllMocks(); h.active = h.parent; h.childKey = undefined; h.owner.value = 'alice'; h.owner.active = true;
     h.user = {activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: []}; h.projects = [{id: 'prj-one', name: 'Alpha'}, {id: 'prj-two', name: 'Beta'}] as IProjectSummary[]; h.ready = true; h.projectsLoading = false; h.projectsError = '';
@@ -62,14 +69,14 @@ describe('Header overlay: project/model selection and keyed private lifecycle', 
         props.projectId = 'Alpha'; h.ready = false; h.projectsError = 'Проекты недоступны'; expect(render()).toContain('Проекты недоступны'); button('Повторить').onClick(); expect(h.projectsRefresh).toHaveBeenCalledOnce(); uiNode(h.ui, 'Modal').onCancel(); expect(h.close).toHaveBeenCalledOnce(); expect(h.list).toBeUndefined();
         h.projectsError = ''; expect(render()).not.toContain('Выберите модель'); h.ready = true; render(); render(); expect(select('Проект чата').value).toBe('prj-one'); select('Модель чата').onChange(model.id); render(); const key = h.childKey; h.projects = [{id: 'prj-one', name: 'Renamed'}] as IProjectSummary[]; render(); expect(h.childKey).toBe(key); expect(h.workspace?.model.id).toBe(model.id); expect(h.workspace?.projectName).toBe('Renamed');
     });
-    it('project changes mount a fresh scope, common admin model choice stays explicit and connect closes before routing', () => {
-        render(); select('Модель чата').onChange(model.id); render(); expect(h.workspace).toBeDefined(); select('Проект чата').onChange('prj-two'); render(); expect(h.workspace).toBeUndefined(); expect(select('Проект чата').value).toBe('prj-two');
+    it('project changes mount a fresh scope with the first suitable model and connect closes before routing', () => {
+        render(); select('Модель чата').onChange('other-model'); render(); expect(h.workspace?.model.id).toBe('other-model'); select('Проект чата').onChange('prj-two'); render(); render(); expect(h.workspace?.model.id).toBe(model.id); expect(h.workspace?.navigation?.initialDetail).toBeUndefined(); expect(select('Проект чата').value).toBe('prj-two');
         button('Подключить модель').onClick(); expect(h.close).toHaveBeenCalledOnce(); expect(h.push).toHaveBeenLastCalledWith('/store?tab=models&p=prj-two'); expect(h.close.mock.invocationCallOrder[0]).toBeLessThan(h.push.mock.invocationCallOrder[0]);
         select('Проект чата').onChange(''); render(); expect(select('Проект чата').value).toBe(''); expect(h.list!.onNew).toBeDefined(); button('Подключить модель').onClick(); expect(h.push).toHaveBeenLastCalledWith('/store?tab=models');
     });
     it('project selector lists only effective developer grants and retains an honest unavailable current-project label', () => {
         h.user = {activeRole: 'Разработчик', userRoles: ['Разработчик'], projectRoles: [{projectId: 'prj-one', projectName: 'Alpha', role: 'Разработчик'}, {projectId: 'prj-two', projectName: 'Beta', role: 'Наблюдатель'}]}; render(); expect(select('Проект чата').options).toEqual([{value: '', label: 'Выберите проект', disabled: true}, {value: 'prj-one', label: 'Alpha'}]);
-        h.projects = []; render(); expect(select('Проект чата').options).toContainEqual({value: 'prj-one', label: 'Текущий проект'}); h.user.projectRoles = []; expect(render()).toContain('Выберите проект с доступом'); expect(select('Модель чата').disabled).toBe(true);
+        h.projects = []; render(); expect(select('Проект чата').options).toContainEqual({value: 'prj-one', label: 'Текущий проект'}); h.user.projectRoles = []; render(); expect(h.workspace?.unavailableReason).toBe('Для чата нужна рабочая роль в выбранном проекте.'); expect(select('Модель чата').disabled).toBe(true);
     });
     it('loading/error and non-ready/unassigned models cannot select a default; retry only refreshes metadata', () => {
         h.modelsLoading = true; expect(render()).toContain('Загружаем модели'); select('Модель чата').onChange(model.id); render(); expect(h.workspace).toBeUndefined(); h.modelsLoading = false; h.modelsError = 'Модели недоступны'; render(); select('Модель чата').onChange(model.id); render(); expect(h.workspace).toBeUndefined(); button('Повторить').onClick(); expect(h.modelsRefresh).toHaveBeenCalledOnce();
@@ -97,26 +104,26 @@ describe('Header overlay: project/model selection and keyed private lifecycle', 
         h.list!.onSelect('chat-1'); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail?.conversation.id).toBe('chat-1'); expect(modelChatApi.read).toHaveBeenCalledOnce();
     });
     it('missing saved IDs do no read; opening freezes controls until both conversation and exact model resolve', async () => {
-        render(); h.list!.onSelect('missing'); expect(modelChatApi.read).not.toHaveBeenCalled(); const pending = deferredSetup<IModelChatDetail>(), found = deferredSetup<ICatalogModel>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); vi.mocked(modelCatalogApi.get).mockReturnValueOnce(found.promise); h.items = [conversation()]; render(); h.list!.onSelect('chat-1'); expect(render()).toContain('Открываем диалог'); expect(select('Проект чата').disabled).toBe(true); expect(select('Модель чата').disabled).toBe(true); expect(h.list!.disabled).toBe(true);
-        pending.resolve(detail()); await flushSetup(); render(); expect(h.workspace).toBeUndefined(); found.resolve(model); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail?.conversation.id).toBe('chat-1');
+        render(); selectConversation('missing'); expect(modelChatApi.read).not.toHaveBeenCalled(); const pending = deferredSetup<IModelChatDetail>(), found = deferredSetup<ICatalogModel>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); vi.mocked(modelCatalogApi.get).mockReturnValueOnce(found.promise); h.items = [conversation()]; render(); selectConversation('chat-1'); expect(render()).toContain('Открываем диалог'); expect(select('Проект чата').disabled).toBe(true); expect(select('Модель чата').disabled).toBe(true); expect(h.workspace?.navigation?.opening).toBe(true);
+        pending.resolve(detail()); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail).toBeUndefined(); expect(h.workspace?.navigation?.opening).toBe(true); found.resolve(model); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail?.conversation.id).toBe('chat-1');
     });
     it.each(['project', 'model'] as const)('a mismatched saved %s refuses cross-scope history and displays the exact recovery reason', async mismatch => {
-        vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({conversation: {...conversation(), ...(mismatch === 'project' ? {projectId: 'private-project'} : {modelId: 'wrong-model'})}})); const html = await open(); expect(html).toContain('Диалог относится к другому проекту'); expect(h.workspace).toBeUndefined();
+        vi.mocked(modelChatApi.read).mockResolvedValueOnce(detail({conversation: {...conversation(), ...(mismatch === 'project' ? {projectId: 'private-project'} : {modelId: 'wrong-model'})}})); const html = await open(); expect(html).toContain('Диалог относится к другому проекту'); expect(h.workspace?.navigation?.initialDetail).toBeUndefined();
     });
     it.each(['resolve', 'reject'] as const)('a newer conversation opening aborts the old %s and retains only the latest selection', async outcome => {
-        const old = deferredSetup<IModelChatDetail>(), current = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise); h.items = [conversation('old'), conversation('current')]; render(); h.list!.onSelect('old'); const signal = vi.mocked(modelChatApi.read).mock.calls[0][1]; render(); h.list!.onSelect('current'); expect(signal.aborted).toBe(true);
+        const old = deferredSetup<IModelChatDetail>(), current = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise); h.items = [conversation('old'), conversation('current')]; render(); selectConversation('old'); const signal = vi.mocked(modelChatApi.read).mock.calls[0][1]; render(); selectConversation('current'); expect(signal.aborted).toBe(true);
         if (outcome === 'resolve') old.resolve(detail({conversation: conversation('old')})); else old.reject(Error('PRIVATE OLD ERROR')); await flushSetup(); expect(render()).not.toContain('PRIVATE OLD'); current.resolve(detail({conversation: conversation('current')})); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail?.conversation.id).toBe('current');
     });
     it.each(['resolve', 'reject'] as const)('owner switch remounts its private scope and aborts the former owner late %s', async outcome => {
         const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); h.items = [conversation()]; render(); h.list!.onSelect('chat-1'); const signal = vi.mocked(modelChatApi.read).mock.calls[0][1]; h.owner.value = 'bob'; h.items = []; render(); expect(signal.aborted).toBe(true);
-        if (outcome === 'resolve') pending.resolve(detail()); else pending.reject(Error('PRIVATE OLD OWNER')); await flushSetup(); expect(render()).not.toContain('PRIVATE OLD OWNER'); expect(h.workspace).toBeUndefined();
+        if (outcome === 'resolve') pending.resolve(detail()); else pending.reject(Error('PRIVATE OLD OWNER')); await flushSetup(); expect(render()).not.toContain('PRIVATE OLD OWNER'); expect(h.workspace?.model.id).toBe(model.id); expect(h.workspace?.navigation?.initialDetail).toBeUndefined();
     });
     it('opening failure leaves existing history selected; close aborts the new read before returning to the launcher', async () => {
         await open(); const selected = h.workspace?.navigation?.initialDetail; vi.mocked(modelCatalogApi.get).mockRejectedValueOnce(Error('Модель больше недоступна')); h.workspace!.navigation!.onSelect(conversation('second')); await flushSetup(); expect(render()).toContain('Модель больше недоступна'); expect(h.workspace?.navigation?.initialDetail).toEqual(selected);
         const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); h.workspace!.navigation!.onSelect(conversation('third')); render(); const signal = vi.mocked(modelChatApi.read).mock.calls.at(-1)![1]; h.workspace!.onClose(); expect(signal.aborted).toBe(true); expect(h.close).toHaveBeenCalledOnce(); pending.resolve(detail({conversation: conversation('third')})); await flushSetup(); render(); expect(h.workspace?.navigation?.initialDetail).toEqual(selected);
     });
     it('welcome close and unmount abort their reads; existing index errors remain visible and refreshable', async () => {
-        h.indexError = 'Список временно недоступен'; expect(render()).toContain('Список временно недоступен'); h.list!.onRefresh(); expect(h.indexRefresh).toHaveBeenCalledOnce();
+        h.models = []; h.assigned = []; h.indexError = 'Список временно недоступен'; expect(render()).toContain('Список временно недоступен'); h.list!.onRefresh(); expect(h.indexRefresh).toHaveBeenCalledOnce();
         const pending = deferredSetup<IModelChatDetail>(); vi.mocked(modelChatApi.read).mockReturnValueOnce(pending.promise); h.items = [conversation()]; render(); h.list!.onSelect('chat-1'); render(); const signal = vi.mocked(modelChatApi.read).mock.calls[0][1]; uiNode(h.ui, 'Modal').onCancel(); expect(signal.aborted).toBe(true); expect(h.close).toHaveBeenCalledOnce(); h.child.dispose(); pending.resolve(detail()); await flushSetup(); expect(h.workspace).toBeUndefined();
     });
 });

@@ -482,11 +482,13 @@ describe('Явная помощь Упаковщика',()=>{
         ready();expect(ui.checkboxes.get('Помощь Упаковщика')?.checked).toBe(false);expect(ui.modelList).not.toHaveBeenCalled();
         ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledOnce();expect(ui.submit.mock.calls[0][0]).not.toHaveProperty('agent');expect(ui.modelList).not.toHaveBeenCalled();
     });
-    it('Требует явную модель и передаёт точный pin с пределом трёх попыток',async()=>{
-        ui.modelList.mockResolvedValue({items:[model,{...model,id:'embedding',capability:'embedding'}],assignedModelIds:[]});ready();
-        check();render();await flush();render();ui.finish!();await flush();expect(ui.submit).not.toHaveBeenCalled();
-        ui.selects.get('Модель Упаковщика')!.onChange(model.id);const html=render();expect(html).toContain('до 6 обращений');expect(html).toContain('результат проверки запуска');
-        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({agent:{modelId:model.id,expectedModelPin:model.modelPin,maxAttempts:3}}));
+    it('Выбирает первую подходящую модель и сохраняет точный pin ручного выбора с пределом трёх попыток',async()=>{
+        const manual={...model,id:'model-manual',name:'Выбранная вручную',modelPin:'c'.repeat(64)};
+        ui.modelList.mockResolvedValue({items:[{...model,id:'embedding',capability:'embedding'},model,manual],assignedModelIds:[]});ready();
+        check();render();await flush();render();expect(ui.selects.get('Модель Упаковщика')!.value).toBe(model.id);
+        expect(ui.submit).not.toHaveBeenCalled();
+        ui.selects.get('Модель Упаковщика')!.onChange(manual.id);const html=render();expect(html).toContain('до 6 обращений');expect(html).toContain('результат проверки запуска');
+        ui.finish!();await flush();expect(ui.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({agent:{modelId:manual.id,expectedModelPin:manual.modelPin,maxAttempts:3}}));
         expect(ui.modelList).toHaveBeenCalledExactlyOnceWith();
     });
     it('Отключение агентского флага блокирует новый вызов и сохраняет ручные поля',async()=>{

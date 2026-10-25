@@ -25,7 +25,11 @@ const create=vi.fn<(input:LearningBridgeInput)=>Promise<IBridgeJob>>(),reload=vi
 let root:Root|undefined,container:HTMLDivElement,action:ReturnType<typeof useLearningBridgeIntent>,input:LearningBridgeInput;
 function Harness(){action=useLearningBridgeIntent({projectId:input.projectId,kind:input.kind,canSend:value=>fixture.canManage&&(value.kind==='sync-learning-memory'&&value.memoryMode==='cleanup'||fixture.enabled),create,reload});return null;}
 async function mount(){container=document.createElement('div');document.body.append(container);root=createRoot(container);await render();}
-async function render(){await act(async()=>root!.render(createElement(StrictMode,null,createElement(Harness))));}
+async function render(){
+ await act(async()=>root!.render(createElement(StrictMode,null,createElement(Harness))));
+ // Recovery validates the saved fingerprint through real WebCrypto before its read completes.
+ await vi.waitFor(async()=>{await act(async()=>{});expect(action.loading).toBe(false);});
+}
 async function close(){await act(async()=>root?.unmount());root=undefined;container?.remove();}
 async function send(value=input){await act(async()=>{await action.send(value);});}
 async function check(){await act(async()=>{await action.check();});}
