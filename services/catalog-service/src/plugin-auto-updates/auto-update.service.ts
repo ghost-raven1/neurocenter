@@ -1,6 +1,8 @@
 import type {PoolClient} from 'pg';
 import {ConflictException,ForbiddenException,HttpException,Injectable,Logger,type OnModuleDestroy,type OnModuleInit} from '@nestjs/common';
 import {isDeepStrictEqual} from 'node:util';
+import type {IPackage} from '../catalog/bundle-package';
+import {normalizeRuntimeArtifacts} from '../../../shared/runtime-artifacts.cjs';
 import {randomUUID} from 'node:crypto';
 import type {IAccessActor} from '../access/access.model';
 import {projectLevel} from '../access/access.model';
@@ -15,6 +17,13 @@ import {isManagedCodexConnectorPackage,CODEX_MANAGED_INSTALL_MESSAGE} from '../.
 import {PluginAutoUpdateRepository} from './auto-update.repository';
 import {autoUpdateMutation,autoUpdateTarget,pendingAutoUpdate} from './auto-update.validation';
 import {autoUpdateView,type AutoUpdateRow,type AutoUpdateStatus,type AutoUpdateTarget} from './auto-update.types';
+
+/** Only archive byte inventory varies on a normal runtime release; launch/settings contracts stay exact. */
+function updateSettings(config:IPackage['config']):unknown {
+ if(config?.extra?.runtimeArtifacts===undefined)return config??null;
+ const runtimeArtifacts=normalizeRuntimeArtifacts(config.extra.runtimeArtifacts).map(({sha256:_sha,compressedBytes:_compressed,unpackedBytes:_unpacked,filesCount:_count,...settings})=>settings);
+ return {...config,extra:{...config.extra,runtimeArtifacts}};
+}
 
 class UpdateBlocked extends Error {
  constructor(readonly status:AutoUpdateStatus,message:string,readonly delay:number|null){super(message);}
@@ -97,7 +106,7 @@ export class PluginAutoUpdateService implements OnModuleInit,OnModuleDestroy {
     if(pkg.plugin.version<installed.plugin.version||pkg.manifest.sha256!==installed.manifest.sha256)throw new UpdateBlocked('attention','Закрепление проекта отличается от установленной версии. Автоматический откат не выполняется.',null);
     await this.repository.finish(row,'up-to-date','Установлена актуальная одобренная версия проекта. Проверяем новые назначения каждый час.',3600,undefined,true);return;
    }
-   if(!isDeepStrictEqual(pkg.config??null,installed.config??null))throw new UpdateBlocked('attention','Новая версия меняет настройки или зависимости. Обновите её вручную через план установки; прежняя версия сохранена.',null);
+   if(!isDeepStrictEqual(updateSettings(pkg.config),updateSettings(installed.config)))throw new UpdateBlocked('attention','Новая версия меняет настройки или зависимости. Обновите её вручную через план установки; прежняя версия сохранена.',null);
    let approved:Awaited<ReturnType<InstallPlans['approvedInstalled']>>;
    try{approved=await this.plans.approvedInstalled(target.projectId,pkg);}catch(error){
     if(error instanceof ConflictException)throw new UpdateBlocked('waiting','Новая версия закреплена, но план ещё не одобрен. Откройте план установки в каталоге проекта.',3600);

@@ -1,4 +1,6 @@
 import {randomUUID} from 'node:crypto';
+import {artifactFixture} from '../../../scripts/test/runtime-artifact-fixture.cjs';
+import {approvedRuntimeArtifact} from '../src/devices/runtime-job-artifact';
 import {ForbiddenException} from '@nestjs/common';
 import {statfs} from 'node:fs/promises';
 import {Pool} from 'pg';
@@ -84,7 +86,7 @@ describe.skipIf(!url).sequential('Plugin update policy + ordinary queue on expli
   }finally{await locker.query('ROLLBACK');locker.release();}
   await expect(saving).rejects.toMatchObject({status:403});expect((await repository.read(actor,target))?.revision).toBe(1);
  });
- it('published catalog version waits for pin and approval, then scheduler uses DeviceJobs and exact completion receipt',async()=>{
+ it.each(['text','runtime'] as const)('published %s catalog version waits for pin/approval, then scheduler uses exact DeviceJobs completion',async distribution=>{
   // The real owners share an explicitly injected owned pool; no default localhost database is constructed.
   const access=Object.assign(Object.create(AccessDb.prototype),{pool}) as AccessDb;
   const singleStorePool=new Pool({connectionString:pool.options.connectionString,max:1,connectionTimeoutMillis:1000,application_name:application});
@@ -93,11 +95,15 @@ describe.skipIf(!url).sequential('Plugin update policy + ordinary queue on expli
   const service=new PluginAutoUpdateService(store,installations,plans,jobs),adminActor={email:'admin-policy@fixture.test',activeRole:'Админ проекта'};
   await pool.query('INSERT INTO platform_users(email) VALUES($1),($2)',[actor.email,adminActor.email]);
   await pool.query('INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES($1,$2,$2,$2,$3),($1,$4,$4,$4,$5)',[target.projectId,actor.email,actor.activeRole,adminActor.email,adminActor.activeRole]);
-  await pool.query("UPDATE bridge_devices SET report=report||$2::jsonb WHERE id=$1",[target.deviceId,JSON.stringify({protocolVersion:2,capabilities:['durable-completions','managed-installations','install-set-v1','package-v4']})]);
+  await pool.query("UPDATE bridge_devices SET report=report||$2::jsonb WHERE id=$1",[target.deviceId,JSON.stringify({protocolVersion:2,capabilities:['durable-completions','managed-installations','install-set-v1','package-v4','package-v5']})]);
   const flags=evaluateFeatureFlags(defaultFeatureFlags());
   vi.stubGlobal('fetch',vi.fn(async(raw:string)=>{if(!String(raw).endsWith('/internal/feature-flags/evaluated'))throw Error('Unexpected fixture egress');return new Response(JSON.stringify(flags));}));
   const catalog=new PluginRepository(pool),assignments=new ProjectAssetRepository(pool);
-  const first=await catalog.create({name:'Auto fixture '+randomUUID(),kind:'plugin',description:'Owned fixture',config:{entrypoint:'plugin.mjs'},files:[{path:'plugin.mjs',content:'export default 1;',size:0,digest:''}]},adminActor.email);
+  const archives=[1,2].map(version=>artifactFixture([{path:'plugin.mjs',content:'export default '+version+';'},...(version===2?[{path:'README.md',content:'Updated runtime contents'}]:[])]));
+  const delivery=(version:number)=>distribution==='runtime'?{config:{extra:{runtimeArtifacts:[archives[version-1].descriptor]}},files:[]}
+   :{config:{entrypoint:'plugin.mjs'},files:[{path:'plugin.mjs',content:'export default '+version+';',size:0,digest:''}]};
+  if(distribution==='runtime')for(const {descriptor} of archives)await pool.query('INSERT INTO bridge_runtime_artifacts(sha256,compressed_bytes,unpacked_bytes,files_count) VALUES($1,$2,$3,$4)',[descriptor.sha256,descriptor.compressedBytes,descriptor.unpackedBytes,descriptor.filesCount]);
+  const first=await catalog.create({name:'Auto fixture '+randomUUID(),kind:'plugin',description:'Owned fixture',...delivery(1)},adminActor.email);
   target.assetId=first.id;await assignments.add(target.projectId,first.id,'plugin',adminActor.email);
   const initial=checkedProjectPackage((await pool.query('SELECT * FROM project_assets WHERE project_id=$1',[target.projectId])).rows[0]);
   await pool.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash,state,created_at)
@@ -106,7 +112,7 @@ describe.skipIf(!url).sequential('Plugin update policy + ordinary queue on expli
   try{
    await service.save(actor,{...target,enabled:true,expectedRevision:0,requestKey:randomUUID()});await service.wake();
    expect((await repository.read(actor,target))?.status).toBe('up-to-date');
-   const second=await catalog.update(first.id,{expectedVersion:1,files:[{path:'plugin.mjs',content:'export default 2;',size:0,digest:''}]},adminActor.email);expect(second?.version).toBe(2);
+   const second=await catalog.update(first.id,{expectedVersion:1,...delivery(2)},adminActor.email);expect(second?.version).toBe(2);
    await due();expect((await repository.read(actor,target))?.message).toContain('Админ проекта');
    expect((await pool.query("SELECT count(*) FROM bridge_jobs WHERE payload->>'version'='2'")).rows[0].count).toBe('0');
    await assignments.pin(target.projectId,first.id,'plugin',adminActor.email,{version:2,expectedVersion:1,expectedManifest:initial.manifest.sha256});
@@ -116,6 +122,11 @@ describe.skipIf(!url).sequential('Plugin update policy + ordinary queue on expli
    await due();const queuedPolicy=await repository.read(actor,target);expect(queuedPolicy?.status).toBe('queued');
    const device=await store.owned(actor,target.deviceId),job=await jobs.claim(device);expect(job?.id).toBe(queuedPolicy?.job_id);expect(job?.payload.package.plugin.version).toBe(2);
    await jobs.authorize(device,job!.id,job!.lease!);
+   if(distribution==='runtime'){
+    expect(job!.payload.package.schemaVersion).toBe(5);expect(job!.payload.package.config?.extra?.runtimeArtifacts).toEqual([archives[1].descriptor]);
+    expect(await approvedRuntimeArtifact(pool,target.deviceId,job!.id,job!.lease!,archives[1].descriptor.sha256)).toEqual(archives[1].descriptor);
+    await expect(approvedRuntimeArtifact(pool,target.deviceId,job!.id,job!.lease!,archives[0].descriptor.sha256)).rejects.toThrow('не входит');
+   }
    const installed=job!.payload.package as typeof initial;
    await completeDeviceJob(pool,target.deviceId,job!.id,{lease:job!.lease!,state:'succeeded',message:'Fixture ordinary bridge receipt',result:{projectId:target.projectId,assetId:first.id,version:2,manifest:installed.manifest.sha256,bindingId:binding,ok:true}});
    await due();expect((await service.read(actor,target)).policy).toMatchObject({status:'succeeded',job:{state:'succeeded'}});

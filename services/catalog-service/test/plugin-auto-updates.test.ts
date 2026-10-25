@@ -4,7 +4,9 @@ import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {PluginAutoUpdateService} from '../src/plugin-auto-updates/auto-update.service';
 import {autoUpdateMutation,autoUpdateTarget,pendingAutoUpdate} from '../src/plugin-auto-updates/auto-update.validation';
 import type {AutoUpdateRow} from '../src/plugin-auto-updates/auto-update.types';
-import {buildPackage} from '../src/catalog/bundle-package';
+import {buildPackage,verifyPackage} from '../src/catalog/bundle-package';
+import {assertInstallablePackage} from '../src/devices/installation-set';
+import {artifactFixture} from '../../../scripts/test/runtime-artifact-fixture.cjs';
 import type {DeviceStore} from '../src/devices/device-store';
 import type {DeviceInstallations} from '../src/devices/device-installations';
 import type {InstallPlans} from '../src/devices/install-plans';
@@ -15,6 +17,10 @@ vi.mock('../src/features/require-feature-enabled',()=>({requireFeatureEnabled:vi
 const actor={email:'updates@example.test',activeRole:'Разработчик'},binding='a'.repeat(64),project='prj-auto',asset='plugin-fixture';
 const target={deviceId:'owned-device',projectId:project,bindingId:binding,assetId:asset};
 const pkg=(version:number,config?:Parameters<typeof buildPackage>[3])=>buildPackage({id:asset,name:'Fixture',kind:'plugin',version},[{path:'fixture.mjs',content:'export default '+version+';'}],'2026-10-25',config);
+const runtimePackage=(version:number,extra:Record<string,unknown>={})=>{
+ const archive=artifactFixture([{path:'plugin.mjs',content:'export default '+version+';'},...(version===2?[{path:'README.md',content:'Updated runtime contents'}]:[])]);
+ return buildPackage({id:asset,name:'Fixture',kind:'plugin',version},[],'2026-10-25',{extra:{runtimeArtifacts:[archive.descriptor],userOption:'saved',requirements:{mcp:[],plugins:[],dependencies:[]},...extra}});
+};
 /** Real policy owner runs against controlled installation/queue boundaries; receipts outlive an unconfirmed create ACK. */
 function fixture(){
  let installed=pkg(1),assigned=pkg(2),catalogVersion=2,role='Разработчик',online=true,changedBinding=false,dropAck=false,revokeAtAdmission=false;
@@ -62,6 +68,29 @@ describe('Opt-in approved plugin updates',()=>{
  });
  it('keeps the installed configuration and requires a manual plan when it changes',async()=>{
   const f=fixture();f.setAssigned(pkg(2,{extra:{userOption:'new'}}));await f.service.tick();expect(f.create).not.toHaveBeenCalled();expect(f.row.status).toBe('attention');expect(f.row.message).toContain('настройки');
+ });
+ it('updates a valid v5 runtime archive with the exact newly approved SHA without mutating either package',async()=>{
+  const f=fixture(),old=runtimePackage(1),next=runtimePackage(2),before=structuredClone({old,next});
+  expect(old.schemaVersion).toBe(5);expect(next.schemaVersion).toBe(5);expect(()=>assertInstallablePackage(old)).not.toThrow();expect(()=>assertInstallablePackage(next)).not.toThrow();
+  expect(old.config!.extra!.runtimeArtifacts).not.toEqual(next.config!.extra!.runtimeArtifacts);
+  f.setInstalled(old);f.setAssigned(next);await f.service.tick();
+  expect(f.create).toHaveBeenCalledTimes(1);expect(f.create.mock.calls[0][1]).toMatchObject({version:2,expectedManifest:next.manifest.sha256});
+  expect({old,next}).toEqual(before);expect(verifyPackage(old)&&verifyPackage(next)).toBe(true);
+ });
+ it.each([
+  {name:'user settings',extra:{userOption:'changed'}},
+  {name:'exact dependency pins',extra:{requirements:{mcp:[],plugins:[],dependencies:[{kind:'plugin',id:'another-plugin',version:2,manifest:'d'.repeat(64)}]}}},
+  {name:'additional schema metadata',extra:{settingsSchema:{schemaVersion:2}}},
+  {name:'local configuration schema',extra:{localConfiguration:{schemaVersion:1,fields:[]}}},
+ ])('runtime updates still require a manual plan for changed $name',async({extra})=>{
+  const f=fixture();f.setInstalled(runtimePackage(1));f.setAssigned(runtimePackage(2,extra));await f.service.tick();
+  expect(f.create).not.toHaveBeenCalled();expect(f.row.status).toBe('attention');expect(f.plans.approvedInstalled).not.toHaveBeenCalled();
+ });
+ it.each(['target','entrypoint','executable'] as const)('runtime delivery comparison retains the artifact %s setting',async key=>{
+  const f=fixture(),next=runtimePackage(2),descriptor=(next.config!.extra!.runtimeArtifacts as Record<string,unknown>[])[0];
+  const config={...next.config!,extra:{...next.config!.extra,runtimeArtifacts:[{...descriptor,[key]:key==='target'?'linux-x64-glibc':key==='entrypoint'?'another.mjs':false}]}};
+  const changed=buildPackage(next.plugin,[],'2026-10-25',config);f.setInstalled(runtimePackage(1));f.setAssigned(changed);await f.service.tick();
+  expect(f.create).not.toHaveBeenCalled();expect(f.row.status).toBe('attention');
  });
  it('waits offline and refuses a changed folder before preparing a job',async()=>{
   const f=fixture();f.offline();await f.service.tick();expect(f.row.message).toContain('не в сети');expect(f.create).not.toHaveBeenCalled();
