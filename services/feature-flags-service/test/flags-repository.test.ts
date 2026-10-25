@@ -22,7 +22,7 @@ describe('Хранилище переключателей и аудит', () => 
         query.mockImplementation(async (sql: string, values?: unknown[]) => {
             if (sql.startsWith('SELECT * FROM feature_flags WHERE flag_key=ANY')) { return { rows: rows() }; }
             if (sql.startsWith('SELECT * FROM feature_flags WHERE flag_key=$1')) { return { rows: rows().filter(row => row.flag_key === values![0]) }; }
-            if (sql.startsWith('UPDATE feature_flags')) { return { rows: [{ ...rows()[0], overrides: { enabled: values![1] }, revision: '2', updated_by: values![2] }] }; }
+            if (sql.startsWith('UPDATE feature_flags')) { return { rows: [{ ...rows().find(row => row.flag_key === values![0])!, overrides: { enabled: values![1] }, revision: '2', updated_by: values![2] }] }; }
             return { rows: [] };
         });
         repository = new FlagsRepository(pool);
