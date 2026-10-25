@@ -19,7 +19,7 @@ describe('Provider wizard opening and later filesystem completion',()=>{
  it.each(['acknowledged','lost-ack'] as const)('a later HTTP save never reuses the %s opening job',async delivery=>{
   const f=await providerFixture();cleanup.push(f.cleanup);
   const file=path.join(f.root,providerConfig),manual='// KEEP MANUAL SETTINGS\n{"model":"manual/default","provider":{"manual":{"models":{"m":{}}}}}\n';
-  await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,manual,{mode:0o640});
+  await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,manual,{mode:0o640});await fs.chmod(file,0o640);
   const preparation=await prepareOpenCodeProvider(f.descriptor,noop),job={id:randomUUID(),lease:randomUUID(),deviceId:f.descriptor.deviceId};
   let address='';const open=vi.fn(async(url:string)=>{address=url;return true;}),authorizeSave=vi.fn(noop);
   // The real worker's AsyncLocalStorage also belongs to the server's later HTTP callbacks.
