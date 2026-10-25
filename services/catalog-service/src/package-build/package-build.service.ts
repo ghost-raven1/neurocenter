@@ -1,4 +1,5 @@
 import {pinBuildRecipe} from './package-agent.inventory';
+import {traceToolBuild} from '../../../shared/dev-trace.cjs';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
 import {buildFeatures,assertCodexBuildKind,assertCodexBuildPublication,publishedCodexConnectors} from './codex-connector-build';
@@ -229,12 +230,14 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     async cancel(actor:IAccessActor,id:string){
         await this.requireMain(actor);if(!validId(id))throw new BadRequestException('Некорректный ID сборки.');
         const row=await withBuildSqlErrors(()=>this.repository.cancel(actor.email,id,()=>this.requireMain(actor)));
+        traceToolBuild('cancel-requested',{requestKey:row.request_key,buildId:row.id});
         if(row.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
         void notifyDeviceOperations();return this.view(actor,row);
     }
     async cancelRequest(actor:IAccessActor,key:string){
         await this.requireMain(actor);if(!validId(key))throw new BadRequestException('Некорректный ключ запроса сборки.');
         const row=await withBuildSqlErrors(()=>this.repository.cancelRequest(actor.email,key,()=>this.requireMain(actor)));
+        traceToolBuild('cancel-requested',{requestKey:key,...(row?{buildId:row.id}:{})});
         if(row?.state==='CANCELLING'&&this.activeBuild?.id===row.id)this.activeBuild.cancellation.cancel();
         void notifyDeviceOperations();return {requestKey:key,state:row?.state??'CANCELLED' as const,build:row?await this.view(actor,row):null};
     }
@@ -274,8 +277,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     async create(actor: IAccessActor, raw: unknown) {
         await this.requireMain(actor);
         const input = validateBuildInput(raw), fingerprint = requestHash(input);
+        traceToolBuild('requested',{requestKey:input.requestKey});
         const previous = await this.repository.existing(actor.email, input.requestKey, fingerprint);
-        if (previous) { return this.view(actor,previous); }
+        if (previous) { traceToolBuild('replayed',{requestKey:input.requestKey,buildId:previous.id});return this.view(actor,previous); }
         await assertBuildCreateName(this.pool,input);
         const publication=await pinBuildPublication(this.pool,input);
         await requireFeaturesEnabled(buildFeatures(input));
@@ -348,6 +352,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                     if(source.type==='upload')await this.uploads!.retain(client,actor.email,source);
                 };
                 const row=await this.repository.enqueue(actor.email,input.requestKey,fingerprint,config,lease,retain);
+                traceToolBuild('accepted',{requestKey:input.requestKey,buildId:row.id});
                 this.currentLease(lease);
                 if (row.state === 'QUEUED') {this.startWorker(root);}
                 void notifyDeviceOperations();
@@ -403,7 +408,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private async execute(row: BuildRow, root: string): Promise<void> {
         const stage = path.join(root, row.id);
         const cancellation=new BuildCancellation(()=>this.repository.get(row.id));
-        this.activeBuild={id:row.id,cancellation};let cancelled=false,unreaped=false,started=false,reaped=false;
+        this.activeBuild={id:row.id,cancellation};let cancelled=false,unreaped=false,started=false,reaped=false,succeeded=false,cancellationComplete=false,failureComplete=false;
+        traceToolBuild('started',{requestKey:row.request_key,buildId:row.id});
         let releaseDisk: () => void = () => undefined;
         try {
             await this.requireMain({email: row.actor, activeRole: 'Главный админ'}); await requireFeaturesEnabled(buildFeatures(row.config));
@@ -411,7 +417,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             releaseDisk = await reserveCapacity({resource: 'runtime-artifacts', bytes: row.config.kind==='skill'&&row.config.source.type==='files'?64*1024**2:stagingLimit, path: root});
             await fs.mkdir(stage, {mode: 0o700});
             await this.progress(row.id, 10, 'Подготовка исходников и закреплённой версии');
-            if(row.config.kind==='skill'){await this.executeSkill(row,stage);return;}
+            if(row.config.kind==='skill'){await this.executeSkill(row,stage);succeeded=true;return;}
             await this.progress(row.id, 30, 'Сборка платформенных комплектов и проверка SHA');
             if(row.config.source.type==='upload'){if(!this.uploads)throw new Error('Сервис сохранённых исходников недоступен.');await this.uploads.assertRetained(row.actor,row.config.source);}
             const ownerLease=this.currentLease(),actor={email:row.actor,activeRole:'Главный админ' as const};
@@ -478,22 +484,23 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 method: 'POST', headers: {'Content-Type': 'application/json', 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || ''},
                 body: JSON.stringify({sections: ['catalog', 'operations', 'audit']}), signal: AbortSignal.timeout(1500),
             }).catch(() => undefined);
+            succeeded=true;
         } catch (error) {
             unreaped=error instanceof BuildProcessUnreapedError;
             const message = publicationDeadlineMessage(error) ?? (error instanceof ForbiddenException ? (error.message.startsWith('Функция «')?error.message:'Права главного администратора отозваны. Публикация остановлена.')
                 : error instanceof Error && !/postgres|password|token|secret|connection|https?:\/\//i.test(error.message) ? error.message.slice(0, 500)
                 : 'Сборка не выполнена. Проверьте исходники, зависимости и доступность npm.');
             cancelled=error instanceof BuildCancelledError||cancellation.controller.signal.reason instanceof BuildCancelledError;
-            if(!cancelled)try{await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message);}
+            if(!cancelled)try{failureComplete=(await this.repository.progress(row.id, 'FAILED', 0, message, undefined, message))?.state==='FAILED';}
             catch(failure){if(failure instanceof BuildCancelledError)cancelled=true;else throw failure;}
             if(cancelled&&started&&!reaped)unreaped=true;
         } finally {
             this.child = undefined;
             cancellation.dispose();if(this.activeBuild?.id===row.id)this.activeBuild=undefined;
-            try {if(unreaped){if(cancelled)await this.repository.cancellationAwaitingOwner(row.id);}else{if(row.execution_nonce)this.stoppedWorkers.add(row.execution_nonce);await fs.rm(stage, {recursive: true, force: true});if(cancelled){await acknowledgeBuildCleanup(root,row);await this.repository.completeCancellation(row.id);}await forgetBuildCleanup(root,row);if(row.execution_nonce)this.stoppedWorkers.delete(row.execution_nonce);}}
-            catch(error){if(cancelled)await this.repository.cancellationCleanupFailed(row.id);throw error;}
+            try {if(unreaped){if(cancelled)await this.repository.cancellationAwaitingOwner(row.id);}else{if(row.execution_nonce)this.stoppedWorkers.add(row.execution_nonce);await fs.rm(stage, {recursive: true, force: true});if(cancelled){await acknowledgeBuildCleanup(root,row);cancellationComplete=await this.repository.completeCancellation(row.id);}await forgetBuildCleanup(root,row);if(row.execution_nonce)this.stoppedWorkers.delete(row.execution_nonce);}}
+            catch(error){succeeded=false;cancellationComplete=false;failureComplete=false;if(cancelled)await this.repository.cancellationCleanupFailed(row.id);throw error;}
             // An unreaped producer can still grow its stage; keep its process-local reservation for operator recovery.
-            finally {if(!unreaped)releaseDisk();}
+            finally {if(!unreaped)releaseDisk();if(cancelled?cancellationComplete:succeeded||failureComplete)traceToolBuild(cancelled?'cancelled':succeeded?'succeeded':'failed',{requestKey:row.request_key,buildId:row.id});}
             void notifyDeviceOperations();
         }
     }
