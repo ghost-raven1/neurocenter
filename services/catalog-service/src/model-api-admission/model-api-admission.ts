@@ -31,7 +31,7 @@ export class ModelApiAdmission {
   if (enabled) await this.limits.acquire(model, signal, beforeAttempt, ms => { if (metrics) metrics.rateWaitMs += ms; });
   // Unlike ongoing authority checks, this guard must never run after the provider has accepted work.
   await context.beforeDispatch?.();
-  if(context.beforeDispatch)await modelRateBeforeAttempt(beforeAttempt,signal);
+  await modelRateBeforeAttempt(beforeAttempt,signal);
   signal?.throwIfAborted();
   if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
   const started=performance.now();let activeWrite:Promise<void>|undefined;
