@@ -22,6 +22,7 @@ import WebRestore from './restore/WebRestore';
 import RetiredRagDatabases from '../../features/RetiredRagDatabases/RetiredRagDatabases';
 import { FeatureFlagsPanel } from '../../features/FeatureFlags/FeatureFlagsPanel';
 import { RagQuotaPolicy } from '../../features/RagQuotaPolicy/RagQuotaPolicy';
+import {MaintenanceSections} from './MaintenanceSections';
 import './Maintenance.less';
 
 const { Paragraph, Text, Title } = Typography;
@@ -94,13 +95,9 @@ const AccountMaintenance: FC = () => {
                 description="Расписание резервных копий, состояние хранилищ и восстановление серверных данных."
                 actions={<Button icon={<ReloadOutlined />} loading={storageLoading || backupLoading} onClick={refresh} disabled={backingUp}>Обновить сведения</Button>}
             />
-            <Row gutter={[ 24, 24 ]}>
-                <Col span={24}><FeatureFlagsPanel /></Col>
-                <Col span={24}><RagQuotaPolicy /></Col>
+            <MaintenanceSections backups={<Row gutter={[24, 24]}>
                 <Col span={24}><FullBackupSettings /></Col>
                 <Col span={24}><WebRestore account={restoreAccount} /></Col>
-                <Col span={24}><RetiredRagDatabases /></Col>
-                <Col span={24}><CapacityStatus /></Col>
                 <Col xs={24} xl={15}>
                     <Card
                         className="maintenance-page__backup"
@@ -150,6 +147,10 @@ const AccountMaintenance: FC = () => {
                         </Card>
                     </Space>
                 </Col>
+            </Row>} storage={<Row gutter={[24, 24]}>
+                <Col span={24}><RagQuotaPolicy /></Col>
+                <Col span={24}><RetiredRagDatabases /></Col>
+                <Col span={24}><CapacityStatus /></Col>
                 <Col span={24}>
                     <Card
                         className="maintenance-page__storage"
@@ -189,7 +190,7 @@ const AccountMaintenance: FC = () => {
                         </> : !storageError ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Размеры пока не получены" /> : null}
                     </Card>
                 </Col>
-            </Row>
+            </Row>} features={<FeatureFlagsPanel />} />
         </div>
     );
 };

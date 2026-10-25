@@ -57,7 +57,7 @@ describe('Управление функциями в Обслуживании', 
         const controller = createFeatureFlagsController({ read, write, captureOwner: () => () => true, onChange: next => { state = next; } });
         controller.activate(); await controller.refresh(); await controller.save('model_hosting', false);
         const render = () => renderToStaticMarkup(createElement(FeatureFlagRow, {
-            flag: state.items![0], state: state.rows.model_hosting, disabled: state.loading || !!state.readError,
+            flag: state.items!.find(item => item.key === 'model_hosting')!, state: state.rows.model_hosting, disabled: state.loading || !!state.readError,
             onChange: enabled => { void controller.save('model_hosting', enabled); }, onRefresh: controller.refresh,
             onRetryChoice: () => { void controller.retryChoice('model_hosting'); }, onUseCurrent: () => controller.useCurrent('model_hosting'),
         }));

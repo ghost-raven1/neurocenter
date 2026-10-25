@@ -1,5 +1,5 @@
 import { Alert, Button, Checkbox, Descriptions, Modal, Radio, Select, Space, Spin, Tag, Typography } from 'antd';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { AgentTrialStatus } from './AgentTrialStatus';
@@ -21,7 +21,11 @@ const date = (value: string): string => Number.isFinite(Date.parse(value)) ? new
 export function AgentTrialModal({ projectId, name, item, busy, loading, error, uncertain, checking = false, onClose, onRefresh, onReplay, onStart, onCancel }: IProps): JSX.Element {
     const history = useHistory(), searchAvailability = useFeatureAvailability('project_search');
     const fixed = item.eligibility.modelSelection === 'fixed';
-    const [selected, setSelected] = useState(fixed ? item.eligibility.resolvedModelId ?? '' : item.latestTrial?.receipt.modelId ?? '');
+    const [selected, setSelected] = useState(fixed ? item.eligibility.resolvedModelId ?? '' : item.latestTrial?.receipt.modelId ?? (!loading && !checking && !uncertain ? item.eligibility.models.find(model => model.available)?.id : undefined) ?? '');
+    const modelTouched = useRef(false);
+    useEffect(() => {if (!fixed && !loading && !checking && !uncertain && !modelTouched.current && !selected) {
+        const first = item.latestTrial?.receipt.modelId ?? item.eligibility.models.find(model => model.available)?.id; if (first) setSelected(first);
+    }}, [fixed, loading, checking, uncertain, selected, item]);
     const [tool, setTool] = useState<TAgentTrialTool>('none'), [consent, setConsent] = useState(false);
     const trial = item.latestTrial, pending = agentTrialPending(trial);
     const model = item.eligibility.models.find(value => value.id === (fixed ? item.eligibility.resolvedModelId : selected));
@@ -64,7 +68,7 @@ export function AgentTrialModal({ projectId, name, item, busy, loading, error, u
         {!pending && <div className="agent-trial__setup">
             <Typography.Text strong>Модель для этого испытания</Typography.Text>
             {fixed ? <Typography.Paragraph>{model?.name || 'Закреплённая модель недоступна'} <Tag>Закреплена в агенте</Tag></Typography.Paragraph>
-                : <Select aria-label="Модель для испытания" value={model?.id} disabled={busy || uncertain} placeholder="Выберите модель проекта" onChange={value => setSelected(value)}
+                : <Select aria-label="Модель для испытания" value={model?.id} disabled={busy || uncertain} placeholder="Выберите модель проекта" onChange={value => {modelTouched.current = true; setSelected(value);}}
                     options={item.eligibility.models.map(value => ({ value: value.id, label: value.name, disabled: !value.available, title: value.reason }))} />}
             {(!item.eligibility.canRun || model && !model.available) && <Alert showIcon type="info" message={model?.reason || item.eligibility.reason || 'Испытание пока недоступно.'} />}
             {!item.eligibility.models.some(value => value.available) && <Button onClick={() => { onClose(); history.push(`/projects/${encodeURIComponent(projectId)}?tab=store&catalogTab=models`); }}>Открыть модели проекта</Button>}

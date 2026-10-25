@@ -1,4 +1,5 @@
 import type {ICatalogModel} from '../ModelCatalog/types';
+import {catalogInferenceModelReady} from '../ModelCatalog/availability';
 import type {IBridgeJob} from '../McpBridge/api';
 import type {useBridge} from '../McpBridge/useBridge';
 import {bridgeOperationBlocker} from '../McpBridge/readiness';
@@ -17,8 +18,7 @@ export const providerKindForModel = (model: ICatalogModel): Exclude<OpenCodeProv
 export const providerModelCompatibilityReason = (model: ICatalogModel): string => !!providerKindForModel(model) && model.capability !== 'embedding'
     && (model.model.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/.test(model.model) || model.model.includes('://'))
     ? 'Для OpenCode нужен идентификатор модели до 128 символов: латинские буквы, цифры и . _ : / -. Эта модель остаётся доступна через серверное API.' : '';
-export const providerModelEligible = (model: ICatalogModel): boolean => !!providerKindForModel(model) && model.capability !== 'embedding'
-    && !model.archivedAt && sha(model.modelPin) && sha(model.verificationSha256) && !providerModelCompatibilityReason(model);
+export const providerModelEligible = (model: ICatalogModel): boolean => !!providerKindForModel(model) && catalogInferenceModelReady(model) && !providerModelCompatibilityReason(model);
 
 /** A named computer and exact physical project instance are required even for a status request. */
 export function providerSetupTarget(bridge: ReturnType<typeof useBridge>, projectId: string | undefined, kind: OpenCodeProviderKind = 'openai-compatible'): {target?: IProviderSetupTarget; reason: string} {

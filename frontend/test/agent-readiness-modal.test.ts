@@ -34,8 +34,8 @@ const choose = () => { uiNode(h.ui, 'Select').onChange('model-one'); render(); }
 beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.search = true; item = readinessItem(); busy = false; loading = false; error = ''; uncertain = false; checking = false; });
 afterEach(() => h.hooks.dispose());
 it('opening, selecting and rereading never start a model call; only the explicit button starts the selected configuration', () => {
-    const html = render(); expect(html).toContain('может расходовать лимит провайдера'); expect(start).not.toHaveBeenCalled(); expect(button().disabled).toBe(true);
-    button().onClick({}); expect(start).not.toHaveBeenCalled(); choose(); expect(start).not.toHaveBeenCalled(); expect(button().disabled).toBe(false);
+    const html = render(); expect(html).toContain('может расходовать лимит провайдера'); expect(start).not.toHaveBeenCalled(); expect(button().disabled).toBe(false);
+    choose(); expect(start).not.toHaveBeenCalled(); expect(button().disabled).toBe(false);
     button().onClick({}); expect(start).toHaveBeenCalledExactlyOnceWith('model-one', 'none', false);
 });
 it('fixed effective model is displayed without a replacement selector', () => {
