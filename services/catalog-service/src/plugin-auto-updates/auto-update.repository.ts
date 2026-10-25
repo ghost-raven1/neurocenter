@@ -16,6 +16,7 @@ export class PluginAutoUpdateRepository {
  async read(actor:IAccessActor,input:AutoUpdateTarget):Promise<AutoUpdateRow|null>{return (await this.pool.query<AutoUpdateRow>(select+' WHERE '+match,tuple(actor,input))).rows[0]??null;}
  async save(actor:IAccessActor,input:AutoUpdateMutation,authorize?:(db:PoolClient,previous:AutoUpdateRow|undefined)=>Promise<void>):Promise<AutoUpdateRow>{
   const client=await this.pool.connect(),hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
+  let discard=false;
   try{
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['plugin-auto-update:'+JSON.stringify(tuple(actor,input))]);
@@ -41,7 +42,7 @@ export class PluginAutoUpdateRepository {
     before:previous?{enabled:previous.enabled,revision:Number(previous.revision)}:null,after:{enabled:saved.enabled,revision:Number(saved.revision),projectId:saved.project_id,deviceId:saved.device_id,bindingId:saved.binding_id,assetId:saved.asset_id}});
    const view=(await client.query<AutoUpdateRow>(select+' WHERE p.id=$1',[saved.id])).rows[0];
    await client.query('COMMIT');return view;
-  }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+  }catch(error){try{await client.query('ROLLBACK');}catch{discard=true;}throw error;}finally{if(discard)client.release(true);else client.release();}
  }
  async claim():Promise<AutoUpdateRow[]>{
   return (await this.pool.query<AutoUpdateRow>(`WITH due AS(SELECT id FROM plugin_auto_update_policies WHERE enabled AND next_check_at<=clock_timestamp()
