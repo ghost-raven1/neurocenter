@@ -1,10 +1,12 @@
 import {homedir} from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {generateKit,repositoryRoot} from './generate.mjs';
+import {generateKit,loadRoles,repositoryRoot} from './generate.mjs';
 import {installCodexKit} from './install-codex.mjs';
+import {roleContractsEnabled,summarizeRoleContracts} from './contracts.mjs';
 
-const usage='Usage: node scripts/agent-kit/doctor.mjs [--observed-tool <name>]...\nRead-only checks of generated kit files, installed files and a caller-supplied MCP tool catalogue.\nOmit --observed-tool to leave client discovery unverified. This command never queries the active client.\n';
+const usage='Usage: node scripts/agent-kit/doctor.mjs [--observed-tool <name>]...\nRead-only checks of generated kit files, installed files and a caller-supplied MCP tool catalogue.\nOmit --observed-tool to leave client discovery unverified. This command never queries the active client.\nNEUROCENTER_AGENT_ROLE_CONTRACTS=0 omits additive role diagnostics; existing file/discovery checks remain available.\n';
 const toolPattern=/^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 
 /** Accept only bounded public tool names; never interpret input as a path or command. */
@@ -34,9 +36,10 @@ function failure(error,scope){
 }
 
 /** Observe source, installed files and supplied discovery evidence without changing any files. */
-export async function doctorKit({kitRoot=repositoryRoot,codexHome=process.env.CODEX_HOME||path.join(homedir(),'.codex'),observedTools,expectedTools}={}){
+export async function doctorKit({kitRoot=repositoryRoot,codexHome=process.env.CODEX_HOME||path.join(homedir(),'.codex'),observedTools,expectedTools,environment=process.env}={}){
     kitRoot=rootPath(kitRoot);codexHome=rootPath(codexHome);
     const observed=observedTools===undefined?undefined:toolNames(observedTools,'observedTools');
+    const contractsEnabled=roleContractsEnabled(environment);
     const catalog=expectedTools===undefined?await import('../dev-mcp/tool-catalog.mjs'):null;
     const expected=toolNames(expectedTools??catalog.toolDefinitions(catalog.toolFlags()).map(tool=>tool.name),'expectedTools');
     let repository,installedCopy;
@@ -54,7 +57,14 @@ export async function doctorKit({kitRoot=repositoryRoot,codexHome=process.env.CO
         ?{status:'unknown',evidence:'not-supplied',message:'Client discovery was not observed. File checks do not verify loaded roles, skills or tools.',expectedTools:expected}
         :{status:missing.length||unexpected.length?'mismatch':'pass',evidence:'caller-supplied',message:'Compared supplied public tool names only; no active-client discovery or tool execution was performed.',expectedTools:expected,observedTools:observed,missing,unexpected};
     const statuses=[repository.status,installedCopy.status,observedClient.status];
-    return {schemaVersion:1,status:statuses.includes('error')?'error':statuses.includes('mismatch')?'mismatch':statuses.includes('unknown')?'unverified':'pass',repository,installedCopy,observedClient};
+    let roleContracts;
+    if(contractsEnabled)try{
+        const roles=await loadRoles(kitRoot);
+        roleContracts={...summarizeRoleContracts(roles),source:{status:'valid',sha256:createHash('sha256').update(JSON.stringify(roles)).digest('hex')},
+            generated:{status:repository.status},installed:{status:installedCopy.status}};
+    }catch{roleContracts={schemaVersion:1,status:'unavailable',code:'ROLE_CONTRACTS_UNAVAILABLE',effectivePermissions:'unknown',loadedRoles:'unverified'};}
+    return {schemaVersion:1,status:statuses.includes('error')?'error':statuses.includes('mismatch')?'mismatch':statuses.includes('unknown')?'unverified':'pass',repository,installedCopy,observedClient,
+        ...(roleContracts?{roleContracts}:{})};
 }
 
 function argumentsFor(args){

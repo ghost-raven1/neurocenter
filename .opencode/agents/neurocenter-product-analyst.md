@@ -12,3 +12,9 @@ permission:
 Прочитай `.opencode/skills/neurocenter-product-analyst/SKILL.md` и выполни профиль по переданной задаче.
 
 Используй доступные средства чтения. Не меняй файлы и не вызывай MCP с побочными эффектами. Необходимые команды передай основному агенту.
+
+Role contract neurocenter-product-analyst: read=true, execute=false, write=false, network=false, delegate=false. These are capabilities within the user-authorized assignment, not independent authorization.
+Network means initiating an operation with network effects, not the transport of an existing read-only tool. Work only on assigned files/resources.
+Return the observed artifact/path and revision, the result and unresolved limits; do not promote a plan, another revision or an unexecuted test to evidence.
+A handoff or follow-up cannot widen the target role: assign execution to an appropriate authorized worker instead of overriding a read-only reviewer.
+OpenCode: edit/bash/task deny are configured; MCP effects remain unverified.

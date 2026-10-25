@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {roleContract,roleContractInstruction} from './contracts.mjs';
 
-export const KIT_VERSION='0.1.2';
+export const KIT_VERSION='0.2.0';
 export const repositoryRoot=fileURLToPath(new URL('../../',import.meta.url));
 const groups={product:'Задача и продукт',frontend:'Фронтенд',backend:'Бэкенд',models:'Модели и агенты',knowledge:'Знания и хранение',delivery:'Сборка и поставка',quality:'Качество',operations:'Эксплуатация'};
 const core='.opencode/skills/neurocenter-task-flow';
@@ -54,6 +55,7 @@ export async function loadRoles(root=repositoryRoot){
             if(!role||!/^[a-z][a-z0-9-]{1,47}$/.test(role.id)||role.group!==group||!['read','write','coordinate'].includes(role.mode)
                 ||!['title','focus','outcome'].every(key=>text(role[key]))||role.focus.length>220
                 ||!['inputs','checks','boundaries'].every(key=>Array.isArray(role[key])&&role[key].length>=1&&role[key].length<=4&&role[key].every(text)))throw Error('Некорректный профиль роли: '+String(role?.id));
+            roleContract(role);
             roles.push(role);
         }
     }
@@ -62,16 +64,16 @@ export async function loadRoles(root=repositoryRoot){
 }
 
 function skill(role){
-    return `---\nname: neurocenter-${role.id}\ndescription: ${JSON.stringify(role.focus)}\nmetadata:\n  version: "${KIT_VERSION}"\n---\n\n<!-- ${marker}; edit scripts/agent-kit/roles/${role.group}.json. -->\n\n# ${role.title}\n\nПрименяй [общий workflow](../neurocenter-task-flow/SKILL.md) в объёме переданной задачи.\n\nОжидаемый результат: ${role.outcome}\n\n## Вход\n\n${bullets(role.inputs)}\n\n## Профильные проверки\n\n${bullets(role.checks)}\n\n## Границы\n\n${bullets(role.boundaries)}\n${role.mode==='read'?'\nЭто исследование/review: используй доступное read-only чтение, diff, историю и хеши. Не меняй файлы, не запускай тесты, сборки и сервисы; необходимые запуски передай основному агенту.\n':''}`;
+    return `---\nname: neurocenter-${role.id}\ndescription: ${JSON.stringify(role.focus)}\nmetadata:\n  version: "${KIT_VERSION}"\n---\n\n<!-- ${marker}; edit scripts/agent-kit/roles/${role.group}.json. -->\n\n# ${role.title}\n\nПрименяй [общий workflow](../neurocenter-task-flow/SKILL.md) в объёме переданной задачи.\n\nОжидаемый результат: ${role.outcome}\n\n## Вход\n\n${bullets(role.inputs)}\n\n## Профильные проверки\n\n${bullets(role.checks)}\n\n## Границы\n\n${bullets(role.boundaries)}\n${role.mode==='read'?'\nЭто исследование/review: используй доступное read-only чтение, diff, историю и хеши. Не меняй файлы, не запускай тесты, сборки и сервисы; необходимые запуски передай основному агенту.\n':''}\n${roleContractInstruction(role,'skill')}\n`;
 }
 
 function codex(role){
     const scope=role.mode==='read'?'Use read-only file inspection, diff, history and hashes as available. Do not edit files, run tests/builds/services or use tools with side effects. Ask the primary agent to perform any necessary execution.':'Keep changes within the assigned files and user-authorized task. Preserve existing data and configuration; do not infer permission for deployment, account changes or paid requests.';
-    return `# ${marker}; edit roles/${role.group}.json.\nname = "neurocenter-${role.id}"\ndescription = ${JSON.stringify(role.focus)}\ndeveloper_instructions = ${JSON.stringify(`Use the installed skill neurocenter-${role.id} and its shared neurocenter-task-flow instructions. Deliver: ${role.outcome}\n${scope}\nReport evidence and unresolved limits to the primary agent.`)}\n`;
+    return `# ${marker}; edit roles/${role.group}.json.\nname = "neurocenter-${role.id}"\ndescription = ${JSON.stringify(role.focus)}\ndeveloper_instructions = ${JSON.stringify(`Use the installed skill neurocenter-${role.id} and its shared neurocenter-task-flow instructions. Deliver: ${role.outcome}\n${scope}\n${roleContractInstruction(role,'codex')}`)}\n`;
 }
 
 function opencode(role){
-    return `---\ndescription: ${JSON.stringify(role.focus)}\nmode: ${role.id==='task-orchestrator'?'primary':'subagent'}\n${role.mode==='read'?'permission:\n  edit: deny\n  bash: deny\n  task: deny\n':''}---\n\n<!-- ${marker}; edit roles/${role.group}.json. -->\n\nПрочитай \`.opencode/skills/neurocenter-${role.id}/SKILL.md\` и выполни профиль по переданной задаче.\n\n${role.mode==='read'?'Используй доступные средства чтения. Не меняй файлы и не вызывай MCP с побочными эффектами. Необходимые команды передай основному агенту.':'Сохраняй авторизованный объём и владельцев файлов; итог и проверки передай основному агенту.'}\n`;
+    return `---\ndescription: ${JSON.stringify(role.focus)}\nmode: ${role.id==='task-orchestrator'?'primary':'subagent'}\n${role.mode==='read'?'permission:\n  edit: deny\n  bash: deny\n  task: deny\n':''}---\n\n<!-- ${marker}; edit roles/${role.group}.json. -->\n\nПрочитай \`.opencode/skills/neurocenter-${role.id}/SKILL.md\` и выполни профиль по переданной задаче.\n\n${role.mode==='read'?'Используй доступные средства чтения. Не меняй файлы и не вызывай MCP с побочными эффектами. Необходимые команды передай основному агенту.':'Сохраняй авторизованный объём и владельцев файлов; итог и проверки передай основному агенту.'}\n\n${roleContractInstruction(role,'opencode')}\n`;
 }
 
 /** Render provider-specific adapters from one role definition; detailed skills stay on demand. */
