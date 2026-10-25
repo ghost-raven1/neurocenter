@@ -1,14 +1,35 @@
+.project-chat-workspace {display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden;}
 .project-chat {
-    display: flex; flex-direction: column; gap: 12px; min-height: 320px; height: min(70vh, 900px); padding: 14px 18px; box-sizing: border-box; overflow-y: auto;
-    &__heading, &__settings-heading, &__send {display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;}
-    &__heading h4, &__settings-heading h5 {margin: 0;}
-    &__heading > div:first-child {min-width: 0; flex: 1 1 250px; overflow-wrap: anywhere;}
-    &__participants {flex: none; padding: 8px 12px; border: 1px solid #dbe4ec; border-radius: 8px; background: #f7f9fc;
-        summary {cursor: pointer; font-weight: 500; span {margin-left: 16px; color: #597086;}}
-        ul {display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 10px 0; margin: 0; list-style: none; li {display: flex; gap: 8px;}}
+    display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; padding: 10px 16px; box-sizing: border-box; overflow-y: auto;
+    &__layout {display: flex; flex: 1; min-height: 0; overflow: hidden;}
+    &__sidebar {width: 220px; flex-shrink: 0; min-height: 0; background: #f6f8fb; border-right: 1px solid #e2e8f0;}
+    &__rooms {height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px 10px;}
+    &__list-heading {display: flex; justify-content: space-between; align-items: center; gap: 4px;}
+    &__room-items {overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain;}
+    &__room {display: flex; flex-direction: column; gap: 4px; width: 100%; margin-bottom: 6px; padding: 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #263c52; text-align: left; cursor: pointer;
+        > span {max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; .anticon {margin-right: 6px;}}
+        > small {color: #617387; font-size: 11px;}
+        &:hover {background: #eaf0f7;} &:focus-visible {outline: 2px solid @brand-primary; outline-offset: -2px;}
+        &_selected {background: #e4ecf5; border-color: #c8d7e7;}
     }
-    &__history-wrap {position: relative; flex: 1; min-height: 120px; overflow: hidden;}
-    &__history {height: 100%; overflow-y: auto; padding: 0 8px 8px 0; overscroll-behavior: contain;}
+    &__rail-note.ant-typography {font-size: 11px; line-height: 1.5;}
+    &__heading {display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 4px;}
+    &__settings-heading, &__send {display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;}
+    &__settings-heading h5 {margin: 0;}
+    &__room-title {display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 1px;
+        > .ant-typography {overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+        > .ant-typography-secondary {font-size: 11px;}
+    }
+    &__mobile-menu.ant-btn, &__mobile-list-close.ant-btn {display: none;}
+    &__participants {display: flex; flex-direction: column; gap: 8px;
+        ul {display: flex; flex-direction: column; gap: 10px; padding: 0; margin: 0; list-style: none;}
+        li {display: flex; align-items: baseline; justify-content: space-between; gap: 10px; > div {display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere;}}
+    }
+    &__roster-agents {display: flex; flex-wrap: wrap; gap: 4px; .ant-tag {white-space: normal;}}
+    &__notice {flex-shrink: 0; margin: 4px 0;}
+    &__loading {flex: 1; padding: 40px; text-align: center;}
+    &__history-wrap {position: relative; flex: 1; min-height: 90px; display: flex; overflow: hidden;}
+    &__history {flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 6px 0; overscroll-behavior: contain;}
     &__message {border: 1px solid #e0e7ee; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fff;
         &:focus {outline: 2px solid #8aa5bc; outline-offset: 2px;}
         header {display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; div {display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere;} time {white-space: nowrap; color: #75879a; font-size: 12px;}}
@@ -22,30 +43,68 @@
     &__pending {display: flex; align-items: center; gap: 8px; color: #597086; padding: 8px 0;}
     &__message-actions {margin-top: 4px;}
     &__presence {font-size: 12px; color: #75879a; &_online {color: #33754e;}}
-    &__typing {flex: none; min-height: 18px; color: #597086; font-size: 12px;}
+    &__typing {flex: none; color: #597086; font-size: 12px; &:empty {display: none;}}
     &__seen {display: inline-block; color: #75879a; font-weight: 600; letter-spacing: -4px; padding-right: 4px; cursor: help; &_read {color: #1677bb;} &:focus {outline: 2px solid #8aa5bc; outline-offset: 3px;}}
     &__markdown {overflow-wrap: anywhere; pre {max-width: 100%; overflow-x: auto; padding: 10px; background: #edf2f7; border-radius: 6px;} p:last-child {margin-bottom: 0;}}
     &__table {max-width: 100%; overflow-x: auto; table {border-collapse: collapse;} td, th {border: 1px solid #dbe4ec; padding: 6px 8px;}}
     &__latest {position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);}
     &__earlier {display: block; margin: 0 auto 12px;}
-    &__composer {flex: none; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #e0e7ee; padding-top: 12px;}
-    &__delivery {display: flex; gap: 12px; flex-wrap: wrap; label {display: flex; flex: 1 1 260px; flex-direction: column; gap: 4px;} .ant-select {width: 100%;}}
-    &__delivery-note {font-size: 12px;}
+    &__composer {flex: none; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #edf1f5; padding-top: 5px;}
+    &__composer-heading {display: flex; align-items: center; justify-content: space-between; gap: 8px; > label {font-size: 12px; font-weight: 500;}}
+    &__tool-trigger.ant-btn {height: auto; min-width: 0; min-height: 28px; padding: 2px 0; color: @brand-primary; font-size: 12px; white-space: normal; text-align: right;}
+    &__delivery {display: flex; flex-direction: column; gap: 12px; label {display: flex; flex-direction: column; gap: 4px;} .ant-select {width: 100%;}}
+    &__delivery-note {font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;}
+    &__feedback {flex: none; max-height: min(104px, 20vh); max-height: min(104px, 20dvh); overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere;
+        .ant-alert {padding: 6px 10px;}
+        .ant-alert-message, .ant-alert-description {font-size: 12px; line-height: 1.5;}
+        .ant-alert-message {margin-bottom: 2px;}
+        > .ant-typography {margin: 4px 0 0; font-size: 12px;}
+    }
+    &__send {flex-wrap: nowrap; margin-top: 1px; > .ant-typography {font-size: 12px;} > .ant-btn {flex-shrink: 0;}}
     &__settings {flex: none; max-height: 40vh; overflow-y: auto; padding: 12px; background: #f7f9fc; border: 1px solid #dbe4ec; border-radius: 8px; display: flex; flex-direction: column; gap: 10px;
         > label {display: flex; flex-direction: column; gap: 4px;}
     }
     &__agent-options {display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;
         > div {display: flex; flex-direction: column; gap: 2px;} .ant-typography {padding-left: 24px; font-size: 12px;}
     }
-    @media (max-width: 600px) {height: 72vh; gap: 8px; padding: 12px; &__heading .ant-space {width: 100%;} &__send > .ant-typography {font-size: 11px;} &__message {padding: 10px;} &__message header {flex-wrap: wrap;} &__delivery label {flex-basis: 100%;} &__send > button {width: 100%;} &__reply-draft {align-items: flex-start; flex-wrap: wrap;}}
 }
 .project-chat__mentions {
     max-width: min(360px, calc(100vw - 32px));
     .ant-mentions-dropdown-menu-item {white-space: normal; overflow-wrap: anywhere;}
 }
 
-.project-chat__dialogs {display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;padding:12px 18px;border-bottom:1px solid #dbe4ec;
-    > label {display:flex;flex-direction:column;gap:4px;flex:1 1 220px;min-width:0;} .ant-select {width:100%;}
-    @media(max-width:600px){padding:10px 12px; > .ant-space {width:100%;}}
-}
 .project-chat__dialog-field {display:flex;flex-direction:column;gap:4px;width:100%;.ant-select {width:100%;}}
+.project-chat-panel {max-width: calc(100vw - 24px); z-index: 1060;
+    .ant-popover-inner-content {padding: 0;}
+    &__panel {width: min(460px, calc(100vw - 24px)); max-height: min(460px, 60vh); max-height: min(460px, 60dvh); display: flex; flex-direction: column; outline: none;}
+    &__heading {display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid #edf1f5; font-size: 13px;}
+    &__body {min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 12px; font-size: 12px;
+        .project-chat__settings {max-height: none; overflow: visible; padding: 0; border: 0; background: transparent;}
+        .project-chat__settings-heading h5 {display: none;}
+        .ant-typography, .ant-checkbox-wrapper {font-size: 12px;}
+    }
+}
+@media (max-width: 768px) {
+    .project-chat {padding: 8px 12px;
+        &__icon-action.ant-btn, &__mobile-menu.ant-btn {min-width: 44px; min-height: 44px;}
+        &__sidebar {display: none;}
+        &__mobile-menu.ant-btn {display: inline-flex; align-items: center; justify-content: center; > span:not(.anticon) {display: none;}}
+        &__layout_list-open {flex-direction: column; .project-chat__sidebar {display: block; width: 100%; flex: 1; min-height: 0;} > .project-chat {display: none;} .project-chat__mobile-list-close.ant-btn {display: block; min-height: 44px; margin: 8px 12px;}}
+        &__room {min-height: 64px;}
+        &__rooms > .ant-btn {min-height: 44px;}
+        &__send {justify-content: flex-end; > .ant-btn {min-height: 44px;}}
+        &__tool-trigger.ant-btn {min-height: 44px;}
+        &__keyboard-hint {position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;}
+        &__message {padding: 10px; header {flex-wrap: wrap;}}
+        &__reply-draft {align-items: flex-start; flex-wrap: wrap;}
+    }
+    .project-chat-panel__heading .ant-btn {min-width: 44px; min-height: 44px;}
+    .project-chat-modal .model-chat__configuration-summary > .ant-btn {min-height: 44px;}
+}
+@media (max-height: 600px) {
+    .project-chat {padding-top: 6px; padding-bottom: 6px; &__history-wrap {min-height: 60px;}}
+}
+@media (max-height: 480px) {
+    .project-chat {padding-top: 4px; padding-bottom: 4px; gap: 4px; &__history-wrap {min-height: 40px;}}
+    #project-chat-message {max-height: 72px !important; overflow-y: auto !important;}
+}
