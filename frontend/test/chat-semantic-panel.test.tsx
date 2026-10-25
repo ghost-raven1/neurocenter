@@ -75,3 +75,51 @@ it.each([undefined, 500])('an unconfirmed %s ACK retains the exact request inste
     expect(h.create).toHaveBeenCalledTimes(2); expect(h.create.mock.calls[1][2]).toEqual(h.create.mock.calls[0][2]);
     expect(h.listModels).toHaveBeenCalledTimes(1); expect(history().value).toBe('recovered-job'); expect(node('Form').disabled).toBe(false);
 });
+
+const modelChoice = () => node('Select', undefined, 'Embedding-модель для публичных чатов');
+it('fills a fresh late catalog with its first eligible model without consent or model calls', async () => {
+    const metadata = deferred<unknown>(); h.listModels.mockReturnValue(metadata.promise); await render();
+    expect(modelChoice().value).toBeUndefined(); expect(node('Checkbox').checked).toBe(false);
+    const first = {...model(), id: 'first'}, second = {...model(), id: 'second'};
+    await act(async () => {metadata.resolve({items: [{...model(), id: 'unassigned'}, {...model(), id: 'wrong', capability: 'chat'}, first, second], assignedModelIds: ['wrong', 'first', 'second']});});
+    expect(modelChoice().value).toBe('first'); expect(node('Checkbox').checked).toBe(false); expect(h.create).not.toHaveBeenCalled(); expect(h.read).not.toHaveBeenCalled();
+});
+it('keeps a manual selection when refreshed metadata arrives in a different order', async () => {
+    h.listModels.mockResolvedValueOnce({items: [model(), {...model(), id: 'second'}], assignedModelIds: ['model-embed', 'second']});
+    await render(); expect(modelChoice().value).toBe('model-embed');
+    const refresh = deferred<unknown>(); h.listModels.mockReturnValueOnce(refresh.promise); await click('Обновить модели');
+    await act(async () => {modelChoice().onChange('second');});
+    await act(async () => {refresh.resolve({items: [{...model(), id: 'new-first'}, {...model(), id: 'second'}], assignedModelIds: ['new-first', 'second']});});
+    expect(modelChoice().value).toBe('second'); expect(node('Checkbox').checked).toBe(false); expect(h.create).not.toHaveBeenCalled();
+});
+it('preserves an explicit clear after metadata refresh', async () => {
+    await render(); expect(modelChoice().value).toBe('model-embed'); expect(modelChoice().allowClear).toBe(true);
+    await act(async () => {modelChoice().onChange(undefined);}); await click('Обновить модели');
+    expect(modelChoice().value).toBeUndefined(); expect(h.create).not.toHaveBeenCalled();
+});
+it('does not default a draft while a saved job is being restored', async () => {
+    const initial = deferred<unknown>(), receipt = deferred<ChatSearchJob>(); h.listModels.mockReturnValueOnce(initial.promise); h.read.mockReturnValueOnce(receipt.promise);
+    await render(); await act(async () => {history().onChange('old-job');});
+    h.listModels.mockResolvedValueOnce({items: [model()], assignedModelIds: ['model-embed']}); await click('Обновить модели');
+    expect(modelChoice().value).toBeUndefined();
+    await act(async () => {receipt.resolve({...job('old-job'), modelId: 'saved-model', modelPin: 'e'.repeat(64)}); initial.resolve({items: [{...model(), id: 'late-model'}], assignedModelIds: ['late-model']});});
+    expect(history().value).toBe('old-job'); expect(modelChoice().value).toBeUndefined(); expect(h.create).not.toHaveBeenCalled();
+});
+it('keeps an automatically chosen model and the exact unknown request pin while metadata changes', async () => {
+    h.create.mockRejectedValueOnce(Error('ACK lost')); await render(); expect(modelChoice().value).toBe('model-embed');
+    await act(async () => {node('TextArea').onChange({target: {value: 'Смысловой запрос'}}); node('Checkbox').onChange({target: {checked: true}});});
+    await click('Найти в публичных чатах'); const input = h.create.mock.calls[0][2];
+    h.listModels.mockResolvedValueOnce({items: [{...model('c'.repeat(64)), id: 'different-model'}], assignedModelIds: ['different-model']}); await click('Обновить модели');
+    expect(modelChoice().value).toBe('model-embed'); expect(node('Form').disabled).toBe(true); expect(h.create).toHaveBeenCalledTimes(1);
+    h.create.mockResolvedValueOnce(job('recovered')); await click('Повторить тот же запрос');
+    expect(h.create.mock.calls[1][2]).toEqual(input); expect(input.expectedModelPin).toBe('b'.repeat(64));
+});
+it('a rejected automatic default remains selected when a corrected request refreshes its pin', async () => {
+    h.create.mockRejectedValueOnce({response: {status: 400}}); await render();
+    await act(async () => {node('TextArea').onChange({target: {value: 'Первый вопрос'}}); node('Checkbox').onChange({target: {checked: true}});});
+    await click('Найти в публичных чатах'); const first = h.create.mock.calls[0][2]; await click('Вернуться к редактированию');
+    h.listModels.mockResolvedValueOnce({items: [{...model(), id: 'new-first'}, model('d'.repeat(64))], assignedModelIds: ['new-first', 'model-embed']});
+    await click('Обновить модели'); expect(modelChoice().value).toBe('model-embed'); expect(node('Checkbox').checked).toBe(false);
+    h.create.mockResolvedValueOnce(job('corrected')); await act(async () => {node('Checkbox').onChange({target: {checked: true}});}); await click('Найти в публичных чатах');
+    const corrected = h.create.mock.calls[1][2]; expect(corrected.modelId).toBe('model-embed'); expect(corrected.expectedModelPin).toBe('d'.repeat(64)); expect(corrected.requestKey).not.toBe(first.requestKey);
+});
