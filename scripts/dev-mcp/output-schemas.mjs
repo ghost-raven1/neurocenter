@@ -37,7 +37,11 @@ const probe=object({path:nullable(text(180)),state:choices(probeStates),statusCo
 const ownership=object({state:choices(['owned','foreign','unknown','disabled']),reason:text(80),pids:array(integer(),8)});
 const health=object({scope:text(2000),services:array(object({service:choices(logServices),port:integer(65535),state:choices(probeStates),statusCode:nullable(integer(599)),
     ready:nullable(boolean),partialProbe:boolean,bodyBytes:integer(32768),durationMs:integer(),liveness:probe,readiness:probe,compilation:probe,ownership}),8),evidence});
-const logs=object({service:choices(logServices),text:text(32768),lines:integer(100),truncated:boolean,evidence});
+const logTime={type:'string',pattern:'^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$'};
+const logDetails=object({observedAt:logTime,fileModifiedAt:logTime,fileBytes:integer(),bytesRead:integer(32768),
+    currentProcessCorrelation:object({state:{const:'unknown'},reason:{const:'append-log-without-launch-provenance'}})});
+const logs=object({service:choices(logServices),text:text(32768),lines:integer(100),truncated:boolean,evidence,details:logDetails},
+    ['service','text','lines','truncated','evidence']);
 
 const coverageSource=object({recordedHead:nullable(head),currentHead:nullable(head),currentHeadMatches:nullable(boolean),sourceChangedDuringRun:nullable(boolean),
     status:choices(['changed','clean-head-match','not-fully-verified'])});
@@ -53,7 +57,7 @@ const coverage=object({...baseReport,status:choices(['in-progress','failed','inc
 const checkSource=object({status:choices(['unknown','capturing','unchanged','changed']),available:boolean,head:nullable(head),workingTree,
     currentSourceEquivalent:{const:'unknown'},before:nullable(snapshot),after:nullable(snapshot),reason:nullable(text(100)),note:text(1000)},['status','currentSourceEquivalent']);
 const check=object({...baseReport,kind:{const:'check'},status:choices(['requested-steps-complete','incomplete','failed','cancelled','in-progress']),
-    reportedSuccess:boolean,observedStepsPassed:boolean,requested:nullable(selection),requestedScope:choices(['recorded-selectors','unknown']),
+    reportedSuccess:boolean,observedStepsPassed:boolean,requested:nullable(object({...selection.properties,tooling:{const:true}},['packages','steps'])),requestedScope:choices(['recorded-selectors','unknown']),
     plannedSteps:nullable(array(text(200),64)),recordedStepCount:integer(64),plannedStepCount:nullable(integer(64)),
     steps:array(object({name:text(200),package:nullable(packageName),step:nullable(checkStep),...processFields,testRunner:choices(['node','vitest']),tests:testCounters,
         leaderReaped:boolean,cleanup,failure},['name','package','step',...Object.keys(processFields)]),64),

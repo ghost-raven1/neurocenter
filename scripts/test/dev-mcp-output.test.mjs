@@ -47,6 +47,14 @@ test('planning and redacted log output satisfy the published structures and reje
     const log=await diagnostics.serviceLogs('catalog',2);validateOutput('service_logs',log);
     assert.ok(!JSON.stringify(log).includes('PRIVATE_VALUE'));
     assert.throws(()=>validateOutput('service_logs',{...log,lines:101}),error=>error.code==='OUTPUT_CONTRACT_MISMATCH');
+    assert.ok(log.details);
+    for(const change of [v=>delete v.details.fileModifiedAt,v=>v.details.observedAt='yesterday',v=>v.details.fileBytes=-1,
+        v=>v.details.bytesRead=32769,v=>v.details.currentProcessCorrelation.state='owned',v=>v.details.currentProcessCorrelation.pid=123]){
+        const invalid=structuredClone(log);change(invalid);
+        assert.throws(()=>validateOutput('service_logs',invalid),error=>error.code==='OUTPUT_CONTRACT_MISMATCH');
+    }
+    const legacy=await (await createDiagnostics(root,{serviceDetailsEnabled:false})).serviceLogs('catalog',2);
+    assert.equal(Object.hasOwn(legacy,'details'),false);validateOutput('service_logs',legacy);
 });
 
 test('output-schema flag only changes the advertised contract and preserves evidence tools',()=>{

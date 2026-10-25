@@ -87,7 +87,7 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
                 }catch{return {name,version:null,state:'unavailable'};}
             }));
             return {workspace:workspaceName,node:process.version,node24:Number(process.versions.node.split('.')[0])===24,git:await gitObservation(root),packages:versions,
-                checkCommands:['npm run check','npm run coverage -- --max-workers 1','node --test scripts/test/dev-mcp.test.mjs'],
+                checkCommands:['npm run check -- --tooling','npm run check','npm run coverage -- --max-workers 1','node --test scripts/test/dev-mcp.test.mjs'],
                 note:'Commands are suggestions only and can be expensive; this server never executes checks.',evidence:evidenceNote};
         },
         async servicesHealth(signal){return {...await health(signal),evidence:evidenceNote};},
@@ -105,7 +105,9 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             text=redactLog(text);
             const selected=text.replace(/\n$/,'').split('\n').slice(-lines).join('\n');
             const bytes=Buffer.from(selected),bounded=bytes.subarray(Math.max(0,bytes.length-32768)).toString('utf8');
-            return {service,text:bounded,lines:bounded?bounded.split('\n').length:0,truncated:file.truncated||bytes.length>32768||text.split('\n').length>lines,evidence:evidenceNote};
+            return {service,text:bounded,lines:bounded?bounded.split('\n').length:0,truncated:file.truncated||bytes.length>32768||text.split('\n').length>lines,
+                ...(serviceDetailsEnabled?{details:{observedAt:file.observedAt,fileModifiedAt:file.fileModifiedAt,fileBytes:file.fileBytes,bytesRead:file.bytesRead,
+                    currentProcessCorrelation:{state:'unknown',reason:'append-log-without-launch-provenance'}}}:{}),evidence:evidenceNote};
         },
         async verificationSummary(report){
             if(typeof report!=='string'||report.length>180||!new RegExp(verificationReportPattern).test(report))throw new DiagnosticError('INVALID_ARGUMENT','Choose one coverage manifest, check report or isolated-build receipt in a single run directory.');

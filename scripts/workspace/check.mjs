@@ -17,7 +17,9 @@ async function directory(folder){
 /** Execute the admitted plan, preserve terminal outcome, and bind results to before/after current source bytes. */
 export async function runCheck(root,options,{signal,environment=process.env,timeoutMs=600000,graceMs=1000,output=process.stdout,errorOutput=process.stderr}={}){
     if(environment.NEUROCENTER_CHECK_SOURCE!==undefined&&!['0','1'].includes(environment.NEUROCENTER_CHECK_SOURCE))throw Error('NEUROCENTER_CHECK_SOURCE должен быть 0 или 1.');
-    const plan=captureCheckPlan(root,options),steps=plan.steps,runtime=nodeRuntime(environment),npm=npmCli(runtime.env);
+    if(environment.NEUROCENTER_CHECK_TOOLING!==undefined&&!['0','1'].includes(environment.NEUROCENTER_CHECK_TOOLING))throw Error('NEUROCENTER_CHECK_TOOLING должен быть 0 или 1.');
+    if(options.tooling&&environment.NEUROCENTER_CHECK_TOOLING==='0')throw Error('NEUROCENTER_CHECK_TOOLING=0 отключает --tooling.');
+    const plan=captureCheckPlan(root,options),steps=plan.steps,runtime=nodeRuntime(environment),npm=steps.some(step=>step.type==='npm')?npmCli(runtime.env):null;
     if(process.platform==='win32')throw Error('Проверка с управляемой очисткой процессов требует POSIX.');
     if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||!Number.isSafeInteger(graceMs)||graceMs<1)throw Error('Некорректные ограничения времени check.');
     await directory(path.join(root,'.run'));await directory(path.join(root,'.run/check'));
