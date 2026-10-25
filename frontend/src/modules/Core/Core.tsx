@@ -1,6 +1,6 @@
 import { BrandMark } from '../../common/components/BrandMark';
-import { SettingOutlined, QuestionCircleOutlined, ApiOutlined, AppstoreOutlined, AuditOutlined, DatabaseOutlined, DeploymentUnitOutlined, DisconnectOutlined, FolderOutlined, MenuOutlined, RocketOutlined, SafetyOutlined, SyncOutlined, ToolOutlined } from '@ant-design/icons';
-import { Alert, Button, Grid, Layout, Menu, Space, Typography } from 'antd';
+import { DisconnectOutlined, MenuOutlined, SyncOutlined } from '@ant-design/icons';
+import { Alert, Button, Grid, Layout, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -25,22 +25,10 @@ import {ChatLauncher} from '../../features/ModelChat/ChatLauncher';
 import {useChatPresence} from '../../features/ChatActivity/useChatPresence';
 import {useTabNotifications} from '../../features/TabNotifications/useTabNotifications';
 import {useNotificationSounds} from '../../features/NotificationSounds/useNotificationSounds';
+import {AppNavigation} from '../../features/AppNavigation/AppNavigation';
+import {navigationEntries, selectedNavigationEntry} from '../../features/AppNavigation/model';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
-
-const navigation: Record<string, { title: string; icon: ReactNode }> = {
-    start: { title: 'Начало работы', icon: <RocketOutlined /> },
-    assets: { title: 'Ассеты', icon: <DatabaseOutlined /> },
-    store: { title: 'Каталог', icon: <AppstoreOutlined /> },
-    projects: { title: 'Проекты', icon: <FolderOutlined /> },
-    rag: { title: 'Базы знаний', icon: <DatabaseOutlined /> },
-    maintenance: { title: 'Обслуживание', icon: <ToolOutlined /> },
-    audit: { title: 'История действий', icon: <AuditOutlined /> },
-    'model-usage': { title: 'Использование моделей', icon: <DeploymentUnitOutlined /> },
-    access: { title: 'Участники и доступ', icon: <SafetyOutlined /> },
-    settings: { title: 'Настройки', icon: <SettingOutlined /> },
-    help: { title: 'Помощь', icon: <QuestionCircleOutlined /> },
-};
 
 const OperationsQueue = lazySection(() => import('../Operations/OperationsQueue'), 'Операции', { preserveOnNavigation: true });
 
@@ -100,13 +88,11 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
 
     if (!isAuth) { return <LoginScreen />; }
 
-    const items = modulesStructure
-        .filter(item => user?.routePermissions.includes(item.name))
-        .map(item => ({ key: item.route, label: navigation[item.name]?.title ?? item.title, icon: navigation[item.name]?.icon }));
-    const selected = items.find(item => location.pathname.startsWith(item.key));
+    const items = navigationEntries(modulesStructure, user?.routePermissions ?? []);
+    const selected = selectedNavigationEntry(items, location.pathname);
     const brand = <div className="app__brand"><BrandMark/><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
-    const menuItems = [...items, {key: '/api/docs', className: 'app__documentation-item', label: <a className="app__documentation-link" href="/api/docs" target="_blank" rel="noopener noreferrer">Swagger API</a>, icon: <ApiOutlined />}];
-    const menu = <nav aria-label="Основная навигация"><Menu theme="dark" mode="inline" items={menuItems} selectedKeys={selected ? [selected.key] : []} onClick={({key}) => { if (key !== '/api/docs') { history.push(key); } setMenuOpen(false); }} /></nav>;
+    const menu = <AppNavigation entries={items} pathname={location.pathname} active={!compact || menuOpen}
+        onNavigate={route => history.push(route)} onClose={() => setMenuOpen(false)}/>;
 
     return (
         <Layout className="app">
@@ -117,7 +103,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                     <div className="app__location">{compact && <BrandMark className="app__header-mark"/>}
                         {compact && <Button type="text" icon={<MenuOutlined />} aria-label="Открыть меню" onClick={() => setMenuOpen(true)} />}
                         <Typography.Text type="secondary">Рабочее пространство</Typography.Text>
-                        <span className="app__location-separator">/</span><Typography.Text strong>{selected?.label ?? 'Нейроцентр'}</Typography.Text>
+                        <span className="app__location-separator">/</span><Typography.Text strong>{selected?.title ?? 'Нейроцентр'}</Typography.Text>
                     </div>
                     <Space size={16} className="app__header-actions">
                         <span className={`app__live${live ? '' : ' app__live--disconnected'}`} role="status" aria-label={live?'Автообновление данных подключено.':'Автообновление данных недоступно. Восстанавливаем соединение.'}

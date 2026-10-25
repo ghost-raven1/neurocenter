@@ -2,6 +2,9 @@
     min-height: 100vh;
     background: #f4f7fa;
     &__sidebar.ant-layout-sider { position: sticky; top: 0; height: 100vh; background: #14283d; }
+    &__sidebar .ant-layout-sider-children { display: flex; flex-direction: column; }
+    &__sidebar nav { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    &__brand, &__sidebar-note { flex-shrink: 0; }
     &__brand { display: flex; align-items: center; gap: 12px; padding: 28px 22px 32px; color: #fff;
         > .anticon { font-size: 30px; color: @brand-on-dark; }
         strong { display: block; font-size: 20px; letter-spacing: -.5px; }
@@ -34,9 +37,6 @@
 @media (max-width: 575px) { .app { &__content { padding: 16px 12px; } &__operations-label { display: none; } &__header .ant-space { gap: 8px !important; } &__location { gap: 4px; } } }
 
 .app__sidebar-note a { display: block; margin-top: 16px; color: @brand-on-dark; }
-// Native link covers the icon and padding while retaining keyboard and modified-click behavior.
-.app__documentation-item { position: relative; }
-.app__documentation-link { position: static; &::after { position: absolute; inset: 0; content: ''; } }
 @media (max-width: 575px) { .user-info__name { display: none; } .app__location { overflow: hidden; } .app__location .ant-typography { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 
 @media (max-width: 575px) { .app__header.ant-layout-header { gap: 8px; } .app__live-label { max-width: 90px; white-space: normal; line-height: 1.3; } .app__header > .ant-space { margin-left: auto; } }
