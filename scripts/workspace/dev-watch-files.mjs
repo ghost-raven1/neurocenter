@@ -12,13 +12,13 @@ export async function initialWatchGeneration(root,signal){
     const folder=path.join(watchDirectory(root),'generations',randomUUID()),repository=path.join(folder,'repository');await fs.mkdir(repository,{recursive:true,mode:0o700});
     try{const source=await sourceSnapshot(root,{destination:repository,signal});if(source.bytes>64*1024**2)throw Error('WATCH_RUNTIME_INPUT_LIMIT');await linkDependencies(root,repository,backendSelection);
         for(const [,relative,entry]of backendSelection){signal?.throwIfAborted();const source=await fs.realpath(path.join(root,relative,'dist'));const artifacts=await artifactTree(source);if(!artifacts.files[entry])throw Error('WATCH_INITIAL_BUILD_MISSING');await fs.cp(source,path.join(repository,relative,'dist'),{recursive:true,dereference:false});}
-        return {folder,repository};
+        return {folder,repository,sourceSha256:source.digest};
     }catch(error){await fs.rm(folder,{recursive:true,force:true});throw error;}
 }
 /** Keep the active immutable repository; large transient build manifests/logs are removed after use. */
 export async function publishWatchGeneration(root,result){
     const folder=path.join(watchDirectory(root),'generations',path.basename(path.dirname(result.repository)));await fs.mkdir(folder,{recursive:true,mode:0o700});
-    await fs.rename(result.repository,path.join(folder,'repository'));return {folder,repository:path.join(folder,'repository')};
+    await fs.rename(result.repository,path.join(folder,'repository'));return {folder,repository:path.join(folder,'repository'),sourceSha256:result.inputs?.sha256??null};
 }
 export async function pruneWatchGenerations(root,keep){
     const directory=path.join(watchDirectory(root),'generations'),names=await fs.readdir(directory).catch(error=>{if(error.code==='ENOENT')return [];throw error;});

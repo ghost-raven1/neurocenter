@@ -1,5 +1,6 @@
-import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {randomUUID} from 'node:crypto';
 import { homedir } from 'node:os';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
-import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
+import {devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
 import {devServices,devServiceHealth,probeLocalEndpoint,serviceDetailsFlag} from './workspace/dev-service-health.mjs';
 import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
@@ -16,6 +17,8 @@ import {privateSnapshotFile} from './snapshots/control.mjs';
 import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
 import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
+import {launchDevService,currentDevLaunchId} from './workspace/dev-launch-provenance.mjs';
+import {recoverDevLaunch} from './workspace/dev-launch-recovery.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const stateDir = path.join(root, '.run');
@@ -128,9 +131,26 @@ function signalProcess(pid, signal) {
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
 async function stop(saved) {
     let known = saved ?? readProcesses();
+    const witnessed = known.filter(record=>record.serviceWitness!==undefined),recovered=new Set();
+    const recoverOwners=async()=>{
+        for(const record of witnessed){if(ownsProcess(record))continue;
+            const result=await recoverDevLaunch(root,record,trackedServices.find(service=>service.name===record.name));
+            if(result.state==='unknown'){
+                const current=readProcesses(),missing=witnessed.filter(item=>!current.some(row=>row.pid===item.pid&&JSON.stringify(row.serviceWitness)===JSON.stringify(item.serviceWitness)));
+                if(missing.length){const temporary=stateFile+'.recovery-'+randomUUID();
+                    try{writeFileSync(temporary,JSON.stringify([...current,...missing],null,2),{mode:0o600,flag:'wx'});renameSync(temporary,stateFile);}
+                    finally{rmSync(temporary,{force:true});}
+                }
+                throw new Error(`${record.name}: ${result.reason}; принадлежность процесса не подтверждена. Состояние сохранено; повторите down после проверки.`);
+            }
+            if(result.state==='stopped')recovered.add(record.pid);
+        }
+    };
+    await recoverOwners();
     const watchers=[...known.filter(item=>item.name===watchService.name),...(!saved?discoverDevProcesses(root,[watchService],known.map(record=>record.pid)):[])].filter(ownsProcess);
     if(watchers.length){const {stopDevWatch}=await import('./workspace/dev-watch-control.mjs');for(const record of watchers)await stopDevWatch(root,record);if(!saved)known=readProcesses();}
-    const discovered = saved ? [] : discoverDevProcesses(root, trackedServices, known.map(record => record.pid));
+    const managedNames=new Set(witnessed.map(record=>record.name));
+    const discovered = saved ? [] : discoverDevProcesses(root, trackedServices.filter(service=>!managedNames.has(service.name)), known.map(record => record.pid));
     const records = [...new Map([...known, ...discovered].map(record => [record.pid, record])).values()].filter(ownsProcess);
     for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
     const deadline = Date.now() + 5000;
@@ -140,8 +160,9 @@ async function stop(saved) {
     while (records.some(ownsProcess) && Date.now() < killedDeadline) { await delay(50); }
     const remaining = records.filter(ownsProcess);
     if (remaining.length) { throw new Error(`Не удалось остановить сервисы (PID: ${remaining.map(record => record.pid).join(', ')}). Перезапуск отменён.`); }
+    await recoverOwners();
     rmSync(stateFile, { force: true });
-    return records.length;
+    return records.length+recovered.size;
 }
 
 /** Проверяем освобождение адресов до запуска новых процессов; чужие сервисы не останавливаем. */
@@ -264,33 +285,19 @@ async function start(profile,watchMode=false) {
     process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
-        const environmentFor=service=>service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
-            ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)};
+        const environmentFor=service=>({...service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
+            ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)},
+            NEUROCENTER_DEV_LAUNCH_PROVENANCE:process.env.NEUROCENTER_DEV_LAUNCH_PROVENANCE});
         if(watchMode){
             const {startDevWatch}=await import('./workspace/dev-watch-control.mjs');
             const watcher=await startDevWatch({root,node,logDir,signal:cancellation.signal,services:managedServices.map(service=>({...service,entry:entryFor(service),environment:environmentFor(service)}))});
             records.push(watcher.record);children.push({child:watcher.child,service:watchService,logFile:path.join(logDir,'neurocenter-source-watch.log')});
         }else for (const service of managedServices) {
             cancellation.signal.throwIfAborted();
-            const logFile = path.join(logDir, `neurocenter-${service.name}.log`);
-            const log = openSync(logFile, 'a');
-            const child = spawn(node, [ entryFor(service) ], {
-                cwd: path.join(root, service.dir),
-                env: environmentFor(service),
-                detached: true,
-                stdio: [ 'ignore', log, log ],
-            });
+            const {child,record,logFile} = await launchDevService({root,node,service,entry:entryFor(service),environment:environmentFor(service),logDir,signal:cancellation.signal});
             children.push({child, service, logFile});
-            try {
-                await new Promise((resolve, reject) => {
-                    child.once('spawn', resolve);
-                    child.once('error', reject);
-                });
-            } catch (error) {
-                throw new Error(`${service.label} (:${service.port}) не запущен: ${error.message}. Лог: ${logFile}`);
-            } finally { closeSync(log); }
             child.unref();
-            records.push({ name: service.name, pid: child.pid, identity: devProcessIdentity(child.pid) });
+            records.push(record);
             writeFileSync(stateFile, JSON.stringify(records, null, 2));
         }
 
@@ -429,10 +436,15 @@ async function main() {
         }
         output.info('Логи', logDir);
     } else if (command === 'tail') {
+        const {readOwnedFile}=await import('./dev-mcp/safe-file.mjs');
         let found = 0;
         for (const service of managedServices) {
-            const file = path.join(logDir, `neurocenter-${service.name}.log`);
-            if (existsSync(file)) { found++; output.logs(service.label, readFileSync(file, 'utf8').trimEnd().split('\n').slice(-20).join('\n')); }
+            if(!existsSync(logDir))break;
+            const launchId=await currentDevLaunchId(root,service.name),file=`neurocenter-${service.name}${launchId?'-'+launchId:''}.log`;
+            try{const read=await readOwnedFile(realpathSync(logDir),file,{limit:32768,tail:true});let text=read.text;
+                if(read.truncated){const newline=text.indexOf('\n');text=newline<0?'':text.slice(newline+1);}
+                found++;output.logs(service.label,text.trimEnd().split('\n').slice(-20).join('\n'));
+            }catch(error){if(error.code!=='ENOENT')throw error;}
         }
         if (!found) { output.info('Логи', 'Пока нет — появятся после первого запуска проекта.'); }
         output.info('Каталог логов', logDir);

@@ -44,8 +44,10 @@ async function fixture(t, mode) {
         await fs.rm(directory, {recursive: true, force: true});
     });
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
+    await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
+    for (const file of ['safe-file.mjs','constants.mjs']) await fs.copyFile(path.join(root,'scripts/dev-mcp',file),path.join(checkout,'scripts/dev-mcp',file));
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -108,6 +110,10 @@ async function fixture(t, mode) {
             const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
             record({kind:'child-start',service,pid:process.pid,entry:process.argv[1],flagsUrl:process.env.FEATURE_FLAGS_SERVICE_URL});
             process.on('SIGTERM',()=>{record({kind:'child-stop',service,pid:process.pid});process.exit(0);});
+            if(service==='catalog'&&process.env.DEV_START_MODE.startsWith('profile-ready-owner-kill')){
+                require('node:child_process').spawn(process.execPath,[process.env.DEV_START_CHECKOUT+'/scripts/owner-kill-writer.cjs'],{stdio:'inherit'});
+                if(process.env.DEV_START_MODE.includes('-blocked')){const blocked=setInterval(()=>{if(!fs.existsSync(process.env.DEV_START_MARKER+'.block'))return;clearInterval(blocked);record({kind:'actual-blocked',pid:process.pid});Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0);},5);}
+            }
             if(service==='catalog'&&!process.env.DEV_START_MODE.startsWith('native-cancel-')&&!process.env.DEV_START_MODE.startsWith('profile-ready')){
                 const fail=()=>{record({kind:'child-exit',service,pid:process.pid});console.error('fixture catalog failure');process.exit(7);};
                 if(process.env.DEV_START_MODE==='immediate')fail();
@@ -118,6 +124,7 @@ async function fixture(t, mode) {
             setInterval(()=>{},1000);
         `);
     }
+    await fs.writeFile(path.join(checkout,'scripts/owner-kill-writer.cjs'),`const fs=require('node:fs');process.on('SIGTERM',()=>{});fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'stubborn-ready',pid:process.pid,entry:process.argv[1]})+String.fromCharCode(10));setInterval(()=>{},1000);`);
     await fs.writeFile(path.join(checkout,'scripts/snapshots/runner.mjs'),`
         import fs from 'node:fs';
         const calls=${JSON.stringify(calls)},service='snapshot-verifier';
@@ -159,7 +166,12 @@ async function fixture(t, mode) {
         const spawn=childProcess.spawn;
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
-            if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid:child.pid,entry,modelKeyFile:args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof args[2]?.env?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string',chatS3Keys:Object.keys(args[2]?.env||{}).filter(key=>key.startsWith('CHAT_S3_'))});
+            const started=(pid,entry,environment)=>record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid,entry,modelKeyFile:environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string',chatS3Keys:Object.keys(environment||{}).filter(key=>key.startsWith('CHAT_S3_'))});
+            if(entry?.endsWith('/scripts/workspace/dev-watch-child.mjs')){
+                let launch;const send=child.send;
+                child.send=function(message,...rest){if(message?.kind==='run')launch=message;return send.call(this,message,...rest);};
+                child.on('message',message=>{if(message?.kind==='dev-launch-ack'&&launch){started(message.pid,launch.args[0],launch.environment);launch=null;}});
+            }else if(entry?.startsWith(process.env.DEV_START_CHECKOUT+'/'))started(child.pid,entry,args[2]?.env);
             return child;
         };
         const writeFileSync=fs.writeFileSync;
@@ -192,6 +204,20 @@ async function fixture(t, mode) {
             if(String(input)==='http://127.0.0.1:19010/minio/health/ready')return new Response('',{status:200});
             const url=new URL(input);
             record({kind:'health-start',port:url.port,path:url.pathname,search:url.search});
+            if(process.env.DEV_START_MODE.startsWith('profile-ready-owner-kill')&&url.port==='4100'&&url.pathname==='/health'){
+                const until=Date.now()+3000;
+                while(!fs.readFileSync(process.env.DEV_START_CALLS,'utf8').trim().split(String.fromCharCode(10)).filter(Boolean).map(JSON.parse).some(event=>event.kind==='stubborn-ready')){
+                    if(Date.now()>=until)throw Error('OWNED_STUBBORN_CHILD_NOT_READY');await new Promise(resolve=>setTimeout(resolve,10));
+                }
+                if(process.env.DEV_START_MODE.includes('-blocked')){
+                    fs.writeFileSync(process.env.DEV_START_MARKER+'.block','block');
+                    while(!fs.readFileSync(process.env.DEV_START_CALLS,'utf8').trim().split(String.fromCharCode(10)).filter(Boolean).map(JSON.parse).some(event=>event.kind==='actual-blocked')){
+                        if(Date.now()>=until)throw Error('OWNED_ACTUAL_NOT_BLOCKED');await new Promise(resolve=>setTimeout(resolve,10));
+                    }
+                }
+                const owner=JSON.parse(fs.readFileSync(process.env.DEV_START_CHECKOUT+'/.run/processes.json','utf8')).find(record=>record.name==='catalog');
+                record({kind:'owner-killed',pid:owner.pid});process.kill(owner.pid,'SIGKILL');
+            }
             if(url.hostname!=='127.0.0.1'||!['22222','4100','4200','4300','4400','4000','5173'].includes(url.port))return deny();
             fs.writeFileSync(process.env.DEV_START_MARKER,'started');
             if(process.env.DEV_START_MODE.startsWith('native-cancel-')){
@@ -230,6 +256,7 @@ async function fixture(t, mode) {
         DEV_START_CHECKOUT: checkout,
     };
     if(mode==='profile-ready-external')env.NEUROCENTER_MODEL_CREDENTIAL_KEY=Buffer.alloc(32,17).toString('base64');
+    if(mode.startsWith('profile-ready-owner-kill')&&mode.endsWith('-disabled'))env.NEUROCENTER_DEV_LAUNCH_PROVENANCE='0';
     async function run(...args) {
         // Проверки полной поставки явно выбирают full, независимо от лёгкого default приложения.
         cli = spawn(process.execPath, [path.join(checkout, 'scripts/dev.mjs'), 'up', ...(args.length ? args : ['--profile=full'])], {cwd: checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
@@ -290,7 +317,7 @@ test('Запуск называет завершившийся сервис, п�
     assert.match(result.stderr, /Каталог/);
     assert.match(result.stderr, /4100/);
     assert.match(result.stderr, /код\S*\s+7/);
-    assert.match(result.stderr, /neurocenter-catalog\.log/);
+    assert.match(result.stderr, /neurocenter-catalog(?:-[a-f0-9-]{36})?\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
     assert.equal(result.events.filter(event => event.kind === 'npm').length, 9);
     assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 0);
@@ -364,12 +391,27 @@ test('Сервис, завершившийся во время проверки 
     assert.match(result.stderr, /Каталог/);
     assert.match(result.stderr, /4100/);
     assert.match(result.stderr, /код\S*\s+7/);
-    assert.match(result.stderr, /neurocenter-catalog\.log/);
+    assert.match(result.stderr, /neurocenter-catalog(?:-[a-f0-9-]{36})?\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
     const firstHealth = result.events.findIndex(event => event.kind === 'health-start');
     const exit = result.events.findIndex(event => event.kind === 'child-exit' && event.service === 'catalog');
     const healthEnd = result.events.findIndex(event => event.kind === 'health-end');
     assert.ok(firstHealth >= 0 && firstHealth < exit && exit < healthEnd, JSON.stringify(result.events));
+});
+
+for(const mode of ['profile-ready-owner-kill','profile-ready-owner-kill-disabled'])test('Saved startup rollback leaves no actual service after owner SIGKILL: '+mode,async t=>{
+    const f=await fixture(t,mode),result=await f.run('--profile=fast');
+    assert.equal(result.code,1,result.stdout+result.stderr);assert.match(result.stderr,/Каталог/);assert.match(result.stderr,/SIGKILL/);
+    assert.ok(result.events.some(event=>event.kind==='owner-killed'));assert.ok(result.events.some(event=>event.kind==='stubborn-ready'));
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,9);
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
+});
+
+for(const mode of ['profile-ready-owner-kill-blocked','profile-ready-owner-kill-blocked-disabled'])test('Saved rollback reaps a synchronously blocked service after owner SIGKILL: '+mode,async t=>{
+    const f=await fixture(t,mode),result=await f.run('--profile=fast');
+    assert.equal(result.code,1,result.stdout+result.stderr);assert.match(result.stderr,/Каталог/);assert.match(result.stderr,/SIGKILL/);
+    assert.ok(result.events.some(event=>event.kind==='actual-blocked'));assert.ok(result.events.some(event=>event.kind==='stubborn-ready'));
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
 });
 
 for(const [mode,code] of [['native-cancel-int',130],['native-cancel-term',143]]){
