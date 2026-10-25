@@ -120,8 +120,8 @@ export class AgentToolsService implements OnModuleDestroy {
      const grant=scope.owner.grant.publicChats!;await this.admit(req,scope.owner.projectId,scope.owner.grant);
      const search=this.modules.get(ChatSearchService,{strict:false});
      let job=await search.create(req,scope.owner.projectId,'search',{...grant,requestKey:step.id,query:action.query,limit:3});
-     await reference({kind:'public-chat-search',jobId:job.id});
      try{
+      await reference({kind:'public-chat-search',jobId:job.id});
       while(job.state==='RUNNING'){await delay(150,undefined,{signal:scope.signal});await assertCurrent();job=await search.get(req,scope.owner.projectId,job.id);}
       if(job.state!=='SUCCEEDED')return {status:'unavailable',message:job.error??'Поиск не завершён.',jobId:job.id};
       // The durable ledger retains only a live domain receipt. PUBLIC text is hydrated after current visibility/revision filters.
