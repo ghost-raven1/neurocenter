@@ -1,5 +1,11 @@
+import {createHash} from 'node:crypto';
 import {ConflictException} from '@nestjs/common';
 import type {PoolClient} from 'pg';
+
+/** One identity formula is shared by manual enqueue and durable policy recovery. */
+export function deviceJobRequestHash(role:string,input:Record<string,unknown>|object):string {
+    return createHash('sha256').update(JSON.stringify({role,request:Object.entries(input).sort(([a],[b])=>a.localeCompare(b))})).digest('hex');
+}
 
 interface RequestIdentity {email:string;deviceId:string;requestKey:string;requestHash:string}
 type JobRow=Record<string,unknown>&{id:string};

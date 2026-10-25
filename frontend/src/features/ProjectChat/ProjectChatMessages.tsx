@@ -1,5 +1,6 @@
 import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import type {ReactNode} from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {modelChatUrl} from '../ModelChat/model';
@@ -9,16 +10,19 @@ import type {ProjectChatMember, ProjectChatMessage} from './types';
 import type {ProjectChatActivity} from './activity.types';
 import {ProjectChatSeen} from './ProjectChatActivity';
 import {observeVisibleMessages} from './observeVisibleMessages';
+import {ChatLog} from '../ChatCommon/ChatLog';
+import {AgentToolHistory} from '../AgentTools/AgentToolHistory';
 
 interface Props {
     messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
     onLoadEarlier: () => void; onReply: (message: ProjectChatMessage) => void; onRetry: (id: string) => void; onCancel: (id: string) => void;
     members?: ProjectChatMember[]; activity?: ProjectChatActivity; onVisible?: (ids: string[], currentVisible?: () => string[]) => void;
+    privateTasks?: ReactNode; projectId?: string;
 }
 const stateText: Record<ProjectChatMessage['status'], string> = {queued: 'В очереди', running: 'Готовится ответ', done: '', failed: 'Ответ не получен', cancelled: 'Остановлено'};
 
 /** Every saved human question and agent answer keeps its author and an explicit reply anchor. */
-export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible}: Props): JSX.Element {
+export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible, privateTasks, projectId}: Props): JSX.Element {
     const inference = useFeatureAvailability('project_chat', 'group_chat');
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number}>();
     const [newMessages, setNewMessages] = useState(false);
@@ -32,7 +36,7 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
     }, [messages, historyLoading, historyError]);
     const messageIds = messages.map(message => message.id).join(',');
     useEffect(() => {if (viewport.current && onVisible) return observeVisibleMessages(viewport.current, onVisible);}, [messageIds, onVisible]);
-    return <div className="project-chat__history-wrap"><div className="project-chat__history" ref={viewport} role="log" aria-label="Сообщения команды проекта" aria-live="polite" aria-relevant="additions text"
+    return <div className="project-chat__history-wrap"><ChatLog className="project-chat__history" ref={viewport} aria-label="Сообщения команды проекта"
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setNewMessages(false);}}>
         {hasMore && <Button className="project-chat__earlier" loading={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button>}
         {historyError && <Alert type="warning" showIcon message={historyError}/>}
@@ -58,11 +62,13 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
                 }}>{message.content}</Markdown></div>)}
                 {['queued', 'running'].includes(message.status) && <div className="project-chat__pending" role="status"><Spin size="small"/>{stateText[message.status]}{message.kind === 'user' ? ' · остальные участники могут продолжать писать' : ''}</div>}
                 {['failed', 'cancelled'].includes(message.status) && <Alert showIcon type={message.status === 'failed' ? 'error' : 'info'} message={message.error || stateText[message.status]}/>}
+                {projectId && message.kind === 'user' && message.agentTools && <AgentToolHistory projectId={projectId} turnId={message.id} grant={message.agentTools}/>}
                 <Space wrap size={4} className="project-chat__message-actions"><Button type="text" size="small" disabled={!canReply || !canQuote} aria-label={`Ответить · ${projectChatAuthor(message)}`} onClick={() => onReply(message)}>Ответить</Button>
                     {(message.canRetry || retryPending.includes(message.id)) && <Button size="small" disabled={!!action || !inference.enabled && !retryPending.includes(message.id)} loading={action === message.id} onClick={() => onRetry(message.id)}>{retryPending.includes(message.id) ? 'Проверить повтор отправки' : 'Повторить неуспешные ответы'}</Button>}
                     {message.canCancel && <Button size="small" disabled={!!action} loading={action === message.id} onClick={() => onCancel(message.id)}>Остановить ответы</Button>}
                 </Space>
             </article>;
         })}
-    </div>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
+        {privateTasks}
+    </ChatLog>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
 }

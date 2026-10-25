@@ -3,6 +3,7 @@ import { DeviceInstallations } from '../src/devices/device-installations';
 import { buildPackage } from '../src/catalog/bundle-package';
 import type { DeviceStore } from '../src/devices/device-store';
 import type { IAccessClaims } from '../src/access/access.model';
+import {QUIRKS_SOURCE_SHA256} from '../../shared/project-learning-quirks.cjs';
 
 const actor = { email: 'user@example.test', activeRole: 'Разработчик' };
 const claims: IAccessClaims = {
@@ -56,6 +57,8 @@ describe('Серверный список и удаление личных ус�
     const ragCore={schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'};
     const ragUi={...ragCore,args:['ui','--port','0','--no-open']};
     const hostedEmbedding={schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1};
+    const learningQuirks={schemaVersion:1,format:'opencode-rag-quirks-jsonl',sourceSha256:QUIRKS_SOURCE_SHA256};
+    /** Listing exercises descriptor authorization without starting a bridge or opening a window. */
     async function listedRag(extra:Record<string,unknown>){
         query.mockResolvedValue({rows:[{deviceId:input.deviceId,projectId:input.projectId,assetId:'rag',assetKind:'plugin',version:9,manifest:pkg.manifest.sha256,bindingId:input.bindingId,
             bindings:[{projectId:input.projectId,bindingId:input.bindingId,instanceId:'11111111-1111-4111-8111-111111111111',valid:true}],
@@ -68,6 +71,17 @@ describe('Серверный список и удаление личных ус�
             hostedEmbedding:{supported:true,reindexSupported:true}});
         expect(value).not.toHaveProperty('ragUi');expect(value).not.toHaveProperty('installedConfig');
         expect(query.mock.calls[0][1]).toEqual([actor.email,false,['mine','read']]);
+    });
+    it('A core-only installed package exposes its reviewed quirks source without a Web UI',async()=>{
+        const value=await listedRag({ragCore,hostedEmbedding,learningQuirks});
+        expect(value.learningQuirks).toEqual({supported:true});expect(value).not.toHaveProperty('ragUi');
+    });
+    it.each([{...ragCore,entrypoint:'other.mjs'},null])('A malformed explicit core cannot borrow quirks support from a valid legacy UI: %j',async ragCore=>{
+        const value=await listedRag({ragCore,localUi:ragUi,hostedEmbedding,learningQuirks});
+        expect(value).not.toHaveProperty('learningQuirks');expect(value.ragUi).toEqual({supported:true,mode:'web'});
+    });
+    it('A marker alone cannot advertise collection without any supported engine or legacy UI',async()=>{
+        expect(await listedRag({learningQuirks})).not.toHaveProperty('learningQuirks');
     });
     it.each([{...ragCore,entrypoint:'other.mjs'},{...ragCore,args:['reindex']},null])('Invalid explicit core metadata cannot borrow hosted support from a valid UI: %j',async ragCore=>{
         const value=await listedRag({ragCore,localUi:ragUi,hostedEmbedding});

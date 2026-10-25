@@ -60,8 +60,8 @@ export class ProxyService {
      * @returns {Promise<void>}
      */
     public async forward(req: Request, res: Response): Promise<void> {
-        // A cached missing receipt could conceal a request accepted after the original response was lost.
-        if(/^\/api\/device-jobs\/requests(?:\/|$)/.test(canonicalAccessRoute(req.path)||''))res.setHeader('Cache-Control','no-store');
+        // Private chat history and missing receipts must stay fresh across session and commit changes.
+        if(/^\/api\/(?:device-jobs\/requests|system-role-chats|agent-tools)(?:\/|$)/.test(canonicalAccessRoute(req.path)||''))res.setHeader('Cache-Control','no-store');
         if(req.method==='GET'&&req.path==='/api/ui/appearance'){
             res.setHeader('Cache-Control','no-store');res.json(await publicAppearance(this.http,this.featureFlagsUrl));return;
         }
@@ -91,10 +91,10 @@ export class ProxyService {
               : this.catalogUrl;
         const snapshotPublication=snapshotPublicationRoute(method,path);
         const canonicalPath=canonicalAccessRoute(path);
-        if (/^\/api\/(?:model-chats|chat-presence|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
+        if (/^\/api\/(?:chat-system-roles|model-chats|chat-presence|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
         const agentTrialRoute=/^\/api\/projects\/[^/]+\/agents\/(?:readiness(?:[/%]|$)|.*\/readiness-trials(?:[/%]|$))/.test(canonicalPath||'');
-        const projectChatRoute=/^\/api\/projects\/[^/]+\/team-chat(?:[/%]|$)/.test(canonicalPath||'');
+        const projectChatRoute=/^\/api\/projects\/[^/]+\/(?:team-chat|chat-search)(?:[/%]|$)/.test(canonicalPath||'');
         if(learningRoute||agentTrialRoute||projectChatRoute)res.setHeader('Cache-Control','no-store');
         if(auth.deviceId&&(canonicalPath===undefined||learningRoute||agentTrialRoute||projectChatRoute)){
             res.status(403).json({message:projectChatRoute?'Командный чат доступен пользователям через интерфейс проекта.':agentTrialRoute?'Испытания агента доступны только пользователю через интерфейс проекта.':'Проектное обучение доступно мосту только через проверенную привязку папки.'});return;
@@ -201,7 +201,7 @@ export class ProxyService {
             await forwardRuntimeArtifact(this.http,this.catalogUrl,suffix,req,res);return;
         }
         const publicPair=/^pair\/(start|poll)$/.test(suffix);
-        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|embedding(?:\/context)?|codex-inference\/(context|dispatch)|opencode-models\/(context|sync)|agents\/compile|learning-quirks\/import|learning-memory\/context|learning\/(context|record|propose|observe)|worker\/(pause|resume|update-cleanup\/authorize)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
+        if(req.method!=='POST'||(!publicPair&&!/^(identity|heartbeat|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|embedding(?:\/context)?|codex-inference\/(context|dispatch)|system-role-mcp\/(claim|authorize|context|next|dispatch|result|complete)|opencode-models\/(context|sync)|agents\/compile|learning-quirks\/import|learning-memory\/context|learning\/(context|record|propose|observe)|worker\/(pause|resume|update-cleanup\/authorize)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(suffix))){res.status(404).json({message:'Маршрут MCP не найден.'});return;}
         if(suffix==='opencode-models/sync'&&req.body?.credentials&&Object.keys(req.body.credentials).length&&!deviceCredentialTransport(req)){
             res.status(403).json({message:'Перенос ключей OpenCode требует HTTPS. Для TLS-прокси настройте доверенные адреса на API Gateway.'});return;
         }
@@ -226,7 +226,8 @@ export class ProxyService {
         const auth=publicPair||maintenance?null:await this.authGuard.authenticate({headers:{authorization:req.headers.authorization}} as Request);
         // Catalog accepts only the already-dispatched call's exact retained token, job and lease.
         const codexReceipt=/^jobs\/[a-f0-9-]{36}\/complete$/.test(suffix)&&req.body?.result?.protocol==='device-codex-inference-v1';
-        if(!publicPair&&!maintenance&&!codexReceipt&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
+        const mcpReceipt=/^system-role-mcp\/(result|complete)$/.test(suffix);
+        if(!publicPair&&!maintenance&&!codexReceipt&&!mcpReceipt&&!auth?.deviceId){res.status(401).json({message:'MCP не подключён или доступ отозван.'});return;}
         const failure=await featureFlagsFailure(this.http,this.featureFlagsUrl,requiredFeatureFlags(req.method,req.path,req.body));
         if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
         try{

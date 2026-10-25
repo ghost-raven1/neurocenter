@@ -8,6 +8,8 @@ import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {workspacePackages} from '../workspace/check-plan.mjs';
 
+import {healthHttpHook} from './dev-health-http-hook.fixture.mjs';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const commands = ['install', 'build', 'check', 'up', 'down', 'status', 'tail'];
 
@@ -26,7 +28,7 @@ async function fixture(t, mode = 'ready') {
             process.exitCode=92;`, {mode: 0o700});
     }
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -56,10 +58,11 @@ async function fixture(t, mode = 'ready') {
                 if(mode==='frontend-html')return new Response('<!doctype html><html></html>',{headers:{'Content-Type':'text/html'}});
                 return new Response(mode==='frontend-empty'?' \\n ':'.ant-btn { color: #1677ff; }',{headers:{'Content-Type':'text/css; charset=utf-8'}});
             }
-            const ok=process.env.DEV_CLI_MODE!=='unavailable'||url.port!=='4300';
+            const ok=(process.env.DEV_CLI_MODE!=='unavailable'||url.port!=='4300')&&!(process.env.DEV_CLI_MODE==='dependency-failed'&&url.port==='4100'&&url.pathname==='/ready');
             return new Response(JSON.stringify({ok}),{status:ok?200:503,headers:{'Content-Type':'application/json'}});
         };
-        http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny; syncBuiltinESMExports();`);
+        http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny; syncBuiltinESMExports();
+        ${healthHttpHook}`);
     const env = {PATH: [bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter), NODE_BIN: process.execPath, NPM_CLI_JS: npm, LOGDIR: logs,
         NO_COLOR: '1', TERM: 'dumb', NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`,
         DEV_CLI_RECORD: record, DEV_CLI_MODE: mode};
@@ -185,16 +188,16 @@ test('Статус показывает адреса всех сервисов �
     assert.equal(result.status, 0, result.stderr);
     for (const port of [22222, 4100, 4200, 4300, 4400, 4000, 5173]) assert.ok(result.stdout.includes(String(port)), String(port));
     assert.match(result.stdout, /готов/);
-    assert.equal(result.stderr, '');
+    assert.match(result.stderr,/остальные проверки не пройдены или пропущены/);
+    assert.doesNotMatch(result.stdout,/Все сервисы готовы/);
+    assert.match(result.stdout,/checkout: неизвестен/);
     const requests = result.events.filter(event => event.kind === 'health');
-    assert.deepEqual(requests.map(event => event.port).sort(), ['22222', '4000', '4100', '4100', '4200', '4300', '4400', '5173']);
+    assert.deepEqual(requests.map(event => event.port).sort(), ['22222','22222','4000','4100','4100','4100','4200','4300','4300','4400','4400','5173']);
     assert.deepEqual(requests.find(event => event.port === '5173'), {
         kind: 'health', port: '5173', path: '/node_modules/antd/dist/antd.less', search: '?direct',
     });
-    assert.ok(requests.filter(event => !['5173','4400'].includes(event.port)&&event.path!=='/internal/project-snapshots/verifier/ready').every(event => event.path === '/health' && event.search === ''));
-    assert.equal(requests.find(event=>event.port==='4400').path,'/ready');
-    assert.deepEqual(result.events.filter(event => event.kind === 'timeout').map(event => event.ms).sort((a, b) => a - b),
-        [1000, 1000, 1000, 1000, 1000, 1000, 1000, 10000]);
+    assert.deepEqual(requests.filter(event=>event.path==='/ready').map(event=>event.port).sort(),['22222','4100','4300','4400']);
+    assert.equal(requests.find(event=>event.port==='4400'&&event.path==='/health').path,'/health');
     assert.equal(await fs.readFile(path.join(f.checkout,'.run/project-snapshots/secrets/verifier-token'),'utf8'),'a'.repeat(64)+'\n');
     await assert.rejects(fs.access(path.join(f.checkout, '.run/processes.json')), {code: 'ENOENT'});
 });
@@ -207,11 +210,11 @@ for (const [mode, description] of [
     test('Статус отклоняет ' + description + ', даже когда все серверные сервисы готовы', async t => {
         const f = await fixture(t, mode), result = await f.run('status');
         assert.equal(result.status, 1);
-        assert.match(result.stdout, /Веб-интерфейс[^\n]*недоступен/);
+        assert.match(result.stdout, /Веб-интерфейс[^\n]*компиляция: не готова/);
         for (const label of ['Вход и сессии', 'Каталог', 'Флаги функций', 'Скиллы', 'Базы знаний', 'API']) {
-            assert.match(result.stdout, new RegExp(label + '[^\\n]*готов'));
+            assert.match(result.stdout, new RegExp(label + '[^\\n]*процесс: отвечает'));
         }
-        assert.match(result.stderr, /Готово сервисов: 7\/8/);
+        assert.match(result.stderr, /Подтверждена готовность сервисов: 1\/8/);
         await assert.rejects(fs.access(path.join(f.checkout, '.run/processes.json')), {code: 'ENOENT'});
     });
 }
@@ -220,8 +223,29 @@ test('Недоступный сервис остаётся заметен и с�
     const f = await fixture(t, 'unavailable'), result = await f.run('status');
     assert.equal(result.status, 1);
     assert.match(result.stdout, /4300/);
-    assert.match(result.stdout, /недоступ/);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
+    assert.match(result.stdout, /процесс: не отвечает/);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
+});
+
+test('status reports failed dependencies despite health 200 and does not claim full readiness',async t=>{
+    const f=await fixture(t,'dependency-failed'),result=await f.run('status');
+    assert.equal(result.status,1);assert.match(result.stdout,/Каталог[^\n]*процесс: отвечает; зависимости: не готовы/);
+    assert.doesNotMatch(result.stdout,/Все сервисы готовы/);
+    assert.equal(result.events.filter(event=>event.kind==='health'&&event.port==='4100'&&event.path==='/ready').length,1);
+});
+
+test('status with details disabled keeps legacy probes and labels readiness unknown',async t=>{
+    const f=await fixture(t);f.env.NEUROCENTER_DEV_MCP_SERVICE_DETAILS='0';const result=await f.run('status');
+    assert.equal(result.status,0);assert.match(result.stdout,/готовность: проверка отключена/);
+    assert.match(result.stdout,/checkout: проверка отключена/);assert.doesNotMatch(result.stdout,/Все сервисы готовы/);
+    assert.equal(result.events.filter(event=>event.kind==='health').length,8);
+    assert.equal(result.events.filter(event=>event.kind==='health'&&event.path==='/ready').length,0);
+});
+
+test('up rejects an invalid service details flag before builds and process changes',async t=>{
+    const f=await fixture(t);f.env.NEUROCENTER_DEV_MCP_SERVICE_DETAILS='yes';const result=await f.run('up');
+    assert.equal(result.status,1);assert.match(result.stderr,/NEUROCENTER_DEV_MCP_SERVICE_DETAILS must be 0 or 1/);
+    assert.deepEqual(result.events,[]);await assert.rejects(fs.access(path.join(f.checkout,'.run')),{code:'ENOENT'});
 });
 
 test('Логи читаются из LOGDIR с пробелами и показывают последние события', async t => {

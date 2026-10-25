@@ -1,3 +1,6 @@
+import {AgentToolsService} from '../agent-tools/agent-tools.service';
+import {agentToolContext} from '../agent-tools/agent-tools.validation';
+import {projectEmbeddingPin} from '../models/project-embedding.validation';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {automaticModelOptions} from '../models/model-runtime-options';
 import type { Request } from 'express';
@@ -21,7 +24,7 @@ export interface ChatRoundScope { owner: string;actorRole?:string; row: Conversa
 export interface ChatRoundHooks {
     compact(model: IModel, overhead: ChatMessage[], assertCurrent: (db?: ChatDb) => Promise<void>, budget: ChatRoundBudget, responseId: string, beforeInference?: () => Promise<void>): Promise<ChatMessage[]>;
     localContextWindow: number | null;
-    research: ChatResearchExecutor; researchBudget: ResearchRoundBudget;
+    research: ChatResearchExecutor; agentTools?:AgentToolsService; researchBudget: ResearchRoundBudget;
     prepared: PreparedChatRound;
 }
 
@@ -41,27 +44,31 @@ export async function executeChatRound(req: Request, scope: ChatRoundScope, turn
             const persona: ChatMessage[] = [{ role: 'system', content: response.snapshot.definition.prompt }];
             const learning = prepared.learning, base = [...persona, ...learning.messages];
             const minimal = project.fit([...base, { role: 'user', content: turn.input_text }], settings);
-            const overhead = [...minimal.messages.slice(0, minimal.messages.length - base.length - 1), ...base, ...hooks.research.overhead(turn.research_request)];
+            const overhead = [...minimal.messages.slice(0, minimal.messages.length - base.length - 1), ...base, ...(turn.agent_tools_request?agentToolContext(scope.row.project_id!,turn.agent_tools_request):hooks.research.overhead(turn.research_request))];
             const assertCurrent = async (db?: ChatDb) => { signal.throwIfAborted(); await scope.authorize(true); await groups.assert(req, scope.row, scope.model, response.snapshot, db); await project.assertCurrent(); await learning.assertAuthorized(db); };
+            const beforeInference = async () => { if(turn.agent_tools_request)await requireFeatureEnabled('project_agent_tools');await learning.beforeInference(); await project.beforeInference(); };
             const attribution = { purpose: 'agent' as const, actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, agentId: response.agent_id, operationId: turn.request_id };
-            const history = await withModelUsage({ ...attribution, requiredFeatures: learning.requiredFeatures }, () => hooks.compact(model, overhead, assertCurrent, budget, response.id, learning.beforeInference));
+            const requiredFeatures = [...learning.requiredFeatures, ...project.requiredFeatures, ...(turn.research_request?.project ? ['project_search' as const] : [])];
+            const history = await withModelUsage({ ...attribution, requiredFeatures }, () => hooks.compact(model, overhead, assertCurrent, budget, response.id, beforeInference));
             const fitted = project.fit([...base, ...history], settings);
             const definition = response.snapshot.definition, options = automaticModelOptions(model,{}, {
                 ...(definition.temperature === undefined ? {} : { temperature: definition.temperature }), ...(definition.topP === undefined ? {} : { top_p: definition.topP }),
                 ...(model.runtime === 'ollama' && hooks.localContextWindow !== null ? { num_ctx: hooks.localContextWindow } : {}) });
-            const researched = await hooks.research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, responseId: response.id, agentId: response.agent_id,
+            if(turn.agent_tools_request&&!hooks.agentTools)throw new BadRequestException('Инструменты агентов недоступны.');
+            const toolMessages:ChatMessage[]=[...persona,...fitted.messages.slice(0,fitted.messages.length-base.length-history.length),...learning.messages,...history];
+            const researched = turn.agent_tools_request? {...await hooks.agentTools!.run(req,{owner:{kind:'model-chat',originId:scope.row.id,turnId:turn.id,recipientId:response.id,generation:turn.request_id,ownerEmail:scope.owner,actorRole:scope.actorRole!,projectId:scope.row.project_id!,agentId:response.agent_id,modelId:model.id,modelPin:projectEmbeddingPin(model),grant:turn.agent_tools_request},messages:toolMessages,settings,signal,assertAuthorized:assertCurrent,assertCurrent:async db=>{await assertCurrent(db);await assertPendingChatInference(repository,scope.row.id,turn,signal,response.id);}},project,turn.input_text),projectSources:[],externalSources:[],limitReached:false}:await hooks.research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, responseId: response.id, agentId: response.agent_id,
                 model, messages: [...persona, ...fitted.messages.slice(0, fitted.messages.length - base.length - history.length), ...learning.messages, ...history], initialProjectSources: fitted.evidence.sources, settings, signal,
-                options, budget: hooks.researchBudget, assertCurrent, beforeInference: learning.beforeInference, requiredFeatures: learning.requiredFeatures });
+                options, budget: hooks.researchBudget, assertCurrent, beforeInference, requiredFeatures });
             const messages = researched.messages;
             await repository.owned(scope.owner, scope.row.id, researched.assertCurrent, async (db, row) => {
                 await repository.stage(db, row, turn, 'responding');
                 await db.query("UPDATE model_chat_agent_responses SET processing_stage='responding' WHERE id=$1 AND request_id=$2 AND status='pending'", [response.id, turn.request_id]);
             });
             if (chatContext(messages, settings).exceeded) throw new BadRequestException('Сообщение и контекст проекта не помещаются в окно модели этого агента.');
-            await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); await learning.beforeInference();
+            await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); await beforeInference();
             const result = await withModelUsage({ ...attribution, beforeInference: async () => {
-                await researched.assertCurrent(); await learning.beforeInference(); await assertPendingChatInference(repository, scope.row.id, turn, signal, response.id);
-            }, requiredFeatures: [...learning.requiredFeatures, ...(turn.research_request ? ['research_tools' as const] : [])] }, () => runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
+                await researched.assertCurrent(); await beforeInference(); await assertPendingChatInference(repository, scope.row.id, turn, signal, response.id);
+            }, requiredFeatures: [...requiredFeatures, ...(turn.research_request ? ['research_tools' as const] : [])] }, () => runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
             signal.throwIfAborted(); await researched.assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;
             if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim()

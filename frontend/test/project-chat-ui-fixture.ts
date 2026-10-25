@@ -23,6 +23,7 @@ const ui = vi.hoisted(() => ({
     flags: new Map<string, boolean>(), owner: 'alice', scope: 'alice',
 }));
 const captureOwner = () => {const current = ui.owner; return () => current === ui.owner;};
+vi.mock('../src/features/AgentTools/useAgentTools', () => ({useAgentTools: () => ({draft: {enabled: false},blocked: false,loading: false,update: () => undefined,restore: () => undefined,disable: () => undefined,reload: () => undefined})}));
 export {harness, ui};
 vi.mock('react', async original => ({...await original<typeof import('react')>(), ...harness, useLayoutEffect: harness.useEffect}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: ui.scope, captureOwner})}));

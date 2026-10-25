@@ -115,9 +115,9 @@ export class ChatRepository {
     async priorTurn(db: ChatDb, conversation: string, requestId: string): Promise<TurnRow | undefined> {
         return (await db.query<TurnRow>('SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND $2::uuid=ANY(request_ids)', [conversation, requestId])).rows[0];
     }
-    async addTurn(db: ChatDb, row: ConversationRow, input: { requestId: string; hash: string; prompt: string; attachmentIds: string[]; text: string; targetAgentIds?: string[]; research?: import('./chat-research.types').ChatResearchRequest | null }): Promise<TurnRow> {
-        const turn = (await db.query<TurnRow>(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,lease_until,target_agent_ids,research_request)
-            VALUES($1,$2,$3,ARRAY[$3::uuid],$4,$5,$6,$7,'pending',now()+interval '20 minutes',$8,$9::jsonb) RETURNING *`, [randomUUID(), row.id, input.requestId, input.hash, input.prompt, input.attachmentIds, input.text, input.targetAgentIds ?? [], input.research ? JSON.stringify(input.research) : null])).rows[0];
+    async addTurn(db: ChatDb, row: ConversationRow, input: { requestId: string; hash: string; prompt: string; attachmentIds: string[]; text: string; targetAgentIds?: string[]; research?: import('./chat-research.types').ChatResearchRequest | null; agentTools?:import('../agent-tools/agent-tools.types').AgentToolGrant }): Promise<TurnRow> {
+        const turn = (await db.query<TurnRow>(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,lease_until,target_agent_ids,research_request,agent_tools_request)
+            VALUES($1,$2,$3,ARRAY[$3::uuid],$4,$5,$6,$7,'pending',now()+interval '20 minutes',$8,$9::jsonb,$10::jsonb) RETURNING *`, [randomUUID(), row.id, input.requestId, input.hash, input.prompt, input.attachmentIds, input.text, input.targetAgentIds ?? [], input.research ? JSON.stringify(input.research) : null,input.agentTools?JSON.stringify(input.agentTools):null])).rows[0];
         await this.bump(db, row); return turn;
     }
     async attachment(db: ChatDb, conversation: string, id: string): Promise<AttachmentRow> {

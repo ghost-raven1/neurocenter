@@ -44,8 +44,8 @@ test('Owned integration includes chat recovery SQL using only its admitted Postg
  assert.equal(safeEnvironment({CHAT_RECOVERY_TEST_ADMIN_PG_URL:caller}).CHAT_RECOVERY_TEST_ADMIN_PG_URL,undefined);
 });
 test('TAP footer counts preserve failures, skips and cancellation; missing output is incomplete',()=>{
- assert.deepEqual(tapCounts('# pass 12\n# fail 1\n# skipped 2\n# cancelled 3\n'),{passed:12,failed:1,skipped:2,cancelled:3});
- assert.deepEqual(tapCounts('process died before summary'),{passed:null,failed:null,skipped:null,cancelled:null});
+ assert.deepEqual(tapCounts('# pass 12\n# fail 1\n# skipped 2\n# cancelled 3\n# todo 4\n'),{passed:12,failed:1,skipped:2,cancelled:3,todo:4});
+ assert.deepEqual(tapCounts('process died before summary'),{passed:null,failed:null,skipped:null,cancelled:null,todo:null});
 });
 test('Editing an existing untracked source changes identity even when the file inventory is identical',async t=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-identity-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));

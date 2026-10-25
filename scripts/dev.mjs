@@ -8,6 +8,7 @@ import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
 import {ensureCompose,checkCompose} from './workspace/compose.mjs';
 import {createDevOutput} from './workspace/dev-output.mjs';
 import {devProcessIdentity, devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
+import {devServices,devServiceHealth,probeLocalEndpoint,serviceDetailsFlag} from './workspace/dev-service-health.mjs';
 import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
 import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
@@ -19,15 +20,7 @@ import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 const root = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const stateDir = path.join(root, '.run');
 const stateFile = path.join(stateDir, 'processes.json');
-const services = [
-    { name: 'bridge', label: 'Вход и сессии', dir: 'services/oauth2-bridge', port: 22222 },
-    { name: 'catalog', label: 'Каталог', dir: 'services/catalog-service', port: 4100 },
-    { name: 'flags', label: 'Флаги функций', dir: 'services/feature-flags-service', port: 4400, healthPath: '/ready' },
-    { name: 'skills', label: 'Скиллы', dir: 'services/skills-service', port: 4200 },
-    { name: 'rag', label: 'Базы знаний', dir: 'services/rag-sync-service', port: 4300 },
-    { name: 'gateway', label: 'API', dir: 'services/api-gateway', port: 4000 },
-    { name: 'frontend', label: 'Веб-интерфейс', dir: 'frontend', port: 5173 },
-];
+const services = devServices;
 const snapshotWorker={name:'snapshot-verifier',label:'Проверка снимков',dir:'.',port:4100,entry:'scripts/snapshots/runner.mjs'};
 const managedServices=[...services,snapshotWorker];
 const watchService={name:'source-watch',label:'Пересборка исходников',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'};
@@ -164,24 +157,39 @@ async function assertServicePortsAvailable() {
     })));
 }
 
-/** Проверяем JSON health сервисов и компиляцию Less интерфейса, а не только выдачу HTML. */
+/** Liveness, passive dependency checks and OS ownership are separate evidence. */
 async function health(deadline = Infinity, cancellation) {
-    return Promise.all(managedServices.map(async service => {
-        const frontend = service.name === 'frontend',snapshot=service.name==='snapshot-verifier';
-        const suffix = snapshot?'/internal/project-snapshots/verifier/ready':frontend ? '/node_modules/antd/dist/antd.less?direct' : service.healthPath || '/health';
-        try {
-            const timeout = Math.max(1, Math.min(frontend ? 10000 : 1000, deadline - Date.now()));
-            const timeoutSignal = AbortSignal.timeout(timeout);
-            const signal = cancellation ? AbortSignal.any([cancellation, timeoutSignal]) : timeoutSignal;
-            const headers=snapshot?{'x-neurocenter-snapshot-verifier':(await privateSnapshotFile(path.resolve(root,process.env.SNAPSHOT_VERIFIER_TOKEN_FILE||'.run/project-snapshots/secrets/verifier-token'),1024)).toString('utf8').trim()}:undefined;
-            const response = await fetch(`http://127.0.0.1:${service.port}${suffix}`, { signal,headers });
-            const ok = response.ok && (frontend
-                ? response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'text/css'
-                    && (await response.text()).trim().length > 0
-                : (await response.json()).ok === true);
-            return { ...service, ok };
-        } catch { return { ...service, ok: false }; }
-    }));
+    const read=devServiceHealth(services,{root,deadline,detailsEnabled:serviceDetailsFlag()});
+    const readWorker=async()=>{
+        try{
+            const token=(await privateSnapshotFile(path.resolve(root,process.env.SNAPSHOT_VERIFIER_TOKEN_FILE||'.run/project-snapshots/secrets/verifier-token'),1024)).toString('utf8').trim();
+            const probe=await probeLocalEndpoint({...snapshotWorker,path:'/internal/project-snapshots/verifier/ready'},
+                {signal:cancellation,deadline,headers:{'x-neurocenter-snapshot-verifier':token}});
+            return {...snapshotWorker,ok:probe.ok===true,available:probe.ok===true};
+        }catch{return {...snapshotWorker,ok:false,available:false};}
+    };
+    const [probes,worker]=await Promise.all([read(cancellation),readWorker()]);
+    const results=probes.map(result=>{
+        const base=result.service==='frontend'?result.compilation:result.liveness;
+        const available=base.ok===true&&(result.readiness.state==='skipped'||result.readiness.ok===true)&&result.ownership.state!=='foreign';
+        return {...services.find(service=>service.name===result.service),...result,available,ok:result.ready===true&&result.ownership.state==='owned'};
+    });
+    results.push(worker);
+    return results;
+}
+
+/** Show unknown checks explicitly so a healthy HTTP process cannot imply full readiness. */
+function reportHealth(results){
+    for(const service of results){
+        if(!service.liveness){output.service(service);continue;}
+        const live=service.name==='frontend'?`компиляция: ${service.compilation.ok===true?'готова (частичная проверка)':'не готова'}`
+            :`процесс: ${service.liveness.ok===true?'отвечает':'не отвечает'}`;
+        const ready=service.readiness.state==='skipped'
+            ?`готовность: ${service.readiness.reason==='disabled'?'проверка отключена':service.readiness.reason==='side-effectful-endpoint'?'не проверена (проверка пишет файлы)':'не применима'}`
+            :`зависимости: ${service.readiness.ok===true?'готовы':'не готовы'}`;
+        const owner={owned:'этот',foreign:'другой',unknown:'неизвестен',disabled:'проверка отключена'}[service.ownership.state];
+        output.info(`${service.label} (:${service.port})`,`${live}; ${ready}; checkout: ${owner}`);
+    }
 }
 
 async function start(profile,watchMode=false) {
@@ -294,15 +302,17 @@ async function start(profile,watchMode=false) {
             const results = await health(deadline, cancellation.signal);
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            if (results.every(service => service.ok)) {
-                for (const service of results) { output.service(service); }
+            if (results.every(service => service.available)) {
+                reportHealth(results);
                 try {
                     const {applyPublishedDevBridge} = await import('./workspace/dev-bridge-startup.mjs');
                     await applyPublishedDevBridge({root, node, environment: process.env, output});
                 } catch (error) { output.warning('Обновление установленного моста отложено: '+error.message+' Сервисы продолжают работать; повторите scripts/dev.sh up.'); }
                 cancellation.signal.throwIfAborted();
                 assertServicesRunning(children);
-                output.heading('Готов к работе');
+                const fullyReady=results.every(service=>service.ok);
+                output.heading(fullyReady?'Готов к работе':'Сервисы запущены');
+                if(!fullyReady)output.warning('Полная готовность не подтверждена: выше перечислены пропущенные проверки и неизвестная принадлежность процессов.');
                 output.info('Интерфейс', 'http://localhost:5173');
                 output.info('Логи', logDir);
                 output.info('Проверить состояние', 'scripts/dev.sh status');
@@ -372,6 +382,7 @@ async function main() {
         try { process.loadEnvFile(path.join(root, name)); }
         catch (error) { if (error.code !== 'ENOENT') { throw error; } }
     }
+    if(command==='up'||command==='status')serviceDetailsFlag();
     const runtime = nodeRuntime();
     node = runtime.node;
     process.env.PATH = runtime.env.PATH;
@@ -409,10 +420,13 @@ async function main() {
     else if (command === 'status') {
         const results = await health();
         if(existsSync(path.join(stateDir,'dev-watch/status.json'))){const {devWatchStatus}=await import('./workspace/dev-watch-control.mjs');const watch=await devWatchStatus(root);if(watch){output.info('Watch',watch.alive?watch.phase:'остановлен');if(watch.lastBuild?.ok===false)output.warning('Последняя пересборка не применена: '+watch.lastBuild.code+'; предыдущие сервисы сохранены. Лог: '+path.join(stateDir,'dev-watch/last-failure'));}}
-        for (const service of results) { output.service(service); }
+        reportHealth(results);
         const ready = results.filter(service => service.ok).length;
         if (ready === results.length) { output.success(`Все сервисы готовы: ${ready}/${results.length}`); output.info('Интерфейс', 'http://localhost:5173'); }
-        else { output.warning(`Готово сервисов: ${ready}/${results.length}. Запуск: scripts/dev.sh up`); process.exitCode = 1; }
+        else {
+            output.warning(`Подтверждена готовность сервисов: ${ready}/${results.length}; остальные проверки не пройдены или пропущены. Запуск: scripts/dev.sh up`);
+            if(results.some(service=>!service.available))process.exitCode=1;
+        }
         output.info('Логи', logDir);
     } else if (command === 'tail') {
         let found = 0;

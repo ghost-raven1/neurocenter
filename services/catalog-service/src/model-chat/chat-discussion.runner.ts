@@ -58,8 +58,8 @@ export async function runChatDiscussion(req: Request, scope: ChatRoundScope, tur
     };
     const call = async (phase: DiscussionPhase, key: string, model: IModel, messages: ChatMessage[], remainingSteps: number,
         snapshot: ChatAgentSnapshot | null = null, before?: () => Promise<void>, required: readonly FeatureFlagKey[] = [], body?: Record<string, unknown>) => {
-        const flags: FeatureFlagKey[] = ['group_chat', 'group_discussions', 'model_hosting', ...required];
-        await requireFeaturesEnabled(flags, process.env, globalThis.fetch, signal); await checkpoint(undefined, snapshot ?? undefined);
+        const flags: FeatureFlagKey[] = ['group_chat', 'group_discussions', 'model_hosting', ...required, ...(project?.requiredFeatures ?? [])];
+        await requireFeaturesEnabled(flags, process.env, globalThis.fetch, signal); await checkpoint(undefined, snapshot ?? undefined); await project?.beforeInference();
         const allocation = await deps.settings(model);
         if (!body && chatContext(messages, allocation).exceeded) throw new BadRequestException('Контекст обсуждения не помещается в окно выбранной модели.');
         const step = await deps.steps.begin(scope.owner, scope.row.id, turn, phase, key, model, snapshot, messages, db => checkpoint(db, snapshot ?? undefined));
@@ -70,7 +70,7 @@ export async function runChatDiscussion(req: Request, scope: ChatRoundScope, tur
         timeout.unref(); const combined = AbortSignal.any([signal, abort.signal]);
         const inherited = currentModelUsage().beforeInference;
         const authorize = async () => {
-            combined.throwIfAborted(); await checkpoint(undefined, snapshot ?? undefined); await inherited?.(); await before?.();
+            combined.throwIfAborted(); await checkpoint(undefined, snapshot ?? undefined); await inherited?.(); await before?.(); await project?.beforeInference();
             await deps.steps.current(deps.chats.pool, turn, step); combined.throwIfAborted();
         };
         try {
@@ -100,15 +100,9 @@ export async function runChatDiscussion(req: Request, scope: ChatRoundScope, tur
         } finally { clearTimeout(timeout); }
     };
     await checkpoint();
-    try {
-        project = await withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, actorRole: run.actor_role, projectId: scope.row.project_id, turnId: turn.id, beforeInference: checkpoint },
-            () => deps.project.prepare(req, scope.row.project_id, turn.input_text, signal, checkpoint,
-                async (model, body) => (await call('context', 'context', model, [{ role: 'user', content: turn.input_text }], DISCUSSION_LIMITS.calls, null, undefined, [], body)).result));
-    } catch {
-        await checkpoint();
-        // A failed search is not replayed; the same question may still receive a metadata-only discussion.
-        project = await deps.project.prepare(req, scope.row.project_id, '', signal, checkpoint);
-    }
+    project = await withModelUsage({ purpose: 'project-search', actorEmail: scope.owner, actorRole: run.actor_role, projectId: scope.row.project_id, turnId: turn.id, beforeInference: checkpoint },
+        () => deps.project.prepare(req, scope.row.project_id, turn.input_text, signal, checkpoint,
+            async (model, body) => (await call('context', 'context', model, [{ role: 'user', content: turn.input_text }], DISCUSSION_LIMITS.calls, null, undefined, [], body)).result));
     const used = (await deps.steps.get(deps.chats.pool, turn.id))!.calls_started;
     const result = await discussGroup(turn.input_text, run.roster, Math.min(DISCUSSION_LIMITS.contributions, DISCUSSION_LIMITS.calls - used - 2), async (input: DiscussionCall) => {
         const agent = input.task ? run.roster.find(item => item.snapshot.agentId === input.task!.agentId) : undefined;

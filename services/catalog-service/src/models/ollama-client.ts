@@ -5,6 +5,7 @@ import {localModelAlias} from './local-model-alias';
 import {withModelUsage} from '../model-usage/model-usage.context';
 import type {ModelUsageRecorder} from '../model-usage/model-usage.types';
 import type {ModelApiAdmission} from '../model-api-admission/model-api-admission';
+import {markModelProviderUnavailable} from './model-provider-availability';
 
 export interface IModelProgress {stage:string;message:string;progress:number|null;}
 export interface IRuntimeModelStatus {
@@ -14,7 +15,7 @@ type JsonObject = Record<string,unknown>;
 type Progress = (value:IModelProgress)=>void|Promise<void>;
 const modelName = /^(?:[a-z0-9_-]+\/)?[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$/i;
 const object = (value:unknown):value is JsonObject => !!value&&typeof value==='object'&&!Array.isArray(value);
-const unavailable = () => new Error('Хостинг моделей недоступен. Проверьте запуск проектного runtime.');
+const unavailable = () => markModelProviderUnavailable(new Error('Хостинг моделей недоступен. Проверьте запуск проектного runtime.'));
 
 /** Адрес задаёт оператор; карточка модели не может перенаправить запрос на другой сервер. */
 export function modelRuntimeUrl(env:NodeJS.ProcessEnv=process.env):string {
@@ -176,16 +177,21 @@ export class OllamaClient {
 
     private async response(endpoint:string,body:JsonObject|undefined,signal:AbortSignal|undefined,timeout:number):Promise<Response> {
         if(this.environment.MODEL_HOSTING_ENABLED==='false')throw new Error('Хостинг моделей отключён администратором сервера.');
+        const url=modelRuntimeUrl(this.environment)+endpoint;
+        const request:RequestInit={method:body===undefined?'GET':'POST',redirect:'error',
+            signal:AbortSignal.any([AbortSignal.timeout(timeout),...(signal?[signal]:[])]),
+            ...(body===undefined?{}:{headers:{'content-type':'application/json'},body:JSON.stringify(body)})};
         try {
-            return await this.fetch(modelRuntimeUrl(this.environment)+endpoint,{method:body===undefined?'GET':'POST',redirect:'error',
-                signal:AbortSignal.any([AbortSignal.timeout(timeout),...(signal?[signal]:[])]),
-                ...(body===undefined?{}:{headers:{'content-type':'application/json'},body:JSON.stringify(body)})});
-        } catch {throw unavailable();}
+            return await this.fetch(url,request);
+        } catch {signal?.throwIfAborted();throw unavailable();}
     }
 
     private async request(endpoint:string,body?:JsonObject,signal?:AbortSignal,timeout=5000,limit=1024*1024):Promise<JsonObject> {
         const response=await this.response(endpoint,body,signal,timeout);
-        if(!response.ok||!response.body) {await response.body?.cancel();throw new Error(`Модельный runtime отклонил запрос (HTTP ${response.status}).`);}
+        if(!response.ok||!response.body) {
+            await response.body?.cancel();const error=new Error(`Модельный runtime отклонил запрос (HTTP ${response.status}).`);
+            throw [502,503,504].includes(response.status)?markModelProviderUnavailable(error):error;
+        }
         let size=0;const chunks:Uint8Array[]=[];
         for await(const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
             size+=chunk.length;if(size>limit)throw new Error('Ответ модельного runtime превышает допустимый размер.');chunks.push(chunk);

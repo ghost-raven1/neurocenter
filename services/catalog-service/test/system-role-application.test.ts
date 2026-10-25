@@ -16,6 +16,13 @@ function fixture() {
     return { row, repository, policy, targets, receipt, features, apply: (revision = 5, rollback = false) => service.apply({} as never, row, revision, '12345678-1234-1234-1234-123456789abc', rollback) };
 }
 describe('Human role proposal application', () => {
+    it('blocks a new service-chat application with its source flag disabled while retaining rollback', async () => {
+        const f = fixture(); f.row.request.sourceFeature = 'system_role_chat';
+        f.features.mockImplementation(async keys => { if (keys.includes('system_role_chat')) throw Error('chat disabled'); });
+        await expect(f.apply()).rejects.toThrow('chat disabled'); expect(f.targets.write).not.toHaveBeenCalled();
+        f.features.mockResolvedValue(undefined); await f.apply();
+        f.features.mockRejectedValue(Error('chat disabled')); await expect(f.apply(f.row.revision, true)).resolves.toMatchObject({ phase: 'rolled_back' });
+    });
     it('does not dispatch a second owner write while the first tab is applying', async () => {
         const f = fixture(), started = deferred(), release = deferred();
         f.targets.write.mockImplementation(async () => { started.resolve(); await release.promise; return f.receipt; });

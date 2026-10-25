@@ -1,5 +1,29 @@
 [
   {
+    "key": "project_agent_tools",
+    "name": "Инструменты агентов проекта",
+    "description": "Явные ограниченные запросы к знаниям, публичным чатам и системной помощи с сохранёнными квитанциями.",
+    "group": "agents",
+    "dependsOn": ["projects", "model_hosting"],
+    "defaultEnabled": true
+  },
+  {
+    "key": "plugin_auto_updates",
+    "name": "Автообновление установленных плагинов",
+    "description": "Личные opt-in политики автоматически устанавливают только закреплённые и одобренные версии проекта.",
+    "group": "catalog",
+    "dependsOn": ["tool_installation"],
+    "defaultEnabled": true
+  },
+  {
+    "key": "notification_sounds",
+    "name": "Звук уведомлений",
+    "description": "Личный звуковой сигнал о новых результатах. Пользователь включает звук и выбирает громкость в своём браузере.",
+    "group": "agents",
+    "dependsOn": ["tab_notifications"],
+    "defaultEnabled": true
+  },
+  {
     "key": "tab_notifications",
     "name": "Уведомления на вкладке",
     "description": "Метка вкладки при новых сообщениях и завершении известных фоновых задач. Выключение не отменяет задания.",
@@ -397,6 +421,24 @@
     "defaultEnabled": true
   },
   {
+    "key": "system_role_guidance",
+    "name": "Справка и диагностика системных ролей",
+    "description": "Чтение справки и безопасного состояния проекта для подробного ответа. Изменения требуют отдельной проверки; история сохраняется после выключения.",
+    "group": "agents",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_role_mcp",
+    "name": "MCP системных агентов",
+    "description": "Явный доступ системных ролей к выбранным обнаруженным инструментам проекта. История и закрытие сессий доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "tool_catalog"
+    ],
+    "defaultEnabled": true
+  },
+  {
     "key": "device_codex_inference",
     "name": "Codex на компьютере",
     "description": "Запросы чатов и агентов через личный мост. Авторизация остаётся на компьютере.",
@@ -429,5 +471,15 @@
       "computer_connections"
     ],
     "defaultEnabled": false
+  },
+  {
+    "key": "chat_system_roles",
+    "name": "Системные агенты в чатах",
+    "description": "Личные задачи системным агентам из существующего диалога. Подготовка, согласие и результаты остаются приватными.",
+    "group": "agents",
+    "dependsOn": [
+      "system_role_chat"
+    ],
+    "defaultEnabled": true
   }
 ]

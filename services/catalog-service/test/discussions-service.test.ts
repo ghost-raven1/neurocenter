@@ -7,7 +7,7 @@ import type { CommentRow } from '../src/discussions/discussions.types';
 import type { Request } from 'express';
 import { requireFeatureEnabled } from '../src/features/require-feature-enabled';
 vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn() }));
-vi.mock('../../../shared/feature-client.cjs', () => ({ readFeatures: vi.fn(async () => ({ flags: { discussions: true, discussion_attachments: true } })) }));
+vi.mock('../../shared/feature-client.cjs', () => ({ readFeatures: vi.fn(async () => ({ flags: { discussions: true, discussion_attachments: true } })) }));
 const id = '00000000-0000-0000-0000-000000000001', requestKey = '00000000-0000-0000-0000-000000000002';
 const actor: DiscussionActor = { email: 'writer@fixture.test', activeRole: 'Разработчик', displayName: 'Автор', claims: { email: 'writer@fixture.test', projects: [], userRoles: ['Разработчик'], pluginIds: [], skillPaths: [] } };
 const input = { targetType: 'catalog', targetId: 'mcp:sample', body: 'Комментарий', requestKey };
@@ -108,7 +108,7 @@ describe('Discussion durable admission, replies and CAS', () => {
         query.mockImplementation(async (sql: string, values: unknown[] = []) => sql.startsWith('SELECT count(*) AS count FROM discussion_comments')
             ? { rows: [{ count: '53' }], rowCount: 1 } : base(sql, values));
         const page = await service.list({} as Request, { targetType: 'help', targetId: 'models' });
-        expect(page.items).toEqual([]); expect(page).toMatchObject({ totalCount: 53 });
+        expect(page.items).toEqual([]); expect(page).toMatchObject({ totalCount: 53, canComment: true, canAttach: false });
         expect(await service.reaction({} as Request, 'mcp:sample')).toEqual({ liked: false, count: 0, commentCount: 53 });
         expect(requireFeatureEnabled).not.toHaveBeenCalled();
     });

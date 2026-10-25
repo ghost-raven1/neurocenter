@@ -1,4 +1,6 @@
 import {allowSystemRoleRoute} from '../system-roles/system-role.access';
+import {allowSystemRoleChatRoute} from '../system-role-chat/system-role-chat.access';
+import {allowSystemRoleMcpRoute} from '../system-role-mcp/system-role-mcp.access';
 import { canReadCommon, IAccessClaims, projectLevel } from './access.model';
 import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 import {allowLearningRoute} from './learning-access-policy';
@@ -16,10 +18,16 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === undefined) { return false; }
     const body = request.body ?? {};
     const verb = request.method.toUpperCase();
+    if (route === '/api/chat-system-roles/origin') return read || verb === 'POST';
+    const systemMcp = allowSystemRoleMcpRoute(activeRole, verb, route);
+    if (typeof systemMcp === 'boolean') return systemMcp;
+    const systemChat = allowSystemRoleChatRoute(activeRole, verb, route);
+    if (typeof systemChat === 'boolean') return systemChat;
     const systemRole = allowSystemRoleRoute(activeRole, verb, route);
     if (typeof systemRole === 'boolean') return systemRole;
     if(route==='/api/chat-presence/session')return verb==='PUT';
     // Executors additionally check fresh target ACL, authorship and expected version.
+    if(route==='/api/agent-tools/capabilities'||route==='/api/agent-tools/steps'||/^\/api\/agent-tools\/steps\/[a-f0-9-]{36}$/.test(route))return read;
     if(route==='/api/help')return read;
     if(/^\/api\/help\/[a-z0-9][a-z0-9-]{0,79}$/.test(route))return read||main&&verb==='PUT';
     if(route==='/api/discussions')return read;
@@ -35,11 +43,13 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if(/^\/api\/catalog-requests\/[a-f0-9-]{36}\/actions$/.test(route)){return request.method.toUpperCase()==='POST';}
     if (/^\/api\/(devices|device-jobs|device-pairs)(\/|$)/.test(route)) { return true; }
     if(route==='/api/device-installations'){return read;}
+    if(route==='/api/plugin-auto-updates')return read||verb==='PUT';
     if (/^\/api\/device-install-plans(?:\/|$)/.test(route)) { return read || ['Разработчик','Админ проекта','Главный админ'].includes(activeRole); }
     const project = /^\/api\/projects\/([^/]+)(?:\/(.*))?$/.exec(route);
     if (project && project[1] !== 'import-local') {
         const level = projectLevel(claims,activeRole,project[1]);
         if (!level) { return false; }
+        if(project[2]?.startsWith('chat-search'))return project[2]==='chat-search' ? read : /^chat-search\/jobs\/[a-f0-9-]{36}$/.test(project[2]) ? read||verb==='DELETE' : level>=2&&verb==='POST'&&/^chat-search\/(index|search)$/.test(project[2]);
         if(project[2]?.startsWith('team-chat'))return allowProjectChat(level,verb,project[2]);
         if(project[2]&&/^learning(?:[/%]|$)/.test(project[2]))return allowLearningRoute(level,request.method.toUpperCase(),project[2]);
         const trial = project[2] && allowAgentReadinessRoute(level, request.method.toUpperCase(), project[2]);

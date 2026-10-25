@@ -13,6 +13,42 @@ beforeEach(() => {vi.clearAllMocks(); ui.flags.clear(); ui.owner = 'alice'; prop
 afterEach(() => harness.dispose());
 
 describe('Команда: явная отправка и безопасные ответы', () => {
+    it('системное @ открывает частную подготовку без публикации, а подтверждение не стирает новый черновик', () => {
+        const launch = vi.fn(); props.onSystemRole = launch; type('@Индексатор проверь знания');
+        ui.buttons.get('Подготовить задачу')!();
+        expect(onSend).not.toHaveBeenCalled(); expect(launch).toHaveBeenCalledOnce();
+        expect(launch.mock.calls[0][0]).toMatchObject({agentId: 'agent-indexer', instruction: 'проверь знания'});
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@Индексатор проверь знания');
+        type('Новый текст коллегам'); launch.mock.calls[0][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('Новый текст коллегам');
+    });
+    it('подтверждённая системная задача очищает только исходный черновик своего владельца', () => {
+        const launch = vi.fn(); props.onSystemRole = launch; type('@sys-ai-admin помоги');
+        ui.buttons.get('Подготовить задачу')!(); launch.mock.calls[0][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe(''); expect(onSend).not.toHaveBeenCalled();
+        type('@sys-ai-admin другая задача'); ui.buttons.get('Подготовить задачу')!(); ui.owner = 'bob'; launch.mock.calls.filter(([task]) => task)[1][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@sys-ai-admin другая задача');
+    });
+    it('смешанные системные и обычные @ сохраняют текст и не запускают ни одну ветку', () => {
+        props.onSystemRole = vi.fn(); type('@sys-indexer @reviewer проверь');
+        expect(renderProjectUi(element).html).toContain('отдельно'); expect(onSend).not.toHaveBeenCalled(); expect(props.onSystemRole).not.toHaveBeenCalled();
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@sys-indexer @reviewer проверь');
+    });
+    it('общий ввод обновляет системную подготовку и запускает только её текущий main action', () => {
+        const action = vi.fn(), changed = vi.fn(); props.onSystemRole = vi.fn(); props.systemTaskKey = 7; props.systemAction = {label: 'Проверить контекст',disabled: false,busy: false,onClick: action}; props.onSystemInstructionChange = changed;
+        type('@sys-indexer проверь новую задачу');
+        expect(changed).toHaveBeenLastCalledWith(7,'проверь новую задачу'); expect(ui.inputs.size).toBe(1);
+        ui.buttons.get('Проверить контекст')!(); expect(action).toHaveBeenCalledOnce(); expect(onSend).not.toHaveBeenCalled();
+        expect(renderProjectUi(element).html).toContain('Системная задача не публикуется');
+        expect(ui.selects.has('Адресаты сообщения')).toBe(false);
+    });
+    it('возврат к обычному сообщению сохраняет текст, а поздний ACK закрытой подготовки его не стирает', () => {
+        const launch = vi.fn(); props.onSystemRole = launch; type('@sys-ai-admin помоги'); ui.buttons.get('Подготовить задачу')!();
+        const task = launch.mock.calls[0][0]; props.systemTaskKey = task.key; renderProjectUi(element);
+        ui.buttons.get('Вернуться к сообщению')!(); props.systemTaskKey = undefined; renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('помоги');
+        task.onAccepted('помоги'); renderProjectUi(element); expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('помоги'); expect(onSend).not.toHaveBeenCalled();
+    });
     it('По умолчанию пишет людям без модельного запроса; работающие агенты не блокируют новый вопрос', async () => {
         props.detail.messages = [projectMessage({status: 'running'})]; type('Коллеги, обсудим?');
         expect(ui.selects.get('Адресаты сообщения')!.value).toBe('people'); ui.buttons.get('Отправить')!(); await settleProjectUi(element);

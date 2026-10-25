@@ -5,7 +5,7 @@ export function modalHooks(){
         state(initial:any){const slot=slots[cursor++]??={value:typeof initial==='function'?initial():initial};return [slot.value,(next:any)=>{slot.value=typeof next==='function'?next(slot.value):next;}];},
         ref(initial:any){return (slots[cursor++]??={value:{current:initial}}).value;},
         effect(effect:()=>void|(()=>void),deps?:unknown[]){const index=cursor++,previous=slots[index];if(deps&&previous?.deps&&deps.length===previous.deps.length&&deps.every((value,i)=>Object.is(value,previous.deps![i])))return;
-            const slot=slots[index]={deps};effects.push(()=>{previous?.cleanup?.();slot.cleanup=effect()||undefined;});},memo(fn:()=>unknown){return fn();}};
+            const slot:(typeof slots)[number]=slots[index]={deps};effects.push(()=>{previous?.cleanup?.();slot.cleanup=effect()||undefined;});},memo(fn:()=>unknown){return fn();}};
 }
 export type UiNode={kind:string;props:Record<string,any>;text:string};
 const words=(value:any):string=>typeof value==='string'||typeof value==='number'?String(value):Array.isArray(value)?value.map(words).join(''):value?.props?words(value.props.children):'';

@@ -1,7 +1,19 @@
+import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
+import {AGENT_TOOLS_SCHEMA_ASSERT_SQL} from '../agent-tools/agent-tools.schema-verification';
+import {PLUGIN_AUTO_UPDATE_SCHEMA_SQL} from '../plugin-auto-updates/auto-update.schema';
+import {PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL} from '../plugin-auto-updates/auto-update.schema-verification';
+import {CHAT_SYSTEM_ROLE_SCHEMA_SQL} from '../chat-system-roles/chat-system-roles.schema';
+import {CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL} from '../chat-system-roles/chat-system-roles.schema-verification';
+import {CHAT_SEARCH_SCHEMA_SQL} from '../chat-search/chat-search.schema';
+import {CHAT_SEARCH_SCHEMA_ASSERT_SQL} from '../chat-search/chat-search.schema-verification';
+import {BROWSER_AUTH_SESSION_SCHEMA_SQL} from '../browser-auth-sessions/browser-auth-session.schema';
 import {PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL} from '../models/project-rag-authorization.schema';
 import {PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL} from '../models/project-rag-authorization.schema-verification';
 import {DEVICE_CODEX_SCHEMA_SQL} from '../models/device-codex.schema';
 import {SYSTEM_ROLE_SCHEMA_SQL} from '../system-roles/system-role.schema';
+import {SYSTEM_ROLE_CHAT_SCHEMA_SQL} from '../system-role-chat/system-role-chat.schema';
+import {SYSTEM_ROLE_MCP_SCHEMA_SQL} from '../system-role-mcp/system-role-mcp.schema';
+import {SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL} from '../system-role-mcp/system-role-mcp-maintenance.schema';
 import {SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL} from '../system-roles/system-role.coordinator.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../project-chat/project-chat-dialogs.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../project-chat/project-chat-learning.schema';
@@ -93,4 +105,12 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:32,name:'isolated-project-chat-room-execution',sql:PROJECT_CHAT_ISOLATION_SCHEMA_SQL+'\n'+PROJECT_CHAT_ISOLATION_SCHEMA_ASSERT_SQL},
     {version:33,name:'bounded-system-role-coordinator',sql:SYSTEM_ROLE_COORDINATOR_SCHEMA_SQL},
     {version:34,name:'bounded-private-group-discussions',sql:CHAT_DISCUSSION_SCHEMA_SQL+'\n'+CHAT_DISCUSSION_SCHEMA_ASSERT_SQL},
+    {version:35,name:'private-system-role-service-chat',sql:SYSTEM_ROLE_CHAT_SCHEMA_SQL},
+    {version:36,name:'bounded-system-role-mcp-execution',sql:SYSTEM_ROLE_MCP_SCHEMA_SQL},
+    {version:37,name:'durable-device-mcp-cleanup',sql:SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL},
+    {version:38,name:'durable-opaque-browser-sessions',sql:BROWSER_AUTH_SESSION_SCHEMA_SQL},
+    {version:39,name:'public-chat-semantic-search',sql:CHAT_SEARCH_SCHEMA_SQL+'\n'+CHAT_SEARCH_SCHEMA_ASSERT_SQL},
+    {version:40,name:'private-system-role-chat-origins',sql:CHAT_SYSTEM_ROLE_SCHEMA_SQL+'\n'+CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL},
+    {version:41,name:'approved-plugin-auto-updates',sql:PLUGIN_AUTO_UPDATE_SCHEMA_SQL+'\n'+PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL},
+    {version:42,name:'bounded-project-agent-tools',sql:AGENT_TOOLS_SCHEMA_SQL+'\n'+AGENT_TOOLS_SCHEMA_ASSERT_SQL},
 ];

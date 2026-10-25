@@ -11,6 +11,7 @@ import {SnapshotSigner} from '../src/snapshots/snapshot-signature';
 import {SnapshotCommands,snapshotSignedPayload} from '../src/snapshots/snapshot-commands';
 import type {CatalogService} from '../src/catalog/catalog.service';
 import {snapshotManifestHash} from '../../shared/project-snapshot.cjs';
+import {callerOwnedPostgresAdmin} from './caller-owned-postgres.fixture';
 
 const dispose:Array<()=>Promise<void>>=[];afterEach(async()=>{for(const action of dispose.splice(0).reverse())await action();});
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
@@ -18,7 +19,7 @@ const actor={email:'snapshot@localhost',activeRole:'Главный админ'},
 const manifest=()=>({format:'neurocenter.lancedb-snapshot',schemaVersion:1,sdkVersion:'0.29.0',tables:[{name:'chunks',version:1,rows:1,schemaSha256:hash('schema')}],
     files:[{path:'chunks.lance/data/a.lance',size:3,sha256:hash('abc'),chunks:[{sha256:hash('abc'),size:3}]}]});
 async function fixture(){
-    const url=new URL(process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/postgres');url.pathname='/postgres';
+    const url=callerOwnedPostgresAdmin();
     const admin=new Pool({connectionString:url.href,max:1}),database='nc_snapshot_'+randomUUID().replaceAll('-','');
     await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;
     const pool=new Pool({connectionString:url.href,max:5}),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-'));

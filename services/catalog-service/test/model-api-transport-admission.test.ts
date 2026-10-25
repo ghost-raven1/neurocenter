@@ -20,6 +20,32 @@ beforeEach(() => { flags = defaultFeatureFlags(); vi.stubGlobal('fetch', vi.fn(a
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Gate on the physical provider boundary', () => {
+ it('runs the dispatch-only guard after a held rate permit and never sends an obsolete planning request',async()=>{
+  let release!:()=>void,entered!:()=>void,available=true;const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve);
+  const provider=vi.fn(async()=> 'answer'),guard=vi.fn(async()=>{if(!available)throw new Error('planning unavailable');}),metrics=createModelDispatchMetrics();
+  const acquire:ModelRateLimitsService['acquire']=async(_model,_signal,beforeAttempt)=>{await beforeAttempt?.();entered();await held;};
+  const gate=new ModelApiAdmission({acquire}as never);
+  const pending=withModelDispatchMetrics(metrics,()=>withModelUsage({purpose:'direct',beforeDispatch:guard},()=>gate.run(local,undefined,provider)));
+  const rejected=pending.catch(error=>error);await started;available=false;release();expect(await rejected).toMatchObject({message:'planning unavailable'});
+  expect(guard).toHaveBeenCalledOnce();expect(provider).not.toHaveBeenCalled();expect(metrics.dispatchCount).toBe(0);
+ });
+ it('does not recheck a dispatch-only guard after the provider has accepted the request',async()=>{
+  let available=true;const guard=vi.fn(async()=>{if(!available)throw new Error('planning unavailable');});
+  const gate=new ModelApiAdmission({acquire:async()=>undefined}as never),provider=vi.fn(async()=>{available=false;return 'received answer';});
+  expect(await withModelUsage({purpose:'direct',beforeDispatch:guard},()=>gate.run(local,undefined,provider))).toBe('received answer');
+  expect(provider).toHaveBeenCalledOnce();expect(guard).toHaveBeenCalledOnce();
+ });
+ it('cannot send a late provider request when cancellation occurs during its dispatch-only guard',async()=>{
+  let release!:()=>void,entered!:()=>void;const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve),abort=new AbortController();
+  const provider=vi.fn(),gate=new ModelApiAdmission({acquire:async()=>undefined}as never);
+  const pending=withModelUsage({purpose:'direct',beforeDispatch:async()=>{entered();await held;}},()=>gate.run(local,abort.signal,provider));
+  const rejected=pending.catch(error=>error);await started;abort.abort(new Error('cancelled'));release();expect(await rejected).toBe(abort.signal.reason);expect(provider).not.toHaveBeenCalled();
+ });
+ it('rechecks ordinary authority after a dispatch-only guard has waited',async()=>{
+  let current=true;const provider=vi.fn(),gate=new ModelApiAdmission({acquire:async()=>undefined}as never);
+  await expect(withModelUsage({purpose:'direct',beforeInference:async()=>{if(!current)throw new Error('source revoked');},beforeDispatch:async()=>{current=false;}},()=>gate.run(local,undefined,provider))).rejects.toThrow('source revoked');
+  expect(provider).not.toHaveBeenCalled();
+ });
  it('records active metadata after transport starts and orders settlement after a held active write',async()=>{
   let release!:()=>void,entered!:()=>void;const hold=new Promise<void>(resolve=>{release=resolve;}),observed=new Promise<void>(resolve=>{entered=resolve;});
   const events:string[]=[],metrics=createModelDispatchMetrics();

@@ -9,6 +9,8 @@ import type { IModel } from '../src/models/model.types';
 import { defaultFeatureFlags, evaluateFeatureFlags } from '../../shared/feature-flags.cjs';
 import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
 import { requiredRouteFeatures } from '../../shared/feature-policy.cjs';
+import { projectContextPort } from './helpers/project-context-port';
+import type { ChatProjectEvidence } from '../src/model-chat/chat-project-context.types';
 
 const model: IModel = { id:'model-test',name:'Test',description:'',capability:'chat',runtime:'ollama',model:'test:local',manifestSha256:'a'.repeat(64),
     dimension:null,source:'custom',revision:1,createdAt:'',updatedAt:'' };
@@ -90,7 +92,7 @@ describe('A model plan grants no new participants, identity or recursive work',(
 
 /** A controlled durable port records observable receipts; SQL ownership and immutability are checked separately on real PostgreSQL. */
 function runtimeFixture(withEmbedding=false){
-    const controller=new AbortController(),state={authorized:true,pending:true,enabled:true,answer:'',changed:new Set<string>()};
+    const controller=new AbortController(),state={authorized:true,pending:true,enabled:true,searchEnabled:true,answer:'',evidence:undefined as ChatProjectEvidence|undefined,changed:new Set<string>()};
     const conversation={id:'conversation',owner_email:'owner@example.test',project_id:'project',model_id:model.id,model_pin:projectEmbeddingPin(model),agent_ids:roster.map(item=>item.snapshot.agentId),mode:'group'};
     const turn={id:'turn',conversation_id:conversation.id,request_id:'request',input_text:'QUESTION',status:'pending',removed_at:null,lease_until:new Date(Date.now()+900000)};
     const run:DiscussionRun={turn_id:turn.id,request_id:turn.request_id,actor_role:'Разработчик',model,roster,calls_started:0,deadline_at:new Date(Date.now()+120000)};
@@ -98,7 +100,7 @@ function runtimeFixture(withEmbedding=false){
     const query=async(sql:string)=>sql.includes('model_chat_conversations')?{rows:[conversation],rowCount:1}:{rows:state.pending?[{}]:[],rowCount:state.pending?1:0};
     const db={query};
     const chats={pool:db,peek:async()=>conversation,owned:async(_owner:unknown,_id:unknown,authorize:(db:unknown)=>Promise<unknown>,work:(db:unknown,row:unknown)=>Promise<unknown>)=>{await authorize(db);const result=await work(db,conversation);await authorize(db);return result;},
-        finish:async(_db:unknown,_row:unknown,_turn:unknown,answer:{content:string})=>{if(!state.pending)throw Error('cancelled');state.answer=answer.content;state.pending=false;return true;}};
+        finish:async(_db:unknown,_row:unknown,_turn:unknown,answer:{content:string;evidence?:ChatProjectEvidence})=>{if(!state.pending)throw Error('cancelled');state.answer=answer.content;state.evidence=answer.evidence;state.pending=false;return true;}};
     const steps={get:async()=>run,begin:async(_owner:unknown,_id:unknown,_turn:unknown,phase:string,key:string,selected:IModel,snapshot:unknown)=>{
         if(receipts.some(step=>step.step_key===key))throw new ConflictException('already accepted');
         if(run.calls_started>=(phase==='synthesis'?5:4))throw new ConflictException('budget');
@@ -111,13 +113,76 @@ function runtimeFixture(withEmbedding=false){
     const runtime={infer:async(_model:IModel,_endpoint:string,body:Record<string,unknown>,signal:AbortSignal)=>{
         await currentModelUsage().beforeInference?.();const step=receipts.at(-1)!;calls.push({phase:step.phase,agentId:currentModelUsage().agentId,body,signal});return provider(step.phase,signal);
     }};
-    const project={evidence:{status:'metadata',sources:[]},messages:[],assertCurrent:noop,fit:(messages:unknown)=>({messages,evidence:{status:'metadata',sources:[]}})};
+    const project={evidence:{status:'metadata',sources:[]},messages:[],assertCurrent:noop,beforeInference:noop,requiredFeatures:[],fit:(messages:unknown)=>({messages,evidence:{status:'metadata',sources:[]}})};
     const deps={chats,steps,runtime,settings:async()=>({contextWindowTokens:null}),history:async()=>[{role:'user',content:'QUESTION'}],
         groups:{assert:async(_req:unknown,_row:unknown,_base:unknown,snapshot:{agentId:string})=>{await checkpoint();if(state.changed.has(snapshot.agentId))throw new ConflictException('changed');return model;},learning:{prepare:async()=>({messages:[],requiredFeatures:[],beforeInference:noop})}},
         project:{prepare:async(_req:unknown,_project:unknown,prompt:string,_signal:unknown,_before:unknown,embedding?:(...args:unknown[])=>Promise<unknown>)=>{if(withEmbedding&&prompt&&embedding)await embedding({...model,capability:'embedding'},{input:[prompt]},controller.signal);return project;}}};
-    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags({...defaultFeatureFlags(),group_discussions:state.enabled})),{status:200})));
-    return {state,run,turn,receipts,calls,controller,setProvider(value:typeof provider){provider=value;},start:()=>runChatDiscussion({} as never,scope as never,turn as never,run,controller.signal,deps as never)};
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags({...defaultFeatureFlags(),group_discussions:state.enabled,project_search:state.searchEnabled})),{status:200})));
+    return {state,run,turn,receipts,calls,controller,deps,scope,setProvider(value:typeof provider){provider=value;},start:()=>runChatDiscussion({} as never,scope as never,turn as never,run,controller.signal,deps as never)};
 }
+
+describe('Discussion uses the real project context failure boundary',()=>{
+    afterEach(()=>vi.restoreAllMocks());
+    const fixture=(response?:()=>Response)=>{
+        const f=runtimeFixture(true),project=projectContextPort(()=>f.deps.runtime as never);
+        f.scope.row.project_id=project.project.id;Object.assign(f.deps,{project:project.context});
+        f.setProvider(async phase=>phase==='context'?{embeddings:[[1,2,3]]}:phase==='planning'?reply(planned()):phase==='synthesis'?reply(final()):reply('SAVED RESPONSE'));
+        if(response){
+            vi.mocked(project.context.client.call).mockRestore();vi.spyOn(project.context.client,'call');
+            const flags=fetch;vi.stubGlobal('fetch',vi.fn(async(input:string|URL|Request,init?:RequestInit)=>String(input).includes('/internal/project-rag/search')?response():flags(input,init)));
+        }
+        return {...f,project};
+    };
+    it('continues a real HTTP503 outage once and saves explicit unavailable evidence',async()=>{
+        const f=fixture(()=>new Response('<html>proxy unavailable</html>',{status:503}));await f.start();
+        expect(f.calls.map(call=>call.phase)).toEqual(['context','planning','response','synthesis']);
+        expect(f.project.context.client.call).toHaveBeenCalledOnce();expect(f.state.answer).toContain('Проверенный итог');
+        expect(f.state.evidence).toMatchObject({status:'unavailable',sources:[]});
+    });
+    it('does not retry a late index change as a new metadata-only identity',async()=>{
+        const f=fixture();f.setProvider(async phase=>{if(phase==='context'){f.project.selected.dataRevision++;return{embeddings:[[1,2,3]]};}return phase==='planning'?reply(planned()):phase==='synthesis'?reply(final()):reply('MUST NOT RUN');});
+        await expect(f.start()).rejects.toMatchObject({status:409});expect(f.calls.map(call=>call.phase)).toEqual(['context']);
+        expect(f.project.context.client.call).not.toHaveBeenCalled();expect(f.state.answer).toBe('');
+    });
+    it.each([
+        ['malformed JSON',()=>new Response('{')],
+        ['wrong snapshot',()=>Response.json({generation:'initial-'+'a'.repeat(32),snapshot:'c'.repeat(64),sources:[]})],
+        ['truncated body',()=>new Response(new ReadableStream({start(controller){controller.error(new Error('truncated'));}}))],
+    ] as const)('does not replace a real %s failure with a new empty-prompt preparation',async(_name,response)=>{
+        const f=fixture(response);await expect(f.start()).rejects.toMatchObject({status:503});
+        expect(f.calls.map(call=>call.phase)).toEqual(['context']);expect(f.project.context.client.call).toHaveBeenCalledOnce();
+        expect(f.receipts[0]).toMatchObject({phase:'context',status:'done'});expect(f.state.answer).toBe('');
+    });
+    it('retains a held paid response when project search turns off and blocks subsequent dispatches with that search context',async()=>{
+        const f=fixture();let started!:()=>void,release!:()=>void;
+        const waiting=new Promise<void>(resolve=>{started=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+        vi.mocked(f.project.context.client.call).mockResolvedValue({generation:f.project.selected.activeGeneration,snapshot:f.project.selected.activeSnapshot,
+            sources:[{id:'retained-source',path:'project.md',score:0.9,excerpt:'Verified project data'}]});
+        f.setProvider(async phase=>{if(phase==='context')return{embeddings:[[1,2,3]]};if(phase==='planning')return reply(planned([task(),task('agent-b')]));
+            if(phase==='response'){started();await held;return reply('PAID RETAINED RESPONSE');}return reply(final());});
+        const work=f.start();try{await waiting;f.state.searchEnabled=false;release();await work;}
+        finally{release();await work.catch(()=>undefined);}
+        expect(f.calls.map(call=>call.phase)).toEqual(['context','planning','response']);
+        expect(f.receipts.find(step=>step.phase==='response')).toMatchObject({status:'done',output:'PAID RETAINED RESPONSE'});
+        expect(f.state.answer).toContain('PAID RETAINED RESPONSE');expect(f.state.evidence).toMatchObject({status:'ready',sources:[{id:'retained-source'}]});
+    });
+    it.each(['access','snapshot','profile','cancel'] as const)('still rejects a held response after its %s authority changes',async change=>{
+        const f=fixture();let started!:()=>void,release!:()=>void;
+        const waiting=new Promise<void>(resolve=>{started=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+        f.setProvider(async phase=>{if(phase==='context')return{embeddings:[[1,2,3]]};if(phase==='planning')return reply(planned());
+            if(phase==='response'){started();await held;return reply('STALE RESULT');}return reply(final());});
+        const work=f.start().catch(error=>error);
+        try{await waiting;
+            if(change==='access')f.project.models.resolveProject.mockRejectedValue(new ForbiddenException('revoked'));
+            else if(change==='snapshot')f.project.selected.activeSnapshot='c'.repeat(64);
+            else if(change==='profile')f.project.selected.profile={...f.project.selected.profile!,model:'new embedding model'};
+            else f.controller.abort();
+            release();expect(await work).toBeInstanceOf(Error);
+        }finally{release();await work;}
+        expect(f.state.answer).toBe('');expect(f.receipts.some(step=>step.output==='STALE RESULT')).toBe(false);
+        expect(f.calls.map(call=>call.phase)).toEqual(['context','planning','response']);
+    });
+});
 
 describe('Discussion deadlines, call accounting and fresh authority',()=>{
     it('counts shared embedding in the same five-call bound and reserves synthesis',async()=>{

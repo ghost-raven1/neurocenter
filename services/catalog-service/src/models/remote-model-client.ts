@@ -8,6 +8,7 @@ import type { ModelApiAdmission } from '../model-api-admission/model-api-admissi
 import { RemoteModelError } from './remote-model-error';
 import { openaiResponsesBody, openaiResponsesResult } from './remote-openai-responses';
 import { ADAPTER_PARAMETER_DEFINITIONS, applyAdapterParameters } from '../../../shared/adapter-parameters.cjs';
+import {markModelProviderUnavailable} from './model-provider-availability';
 export { RemoteModelError } from './remote-model-error';
 
 type Json = Record<string, unknown>;
@@ -120,13 +121,21 @@ export class RemoteModelClient {
         if (apiKey && (apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(apiKey))) { throw new RemoteModelError('authorization', 'Сохранённый ключ удалённого API некорректен.'); }
         const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
         try {
-            const response = await (this.options.fetch ?? fetch)(url, { method: 'POST', redirect: 'error', signal: deadline,
-                headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: 'Bearer ' + apiKey } : {}) }, body: JSON.stringify(body) });
+            const request:RequestInit={ method: 'POST', redirect: 'error', signal: deadline,
+                headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: 'Bearer ' + apiKey } : {}) }, body: JSON.stringify(body) };
+            let response:Response;
+            try {
+                response = await (this.options.fetch ?? fetch)(url,request);
+            } catch {
+                signal?.throwIfAborted();
+                throw markModelProviderUnavailable(new RemoteModelError('unavailable', deadline.aborted ? 'Удалённая модель не ответила вовремя.' : 'Не удалось соединиться с удалённым API модели.'));
+            }
             if (!response.ok) {
                 await response.body?.cancel();
                 if (response.status === 401 || response.status === 403) { throw new RemoteModelError('authorization', 'Удалённый API отклонил ключ или доступ к модели.'); }
                 if (response.status === 429) { throw new RemoteModelError('rate-limit', 'Удалённый API ограничил запросы. Повторите позже.'); }
-                throw new RemoteModelError('unavailable', `Удалённый API недоступен (HTTP ${response.status}).`);
+                const error=new RemoteModelError('unavailable', `Удалённый API недоступен (HTTP ${response.status}).`);
+                throw [502,503,504].includes(response.status)?markModelProviderUnavailable(error):error;
             }
             if (!response.body || !/^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) {
                 await response.body?.cancel(); throw new RemoteModelError('response', 'Удалённый API вернул неподдерживаемый формат ответа.');

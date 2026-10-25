@@ -61,8 +61,8 @@ interface InstallationInput {
 export class DeviceInstallations {
     constructor(private readonly store: DeviceStore) {}
     /** Для миграции берём замороженную историю выбранной привязки, а не текущую версию магазина. */
-    async workspacePackages(email: string, deviceId: string, projectId: string, bindingId?: string): Promise<IPackage[]> {
-        const { rows } = await this.store.pool.query<{ kind: string; package: IPackage }>(`${latest}
+    async workspacePackages(email: string, deviceId: string, projectId: string, bindingId?: string, db:Pick<PoolClient,'query'>=this.store.pool): Promise<IPackage[]> {
+        const { rows } = await db.query<{ kind: string; package: IPackage }>(`${latest}
             SELECT installed_action AS kind,installed_package AS package FROM latest WHERE device_id=$2 AND project_id=$3
                 AND installed_binding IS NOT DISTINCT FROM $4 ORDER BY installed_package->'plugin'->>'kind',installed_package->'plugin'->>'id'`,
         [email, deviceId, projectId, bindingId ?? null]);
@@ -172,7 +172,7 @@ export class DeviceInstallations {
             try{if(localRagUi({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig}))ragUi={supported:true,mode:'web'};}catch{/* Неизвестный descriptor не обещает интерфейс. */}
             let coreSupported=false;
             try{coreSupported=!!localRagCore({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig});}catch{/* Invalid explicit core metadata cannot borrow a legacy UI's hosted capability. */}
-            return { ...item,...(supportsLearningQuirks({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningQuirks:{supported:true as const}}:{}),...(memoryRecipeSupported({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningMemory:{supported:true as const}}:{}),...(ragUi?{ragUi}:{}),...(coreSupported&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true,...((installedConfig?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion===1?{reindexSupported:true}:{})}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
+            return { ...item,...(coreSupported&&supportsLearningQuirks({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningQuirks:{supported:true as const}}:{}),...(memoryRecipeSupported({schemaVersion:5,plugin:{kind:item.assetKind},config:installedConfig})?{learningMemory:{supported:true as const}}:{}),...(ragUi?{ragUi}:{}),...(coreSupported&&supportsHostedRag({config:installedConfig})?{hostedEmbedding:{supported:true,...((installedConfig?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion===1?{reindexSupported:true}:{})}}:{}), bindingChanged: !isCurrentBinding, isCurrentBinding,
                 ...(!item.bindingId ? { legacyBinding: true } : {}),
                 ...(verifiedInspection ? { inspection:verifiedInspection } : {}),
                 ...(verifiedRuntime && isCurrentBinding ? {runtime:verifiedRuntime} : {}),
@@ -198,9 +198,9 @@ export class DeviceInstallations {
         return this.installedPackage(actor, input,db);
     }
     /** Чтение копий сохраняет исходный граф даже после отзыва одобрения. */
-    async inspectionDelivery(actor:IAccessActor,input:InstallationInput):Promise<{package:IPackage;installSet?:IInstallationSet}> {
-        const pkg=await this.installedPackage(actor,input);
-        const {rows}=await this.store.pool.query(`${latest} SELECT payload FROM latest WHERE device_id=$2 AND project_id=$3
+    async inspectionDelivery(actor:IAccessActor,input:InstallationInput,db:Pick<PoolClient,'query'>=this.store.pool):Promise<{package:IPackage;installSet?:IInstallationSet}> {
+        const pkg=await this.installedPackage(actor,input,db);
+        const {rows}=await db.query(`${latest} SELECT payload FROM latest WHERE device_id=$2 AND project_id=$3
             AND installed_package->'plugin'->>'id'=$4 AND installed_package->'plugin'->>'kind'=$5 AND installed_binding=$6`,
         [actor.email,input.deviceId,input.projectId,input.assetId,input.assetKind,input.bindingId]);
         const set=rows[0]?.payload?.installSet as IInstallationSet|undefined;
@@ -210,7 +210,7 @@ export class DeviceInstallations {
             for(let index=0;index<members.length;index++)for(const pin of packageDependencies(members[index])){
                 const key=pin.kind+':'+pin.id;if(found.has(key))continue;
                 if(members.length>=20)throw new ConflictException('Закреплённый комплект превышает лимит 20 инструментов.');
-                const {rows:children}=await this.store.pool.query(`${latest} SELECT installed_package AS package FROM latest
+                const {rows:children}=await db.query(`${latest} SELECT installed_package AS package FROM latest
                     WHERE device_id=$2 AND project_id=$3 AND installed_binding=$6 AND installed_action='install'
                     AND installed_package->'plugin'->>'id'=$4 AND installed_package->'plugin'->>'kind'=$5
                     AND installed_package->'plugin'->>'version'=$7 AND installed_package->'manifest'->>'sha256'=$8`,

@@ -32,7 +32,7 @@ vi.mock('antd',()=>{
     const Form=Object.assign(({children,onFinish,initialValues}:{children?:ReactNode;onFinish:typeof ui.finish;initialValues:IModelCreate})=>{
         ui.finish=onFinish;ui.initial=initialValues;return children;
     },{Item:content,useForm:()=>[{}],useWatch:(name:keyof IModelCreate)=>ui.values[name]});
-    return{Form,Tooltip:content,Modal:content,Space:content,Row:content,Col:content,Spin:input,Empty:content,
+    return{Form,Tooltip:content,Modal:({children,footer}:{children?:ReactNode;footer?:ReactNode})=>createElement('section',null,children,footer),Space:content,Row:content,Col:content,Spin:input,Empty:content,
         Alert:({message,description}:{message?:ReactNode;description?:ReactNode})=>createElement('div',null,message,description),Typography:{Title:content,Text:content,Paragraph:content},
         Input:Object.assign(input,{TextArea:input,Search:input}),InputNumber:input,Select:input,Checkbox:content,
         Button:(props:Button)=>{ui.buttons.set(String(props.children),props);return createElement('button',{disabled:props.disabled},props.children);}};
@@ -48,7 +48,7 @@ beforeEach(()=>{vi.clearAllMocks();hooks.reset();ui.owner='admin-a';ui.flags={mo
 
 describe('Прямой вход подключения внешнего API',()=>{
     it('Главный администратор открывает OpenAI-compatible chat с общим scope; обычное добавление остаётся embedding',()=>{
-        const html=open();expect(ui.initial).toMatchObject({runtime:'remote-openai',capability:'chat'});expect(html).toContain('общие для команды');expect(html).toContain('проект отдельно');
+        const html=open();expect(ui.initial).toMatchObject({runtime:'remote-openai',capability:'chat'});expect(html).toContain('Подключение доступно команде');expect(html).toContain('добавление в проект — отдельно');
         expect(modelCatalogApi.create).not.toHaveBeenCalled();expect(modelCatalogApi.assign).not.toHaveBeenCalled();
     });
     it('Обычная кнопка добавления сохраняет embedding default',()=>{open('Добавить модель');expect(ui.initial).toMatchObject({runtime:'remote-openai',capability:'embedding'});});

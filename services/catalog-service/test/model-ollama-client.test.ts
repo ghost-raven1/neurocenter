@@ -72,7 +72,7 @@ describe('Проверка и хостинг модели',()=>{
         const {client,calls}=fixture();const progress:IModelProgress[]=[];
         await client.start(model,value=>{progress.push(value);});
         expect(calls.map(call=>call.path)).toEqual(['/api/tags','/api/tags','/api/show','/api/embed','/api/tags']);
-        expect(calls.findLast(call=>call.path==='/api/embed')?.body).toMatchObject({model:alias,input:expect.any(Array),truncate:false});
+        expect(calls.filter(call=>call.path==='/api/embed').pop()?.body).toMatchObject({model:alias,input:expect.any(Array),truncate:false});
         expect(progress.at(-1)?.progress).toBe(100);
     });
     it.each([[[0,0],[3,4]],[[1,2],[3]],[[1,2],[1e100,3]],[[1,2],['private',4]],[[1,2]]].map(vectors=>({vectors})))('отклоняет неправильные векторы $vectors',async({vectors})=>{
@@ -102,7 +102,7 @@ describe('Проверка и хостинг модели',()=>{
         const context=fixture({'/api/show':()=>json({capabilities:['completion','vision']}),
             '/api/chat':()=>json({model:alias,done:true,done_reason:'stop',message:{content:'{"number":"42","color":"red"}'}})});
         await context.client.check(vision);
-        const body=context.calls.findLast(call=>call.path==='/api/chat')!.body!;
+        const body=context.calls.filter(call=>call.path==='/api/chat').pop()!.body!;
         expect(body.stream).toBe(false);expect(JSON.stringify(body)).not.toContain('file://');
         const messages=body.messages as Array<{images:string[]}>;
         expect(Buffer.from(messages[0].images[0],'base64').subarray(0,8).toString('hex')).toBe('89504e470d0a1a0a');

@@ -72,25 +72,29 @@ const syntheticVitest=String.raw`
 import fs from 'node:fs/promises';import path from 'node:path';
 if(!process.argv.includes('--maxWorkers='+process.env.EXPECTED_MAX_WORKERS))throw Error('Actual worker limit differs from the requested limit.');
 const scenario=process.env.SYNTHETIC_COVERAGE_CASE,cwd=process.cwd(),selected=path.join(cwd,'test/selected.test.ts'),missing=path.join(cwd,'test/workspace-bounds.test.ts');
-const moduleIds=scenario==='success'?[selected]:[selected,missing];
+const moduleIds=['success','todo','invalid-todo'].includes(scenario)?[selected]:[selected,missing];
 await fs.writeFile(process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE,JSON.stringify({schemaVersion:1,phase:'before-collection',cwd,moduleIds}),{mode:0o600});
 const testResults=[{name:selected,status:'passed',assertionResults:[{status:'passed',fullName:'selected assertion'}]}];
 if(scenario==='suite-failed')testResults.push({name:missing,status:'failed',assertionResults:[]});
-const report={success:scenario!=='suite-failed',numPassedTests:1,numFailedTests:0,numPendingTests:0,numTodoTests:0,numTotalTests:1,numFailedTestSuites:scenario==='suite-failed'?1:0,testResults};
+if(scenario==='todo')testResults[0].assertionResults.push({status:'todo',fullName:'unfinished assertion'});
+const report={success:scenario!=='suite-failed',numPassedTests:1,numFailedTests:0,numPendingTests:0,numTodoTests:scenario==='todo'?1:scenario==='invalid-todo'?-1:0,numTotalTests:scenario==='todo'?2:1,numFailedTestSuites:scenario==='suite-failed'?1:0,testResults};
 const filename=process.argv.find(arg=>arg.startsWith('--outputFile=')).slice('--outputFile='.length);await fs.writeFile(filename,JSON.stringify(report));
 const source=path.join(cwd,'src/entry.ts');await fs.mkdir(process.env.NEUROCENTER_COVERAGE_DIR,{recursive:true});
 await fs.writeFile(path.join(process.env.NEUROCENTER_COVERAGE_DIR,'coverage-final.json'),JSON.stringify({[source]:{path:source,statementMap:{0:{start:{line:1,column:0},end:{line:1,column:21}}},fnMap:{},branchMap:{},s:{0:1},f:{},b:{}}}));
 // Every synthetic worker exits0; the actual copied coverage runner must independently reject bad receipts.
 `;
 
-for(const scenario of ['success','missing','suite-failed'])test('Actual runner preserves evidence and '+scenario+' receipts determine completion independently of worker exit0',async t=>{
+for(const scenario of ['success','missing','suite-failed','todo','invalid-todo'])test('Actual runner preserves evidence and '+scenario+' receipts determine completion independently of worker exit0',async t=>{
  const sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-runner-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),pkg=path.join(root,'services/feature-flags-service'),output=path.join(root,'output');
  await Promise.all([fs.mkdir(tools,{recursive:true}),fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true}),fs.mkdir(path.join(root,'services/shared'),{recursive:true}),fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
- for(const file of ['run.mjs','focused-selection.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
+ for(const file of ['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
  await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
  for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
+ const policyFile=path.join(tools,'unit-safe-profile.mjs'),policy=await fs.readFile(policyFile,'utf8');
+ await fs.writeFile(policyFile,policy.replace(/export async function validateUnitSafeProfile[\s\S]*$/,'export async function validateUnitSafeProfile() {}\n'));
+ // The classifier has its own real-policy fixture tests; this fixture admits only synthetic worker receipts.
  // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.
  await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
  await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
@@ -102,7 +106,7 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  assert.equal(spawnSync('git',['init','--quiet'],{cwd:root}).status,0);
  const workers=scenario==='success'?1:2;
  const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service',...(workers===1?['--max-workers','1']:[]),'--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,SYNTHETIC_COVERAGE_CASE:scenario,EXPECTED_MAX_WORKERS:String(workers)},encoding:'utf8',timeout:15000});
- assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,scenario==='success'?0:1,result.stdout+'\n'+result.stderr);
+ assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,['success','todo'].includes(scenario)?0:1,result.stdout+'\n'+result.stderr);
  const manifest=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8')),item=manifest.packages[0];
  assert.equal(manifest.limits.maxWorkers,workers);assert.ok(item.command.includes('--maxWorkers='+workers));
  assert.equal(item.exitCode,0);assert.equal(manifest.complete,scenario==='success');assert.equal(manifest.suiteCompletion,scenario==='success');
@@ -112,8 +116,9 @@ for(const scenario of ['success','missing','suite-failed'])test('Actual runner p
  assert.equal(sources.find(file=>file.path==='bridge-dist/install.sh').measurement,'unsupported-runtime');
  assert.equal(sources.find(file=>file.path==='services/feature-flags-service/src/entry.ts').measurement,'represented');
  assert.match(await fs.readFile(path.join(output,'source-inventory.md'),'utf8'),/bridge-dist\/install\.sh/);
- assert.equal(item.passed,1);assert.equal(item.failed,0);assert.equal(item.testFileInventory.complete,scenario!=='missing');
- assert.equal(item.reportValidation.ok,scenario!=='suite-failed');assert.deepEqual(item.excludedInfrastructureSuites,['test/excluded-db.test.ts']);
+ assert.equal(item.todo,scenario==='todo'?1:scenario==='invalid-todo'?null:0);
+ assert.equal(item.passed,scenario==='invalid-todo'?null:1);assert.equal(item.failed,scenario==='invalid-todo'?null:0);assert.equal(item.testFileInventory.complete,scenario!=='missing');
+ assert.equal(item.reportValidation.ok,!['suite-failed','invalid-todo'].includes(scenario));assert.deepEqual(item.excludedInfrastructureSuites,['test/excluded-db.test.ts']);
  if(scenario==='missing')assert.deepEqual(item.testFileInventory.missingFiles,[path.join(pkg,'test/workspace-bounds.test.ts')]);
  const rawReport=JSON.parse(await fs.readFile(path.join(output,'feature-flags-service/test-results.json'),'utf8'));
  assert.equal(rawReport.numFailedTests,0);assert.equal(rawReport.numFailedTestSuites,scenario==='suite-failed'?1:0);

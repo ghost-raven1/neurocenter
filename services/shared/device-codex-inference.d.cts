@@ -1,5 +1,6 @@
 export const DEVICE_CODEX_PROTOCOL: 'device-codex-inference-v1';
 export const DEVICE_CODEX_CAPABILITY: typeof DEVICE_CODEX_PROTOCOL;
+export const DEVICE_CODEX_DISPATCH_CAPABILITY: 'device-codex-dispatch-features-v1';
 export const DEVICE_CODEX_JOB: 'infer-device-codex';
 export type DeviceCodexSource = {
     scope: 'global';
@@ -17,6 +18,8 @@ export interface DeviceCodexPayload {
     connectionRevision: number;
     source: DeviceCodexSource;
     deadlineAt: string;
+    /** Immutable feature gates checked only before the first physical dispatch marker. */
+    dispatchOnlyFeatures?: import('./feature-flags.cjs').FeatureFlagKey[];
 }
 export interface DeviceCodexMessage {
     role: 'system' | 'user' | 'assistant';

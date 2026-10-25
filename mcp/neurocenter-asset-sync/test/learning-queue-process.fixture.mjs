@@ -8,7 +8,8 @@ const [mode,directory,rawTarget]=process.argv.slice(2),target=rawTarget?JSON.par
 const input={requestKey:randomUUID(),title:'Parallel observation',summary:'Only counters',outcome:'unknown',evidence:[{kind:'observation',status:'unknown',summary:'{"read":1}'}]};
 const send=value=>process.send?.(value);
 const message=type=>new Promise(resolve=>{const listener=value=>{if(value?.type===type){process.off('message',listener);resolve();}};process.on('message',listener);});
-const stage=async type=>{send({type,input});await new Promise(()=>{});};
+/** Keep the crash barrier alive until the parent actually kills this process. */
+const stage=async type=>{process.channel.ref();send({type,input});await new Promise(()=>{});};
 const start=message('start');send({type:'ready',input});await start;
 try{
     if(mode==='before-mutex'){

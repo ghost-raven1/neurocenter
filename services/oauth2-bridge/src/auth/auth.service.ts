@@ -168,9 +168,12 @@ export class AuthService {
         const rawEmail=profile.email??profile.mail;
         const email = typeof rawEmail==='string'?rawEmail.trim().toLowerCase():'';
         if (!/^[^\s@]+@[^\s@]+$/.test(email)) { throw new ForbiddenException('SSO не вернул почту пользователя.'); }
+        const name = typeof profile.name === 'string' ? profile.name.trim() : '';
+        // An optional IdP label must fit the durable identity boundary without blocking a valid login.
+        const displayName = name && name.length <= 512 && !/[\x00-\x1f\x7f]/.test(name) ? name : email;
         return {
             id, email, principalName:email,
-            displayName: typeof profile.name==='string'?profile.name:email,
+            displayName,
             userRoles: [], activeRole: '', routePermissions: [], projectRoles: [],
         };
     }

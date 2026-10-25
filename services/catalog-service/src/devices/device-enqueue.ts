@@ -2,7 +2,7 @@ import {PROJECT_AGENTS_JOB} from '../../../shared/project-agents.cjs';
 import {securityEvent} from '../access/security-events';
 import { LOCAL_APPLIES } from './project-local-actions';
 import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
-import type { Pool } from 'pg';
+import type { Pool,PoolClient } from 'pg';
 import { notifyDeviceOperations, recordDeviceOperation } from './device-operations';
 import { guardWorkspaceQueue } from './workspace-queue';
 import type { IAccessClaims } from '../access/access.model';
@@ -20,7 +20,7 @@ const clean = (row: Row): Row => {
 };
 
 /** Lock устройства объединяет две вкладки в одно ожидающее действие и ограничивает размер очереди. */
-export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue, readClaims:()=>Promise<IAccessClaims>): Promise<Row> {
+export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue, readClaims:(db:PoolClient)=>Promise<IAccessClaims>): Promise<Row> {
     const client = await pool.connect();
     let result: Row;
     try {
@@ -33,7 +33,7 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
             return clean(previous);
         }
         const reclaimed=await reclaimUnauthorizedQueuedJobs(client,{id:input.deviceId,email:input.email,role:owned.rows[0].role},
-            {role:input.role,project_id:input.projectId??null,kind:input.kind},readClaims);
+            {role:input.role,project_id:input.projectId??null,kind:input.kind},()=>readClaims(client));
         await guardWorkspaceQueue(client, input);
         if (['install','uninstall',...LOCAL_APPLIES].includes(input.kind)) {
             const pending = await client.query<Row>(`SELECT ${view},role,payload FROM bridge_jobs WHERE device_id=$1 AND project_id=$2

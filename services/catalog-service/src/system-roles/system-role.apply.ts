@@ -16,7 +16,7 @@ export class SystemRoleApplication {
         private readonly features = requireFeaturesEnabled) {}
     async apply(req: Request, input: RoleRunRow, revision: number, requestId: string, rollback = false): Promise<RoleRunRow> {
         const actor = await this.policy.actor(req, input.project_id);
-        if (!rollback) await this.features([systemRole(input.agent_id).flag]);
+        if (!rollback) await this.features([systemRole(input.agent_id).flag, ...(input.request.sourceFeature ? [input.request.sourceFeature] : [])]);
         const intent = await this.repository.transaction(async db => {
             const current = await this.repository.get(input.id, db, true);
             if (!current) throw new ConflictException('Задание недоступно.');
@@ -26,6 +26,7 @@ export class SystemRoleApplication {
             if (current.revision !== revision || (rollback ? !['succeeded','failed','interrupted'].includes(current.state) || !current.applied.length
                 : current.state !== 'awaiting_review' || current.result?.kind !== 'proposal' || !current.result.changes.length)) throw new ConflictException('Предложение изменилось. Обновите результат перед действием.');
             if (!rollback && current.result!.changes.some(change => !current.snapshot.targets.find(target => target.key === change.targetKey)?.editable)) throw new ConflictException('Для этой цели доступно предложение. Применение выполняется через её владельца.');
+            if (!rollback && current.request.source) await this.policy.source(db, actor.email, current.agent_id, current.request, current.request_hash);
             const unconfirmed = rollback && current.phase === 'unconfirmed';
             return { row: await this.repository.change(db, current, 'applying', rollback ? 'rolling_back' : 'applying', rollback ? 'Проверяем версии для отката.' : 'Человек подтвердил применение проверенного предложения.'), started: true, unconfirmed };
         });
@@ -34,10 +35,11 @@ export class SystemRoleApplication {
             const changes = rollback ? row.result!.changes.filter(change => row.applied.some(receipt => receipt.targetKey === change.targetKey)).reverse() : row.result!.changes;
             for (const change of changes) {
                 await this.policy.actor(req, row.project_id);
-                if (!rollback) await this.features([systemRole(row.agent_id).flag]);
+                if (!rollback) await this.features([systemRole(row.agent_id).flag, ...(row.request.sourceFeature ? [row.request.sourceFeature] : [])]);
                 await this.repository.transaction(async db => {
                     const current = await this.repository.applying(row.id, row.phase, db);
                     await this.policy.authorize(db, await this.policy.actor(req, current.project_id), current.project_id);
+                    if (!rollback && current.request.source) await this.policy.source(db, actor.email, current.agent_id, current.request, current.request_hash);
                 });
                 const target = row.snapshot.targets.find(item => item.key === change.targetKey)!;
                 const receipt = await this.targets.write(req, row.snapshot, target, change.replacement, ownerRequestKey(requestId, target.key), rollback ? row.applied.find(item => item.targetKey === target.key) : undefined);

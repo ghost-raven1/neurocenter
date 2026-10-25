@@ -32,10 +32,10 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     ...['filesystem.json','memory.json','opencode-rag.json','opencode-rag-plugin.json','sequential-thinking.json']
         .map(name=>'scripts/catalog-plugins/locks/'+name),
     'scripts/opencode-platforms.mjs','scripts/workspace/node-runtime.mjs','scripts/models/bundle-files.mjs','scripts/release-request.mjs',
-    ...['archive-source.cjs','dependency-pins.cjs','github-release-source.cjs','opencode-rag-source.cjs','rag-index-contract.cjs',
+    ...['archive-source.cjs','dependency-pins.cjs','github-release-source.cjs','opencode-rag-source.cjs','rag-core-contract.cjs','rag-index-contract.cjs',
         'rag-ui-contract.cjs','repository-source.cjs','runtime-artifacts.cjs','source-candidates.cjs','source-entrypoint.cjs','tool-runtime-source.cjs']
         .map(name=>'services/shared/'+name),
-    ...['dependency-pins.d.cts','rag-ui-contract.d.cts','runtime-artifacts.d.cts','source-entrypoint.d.cts'].map(name=>'services/shared/'+name),
+    ...['dependency-pins.d.cts','rag-core-contract.d.cts','rag-ui-contract.d.cts','runtime-artifacts.d.cts','source-entrypoint.d.cts'].map(name=>'services/shared/'+name),
     ...['project-learning','project-learning-memory-sync','project-learning-quirks'].flatMap(name=>['cjs','d.cts'].map(extension=>'services/shared/'+name+'.'+extension)),
     'services/catalog-service/package.json','services/catalog-service/package-lock.json','services/catalog-service/tsconfig.json',
     'services/catalog-service/tsconfig.build.json','services/catalog-service/src/catalog/dto.ts',

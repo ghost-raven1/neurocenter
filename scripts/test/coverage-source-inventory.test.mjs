@@ -132,7 +132,7 @@ test('Source inventory regressions participate in normal workspace check discove
 
 for(const mode of ['same-source','legacy','mixed-instrumentation'])test('Actual merge CLI handles '+mode+' denominator evidence without running application code',async t=>{
     const {root}=await fixture(t),tools=path.join(root,'scripts/coverage');
-    for(const file of ['merge.mjs','methods.mjs','report.mjs','source-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
+    for(const file of ['merge.mjs','profiles.mjs','methods.mjs','report.mjs','source-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
     await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
     const file=path.join(root,'frontend/src/main.ts'),map={[file]:{path:file,statementMap:{0:{start:{line:1,column:0},end:{line:1,column:21}}},fnMap:{},branchMap:{},s:{0:1},f:{},b:{}}};
     const inventory=await collectSourceInventory(root,['frontend/src/main.ts','scripts/production/recovery.mjs','bridge-dist/install.sh']);
@@ -152,7 +152,7 @@ for(const mode of ['same-source','legacy','mixed-instrumentation'])test('Actual 
     assert.match(await fs.readFile(path.join(output,'gaps.md'),'utf8'),/source-inventory/);
 });
 
-test('Actual native runner retains c8 hits for a production CLI outside every package src tree',async t=>{
+for(const todo of [false,true])test('Actual native runner retains c8 hits and TODO '+todo+' for a production CLI outside every package src tree',async t=>{
     const {root,put}=await fixture(t),tools=path.join(root,'scripts/coverage');
     for(const file of ['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
     await fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true});await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
@@ -161,11 +161,11 @@ test('Actual native runner retains c8 hits for a production CLI outside every pa
     await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
     const profiles=await fs.readFile(path.join(tools,'profiles.mjs'),'utf8');await fs.writeFile(path.join(tools,'profiles.mjs'),profiles.replace(/export const nativeSuites = \[[\s\S]*?\];/,'export const nativeSuites = ["owned-native.test.mjs"];'));
     await put('scripts/production/recovery.mjs','export function run(value){return value+1;}\n');
-    await put('scripts/test/owned-native.test.mjs','import {test} from "node:test";import assert from "node:assert/strict";import {run} from "../production/recovery.mjs";test("safe fixture CLI",()=>assert.equal(run(1),2));\n');
+    await put('scripts/test/owned-native.test.mjs','import {test} from "node:test";import assert from "node:assert/strict";import {run} from "../production/recovery.mjs";test("safe fixture CLI",()=>assert.equal(run(1),2));\n'+(todo?'test.todo("unfinished native case");\n':''));
     const output=path.join(root,'native-output'),result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--no-unit','--native','--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH},encoding:'utf8',timeout:15000});
     assert.equal(result.error,undefined);assert.equal(result.status,0,result.stdout+result.stderr);
     const manifest=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8')),map=JSON.parse(await fs.readFile(path.join(output,'merged/coverage-final.json'),'utf8'));
-    assert.equal(manifest.coverageKind,'native-c8-v8');assert.equal(manifest.native.passed,1);assert.equal(manifest.complete,true);assert.equal(manifest.denominator.allWorkspaceSourcesIncluded,false);
+    assert.equal(manifest.coverageKind,'native-c8-v8');assert.equal(manifest.native.passed,1);assert.equal(manifest.native.todo,todo?1:0);assert.equal(manifest.complete,!todo);assert.equal(manifest.denominator.allWorkspaceSourcesIncluded,false);
     assert.ok(map[path.join(root,'scripts/production/recovery.mjs')]);assert.equal(record(manifest.sourceInventory,'scripts/production/recovery.mjs').measurement,'represented');
     assert.equal(record(manifest.sourceInventory,'scripts/models/bundle-cli.mts').measurement,'unrepresented');
     assert.equal(record(manifest.sourceInventory,'bridge-dist/install.sh').measurement,'unsupported-runtime');

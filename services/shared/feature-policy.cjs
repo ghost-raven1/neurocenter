@@ -57,6 +57,8 @@ function requiredRouteFeatures(method,path,body){
     if(verb==='POST'&&systemRole)return requiredInferenceFeatures('agent',systemRole[1]);
     // Canonical role/chat executors check flags after accepted-request replay lookup.
     if(/^\/api\/system-role-chats(?:\/|$)/.test(route))return [];
+    // The owner checks new discovery after immutable request replay; receipt delivery/close never create work.
+    if(/^\/api\/system-role-mcp(?:\/|$)/.test(route))return [];
     // Team-chat admissions preserve accepted replay and cleanup; fresh capabilities are checked by its executor.
     if(/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(route))return [];
     if(/^\/api\/help\/[^/]+$/.test(route))return verb==='PUT'?['help_center']:[];
@@ -67,6 +69,8 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/api\/catalog-reactions(?:\/|$)/.test(route))return [];
     if(/^\/(?:api|internal)\/device-channel\//.test(route)){
         const suffix=route.replace(/^\/(?:api|internal)\/device-channel\//,'');
+        if(/^system-role-mcp\/(?:claim|context|dispatch)$/.test(suffix))return ['system_role_mcp','computer_connections'];
+        if(/^system-role-mcp\/(?:authorize|next|result|complete)$/.test(suffix))return [];
         if(suffix==='pair/start')return ['computer_connections'];
         if(suffix==='worker/update-cleanup/authorize')return ['bridge_storage_cleanup'];
         if(['embedding','embedding/context'].includes(suffix))return ['model_hosting'];

@@ -12,6 +12,7 @@ import {ChatWorkspace} from '../src/features/ModelChat/ChatWorkspace';
 import {ChatProjectContext} from '../src/features/ModelChat/ChatProjectContext';
 import {detail, evidence, model, participant, response, turn} from './model-chat-fixtures';
 import type {IModelChatTurn} from '../src/features/ModelChat/types';
+vi.mock('../src/features/AgentTools/useAgentTools', () => ({useAgentTools: () => ({draft: {enabled: false},blocked: false,loading: false,update: () => undefined,restore: () => undefined,disable: () => undefined,reload: () => undefined})}));
 
 interface Keyboard {key: string; shiftKey: boolean; keyCode: number; nativeEvent: {isComposing: boolean}; defaultPrevented?: boolean; preventDefault: () => void;}
 interface TextArea {value: string; onChange: (event: {target: {value: string}}) => void; disabled?: boolean; onKeyDown: (event: Keyboard) => void; onPaste: (event: {clipboardData: {files: File[]}}) => void; onCompositionStart: () => void; onCompositionEnd: () => void;}
@@ -44,12 +45,14 @@ const ui = vi.hoisted(() => ({
         send: vi.fn(), retry: vi.fn(), stop: vi.fn(), select: vi.fn(), refresh: vi.fn(), newChat: vi.fn(), rename: vi.fn(), remove: vi.fn(), editFailed: vi.fn(), addFiles: vi.fn(), cancelUploads: vi.fn(), removeUpload: vi.fn(), retryUpload: vi.fn(), removeAttachment: vi.fn(), historyLoading: false, historyError: '', loadEarlier: vi.fn(), configureParticipants: vi.fn(), complete: vi.fn(),
         captureOwner: () => {const owner = ui.owner; return () => owner === ui.owner;}},
 }));
-vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect, useLayoutEffect: hooks.effect}));
+vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect, useLayoutEffect: hooks.effect, useCallback: <T,>(value: T) => value}));
 vi.mock('../src/features/ModelChat/ConversationList', async original => {
     const actual = await original<typeof import('../src/features/ModelChat/ConversationList')>();
     return {ConversationList: (props: Parameters<typeof actual.ConversationList>[0]) => {ui.selectConversation = props.onSelect; return actual.ConversationList(props);}};
 });
 vi.mock('../src/features/ModelChat/useModelChat', () => ({useModelChat: () => ui.chat}));
+vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole: 'Главный админ', userRoles: ['Главный админ']}}})}));
+vi.mock('../src/features/SystemRoleChat/SystemRoleChat', () => ({SystemRoleChat: () => null}));
 vi.mock('../src/features/ModelChat/useChatContext', () => ({useChatContext: () => ({context: ui.context ?? detail().context, loading: false, error: '', rejected: false})}));
 vi.mock('../src/common/components/FileDropZone/FileDropZone', () => ({FileDropZone: ({hint}: {hint: string}) => createElement('p', null, hint)}));
 vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: () => null}));
@@ -63,7 +66,7 @@ vi.mock('antd', () => {
     });
     const Modal = Object.assign(({children, onCancel, open, title}: {children?: ReactNode; onCancel: () => void; open?: boolean; title?: ReactNode}) => {if (!open) return null; ui.modalClose = onCancel; return createElement('dialog', null, title, children);}, {confirm: (props: Confirmation) => {ui.confirmCalls(); ui.confirm = props; return {destroy: vi.fn()};}});
     const Empty = Object.assign(({description}: {description?: string}) => createElement('p', null, description), {PRESENTED_IMAGE_SIMPLE: null});
-    return {Modal, Input, Mentions: (props: typeof ui.mention & {value: string; disabled?: boolean}) => {ui.mention = props!; return createElement('textarea', {value: props!.value, disabled: props!.disabled, readOnly: true});}, Empty, Dropdown: ({children, menu}: {children?: ReactNode; menu: {items: Array<ButtonProps & {label: string}>}}) => {for (const item of menu.items) ui.buttons.set(item.label, item); return children;}, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
+    return {Modal, Input, Mentions: (props: NonNullable<typeof ui.mention> & {value: string; disabled?: boolean; onPaste: TextArea['onPaste']; onCompositionStart: () => void; onCompositionEnd: () => void}) => {ui.mention = props; ui.input = {...props, onChange: event => props.onChange(event.target.value), onKeyDown: props.onPressEnter}; return createElement('textarea', {value: props.value, disabled: props.disabled, readOnly: true});}, Empty, Dropdown: ({children, menu}: {children?: ReactNode; menu: {items: Array<ButtonProps & {label: string}>}}) => {for (const item of menu.items) ui.buttons.set(item.label, item); return children;}, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
         Typography: {Text: content, Paragraph: content}, Alert: ({message}: {message?: string}) => createElement('p', {role: 'alert'}, message),
         Button: (props: ButtonProps) => {const key = props['aria-label'] ?? (typeof props.children === 'string' ? props.children : ''); if (key) ui.buttons.set(key, props); return createElement('button', {disabled: props.disabled, 'aria-label': props['aria-label']}, props.children);},
         Progress: ({percent}: {percent: number}) => createElement('div', {role: 'progressbar', 'aria-valuenow': percent}),

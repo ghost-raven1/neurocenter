@@ -10,7 +10,7 @@ export function PackagingAgentOptions({agent, enabled, reason, disabled, locked}
         <Typography.Paragraph type="secondary">Необязательно: выбранная модель подготовит рецепт и разберёт результат проверки. Обычная упаковка доступна без модели.</Typography.Paragraph>
         {!enabled && <Typography.Paragraph type="secondary">{reason}</Typography.Paragraph>}
         {agent.checked && <>
-            <Form.Item label="Модель Упаковщика" extra="Проверенные чат-модели из общего каталога. Модель нужно выбрать явно.">
+            <Form.Item label="Модель Упаковщика" extra="Проверенные чат-модели из общего каталога.">
                 <Select aria-label="Модель Упаковщика" value={agent.selection?.modelId} placeholder="Выберите модель" showSearch optionFilterProp="label" loading={agent.loading} disabled={disabled || !enabled}
                     options={agent.models.map(model => ({value: model.id, label: model.name}))} onChange={agent.choose}/>
             </Form.Item>

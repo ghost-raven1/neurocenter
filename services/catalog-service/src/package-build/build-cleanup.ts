@@ -24,12 +24,19 @@ export async function writeBuildProof(filename:string,nonce:string,extra:Record<
     try{await fs.link(temporary,filename);}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST'||!await proof(filename,nonce))throw error;}
     finally{await fs.rm(temporary,{force:true});}
 }
+/** Negative lifecycle evidence never authorizes cleanup and contains no argv, environment or builder output. */
+export async function writeBuildReapFailure(stage:string,nonce:string,detail:{builderPid:number|null;phase:string;code:string;groupProbeCode?:string}):Promise<void>{
+    const directory=path.join(path.dirname(stage),'.process-reap-failures');await fs.mkdir(directory,{recursive:true,mode:0o700});
+    const info=await fs.lstat(directory);if(!info.isDirectory()||info.isSymbolicLink())throw Error('Unsafe reap failure directory');
+    const filename=path.join(directory,path.basename(stage)+'.'+nonce+'.json'),file=await fs.open(filename,'wx',0o600);
+    try{await file.writeFile(JSON.stringify({nonce,reaped:false,...detail,checkedAt:new Date().toISOString()})+'\n');await file.sync();}finally{await file.close();}
+}
 /** A cleanup acknowledgment is written only by the old worker after child close AND stage removal. */
 export async function acknowledgeBuildCleanup(root:string,row:BuildRow):Promise<void>{
     if(!row.execution_nonce)return;
     await writeBuildProof(ackPath(root,row),row.execution_nonce);
 }
-export async function forgetBuildCleanup(root:string,row:BuildRow):Promise<void>{if(row.execution_nonce){await fs.rm(ackPath(root,row),{force:true});await fs.rm(reapPath(root,row),{force:true});}}
+export async function forgetBuildCleanup(root:string,row:BuildRow):Promise<void>{if(row.execution_nonce){await fs.rm(ackPath(root,row),{force:true});await fs.rm(reapPath(root,row),{force:true});await fs.rm(path.join(root,'.process-reap-failures',row.id+'.'+row.execution_nonce+'.json'),{force:true});}}
 
 /** SQL ownership alone never proves that an old worker has stopped writing its private stage. */
 export async function mayRecoverBuildStage(root:string,row:BuildRow):Promise<boolean>{

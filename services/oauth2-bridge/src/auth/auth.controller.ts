@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { AuthService } from './auth.service';
-import { IAuthMeResponse } from './interface';
+import { IAuthMeResponse, type IBridgeUser } from './interface';
 import { SessionService } from './session.service';
 import {loginReturn} from './login-return';
 import {OAuthTransactions} from './oauth-transactions.service';
@@ -34,7 +34,8 @@ export class AuthController {
     public async login(@Req() req: Request, @Res() res: Response): Promise<void> {
         const target=loginReturn(req.query.returnTo);
         if (this.auth.ssoDisabled) {
-            res.cookie(SESSION_COOKIE, this.sessions.create(await this.auth.mockUser()), {...this.cookieOptions(),maxAge:this.sessions.ttlMs});
+            const token=await this.sessions.create(await this.auth.mockUser());
+            res.cookie(SESSION_COOKIE, token, {...this.cookieOptions(),maxAge:this.sessions.ttlMs});
             res.redirect(this.auth.panelUrl+target);
             return;
         }
@@ -71,16 +72,19 @@ export class AuthController {
         res.clearCookie(RETURN_COOKIE,this.cookieOptions());
         if(query.error){res.redirect(`${panel}/?login_error=denied`);return;}
 
+        let user:IBridgeUser;
         try {
-            const user = await this.auth.exchangeCode(query.code ?? '',transaction.verifier);
-
-            res.cookie(SESSION_COOKIE, this.sessions.create(user), {...this.cookieOptions(),maxAge:this.sessions.ttlMs});
-            res.redirect(panel+transaction.returnTo);
+            user = await this.auth.exchangeCode(query.code ?? '',transaction.verifier);
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[oauth2-bridge] code exchange failed:', error instanceof Error?error.name:'Unavailable');
             res.redirect(`${panel}/?login_error=exchange`);
+            return;
         }
+        // Storage failure is503, independent of provider exchange and before issuing a cookie.
+        const token=await this.sessions.create(user);
+        res.cookie(SESSION_COOKIE,token,{...this.cookieOptions(),maxAge:this.sessions.ttlMs});
+        res.redirect(panel+transaction.returnTo);
     }
 
     /**
@@ -91,7 +95,7 @@ export class AuthController {
     @Get('me')
     public async me(@Req() req: Request, @Res() res: Response): Promise<void> {
         const cookies = req.cookies ?? {};
-        const user = this.sessions.get(cookies[SESSION_COOKIE]);
+        const user = await this.sessions.get(cookies[SESSION_COOKIE]);
 
         if (!user) {
             res.status(401).json({ message: 'Unauthorized' });
@@ -113,18 +117,18 @@ export class AuthController {
      * @returns {void}
      */
     @Get('logout')
-    public logout(@Req() req: Request, @Res() res: Response): void {
+    public async logout(@Req() req: Request, @Res() res: Response): Promise<void> {
         const cookies = req.cookies ?? {};
 
-        this.sessions.remove(cookies[SESSION_COOKIE]);
+        await this.sessions.remove(cookies[SESSION_COOKIE]);
         res.clearCookie(SESSION_COOKIE);
         res.redirect(this.auth.ssoDisabled ? `${this.auth.panelUrl}/` : this.auth.logoutUrl());
     }
 
     /** Выход интерфейса подтверждается отзывом серверной сессии до очистки состояния фронта. */
     @Post('logout')
-    public logoutJson(@Req() req:Request,@Res() res:Response):void {
-        this.sessions.remove(req.cookies?.[SESSION_COOKIE]);
+    public async logoutJson(@Req() req:Request,@Res() res:Response):Promise<void> {
+        await this.sessions.remove(req.cookies?.[SESSION_COOKIE]);
         res.clearCookie(SESSION_COOKIE);
         res.status(200).json(this.auth.ssoDisabled?{}:{redirectUrl:this.auth.logoutUrl()});
     }
@@ -137,7 +141,7 @@ export class AuthController {
     @Post('switch-role')
     public async switchRole(@Req() req: Request, @Res() res: Response, @Body() payload: { role?: string }): Promise<void> {
         const cookies = req.cookies ?? {};
-        const user = this.sessions.get(cookies[SESSION_COOKIE]);
+        const user = await this.sessions.get(cookies[SESSION_COOKIE]);
 
         if (!user) {
             res.status(401).json({ message: 'Unauthorized' });
@@ -147,6 +151,9 @@ export class AuthController {
         // Переключаем активную роль: права (routePermissions) фильтруются по роли.
         await this.auth.refreshAccess(user);
         this.auth.applyRole(user, payload?.role ?? user.activeRole);
+        if(!await this.sessions.selectRole(cookies[SESSION_COOKIE],user.activeRole)){
+            res.status(401).json({message:'Unauthorized'});return;
+        }
 
         const body: IAuthMeResponse = {
             user,

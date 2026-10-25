@@ -74,6 +74,7 @@ import {runRuntimeCachePolicyJob,recoverRuntimeCachePolicyCompletions} from '../
 import {RUNTIME_CACHE_POLICY_JOB} from '../features/runtime-artifacts/policy-store.js';
 import {readBridgeCleanupPolicy} from '../features/runtime-artifacts/policy-store.js';
 import {cleanupInstalledBridge} from '../features/runtime-artifacts/update-cleanup.js';
+import {startRoleMcpPoller} from '../features/system-role-mcp/poller.js';
 
 interface Job {
     id: string;
@@ -128,6 +129,7 @@ export async function runWorker(): Promise<void> {
         auth: { token: credentials.token },
         reconnection: true,
     });
+    const roleMcpPoller=startRoleMcpPoller();
     let heartbeatPending: Promise<void> | undefined;
     let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
     let observationsPending:Promise<void>|undefined;
@@ -427,16 +429,18 @@ export async function runWorker(): Promise<void> {
         if (!running) { void drain(); }
     }, 15000);
     socket.on('connect', () => {
+        roleMcpPoller.wake();
         void drain();
     });
     socket.on('bridge:work', () => {
+        roleMcpPoller.wake();
         void drain();
     });
     const stop = (): void => {
         stopped = true;
         clearInterval(timer);
         socket.disconnect();
-        void Promise.all([closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
+        void Promise.all([roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })

@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException,Optional, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import type {SystemRoleMcpAccess} from '../system-role-mcp/system-role-mcp.types';
 import type { Request } from 'express';
 import { AgentsService } from '../agents/agents.service';
 import { CatalogService } from '../catalog/catalog.service';
@@ -11,15 +12,26 @@ import type { IModelActor } from '../models/model-access';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { listTargets } from '../catalog-requests/request.targets';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, roleHash, systemRole } from './system-role.definitions';
-import { SystemRoleRepository, type RoleExecutionLane } from './system-role.repository';
+import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleCallBudget, roleDefinitionPin, roleHash, systemRole } from './system-role.definitions';
+import { acceptedLegacyDefinition } from './system-role.legacy-contract';
+import { acceptedPreviousDefinition } from './system-role.previous-contract';
+import { HelpService } from '../help/help.service';
+import { SystemRoleGuidance } from './system-role.guidance';
+import { SystemRoleRepository, type RoleDb, type RoleExecutionLane } from './system-role.repository';
 import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
 import { SystemRoleRunner, SystemRoleStepTimeout } from './system-role.runner';
+import { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { SystemRoleApplication } from './system-role.apply';
 import { notifyRoleOperations } from './system-role.operations';
 import { roleAction, roleRequestId, roleSelection, startRoleRun } from './system-role.validation';
 import type { RoleRunRow, RoleRunView, SystemRoleId } from './system-role.types';
+
+/** Server-owned admission hooks bind a dialog receipt to this queue in the same transaction. */
+export interface RoleAdmissionReceipt {
+    before(db: RoleDb): Promise<void>;
+    accepted(db: RoleDb, row: RoleRunRow): Promise<void>;
+}
 
 /** Builtins share a durable owner, with one active request per transport. Restart never replays paid work. */
 @Injectable()
@@ -37,10 +49,11 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     private draining = false;
     private wakeAgain = false;
     private stopped = false;
-    constructor(private readonly models: ModelsService, agents: AgentsService, catalog: CatalogService, connections: RemoteConnectionService, runtime: ModelRuntime, chats: ProjectChatService) {
+    constructor(private readonly models: ModelsService, agents: AgentsService, catalog: CatalogService, connections: RemoteConnectionService, runtime: ModelRuntime, chats: ProjectChatService,@Optional()@Inject('SYSTEM_ROLE_MCP')readonly mcp?:SystemRoleMcpAccess, @Optional() help?: HelpService) {
         this.repository = new SystemRoleRepository(models.pool); this.policy = new SystemRolePolicy(models);
-        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats);
-        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready());
+        const projectContext = new ModelChatProjectContext(models, runtime);
+        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats,mcp,projectContext,true);
+        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready(),undefined,undefined,mcp,projectContext,new SystemRoleGuidance(models,help));
         this.application = new SystemRoleApplication(this.repository, this.policy, this.targets);
     }
     async onModuleInit(): Promise<void> {
@@ -80,11 +93,12 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     async prepare(req: Request, agentId: string, raw: unknown) {
         const id = this.role(agentId), selection = roleSelection(id, raw); await this.policy.actor(req, selection.projectId);
         await requireFeaturesEnabled([systemRole(id).flag]);
+        if (selection.mcp?.length) await this.mcp?.assertAdmission(req, selection.projectId, selection.mcp);
         const prepared = await this.targets.prepare(req, id, selection);
         return { preview: prepared.preview, consentDigest: prepared.consentDigest, definitionPin: prepared.definitionPin,
-            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })) };
+            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })),...(prepared.mcp?{mcp:prepared.mcp}:{}), ...(prepared.projectContext ? { projectContext: prepared.projectContext } : {}), ...(prepared.guidance ? {guidance: prepared.guidance} : {}) };
     }
-    async start(req: Request, agentId: string, raw: unknown): Promise<RoleRunView> {
+    async start(req: Request, agentId: string, raw: unknown, receipt?: RoleAdmissionReceipt): Promise<RoleRunView> {
         const id = this.role(agentId), input = startRoleRun(id, raw), actor = await this.policy.actor(req, input.projectId), requestHash = roleHash({ id, input });
         const old = await this.repository.existing(actor.email, input.requestId);
         if (old) {
@@ -92,15 +106,17 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             await this.policy.read(req, old); return this.view(old);
         }
         await requireFeaturesEnabled([systemRole(id).flag, ...(input.sourceFeature ? [input.sourceFeature] : [])]);
+        if (input.mcp?.length) await this.mcp?.assertAdmission(req, input.projectId, input.mcp);
         const snapshot = await this.targets.prepare(req, id, input), model = await this.policy.model(req, input.modelId, input.projectId, input.expectedModelPin);
         if (snapshot.definitionPin !== input.expectedDefinitionPin || snapshot.consentDigest !== input.consentDigest) throw new ConflictException('Контекст изменился. Подготовьте и подтвердите его заново.');
         if (Buffer.byteLength(JSON.stringify(snapshot)) > 524288 || Buffer.byteLength(JSON.stringify(input)) > 131072) throw new ConflictException('Уменьшите выбранный контекст.');
         const row = await this.repository.create({ agent_id: id, project_id: input.projectId, actor: actor.email, actor_role: actor.activeRole,
             request_id: input.requestId, request_hash: requestHash, request: input, snapshot, model }, async db => {
             await this.policy.authorize(db, actor, input.projectId);
+            await receipt?.before(db);
             await this.policy.source(db, actor.email, id, input, requestHash);
             await this.policy.modelInTransaction(db, actor, input.projectId, input.modelId, input.expectedModelPin);
-        });
+        }, receipt?.accepted);
         void notifyRoleOperations(); this.wake(); return this.view(row);
     }
     async list(req: Request, agentId: string, projectId?: string): Promise<RoleRunView[]> {
@@ -140,11 +156,16 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     }
     private view(row: RoleRunRow, actor?: IModelActor): RoleRunView {
         const manage = !actor || (row.project_id ? projectLevel(actor.claims, actor.activeRole, row.project_id) >= 3 : actor.activeRole === 'Главный админ');
+        const currentDefinition = row.request.expectedDefinitionPin === roleDefinitionPin(row.agent_id);
+        const prepareAgain: RoleRunView['prepareAgain'] = !currentDefinition && manage && actor?.email === row.actor
+            && row.state === 'awaiting_review' && row.result?.kind === 'proposal' && (acceptedLegacyDefinition(row) || acceptedPreviousDefinition(row))
+            ? { reason: 'definition_changed', selection: structuredClone(row.snapshot.selection), modelId: row.request.modelId } : undefined;
         return { id: row.id, agentId: row.agent_id, projectId: row.project_id, actor: row.actor, state: row.state, phase: row.phase, revision: row.revision,
             operationId: 'system-role-' + row.id, message: row.message, createdAt: new Date(row.created_at).toISOString(), finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
-            callsStarted: row.calls_started, modelId: row.request.modelId, modelPin: row.request.expectedModelPin, facts: row.facts, result: row.result, steps: row.steps, applied: row.applied,
+            callsStarted: row.calls_started, modelCallBudget: roleCallBudget(row.agent_id, !!row.request.mcp?.length), modelId: row.request.modelId, modelPin: row.request.expectedModelPin, facts: row.facts, result: row.result, steps: row.steps, applied: row.applied,
             targets: row.snapshot.targets.map(({ key, kind, id, version, modelContent, editable }) => ({ key, kind, id, version, content: modelContent, editable })),
-            canApply: manage && row.state === 'awaiting_review' && !!row.result?.changes.length && row.result.changes.every(change => row.snapshot.targets.find(target => target.key === change.targetKey)?.editable),
+            ...(prepareAgain ? { prepareAgain } : {}),
+            canApply: currentDefinition && manage && row.state === 'awaiting_review' && !!row.result?.changes.length && row.result.changes.every(change => row.snapshot.targets.find(target => target.key === change.targetKey)?.editable),
             canRollback: manage && ['succeeded', 'failed', 'interrupted'].includes(row.state) && !!row.applied.length,
             canCancel: ['queued', 'running', 'awaiting_review'].includes(row.state) };
     }

@@ -4,6 +4,7 @@ import {mkdtemp,realpath,mkdir,writeFile,rm,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createDiagnostics} from '../dev-mcp/diagnostics.mjs';
+import {validateOutput} from '../dev-mcp/output-validation.mjs';
 import {readCoverageGaps} from '../dev-mcp/coverage-gaps.mjs';
 
 const metric=(total,covered)=>({total,covered,skipped:0,pct:999});
@@ -19,7 +20,7 @@ async function fixture(t){
     const report='.run/coverage/owned/manifest.json';
     const manifest={schemaVersion:2,profile:'unit-safe',coverageKind:'vitest-ast-v8',comparablePercentages:true,
         finishedAt:'2026-10-23T00:00:00Z',complete:true,sourceChangedDuringRun:false,
-        packages:[{name:'catalog-service',passed:2,failed:0,skipped:0,exitCode:0,excludedInfrastructureSuites:['test/example-db.test.ts'],testFileInventory:{complete:true},reportValidation:{ok:true}}],
+        packages:[{name:'catalog-service',passed:2,failed:0,skipped:0,todo:0,exitCode:0,excludedInfrastructureSuites:['test/example-db.test.ts'],testFileInventory:{complete:true},reportValidation:{ok:true}}],
         sourceInventory:{schemaVersion:1,inventoryComplete:true,files:[{path:file,role:'production',measurement:'represented'},
             {path:'services/catalog-service/src/missing.ts',role:'production',measurement:'unrepresented'},
             {path:'frontend/src/private.ts',role:'production',measurement:'unrepresented'}]},summary:metrics};
@@ -32,7 +33,7 @@ async function fixture(t){
 
 test('Coverage targets retain measured gaps, missing sources and excluded suites in the requested package',async t=>{
     const f=await fixture(t),value=await f.diagnostics.coverageGaps(f.report,'catalog-service',1);
-    assert.equal(value.package,'catalog-service');assert.equal(value.targets.length,1);assert.equal(value.targets[0].file,file);
+    assert.equal(value.package,'catalog-service');assert.equal(value.complete,true);assert.equal(value.testCounters[0].todo,0);validateOutput('coverage_gaps',value);assert.equal(value.targets.length,1);assert.equal(value.targets[0].file,file);
     assert.equal(value.targets[0].summary.lines.pct,50,'Recompute percentages from counters, never trust a saved pct');
     assert.equal(value.targets[0].uncoveredBranches,5);assert.deepEqual(value.targets[0].uncoveredFunctions,[{name:'retry',line:8},{name:'cancel',line:12}]);
     assert.deepEqual(value.unrepresentedFiles,['services/catalog-service/src/missing.ts']);
@@ -101,4 +102,39 @@ test('Retained package entries preserve distinct exclusions from every run witho
 test('HTTP-only reports explain the missing unit package scope instead of inferring it from executed source',async t=>{
     const f=await fixture(t);f.manifest.packages=[];f.manifest.native={passed:1,failed:0,skipped:0,cancelled:0,exitCode:0};await f.save();
     await assert.rejects(f.diagnostics.coverageGaps(f.report,'catalog-service'),error=>error.code==='PACKAGE_NOT_MEASURED'&&/HTTP-only/.test(error.message));
+});
+
+for(const todo of [1,null,undefined])test('Coverage TODO '+String(todo)+' remains incomplete through summary and gap contracts',async t=>{
+    const f=await fixture(t);if(todo===undefined)delete f.manifest.packages[0].todo;else f.manifest.packages[0].todo=todo;await f.save();
+    const verification=await f.diagnostics.verificationSummary(f.report),gaps=await f.diagnostics.coverageGaps(f.report,'catalog-service');
+    assert.equal(verification.complete,false);assert.equal(verification.status,'incomplete');assert.equal(verification.packages[0].todo,todo??null);
+    assert.equal(gaps.complete,false);assert.equal(gaps.testCounters[0].todo,todo??null);assert.equal(gaps.verificationStatus,'incomplete');
+    validateOutput('verification_summary',verification);validateOutput('coverage_gaps',gaps);
+});
+
+for(const key of ['todo','passed','failed','skipped'])for(const value of [-1,1.5,'0'])test('Coverage rejects malformed '+key+' counter '+String(value),async t=>{
+    const f=await fixture(t);f.manifest.packages[0][key]=value;await f.save();
+    await assert.rejects(f.diagnostics.verificationSummary(f.report),error=>error.code==='MALFORMED_REPORT');
+});
+
+test('Retained native TODO remains visible when no top-level native profile is present',async t=>{
+    const f=await fixture(t);f.manifest.profile=f.gaps.profile='retained-runs-merge';
+    f.manifest.inputs=[{native:{passed:2,failed:0,skipped:0,todo:1,cancelled:0,exitCode:0}}];await f.save();
+    const verification=await f.diagnostics.verificationSummary(f.report);assert.equal(verification.complete,false);assert.equal(verification.retainedProfiles[0].native.todo,1);
+    validateOutput('verification_summary',verification);
+});
+
+for(const profile of ['native','integration'])for(const todo of [0,1,undefined])test(profile+' TODO '+String(todo)+' is known or explicitly incomplete',async t=>{
+    const f=await fixture(t);f.manifest[profile]={passed:1,failed:0,skipped:0,cancelled:0,exitCode:0,excludedSuites:[],...(todo===undefined?{}:{todo})};await f.save();
+    const value=await f.diagnostics.verificationSummary(f.report);assert.equal(value[profile].todo,todo??null);assert.equal(value.complete,todo===0);
+    validateOutput('verification_summary',value);
+});
+
+for(const scenario of ['nested-failure','nested-invalid'])test('Retained profile '+scenario+' cannot hide behind an outer completion flag',async t=>{
+    const f=await fixture(t);f.manifest.profile=f.gaps.profile='retained-runs-merge';
+    const native={passed:1,failed:0,skipped:0,todo:0,cancelled:0,exitCode:0};
+    if(scenario==='nested-failure')native.failed=1;else native.todo=-1;
+    f.manifest.inputs=[{inputs:[{native}]}];await f.save();
+    if(scenario==='nested-invalid')await assert.rejects(f.diagnostics.verificationSummary(f.report),error=>error.code==='MALFORMED_REPORT');
+    else{const value=await f.diagnostics.verificationSummary(f.report);assert.equal(value.status,'failed');assert.equal(value.complete,false);}
 });

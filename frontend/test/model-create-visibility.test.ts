@@ -50,7 +50,7 @@ vi.mock('antd', () => {
         ui.submit = onFinish; return children;
     }, { Item: content, useForm: () => [{}], useWatch: (name:string) => name==='runtime'?ui.runtime:'chat' });
     return {
-        Form, Tooltip: content, Modal: content, Space: content, Row: content, Col: content, Spin: () => null, Empty: content,
+        Form, Tooltip: content, Modal: ({children,footer}:{children?:ReactNode;footer?:ReactNode})=>createElement('section',null,children,footer), Space: content, Row: content, Col: content, Spin: () => null, Empty: content,
         Alert: ({ message }: { message: string }) => message,
         Typography: { Title: content, Text: content, Paragraph: content },
         Input: Object.assign(input, { TextArea: input, Search: ({ value, onChange }: { value: string; onChange: typeof ui.changeQuery }) => {

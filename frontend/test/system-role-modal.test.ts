@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { modalAntd, uiNode } from './modal-actions.fixture';
+import type { RoleProjectContextGrant } from '../src/features/SystemRoles/types';
 const h = await vi.hoisted(async () => {
     const { adminSetupHooks } = await import('./admin-setup-hooks.fixture'), { modalUi } = await import('./modal-actions.fixture');
     return { hooks: adminSetupHooks(), ui: modalUi(), enabled: true, owner: 'alice', values: {} as Record<string, any> };
@@ -17,7 +18,8 @@ vi.mock('antd', async () => {
 });
 import { SystemRoleModal } from '../src/features/SystemRoles/SystemRoleModal';
 import { useSystemRole } from '../src/features/SystemRoles/useSystemRole';
-const render = (initialRunId?: string, id: 'agent-ai-admin' | 'agent-coordinator' = 'agent-ai-admin') => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(SystemRoleModal, { id, projectId: 'prj-one', initialRunId, onClose: vi.fn() })); h.hooks.commit(); return html; };
+const render = (initialRunId?: string, id: 'agent-ai-admin' | 'agent-coordinator' = 'agent-ai-admin', projectId = 'prj-one') => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(SystemRoleModal, { id, projectId, initialRunId, onClose: vi.fn() })); h.hooks.commit(); return html; };
+const projectContext: RoleProjectContextGrant = { scope: 'project-index', projectId: 'prj-one', projectName: 'Мой проект', identity: 'index-one', recipients: ['agent-ai-admin'], generation: 'generation-one', snapshot: 'snapshot-one' };
 const button = (text: string) => uiNode(h.ui, 'Button', text);
 beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.owner = 'alice'; h.values = {
     overview: { definitions: [{ id: 'agent-ai-admin', description: 'Diagnostics', targets: [], diagnostics: ['health'] }], models: [{ id: 'model-one', name: 'Model', pin: 'a'.repeat(64) }], targets: [] },
@@ -25,6 +27,11 @@ beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.ow
 }; vi.stubGlobal('crypto', { randomUUID: () => 'explicit-request' }); });
 afterEach(() => { h.hooks.dispose(); vi.unstubAllGlobals(); });
 const selectModelAndTask = () => { uiNode(h.ui, 'Select').onChange('model-one'); uiNode(h.ui, 'TextArea').onChange({ target: { value: 'Check current readiness' } }); render(); };
+it('new role drafts default to the first eligible model without starting, and preserve explicit clearing', () => {
+    render(); render(); expect(uiNode(h.ui, 'Select').value).toBe('model-one'); expect(h.values.start).not.toHaveBeenCalled();
+    uiNode(h.ui, 'Select').onChange(undefined); render(); h.values.overview.models = [{id: 'new-model', name: 'New', pin: 'd'.repeat(64)}]; render(); render();
+    expect(uiNode(h.ui, 'Select').value).toBeUndefined(); expect(h.values.start).not.toHaveBeenCalled();
+});
 it('opening and preview do not call a model; explicit selected model+exact preview consent creates one pinned request', () => {
     render(); expect(h.values.start).not.toHaveBeenCalled(); selectModelAndTask();
     button('Подготовить контекст').onClick(); expect(h.values.prepare).toHaveBeenCalledExactlyOnceWith({ projectId: 'prj-one', instruction: 'Check current readiness', diagnostics: [], targets: [] }); expect(h.values.start).not.toHaveBeenCalled();
@@ -52,4 +59,27 @@ it('coordinator explains delegation and confirms the total model budget before e
     expect(render(undefined, 'agent-coordinator')).toContain('до 5 вызовов');
     uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(undefined, 'agent-coordinator'); button('Запустить').onClick();
     expect(h.values.start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ instruction: 'Проверь проект и настройки', modelId: 'model-one', consentDigest: 'b'.repeat(64) }));
+});
+it('the existing preview and checkbox disclose whole-project search, only approved recipients and its shared budget', () => {
+    render(); selectModelAndTask();
+    h.values.prepared = { preview: 'Выбранные тексты', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64), projectContext };
+    const html = render();
+    expect(html).toContain('поиск охватывает весь индекс проекта'); expect(html).toContain('он не ограничивает пути в индексе');
+    expect(html).toContain('Фрагменты могут получить: AI-админ.'); expect(html).not.toContain('Индексатор');
+    expect(html).toContain('Не более одного поиска за запуск'); expect(html).toContain('общий лимит вызовов модели'); expect(html).toContain('Найденные фрагменты станут известны после запуска');
+    expect(uiNode(h.ui, 'Checkbox', 'Разрешаю').children).toContain('результаты описанного поиска');
+    expect(button('Запустить').disabled).toBe(true); expect(h.values.start).not.toHaveBeenCalled();
+    uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); button('Запустить').onClick();
+    expect(h.values.start).toHaveBeenCalledTimes(1); expect(h.values.start.mock.calls[0][0]).not.toHaveProperty('projectContext');
+});
+it.each(['model', 'project', 'role'] as const)('changing %s revokes project-index consent and fences the retained launch handler', change => {
+    let activeRole: 'agent-ai-admin' | 'agent-coordinator' = 'agent-ai-admin', activeProject = 'prj-one';
+    const show = () => render(undefined, activeRole, activeProject);
+    show(); selectModelAndTask(); h.values.prepared = { preview: 'Выбранные тексты', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64), projectContext }; show();
+    uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); show(); const stale = button('Запустить').onClick;
+    if (change === 'model') h.values.overview.models[0].pin = 'd'.repeat(64);
+    else if (change === 'project') activeProject = 'prj-two';
+    else { activeRole = 'agent-coordinator'; h.values.overview.definitions.push({ id: activeRole, description: 'Координатор', targets: [], diagnostics: [] }); }
+    show(); stale(); expect(h.values.start).not.toHaveBeenCalled(); show();
+    expect(uiNode(h.ui, 'Checkbox', 'Разрешаю').checked).toBe(false); expect(button('Запустить').disabled).toBe(true);
 });

@@ -6,7 +6,7 @@ import {DiagnosticError} from './constants.mjs';
 const same=(a,b)=>a.dev===b.dev&&a.ino===b.ino;
 const unsafe=()=>new DiagnosticError('UNSAFE_FILE','Use a regular workspace file without symbolic links; retry if the file is being replaced.');
 
-/** Read one bounded regular FD and recheck its directory/path identity; never follow a link. */
+/** Read one bounded regular FD; timestamps describe this checked observation, not a live process. */
 export async function readOwnedFile(root,relative,{limit,tail=false}={}){
     if(!Number.isSafeInteger(limit)||limit<1||path.isAbsolute(relative)||relative.split(/[\\/]/).some(part=>!part||part==='.'||part==='..'))throw unsafe();
     const absoluteRoot=path.resolve(root);
@@ -33,6 +33,7 @@ export async function readOwnedFile(root,relative,{limit,tail=false}={}){
         if(!same(after,before)||!same(after,selected)||selected.isSymbolicLink()||!selected.isFile()||after.nlink!==1||selected.nlink!==1
             ||after.size!==before.size||after.mtimeMs!==before.mtimeMs||offset!==size)throw new DiagnosticError('FILE_CHANGED','The file changed while being read; retry the observation.');
         for(const ancestor of ancestors){const now=await lstat(ancestor.file);if(now.isSymbolicLink()||!now.isDirectory()||!same(now,ancestor.info))throw unsafe();}
-        return {text:buffer.toString('utf8'),bytesRead:offset,fileBytes:before.size,truncated:start>0};
+        return {text:buffer.toString('utf8'),bytesRead:offset,fileBytes:before.size,truncated:start>0,
+            fileModifiedAt:new Date(before.mtimeMs).toISOString(),observedAt:new Date().toISOString()};
     }finally{await handle.close();}
 }

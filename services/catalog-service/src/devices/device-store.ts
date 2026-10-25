@@ -144,6 +144,9 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             const id = pair.resume_device_id || randomUUID();
             const tokenHash = pair.proposed_token_hash || digest(token);
             if (pair.resume_device_id) {
+                const retained = await client.query('SELECT id FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3 AND NOT revoked FOR UPDATE', [id, pair.email, pair.resume_token_hash]);
+                if (!retained.rows.length) { throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.'); }
+                if (await this.activeLocalWork(client, id)) throw new ConflictException('Компьютер ещё завершает задания. Дождитесь подтверждения остановки и повторите подключение.');
                 const renewed = await client.query(`UPDATE bridge_devices SET token_hash=$2,role=$3,name=$4,fingerprint=$5,expires_at=now()+interval '30 days',last_seen=NULL
                     WHERE id=$1 AND email=$6 AND token_hash=$7 AND NOT revoked RETURNING id`, [id, tokenHash, pair.role, pair.name, pair.fingerprint, pair.email, pair.resume_token_hash]);
                 if (!renewed.rows.length) { throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.'); }
@@ -196,8 +199,8 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         }
         return device;
     }
-    async owned(actor: IAccessActor, id: string, allowExpired = false): Promise<Device> {
-        const { rows } = await this.pool.query(
+    async owned(actor: IAccessActor, id: string, allowExpired = false, db:Pick<PoolClient,'query'>=this.pool): Promise<Device> {
+        const { rows } = await db.query(
             'SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND ($3::boolean OR expires_at>now())',
             [id, actor.email, allowExpired],
         );
@@ -263,10 +266,16 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
     async pause(token:unknown) {
         return this.maintenance(token,async(client,id)=>{
             await client.query("UPDATE bridge_devices SET paused_until=now()+interval '1 minute' WHERE id=$1", [id]);
-            const active = await client.query<{ count: string }>(`SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND (state IN ('running','reconciling')
-                OR (state='failed' AND message='Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.'))`, [id]);
-            return { activeJobs: Number(active.rows[0]?.count || 0) };
+            return { activeJobs: await this.activeLocalWork(client, id) };
         });
+    }
+    /** Called only while the device row is locked, so neither queue can claim across pause or credential replacement. */
+    private async activeLocalWork(client:PoolClient,id:string):Promise<number> {
+        const active = await client.query<{ count: string }>(`SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND (state IN ('running','reconciling')
+            OR (state='failed' AND message='Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.'))`, [id]);
+        const mcp = await client.query<{ count: string }>(`SELECT count(*) FROM system_role_mcp_sessions
+            WHERE target->>'runtime'='device' AND target->>'deviceId'=$1 AND claimed_at IS NOT NULL AND worker_closed_at IS NULL`, [id]);
+        return Number(active.rows[0]?.count || 0) + Number(mcp.rows[0]?.count || 0);
     }
     async resume(token:unknown) {
         return this.maintenance(token,async(client,id)=>{

@@ -3,6 +3,8 @@ export type TabSource =
     | {kind: 'project'; id: string; projectId: string};
 export interface TabRow {id: string; order: string; state: 'pending' | 'attention' | 'terminal'; version?: number; stamp?: string; actor?: string;}
 export interface TabSnapshot {source: TabSource; rows: TabRow[]; revision?: number;}
+/** A confirmed new result, still owned and unseen when a delayed optional cue runs. */
+export interface TabCompletion {scope: string; source: TabSource; isCurrent: () => boolean;}
 export const tabSourceKey = (source: TabSource): string => JSON.stringify([source.kind, source.projectId, source.id]);
 export const TAB_PENDING_POLL_MS = 4000;
 export const TAB_ROOM_POLL_MS = 15000;

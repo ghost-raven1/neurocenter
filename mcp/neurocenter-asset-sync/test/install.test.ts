@@ -62,7 +62,13 @@ describe('Подключение моста к OpenCode', () => {
         const script=`process.umask(0o077);const{installBridgeGlobal}=await import(${JSON.stringify(source)});const result=await installBridgeGlobal();console.log(JSON.stringify({umask:process.umask(),...result}));`;
         const result=await promisify(execFile)(process.execPath,['--import','tsx','--input-type=module','--eval',script],{
             cwd:path.resolve(import.meta.dirname,'..'),timeout:15000,killSignal:'SIGTERM',
-            env:{HOME:root,USERPROFILE:root,XDG_CONFIG_HOME:root,NEUROCENTER_URL:'https://install.fixture.test',NEUROCENTER_BRIDGE_HOME:path.join(root,'private')},
+            env:{
+                HOME:root,USERPROFILE:root,XDG_CONFIG_HOME:root,NEUROCENTER_URL:'https://install.fixture.test',NEUROCENTER_BRIDGE_HOME:path.join(root,'private'),
+                // Сохраняем тестовую изоляцию и приватный IPC без настроек провайдеров.
+                NODE_OPTIONS:process.env.NODE_OPTIONS,TMPDIR:process.env.TMPDIR,TMP:process.env.TMP,TEMP:process.env.TEMP,
+                NC_OPERATOR_FENCE_DIR:process.env.NC_OPERATOR_FENCE_DIR,NC_OPERATOR_FENCE_NONCE:process.env.NC_OPERATOR_FENCE_NONCE,
+                NC_OPERATOR_UNIX_ROOT:process.env.NC_OPERATOR_UNIX_ROOT,
+            },
         });
         const report=JSON.parse(result.stdout);expect(report.umask).toBe(0o077);
         expect((await fs.stat(config)).mode&0o777).toBe(0o640);
@@ -121,7 +127,7 @@ describe('Подключение моста к OpenCode', () => {
         expect(await readFile(json,'utf8')).toBe('{"model":"old"}\n');expect(await readFile(config,'utf8')).toContain('// Новый выбранный файл');
     });
     it('Сохраняет symlink и режим реального конфига',async()=>{
-        const destination=path.join(root,'actual.jsonc');await writeFile(destination,'// Ссылка\n{"model":"linked"}\n',{mode:0o640});
+        const destination=path.join(root,'actual.jsonc');await writeFile(destination,'// Ссылка\n{"model":"linked"}\n',{mode:0o640});await fs.chmod(destination,0o640);
         await fs.symlink(destination,config);
         await installBridgeGlobal();expect((await fs.lstat(config)).isSymbolicLink()).toBe(true);
         expect(parse(await readFile(destination,'utf8')).model).toBe('linked');

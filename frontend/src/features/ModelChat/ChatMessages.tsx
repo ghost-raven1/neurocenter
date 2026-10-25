@@ -1,19 +1,22 @@
 import {MessageOutlined} from '@ant-design/icons';
 import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
 import {useLayoutEffect, useRef, useState} from 'react';
+import type {ReactNode} from 'react';
 import {ChatResearchHistory} from './ChatResearchHistory';
 import {ChatAnswer} from './ChatAnswer';
 import type {IModelChatAttachment, IModelChatTurn} from './types';
 import type {TFeatureFlagKey} from '../FeatureFlags/types';
 import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
+import {ChatLog} from '../ChatCommon/ChatLog';
+import {AgentToolHistory} from '../AgentTools/AgentToolHistory';
 
-interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string;}
+interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string; privateTasks?: ReactNode; projectId?: string;}
 
 const retryFeatures = (group: boolean | undefined, turn: IModelChatTurn): TFeatureFlagKey[] => [group ? 'group_chat' : 'model_chat',
     ...(turn.research ? ['research_tools' as const, ...(turn.research.project ? ['project_search' as const] : []), ...(turn.research.external ? ['tool_catalog' as const] : [])] : [])];
 
 /** Markdown stays inert; files are explicitly opened and never auto-fetch third-party resources. */
-export function ChatMessages({turns, attachments, modelName, blocked, busy, onRetry, onEdit, onPreview, hasEarlier, historyLoading, historyError, onLoadEarlier, onComplete, group, conversationId}: Props): JSX.Element {
+export function ChatMessages({turns, attachments, modelName, blocked, busy, onRetry, onEdit, onPreview, hasEarlier, historyLoading, historyError, onLoadEarlier, onComplete, group, conversationId, privateTasks, projectId}: Props): JSX.Element {
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number; stamp: string}>();
     const [showLatest, setShowLatest] = useState(false);
     useLayoutEffect(() => {
@@ -25,7 +28,7 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
         else if (last !== before.last || stamp !== before.stamp) setShowLatest(true);
         previous.current = {first, last, count: turns.length, height: node.scrollHeight, stamp};
     }, [turns, historyLoading, historyError]);
-    return <div className="model-chat__history-wrap"><div ref={viewport} className="model-chat__history" role="log" aria-label="История чата" aria-live="polite" aria-relevant="additions text"
+    return <div className="model-chat__history-wrap"><ChatLog ref={viewport} className="model-chat__history" aria-label="История чата"
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setShowLatest(false);}}>
         {hasEarlier && <div className="model-chat__earlier"><Button loading={historyLoading} disabled={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button></div>}
         {historyError && <Alert type="warning" showIcon message={historyError}/>}
@@ -42,8 +45,10 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
             {turn.discussion && turn.status === 'pending' && <div className="model-chat__pending" role="status"><Spin size="small"/>Агенты обсуждают задачу…</div>}
             {turn.discussion && ['failed', 'cancelled'].includes(turn.status) && <Alert type={turn.status === 'cancelled' ? 'info' : 'warning'} showIcon message={turn.error || 'Обсуждение не завершено.'} description="Продолжите новым сообщением. Готовые ответы останутся в истории."/>}
             {turn.research && conversationId && !turn.id.startsWith('client:') && <ChatResearchHistory conversationId={conversationId} turnId={turn.id} requestId={turn.requestId} responses={turn.responses}/>}
+            {turn.agentTools && projectId && !turn.id.startsWith('client:') && <AgentToolHistory projectId={projectId} turnId={turn.id} grant={turn.agentTools}/>}
             {!turn.discussion && ['failed', 'cancelled'].includes(turn.status) && index === turns.length - 1 && <Space wrap className="model-chat__retry"><FeatureButton features={retryFeatures(group, turn)} disabled={busy || blocked} onClick={onRetry}>{turn.responses?.length ? 'Повторить неуспешные ответы' : 'Повторить запрос'}</FeatureButton>
                 {turn.responses?.some(response => response.status === 'done') ? <Button disabled={busy} onClick={onComplete}>Продолжить с готовыми ответами</Button> : <Button disabled={busy} onClick={onEdit}>Изменить сообщение</Button>}</Space>}
         </section>)}
-    </div>{showLatest && <Button className="model-chat__latest" size="small" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setShowLatest(false);}}>К последним сообщениям</Button>}</div>;
+        {privateTasks}
+    </ChatLog>{showLatest && <Button className="model-chat__latest" size="small" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setShowLatest(false);}}>К последним сообщениям</Button>}</div>;
 }

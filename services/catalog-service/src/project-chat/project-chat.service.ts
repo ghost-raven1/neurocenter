@@ -39,7 +39,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         return { id: row.id, roomId: row.room_id ?? DEFAULT_PROJECT_CHAT_ROOM, position: String(row.position), kind: row.kind, content: row.content,
             author: row.author_email ? { email: row.author_email, displayName: row.author_name || row.author_email } : null,
             agent: row.snapshot ? { id: row.snapshot.agentId, name: row.snapshot.name, slug: row.snapshot.slug, modelId: row.snapshot.modelId, modelPin: row.snapshot.modelPin } : null,
-            replyToId: row.reply_to_id, sourceMessageId: row.source_message_id, status: row.status,
+            replyToId: row.reply_to_id, sourceMessageId: row.source_message_id, status: row.status,...(row.agent_tools_request?{agentTools:row.agent_tools_request}:{}),
             ...(row.kind === 'agent' && row.status === 'done' && row.learning ? { learning: {
                 status: row.learning.status, projectId: row.learning.projectId, agentId: row.learning.agentId,
                 ...(row.learning.revision === undefined ? {} : { revision: row.learning.revision }),
@@ -95,7 +95,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         return this.read(req, projectId, undefined, roomId);
     }
     async send(req: Request, id: string, raw: unknown, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
-        projectChatUuid(roomId); const input = projectChatSend(raw), { actor, projectId } = await this.project(req, id);
+        projectChatUuid(roomId); const {actor,projectId}=await this.project(req,id),input=projectChatSend(raw,projectId);
         const result = await this.repository.scoped(projectId, actor, 2, true, async (db, room, current) => {
             const prior = await this.repository.prior(db, projectId, current.email, input.requestKey, roomId);
             if (prior) {
@@ -109,6 +109,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
                 if (parent.kind !== 'user' && (parent.kind !== 'agent' || parent.status !== 'done' || !parent.content.trim())) throw new ConflictException('Ответьте на сообщение пользователя или на готовый ответ агента.');
             }
             const targets = input.targetAgentIds ?? [];
+            if(input.agentTools){if(!targets.length)throw new BadRequestException('Выберите агента для работы с инструментами.');await requireFeaturesEnabled(['project_agent_tools']);}
             if (targets.some(agentId => !room.agent_ids.includes(agentId))) throw new BadRequestException('Выберите агентов из состава этого чата.');
             if (targets.length) await requireFeaturesEnabled(['group_chat']);
             const snapshots = targets.length ? await this.inference.resolve(req, projectId, room, targets, db) : [];
