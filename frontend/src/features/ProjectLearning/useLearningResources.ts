@@ -5,6 +5,7 @@ import {agentCatalogApi} from '../AgentCatalog/api';
 import type {IProjectAgent} from '../AgentCatalog/types';
 import {modelCatalogApi} from '../ModelCatalog/api';
 import type {ICatalogModel} from '../ModelCatalog/types';
+import {catalogInferenceModelReady} from '../ModelCatalog/availability';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 
 /** Optional model/agent metadata cannot erase recorded experience when its catalog is unavailable. */
@@ -23,7 +24,7 @@ export function useLearningResources(projectId: string, enabled: boolean) {
         if (!active()) return;
         const [modelResult, agentResult] = results;
         if (modelResult.status === 'fulfilled' && Array.isArray(modelResult.value.items) && Array.isArray(modelResult.value.assignedModelIds))
-            setModels(modelResult.value.items.filter(model => modelResult.value.assignedModelIds.includes(model.id) && ['chat', 'vision'].includes(model.capability) && !model.archivedAt));
+            setModels(modelResult.value.items.filter(model => modelResult.value.assignedModelIds.includes(model.id) && catalogInferenceModelReady(model)));
         else setModels([]);
         if (agentResult.status === 'fulfilled' && Array.isArray(agentResult.value.assignments)) setAgents(agentResult.value.assignments.filter(agent => !agent.removed));
         else setAgents([]);

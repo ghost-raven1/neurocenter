@@ -1,5 +1,5 @@
 import {Alert, Button, Modal, Select, Space, Steps, Tag, Typography} from 'antd';
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {artifactTargets} from '../McpBridge/runtimeArtifacts';
 import type {useBridge} from '../McpBridge/useBridge';
@@ -23,10 +23,13 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
     const buildFlag = useFeatureAvailability('tool_builds', 'tool_catalog', 'codex_connector');
     const initialModel = models.find(item => item.id === props.initialModelId);
     const [kind, setKind] = useState<OpenCodeProviderKind>(props.initialProviderKind ?? (initialModel && providerKindForModel(initialModel)) ?? 'openai-compatible');
-    const [modelId, setModelId] = useState(props.initialModelId ?? '');
+    const [drafts, setDrafts] = useState<Partial<Record<OpenCodeProviderKind, string>>>(() => props.initialModelId ? {[kind]: props.initialModelId} : {});
+    const modelId = drafts[kind];
     const catalogProvider = kind !== 'codex-bridge', sameRuntime = models.filter(item => providerKindForModel(item) === kind);
     const eligible = sameRuntime.filter(providerModelEligible), model = eligible.find(item => item.id === modelId);
     const selectedCard = sameRuntime.find(item => item.id === modelId);
+    // Each provider kind owns its draft, including an explicit clear.
+    useEffect(() => {if (props.catalogReady && drafts[kind] === undefined && eligible[0]) setDrafts(previous => previous[kind] === undefined ? {...previous, [kind]: eligible[0].id} : previous);}, [props.catalogReady, kind, models, drafts]);
     const compatibility = selectedCard ? providerModelCompatibilityReason(selectedCard) : !eligible.length ? sameRuntime.map(providerModelCompatibilityReason).find(Boolean) : '';
     const target = providerSetupTarget(bridge, projectId, kind);
     const modelReason = catalogProvider ? !props.catalogReady ? props.catalogError || 'Дождитесь актуального каталога моделей.'
@@ -65,7 +68,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                 options={[{value: 'openai-compatible', label: 'OpenAI-совместимый API'}, {value: 'ollama', label: 'Ollama — локальный или удалённый сервер'}, {value: 'codex-bridge', label: 'Codex Bridge — локальный вход'}]} /></label>
             {catalogProvider ? <>
                 <label>Модель проекта<Select aria-label="API-модель для OpenCode" value={model?.id} placeholder="Выберите API-модель" disabled={locked}
-                    onChange={setModelId} options={eligible.map(item => ({value: item.id, label: `${item.name} · ${item.model}`}))} /></label>
+                    onChange={id => setDrafts(previous => ({...previous, [kind]: id ?? ''}))} options={eligible.map(item => ({value: item.id, label: `${item.name} · ${item.model}`}))} /></label>
                 <Typography.Text type="secondary">{kind === 'ollama' ? 'Адрес и параметры Ollama появятся в локальном окне на выбранном компьютере; ключ необязателен.' : 'Параметры и ключ вводятся в локальном окне на выбранном компьютере.'}</Typography.Text>
             </> : <Typography.Text type="secondary">Войдите в Codex на выбранном компьютере: используйте текущий вход или официальный экран. После настройки выберите нужную модель в новой сессии OpenCode.</Typography.Text>}
             {bridge.device?.online === false && <Alert type="info" showIcon message="Компьютер не в сети" description="Запрос останется в очереди. Включите мост на выбранном компьютере; локальный мастер откроется там." />}
