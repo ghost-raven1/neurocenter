@@ -44,7 +44,7 @@ const ui = vi.hoisted(() => ({
         send: vi.fn(), retry: vi.fn(), stop: vi.fn(), select: vi.fn(), refresh: vi.fn(), newChat: vi.fn(), rename: vi.fn(), remove: vi.fn(), editFailed: vi.fn(), addFiles: vi.fn(), cancelUploads: vi.fn(), removeUpload: vi.fn(), retryUpload: vi.fn(), removeAttachment: vi.fn(), historyLoading: false, historyError: '', loadEarlier: vi.fn(), configureParticipants: vi.fn(), complete: vi.fn(),
         captureOwner: () => {const owner = ui.owner; return () => owner === ui.owner;}},
 }));
-vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect, useLayoutEffect: hooks.effect}));
+vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: hooks.state, useRef: hooks.ref, useEffect: hooks.effect, useLayoutEffect: hooks.effect, useCallback: <T,>(value: T) => value}));
 vi.mock('../src/features/ModelChat/ConversationList', async original => {
     const actual = await original<typeof import('../src/features/ModelChat/ConversationList')>();
     return {ConversationList: (props: Parameters<typeof actual.ConversationList>[0]) => {ui.selectConversation = props.onSelect; return actual.ConversationList(props);}};

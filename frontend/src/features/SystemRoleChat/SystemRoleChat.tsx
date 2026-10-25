@@ -6,14 +6,14 @@ import { ServiceComposer } from './ServiceComposer';
 import { ServiceTurnContent } from './ServiceTurnContent';
 import { useSystemRoleChat } from './useSystemRoleChat';
 import {originSystemRoleApi} from '../ChatSystemRoles/api';
-import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin} from '../ChatSystemRoles/types';
+import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin, type ChatRoleAction} from '../ChatSystemRoles/types';
 import '../SystemRoles/SystemRoles.less';
 import './SystemRoleChat.less';
 
-interface Props {projectId?: string; canExecute?: boolean; historyOnly?: boolean; origin?: ChatRoleOrigin; embedded?: boolean; launch?: ChatRoleLaunch;}
+interface Props {projectId?: string; canExecute?: boolean; historyOnly?: boolean; origin?: ChatRoleOrigin; embedded?: boolean; launch?: ChatRoleLaunch; onActionChange?: (action?: ChatRoleAction) => void;}
 
 /** The same durable private task history can live inside an ordinary chat or in the legacy archive. */
-export function SystemRoleChat({ projectId, canExecute = true, historyOnly = false, origin, embedded = false, launch }: Props): JSX.Element {
+export function SystemRoleChat({ projectId, canExecute = true, historyOnly = false, origin, embedded = false, launch, onActionChange }: Props): JSX.Element {
     const originKey = origin ? chatRoleOriginKey(origin) : undefined;
     const transport = useMemo(() => origin ? originSystemRoleApi(origin) : undefined, [originKey]);
     const availability = useFeatureAvailability('system_role_chat', ...(embedded ? ['chat_system_roles' as const] : []));
@@ -21,7 +21,7 @@ export function SystemRoleChat({ projectId, canExecute = true, historyOnly = fal
     const appliedLaunch = useRef<number | undefined>(launch?.key);
     const automaticRead = useRef<{owner: object; id: string}>(), [readRetry, setReadRetry] = useState(0);
     const value = useSystemRoleChat(projectId, availability.enabled && canExecute && !historyOnly, {transport, origin: originKey, suspended: embedded && !origin,
-        onAccepted: () => {currentLaunch.current?.onAccepted?.(); setActiveLaunch(undefined);}});
+        onAccepted: turn => {currentLaunch.current?.onAccepted?.(turn.instruction); setActiveLaunch(undefined);}});
     useEffect(() => {
         if (!embedded || !value.dialogs.length || value.detail || value.receipt || value.busy) return;
         const id = value.dialogs[0].id;
@@ -38,7 +38,6 @@ export function SystemRoleChat({ projectId, canExecute = true, historyOnly = fal
     useEffect(() => {
         if (!embedded || !activeLaunch) return;
         viewport.current?.scrollIntoView?.({block: 'nearest'});
-        viewport.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
     }, [activeLaunch?.key]);
     useEffect(() => {
         if (value.busy || !value.error && !value.receipt) return;
@@ -52,9 +51,10 @@ export function SystemRoleChat({ projectId, canExecute = true, historyOnly = fal
     const dialogs = value.detail ? [value.detail.dialog, ...value.dialogs.filter(item => item.id !== value.detail!.dialog.id)] : value.dialogs;
     const refresh = (): void => {automaticRead.current = undefined; setReadRetry(item => item + 1); void value.refresh();};
     return <div className={'service-chat' + (embedded ? ' service-chat_embedded' : '')} ref={viewport}>
-        <div className="service-chat__heading"><div><Typography.Text strong>{embedded ? 'Системные задачи' : historyOnly ? 'Прежние сервисные диалоги' : 'Сервисный чат'}</Typography.Text><Typography.Paragraph type="secondary">{embedded ? 'Задачи и измерения видны только вам. В переписку участников они автоматически не отправляются.' : 'Личные задачи системным агентам и проверенные результаты.'}</Typography.Paragraph></div>
+        {!embedded && <div className="service-chat__heading"><div><Typography.Text strong>{historyOnly ? 'История системных задач' : 'Сервисный чат'}</Typography.Text><Typography.Paragraph type="secondary">Личные задачи системным агентам и проверенные результаты.</Typography.Paragraph></div>
             {!embedded && !historyOnly && <Button disabled={value.busy || !!value.receipt} onClick={() => { value.newDialog(); setDraft(item => item + 1); }}>Новый диалог</Button>}
-            <Button loading={value.loading} disabled={value.busy} onClick={refresh}>Обновить</Button></div>
+            <Button loading={value.loading} disabled={value.busy} onClick={refresh}>Обновить</Button></div>}
+        {embedded && (activeLaunch || value.pendingIntent) && <Typography.Text type="secondary">Системная задача · результат виден только вам. Продолжайте в общем поле сообщения.</Typography.Text>}
         {!embedded && <label className="service-chat__history-label">История диалогов<Select aria-label="История сервисного чата" value={value.detail?.dialog.id} placeholder="Выберите сохранённый диалог" loading={value.loading} disabled={value.busy} showSearch optionFilterProp="label"
             options={dialogs.map(item => ({ value: item.id, label: item.title + ' · ' + new Date(item.updatedAt).toLocaleDateString('ru-RU') }))} onChange={id => { void value.select(id); setDraft(item => item + 1); }} /></label>}
         {(value.error || value.receipt) && <div className="service-chat__feedback" ref={feedback}>
@@ -68,6 +68,7 @@ export function SystemRoleChat({ projectId, canExecute = true, historyOnly = fal
                 : value.detail.turns.map(turn => <ServiceTurnContent key={turn.id} turn={turn} busy={value.busy} onAction={value.action} />)}
         </div>
         {embedded && !availability.enabled && <Alert type="info" showIcon message={availability.reason} description="История, проверка отправки и отмена принятых задач доступны."/>}
-        {!historyOnly && (!embedded || availability.enabled || value.pendingIntent) && (!embedded || activeLaunch || value.pendingIntent || value.prepared) && <ServiceComposer key={value.receipt ? 'pending' : draft + ':' + (activeLaunch?.key ?? 'new')} value={value} projectId={projectId} canExecute={canExecute} initial={activeLaunch} compact={embedded} />}
+        {!historyOnly && (!embedded || availability.enabled || value.pendingIntent) && (!embedded || activeLaunch || value.pendingIntent || value.prepared) && <ServiceComposer key={value.receipt ? 'pending' : draft + ':' + (activeLaunch?.key ?? 'new')} value={value} projectId={projectId} canExecute={canExecute}
+            initial={activeLaunch && launch?.key === activeLaunch.key ? {...activeLaunch,instruction: launch.instruction} : activeLaunch} compact={embedded} onActionChange={activeLaunch ? onActionChange : undefined} />}
     </div>;
 }

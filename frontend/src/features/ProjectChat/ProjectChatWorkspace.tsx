@@ -1,6 +1,6 @@
 import {EditOutlined, MenuOutlined, ReloadOutlined, SettingOutlined, TeamOutlined} from '@ant-design/icons';
 import {Alert, Button, Space, Spin, Tag, Tooltip, Typography} from 'antd';
-import {useEffect, useRef, useState, type RefObject} from 'react';
+import {useCallback, useEffect, useRef, useState, type RefObject} from 'react';
 import {useSelector} from 'react-redux';
 import type {RootState} from '../../store';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
@@ -19,6 +19,7 @@ import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessage, type ProjectChatRoom
 import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin} from '../ChatSystemRoles/types';
 import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
 import {projectRoleLevel} from '../UserBlock/roles';
+import {useChatRoleAction} from '../ChatSystemRoles/useChatRoleAction';
 import './ProjectChat.less';
 
 interface Props {projectId: string; projectName?: string;}
@@ -33,6 +34,11 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
     const [roleLaunch, setRoleLaunch] = useState<ChatRoleLaunch>();
     const user = useSelector((state: RootState) => state.userBlock.user);
     const origin: ChatRoleOrigin = {kind: 'project-chat', originId: roomId, projectId}, originKey = chatRoleOriginKey(origin);
+    const activeRole = roleLaunch?.origin === originKey ? roleLaunch : undefined;
+    const roleControls = useChatRoleAction(activeRole && JSON.stringify([scope,originKey,activeRole.key]));
+    const updateRoleInstruction = useCallback((key: number, instruction: string): void => {
+        setRoleLaunch(current => current?.key === key && current.instruction !== instruction ? {...current,instruction} : current);
+    }, []);
     const detail = chat.detail;
     const activity = useProjectChatActivity(projectId, roomId, detail, chat.clearAccess);
     useEffect(() => {if (chat.accessDenied && roomId !== DEFAULT_PROJECT_CHAT_ROOM) onAccessLost(roomId);}, [chat.accessDenied, roomId, onAccessLost]);
@@ -57,10 +63,11 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
         {chat.error && <Alert className="project-chat__notice" type="error" showIcon message={chat.error} action={<Button onClick={() => {void chat.refresh();}}>Повторить</Button>}/>}
         {!detail ? chat.loading ? <div className="project-chat__loading" role="status"><Spin tip="Открываем чат команды…"/></div> : null : <>
             <ProjectChatMessages messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
-                privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={projectRoleLevel(user, projectId) >= 3} launch={roleLaunch?.origin === originKey ? roleLaunch : undefined}/>}
+                privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={projectRoleLevel(user, projectId) >= 3} launch={activeRole} onActionChange={roleControls.register}/>}
                 onLoadEarlier={() => {void chat.loadEarlier();}} onReply={setReply} onRetry={id => {void chat.retry(id);}} onCancel={id => {void chat.cancel(id);}}/>
             <ProjectChatTyping activity={activity.snapshot} members={detail.members} connected={activity.connected} enabled={activity.enabled}/>
-            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send} onSystemRole={setRoleLaunch}/>
+            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send} onSystemRole={setRoleLaunch}
+                systemTaskKey={activeRole?.key} systemAction={roleControls.action} onSystemInstructionChange={updateRoleInstruction}/>
         </>}
     </section>;
 }

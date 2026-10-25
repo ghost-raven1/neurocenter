@@ -10,6 +10,7 @@ import type {ProjectChatMember, ProjectChatMessage} from './types';
 import type {ProjectChatActivity} from './activity.types';
 import {ProjectChatSeen} from './ProjectChatActivity';
 import {observeVisibleMessages} from './observeVisibleMessages';
+import {ChatLog} from '../ChatCommon/ChatLog';
 
 interface Props {
     messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
@@ -34,7 +35,7 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
     }, [messages, historyLoading, historyError]);
     const messageIds = messages.map(message => message.id).join(',');
     useEffect(() => {if (viewport.current && onVisible) return observeVisibleMessages(viewport.current, onVisible);}, [messageIds, onVisible]);
-    return <div className="project-chat__history-wrap"><div className="project-chat__history" ref={viewport} role="log" aria-label="Сообщения команды проекта" aria-live="polite" aria-relevant="additions text"
+    return <div className="project-chat__history-wrap"><ChatLog className="project-chat__history" ref={viewport} aria-label="Сообщения команды проекта"
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setNewMessages(false);}}>
         {hasMore && <Button className="project-chat__earlier" loading={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button>}
         {historyError && <Alert type="warning" showIcon message={historyError}/>}
@@ -67,5 +68,5 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
             </article>;
         })}
         {privateTasks}
-    </div>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
+    </ChatLog>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
 }

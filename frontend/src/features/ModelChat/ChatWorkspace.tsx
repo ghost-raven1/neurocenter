@@ -22,6 +22,8 @@ import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
 import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin} from '../ChatSystemRoles/types';
 import type {SystemRoleId} from '../SystemRoles/types';
 import {projectRoleLevel} from '../UserBlock/roles';
+import {useChatRoleAction} from '../ChatSystemRoles/useChatRoleAction';
+import {chatSystemRoleMention} from '../ChatSystemRoles/mentions';
 import './ModelChat.less';
 
 /** Saved personal conversations retain model and project scope across openings of the catalogue. */
@@ -39,13 +41,19 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     const canRunRole = !!user && (projectId ? projectRoleLevel(user, projectId) >= 3 : user.activeRole === 'Главный админ');
     const origin: ChatRoleOrigin | undefined = chat.detail ? {kind: 'model-chat', originId: chat.detail.conversation.id, projectId: projectId ?? null} : undefined;
     const originKey = origin && chatRoleOriginKey(origin);
+    const activeRole = roleLaunch?.origin === originKey ? roleLaunch : undefined, liveRole = useRef(activeRole); liveRole.current = activeRole;
+    const roleTask = activeRole && {...activeRole,instruction: chatSystemRoleMention(draft).instruction};
+    const roleControls = useChatRoleAction(activeRole && originKey + ':' + activeRole.key);
     const openSystemRole = async (agentId: SystemRoleId, instruction: string): Promise<void> => {
-        const owns = chat.captureOwner(), sourceDraft = currentDraft.current;
+        const owns = chat.captureOwner();
         const selected = chat.detail ?? await chat.ensureConversation();
         if (!owns() || !selected || selected.conversation.projectId !== (projectId ?? null)) return;
         const source = chatRoleOriginKey({kind: 'model-chat', originId: selected.conversation.id, projectId: projectId ?? null});
-        setRoleLaunch({key: ++roleSequence.current, origin: source, agentId, instruction, modelId: model.id,
-            onAccepted: () => {if (owns() && currentDraft.current === sourceDraft) setDraft('');}});
+        const key = ++roleSequence.current;
+        setRoleLaunch({key, origin: source, agentId, instruction, modelId: model.id,
+            onAccepted: accepted => {if (!owns() || liveRole.current?.key !== key) return;
+                if (chatSystemRoleMention(currentDraft.current).instruction.trim() === accepted.trim()) setDraft('');
+                setRoleLaunch(current => current?.key === key ? undefined : current);}});
     };
     const [listOpen, setListOpen] = useState(false), [renaming, setRenaming] = useState(false), [title, setTitle] = useState('');
     const [actionsOpen, setActionsOpen] = useState(false);
@@ -172,7 +180,7 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                 <FeatureAvailabilityNotice features={[group ? 'group_chat' : 'model_chat']}/>
                 {chat.activity === 'loading' && !chat.detail ? <div className="model-chat__loading" role="status"><Spin tip="Загружаем личные диалоги…"/></div>
                     : <ChatMessages key={chat.detail?.conversation.id || 'new'} turns={chat.turns} attachments={chat.detail?.attachments ?? []} modelName={model.name} conversationId={chat.detail?.conversation.id} blocked={!!chat.blocked} busy={!!chat.activity} group={group}
-                        privateTasks={origin && <SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={canRunRole} launch={roleLaunch?.origin === originKey ? roleLaunch : undefined}/>}
+                        privateTasks={origin && <SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={canRunRole} launch={roleTask} onActionChange={roleControls.register}/>}
                         onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview} hasEarlier={chat.detail?.history?.hasMore ?? false} historyLoading={chat.historyLoading} historyError={chat.historyError} onLoadEarlier={() => {void chat.loadEarlier();}} onComplete={() => {void chat.complete();}}/>}
                 <ChatAttachments files={chat.attachments} uploads={chat.uploads} disabled={!!chat.activity || unresolved} onPreview={setPreview} onRemove={id => {void chat.removeAttachment(id);}}
                     onRetryUpload={chat.retryUpload} onRemoveUpload={chat.removeUpload}/>
@@ -181,6 +189,7 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                     <ChatResearchControls value={research} disabled={disabled} projectId={projectId} open={activeTool === 'research'} onOpenChange={open => openTool('research', open)}/>
                 </div>
                 <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !contextBlocked && !researchBlocked && (!!draft.trim() || !!chat.attachments.length)} onSystemRole={(agentId, instruction) => {void openSystemRole(agentId, instruction);}}
+                    systemTask={!!activeRole} systemAction={roleControls.action} onCancelSystemTask={() => {setRoleLaunch(undefined); setDraft(chatSystemRoleMention(currentDraft.current).instruction);}}
                     sending={chat.busy} uploading={chat.activity === 'uploading'} onDraft={setDraft} onSend={send} onStop={() => {void chat.stop();}} onCancelUpload={chat.cancelUploads}
                     onFiles={files => {if(availability.enabled){setFileError(''); chat.addFiles(files);}}} onReject={setFileError} participants={group ? chat.detail?.participants ?? [] : undefined} filesOpen={activeTool === 'files'} onFilesOpenChange={open => openTool('files', open)}/>
                 </>}

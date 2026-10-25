@@ -7,6 +7,7 @@ import {ChatAnswer} from './ChatAnswer';
 import type {IModelChatAttachment, IModelChatTurn} from './types';
 import type {TFeatureFlagKey} from '../FeatureFlags/types';
 import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
+import {ChatLog} from '../ChatCommon/ChatLog';
 
 interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string; privateTasks?: ReactNode;}
 
@@ -26,7 +27,7 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
         else if (last !== before.last || stamp !== before.stamp) setShowLatest(true);
         previous.current = {first, last, count: turns.length, height: node.scrollHeight, stamp};
     }, [turns, historyLoading, historyError]);
-    return <div className="model-chat__history-wrap"><div ref={viewport} className="model-chat__history" role="log" aria-label="История чата" aria-live="polite" aria-relevant="additions text"
+    return <div className="model-chat__history-wrap"><ChatLog ref={viewport} className="model-chat__history" aria-label="История чата"
         onScroll={event => {const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80; if (nearBottom.current) setShowLatest(false);}}>
         {hasEarlier && <div className="model-chat__earlier"><Button loading={historyLoading} disabled={historyLoading} onClick={onLoadEarlier}>Показать ранние сообщения</Button></div>}
         {historyError && <Alert type="warning" showIcon message={historyError}/>}
@@ -47,5 +48,5 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
                 {turn.responses?.some(response => response.status === 'done') ? <Button disabled={busy} onClick={onComplete}>Продолжить с готовыми ответами</Button> : <Button disabled={busy} onClick={onEdit}>Изменить сообщение</Button>}</Space>}
         </section>)}
         {privateTasks}
-    </div>{showLatest && <Button className="model-chat__latest" size="small" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setShowLatest(false);}}>К последним сообщениям</Button>}</div>;
+    </ChatLog>{showLatest && <Button className="model-chat__latest" size="small" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setShowLatest(false);}}>К последним сообщениям</Button>}</div>;
 }

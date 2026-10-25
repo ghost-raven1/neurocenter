@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import {act, createElement} from 'react';
+import {act, createElement, StrictMode, useState} from 'react';
 import {createRoot, type Root} from 'react-dom/client';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {SystemRoleChat} from '../src/features/SystemRoleChat/SystemRoleChat';
@@ -7,6 +7,8 @@ import type {ServiceTurn} from '../src/features/SystemRoleChat/types';
 import type {RoleOverview, RoleRun} from '../src/features/SystemRoles/types';
 import type {ChatRoleLaunch} from '../src/features/ChatSystemRoles/types';
 import {deferredSetup} from './admin-setup-hooks.fixture';
+import {useChatRoleAction} from '../src/features/ChatSystemRoles/useChatRoleAction';
+import {ChatSendAction} from '../src/features/ChatCommon/ChatSendAction';
 
 const h = vi.hoisted(() => ({owner: 'alice', bound: false, accepted: vi.fn(), capture: () => {const owner = h.owner; return () => owner === h.owner;}}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner, captureOwner: h.capture})}));
@@ -29,9 +31,21 @@ const run = {id: 'run-one', agentId: 'agent-indexer', projectId: 'prj-one', stat
 const turn: ServiceTurn = {id: 'request-one', agentId: 'agent-indexer', instruction: launch.instruction, createdAt: dialog.createdAt, cancelRequested: false, run};
 let root: Root, container: HTMLDivElement;
 const settle = async () => {await act(async () => {await new Promise(done => setTimeout(done, 10));});};
-const render = async (task?: ChatRoleLaunch) => {await act(async () => {root.render(createElement(SystemRoleChat, {embedded: true, projectId: 'prj-one', origin, launch: task}));}); await settle();};
+function Host({task}: {task?: ChatRoleLaunch}) {
+    const [body,setBody] = useState(task?.instruction ?? ''), [done,setDone] = useState(false);
+    const active = task && !done, controls = useChatRoleAction(active ? task.origin + ':' + task.key : undefined);
+    return <><SystemRoleChat embedded projectId="prj-one" origin={origin} launch={active ? {...task,instruction: body,onAccepted: accepted => {h.accepted(accepted); setDone(true); setBody(current => current === accepted ? '' : current);}} : undefined} onActionChange={controls.register}/>
+        <textarea aria-label="Сообщение" value={body} onChange={event => setBody(event.target.value)}/>
+        <ChatSendAction task={controls.action} disabled onSend={() => undefined}/></>;
+}
+const render = async (task?: ChatRoleLaunch) => {await act(async () => {root.render(createElement(StrictMode,null,createElement(Host,{task})));}); await settle();};
 const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label)!;
 const click = async (node: HTMLElement) => {expect(node).toBeTruthy(); await act(async () => {node.click();}); await settle();};
+const typeBody = async (body: string) => {await act(async () => {
+    const node = container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(node,body);
+    node.dispatchEvent(new Event('input',{bubbles: true}));
+}); await settle();};
 beforeEach(() => {
     vi.clearAllMocks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); h.owner = 'alice'; h.bound = false; sessionStorage.clear();
     vi.stubGlobal('matchMedia', (query: string) => ({matches: false, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => false}));
@@ -47,7 +61,9 @@ afterEach(async () => {await act(async () => {root.unmount();}); container.remov
 
 it('uses a compact task and canonical binding, then requires consent before any inference', async () => {
     await render(launch);
-    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Задача системному агенту"]')?.value).toBe(launch.instruction);
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')?.value).toBe(launch.instruction);
+    expect(container.querySelectorAll('textarea')).toHaveLength(1);
+    expect(container.querySelector('.service-chat__heading')).toBeNull();
     expect(container.querySelector<HTMLDetailsElement>('.service-chat__context')?.open).toBe(false);
     expect(container.querySelector<HTMLDetailsElement>('.service-chat__task-settings')?.open).toBe(false);
     expect(api.start).not.toHaveBeenCalled(); await click(button('Проверить контекст'));
@@ -61,13 +77,14 @@ it('uses a compact task and canonical binding, then requires consent before any 
     vi.mocked(api.read).mockResolvedValue({dialog, turns: [turn]});
     await act(async () => {pending.resolve(turn);}); await settle();
     expect(h.accepted).toHaveBeenCalledOnce(); expect(container.textContent).toContain('Индекс требует настройки модели.');
-    expect(container.querySelector('[aria-label="Задача системному агенту"]')).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')?.value).toBe('');
+    expect(container.querySelectorAll('textarea')).toHaveLength(1);
 });
 
 it('a failed free preview keeps the complete task and permits an explicit retry without starting a model', async () => {
     vi.mocked(api.prepare).mockRejectedValueOnce(Error('Dependency unavailable')); await render(launch);
     await click(button('Проверить контекст'));
-    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Задача системному агенту"]')?.value).toBe(launch.instruction);
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')?.value).toBe(launch.instruction);
     expect(button('Проверить контекст').disabled).toBe(false); expect(api.start).not.toHaveBeenCalled();
     await click(button('Проверить контекст')); expect(api.prepare).toHaveBeenCalledTimes(2); expect(base.post).toHaveBeenCalledOnce();
 });
@@ -77,4 +94,20 @@ it('a failed automatic history read does not spin; the user can retry the same p
     await settle(); await settle(); expect(api.read).toHaveBeenCalledOnce();
     vi.mocked(api.read).mockResolvedValue({dialog, turns: [turn]}); await click(button('Повторить проверку'));
     expect(api.read).toHaveBeenCalledTimes(2); expect(container.textContent).toContain('Индекс требует настройки модели.'); expect(api.start).not.toHaveBeenCalled();
+});
+it('editing the common draft invalidates consent and sends the new exact instruction only after a new preview', async () => {
+    await render(launch); await click(button('Проверить контекст'));
+    await click(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
+    await typeBody('Проверь новую задачу без изменения настроек.');
+    expect(button('Отправить задачу')).toBeUndefined(); expect(button('Проверить контекст').disabled).toBe(false);
+    await click(button('Проверить контекст'));
+    expect(api.prepare).toHaveBeenLastCalledWith(dialog.id,'agent-indexer',expect.objectContaining({instruction: 'Проверь новую задачу без изменения настроек.'}),false);
+    expect(button('Отправить задачу').disabled).toBe(true); expect(api.start).not.toHaveBeenCalled(); expect(container.querySelectorAll('textarea')).toHaveLength(1);
+});
+it('retains a newer common draft after a delayed accepted task and does not repeat its model call', async () => {
+    await render(launch); await click(button('Проверить контекст')); await click(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
+    const pending = deferredSetup<ServiceTurn>(); vi.mocked(api.start).mockReturnValueOnce(pending.promise); await click(button('Отправить задачу'));
+    await typeBody('Новый вопрос после отправки.'); await act(async () => {pending.resolve(turn);}); await settle();
+    expect(api.start).toHaveBeenCalledOnce(); expect(h.accepted).toHaveBeenCalledWith(turn.instruction);
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')?.value).toBe('Новый вопрос после отправки.');
 });

@@ -6,11 +6,12 @@ import { diagnosticNames, roleCallBudget, roleFlag, roleName, targetNames, type 
 import { McpTaskPicker } from './McpTaskPicker';
 import { RoleProjectContextPreview } from '../SystemRoles/RoleProjectContext';
 import type { useSystemRoleChat } from './useSystemRoleChat';
+import type {ChatRoleAction} from '../ChatSystemRoles/types';
 
 type ChatValue = ReturnType<typeof useSystemRoleChat>;
 interface InitialTask {agentId: SystemRoleId; instruction: string; modelId?: string;}
 /** Context is opt-in, visible before payment, and invalidated on every task/model/role edit. */
-export function ServiceComposer({ value, projectId, canExecute = true, initial, compact = false }: { value: ChatValue; projectId?: string; canExecute?: boolean; initial?: InitialTask; compact?: boolean }): JSX.Element {
+export function ServiceComposer({ value, projectId, canExecute = true, initial, compact = false, onActionChange }: { value: ChatValue; projectId?: string; canExecute?: boolean; initial?: InitialTask; compact?: boolean; onActionChange?: (action?: ChatRoleAction) => void }): JSX.Element {
     const restored = value.pendingIntent;
     const [agentId, setAgentId] = useState<SystemRoleId>(restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
     const [instruction, setInstruction] = useState(restored?.input.instruction ?? initial?.instruction ?? ''), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
@@ -25,6 +26,10 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
     const model = value.overview?.models.find(item => item.id === modelId), locked = value.busy || !!value.receipt;
     const invalidate = (): void => { revision.current++; value.invalidate(); setConsent(false); };
     useEffect(() => {
+        if (!compact || !initial || restored || locked || instruction === initial.instruction) return;
+        invalidate(); setInstruction(initial.instruction);
+    }, [compact,initial?.instruction,locked,restored?.input.requestId]);
+    useEffect(() => {
         if (modelChosen.current || restored || !value.overview?.models.length) return;
         const first = value.overview.models.find(item => item.id === initial?.modelId) ?? value.overview.models[0];
         modelChosen.current = true; setModelId(first.id); invalidate();
@@ -36,7 +41,8 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
         restoredRequest.current = restored.input.requestId; modelChosen.current = true; setAgentId(restored.agentId); setModelId(restored.input.modelId); setInstruction(restored.input.instruction); setMcp(restored.input.mcp ?? []);
     }, [restored?.input.requestId]);
     const diagnosticsLimit = value.overview?.budget?.diagnostics ?? 0, diagnosticsOverLimit = diagnostics.length > diagnosticsLimit;
-    const ready = !!definition && !!model && !!instruction.trim() && !diagnosticsOverLimit && (!usePrompt || !!prompt.trim()) && selected.length + Number(usePrompt) + Number(includeContext) <= 4;
+    const aligned = !compact || !initial || !!restored || initial.instruction === instruction;
+    const ready = aligned && !!definition && !!model && !!instruction.trim() && !diagnosticsOverLimit && (!usePrompt || !!prompt.trim()) && selected.length + Number(usePrompt) + Number(includeContext) <= 4;
     const selection = (): RoleSelection => ({ projectId: projectId ?? null, instruction, diagnostics,
         targets: [...targets.filter(item => selected.includes(item.kind + ':' + item.id)).map(({ kind, id }) => ({ kind, id })), ...(usePrompt ? [{ kind: 'prompt' as const, id: 'selected-text', text: prompt }] : [])], ...(mcp.length ? { mcp } : {}) });
     const hasAnswers = value.detail?.turns.some(turn => !!turn.run?.result && ['succeeded', 'awaiting_review'].includes(turn.run.state));
@@ -45,6 +51,21 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
         void value.start(model!.id);
     };
     const preparedRevision = revision.current;
+    const prepare = (): void => {
+        if (!enabled.current || locked || !ready || !captureOwner()() || !model) return;
+        invalidate(); void value.prepare(agentId, selection(), includeContext, model.id);
+    };
+    const action: ChatRoleAction = {label: value.prepared ? 'Отправить задачу' : 'Проверить контекст', busy: value.busy,
+        disabled: !canStart || !ready || locked || !!value.prepared && !consent,
+        onClick: value.prepared ? () => {if (revision.current === preparedRevision) submit();} : prepare};
+    const currentAction = useRef(action); currentAction.current = action;
+    const alive = useRef(true), invokeAction = useRef(() => {if (alive.current) currentAction.current.onClick();});
+    useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
+    useEffect(() => {
+        if (!onActionChange) return;
+        onActionChange({...action,onClick: invokeAction.current});
+        return () => onActionChange(undefined);
+    }, [onActionChange,action.label,action.busy,action.disabled]);
     const taskField = <Form.Item label="Задача" required><Input.TextArea aria-label={compact ? 'Задача системному агенту' : 'Задача сервисного чата'} value={instruction} maxLength={2048} autoSize={{ minRows: 2, maxRows: compact ? 3 : 5 }} placeholder="Что проверить или улучшить?"
         onChange={event => { invalidate(); setInstruction(event.target.value); }} /></Form.Item>;
     const tools = <McpTaskPicker projectId={projectId} value={mcp} disabled={locked} canExecute={canExecute && availability.enabled} onChange={items => { invalidate(); setMcp(items); }} />;
@@ -52,7 +73,6 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
         {!availability.enabled && <Alert type="info" showIcon message={availability.reason} description="История, проверка отправки, отмена и откат остаются доступны." />}
         {!canExecute && <Alert type="info" showIcon message="Новые задачи доступны администратору проекта" description="Вы можете читать свою историю, проверять отправку и отменять принятые задачи." />}
         <Form layout="vertical" disabled={locked}>
-            {compact && taskField}
             <details open={!compact || !model} className="service-chat__task-settings"><summary hidden={!compact}>{roleName(agentId)} · {model?.name ?? 'Выберите модель'}</summary>
             <div className="service-chat__choices">
                 <Form.Item label="Системный агент"><Select aria-label="Системный агент" value={agentId} options={(value.overview?.definitions ?? []).map(item => ({ value: item.id, label: roleName(item.id) }))}
@@ -77,15 +97,18 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
                 {compact && tools}
             </details>
             {!compact && tools}
-            {(!compact || !value.prepared) && <Button type={compact ? 'primary' : 'default'} disabled={!canStart || !ready || locked} loading={value.busy} onClick={() => {
-                if (!enabled.current || locked || !captureOwner()() || !model) return; invalidate(); void value.prepare(agentId, selection(), includeContext, model.id);
-            }}>Проверить контекст</Button>}
+            {!onActionChange && (!compact || !value.prepared) && <Button type={compact ? 'primary' : 'default'} disabled={!canStart || !ready || locked} loading={value.busy} onClick={prepare}>Проверить контекст</Button>}
         </Form>
-        {value.prepared && <div className="service-chat__confirmation"><details open><summary>Контекст для выбранной модели</summary><pre>{value.prepared.prepared.preview}</pre></details>
+        {value.prepared && <div className="service-chat__confirmation">
+            {compact && <><Typography.Paragraph>Получатель: {roleName(agentId)} · {model?.name}. Передаётся задача из поля сообщения{value.prepared.selection.targets.length ? ` и выбранные данные: ${value.prepared.selection.targets.length}` : ''}.</Typography.Paragraph>
+                {value.prepared.prepared.guidance && <Typography.Paragraph>Роль прочитает справку и проверит доступное состояние проекта: индекс, модель, ваши мосты, очередь и обучение. Настройки изменяются только отдельным подтверждённым действием.</Typography.Paragraph>}
+                {!!diagnostics.length && <Typography.Paragraph>Дополнительные проверки: {diagnostics.map(kind => diagnosticNames[kind]).join(', ')}.</Typography.Paragraph>}
+                {!!mcp.length && <Typography.Paragraph>Разрешены только выбранные инструменты: {mcp.flatMap(target => target.tools.map(tool => tool.name)).join(', ')}.</Typography.Paragraph>}</>}
+            <details open={!compact}><summary>{compact ? 'Точный состав передаваемых данных' : 'Контекст для выбранной модели'}</summary><pre>{value.prepared.prepared.preview}</pre></details>
             <RoleProjectContextPreview context={value.prepared.prepared.projectContext} />
             <Checkbox checked={consent} disabled={locked || !canStart} onChange={event => setConsent(event.target.checked)}>{value.prepared.prepared.projectContext ? 'Разрешаю передать показанный контекст и результаты описанного поиска выбранной модели' : 'Разрешаю передать показанный контекст выбранной модели'}</Checkbox>
             {compact && <Typography.Paragraph type="secondary">{roleName(agentId)} · {model?.name}. До {roleCallBudget(agentId, !!mcp.length)} обращений к модели.</Typography.Paragraph>}
-            <Button type="primary" disabled={!canStart || locked || !ready || !consent} onClick={() => { if (revision.current === preparedRevision) submit(); }}>{compact ? 'Отправить задачу' : `Отправить · до ${roleCallBudget(agentId, !!mcp.length)} вызовов модели`}</Button>
+            {!onActionChange && <Button type="primary" disabled={!canStart || locked || !ready || !consent} onClick={() => { if (revision.current === preparedRevision) submit(); }}>{compact ? 'Отправить задачу' : `Отправить · до ${roleCallBudget(agentId, !!mcp.length)} вызовов модели`}</Button>}
         </div>}
     </section>;
 }
