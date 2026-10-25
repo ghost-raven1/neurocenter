@@ -15,6 +15,7 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
     const [agentId, setAgentId] = useState<SystemRoleId>(restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
     const [instruction, setInstruction] = useState(restored?.input.instruction ?? initial?.instruction ?? ''), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
     const restoredRequest = useRef(restored?.input.requestId);
+    const modelChosen = useRef(!!restored);
     const [mcp, setMcp] = useState<RoleMcpSelection[]>(restored?.input.mcp ?? []);
     const [includeContext, setIncludeContext] = useState(false), [prompt, setPrompt] = useState(''), [usePrompt, setUsePrompt] = useState(false), [consent, setConsent] = useState(false);
     const availability = useFeatureAvailability('system_role_chat', roleFlag(agentId)), mcpAvailability = useFeatureAvailability('system_role_mcp'), { captureOwner } = useAuthRequestOwner();
@@ -23,11 +24,16 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
     const targets = value.overview?.targets.filter(item => definition?.targets.includes(item.kind) && item.kind !== 'dialog-context') ?? [];
     const model = value.overview?.models.find(item => item.id === modelId), locked = value.busy || !!value.receipt;
     const invalidate = (): void => { revision.current++; value.invalidate(); setConsent(false); };
+    useEffect(() => {
+        if (modelChosen.current || restored || !value.overview?.models.length) return;
+        const first = value.overview.models.find(item => item.id === initial?.modelId) ?? value.overview.models[0];
+        modelChosen.current = true; setModelId(first.id); invalidate();
+    }, [value.overview?.models, restored?.input.requestId]);
     useEffect(() => { if (!canStart) invalidate(); }, [canStart]);
     useEffect(() => { invalidate(); }, [model?.id, model?.pin, projectId, agentId]);
     useEffect(() => {
         if (!restored || restoredRequest.current === restored.input.requestId) return;
-        restoredRequest.current = restored.input.requestId; setAgentId(restored.agentId); setModelId(restored.input.modelId); setInstruction(restored.input.instruction); setMcp(restored.input.mcp ?? []);
+        restoredRequest.current = restored.input.requestId; modelChosen.current = true; setAgentId(restored.agentId); setModelId(restored.input.modelId); setInstruction(restored.input.instruction); setMcp(restored.input.mcp ?? []);
     }, [restored?.input.requestId]);
     const diagnosticsLimit = value.overview?.budget?.diagnostics ?? 0, diagnosticsOverLimit = diagnostics.length > diagnosticsLimit;
     const ready = !!definition && !!model && !!instruction.trim() && !diagnosticsOverLimit && (!usePrompt || !!prompt.trim()) && selected.length + Number(usePrompt) + Number(includeContext) <= 4;
@@ -51,8 +57,8 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
             <div className="service-chat__choices">
                 <Form.Item label="Системный агент"><Select aria-label="Системный агент" value={agentId} options={(value.overview?.definitions ?? []).map(item => ({ value: item.id, label: roleName(item.id) }))}
                     onChange={id => { invalidate(); setAgentId(id); setDiagnostics([]); setSelected([]); setUsePrompt(false); setIncludeContext(false); setMcp([]); }} /></Form.Item>
-                <Form.Item label="Модель для этой задачи" required><Select aria-label={compact ? 'Модель системной задачи' : 'Модель сервисного чата'} value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label"
-                    options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { invalidate(); setModelId(id); }} /></Form.Item>
+                <Form.Item label="Модель для этой задачи" required><Select aria-label={compact ? 'Модель системной задачи' : 'Модель сервисного чата'} value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear
+                    options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { modelChosen.current = true; invalidate(); setModelId(id); }} /></Form.Item>
             </div>
             </details>
             {agentId === 'agent-coordinator' && <Typography.Paragraph type="secondary">Координатор соберёт ответы до трёх системных агентов. Применение изменений подтверждается отдельно.</Typography.Paragraph>}

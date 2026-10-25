@@ -34,12 +34,20 @@ beforeEach(() => {
     };
 });
 afterEach(() => { h.hooks.dispose(); });
-it('defaults to Coordinator and requires an explicit per-task model and exact context consent before sending', () => {
-    const html = render(); expect(html).toContain('до трёх системных агентов'); expect(field('Select', 'Системный агент').value).toBe('agent-coordinator'); expect(field('Select', 'Модель сервисного чата').value).toBeUndefined();
+it('defaults to Coordinator and the first eligible model while requiring exact context consent before sending', () => {
+    render(); const html = render(); expect(html).toContain('до трёх системных агентов'); expect(field('Select', 'Системный агент').value).toBe('agent-coordinator'); expect(field('Select', 'Модель сервисного чата').value).toBe('model-one');
     expect(button('Проверить контекст').disabled).toBe(true); expect(h.values.start).not.toHaveBeenCalled(); fill(); button('Проверить контекст').onClick();
     expect(h.values.prepare).toHaveBeenCalledExactlyOnceWith('agent-coordinator', { projectId: 'prj-one', instruction: 'Проверь текущую готовность', diagnostics: [], targets: [] }, false, 'model-one');
     preview(); expect(button('Отправить').disabled).toBe(true); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); button('Отправить').onClick();
     expect(h.values.start).toHaveBeenCalledExactlyOnceWith('model-one');
+});
+it('late eligible models initialize only an untouched draft, and explicit clear survives refresh', () => {
+    h.values.overview.models = []; render(); expect(field('Select', 'Модель сервисного чата').value).toBeUndefined();
+    h.values.overview.models = [{id: 'model-late', name: 'Late', pin: 'a'.repeat(64)}]; render(); render();
+    expect(field('Select', 'Модель сервисного чата').value).toBe('model-late');
+    field('Select', 'Модель сервисного чата').onChange(undefined); render();
+    h.values.overview.models = [{id: 'other', name: 'Other', pin: 'b'.repeat(64)}]; render(); render();
+    expect(field('Select', 'Модель сервисного чата').value).toBeUndefined(); expect(h.values.start).not.toHaveBeenCalled();
 });
 it('editing a task invalidates consent synchronously and fences a retained submit handler', () => {
     render(); fill(); preview(); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); const old = button('Отправить').onClick;

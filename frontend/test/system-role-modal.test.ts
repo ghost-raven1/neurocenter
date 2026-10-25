@@ -27,6 +27,11 @@ beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.ow
 }; vi.stubGlobal('crypto', { randomUUID: () => 'explicit-request' }); });
 afterEach(() => { h.hooks.dispose(); vi.unstubAllGlobals(); });
 const selectModelAndTask = () => { uiNode(h.ui, 'Select').onChange('model-one'); uiNode(h.ui, 'TextArea').onChange({ target: { value: 'Check current readiness' } }); render(); };
+it('new role drafts default to the first eligible model without starting, and preserve explicit clearing', () => {
+    render(); render(); expect(uiNode(h.ui, 'Select').value).toBe('model-one'); expect(h.values.start).not.toHaveBeenCalled();
+    uiNode(h.ui, 'Select').onChange(undefined); render(); h.values.overview.models = [{id: 'new-model', name: 'New', pin: 'd'.repeat(64)}]; render(); render();
+    expect(uiNode(h.ui, 'Select').value).toBeUndefined(); expect(h.values.start).not.toHaveBeenCalled();
+});
 it('opening and preview do not call a model; explicit selected model+exact preview consent creates one pinned request', () => {
     render(); expect(h.values.start).not.toHaveBeenCalled(); selectModelAndTask();
     button('Подготовить контекст').onClick(); expect(h.values.prepare).toHaveBeenCalledExactlyOnceWith({ projectId: 'prj-one', instruction: 'Check current readiness', diagnostics: [], targets: [] }); expect(h.values.start).not.toHaveBeenCalled();
