@@ -3,9 +3,12 @@ import {ForbiddenException,ServiceUnavailableException} from '@nestjs/common';
 import type {ConfigService} from '@nestjs/config';
 import axios from 'axios';
 import {AuthService} from '../src/auth/auth.service';
+import {SessionService} from '../src/auth/session.service';
+import {CatalogSessionClient} from '../src/auth/catalog-session.client';
+import {createSessionInput} from '../../catalog-service/src/browser-auth-sessions/browser-auth-session.validation';
 import type {IBridgeUser} from '../src/auth/interface';
 
-const http=vi.hoisted(()=>({post:vi.fn(),get:vi.fn()}));
+const http=vi.hoisted(()=>({post:vi.fn(),get:vi.fn(),request:vi.fn()}));
 vi.mock('axios',async importOriginal=>{
  const original=await importOriginal<typeof import('axios')>();
  return {...original,default:{...original.default,create:vi.fn(()=>http)}};
@@ -50,6 +53,20 @@ describe('OAuth provider and current catalog authorization',()=>{
  it.each([{uid:0,mail:' QA@EXAMPLE.TEST '},{preferred_username:'preferred',email:'qa@example.test'}])('accepts documented profile aliases, normalizes email and supplies a safe display name',async profile=>{
   http.get.mockResolvedValueOnce({data:profile});const result=await service().exchangeCode('code','v');
   expect(result.id).toBe(String('uid'in profile?profile.uid:profile.preferred_username));expect(result.email).toBe('qa@example.test');expect(result.displayName).toBe('qa@example.test');
+ });
+ it.each(['','   ',undefined,null,42,'x'.repeat(513),'QA\u0000name'])('an optional unusable provider name cannot prevent durable session creation: %s',async name=>{
+  http.get.mockResolvedValueOnce({data:{sub:'id',email:' QA@EXAMPLE.TEST ',name}});
+  http.request.mockImplementation(async({data}:{data:unknown})=>{createSessionInput(data);return {status:201,data:{created:true}};});
+  const sessions=new SessionService(new CatalogSessionClient()),profile=await service().exchangeCode('code','v');
+  await expect(sessions.create(profile)).resolves.toMatch(/^[a-f0-9]{48}$/);
+  expect(http.request.mock.calls[0][0].data.identity.displayName).toBe('qa@example.test');
+ });
+ it('trims a usable optional display name before the durable session boundary',async()=>{
+  http.get.mockResolvedValueOnce({data:{sub:'id',email:'qa@example.test',name:'  QA 名字  '}});
+  http.request.mockImplementation(async({data}:{data:unknown})=>{createSessionInput(data);return {status:201,data:{created:true}};});
+  const sessions=new SessionService(new CatalogSessionClient()),profile=await service().exchangeCode('code','v');
+  await expect(sessions.create(profile)).resolves.toMatch(/^[a-f0-9]{48}$/);
+  expect(http.request.mock.calls[0][0].data.identity.displayName).toBe('QA 名字');
  });
  it('keeps an assigned selected role, replaces revoked selection and never trusts a requested role',async()=>{
   const auth=service(),selected={...user(),activeRole:'Наблюдатель'};

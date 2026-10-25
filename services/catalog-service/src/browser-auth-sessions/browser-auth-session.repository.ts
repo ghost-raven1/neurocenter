@@ -25,8 +25,11 @@ export class BrowserAuthSessionRepository {
   });
  }
  async selectRole(hash:string,role:string):Promise<{found:boolean}>{
-  return this.available(async()=>({found:!!(await this.db.query(`UPDATE browser_auth_sessions SET selected_role=$2
-   WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp() RETURNING token_hash`,[hash,role])).rowCount}));
+  // Materialize the locked row before checking wall-clock expiry, including an unchanged preference.
+  return this.available(async()=>({found:!!(await this.db.query(`WITH locked AS MATERIALIZED (
+    SELECT token_hash,revoked_at,expires_at FROM browser_auth_sessions WHERE token_hash=$1 FOR UPDATE
+   ) UPDATE browser_auth_sessions s SET selected_role=$2 FROM locked
+   WHERE s.token_hash=locked.token_hash AND locked.revoked_at IS NULL AND locked.expires_at>clock_timestamp() RETURNING s.token_hash`,[hash,role])).rowCount}));
  }
  async revoke(hash:string):Promise<{revoked:true}>{
   return this.available(async()=>{
