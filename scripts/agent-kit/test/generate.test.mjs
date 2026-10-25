@@ -149,6 +149,22 @@ test('a parent directory symlink is rejected before creating foreign or earlier 
     await assert.rejects(fs.stat(path.join(root,firstSkill)),{code:'ENOENT'});
 });
 
+for(const relative of ['.opencode/skills/neurocenter-backend-architect/SKILL.md','scripts/agent-kit/manifest.json'])
+for(const checkOnly of [true,false])test(`a hardlinked ${relative} blocks every write in ${checkOnly?'check':'apply'} mode`,async t=>{
+    const root=await fixture(t);await generateKit({root});
+    const sentinel=path.join(root,'personal-copy');await fs.link(path.join(root,relative),sentinel);
+    const original=await fs.readFile(sentinel);
+    for(const group of ['product','backend']){
+        const catalogue=path.join(root,'scripts/agent-kit/roles',group+'.json');
+        const roles=JSON.parse(await fs.readFile(catalogue));roles[0].outcome+=' Уточнённый результат.';
+        await fs.writeFile(catalogue,JSON.stringify(roles));
+    }
+    const before=await snapshot(root);
+    await assert.rejects(generateKit({root,checkOnly}),/Небезопасный путь набора/);
+    assert.deepEqual(await fs.readFile(sentinel),original);
+    assert.deepEqual(await snapshot(root),before);
+});
+
 async function renamedRole(t){
     const root=await fixture(t);await generateKit({root});
     const catalogue=path.join(root,'scripts/agent-kit/roles/backend.json');

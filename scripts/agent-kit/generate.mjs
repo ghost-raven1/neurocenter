@@ -14,10 +14,11 @@ const bullets=values=>values.map(value=>'- '+value).join('\n');
 const text=value=>typeof value==='string'&&value.length>0&&value.length<=700&&!/[\x00-\x1f\x7f]/.test(value);
 const generatedRolePath=/^(?:\.opencode\/skills\/neurocenter-[a-z][a-z0-9-]{1,47}\/SKILL\.md|\.opencode\/agents\/neurocenter-[a-z][a-z0-9-]{1,47}\.md|scripts\/agent-kit\/codex\/neurocenter-[a-z][a-z0-9-]{1,47}\.toml)$/;
 const sharedPaths=new Set([...commonFiles.map(name=>core+'/'+name),core+'/references/catalog.md','.opencode/commands/neurocenter-task.md']);
+/** Admit only single-link managed files before planning or applying generation. */
 const optionalRead=async file=>{
     const absolute=path.resolve(file);let missing=false;
     for(let current=absolute;current!==path.dirname(current);current=path.dirname(current)){
-        try{const stat=await fs.lstat(current);if(stat.isSymbolicLink()||(current===absolute?!stat.isFile():!stat.isDirectory()))throw Error('Небезопасный путь набора: '+current);}
+        try{const stat=await fs.lstat(current);if(stat.isSymbolicLink()||(current===absolute?!stat.isFile()||stat.nlink!==1:!stat.isDirectory()))throw Error('Небезопасный путь набора: '+current);}
         catch(error){if(error.code!=='ENOENT')throw error;if(current===absolute)missing=true;}
     }
     return missing?null:fs.readFile(absolute);
