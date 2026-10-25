@@ -22,7 +22,19 @@
 .learning-candidate { padding: 18px; border: 1px solid #dbe4ee; border-radius: 12px; min-width: 0; &__actions { margin-top: 12px; } .ant-collapse-header { padding-left: 0 !important; } .ant-collapse-content-box { padding-left: 0 !important; } }
 .learning-experiences { background: #fff; border-radius: 10px; .ant-collapse-header { align-items: center !important; } .project-learning__row-title { flex: 1; margin: 0; } }
 .learning-details { .ant-drawer-content-wrapper { max-width: 100vw; } &__evidence { padding: 12px 0; border-top: 1px solid #edf1f5; } .ant-typography, .ant-tag { overflow-wrap: anywhere; white-space: normal; } }
-.learning-editor { max-width: calc(100vw - 24px); &__actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 24px; } &__evidence { border: 1px solid #dce5ee; border-radius: 10px; padding: 14px; margin-bottom: 14px; } &__kind { min-width: 160px; } &__content { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.65; } }
+.learning-editor {
+    max-width: calc(100vw - 24px);
+    padding-bottom: 0;
+    .ant-modal-content { display: flex; flex-direction: column; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+    .ant-modal-header, .ant-modal-footer { flex-shrink: 0; }
+    .ant-modal-body { min-height: 0; overflow-y: auto; padding: 16px 24px; }
+    .ant-form-item { margin-bottom: 16px; }
+    .ant-modal-footer { padding: 12px 24px; }
+    &__actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+    &__evidence { border: 1px solid #dce5ee; border-radius: 10px; padding: 12px; margin-bottom: 12px; > .ant-form-item:last-child { margin-bottom: 0; } }
+    &__kind { min-width: 160px; }
+    &__content { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.65; }
+}
 @media (max-width: 700px) {
     .project-learning { &__heading, &__toolbar, &__tab-heading, &__row-title { flex-direction: column; align-items: stretch; gap: 10px; } &__toolbar .ant-input-search { width: 100%; } &__summary { gap: 10px 16px; .ant-tag { margin-left: 0; } } &__row { align-items: flex-start; } &__notice .ant-alert-content { min-width: 0; } &__notice .ant-alert-action { margin-left: 0; margin-top: 10px; } &__notice.ant-alert-with-description { flex-wrap: wrap; } }
     .learning-candidate { padding: 14px; }
