@@ -62,7 +62,7 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
             </Space></div>
         {chat.error && <Alert className="project-chat__notice" type="error" showIcon message={chat.error} action={<Button onClick={() => {void chat.refresh();}}>Повторить</Button>}/>}
         {!detail ? chat.loading ? <div className="project-chat__loading" role="status"><Spin tip="Открываем чат команды…"/></div> : null : <>
-            <ProjectChatMessages messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
+            <ProjectChatMessages projectId={projectId} messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
                 privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={projectRoleLevel(user, projectId) >= 3} launch={activeRole} onActionChange={roleControls.register}/>}
                 onLoadEarlier={() => {void chat.loadEarlier();}} onReply={setReply} onRetry={id => {void chat.retry(id);}} onCancel={id => {void chat.cancel(id);}}/>
             <ProjectChatTyping activity={activity.snapshot} members={detail.members} connected={activity.connected} enabled={activity.enabled}/>

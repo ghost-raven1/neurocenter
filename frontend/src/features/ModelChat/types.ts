@@ -1,5 +1,6 @@
 import type { ICatalogModel } from '../ModelCatalog/types';
 import type { ReactNode } from 'react';
+import type {AgentToolGrant} from '../AgentTools/types';
 
 export interface IModelChatUsage { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null; reported: boolean; }
 export interface IChatProjectSource { id: string; path: string; title?: string; startLine?: number; endLine?: number; score: number; excerpt: string; }
@@ -15,7 +16,7 @@ export interface IModelChatTurn {
     status: 'pending' | 'done' | 'failed' | 'cancelled'; answer?: IModelChatAnswer; error?: string; createdAt: string;
     executionState?: 'waiting' | 'running' | null;
     processingStage?: 'compacting' | 'responding' | 'researching';
-    targetAgentIds?: string[]; responses?: IModelChatResponse[]; research?: IChatResearchRequest; researchSteps?: IChatResearchStepSummary[];
+    targetAgentIds?: string[]; responses?: IModelChatResponse[]; research?: IChatResearchRequest; researchSteps?: IChatResearchStepSummary[]; agentTools?: AgentToolGrant;
     discussion?: {mode: 'automatic'; callsStarted: number; maxCalls: number};
 }
 export interface IModelChatConversation {

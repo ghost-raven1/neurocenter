@@ -12,6 +12,7 @@ import {ChatWorkspace} from '../src/features/ModelChat/ChatWorkspace';
 import {ChatProjectContext} from '../src/features/ModelChat/ChatProjectContext';
 import {detail, evidence, model, participant, response, turn} from './model-chat-fixtures';
 import type {IModelChatTurn} from '../src/features/ModelChat/types';
+vi.mock('../src/features/AgentTools/useAgentTools', () => ({useAgentTools: () => ({draft: {enabled: false},blocked: false,loading: false,update: () => undefined,restore: () => undefined,disable: () => undefined,reload: () => undefined})}));
 
 interface Keyboard {key: string; shiftKey: boolean; keyCode: number; nativeEvent: {isComposing: boolean}; defaultPrevented?: boolean; preventDefault: () => void;}
 interface TextArea {value: string; onChange: (event: {target: {value: string}}) => void; disabled?: boolean; onKeyDown: (event: Keyboard) => void; onPaste: (event: {clipboardData: {files: File[]}}) => void; onCompositionStart: () => void; onCompositionEnd: () => void;}

@@ -44,6 +44,12 @@ beforeEach(() => {
 afterEach(() => {hooks.dispose(); vi.useRealTimers();});
 
 describe('Сохранённая история и безопасная отправка', () => {
+    it('не отправляет одновременно research и agentTools и фиксирует grant отдельно от последующей правки клиента', async () => {
+        let chat = await ready(); const grant = {protocol: 'json-actions-v1' as const,rag: true,systemRoles: true};
+        expect(chat.send('Вопрос',{project: true},grant)).toBe(false); expect(modelChatApi.send).not.toHaveBeenCalled(); expect(render().error).toContain('один способ');
+        chat = render(); expect(chat.send('Вопрос',undefined,grant)).toBe(true); grant.rag = false; await flush();
+        expect(vi.mocked(modelChatApi.send).mock.calls[0][8]).toEqual({protocol: 'json-actions-v1',rag: true,systemRoles: true});
+    });
     it('Открывает последний личный диалог и сохраняет его историю', async () => {
         vi.mocked(modelChatApi.list).mockResolvedValue([detail().conversation]); vi.mocked(modelChatApi.read).mockResolvedValue(detail({turns: [turn()]}));
         const chat = await ready(); expect(chat.turns).toHaveLength(1); expect(chat.detail?.conversation.id).toBe('chat-1'); expect(modelChatApi.list).toHaveBeenCalledWith(model.id, 'prj-one', expect.any(AbortSignal));

@@ -26,7 +26,9 @@ const h = await vi.hoisted(async () => {
         context: {context: undefined as IModelChatDetail['context'] | undefined, loading: false, error: undefined as string | undefined, rejected: false},
         capture: () => { const key = owner.value; return () => owner.active && owner.value === key; }};
 });
-vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: h.hooks.state, useRef: h.hooks.ref, useEffect: h.hooks.effect}));
+vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: h.hooks.state, useRef: h.hooks.ref, useEffect: h.hooks.effect,useCallback: h.hooks.callback}));
+vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole: 'Главный админ',userRoles: ['Главный админ']}}})}));
+vi.mock('../src/features/AgentTools/useAgentTools', () => ({useAgentTools: () => ({draft: {enabled: false},blocked: false,loading: false,update: () => undefined,restore: () => undefined,disable: () => undefined,reload: () => undefined})}));
 vi.mock('@ant-design/icons', () => ({DeleteOutlined: () => null, EditOutlined: () => null, MenuOutlined: () => null, MoreOutlined: () => null, PlusOutlined: () => null, TeamOutlined: () => null}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner.value, captureOwner: h.capture})}));
 vi.mock('../src/features/ModelChat/useChatContext', () => ({useChatContext: () => h.context}));

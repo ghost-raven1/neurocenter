@@ -10,6 +10,7 @@ import type { IChatUpload, IModelChatDetail, IModelChatTurn, IModelChatConversat
 import {useTabWatch} from '../TabNotifications/useTabWatch';
 import {modelTabSnapshot, modelTabSource} from '../TabNotifications/snapshots';
 import {tabNotifications} from '../TabNotifications/tracker';
+import type {AgentToolGrant} from '../AgentTools/types';
 
 type Activity = '' | 'loading' | 'sending' | 'uploading' | 'saving';
 interface ActiveRequest { abort: AbortController; kind: Activity; }
@@ -29,6 +30,8 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const current = useRef(detail), list = useRef(items), pending = useRef(optimistic), fileRows = useRef(uploads);
     const mounted = useRef(false), active = useRef<ActiveRequest>(), liveModelPin = useRef(model.modelPin); liveModelPin.current = model.modelPin;
     const historyRequest = useRef<AbortController>();
+    const toolSubmission = useRef<{requestId: string; confirmed: () => void}>();
+    const confirmToolSubmission = (requestId: string): void => {if (toolSubmission.current?.requestId !== requestId) return; const callback = toolSubmission.current.confirmed; toolSubmission.current = undefined; callback();};
     const updatePending = (value: IModelChatTurn | null): void => { pending.current = value; setOptimistic(value); };
     const updateUploads = (value: IChatUpload[]): void => { fileRows.current = value; setUploads(value); };
     const accept = (value: IModelChatDetail): void => {
@@ -60,7 +63,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             if (selection?.autoSelect !== false && values.length) { const value = await modelChatApi.read(list.current[0].id, controller.signal); if (owns()) accept(value); }
         }).catch(cause => { if (owns()) setError(errorMessage(cause, 'Не удалось загрузить личные диалоги.')); })
             .finally(() => { if (active.current === request) { active.current = undefined; if (mounted.current && owner()) setActivity(''); } });
-        return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; historyRequest.current?.abort(); historyRequest.current = undefined; };
+        return () => { mounted.current = false; active.current?.abort.abort(); active.current = undefined; historyRequest.current?.abort(); historyRequest.current = undefined; toolSubmission.current = undefined; };
     }, [scope, model.id, projectId]);
     /** A failed navigation recovers the original submit without inventing cancellation or a new request key. */
     const reconcileDetachedSubmission = async (previous: IModelChatTurn | null, selected: IModelChatDetail | null, signal: AbortSignal, owns: () => boolean): Promise<void> => {
@@ -102,7 +105,8 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 accept(value);
                 if (pending.current) {
                     const saved = value.turns.find(turn => turn.requestId === pending.current!.requestId);
-                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, discussion: saved.discussion, executionState: saved.executionState, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps} : null);
+                    if (saved) confirmToolSubmission(saved.requestId);
+                    if (saved) updatePending(saved.status === 'pending' ? {...pending.current, id: saved.id, discussion: saved.discussion, executionState: saved.executionState, processingStage: saved.processingStage, responses: saved.responses, targetAgentIds: saved.targetAgentIds, research: saved.research, researchSteps: saved.researchSteps,agentTools: saved.agentTools} : null);
                 }
                 again = !!sending || value.turns.some(turn => turn.status === 'pending');
             } catch (cause) {
@@ -148,7 +152,7 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     };
     const changed = !!detail && detail.conversation.modelPin !== model.modelPin;
     const blocked = changed ? 'Подключение модели изменилось. История сохранена; начните новый диалог.' : detail?.blockedReason || unavailableReason;
-    const generate = (prompt: string, attachmentIds: string[], previous?: IModelChatTurn, research?: IChatResearchRequest): boolean => {
+    const generate = (prompt: string, attachmentIds: string[], previous?: IModelChatTurn, research?: IChatResearchRequest, agentTools?: AgentToolGrant, onAccepted?: () => void): boolean => {
         if (!mounted.current || active.current || blocked || !captureOwner()()) return false;
         const original = current.current, expectedPin = model.modelPin;
         if (!previous) { const problem = modelChatPromptError(prompt, attachmentIds, original); if (problem) { setError(problem); return false; } }
@@ -156,7 +160,11 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         if (recipients.error) {setError(recipients.error); return false;}
         const requestId = previous?.id.startsWith('client:') ? previous.requestId : crypto.randomUUID();
         const consent = previous?.research ?? research;
-        const temporary: IModelChatTurn = {...(consent ? {research: consent} : {}),id: previous?.id ?? `client:${requestId}`, requestId, prompt, attachmentIds, status: 'pending', createdAt: new Date().toISOString(), ...(previous?.responses ? {responses: previous.responses} : {}), ...(original?.conversation.mode === 'group' ? {targetAgentIds: previous?.targetAgentIds ?? recipients.ids} : {})};
+        const toolGrant = previous ? previous.agentTools : agentTools;
+        if (toolGrant && consent) {setError('Выберите один способ: инструменты агентов или исследование источников. Текст и выбор сохранены.'); return false;}
+        const acceptedTools = toolGrant && structuredClone(toolGrant);
+        if (onAccepted) toolSubmission.current = {requestId,confirmed: onAccepted};
+        const temporary: IModelChatTurn = {...(consent ? {research: consent} : {}),...(acceptedTools ? {agentTools: acceptedTools} : {}),id: previous?.id ?? `client:${requestId}`, requestId, prompt, attachmentIds, status: 'pending', createdAt: new Date().toISOString(), ...(previous?.responses ? {responses: previous.responses} : {}), ...(original?.conversation.mode === 'group' ? {targetAgentIds: previous?.targetAgentIds ?? recipients.ids} : {})};
         updatePending(temporary);
         void run('sending', async (signal, owns) => {
             let value: IModelChatDetail | null = current.current;
@@ -166,15 +174,15 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
                 tabNotifications.expect(scope, modelTabSource(value.conversation.id, projectId), [requestId]);
                 const result = previous && !previous.id.startsWith('client:')
                     ? await modelChatApi.retry(value, model, previous.id, requestId, signal)
-                    : await modelChatApi.send(value, model, requestId, prompt, attachmentIds, signal, original?.conversation.mode === 'group' ? temporary.targetAgentIds : undefined, consent);
-                if (owns() && liveModelPin.current === expectedPin) { accept(result); updatePending(null); }
+                    : await modelChatApi.send(value, model, requestId, prompt, attachmentIds, signal, original?.conversation.mode === 'group' ? temporary.targetAgentIds : undefined, consent,...(acceptedTools ? [acceptedTools] : []));
+                if (owns() && liveModelPin.current === expectedPin) { accept(result); if (result.turns.some(turn => turn.requestId === requestId)) confirmToolSubmission(requestId); updatePending(null); }
             } catch (cause) {
                 if (!owns()) return;
                 if (value) {
                     try {
                         const saved = await modelChatApi.read(value.conversation.id, signal);
                         if (!owns()) return; accept(saved);
-                        if (saved.turns.some(turn => turn.requestId === requestId)) { updatePending(null); return; }
+                        if (saved.turns.some(turn => turn.requestId === requestId)) { confirmToolSubmission(requestId); updatePending(null); return; }
                     } catch { /* The unsaved request stays visible and keeps its idempotency key for a safe retry. */ }
                 }
                 if (owns()) updatePending({...temporary, status: 'failed', error: errorMessage(cause, 'Ответ не получен. Можно безопасно повторить запрос.')});
@@ -182,9 +190,9 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
         });
         return true;
     };
-    const send = (prompt: string, research?: IChatResearchRequest): boolean => {
+    const send = (prompt: string, research?: IChatResearchRequest, agentTools?: AgentToolGrant, onAccepted?: () => void): boolean => {
         if ((pending.current && modelChatTurnUnresolved(pending.current)) || fileRows.current.length) return false;
-        return generate(prompt, unusedIds(current.current), undefined, research);
+        return generate(prompt, unusedIds(current.current), undefined, research, agentTools,onAccepted);
     };
     const retry = (): void => {
         const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1];
