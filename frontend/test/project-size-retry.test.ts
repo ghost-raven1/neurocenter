@@ -10,7 +10,7 @@ import projectsReducer, { setPage, setQuery } from '../src/modules/Projects/redu
 const auth: IAuthMe = { user: { id: 'one', email: 'one@example.test', principalName: 'one', displayName: 'Первый', activeRole: 'Разработчик', userRoles: ['Разработчик', 'Наблюдатель'], routePermissions: ['projects'], projectRoles: [] }, policies: { projects: ['read'] } };
 const project: IProjectDetail = {
     id: 'a', name: 'Проект A', externalResourceId: 'resource', fsRootPath: '/projects/a', state: 'ACTIVE', head: null,
-    logicalBytes: null, logicalSizeError: 'Файлы временно недоступны.', retainedBytes: null, retainedSizeError: 'Сервис временно недоступен.',
+    logicalBytes: null, logicalSizeError: 'Папка проекта не настроена на сервере.', retainedBytes: null, retainedSizeError: 'Сервис временно недоступен.',
     retention: 30, activeProfileId: null, activeProfileRevision: 0, activeOperations: 2, createdAt: '2026-10-19T00:00:00Z',
     quota: { currentBytesLimit: 1000, currentBytesUsed: null, retentionBytesLimit: 2000, retentionBytesUsed: null, stagingBytesLimit: 1000, stagingBytesUsed: 0 },
 };
@@ -33,7 +33,7 @@ for (const kind of ['list', 'detail'] as const) {
                 : vi.spyOn(bffApi, 'getProject').mockResolvedValueOnce(project).mockResolvedValueOnce(healthy);
             const load = () => kind === 'list' ? store.dispatch(fetchProjects(params)) : store.dispatch(fetchProject('a'));
             const current = () => kind === 'list' ? store.getState().projects.list[0] : store.getState().projects.selected;
-            await load(); expect(current()).toMatchObject({ id: 'a', activeOperations: 2, logicalBytes: null, retainedBytes: null });
+            await load(); expect(current()).toMatchObject({ id: 'a', state: 'ACTIVE', fsRootPath: '/projects/a', activeOperations: 2, logicalBytes: null, retainedBytes: null, logicalSizeError: 'Папка проекта не настроена на сервере.' });
             await load(); expect(current()).toMatchObject({ id: 'a', activeOperations: 2, logicalBytes: 42, retainedBytes: 0 });
             expect(current()?.logicalSizeError).toBeUndefined(); expect(current()?.retainedSizeError).toBeUndefined();
             expect(store.getState().projects).toMatchObject({ page: 3, size: 10, query: 'Проект' });
