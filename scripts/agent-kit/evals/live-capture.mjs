@@ -3,7 +3,7 @@ import {evaluateTrace} from './evaluate.mjs';
 import {mockName} from './mock-server.mjs';
 
 const parseLines=text=>text.trim()?text.trim().split('\n').map(line=>JSON.parse(line)):[];
-export const LIVE_CAPTURE_VERSION='1.1.0';
+export const LIVE_CAPTURE_VERSION='1.1.1';
 
 /** Starts prove an attempt, never an observation; pair lifecycle events by their native item id. */
 function mcpAttempts(scenario,events,errors){
@@ -39,7 +39,7 @@ function mcpAttempts(scenario,events,errors){
 
 function infrastructureDetails(events,processOk){
     const failures=events.filter(event=>['turn.failed','error'].includes(event.type));
-    if(!failures.length&&processOk!==false)return null;
+    if(!failures.length&&processOk!==false)return events.some(event=>event.type==='turn.completed')?null:{code:'AGENT_TURN_INCOMPLETE',providerStatus:null};
     for(const event of failures){
         let value;try{value=JSON.parse(event.error?.message??event.message??event.item?.message);}catch{continue;}
         if(value.status===400&&value.error?.type==='invalid_request_error'&&/model.*not supported.*ChatGPT account/i.test(value.error.message??''))
@@ -55,7 +55,7 @@ export function captureLiveTrace(scenario,{runId,jsonl,ledger,metadata,versions,
     const calls=completed.filter(item=>item.type==='mcp_tool_call');
     const attempts=mcpAttempts(scenario,events,errors);
     const infrastructure=infrastructureDetails(events,processOk),turnCompleted=events.some(event=>event.type==='turn.completed');
-    if(!events.some(event=>event.type==='turn.completed'))errors.push('AGENT_TURN_NOT_COMPLETED');
+    if(!turnCompleted)errors.push('AGENT_TURN_NOT_COMPLETED');
     if(infrastructure)errors.push('AGENT_ERROR');
     if(events.some(event=>event.type?.startsWith('item.')&&event.item&&!['mcp_tool_call','agent_message','reasoning','error'].includes(event.item.type)))errors.push('NON_MOCK_ACTION');
     if(events.some(event=>event.type?.startsWith('item.')&&event.item?.type==='mcp_tool_call'&&event.item.server!=='eval_mock'))errors.push('NON_MOCK_ACTION');
@@ -84,7 +84,8 @@ export function captureLiveTrace(scenario,{runId,jsonl,ledger,metadata,versions,
     const trace={metadata,actions,final},score=evaluateTrace(scenario,trace,versions);
     if(errors.length){score.status='fail';score.hardFailures.push(...new Set(errors));score.failures.push(...new Set(errors));score.rubric.permissions=0;score.score=Object.values(score.rubric).reduce((sum,value)=>sum+value,0);}
     score.outcome=infrastructure?'infrastructure-error':'behavior-evaluated';
-    const attempted=attempts.count>0||actions.length>0||errors.includes('NON_MOCK_ACTION');
+    const attempted=attempts.count>0||actions.length>0||errors.includes('NON_MOCK_ACTION')
+        ||events.some(event=>event.type?.startsWith('item.')&&['agent_message','reasoning'].includes(event.item?.type)&&typeof event.item.text==='string'&&event.item.text.trim());
     score.modelBehavior=infrastructure?turnCompleted||attempted?'partially-observed':'unmeasured':'measured-in-constrained-mock';
     if(infrastructure&&score.modelBehavior==='unmeasured'){
         score.infrastructure=infrastructure;

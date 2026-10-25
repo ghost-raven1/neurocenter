@@ -50,6 +50,16 @@ test('empty logs expose zero byte facts and an explicit unknown process correlat
     assert.deepEqual(value.details.currentProcessCorrelation,correlation);
 });
 
+for(const ending of ['', '\n'])test('a complete log tail is not truncated by its '+(ending?'final newline':'unterminated last line'),async t=>{
+    const f=await fixture(t,'one\ntwo'+ending);
+    for(const lines of [2,3]){
+        const value=await f.diagnostics.serviceLogs('catalog',lines);
+        assert.equal(value.text,'one\ntwo');assert.equal(value.lines,2);assert.equal(value.truncated,false);
+    }
+    const tail=await f.diagnostics.serviceLogs('catalog',1);
+    assert.equal(tail.text,'two');assert.equal(tail.lines,1);assert.equal(tail.truncated,true);
+});
+
 test('tail details describe the bounded file read rather than redacted or selected text size',async t=>{
     const text='old\n'.repeat(20000)+'one\ntwo\n',f=await fixture(t,text);
     const value=await f.diagnostics.serviceLogs('catalog',1);

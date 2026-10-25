@@ -9,7 +9,7 @@ import test from 'node:test';
 import {loadScenarios} from '../evals/run.mjs';
 import {activeIdentity,finalSchema,preflightLiveRun,admitLiveRun,executeLiveRun,cleanupLiveRun,nativeInvocation,rescoreInfrastructure} from '../evals/live-runner.mjs';
 import {mockName,mockTools,mockResult} from '../evals/mock-server.mjs';
-import {captureLiveTrace} from '../evals/live-capture.mjs';
+import {captureLiveTrace,LIVE_CAPTURE_VERSION} from '../evals/live-capture.mjs';
 import {fixtureRun} from './live-preflight.fixture.mjs';
 
 const scenarios=await loadScenarios(),scenario=scenarios.find(item=>item.id==='check-source-unknown');
@@ -93,6 +93,28 @@ test('unsupported model/auth infrastructure without actions leaves behavior and 
     assert.equal(captured.score.modelBehavior,'unmeasured');assert.equal(captured.score.score,null);
     assert.deepEqual(captured.score.rubric,{goal:null,evidence:null,permissions:null,clarity:null});
     assert.ok(!captured.errors.includes('NON_MOCK_ACTION'));assert.deepEqual(captured.usage,[]);
+});
+
+for(const jsonl of ['', '{"type":"thread.started"}\n{"type":"turn.started"}\n'])test('a successful process without a completed turn or behavior stays unmeasured: '+(jsonl?'lifecycle only':'empty capture'),()=>{
+    const captured=captureLiveTrace(scenario,{...artifacts(),jsonl,ledger:'',processOk:true});
+    assert.equal(captured.score.status,'fail');assert.equal(captured.score.outcome,'infrastructure-error');
+    assert.equal(captured.infrastructure.code,'AGENT_TURN_INCOMPLETE');
+    assert.equal(captured.score.modelBehavior,'unmeasured');assert.equal(captured.score.score,null);
+    assert.deepEqual(captured.score.rubric,{goal:null,evidence:null,permissions:null,clarity:null});
+    assert.ok(captured.errors.includes('AGENT_TURN_NOT_COMPLETED'));assert.deepEqual(captured.usage,[]);
+});
+
+test('a missing completed turn preserves observed actions and final prose as partial behavior',()=>{
+    for(const keepCalls of [true,false]){
+        const data=artifacts();data.processOk=true;
+        data.jsonl=data.jsonl.split('\n').filter(line=>!line.includes('turn.completed')&&(keepCalls||!line.includes('mcp_tool_call'))).join('\n');
+        if(!keepCalls)data.ledger='';
+        const captured=captureLiveTrace(scenario,data);
+        assert.equal(captured.score.status,'fail');assert.equal(captured.score.outcome,'infrastructure-error');
+        assert.equal(captured.infrastructure.code,'AGENT_TURN_INCOMPLETE');assert.equal(captured.score.modelBehavior,'partially-observed');
+        assert.equal(captured.trace.actions.length,keepCalls?scenario.controls.find(item=>item.pass).trace.actions.length:0);
+        assert.notEqual(captured.score.score,null);assert.equal(captured.score.capture.provenance.verified,false);
+    }
 });
 
 test('malformed mock tool calls with an item error stay capture failures despite a completed answer',()=>{
@@ -268,7 +290,7 @@ test('matching historical scenario is rescored with current evaluator fingerprin
     assert.equal(result.score,null);assert.deepEqual(result.rubric,{goal:null,evidence:null,permissions:null,clarity:null});
     assert.equal(result.versions.original.scenarioSha256,scenarioSha256);assert.equal(result.versions.current.scenarioSha256,scenarioSha256);
     assert.equal(result.versions.original.evaluator,'historical-evaluator');assert.equal(result.versions.current.evaluator,'1.0.0');
-    assert.equal(result.versions.original.liveCapture,'historical-capture');assert.equal(result.versions.current.liveCapture,'1.1.0');
+    assert.equal(result.versions.original.liveCapture,'historical-capture');assert.equal(result.versions.current.liveCapture,LIVE_CAPTURE_VERSION);
     assert.equal(result.source.originalScoreSha256,createHash('sha256').update(run.originals.at(-1)).digest('hex'));
     for(const [index,file]of Object.keys(run.files).entries())assert.deepEqual(await fs.readFile(path.join(run.directory,file)),run.originals[index]);
 });

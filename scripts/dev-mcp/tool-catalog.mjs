@@ -1,7 +1,7 @@
 import {logServices,packages,DiagnosticError} from './constants.mjs';
 import {outputSchemas} from './output-schemas.mjs';
 
-export const serverVersion='0.3.2';
+export const serverVersion='0.3.3';
 export const coverageReportPattern='^\\.run/coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json$';
 export const verificationReportPattern='^\\.run/(?:coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json|check/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/report\\.json|isolated-build/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/receipt\\.json)$';
 export const packageNames=packages.map(([name])=>name);

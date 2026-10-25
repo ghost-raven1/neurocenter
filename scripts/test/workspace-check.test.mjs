@@ -199,3 +199,14 @@ test('Общий check проверяет свежий dist, новые конт
     assert.ok(plan.slice(common + 1).every(step => step.type === 'compose'));
     assert.ok(plan.slice(0, common).some(step => step.directory === 'mcp/neurocenter-asset-sync' && step.args.includes('build')));
 });
+
+test('Обычный и выбранный check включают локальные тесты OAuth и Gateway', () => {
+    const packages = ['oauth2-bridge', 'api-gateway'], full = checkPlan(root);
+    const selected = checkPlan(root, {packages, steps: ['test']});
+    assert.deepEqual(selected.map(step => step.name), ['services/oauth2-bridge: test', 'services/api-gateway: test']);
+    for (const step of selected) {
+        assert.equal(step.type, 'npm'); assert.equal(step.vitest, true);
+        assert.deepEqual(step.args, ['run', 'test']);
+        assert.ok(full.some(item => item.name === step.name), step.name);
+    }
+});

@@ -103,9 +103,9 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             let text=file.text;
             if(file.truncated){const newline=text.indexOf('\n');text=newline<0?'':text.slice(newline+1);}
             text=redactLog(text);
-            const selected=text.replace(/\n$/,'').split('\n').slice(-lines).join('\n');
+            const available=text.replace(/\n$/,'').split('\n'),selected=available.slice(-lines).join('\n');
             const bytes=Buffer.from(selected),bounded=bytes.subarray(Math.max(0,bytes.length-32768)).toString('utf8');
-            return {service,text:bounded,lines:bounded?bounded.split('\n').length:0,truncated:file.truncated||bytes.length>32768||text.split('\n').length>lines,
+            return {service,text:bounded,lines:bounded?bounded.split('\n').length:0,truncated:file.truncated||bytes.length>32768||available.length>lines,
                 ...(serviceDetailsEnabled?{details:{observedAt:file.observedAt,fileModifiedAt:file.fileModifiedAt,fileBytes:file.fileBytes,bytesRead:file.bytesRead,
                     currentProcessCorrelation:{state:'unknown',reason:'append-log-without-launch-provenance'}}}:{}),evidence:evidenceNote};
         },
