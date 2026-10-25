@@ -1,3 +1,4 @@
+import type {AgentToolGrant} from '../agent-tools/agent-tools.types';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import type { IAccessActor } from '../access/access.model';
@@ -25,7 +26,7 @@ export interface ProjectChatMessage {
     agent: { id: string; name: string; slug: string; modelId: string; modelPin: string } | null;
     replyToId: string | null; sourceMessageId: string | null; status: ProjectChatStatus;
     error?: string; createdAt: string; canRetry: boolean; canCancel: boolean;
-    learning?: ChatLearningReceipt;
+    learning?: ChatLearningReceipt;agentTools?:AgentToolGrant;
 }
 export interface ProjectChatMessageRow {
     id: string; project_id: string; room_id?: string; position: string; kind: ProjectChatKind; content: string;
@@ -33,7 +34,7 @@ export interface ProjectChatMessageRow {
     reply_to_id: string | null; source_message_id: string | null; status: ProjectChatStatus;
     request_key: string | null; request_hash: string | null; target_agent_ids: string[];
     snapshot: ChatAgentSnapshot | null; generation: string; lease_until: Date | string | null;
-    error: string | null; usage: ChatUsage | null; learning: ChatLearningReceipt | null; created_at: Date | string;
+    agent_tools_request?:AgentToolGrant|null;error: string | null; usage: ChatUsage | null; learning: ChatLearningReceipt | null; created_at: Date | string;
 }
 export interface ProjectChatDetail {
     room: ProjectChatRoom; members: Array<{ email: string; displayName: string; role: string }>;
@@ -45,7 +46,7 @@ export interface ProjectChatRooms {rooms: ProjectChatRoomSummary[]; canCreate: b
 export interface ProjectChatCreateRoomInput {requestKey: string; title: string; visibility: ProjectChatVisibility; memberEmails: string[]}
 export interface ProjectChatUpdateRoomInput {expectedRevision: number; title: string; memberEmails: string[]}
 export interface ProjectChatSendInput {
-    requestKey: string; prompt: string; replyToId?: string; targetAgentIds?: string[];
+    requestKey: string; prompt: string; replyToId?: string; targetAgentIds?: string[];agentTools?:AgentToolGrant;
 }
 export interface ProjectChatParticipantsInput { expectedRevision: number; modelId?: string; expectedModelPin?: string; agentIds: string[] }
 export interface ProjectChatRetryInput { requestKey: string }

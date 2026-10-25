@@ -61,7 +61,7 @@ export class ProxyService {
      */
     public async forward(req: Request, res: Response): Promise<void> {
         // Private chat history and missing receipts must stay fresh across session and commit changes.
-        if(/^\/api\/(?:device-jobs\/requests|system-role-chats)(?:\/|$)/.test(canonicalAccessRoute(req.path)||''))res.setHeader('Cache-Control','no-store');
+        if(/^\/api\/(?:device-jobs\/requests|system-role-chats|agent-tools)(?:\/|$)/.test(canonicalAccessRoute(req.path)||''))res.setHeader('Cache-Control','no-store');
         if(req.method==='GET'&&req.path==='/api/ui/appearance'){
             res.setHeader('Cache-Control','no-store');res.json(await publicAppearance(this.http,this.featureFlagsUrl));return;
         }

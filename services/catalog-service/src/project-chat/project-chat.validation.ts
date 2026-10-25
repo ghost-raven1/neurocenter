@@ -1,3 +1,4 @@
+import {agentToolGrant} from '../agent-tools/agent-tools.validation';
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { chatAgentIds } from '../model-chat/chat-group';
@@ -5,14 +6,15 @@ import { chatBody, chatPin, chatRevision, chatUuid } from '../model-chat/chat-va
 export { chatUuid as projectChatUuid, chatPin as projectChatPin, chatRevision as projectChatRevision, chatBody as projectChatBody };
 export const projectChatHash = (input: unknown): string => createHash('sha256').update(JSON.stringify(input)).digest('hex');
 /** The body is stable for idempotent retries; sending never depends on the shared room revision. */
-export function projectChatSend(raw: unknown) {
-    const body = chatBody(raw, ['requestKey', 'prompt', 'replyToId', 'targetAgentIds']);
+export function projectChatSend(raw: unknown,projectId?:string) {
+    const body = chatBody(raw, ['requestKey', 'prompt', 'replyToId', 'targetAgentIds','agentTools']);
     const requestKey = chatUuid(body.requestKey);
     if (typeof body.prompt !== 'string' || !body.prompt.trim() || Buffer.byteLength(body.prompt) > 131072 || /\x00/.test(body.prompt)) throw new BadRequestException('Введите сообщение до 128 КиБ.');
     const replyToId = body.replyToId === undefined ? null : chatUuid(body.replyToId);
     const targetAgentIds = body.targetAgentIds === undefined ? undefined : chatAgentIds(body.targetAgentIds, true);
-    return { requestKey, prompt: body.prompt, replyToId, targetAgentIds,
-        hash: projectChatHash({ prompt: body.prompt, replyToId, targetAgentIds: targetAgentIds ?? null }) };
+    const agentTools=agentToolGrant(body.agentTools,projectId);
+    return { requestKey, prompt: body.prompt, replyToId, targetAgentIds,agentTools,
+        hash: projectChatHash({ prompt: body.prompt, replyToId, targetAgentIds: targetAgentIds ?? null,...(agentTools?{agentTools}:{}) }) };
 }
 export function projectChatParticipants(raw: unknown) {
     const body = chatBody(raw, ['expectedRevision', 'modelId', 'expectedModelPin', 'agentIds']);

@@ -75,11 +75,11 @@ export class ProjectChatRepository {
         }
     }
     async add(db: ProjectChatDb, room: ProjectChatRoomRow, actor: ProjectChatActor,
-        input: { requestKey: string; hash: string; prompt: string; replyToId: string | null }, snapshots: ChatAgentSnapshot[]) {
+        input: { requestKey: string; hash: string; prompt: string; replyToId: string | null;agentTools?:import('../agent-tools/agent-tools.types').AgentToolGrant }, snapshots: ChatAgentSnapshot[]) {
         const id = randomUUID(), generation = randomUUID();
-        const source = (await db.query<ProjectChatMessageRow>(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,content,author_email,author_name,author_role,reply_to_id,status,request_key,request_hash,target_agent_ids,generation)
-            VALUES($1,$2,$13,'user',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [id, room.project_id, input.prompt, actor.email, actor.displayName, actor.activeRole, input.replyToId,
-            snapshots.length ? 'queued' : 'done', input.requestKey, input.hash, snapshots.map(row => row.agentId), generation, projectChatRoomId(room)])).rows[0];
+        const source = (await db.query<ProjectChatMessageRow>(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,content,author_email,author_name,author_role,reply_to_id,status,request_key,request_hash,target_agent_ids,generation,agent_tools_request)
+            VALUES($1,$2,$13,'user',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14::jsonb) RETURNING *`, [id, room.project_id, input.prompt, actor.email, actor.displayName, actor.activeRole, input.replyToId,
+            snapshots.length ? 'queued' : 'done', input.requestKey, input.hash, snapshots.map(row => row.agentId), generation, projectChatRoomId(room),input.agentTools?JSON.stringify(input.agentTools):null])).rows[0];
         for (const snapshot of snapshots) await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,snapshot,generation)
             VALUES($1,$2,$6,'agent',$3,$3,'queued',$4::jsonb,$5)`, [randomUUID(), room.project_id, id, JSON.stringify(snapshot), generation, projectChatRoomId(room)]);
         if (snapshots.length) await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,generation)

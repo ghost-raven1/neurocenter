@@ -27,6 +27,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (typeof systemRole === 'boolean') return systemRole;
     if(route==='/api/chat-presence/session')return verb==='PUT';
     // Executors additionally check fresh target ACL, authorship and expected version.
+    if(route==='/api/agent-tools/capabilities'||route==='/api/agent-tools/steps'||/^\/api\/agent-tools\/steps\/[a-f0-9-]{36}$/.test(route))return read;
     if(route==='/api/help')return read;
     if(/^\/api\/help\/[a-z0-9][a-z0-9-]{0,79}$/.test(route))return read||main&&verb==='PUT';
     if(route==='/api/discussions')return read;

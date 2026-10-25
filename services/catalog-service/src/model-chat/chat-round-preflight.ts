@@ -1,3 +1,4 @@
+import {agentToolContext} from '../agent-tools/agent-tools.validation';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { IModel } from '../models/model.types';
@@ -30,7 +31,7 @@ export async function prepareChatRound(req: Request, scope: ChatRoundScope, turn
         try {
             signal.throwIfAborted(); const model = await groups.assert(req, scope.row, await scope.authorize(true), response.snapshot), allocation = await settings(model);
             const learning = await groups.learning.prepare(req, scope.row, response.agent_id, signal);
-            const base: ChatMessage[] = [{ role: 'system', content: response.snapshot.definition.prompt }, ...learning.messages, { role: 'user', content: turn.input_text }];
+            const base: ChatMessage[] = [{ role: 'system', content: response.snapshot.definition.prompt },...(turn.agent_tools_request?agentToolContext(scope.row.project_id!,turn.agent_tools_request):[]), ...learning.messages, { role: 'user', content: turn.input_text }];
             if (chatContext(base, allocation).exceeded) throw new BadRequestException('Одобренные знания агента вместе с сообщением не помещаются в окно модели. Выберите модель с большим окном или уменьшите активный контекст знаний.');
             research.assertFits(base, allocation, turn.research_request);
             prepared.set(response.id, { model, settings: allocation, learning });

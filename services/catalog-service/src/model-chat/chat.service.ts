@@ -1,3 +1,6 @@
+import {runModelChatAgentTools} from '../agent-tools/agent-tools.model-chat';
+import {AgentToolsService} from '../agent-tools/agent-tools.service';
+import {agentToolGrant,agentToolContext} from '../agent-tools/agent-tools.validation';
 import {modelPlanningOptions} from '../models/model-planning-options';
 import {readFeatures} from '../../../shared/feature-client.cjs';
 import {ChatDiscussionRepository,discussionResponses} from './chat-discussion.repository';
@@ -5,7 +8,7 @@ import {runChatDiscussion} from './chat-discussion.runner';
 import {DISCUSSION_LIMITS} from './chat-discussion.types';
 import {MODEL_CHAT_ROUND_TIMEOUT_MS} from '../../../shared/model-chat-deadline.cjs';
 import {automaticModelOptions} from '../models/model-runtime-options';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, OnApplicationShutdown, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
 import { createPool } from '../database/pool';
 import { ModelsService } from '../models/models.service';
@@ -49,7 +52,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     projectContext: ModelChatProjectContext;
     storage = new ChatAttachmentStorage(this.pool);
     private readonly active = new Map<string, { conversationId: string; requestId: string; abort: AbortController }>();
-    constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime) { this.groups = new ChatGroup(models, new ProjectAgentRepository(this.pool)); this.projectContext = new ModelChatProjectContext(models, runtime); }
+    constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime,@Optional() private readonly agentTools?:AgentToolsService) { this.groups = new ChatGroup(models, new ProjectAgentRepository(this.pool)); this.projectContext = new ModelChatProjectContext(models, runtime); }
     async onModuleInit(): Promise<void> { await this.models.ready(); this.storage.start(); }
     async onApplicationShutdown(): Promise<void> { for (const value of this.active.values()) value.abort.abort(); await this.storage.close(); await this.pool.end(); }
 
@@ -238,10 +241,11 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         });
     }
     async send(req: Request, id: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
-        const body = chatBody(raw, ['expectedRevision', 'requestId', 'prompt', 'attachmentIds', 'expectedModelPin', 'targetAgentIds', 'research']), revision = chatRevision(body.expectedRevision), requestId = chatUuid(body.requestId),
+        const body = chatBody(raw, ['expectedRevision', 'requestId', 'prompt', 'attachmentIds', 'expectedModelPin', 'targetAgentIds', 'research','agentTools']), revision = chatRevision(body.expectedRevision), requestId = chatUuid(body.requestId),
             prompt = chatPrompt(body.prompt, true), ids = chatAttachmentIds(body.attachmentIds ?? []), pin = chatPin(body.expectedModelPin), scope = await this.scope(req, id),
-            targets = body.targetAgentIds === undefined ? [] : chatAgentIds(body.targetAgentIds, true), research = chatResearchInput(body.research, scope.row.project_id),
-            values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids], hash = chatHash(research ? [...values, research] : values);
+            targets = body.targetAgentIds === undefined ? [] : chatAgentIds(body.targetAgentIds, true), research = chatResearchInput(body.research, scope.row.project_id),agentTools=agentToolGrant(body.agentTools,scope.row.project_id),
+            values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids], hash = chatHash(agentTools?[...values,research??null,agentTools]:research ? [...values, research] : values);
+        if(agentTools&&research)throw new BadRequestException('Выберите один режим: инструменты агента или внешнее исследование. Поиск проекта входит в инструменты агента.');
         if (scope.row.mode !== 'group' && targets.length) throw new BadRequestException('Адресаты доступны в групповом диалоге.');
         if (!prompt.trim() && !ids.length) throw new BadRequestException('Введите сообщение или прикрепите документ.');
         const prepared = await this.repository.owned(scope.owner, id, async () => {
@@ -252,15 +256,16 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if (repeated) { if (repeated.request_hash !== hash || repeated.removed_at) throw new ConflictException('Идентификатор запроса уже использован другим сообщением.'); return null; }
             await requireFeaturesEnabled([row.mode === 'group' ? 'group_chat' : 'model_chat']);
             await this.researchAllowed(req, row, research, db);
+            if(agentTools){if(!this.agentTools)throw new ServiceUnavailableException('Инструменты агентов недоступны.');await this.agentTools.admit(req,row.project_id!,agentTools);}
             signal.throwIfAborted(); this.repository.revision(row, revision);
             const tail = await this.repository.tail(db, id);
             if (!tail || tail.status === 'pending' || !await this.discussions.get(db, tail.id)) this.requireResolved(tail ? [tail] : []);
-            const automatic = row.mode === 'group' && !research && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
+            const automatic = row.mode === 'group' && !research && !agentTools && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
             const model = await scope.authorize(true), text = await this.inputText(db, id, prompt, ids), context = automatic ? undefined : await this.contextFor(req, db, row, model, text, targets);
             if (context?.exceeded) throw new BadRequestException(context.reason || 'Сообщение не помещается в доступный контекст.');
             if (automatic) await this.discussionHistory(db, row, model, text);
             const plan = row.mode === 'group' ? await this.groups.plan(req, row, model, targets, db) : [];
-            const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text, research, targetAgentIds: plan.map(agent => agent.snapshot.agentId) });
+            const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text, research, agentTools, targetAgentIds: plan.map(agent => agent.snapshot.agentId) });
             if (automatic) await this.discussions.create(db, turn, scope.actorRole, model, plan);
             else if (plan.length) await this.groups.add(db, row, turn, plan);
             await this.repository.stage(db, row, turn, context?.compactionNeeded ? 'compacting' : 'responding');
@@ -269,6 +274,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         if (!prepared) return this.read(req, id);
         return this.execute(req, scope, prepared.turn);
     }
+
     async retry(req: Request, id: string, turnId: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
         chatUuid(turnId);
         const body = chatBody(raw, ['expectedRevision', 'expectedModelPin', 'requestId']), revision = chatRevision(body.expectedRevision), requestId = chatUuid(body.requestId), pin = chatPin(body.expectedModelPin), scope = await this.scope(req, id);
@@ -350,24 +356,27 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
                 });
                 return this.read(req,scope.row.id);
             }
+            if(turn.agent_tools_request){if(!this.agentTools)throw new ServiceUnavailableException('Инструменты агентов недоступны.');await this.agentTools.admit(req,scope.row.project_id!,turn.agent_tools_request);}
             const research = new ChatResearchExecutor(this.repository, this.runtime, this.researchTools, this.projectContext);
-            const beforeInference = async () => { await scope.authorize(true); await assertPendingChatInference(this.repository, scope.row.id, turn, combined); };
-            const model = await scope.authorize(true), prepareProject = () => withModelUsage({ purpose: 'project-search', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, beforeInference, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
+            const beforeInference = async () => { if(turn.agent_tools_request)await requireFeatureEnabled('project_agent_tools');await scope.authorize(true); await assertPendingChatInference(this.repository, scope.row.id, turn, combined); };
+            const model = await scope.authorize(true), prepareProject = () => turn.agent_tools_request&&!turn.agent_tools_request.rag?this.agentTools!.metadataProject(req,scope.row.project_id!,combined,()=>scope.authorize(true)):withModelUsage({ purpose: 'project-search', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, beforeInference, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
             if (scope.row.mode === 'group') {
                 const prepared = await prepareChatRound(req, scope, turn, combined, this.groups, this.repository, model => this.settings(this.pool, model), research);
                 if (!prepared.size) { await finishChatRound(scope, turn, combined, this.groups, this.repository); return this.read(req, scope.row.id); }
                 const project = await prepareProject();
                 await executeChatRound(req, scope, turn, combined, project, this.groups, this.repository, this.runtime, {
                     compact: (model, overhead, assertCurrent, budget, responseId, beforeInference) => this.compact(scope, turn, combined, model, overhead, assertCurrent, budget, responseId, beforeInference),
-                    localContextWindow: this.localContextWindow, research,
+                    localContextWindow: this.localContextWindow, research,agentTools:this.agentTools,
                     researchBudget: { externalCalls: 0 }, prepared,
                 }); return this.read(req, scope.row.id);
             }
-            const project = await prepareProject(), settings = await this.settings(this.pool, model), minimal = project.fit([{ role: 'user', content: turn.input_text }], settings);
+            const settings=await this.settings(this.pool,model);
+            if(turn.agent_tools_request&&chatContext([...agentToolContext(scope.row.project_id!,turn.agent_tools_request),{role:'user',content:turn.input_text}],settings).exceeded)throw new BadRequestException('Сообщение и инструменты не помещаются в окно модели.');
+            const project = await prepareProject(), minimal = project.fit([{ role: 'user', content: turn.input_text }], settings);
             const requiredFeatures = [...project.requiredFeatures, ...(turn.research_request?.project ? ['project_search' as const] : [])];
-            const overhead = [...minimal.messages.slice(0, -1), ...research.overhead(turn.research_request)], history = await withModelUsage({ purpose: 'compaction', requiredFeatures },
+            const overhead = [...minimal.messages.slice(0, -1), ...(turn.agent_tools_request?agentToolContext(scope.row.project_id!,turn.agent_tools_request):research.overhead(turn.research_request))], history = await withModelUsage({ purpose: 'compaction', requiredFeatures },
                 () => this.compact(scope, turn, combined, undefined, overhead, project.assertCurrent, undefined, undefined, project.beforeInference));
-            const fitted = project.fit(history, settings), researched = await research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, model,
+            const fitted = project.fit(history, settings), researched = turn.agent_tools_request ? await runModelChatAgentTools(this.agentTools,this.repository,req,scope,turn,model,fitted.messages,settings,combined,project) : await research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, model,
                 messages: fitted.messages, initialProjectSources: fitted.evidence.sources, settings, signal: combined, options: model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {},
                 budget: { externalCalls: 0 }, assertCurrent: async () => { await scope.authorize(true); await project.assertCurrent(); }, beforeInference: project.beforeInference, requiredFeatures });
             const messages = researched.messages; combined.throwIfAborted();

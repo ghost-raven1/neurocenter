@@ -1,13 +1,17 @@
+import {AgentToolsService} from '../agent-tools/agent-tools.service';
+import {agentToolContext} from '../agent-tools/agent-tools.validation';
+import {ModelChatProjectContext} from '../model-chat/chat-project-context';
+import type {PreparedProjectContext} from '../model-chat/chat-project-context.types';
 import {modelPlanningOptions} from '../models/model-planning-options';
 import {automaticModelOptions} from '../models/model-runtime-options';
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable,Optional } from '@nestjs/common';
 import type { Request } from 'express';
 import { projectLevel } from '../access/access.model';
 import { isDeepStrictEqual } from 'node:util';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { ChatGroup } from '../model-chat/chat-group';
 import type { ChatAgentSnapshot, ChatParticipant } from '../model-chat/chat-group.types';
-import { chatUsage, managedChatContextWindow, type IChatContextSettings } from '../model-chat/chat-context';
+import { chatContext,chatUsage, managedChatContextWindow, type IChatContextSettings } from '../model-chat/chat-context';
 import type { ConversationRow } from '../model-chat/chat.types';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { ModelsService } from '../models/models.service';
@@ -27,7 +31,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     private readonly assignments: ProjectAgentRepository;
     private readonly groups: ChatGroup;
     private readonly localContextWindow = managedChatContextWindow();
-    constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime) {
+    constructor(private readonly models: ModelsService, private readonly runtime: ModelRuntime,@Optional() private readonly agentTools?:AgentToolsService) {
         this.assignments = new ProjectAgentRepository(models.pool); this.groups = new ChatGroup(projectChatModels(models, models.pool), this.assignments);
     }
     async roster(req: Request, projectId: string, room: ProjectChatRoomRow, db: ProjectChatDb = this.models.pool): Promise<ChatParticipant[]> {
@@ -88,14 +92,25 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         await authorize();
         const model = await this.base(req, projectId, snapshot.modelId, snapshot.modelPin), settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
-        const messages = projectChatContext(snapshot.definition.prompt, source, ancestors, learning.messages, settings);
+        let messages=projectChatContext(snapshot.definition.prompt,source,ancestors,learning.messages,settings);
+        let toolsCurrent:()=>Promise<void>=()=>authorize(false);
+        if(source.agent_tools_request){
+            if(!this.agentTools)throw new BadRequestException('Инструменты агентов недоступны.');
+            if(chatContext([...agentToolContext(projectId,source.agent_tools_request),...messages],settings).exceeded)throw new BadRequestException('Сообщение и инструменты не помещаются в окно модели.');
+            await this.agentTools.admit(req,projectId,source.agent_tools_request);
+            const none={status:'none' as const,sources:[]};
+            const project:PreparedProjectContext=source.agent_tools_request.rag?await withModelUsage({purpose:'project-search',actorEmail:actor.email,actorRole:actor.activeRole,projectId,turnId:source.id,agentId:snapshot.agentId,privateProjectChatRoomId:privateRoomId,requiredFeatures:['project_agent_tools'],beforeInference:()=>authorize()},()=>new ModelChatProjectContext(this.models,this.runtime).prepare(req,projectId,source.content,signal,()=>authorize())):{messages:[],evidence:none,requiredFeatures:[],assertCurrent:()=>authorize(false),beforeInference:()=>authorize(),fit:history=>({messages:history,evidence:none})};
+            const fitted=project.fit(messages,settings);
+            const toolResult=await this.agentTools.run(req,{owner:{kind:'project-chat',originId:source.room_id??DEFAULT_PROJECT_CHAT_ROOM,turnId:source.id,recipientId:response.id,generation:response.generation,ownerEmail:actor.email,actorRole:actor.activeRole,projectId,agentId:snapshot.agentId,modelId:model.id,modelPin:projectEmbeddingPin(model),grant:source.agent_tools_request},messages:fitted.messages,settings,signal,assertCurrent:()=>authorize(false)},project,source.content);
+            messages=toolResult.messages;toolsCurrent=()=>toolResult.assertCurrent();
+        }
         const options = automaticModelOptions(model,{}, { ...(snapshot.definition.temperature === undefined ? {} : { temperature: snapshot.definition.temperature }),
             ...(snapshot.definition.topP === undefined ? {} : { top_p: snapshot.definition.topP }),
             ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {}) });
         const result = await withModelUsage({ purpose: 'agent', privateProjectChatRoomId: privateRoomId, actorEmail: actor.email,actorRole:actor.activeRole, projectId, agentId: snapshot.agentId,
-            turnId: source.id, operationId: response.id, requiredFeatures: ['project_chat', 'group_chat', ...((source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM) === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]), ...learning.requiredFeatures], beforeInference: () => authorize() },
+            turnId: source.id, operationId: response.id, requiredFeatures: ['project_chat', 'group_chat', ...((source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM) === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]), ...learning.requiredFeatures,...(source.agent_tools_request?['project_agent_tools' as const]:[])], beforeInference: async() => {await toolsCurrent();await authorize();} },
             () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages, stream: false, options }), signal));
-        await authorize(false);
+        await authorize(false);await toolsCurrent();
         const message = result.message as Record<string, unknown> | undefined;
         if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim()
             || Buffer.byteLength(message.content) > 128 * 1024 || !['stop', 'length'].includes(String(result.done_reason))) throw new BadRequestException('Агент не вернул допустимый ответ. Остальные ответы и сообщения сохранены.');

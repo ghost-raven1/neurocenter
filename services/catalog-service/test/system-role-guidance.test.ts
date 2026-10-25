@@ -34,6 +34,12 @@ describe('Measured role guidance and detailed answers', () => {
         const result = await f.collect(); expect(result.evidence.status).toBe('ready'); expect(result.evidence.message).toContain('Справка недоступна');
         expect(result.evidence.sources.some(source => source.kind === 'help')).toBe(false); expect(result.content).not.toContain('private raw error');
     });
+    it('does not read initiator-owned devices or queue when a regular agent answers a shared project room',async()=>{
+        const f=fixture(),sentinel='private-device-sentinel';f.diagnostic.mockImplementation(async kind=>({kind,id:'fact',status:'measured',data:{available:true,...(kind==='bridge'?{deviceId:sentinel}:{})}}));
+        const result=await f.broker.collect({headers:{}} as never,'project-one','Какой контекст доступен?',f.controller.signal,f.checked,'project-shared'),payload=JSON.parse(result.content);
+        expect(f.diagnostic.mock.calls.map(([kind])=>kind)).toEqual(['health','project','index']);expect(f.query.mock.calls.some(([sql])=>sql.includes('bridge_jobs'))).toBe(false);
+        expect(result.content).not.toContain(sentinel);expect(payload.scope).toBe('project-shared');expect(payload.checks.find(check=>check.name==='project-learning')?.data).not.toHaveProperty('queue');
+    });
     it('stops after permission revocation or cancellation while a help read is in flight', async () => {
         const f = fixture(); f.help.read.mockImplementation(async () => {f.allowed.value = false; return {slug: 'getting-started',title: 'Guide',revision: 'one',content: 'text'};});
         await expect(f.collect()).rejects.toThrow('revoked');
