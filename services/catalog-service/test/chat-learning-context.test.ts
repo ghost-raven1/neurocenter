@@ -204,7 +204,7 @@ describe.skipIf(!connection)('Approved learning in private agent rounds — actu
         const a = await f.agent('A'), entry = await f.knowledge('own', 'Знание для планирования', a.id);
         vi.spyOn(ChatResearchTools.prototype, 'choices').mockResolvedValue({ project: { available: true }, external: [], limits: RESEARCH_LIMITS });
         vi.spyOn(f.service.projectContext, 'prepare').mockImplementation(async () => ({ evidence: { status: 'empty', sources: [] }, messages: [],
-            assertCurrent: async () => undefined, fit: history => ({ messages: history, evidence: { status: 'empty', sources: [] } }) }));
+            assertCurrent: async () => undefined, beforeInference: async () => undefined, requiredFeatures: [], fit: history => ({ messages: history, evidence: { status: 'empty', sources: [] } }) }));
         f.runtime.infer.mockImplementationOnce(async () => { await f.revoke(entry.id); return reply('{"kind":"project_search","query":"Проверить факт"}'); });
         const detail = await f.send(await f.create([a.id]), undefined, crypto.randomUUID(), true);
         expect(detail.turns[0].status).toBe('failed'); expect(f.runtime.infer).toHaveBeenCalledOnce();

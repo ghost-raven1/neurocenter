@@ -29,7 +29,7 @@ export async function readText(file: string, encoding: 'utf8' | 'base64' = 'utf8
         throw error;
     }
 }
-async function snapshot(root: string, change: FileChange): Promise<{ text: string; fingerprint: string } | null> {
+async function snapshot(root: string, change: FileChange): Promise<{ text: string; fingerprint: string; mode: number } | null> {
     const target = await safeTarget(root, change.relative);
     let current;
     try { current = await readBoundedSnapshot(target, installationReadLimit(change.relative)); }
@@ -37,7 +37,7 @@ async function snapshot(root: string, change: FileChange): Promise<{ text: strin
     await safeTarget(root, change.relative);
     const text = current.bytes.toString(change.encoding ?? 'utf8');
     if (!change.encoding && !Buffer.from(text).equals(current.bytes)) { throw new Error('Некорректное кодирование локального файла.'); }
-    return { text, fingerprint: current.fingerprint };
+    return { text, fingerprint: current.fingerprint, mode: current.mode };
 }
 async function publishPending(file: string, text: string): Promise<void> {
     await recoveryDirectory(path.dirname(file));
@@ -55,6 +55,7 @@ async function replace(
     privateFile = false,
     encoding: 'utf8' | 'base64' = 'utf8',
     expectedFingerprint?: string | null,
+    absentMode = 0o600,
 ): Promise<void> {
     const stat = await fs.lstat(file).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') { return null; } throw error; });
     if (stat && (!stat.isFile() || stat.isSymbolicLink() || stat.size > (privateFile ? JOURNAL_BYTES_LIMIT : 4 * FILE_BYTES_LIMIT))) {
@@ -77,7 +78,7 @@ async function replace(
     else { await fs.mkdir(path.dirname(file), { recursive: true }); }
     const mode = privateFile
         ? 0o600
-        : stat ? stat.mode & 0o777 : 0o600;
+        : stat ? stat.mode & 0o777 : absentMode;
     if (expectedFingerprint === undefined) { await atomicText(file, text, mode, encoding); return; }
     const temporary = path.join(path.dirname(file), '.' + randomUUID() + '.staged');
     try {
@@ -153,7 +154,8 @@ async function rollback(journal: Journal): Promise<void> {
                     'Файл изменился во время отката: ' + change.relative,
                 );
             }
-            await replace(target, change.before, false, change.encoding, current?.fingerprint ?? null);
+            // Существующий файл сохраняет ручной chmod; старый журнал без режима создаёт закрытый файл.
+            await replace(target, change.before, false, change.encoding, current?.fingerprint ?? null, change.beforeMode);
         }
     }
     journal.state = 'rolled-back';
@@ -284,13 +286,26 @@ export async function commitChanges(
 ): Promise<string> {
     validateChanges(changes);
     for (const change of changes) { await safeTarget(root, change.relative); }
+    const observed = new Map<string, string | null>();
+    const preparedChanges: FileChange[] = [];
+    // Права фиксируются до кодирования и расчёта бюджета, в том числе для вызовов без InstallationPlan.
+    for (const change of changes) {
+        const current = await snapshot(root, change);
+        if ((current?.text ?? null) !== change.before
+            || change.beforeFingerprint !== undefined && change.beforeFingerprint !== (current?.fingerprint ?? null)
+            || change.beforeMode !== undefined && change.beforeMode !== current?.mode) {
+            throw new Error('Файл изменился во время операции; автоматический откат остановлен: ' + change.relative);
+        }
+        observed.set(change.relative, current?.fingerprint ?? null);
+        preparedChanges.push({ ...change, ...(current ? { beforeMode: current.mode } : {}) });
+    }
     const journal: Journal = {
         ...identity,
         version: 1,
         root,
         id: randomUUID(),
         state: 'prepared',
-        changes,
+        changes: preparedChanges,
         ...(jobContext.getStore() && identity.result ? { job: jobContext.getStore() } : {}),
     };
     if (journal.job && journal.result && Buffer.byteLength(JSON.stringify({ ...journal.result,
@@ -300,21 +315,19 @@ export async function commitChanges(
     const encoded = encodeJournal(journal);
     const indexBytes = journal.recovery ? Buffer.byteLength(JSON.stringify(recoveryIndexRecord({...journal,state:'committed'}))) : 0;
     const reservedBytes = indexBytes + Math.max(...(['prepared', 'committed', 'rolled-back'] as const).map(state => Buffer.byteLength(encodeJournal({ ...journal, state }))));
-    return withRecoveryBudget(root, reservedBytes, changes, true, async () => {
+    return withRecoveryBudget(root, reservedBytes, journal.changes, true, async () => {
         await options.verifySnapshot?.();
-        const observed = new Map<string, string | null>();
-        for (const change of changes) {
+        for (const change of journal.changes) {
             const current = await snapshot(root, change);
-            if ((current?.text ?? null) !== change.before || change.beforeFingerprint !== undefined && change.beforeFingerprint !== (current?.fingerprint ?? null)) {
+            if ((current?.text ?? null) !== change.before || (current?.fingerprint ?? null) !== observed.get(change.relative)) {
                 throw new Error('Файл изменился во время операции; автоматический откат остановлен: ' + change.relative);
             }
-            observed.set(change.relative, current?.fingerprint ?? null);
         }
         const pending = path.join(journalDirectory(root), 'pending.json');
         if ((await readText(pending, 'utf8', JOURNAL_BYTES_LIMIT)) !== null) { throw new Error('Предыдущая запись требует восстановления.'); }
         await publishPending(pending, encoded);
         try {
-            for (const change of changes) {
+            for (const change of journal.changes) {
                 const target = await safeTarget(root, change.relative);
                 const current = await snapshot(root, change);
                 if ((current?.text ?? null) !== change.before || (current?.fingerprint ?? null) !== observed.get(change.relative)) { throw new Error('Файл изменился во время операции: ' + change.relative); }

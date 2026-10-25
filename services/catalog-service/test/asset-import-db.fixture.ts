@@ -14,6 +14,7 @@ import { AssetSourceSnapshots } from '../src/asset-sources/source-snapshots';
 import { AssetImportWorker } from '../src/asset-sources/import-worker';
 import type { SkillAssetAdapter } from '../src/asset-sources/skill-adapter';
 import type { RuntimeArtifacts } from '../src/runtime-artifacts/runtime-artifacts';
+import {callerOwnedPostgresAdmin} from './caller-owned-postgres.fixture';
 export const actor='dev@localhost';
 export function tool(id:string,version='1.0.0',dependencies:ToolAsset['dependencies']=[],current=true):ResolvedAsset {
  const asset:ToolAsset={schemaVersion:1,id,version,kind:'plugin',source:{type:'git',repository:'https://github.com/example/fixture',commit:'a'.repeat(40)},license:{spdx:'MIT'},compatibility:{packageFormat:5},card:{kind:'plugin',name:id,description:'Описание '+version,revision:version,origin:'upload',tags:[],files:[{path:'index.mjs',content:'export const fixture = async () => ({})'}],config:{entrypoint:'index.mjs'}},delivery:{type:'runtime-artifacts',artifacts:[]},...(dependencies.length?{dependencies}:{})};
@@ -21,7 +22,7 @@ export function tool(id:string,version='1.0.0',dependencies:ToolAsset['dependenc
 }
 /** Every case owns a complete database, including migration journals and triggers. */
 export async function databaseFixture(options:{beforeFinalize?:(pool:Pool)=>Promise<void>}={}){
- const url=new URL(process.env.TEST_ADMIN_PG_URL||process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/postgres');url.pathname='/postgres';
+ const url=callerOwnedPostgresAdmin();
  const admin=new Pool({connectionString:url.href,connectionTimeoutMillis:1500,max:1}),database='nc_asset_test_'+randomUUID().replaceAll('-','');
  await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;
  const pool=new Pool({connectionString:url.href,connectionTimeoutMillis:1500,max:8}),root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-asset-import-'));

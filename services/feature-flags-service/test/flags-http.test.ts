@@ -81,7 +81,7 @@ describe('HTTP-контракт сервиса переключателей', ()
         expect((await call('/api/feature-flags/model_hosting', 'PATCH', { enabled: false, expectedRevision: 1 })).status).toBe(200);
         expect((await call('/api/feature-flags/model_hosting', 'PATCH', { enabled: true, expectedRevision: 1 })).status).toBe(409);
         expect((await call('/api/feature-flags/model_hosting', 'PATCH', { enabled: false, expectedRevision: 2 })).status).toBe(200);
-        expect(rows[0].revision).toBe(2); expect(events).toHaveLength(1);
+        expect(rows.find(row => row.flag_key === 'model_hosting')!.revision).toBe(2); expect(events).toHaveLength(1);
     });
 
     it('Назначенная роль участника получает только вычисленные значения', async () => {

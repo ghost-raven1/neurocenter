@@ -1,5 +1,13 @@
 [
   {
+    "key": "notification_sounds",
+    "name": "Звук уведомлений",
+    "description": "Личный звуковой сигнал о новых результатах. Пользователь включает звук и выбирает громкость в своём браузере.",
+    "group": "agents",
+    "dependsOn": ["tab_notifications"],
+    "defaultEnabled": true
+  },
+  {
     "key": "tab_notifications",
     "name": "Уведомления на вкладке",
     "description": "Метка вкладки при новых сообщениях и завершении известных фоновых задач. Выключение не отменяет задания.",
@@ -393,6 +401,16 @@
     "dependsOn": [
       "agents",
       "model_hosting"
+    ],
+    "defaultEnabled": true
+  },
+  {
+    "key": "system_role_mcp",
+    "name": "MCP системных агентов",
+    "description": "Явный доступ системных ролей к выбранным обнаруженным инструментам проекта. История и закрытие сессий доступны после выключения.",
+    "group": "agents",
+    "dependsOn": [
+      "tool_catalog"
     ],
     "defaultEnabled": true
   },

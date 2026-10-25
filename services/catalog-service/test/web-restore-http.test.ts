@@ -9,6 +9,7 @@ import {RestoreService} from '../src/restore/restore.service';
 import {ensureCatalogSchema} from '../src/database/catalog-schema';
 import {RestoreRepository} from '../src/restore/restore.repository';
 import {digest,type RestorePreview} from '../../shared/web-restore.cjs';
+import {callerOwnedPostgresAdmin} from './caller-owned-postgres.fixture';
 const token='c'.repeat(64),actor='restore@example.test',other='other@example.test',checkpointId='checkpoint-one',sha='a'.repeat(64),configDigest='b'.repeat(64);
 const denied=new Set<string>();let app:INestApplication,base:string,admin:Pool,pool:Pool,repository:RestoreRepository;
 const schema='nc_restore_test_'+randomUUID().replaceAll('-',''),runnerId=randomUUID();
@@ -28,8 +29,7 @@ async function ready(){
 }
 beforeAll(async()=>{
  vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',token);vi.stubEnv('RESTORE_RUNNER_TOKEN',token);
- const url=process.env.CATALOG_TEST_PG_URL||'postgresql://rag:rag@localhost:5432/catalog';if(!['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname))throw Error('Only isolated localhost schema');
- const target=new URL(url);target.pathname='/postgres';admin=new Pool({connectionString:target.href,max:1});await admin.query('CREATE DATABASE '+schema);target.pathname='/'+schema;pool=new Pool({connectionString:target.href,max:8});await ensureCatalogSchema(pool);repository=new RestoreRepository(pool);
+ const target=callerOwnedPostgresAdmin();admin=new Pool({connectionString:target.href,max:1});await admin.query('CREATE DATABASE '+schema);target.pathname='/'+schema;pool=new Pool({connectionString:target.href,max:8});await ensureCatalogSchema(pool);repository=new RestoreRepository(pool);
  const access={claims:async(email:string)=>({email,userRoles:denied.has(email)?[]:['Главный админ']})};
  const service=Object.assign(Object.create(RestoreService.prototype),{access,pool,repository,initialized:Promise.resolve()});
  Reflect.defineMetadata('design:paramtypes',[RestoreService],RestoreController);Reflect.defineMetadata('design:paramtypes',[RestoreService],RestoreRunnerController);

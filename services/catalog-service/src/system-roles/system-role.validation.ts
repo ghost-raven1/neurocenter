@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import {normalizeRoleMcpSelection} from '../../../shared/system-role-mcp.cjs';
 import { validateModelId } from '../models/model-validation';
 import { ROLE_BUDGET, roleDefinitionPin, systemRole } from './system-role.definitions';
+import { legacyRoleDefinitionPin } from './system-role.legacy-contract';
 import type { DiagnosticFact, RolePrepared, RoleResult, RoleSelection, RoleTargetSelection, StartRoleRun, SystemRoleId } from './system-role.types';
 
 export const roleObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -14,7 +16,7 @@ export const roleRequestId = (value: unknown): string => {
     if (typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)) return fail(); return value;
 };
 export function roleSelection(id: SystemRoleId, value: unknown, start = false): RoleSelection {
-    const raw = exact(value, ['projectId', 'instruction', 'diagnostics', 'targets', ...(start ? ['requestId', 'modelId', 'expectedModelPin', 'expectedDefinitionPin', 'consentDigest', 'sourceFeature', 'source'] : [])]);
+    const raw = exact(value, ['projectId', 'instruction', 'diagnostics', 'targets', 'mcp', ...(start ? ['requestId', 'modelId', 'expectedModelPin', 'expectedDefinitionPin', 'consentDigest', 'sourceFeature', 'source'] : [])]);
     const definition = systemRole(id);
     if (raw.projectId !== null && (!text(raw.projectId, 128) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(raw.projectId))
         || !text(raw.instruction, 2048) || !Array.isArray(raw.diagnostics) || raw.diagnostics.length > ROLE_BUDGET.diagnostics
@@ -28,7 +30,9 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
         return target as unknown as RoleTargetSelection;
     });
     if (new Set(targets.map(item => JSON.stringify([item.kind, item.id]))).size !== targets.length) return fail();
-    return { projectId: raw.projectId as string | null, instruction: raw.instruction, diagnostics: raw.diagnostics as RoleSelection['diagnostics'], targets };
+    let mcp:RoleSelection['mcp'];try{mcp=normalizeRoleMcpSelection(raw.mcp);}catch{return fail();}
+    if(mcp?.length&&!raw.projectId)return fail();
+    return { projectId: raw.projectId as string | null, instruction: raw.instruction, diagnostics: raw.diagnostics as RoleSelection['diagnostics'], targets,...(mcp?.length?{mcp}:{}) };
 }
 /** A start repeats the preview selection; the server re-reads versions before checking the consent digest. */
 export function startRoleRun(id: SystemRoleId, value: unknown): StartRoleRun {
@@ -49,7 +53,7 @@ export function roleAction(value: unknown): { expectedRevision: number; requestI
     return { expectedRevision: Number(raw.expectedRevision), requestId: roleRequestId(raw.requestId) };
 }
 /** Model output can reference only server-held evidence and explicitly selected target identities. */
-export function roleResult(content: string, prepared: RolePrepared, facts: DiagnosticFact[]): RoleResult {
+export function roleResult(content: string, prepared: RolePrepared, facts: DiagnosticFact[], projectContext?: RoleResult['projectContext']): RoleResult {
     const invalid = (): never => { throw new ConflictException('Ответ системного агента не прошёл проверку JSON-контракта.'); };
     if (Buffer.byteLength(content) > ROLE_BUDGET.outputBytes) return invalid();
     let value: unknown; try { value = JSON.parse(content); } catch { return invalid(); }
@@ -57,13 +61,14 @@ export function roleResult(content: string, prepared: RolePrepared, facts: Diagn
         || !['diagnosis', 'proposal'].includes(String(value.kind)) || !text(value.summary, 2048)
         || !Array.isArray(value.findings) || value.findings.length > 20 || !Array.isArray(value.nextSteps) || value.nextSteps.length > 10
         || value.nextSteps.some(step => !text(step, 1024)) || !Array.isArray(value.changes) || value.changes.length > ROLE_BUDGET.targets) return invalid();
-    const evidence = new Set(facts.map(fact => fact.id)), targets = new Map(prepared.targets.map(target => [target.key, target]));
+    const evidence = new Set([...facts.map(fact => fact.id), ...(projectContext?.sources.map(source => source.id) ?? [])]), targets = new Map(prepared.targets.map(target => [target.key, target]));
     for (const finding of value.findings) if (!roleObject(finding) || Object.keys(finding).sort().join(',') !== 'detail,evidenceId'
         || !text(finding.detail, 2048) || !evidence.has(String(finding.evidenceId))) return invalid();
     for (const change of value.changes) if (!roleObject(change) || Object.keys(change).sort().join(',') !== 'explanation,replacement,targetKey'
         || !targets.has(String(change.targetKey)) || ['public-chat','package-source','dialog-context'].includes(targets.get(String(change.targetKey))?.kind ?? '') || !text(change.replacement, 32768) || !text(change.explanation, 2048)) return invalid();
     if (new Set(value.changes.map(change => (change as { targetKey: string }).targetKey)).size !== value.changes.length
         || (value.kind === 'diagnosis' ? value.changes.length !== 0 : value.changes.length === 0)
-        || ['agent-packager', 'agent-coordinator'].some(id => prepared.definitionPin === roleDefinitionPin(id as SystemRoleId)) && value.kind !== 'diagnosis') return invalid();
-    return value as unknown as RoleResult;
+        || ['agent-packager', 'agent-coordinator'].some(id => prepared.definitionPin === roleDefinitionPin(id as SystemRoleId)
+            || prepared.definitionPin === legacyRoleDefinitionPin(id as SystemRoleId)) && value.kind !== 'diagnosis') return invalid();
+    return { ...value, ...(projectContext ? { projectContext } : {}) } as unknown as RoleResult;
 }

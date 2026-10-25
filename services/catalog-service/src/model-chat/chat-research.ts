@@ -52,7 +52,7 @@ export class ChatResearchExecutor {
         const evidence:ChatMessage[]=[],projectSources=new Map<string,ChatProjectSource>(),externalSources=new Map<string,ResearchExternalSource>();
         const found=new Map<string,ChatProjectSource>((request.project?scope.initialProjectSources??[]:[]).map(source=>[source.id,source])),checks:Array<()=>Promise<void>>=[];
         let gathered=0,sequence=0;
-        const flags=(...extra:FeatureFlagKey[])=>[scope.row.mode==='group'?'group_chat':'model_chat','research_tools',...(scope.requiredFeatures??[]),...extra]as FeatureFlagKey[];
+        const flags=(...extra:FeatureFlagKey[])=>[scope.row.mode==='group'?'group_chat':'model_chat','research_tools',...(scope.requiredFeatures??[]),...(request.project?['project_search' as const]:[]),...extra]as FeatureFlagKey[];
         const current=async(db?:ChatDb)=>{scope.signal.throwIfAborted();await scope.assertCurrent(db);for(const check of checks)await check();
             if(request.external)await this.tools.resolve(scope.req,scope.row,request.external,db);scope.signal.throwIfAborted();};
         const active=async()=>{await current();

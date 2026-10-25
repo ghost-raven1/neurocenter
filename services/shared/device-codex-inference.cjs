@@ -1,6 +1,7 @@
 'use strict';
 const {createHash}=require('node:crypto');
 const DEVICE_CODEX_PROTOCOL='device-codex-inference-v1',DEVICE_CODEX_CAPABILITY=DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_JOB='infer-device-codex';
+const DEVICE_CODEX_DISPATCH_CAPABILITY='device-codex-dispatch-features-v1';
 const record=v=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const exact=(v,keys)=>record(v)&&Object.keys(v).every(k=>keys.includes(k))&&keys.every(k=>Object.hasOwn(v,k));
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
@@ -22,9 +23,11 @@ function source(v){
 }
 /** Public queue metadata contains neither prompts, credentials nor generated content. */
 function normalizeDeviceCodexPayload(v){
- if(!exact(v,['protocol','callId','modelId','modelPin','connectionRevision','source','deadlineAt'])||v.protocol!==DEVICE_CODEX_PROTOCOL
+ if(!exact(v,['protocol','callId','modelId','modelPin','connectionRevision','source','deadlineAt',...(record(v)&&Object.hasOwn(v,'dispatchOnlyFeatures')?['dispatchOnlyFeatures']:[])])||v.protocol!==DEVICE_CODEX_PROTOCOL
   ||!uuid(v.callId)||!text(v.modelId,200)||!sha(v.modelPin)||!Number.isSafeInteger(v.connectionRevision)||v.connectionRevision<1||!iso(v.deadlineAt))throw new TypeError('Invalid Codex job.');
- return {...v,source:source(v.source)};
+ if(Object.hasOwn(v,'dispatchOnlyFeatures')&&(!Array.isArray(v.dispatchOnlyFeatures)||!v.dispatchOnlyFeatures.length||v.dispatchOnlyFeatures.length>8
+  ||new Set(v.dispatchOnlyFeatures).size!==v.dispatchOnlyFeatures.length||v.dispatchOnlyFeatures.some(k=>typeof k!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(k))))throw new TypeError('Invalid Codex dispatch features.');
+ return {...v,source:source(v.source),...(v.dispatchOnlyFeatures===undefined?{}:{dispatchOnlyFeatures:[...v.dispatchOnlyFeatures]})};
 }
 function normalizeDeviceCodexRequest(v,capability){
  if(!record(v)||Object.keys(v).some(k=>!['messages','options'].includes(k))||!['chat','vision'].includes(capability)||!Array.isArray(v.messages)||!v.messages.length||v.messages.length>500)throw new TypeError('Invalid Codex request.');
@@ -56,4 +59,4 @@ function normalizeDeviceCodexResult(v){
  return {protocol:v.protocol,callId:v.callId,response:{...r,message:{...r.message}}};
 }
 const deviceCodexResultDigest=v=>createHash('sha256').update(JSON.stringify(canonical(normalizeDeviceCodexResult(v)))).digest('hex');
-module.exports={DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_CAPABILITY,DEVICE_CODEX_JOB,deviceCodexCandidateIdentity,normalizeDeviceCodexPayload,normalizeDeviceCodexRequest,normalizeDeviceCodexContext,normalizeDeviceCodexResult,deviceCodexResultDigest};
+module.exports={DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_CAPABILITY,DEVICE_CODEX_DISPATCH_CAPABILITY,DEVICE_CODEX_JOB,deviceCodexCandidateIdentity,normalizeDeviceCodexPayload,normalizeDeviceCodexRequest,normalizeDeviceCodexContext,normalizeDeviceCodexResult,deviceCodexResultDigest};

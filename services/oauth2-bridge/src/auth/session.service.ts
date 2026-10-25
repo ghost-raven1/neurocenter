@@ -1,67 +1,30 @@
-import { Injectable } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import {Injectable} from '@nestjs/common';
+import {createHash,randomBytes} from 'node:crypto';
+import type {IBridgeUser} from './interface';
+import {CatalogSessionClient} from './catalog-session.client';
 
-import { IBridgeUser } from './interface';
+const hash=(token:unknown):string|null=>typeof token==='string'&&/^[a-f0-9]{48}$/.test(token)?createHash('sha256').update(token).digest('hex'):null;
 
-/**
- * In-memory хранилище сессий (token → user), O(1) по Map. Для dev/одного контейнера;
- * при horizontal scale заменить на Redis (интерфейс тот же).
- */
+/** Catalog owns the absolute session lifetime; this service retains no identity or grant cache. */
 @Injectable()
 export class SessionService {
-    private readonly sessions = new Map<string, {user:IBridgeUser;expiresAt:number}>();
-    readonly ttlMs:number;
-
-    constructor(){
-        const seconds=Number(process.env.SESSION_TTL_SECONDS||28800);
-        if(!Number.isSafeInteger(seconds)||seconds<60||seconds>86400){throw new Error('SESSION_TTL_SECONDS должен быть от 60 до 86400.');}
-        this.ttlMs=seconds*1000;
-    }
-
-    /**
-     * Создаёт сессию.
-     *
-     * @param {IBridgeUser} user - профиль
-     * @returns {string} токен сессии
-     */
-    public create(user: IBridgeUser): string {
-        const token = randomBytes(24).toString('hex');
-
-        const now=Date.now();
-        for(const [key,value] of this.sessions){if(value.expiresAt<=now){this.sessions.delete(key);}}
-        this.sessions.set(token, {user,expiresAt:now+this.ttlMs});
-
-        return token;
-    }
-
-    /**
-     * Возвращает профиль по токену сессии.
-     *
-     * @param {string | undefined} token
-     * @returns {IBridgeUser | null}
-     */
-    public get(token: string | undefined): IBridgeUser | null {
-        if (!token) {
-            return null;
-        }
-
-        const entry=this.sessions.get(token);
-        if(!entry){return null;}
-        if(entry.expiresAt<=Date.now()){this.sessions.delete(token);return null;}
-        return entry.user;
-    }
-
-    /**
-     * Удаляет сессию.
-     *
-     * @param {string | undefined} token
-     * @returns {void}
-     */
-    public remove(token: string | undefined): void {
-        if (!token) {
-            return;
-        }
-
-        this.sessions.delete(token);
-    }
+ readonly ttlMs:number;
+ constructor(private readonly store:CatalogSessionClient){
+  const seconds=Number(process.env.SESSION_TTL_SECONDS||28800);
+  if(!Number.isSafeInteger(seconds)||seconds<60||seconds>86400)throw new Error('SESSION_TTL_SECONDS должен быть от 60 до 86400.');
+  this.ttlMs=seconds*1000;
+ }
+ async create(user:IBridgeUser):Promise<string>{
+  const token=randomBytes(24).toString('hex');
+  await this.store.create({tokenHash:hash(token)!,identity:{id:user.id,principalName:user.principalName,email:user.email,displayName:user.displayName},selectedRole:user.activeRole,ttlSeconds:this.ttlMs/1000});
+  return token;
+ }
+ async get(token:unknown):Promise<IBridgeUser|null>{
+  const key=hash(token);if(!key)return null;
+  const session=await this.store.find(key);if(!session||Date.parse(session.expiresAt)<=Date.now())return null;
+  return {...session.identity,activeRole:session.selectedRole,userRoles:[],projectRoles:[],routePermissions:[]};
+ }
+ /** Called only after fresh grants accepted the explicit role; a late write cannot revive a session. */
+ async selectRole(token:unknown,role:string):Promise<boolean>{const key=hash(token);return key?this.store.selectRole(key,role):false;}
+ async remove(token:unknown):Promise<void>{const key=hash(token);if(key)await this.store.revoke(key);}
 }

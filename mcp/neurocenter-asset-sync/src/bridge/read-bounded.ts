@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 
-export interface BoundedSnapshot { bytes: Buffer; fingerprint: string }
+/** Содержимое и права получены из одного проверенного открытого файла. */
+export interface BoundedSnapshot { bytes: Buffer; fingerprint: string; mode: number }
 export const fileFingerprint = (stat: BigIntStats): string =>
     [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 
@@ -36,7 +37,7 @@ export async function readBoundedSnapshot(file: string, maximum: number): Promis
             || !located.isFile() || located.isSymbolicLink() || fileFingerprint(located) !== fileFingerprint(opened)) {
             throw changed();
         }
-        return { bytes: buffer.subarray(0, length), fingerprint: fileFingerprint(opened) };
+        return { bytes: buffer.subarray(0, length), fingerprint: fileFingerprint(opened), mode: Number(opened.mode & 0o777n) };
     } finally { await handle.close(); }
 }
 

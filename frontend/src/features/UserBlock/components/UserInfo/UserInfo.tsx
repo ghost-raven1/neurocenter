@@ -1,7 +1,7 @@
-import { DownOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
-import { Button, Dropdown, message } from 'antd';
+import { BellOutlined, DownOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Modal, message } from 'antd';
 import block from 'bem-cn';
-import { FC, useCallback } from 'react';
+import { FC, useCallback, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useHistory } from 'react-router-dom';
 
@@ -9,6 +9,7 @@ import { useAppDispatch } from '../../../../core/hooks';
 import { RootState } from '../../../../store';
 import {authLogout} from '../../redux/actions';
 import { RoleSwitcher } from '../RoleSwitcher';
+import {NotificationSoundSettings} from '../../../NotificationSounds/NotificationSoundSettings';
 import './UserInfo.less';
 
 const b = block('user-info');
@@ -23,6 +24,7 @@ const UserInfo: FC = () => {
     const dispatch = useAppDispatch();
     const { user } = useSelector((state: RootState) => state.userBlock);
     const history = useHistory();
+    const [notificationsOpen, setNotificationsOpen] = useState(false);
 
     /**
      * Выход: сначала отзыв серверной сессии, затем экран входа и завершение SSO.
@@ -41,7 +43,7 @@ const UserInfo: FC = () => {
     }
 
     return (
-        <Dropdown
+        <><Dropdown
             dropdownRender={menu => <div className="user-info__dropdown">
                 <div className="user-info__account" onClick={event => event.stopPropagation()}>
                     <strong>{user.displayName}</strong>
@@ -53,6 +55,7 @@ const UserInfo: FC = () => {
             </div>}
             menu={{
                 items: [
+                    {key: 'notifications', icon: <BellOutlined/>, label: 'Настройки уведомлений', onClick: () => setNotificationsOpen(true)},
                     {
                         key: 'logout',
                         icon: <LogoutOutlined />,
@@ -69,7 +72,9 @@ const UserInfo: FC = () => {
                 <span className="user-info__name">{user.displayName}</span>
                 <DownOutlined />
             </Button>
-        </Dropdown>
+        </Dropdown><Modal title="Настройки уведомлений" open={notificationsOpen} onCancel={() => setNotificationsOpen(false)} footer={null} destroyOnClose>
+            {notificationsOpen && <NotificationSoundSettings embedded/>}
+        </Modal></>
     );
 };
 

@@ -22,6 +22,7 @@ vi.mock('antd', () => ({
         return createElement('select', { disabled: props.disabled, 'aria-label': props['aria-label'], value: props.value, onChange: () => undefined },
             fixture.user.userRoles.map(role => createElement('option', { key: role, value: role }, role)));
     },
+    Modal: ({ open, children }: { open: boolean; children: ReactNode }) => open ? createElement('div', { role: 'dialog' }, children) : null,
     message: { error: vi.fn() },
 }));
 

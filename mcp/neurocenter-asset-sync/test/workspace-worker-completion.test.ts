@@ -1,11 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, stateDir, writeState } from '../src/bridge/state.js';
+import { api, apiHub, stateDir, writeState } from '../src/bridge/state.js';
 import { projectFolder, prepareProjectBinding } from '../src/bridge/workspace.js';
 import * as completions from '../src/bridge/completions.js';
 import { runWorker } from '../src/bridge/worker.js';
 import { workspaceFixture } from './bridge-fixture.js';
+import { idleSystemRoleMcpLane } from './worker-control-lane.fixture.js';
+import { stopFixtureWorker } from './worker-lifecycle.fixture.js';
 
 vi.mock('socket.io-client', () => ({ io: vi.fn(() => ({ auth: {}, on: vi.fn(), disconnect: vi.fn(), connect: vi.fn() })) }));
 vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof import('../src/bridge/state.js')>(), api: vi.fn() }));
@@ -13,16 +15,22 @@ vi.mock('../src/bridge/state.js', async original => ({ ...await original<typeof 
 describe('Worker не подменяет committed привязку ошибочным failed', () => {
     let fixture: Awaited<ReturnType<typeof workspaceFixture>>;
     let signals: Map<NodeJS.Signals, Set<(...args: unknown[]) => void>>;
+    let controlLane: ReturnType<typeof idleSystemRoleMcpLane>;
     const job = { id: '11111111-1111-1111-1111-111111111111', lease: '22222222-2222-2222-2222-222222222222' };
     const deviceId = '33333333-3333-3333-3333-333333333333';
     beforeEach(async () => {
         fixture = await workspaceFixture(); vi.mocked(api).mockReset();
         signals = new Map(['SIGINT', 'SIGTERM'].map(signal => [signal as NodeJS.Signals, new Set(process.listeners(signal).map(listener => listener as (...args: unknown[]) => void))]));
+        controlLane = idleSystemRoleMcpLane(apiHub(), 'a'.repeat(64)); vi.stubGlobal('fetch', controlLane.network);
+        vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     });
     afterEach(async () => {
-        vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs();
-        for (const [signal, previous] of signals) { for (const listener of process.listeners(signal)) { if (!previous.has(listener)) { process.off(signal, listener); } } }
-        await fs.rm(fixture.temporary, { recursive: true, force: true });
+        try { await stopFixtureWorker(signals); expect(controlLane.unexpected).toEqual([]); }
+        finally {
+            vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals();
+            for (const [signal, previous] of signals) { for (const listener of process.listeners(signal)) { if (!previous.has(listener)) { process.off(signal, listener); } } }
+            await fs.rm(fixture.temporary, { recursive: true, force: true });
+        }
     });
     it.each([undefined, 1] as const)('Отказ привязки отдаёт безопасную причину только серверу с версией %s', async workspaceFailureVersion => {
         const marker = path.join(fixture.root, '.opencode/neurocenter.json');

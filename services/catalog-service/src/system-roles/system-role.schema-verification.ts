@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { CATALOG_SCHEMA_FACTS_SQL } from '../database/schema-catalog';
-import { CURRENT_SYSTEM_ROLE_SCHEMA_CONTRACT as SYSTEM_ROLE_SCHEMA_CONTRACT } from './system-role.coordinator.schema-contract';
+import { CURRENT_MCP_SYSTEM_ROLE_SCHEMA_CONTRACT as SYSTEM_ROLE_SCHEMA_CONTRACT } from '../system-role-mcp/system-role-mcp.schema-verification';
 /** A source-only candidate cannot advertise readiness before its exact physical contract is measured. */
 export async function assertSystemRoleSchema(db: Pick<Pool, 'query'>): Promise<void> {
     if (!SYSTEM_ROLE_SCHEMA_CONTRACT.length) throw new Error('Физический контракт системных агентов ещё не проверен. Применение этой candidate-сборки заблокировано.');

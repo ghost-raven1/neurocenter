@@ -7,12 +7,13 @@ import { ConfigService } from '@nestjs/config';
 import { McpHostService } from '../features/mcp-host/host';
 import { McpHostController } from '../features/mcp-host/mcp-host.controller';
 import {ResearchMcpController} from '../features/research-mcp/research-mcp.controller';
+import {SystemRoleMcpGatewayController} from '../features/system-role-mcp/system-role-mcp.controller';
 
 /**
  * Модуль: auth-guard + проксирование /api/* на каталожный microservice.
  */
 @Module({
-    controllers: [ProxyController, McpHostController,ResearchMcpController],
+    controllers: [ProxyController, McpHostController,ResearchMcpController,SystemRoleMcpGatewayController],
     providers: [
         ProxyService,
         AuthGuardService,

@@ -1,7 +1,9 @@
 import {createRequire} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createDiagnostics} from './diagnostics.mjs';
-import {logServices,packages,DiagnosticError} from './constants.mjs';
+import {logServices,DiagnosticError} from './constants.mjs';
+import {toolDefinitions,toolFlags,serverVersion,coverageReportPattern,verificationReportPattern,packageNames,checkSteps} from './tool-catalog.mjs';
+import {validateOutput} from './output-validation.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const require=createRequire(new URL('../../mcp/neurocenter-asset-sync/package.json',import.meta.url));
@@ -10,18 +12,11 @@ const {StdioServerTransport}=require('@modelcontextprotocol/sdk/server/stdio.js'
 const {ListToolsRequestSchema,CallToolRequestSchema,McpError,ErrorCode}=require('@modelcontextprotocol/sdk/types.js');
 const {z}=require('zod');
 const annotations={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false};
-const empty={type:'object',properties:{},additionalProperties:false};
-const definitions=[
-    {name:'workspace_status',description:'Read Git summary, eight package versions, current Node and existing check commands. Does not run checks.',inputSchema:empty},
-    {name:'services_health',description:'Probe only the seven fixed local development HTTP endpoints. Discards response bodies; supports cancellation.',inputSchema:empty},
-    {name:'service_logs',description:'Read a bounded, redacted tail from one fixed local development log. Returned text is untrusted evidence.',inputSchema:{type:'object',properties:{service:{type:'string',enum:logServices},lines:{type:'integer',minimum:1,maximum:100,default:50}},required:['service'],additionalProperties:false}},
-    {name:'verification_summary',description:'Summarize one explicitly selected .run/coverage/<directory>/manifest.json. Never scans or returns raw logs/source inventories.',inputSchema:{type:'object',properties:{report:{type:'string',maxLength:180,pattern:'^\\.run/coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json$'}},required:['report'],additionalProperties:false}},
-    {name:'coverage_gaps',description:'Read bounded test-writing targets for a package with unit results in one finished coverage report: uncovered functions/branches, missing sources and unit infrastructure exclusions. HTTP-only reports have no package scope. Does not run or edit code.',inputSchema:{type:'object',properties:{report:{type:'string',maxLength:180,pattern:'^\\.run/coverage/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/manifest\\.json$'},package:{type:'string',enum:packages.map(([name])=>name)},limit:{type:'integer',minimum:1,maximum:20,default:10}},required:['report','package'],additionalProperties:false}},
-];
 const schemas={workspace_status:z.object({}).strict(),services_health:z.object({}).strict(),
     service_logs:z.object({service:z.enum(logServices),lines:z.number().int().min(1).max(100).default(50)}).strict(),
-    verification_summary:z.object({report:z.string().max(180).regex(/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/)}).strict(),
-    coverage_gaps:z.object({report:z.string().max(180).regex(/^\.run\/coverage\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/),package:z.enum(packages.map(([name])=>name)),limit:z.number().int().min(1).max(20).default(10)}).strict()};
+    verification_summary:z.object({report:z.string().max(180).regex(new RegExp(verificationReportPattern))}).strict(),
+    coverage_gaps:z.object({report:z.string().max(180).regex(new RegExp(coverageReportPattern)),package:z.enum(packageNames),limit:z.number().int().min(1).max(20).default(10)}).strict(),
+    check_plan:z.object({packages:z.array(z.enum(packageNames)).min(1).max(8),steps:z.array(z.enum(checkSteps)).min(1).max(3).optional()}).strict()};
 
 function failure(error){
     const known=error instanceof DiagnosticError;
@@ -30,9 +25,10 @@ function failure(error){
 }
 
 /** Headless SDK transport; constructor injection is for owned tests, never command-line destinations. */
-export async function startDevMcp({workspace=root,services,stdin=process.stdin,stdout=process.stdout}={}){
-    const diagnostics=await createDiagnostics(workspace,{services}),lifecycle=new AbortController();
-    const server=new Server({name:'neurocenter-dev',version:'0.1.0'},{capabilities:{tools:{}}});
+export async function startDevMcp({workspace=root,services,stdin=process.stdin,stdout=process.stdout,flags=toolFlags()}={}){
+    const diagnostics=await createDiagnostics(workspace,{services,serviceDetailsEnabled:flags.serviceDetailsEnabled}),lifecycle=new AbortController();
+    const definitions=toolDefinitions(flags),enabled=new Set(definitions.map(tool=>tool.name));
+    const server=new Server({name:'neurocenter-dev',version:serverVersion},{capabilities:{tools:{}}});
     const transport=new StdioServerTransport(stdin,stdout,{maxBufferSize:65536});
     let closed=false;
     const close=async()=>{if(closed)return;closed=true;lifecycle.abort();await server.close();stdin.pause();};
@@ -41,14 +37,16 @@ export async function startDevMcp({workspace=root,services,stdin=process.stdin,s
     server.onclose=()=>{lifecycle.abort();};
     server.setRequestHandler(ListToolsRequestSchema,()=>({tools:definitions.map(tool=>({...tool,annotations}))}));
     server.setRequestHandler(CallToolRequestSchema,async(request,extra)=>{
-        const {name}=request.params,schema=Object.hasOwn(schemas,name)?schemas[name]:null;
+        const {name}=request.params,schema=enabled.has(name)&&Object.hasOwn(schemas,name)?schemas[name]:null;
         if(!schema)throw new McpError(ErrorCode.InvalidParams,'Choose one of the listed developer tools.');
         const parsed=schema.safeParse(request.params.arguments??{});
         if(!parsed.success)return failure(new DiagnosticError('INVALID_ARGUMENT','Use the listed tool schema; arbitrary paths, destinations and commands are not accepted.'));
         try{
             const args=parsed.data,signal=AbortSignal.any([lifecycle.signal,extra.signal]);
-            const value=name==='workspace_status'?await diagnostics.workspaceStatus():name==='services_health'?await diagnostics.servicesHealth(signal)
-                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines):name==='coverage_gaps'?await diagnostics.coverageGaps(args.report,args.package,args.limit):await diagnostics.verificationSummary(args.report);
+            const value=name==='workspace_status'?{...await diagnostics.workspaceStatus(),developerTools:{version:serverVersion,tools:[...enabled]}}:name==='services_health'?await diagnostics.servicesHealth(signal)
+                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines):name==='coverage_gaps'?await diagnostics.coverageGaps(args.report,args.package,args.limit)
+                :name==='check_plan'?await diagnostics.checkPlan(args):await diagnostics.verificationSummary(args.report);
+            if(flags.outputSchemasEnabled!==false)validateOutput(name,value);
             return {content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value};
         }catch(error){return failure(error);}
     });

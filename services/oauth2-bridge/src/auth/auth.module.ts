@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
+import {CatalogSessionClient} from './catalog-session.client';
 import {OAuthTransactions} from './oauth-transactions.service';
 
 /**
@@ -10,6 +11,6 @@ import {OAuthTransactions} from './oauth-transactions.service';
  */
 @Module({
     controllers: [AuthController],
-    providers: [AuthService, SessionService, OAuthTransactions],
+    providers: [AuthService, CatalogSessionClient, SessionService, OAuthTransactions],
 })
 export class AuthModule {}

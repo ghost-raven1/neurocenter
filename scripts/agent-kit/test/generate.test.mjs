@@ -118,6 +118,16 @@ test('duplicate role identifiers are rejected before generation starts',async t=
     assert.deepEqual(await snapshot(root),before);
 });
 
+for(const checkOnly of [true,false])test(`reserved task-flow role cannot replace the shared workflow in ${checkOnly?'check':'apply'} mode`,async t=>{
+    const root=await fixture(t);await generateKit({root});
+    const catalogue=path.join(root,'scripts/agent-kit/roles/backend.json');
+    const roles=JSON.parse(await fs.readFile(catalogue));roles[0].id='task-flow';
+    await fs.writeFile(catalogue,JSON.stringify(roles));
+    const before=await snapshot(root);
+    await assert.rejects(generateKit({root,checkOnly}),/task-flow.*зарезервирован/);
+    assert.deepEqual(await snapshot(root),before);
+});
+
 test('a generated leaf symlink is rejected before writing any planned output',async t=>{
     const root=await fixture(t);
     await put(root,'foreign/sentinel','Leave this file unchanged\n');
@@ -137,4 +147,85 @@ test('a parent directory symlink is rejected before creating foreign or earlier 
     assert.deepEqual(await snapshot(root),before);
     assert.deepEqual(await fs.readdir(path.join(root,'foreign')),['sentinel']);
     await assert.rejects(fs.stat(path.join(root,firstSkill)),{code:'ENOENT'});
+});
+
+async function renamedRole(t){
+    const root=await fixture(t);await generateKit({root});
+    const catalogue=path.join(root,'scripts/agent-kit/roles/backend.json');
+    const roles=JSON.parse(await fs.readFile(catalogue));roles[0].id='backend-architect-renamed';
+    await fs.writeFile(catalogue,JSON.stringify(roles));
+    return {root,obsolete:['.opencode/skills/neurocenter-backend-architect/SKILL.md','.opencode/agents/neurocenter-backend-architect.md','scripts/agent-kit/codex/neurocenter-backend-architect.toml']};
+}
+
+test('a role rename plans and retires only still-owned old outputs, then becomes idempotent',async t=>{
+    const {root,obsolete}=await renamedRole(t);
+    const manual='.opencode/skills/neurocenter-backend-architect/notes.md';await put(root,manual,'Personal notes\n');
+    const before=await snapshot(root),planned=await generateKit({root,checkOnly:true});
+    assert.deepEqual(new Set(planned.obsolete),new Set(obsolete));assert.deepEqual(await snapshot(root),before);
+    const result=await generateKit({root});assert.deepEqual(result.obsolete,planned.obsolete);
+    for(const name of obsolete)await assert.rejects(fs.stat(path.join(root,name)),{code:'ENOENT'});
+    assert.equal(await fs.readFile(path.join(root,manual),'utf8'),'Personal notes\n');
+    const manifest=JSON.parse(await fs.readFile(path.join(root,'scripts/agent-kit/manifest.json')));
+    for(const name of obsolete)assert.equal(Object.hasOwn(manifest.files,name),false);
+    const after=await snapshot(root);assert.deepEqual((await generateKit({root})).obsolete,[]);
+    assert.deepEqual((await generateKit({root,checkOnly:true})).changed,[]);assert.deepEqual(await snapshot(root),after);
+});
+
+for(const conflict of ['modified','link','parent link'])test(`an obsolete ${conflict} prevents every generation write`,async t=>{
+    const {root,obsolete}=await renamedRole(t),target=path.join(root,obsolete[0]);
+    if(conflict==='modified')await fs.writeFile(target,'My obsolete role\n');
+    else{
+        await put(root,'foreign/SKILL.md',await fs.readFile(target));
+        if(conflict==='link'){await fs.unlink(target);await fs.symlink(path.join(root,'foreign/SKILL.md'),target);}
+        else{await fs.rm(path.dirname(target),{recursive:true});await fs.symlink(path.join(root,'foreign'),path.dirname(target));}
+    }
+    const before=await snapshot(root);
+    await assert.rejects(generateKit({root}),/изменённый устаревший файл|Небезопасный путь набора/);
+    assert.deepEqual(await snapshot(root),before);
+});
+
+test('missing obsolete outputs retire their ownership without blocking a role rename',async t=>{
+    const {root,obsolete}=await renamedRole(t);await fs.unlink(path.join(root,obsolete[0]));
+    assert.deepEqual(new Set((await generateKit({root})).obsolete),new Set(obsolete));
+    assert.deepEqual((await generateKit({root,checkOnly:true})).obsolete,[]);
+});
+
+test('a prior manifest cannot authorize retirement outside generated role paths',async t=>{
+    const {root}=await renamedRole(t),file=path.join(root,'scripts/agent-kit/manifest.json');
+    await put(root,'personal.md','Manual file\n');const manifest=JSON.parse(await fs.readFile(file));manifest.files['personal.md']=hash('Manual file\n');
+    await fs.writeFile(file,JSON.stringify(manifest));const before=await snapshot(root);
+    await assert.rejects(generateKit({root}),/Некорректный прежний manifest/);assert.deepEqual(await snapshot(root),before);
+});
+
+test('disabled retirement still plans obsolete files and blocks every generation write until re-enabled',async t=>{
+    const {root,obsolete}=await renamedRole(t),environment={NEUROCENTER_AGENT_KIT_RETIRE:'0'};
+    await put(root,'.opencode/skills/neurocenter-backend-architect/notes.md','Personal notes\n');
+    await fs.unlink(path.join(root,obsolete[1]));
+    const before=await snapshot(root),plan=await generateKit({root,checkOnly:true,environment});
+    assert.equal(plan.retirementEnabled,false);assert.deepEqual(new Set(plan.obsolete),new Set(obsolete));
+    await assert.rejects(generateKit({root,environment}),/NEUROCENTER_AGENT_KIT_RETIRE=0/);
+    assert.deepEqual(await snapshot(root),before);
+    const applied=await generateKit({root,environment:{NEUROCENTER_AGENT_KIT_RETIRE:'1'}});
+    assert.equal(applied.retirementEnabled,true);assert.deepEqual(new Set(applied.obsolete),new Set(obsolete));
+    const after=await snapshot(root);assert.deepEqual((await generateKit({root})).obsolete,[]);
+    assert.deepEqual(await snapshot(root),after);
+});
+
+test('disabled retirement permits generation and updates without obsolete owned paths',async t=>{
+    const root=await fixture(t),environment={NEUROCENTER_AGENT_KIT_RETIRE:'0'};
+    assert.equal((await generateKit({root,environment})).retirementEnabled,false);
+    await put(root,core+'/references/interface.md','Updated shared instructions\n');
+    assert.deepEqual((await generateKit({root,environment})).changed,['scripts/agent-kit/manifest.json']);
+    assert.deepEqual((await generateKit({root,checkOnly:true,environment})).changed,[]);
+});
+
+test('invalid retirement flags are rejected before filesystem access and preserve the entire project',async t=>{
+    const root=await fixture(t),before=await snapshot(root);let pathCalls=0;
+    const inaccessibleRoot={toString(){pathCalls++;throw Error('Filesystem input must not be used');}};
+    for(const value of ['', 'true', '2', '01', ' 1', '1 ', 1, null]){
+        const environment={NEUROCENTER_AGENT_KIT_RETIRE:value};
+        await assert.rejects(generateKit({root:inaccessibleRoot,environment}),/NEUROCENTER_AGENT_KIT_RETIRE must be 0 or 1/);
+        await assert.rejects(generateKit({root,environment}),/NEUROCENTER_AGENT_KIT_RETIRE must be 0 or 1/);
+    }
+    assert.equal(pathCalls,0);assert.deepEqual(await snapshot(root),before);
 });

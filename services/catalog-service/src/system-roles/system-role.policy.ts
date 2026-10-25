@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { ModelsService } from '../models/models.service';
 import type { IModelActor } from '../models/model-access';
@@ -6,6 +6,7 @@ import { modelFromRow, type IModelRow } from '../models/model-history';
 import { authorizeAgentWrite } from '../agents/agent-access';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { roleDefinitionPin } from './system-role.definitions';
+import { acceptedLegacyDefinition } from './system-role.legacy-contract';
 import type { RoleDb } from './system-role.repository';
 import type { RoleRunRow, StartRoleRun, SystemRoleId } from './system-role.types';
 
@@ -37,7 +38,8 @@ export class SystemRolePolicy {
         const actor = await this.actor(req, row.project_id);
         if (actor.email !== row.actor || actor.activeRole !== row.actor_role) throw new ForbiddenException('Исполнитель задания изменился.');
         await this.authorize(db, actor, row.project_id);
-        if (roleDefinitionPin(row.agent_id) !== row.request.expectedDefinitionPin) throw new ConflictException('Определение системного агента изменилось.');
+        if (row.snapshot.definitionPin !== row.request.expectedDefinitionPin || row.snapshot.consentDigest !== row.request.consentDigest
+            || roleDefinitionPin(row.agent_id) !== row.request.expectedDefinitionPin && !acceptedLegacyDefinition(row)) throw new ConflictException('Определение системного агента изменилось.');
         await this.source(db, actor.email, row.agent_id, row.request, row.request_hash);
         return this.modelInTransaction(db, actor, row.project_id, row.request.modelId, row.request.expectedModelPin);
     }
@@ -60,6 +62,7 @@ export class SystemRolePolicy {
     }
     async read(req: Request, row: RoleRunRow): Promise<IModelActor> {
         const actor = await this.actor(req, row.project_id, 1);
+        if (row.request.source?.kind === 'system-role-chat' && actor.email !== row.actor) throw new NotFoundException('Личный запуск сервисного чата недоступен.');
         if (actor.email !== row.actor) await this.actor(req, row.project_id, 3);
         return actor;
     }

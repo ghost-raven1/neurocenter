@@ -1,24 +1,25 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createHash} from 'node:crypto';
 import {SessionService} from '../src/auth/session.service';
+import {catalogSessionPort,sessionUser} from './auth-session.fixture';
 import {OAuthTransactions} from '../src/auth/oauth-transactions.service';
 import {loginReturn} from '../src/auth/login-return';
 import {roleRoutes} from '../src/auth/roles';
 import {allowBrowserOrigin,browserSecurity,panelOrigin} from '../src/security/browser-security';
-import type {IBridgeUser} from '../src/auth/interface';
 import type {Request,Response,NextFunction} from 'express';
-const user={id:'qa'}as IBridgeUser;
-afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();});
+const user=sessionUser();
+const sessionService=()=>new SessionService(catalogSessionPort().client());
+afterEach(()=>{vi.useRealTimers();vi.unstubAllEnvs();vi.restoreAllMocks();});
 
 describe('Session and single-use OAuth transaction boundaries',()=>{
- it.each(['59','86401','NaN','1.5'])('rejects invalid session lifetime: %s',value=>{vi.stubEnv('SESSION_TTL_SECONDS',value);expect(()=>new SessionService()).toThrow('SESSION_TTL_SECONDS');});
- it('expires exactly at the deadline, removes old entries on create and never reuses bearer tokens',()=>{
-  vi.useFakeTimers();vi.setSystemTime(0);vi.stubEnv('SESSION_TTL_SECONDS','60');const sessions=new SessionService(),first=sessions.create(user);
-  expect(first).toMatch(/^[a-f0-9]{48}$/);expect(sessions.ttlMs).toBe(60000);expect(sessions.get(first)).toBe(user);
-  expect(sessions.get(undefined)).toBeNull();expect(sessions.get('unknown')).toBeNull();sessions.remove(undefined);
-  vi.setSystemTime(59999);expect(sessions.get(first)).toBe(user);vi.setSystemTime(60000);expect(sessions.get(first)).toBeNull();
-  const second=sessions.create(user);vi.setSystemTime(120000);const third=sessions.create(user);expect(sessions.get(second)).toBeNull();expect(third).not.toBe(second);sessions.remove(third);expect(sessions.get(third)).toBeNull();
-  vi.stubEnv('SESSION_TTL_SECONDS','');expect(new SessionService().ttlMs).toBe(28800000);
+ it.each(['59','86401','NaN','1.5'])('rejects invalid session lifetime: %s',value=>{vi.stubEnv('SESSION_TTL_SECONDS',value);expect(()=>sessionService()).toThrow('SESSION_TTL_SECONDS');});
+ it('expires exactly at the original deadline and never reuses bearer tokens',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(0);vi.stubEnv('SESSION_TTL_SECONDS','60');const sessions=sessionService(),first=await sessions.create(user);
+  expect(first).toMatch(/^[a-f0-9]{48}$/);expect(sessions.ttlMs).toBe(60000);expect(await sessions.get(first)).toMatchObject({id:user.id,email:user.email,userRoles:[],routePermissions:[],projectRoles:[]});
+  expect(await sessions.get(undefined)).toBeNull();expect(await sessions.get('unknown')).toBeNull();await sessions.remove(undefined);
+  vi.setSystemTime(59999);expect(await sessions.get(first)).toMatchObject({id:user.id,email:user.email,userRoles:[],routePermissions:[],projectRoles:[]});vi.setSystemTime(60000);expect(await sessions.get(first)).toBeNull();
+  const second=await sessions.create(user);vi.setSystemTime(120000);const third=await sessions.create(user);expect(await sessions.get(second)).toBeNull();expect(third).not.toBe(second);await sessions.remove(third);expect(await sessions.get(third)).toBeNull();
+  vi.stubEnv('SESSION_TTL_SECONDS','');expect(sessionService().ttlMs).toBe(28800000);
  });
  it('binds exact state/cookie/PKCE and consumes success once without consuming mismatched transactions',()=>{
   const transactions=new OAuthTransactions(),created=transactions.create('/projects/project?tab=rag#part');

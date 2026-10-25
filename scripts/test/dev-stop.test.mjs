@@ -31,7 +31,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(serviceDirectory, 'dist'), {recursive: true});
     await fs.mkdir(path.join(checkout, '.run'));
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -69,7 +69,8 @@ async function fixture(t) {
         const child = spawn(process.execPath, args, {cwd,
             env: {DEV_STOP_IGNORE_TERM: ignoreTerm ? '1' : '0'}, stdio: ['ignore', 'ignore', 'pipe', 'ipc']});
         children.push(child);
-        const [message] = await once(child, 'message');
+        const signal=AbortSignal.timeout(3000);
+        const [message]=await Promise.race([once(child,'message',{signal}),once(child,'exit',{signal}).then(([code])=>{throw Error(`Owned listener exited before readiness (${code}).`);})]);
         assert.ok(Number.isSafeInteger(message.port) && message.port > 0);
         return {child, port: message.port};
     }

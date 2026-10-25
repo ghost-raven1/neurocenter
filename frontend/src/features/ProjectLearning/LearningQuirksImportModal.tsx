@@ -22,7 +22,9 @@ export function LearningQuirksImportModal({open,projectId,canManage,enabled=true
     useEffect(()=>{setComputer('');setInstallation('');notified.current.clear();},[projectId]);
     useEffect(()=>{const input=action.intent;if(input){setComputer(input.deviceId);setInstallation(JSON.stringify([input.deviceId,input.assetKind,input.assetId,input.expectedManifest]));}},[action.intent]);
     const device=bridge.devices.find(item=>item.id===computer)??(!action.intent&&bridge.devices.length===1?bridge.devices[0]:undefined);
-    const options=(bridge.installations as LearningQuirksInstallation[]).filter(item=>item.projectId===projectId&&item.deviceId===device?.id&&item.ragUi?.supported);
+    // Keep recognized older installations visible so their upgrade requirement can be explained.
+    const options=(bridge.installations as LearningQuirksInstallation[]).filter(item=>item.projectId===projectId&&item.deviceId===device?.id
+        &&(item.learningQuirks?.supported||item.hostedEmbedding?.supported||item.ragUi?.supported));
     const selected=options.find(item=>installationKey(item)===installation)??(!action.intent&&options.length===1?options[0]:undefined);
     const computerOptions=bridge.devices.map(item=>({value:item.id,label:item.name+(item.online?'':' · не подключён')}));
     const installationOptions=options.map(item=>({value:installationKey(item),label:item.name+' · версия '+item.version+(item.folderName?' · '+item.folderName:'')}));

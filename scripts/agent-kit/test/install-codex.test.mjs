@@ -365,3 +365,90 @@ test('check refuses to report completion while a verified legacy receipt still n
   assert.equal(f.run({ apply: true }).unchanged, 130);
   assert.deepEqual(f.run({ check: true }).legacyFiles, []);
 });
+
+function renameRole(f) {
+  const obsolete = ['skills/neurocenter-role-63/SKILL.md', targetRole];
+  delete f.manifest.files['.opencode/skills/neurocenter-role-63/SKILL.md'];
+  delete f.manifest.files[sourceRole];
+  f.add('.opencode/skills/neurocenter-renamed-role/SKILL.md', 'Renamed role skill\n');
+  f.add('scripts/agent-kit/codex/neurocenter-renamed-role.toml', 'name = "neurocenter-renamed-role"\n');
+  f.save();return obsolete;
+}
+
+test('role retirement plans without writes, removes owned outputs, and drops obsolete receipt entries', (t) => {
+  const f = fixture(t);f.run({ apply: true });const obsolete = renameRole(f);
+  const manual = path.join(f.codexHome, 'skills/neurocenter-role-63/notes.md');put(manual, 'Personal notes\n');
+  const before = snapshot(f.codexHome), plan = f.run();
+  assert.deepEqual(new Set(plan.obsolete), new Set(obsolete));assert.deepEqual(snapshot(f.codexHome), before);
+  assert.throws(() => f.run({ check: true }), /obsolete.*neurocenter-role-63/i);assert.deepEqual(snapshot(f.codexHome), before);
+  assert.deepEqual(f.run({ apply: true }).obsolete, plan.obsolete);
+  for (const name of obsolete) assert.equal(existsSync(path.join(f.codexHome, name)), false);
+  assert.equal(readFileSync(manual, 'utf8'), 'Personal notes\n');
+  const receipt = JSON.parse(readFileSync(path.join(f.codexHome, 'neurocenter-agent-kit.json')));
+  for (const name of obsolete) assert.equal(Object.hasOwn(receipt.files, name), false);
+  const after = snapshot(f.codexHome);assert.deepEqual(f.run({ apply: true }).obsolete, []);
+  assert.deepEqual(f.run({ check: true }).changed, []);assert.deepEqual(snapshot(f.codexHome), after);
+});
+
+for (const conflict of ['modified', 'link', 'parent link']) test(`an obsolete ${conflict} blocks the complete installation before writes`, (t) => {
+  const f = fixture(t);f.run({ apply: true });const obsolete = renameRole(f), target = path.join(f.codexHome, obsolete[0]);
+  if (conflict === 'modified') put(target, 'My obsolete role\n');
+  else {
+    const foreign = path.join(f.root, 'foreign');put(path.join(foreign, 'SKILL.md'), readFileSync(target));
+    if (conflict === 'link') { rmSync(target);symlinkSync(path.join(foreign, 'SKILL.md'), target); }
+    else { rmSync(path.dirname(target), { recursive: true });symlinkSync(foreign, path.dirname(target)); }
+  }
+  const before = snapshot(f.codexHome);
+  assert.throws(() => f.run({ apply: true }), /Modified obsolete user file preserved|Unsafe kit path/);
+  assert.deepEqual(snapshot(f.codexHome), before);
+});
+
+test('absent obsolete outputs are removed from ownership and permit a retry', (t) => {
+  const f = fixture(t);f.run({ apply: true });const obsolete = renameRole(f);
+  rmSync(path.join(f.codexHome, obsolete[0]));
+  assert.deepEqual(new Set(f.run({ apply: true }).obsolete), new Set(obsolete));
+  assert.deepEqual(f.run({ check: true }).obsolete, []);
+});
+
+test('an established receipt order remains unchanged when no owned paths retire', (t) => {
+  const f = fixture(t);f.run({ apply: true });const file = path.join(f.codexHome, 'neurocenter-agent-kit.json');
+  const receipt = JSON.parse(readFileSync(file));receipt.files = Object.fromEntries(Object.entries(receipt.files).reverse());
+  put(file, `${JSON.stringify(receipt, null, 2)}\n`);const before = snapshot(f.codexHome);
+  assert.deepEqual(f.run({ check: true }).obsolete, []);assert.deepEqual(f.run({ apply: true }).changed, []);
+  assert.deepEqual(snapshot(f.codexHome), before);
+});
+
+test('disabled retirement preserves every installed byte and ownership entry until re-enabled', (t) => {
+  const f = fixture(t);f.run({ apply: true });const obsolete = renameRole(f);
+  const manual = path.join(f.codexHome, 'skills/neurocenter-role-63/notes.md');put(manual, 'Personal notes\n');
+  rmSync(path.join(f.codexHome, obsolete[0]));f.add(core, 'Updated common task flow\n');f.save();
+  const environment = { NEUROCENTER_AGENT_KIT_RETIRE: '0' }, before = snapshot(f.root), plan = f.run({ environment });
+  assert.equal(plan.retirementEnabled, false);assert.deepEqual(new Set(plan.obsolete), new Set(obsolete));
+  assert.throws(() => f.run({ check: true, environment }), /obsolete.*neurocenter-role-63/i);
+  assert.throws(() => f.run({ apply: true, environment }), /NEUROCENTER_AGENT_KIT_RETIRE=0/);
+  assert.deepEqual(snapshot(f.root), before);
+  const applied = f.run({ apply: true, environment: { NEUROCENTER_AGENT_KIT_RETIRE: '1' } });
+  assert.equal(applied.retirementEnabled, true);assert.deepEqual(new Set(applied.obsolete), new Set(obsolete));
+  assert.equal(readFileSync(manual, 'utf8'), 'Personal notes\n');
+  const after = snapshot(f.root);assert.deepEqual(f.run({ apply: true }).obsolete, []);
+  assert.deepEqual(f.run({ check: true }).changed, []);assert.deepEqual(snapshot(f.root), after);
+});
+
+test('disabled retirement permits installation and updates without obsolete ownership', (t) => {
+  const f = fixture(t), environment = { NEUROCENTER_AGENT_KIT_RETIRE: '0' };
+  assert.equal(f.run({ apply: true, environment }).retirementEnabled, false);
+  f.add(core, 'Updated common task flow\n');f.save();
+  assert.equal(f.run({ apply: true, environment }).updated, 1);
+  assert.deepEqual(f.run({ check: true, environment }).changed, []);
+});
+
+test('invalid retirement flags fail before filesystem input is used and write nothing', (t) => {
+  const f = fixture(t), before = snapshot(f.root);let pathCalls = 0;
+  const inaccessibleRoot = { toString() { pathCalls += 1;throw Error('Filesystem input must not be used'); } };
+  for (const value of ['', 'true', '2', '01', ' 1', '1 ', 1, null]) {
+    const environment = { NEUROCENTER_AGENT_KIT_RETIRE: value };
+    assert.throws(() => installCodexKit({ kitRoot: inaccessibleRoot, codexHome: f.codexHome, apply: true, environment }), /NEUROCENTER_AGENT_KIT_RETIRE must be 0 or 1/);
+    assert.throws(() => f.run({ apply: true, environment }), /NEUROCENTER_AGENT_KIT_RETIRE must be 0 or 1/);
+  }
+  assert.equal(pathCalls, 0);assert.deepEqual(snapshot(f.root), before);
+});

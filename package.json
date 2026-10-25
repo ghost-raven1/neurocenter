@@ -6,6 +6,9 @@
   },
   "scripts": {
     "check": "node scripts/workspace/check.mjs",
+    "agent-kit:check": "node scripts/agent-kit/generate.mjs --check",
+    "agent-kit:doctor": "node scripts/agent-kit/doctor.mjs",
+    "agent-kit:evals": "node scripts/agent-kit/evals/run.mjs --controls",
     "assets:init": "node scripts/assets/setup.mjs",
     "assets:hooks": "node scripts/assets/setup.mjs --hooks-only",
     "assets:sync": "node scripts/assets/cli.mjs",

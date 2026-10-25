@@ -19,6 +19,13 @@ function fixture() {
     return { actor, row, models, query, policy, revoke: () => { assigned = false; } };
 }
 describe('System role authority, identity and dialog source fences', () => {
+    it('keeps service-chat runs private even from another administrator of the same project', async () => {
+        const f = fixture(), row = { actor: 'other@example.test', project_id: project, request: { source: { kind: 'system-role-chat' } } };
+        await expect(f.policy.read({ headers: {} } as never, row as never)).rejects.toHaveProperty('status', 404);
+        row.actor = f.actor.email; expect((await f.policy.read({ headers: {} } as never, row as never)).email).toBe(f.actor.email);
+        row.actor = 'other@example.test'; row.request = {} as never;
+        await expect(f.policy.read({ headers: {} } as never, row as never)).resolves.toMatchObject({ email: f.actor.email });
+    });
     it('project admins require current assignment and exact verified model pin; main may choose global catalog', async () => {
         const f = fixture(), pin = projectEmbeddingPin(modelFromRow(f.row as never));
         expect((await f.policy.modelInTransaction({ query: f.query } as never, f.actor as never, project, f.row.id, pin)).id).toBe(f.row.id);

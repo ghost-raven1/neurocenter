@@ -22,6 +22,29 @@ describe('Атомарная фиксация локальных данных', 
         expect(await fs.readFile(file, 'utf8')).toBe('Старое подключение');
         expect(await fs.readdir(root)).toEqual(['credentials.json']);
     });
+    it('Отказ сохранения прав оставляет прежний файл и позволяет повторить запись', async () => {
+        root = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-durable-'));
+        const file = path.join(root, 'config.jsonc');
+        await fs.writeFile(file, 'Ручные настройки'); await fs.chmod(file, 0o640);
+        const beforeMode = (await fs.stat(file)).mode & 0o777;
+        const open = fs.open.bind(fs);
+        vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+            const handle = await open(...args);
+            if (String(args[0]).endsWith('.tmp')) {
+                vi.spyOn(handle, 'chmod').mockRejectedValue(Object.assign(new Error('Изменение прав запрещено'), { code: 'EACCES' }));
+            }
+            return handle;
+        });
+        await expect(atomicText(file, 'Новые настройки', 0o640)).rejects.toMatchObject({ code: 'EACCES' });
+        expect(await fs.readFile(file, 'utf8')).toBe('Ручные настройки');
+        expect((await fs.stat(file)).mode & 0o777).toBe(beforeMode);
+        expect(await fs.readdir(root)).toEqual(['config.jsonc']);
+        vi.restoreAllMocks();
+        await atomicText(file, 'Новые настройки', 0o640);
+        expect(await fs.readFile(file, 'utf8')).toBe('Новые настройки');
+        expect((await fs.stat(file)).mode & 0o777).toBe(beforeMode);
+        expect(await fs.readdir(root)).toEqual(['config.jsonc']);
+    });
     it('Длинное имя с UTF-8 символами не увеличивается именем временного файла', async () => {
         root = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-durable-'));
         const name='a'.repeat(205)+'я'.repeat(10)+'.txt';
