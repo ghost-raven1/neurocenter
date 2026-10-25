@@ -73,9 +73,11 @@ test('Nested module-relative resources fail before an installable project artifa
             assert.match(result.stderr,/src\/lib\/plugin.ts.*читает ресурс.*готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом/);
             if(progress){
                 const events=result.stdout.trim().split('\n').map(line=>JSON.parse(line));
-                assert.deepEqual(events.filter(event=>event.type==='build-error'),[{type:'build-error',code:'SOURCE_RESOURCE_UNSUPPORTED'}]);
+                const failures=events.filter(event=>event.type==='build-error');assert.equal(failures.length,1);
+                assert.deepEqual({...failures[0],reason:undefined},{type:'build-error',schemaVersion:1,stage:'compile',target:'darwin-arm64',code:'SOURCE_RESOURCE_UNSUPPORTED',reason:undefined});
+                assert.match(failures[0].reason,/src\/lib\/plugin.ts.*читает ресурс/);assert.ok(failures[0].reason.length<=1000);
                 assert.equal(events.filter(event=>event.type==='build-progress').length,1);
-                assert.ok(!result.stdout.includes(root)&&!result.stdout.includes('читает ресурс'));
+                assert.ok(!result.stdout.includes(root));
             }else assert.equal(result.stdout,'');
             await assert.rejects(fs.stat(path.join(cliOutput,'asset.json')),{code:'ENOENT'});
         }
