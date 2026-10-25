@@ -21,7 +21,8 @@ async function beforeAbort<T>(promise:Promise<T>,signal:AbortSignal){
 async function status(pid:number){
  if(!roleMcpLifecycleSupported())throw new Error('Восстановление локальных MCP на этой ОС пока недоступно.');
  try{
-  const {stdout}=await execute('/bin/ps',['-ww','-p',String(pid),'-o','uid=,pgid=,lstart=,stat=,command='],{encoding:'utf8',timeout:3000,maxBuffer:16384,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
+  // UTF-8 preserves exact argv on macOS while C keeps lstart independent of the user's language.
+  const {stdout}=await execute('/bin/ps',['-ww','-p',String(pid),'-o','uid=,pgid=,lstart=,stat=,command='],{encoding:'utf8',timeout:3000,maxBuffer:16384,env:{PATH:'/usr/bin:/bin',LC_ALL:'C.UTF-8'}});
   const match=stdout.trim().match(/^(\d+)\s+(\d+)\s+((?:\S+\s+){4}\S+)\s+(\S+)\s+([\s\S]+)$/);
   if(!match)throw new Error('Не удалось подтвердить владельца процесса MCP.');
   return {uid:Number(match[1]),group:Number(match[2]),birth:match[3]!,state:match[4]!,command:match[5]!};
@@ -37,7 +38,7 @@ export async function roleMcpOwnerAlive(owner:RoleMcpOwner){
 /** Covers the crash between wrapper spawn and durable PID receipt; it still has no execution permit. */
 export async function findRoleMcpProcess(nonce:string,receipt:string){
  if(!/^[a-f0-9-]{36}$/.test(nonce))throw new Error('Некорректный владелец MCP.');
- const {stdout}=await execute('/bin/ps',['-ww','-ax','-o','pid=,uid=,command='],{encoding:'utf8',timeout:3000,maxBuffer:4*1024*1024,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
+ const {stdout}=await execute('/bin/ps',['-ww','-ax','-o','pid=,uid=,command='],{encoding:'utf8',timeout:3000,maxBuffer:4*1024*1024,env:{PATH:'/usr/bin:/bin',LC_ALL:'C.UTF-8'}});
  const command=process.execPath+' '+runner+' --role-mcp-owner '+nonce+' '+receipt,found:number[]=[];
  for(const line of stdout.split('\n')){const match=line.trim().match(/^(\d+)\s+(\d+)\s+([\s\S]+)$/);if(match&&Number(match[2])===process.getuid!()&&match[3]===command)found.push(Number(match[1]));}
  if(found.length>1)throw new Error('Несколько процессов заявили одно владение MCP.');
