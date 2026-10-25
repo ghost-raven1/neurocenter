@@ -16,7 +16,7 @@ const gate='Инструменты разработки: локальные ко
 const expectedFiles=[
     'scripts/agent-kit/test/doctor.test.mjs','scripts/agent-kit/test/evals.test.mjs','scripts/agent-kit/test/generate.test.mjs',
     'scripts/agent-kit/test/install-codex.test.mjs','scripts/agent-kit/test/live-evals.test.mjs','scripts/agent-kit/test/live-preflight.test.mjs',
-    'scripts/test/workspace-check-options.test.mjs','scripts/test/workspace-check-report.test.mjs','scripts/test/workspace-check-source.test.mjs',
+    'scripts/test/workspace-check-options.test.mjs','scripts/test/workspace-check-process.test.mjs','scripts/test/workspace-check-report.test.mjs','scripts/test/workspace-check-source.test.mjs',
     'scripts/test/workspace-check.test.mjs','scripts/test/workspace-check-tooling.test.mjs','scripts/test/dev-mcp-reports.test.mjs',
     'scripts/test/coverage-inventory.test.mjs','scripts/test/coverage-profiles.test.mjs','scripts/test/coverage-completion.test.mjs',
     'scripts/test/coverage-source-inventory.test.mjs','scripts/test/coverage-focused.test.mjs','scripts/test/dev-mcp-coverage.test.mjs',

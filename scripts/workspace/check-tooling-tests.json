@@ -17,6 +17,7 @@
   "scripts/test/dev-mcp-reports.test.mjs",
   "scripts/test/dev-mcp.test.mjs",
   "scripts/test/workspace-check-options.test.mjs",
+  "scripts/test/workspace-check-process.test.mjs",
   "scripts/test/workspace-check-report.test.mjs",
   "scripts/test/workspace-check-source.test.mjs",
   "scripts/test/workspace-check-tooling.test.mjs",
