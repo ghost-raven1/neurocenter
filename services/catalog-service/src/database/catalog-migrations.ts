@@ -1,3 +1,5 @@
+import {CHAT_SYSTEM_ROLE_SCHEMA_SQL} from '../chat-system-roles/chat-system-roles.schema';
+import {CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL} from '../chat-system-roles/chat-system-roles.schema-verification';
 import {CHAT_SEARCH_SCHEMA_SQL} from '../chat-search/chat-search.schema';
 import {CHAT_SEARCH_SCHEMA_ASSERT_SQL} from '../chat-search/chat-search.schema-verification';
 import {BROWSER_AUTH_SESSION_SCHEMA_SQL} from '../browser-auth-sessions/browser-auth-session.schema';
@@ -104,4 +106,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:37,name:'durable-device-mcp-cleanup',sql:SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL},
     {version:38,name:'durable-opaque-browser-sessions',sql:BROWSER_AUTH_SESSION_SCHEMA_SQL},
     {version:39,name:'public-chat-semantic-search',sql:CHAT_SEARCH_SCHEMA_SQL+'\n'+CHAT_SEARCH_SCHEMA_ASSERT_SQL},
+    {version:40,name:'private-system-role-chat-origins',sql:CHAT_SYSTEM_ROLE_SCHEMA_SQL+'\n'+CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL},
 ];

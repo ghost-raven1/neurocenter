@@ -447,5 +447,15 @@
       "computer_connections"
     ],
     "defaultEnabled": false
+  },
+  {
+    "key": "chat_system_roles",
+    "name": "Системные агенты в чатах",
+    "description": "Личные задачи системным агентам из существующего диалога. Подготовка, согласие и результаты остаются приватными.",
+    "group": "agents",
+    "dependsOn": [
+      "system_role_chat"
+    ],
+    "defaultEnabled": true
   }
 ]

@@ -1,3 +1,4 @@
+import {assertChatSystemRoleOrigin} from '../chat-system-roles/chat-system-roles.origin-policy';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { ModelsService } from '../models/models.service';
@@ -52,6 +53,7 @@ export class SystemRolePolicy {
             AND i.request_hash=$6 AND d.project_id IS NOT DISTINCT FROM $7 AND NOT i.cancel_requested FOR SHARE OF i,d`,
         [source.turnId, source.dialogId, actor, input.requestId, id, hash, input.projectId]);
         if (!accepted.rowCount) throw new ConflictException('Сообщение системного чата отменено или изменилось.');
+        await assertChatSystemRoleOrigin(db, source.dialogId, actor, input.projectId);
     }
     async modelInTransaction(db: RoleDb, actor: IModelActor, project: string | null, id: string, pin: string) {
         if (project && actor.activeRole !== 'Главный админ'
