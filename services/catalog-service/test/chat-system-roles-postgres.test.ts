@@ -37,7 +37,7 @@ describe.skipIf(!connection).sequential('Immutable chat origin bindings on expli
         database = 'nc_chat_origins_' + randomUUID().replaceAll('-', ''); await admin.query('CREATE DATABASE ' + database);
         url.pathname = '/' + database; pool = new Pool({connectionString: url.href, max: 8, statement_timeout: 15000});
         await migrateCatalog(pool, CATALOG_MIGRATIONS); await assertCurrentCatalogSchema(pool);
-        expect((await pool.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.map(row => row.version)).toEqual(Array.from({length: 41}, (_, index) => index));
+        expect((await pool.query('SELECT version FROM catalog_schema_migrations ORDER BY version')).rows.map(row => row.version)).toEqual(CATALOG_MIGRATIONS.map(row => row.version));
         for (const email of [owner, other]) await pool.query('INSERT INTO platform_users(email,is_main_admin) VALUES($1,true)', [email]);
         await pool.query("INSERT INTO model_catalog(id,name,descriptor) VALUES('model-origin-fixture','Fixture only',$1::jsonb)", [JSON.stringify({runtime: 'ollama', capability: 'chat', model: 'fixture', manifestSha256: 'a'.repeat(64)})]);
         const actor = async (request: Request) => {
