@@ -21,6 +21,7 @@ export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: 
     const remote = runtime !== 'ollama';
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const optional = useRef<HTMLDetailsElement>(null);
     const lock = useRef(false);
     const creating = useRef<{ input: string; key: string }>();
     const availability = useFeatureAvailability('model_catalog');
@@ -48,18 +49,19 @@ export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: 
             if (owns()) setBusy(false);
         }
     };
-    return <Modal open centered className="model-details" title={model ? 'Изменить модель' : connectApi ? 'Подключить API' : 'Добавить модель в каталог'} footer={null} width={600}
+    return <Modal open centered className="model-details model-editor" title={model ? 'Изменить модель' : connectApi ? 'Подключить API' : 'Добавить модель в каталог'} width={600}
+        footer={<div className="model-editor__footer">
+            {error && <div className="model-editor__feedback" role="region" aria-label="Состояние сохранения" tabIndex={0}><Alert type="error" showIcon message={error} /></div>}
+            <Space wrap className="model-catalog__form-actions"><Button disabled={busy} onClick={() => {if (!lock.current) onClose();}}>Отмена</Button><FeatureButton features={['model_catalog']} type="primary" htmlType="submit" form="model-catalog-edit" loading={busy}>{!model && remote ? 'Далее: подключение API' : 'Сохранить'}</FeatureButton></Space>
+        </div>}
         onCancel={() => { if (!lock.current) onClose(); }} closable={!busy} maskClosable={!busy} keyboard={!busy}>
         <Form form={form} name="model-catalog-edit" layout="vertical" disabled={busy}
-            initialValues={model ?? { capability: defaultCapability, runtime: 'remote-openai' }} onFinish={values => { void submit(values); }}>
-            {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" />}
+            initialValues={model ?? { capability: defaultCapability, runtime: 'remote-openai' }} onFinish={values => { void submit(values); }} scrollToFirstError
+            onFinishFailed={({errorFields}) => {if (errorFields.some(field => field.name[0] === 'description') && optional.current) optional.current.open = true;}}>
             {!model && remote && <Alert type="info" showIcon message="Шаг 1 из 2 — карточка модели"
-                description="Карточка и API-подключение общие для команды. После сохранения укажите адрес и ключ, затем проверьте подключение. Добавьте модель в проект отдельно." className="model-catalog__notice" />}
+                description="Создайте карточку, затем укажите адрес и ключ API. Подключение доступно команде; добавление в проект — отдельно." className="model-catalog__notice" />}
             <Form.Item name="name" label="Название" rules={[{ required: true, whitespace: true, message: 'Введите название' }, { max: 128, message: 'До 128 символов' }]}>
                 <Input placeholder="Например, Модель для поиска по проекту" autoFocus />
-            </Form.Item>
-            <Form.Item name="description" label="Описание" rules={[{ max: 4000, message: 'До 4000 символов' }]}>
-                <Input.TextArea rows={3} placeholder="Для каких задач подходит модель" />
             </Form.Item>
             {!model && <Form.Item name="runtime" label="Где работает модель" rules={[{ required: true }]}>
                 <Select options={[{ value: 'remote-openai', label: 'Удалённый API · OpenAI совместимый' }, { value: 'remote-ollama', label: 'Удалённый API · Ollama' }]} />
@@ -79,7 +81,11 @@ export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: 
                     <InputNumber min={1} max={16384} precision={0} style={{ width: '100%' }} placeholder="Например, 2560" />
                 </Form.Item>}
             </>}
-            <Space className="model-catalog__form-actions"><Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={['model_catalog']} type="primary" htmlType="submit" loading={busy}>{!model && remote ? 'Далее: подключение API' : 'Сохранить'}</FeatureButton></Space>
+            <details ref={optional} className="model-editor__optional"><summary>Описание · необязательно</summary>
+                <Form.Item name="description" label="Описание" rules={[{ max: 4000, message: 'До 4000 символов' }]}>
+                    <Input.TextArea rows={3} placeholder="Для каких задач подходит модель" />
+                </Form.Item>
+            </details>
         </Form>
     </Modal>;
 }
