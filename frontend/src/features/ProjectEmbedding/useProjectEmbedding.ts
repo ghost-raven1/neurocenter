@@ -6,7 +6,7 @@ import { modelCatalogApi } from '../ModelCatalog/api';
 import { requireModelCatalog } from '../ModelCatalog/modelCatalogState';
 import type { IModelCatalog } from '../ModelCatalog/types';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
-import { embeddingNeedsRepair, projectEmbeddingApi, type IProjectEmbedding } from './model';
+import { eligibleEmbedding, embeddingNeedsRepair, projectEmbeddingApi, type IProjectEmbedding } from './model';
 
 /** Выбор сохраняется по CAS; поздний GET или ответ закрытой формы не меняет новый контекст. */
 export function useProjectEmbedding(projectId: string) {
@@ -18,6 +18,7 @@ export function useProjectEmbedding(projectId: string) {
     const [catalogAccessDenied, setCatalogAccessDenied] = useState(false);
     const [readError, setReadError] = useState(''), [saveError, setSaveError] = useState('');
     const [draft, setDraft] = useState<string | null | undefined>();
+    const defaultChosen = useRef(false);
     const active = useRef(true), sequence = useRef(0), lock = useRef(false);
     const refresh = useCallback(async () => {
         const owns = captureOwner(); if (!active.current || lock.current || !owns()) return;
@@ -39,6 +40,11 @@ export function useProjectEmbedding(projectId: string) {
     }, [captureOwner, projectId]);
     useEffect(() => { active.current = true; void refresh(); return () => { active.current = false; sequence.current++; }; }, [refresh]);
     useSectionUpdates(['catalog', 'projects', 'access'], () => { void refresh(); });
+    useEffect(() => {
+        if (defaultChosen.current || draft !== undefined || loading || catalogLoading || readError || catalogError || !selection || selection.revision !== 0 || selection.model || !catalog) return;
+        const first = catalog.items.find(model => catalog.assignedModelIds.includes(model.id) && !model.archivedAt && eligibleEmbedding(model, selection.expectedDimension || undefined));
+        if (first) {defaultChosen.current = true; setDraft(first.id);}
+    }, [selection, catalog, draft, loading, catalogLoading, readError, catalogError]);
     const modelId = draft === undefined ? selection?.model?.id ?? null : draft;
     const save = async () => {
         const owns = captureOwner();
@@ -55,5 +61,5 @@ export function useProjectEmbedding(projectId: string) {
     };
     return { selection, catalog, loading, catalogLoading, catalogError, catalogAccessDenied, saving, readError, saveError, modelId, refresh, save,
         applied:()=>{setDraft(undefined);void refresh();},
-        choose: (id: string | null) => { if (!lock.current) { setDraft(id); setSaveError(''); } } };
+        choose: (id: string | null) => { if (!lock.current) { defaultChosen.current = true; setDraft(id); setSaveError(''); } } };
 }
