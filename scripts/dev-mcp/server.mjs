@@ -2,7 +2,7 @@ import {createRequire} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createDiagnostics} from './diagnostics.mjs';
 import {logServices,DiagnosticError} from './constants.mjs';
-import {toolDefinitions,toolFlags,serverVersion,coverageReportPattern,verificationReportPattern,packageNames,checkSteps} from './tool-catalog.mjs';
+import {toolDefinitions,toolFlags,serverVersion,coverageReportPattern,verificationReportPattern,packageNames,checkSteps,launchIdPattern,requestIdPattern,evidenceFamilies} from './tool-catalog.mjs';
 import {validateOutput} from './output-validation.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
@@ -13,10 +13,15 @@ const {ListToolsRequestSchema,CallToolRequestSchema,McpError,ErrorCode}=require(
 const {z}=require('zod');
 const annotations={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false};
 const schemas={workspace_status:z.object({}).strict(),services_health:z.object({}).strict(),
-    service_logs:z.object({service:z.enum(logServices),lines:z.number().int().min(1).max(100).default(50)}).strict(),
+    service_logs:z.object({service:z.enum(logServices),lines:z.number().int().min(1).max(100).default(50),launchId:z.string().regex(new RegExp(launchIdPattern)).optional()}).strict(),
     verification_summary:z.object({report:z.string().max(180).regex(new RegExp(verificationReportPattern))}).strict(),
     coverage_gaps:z.object({report:z.string().max(180).regex(new RegExp(coverageReportPattern)),package:z.enum(packageNames),limit:z.number().int().min(1).max(20).default(10)}).strict(),
-    check_plan:z.object({packages:z.array(z.enum(packageNames)).min(1).max(8),steps:z.array(z.enum(checkSteps)).min(1).max(3).optional()}).strict()};
+    check_plan:z.object({packages:z.array(z.enum(packageNames)).min(1).max(8),steps:z.array(z.enum(checkSteps)).min(1).max(3).optional()}).strict(),
+    evidence_catalog:z.object({families:z.array(z.enum(evidenceFamilies)).min(1).max(3).optional(),limit:z.number().int().min(1).max(20).default(10)}).strict(),
+    verify_source:z.object({report:z.string().max(180).regex(new RegExp(verificationReportPattern)),expectedReportSha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
+    impact_plan:z.object({baseRevision:z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)}).strict(),
+    request_trace:z.object({flow:z.enum(['tool-build','saved-chat']),request:z.string().regex(new RegExp(requestIdPattern)),
+        launchId:z.string().regex(new RegExp(launchIdPattern)).optional(),limit:z.number().int().min(1).max(100).default(50)}).strict()};
 
 function failure(error){
     const known=error instanceof DiagnosticError;
@@ -44,8 +49,11 @@ export async function startDevMcp({workspace=root,services,stdin=process.stdin,s
         try{
             const args=parsed.data,signal=AbortSignal.any([lifecycle.signal,extra.signal]);
             const value=name==='workspace_status'?{...await diagnostics.workspaceStatus(),developerTools:{version:serverVersion,tools:[...enabled]}}:name==='services_health'?await diagnostics.servicesHealth(signal)
-                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines):name==='coverage_gaps'?await diagnostics.coverageGaps(args.report,args.package,args.limit)
-                :name==='check_plan'?await diagnostics.checkPlan(args):await diagnostics.verificationSummary(args.report);
+                :name==='service_logs'?await diagnostics.serviceLogs(args.service,args.lines,{launchId:args.launchId,signal}):name==='coverage_gaps'?await diagnostics.coverageGaps(args.report,args.package,args.limit)
+                :name==='check_plan'?await diagnostics.checkPlan(args):name==='evidence_catalog'?await diagnostics.evidenceCatalog(args,signal)
+                :name==='verify_source'?await diagnostics.verifySource(args,signal):name==='request_trace'?await diagnostics.requestTrace(args,signal)
+                :name==='impact_plan'?await diagnostics.impactPlan(args,signal)
+                :await diagnostics.verificationSummary(args.report);
             if(flags.outputSchemasEnabled!==false)validateOutput(name,value);
             return {content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value};
         }catch(error){return failure(error);}

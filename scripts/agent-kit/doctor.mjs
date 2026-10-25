@@ -41,7 +41,7 @@ export async function doctorKit({kitRoot=repositoryRoot,codexHome=process.env.CO
     const observed=observedTools===undefined?undefined:toolNames(observedTools,'observedTools');
     const contractsEnabled=roleContractsEnabled(environment);
     const catalog=expectedTools===undefined?await import('../dev-mcp/tool-catalog.mjs'):null;
-    const expected=toolNames(expectedTools??catalog.toolDefinitions(catalog.toolFlags()).map(tool=>tool.name),'expectedTools');
+    const expected=toolNames(expectedTools??catalog.toolDefinitions(catalog.toolFlags(environment)).map(tool=>tool.name),'expectedTools');
     let repository,installedCopy;
     try{
         const result=await generateKit({root:kitRoot,checkOnly:true});

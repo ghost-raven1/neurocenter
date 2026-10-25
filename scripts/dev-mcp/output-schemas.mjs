@@ -40,7 +40,14 @@ const health=object({scope:text(2000),services:array(object({service:choices(log
 const logTime={type:'string',pattern:'^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$'};
 const logDetails=object({observedAt:logTime,fileModifiedAt:logTime,fileBytes:integer(),bytesRead:integer(32768),
     currentProcessCorrelation:object({state:{const:'unknown'},reason:{const:'append-log-without-launch-provenance'}})});
-const logs=object({service:choices(logServices),text:text(32768),lines:integer(100),truncated:boolean,evidence,details:logDetails},
+const launchId={type:'string',pattern:'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'};
+const requestId={type:'string',pattern:'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'};
+const launch=object({launchId,generation:nullable(launchId),entryDigest:digest,sourceSha256:nullable(digest),startedAt:logTime});
+const correlation={anyOf:[object({state:{const:'owned'},reason:text(80),pid:integer()}),
+    object({state:choices(['historical','unknown']),reason:text(80)})]};
+const generationLogDetails=object({...logDetails.properties,launch,currentProcessCorrelation:correlation});
+const logs=object({service:choices(logServices),text:text(32768),lines:integer(100),truncated:boolean,evidence,
+    details:{anyOf:[logDetails,generationLogDetails]}},
     ['service','text','lines','truncated','evidence']);
 
 const coverageSource=object({recordedHead:nullable(head),currentHead:nullable(head),currentHeadMatches:nullable(boolean),sourceChangedDuringRun:nullable(boolean),
@@ -88,5 +95,39 @@ const gaps=object({report:text(180),reportSha256:digest,gapsSha256:digest,packag
 const plan=object({mode:{const:'plan'},selection,steps:array(object({package:packageName,step:checkStep,directory:choices(packages.map(([,folder])=>folder)),command:text(100)}),24),
     skipped:array(object({package:packageName,step:{const:'test'},reason:text(300)}),8),command:text(1000),scope:text(1000),effects:text(1000),evidence});
 
+const evidenceFamily=choices(['check','coverage','isolated-build']);
+const rejectionReason=choices(['MALFORMED_REPORT','UNSAFE_REPORT','REPORT_CHANGED','REPORT_UNAVAILABLE','REPORT_TOO_LARGE']);
+const catalogEntry={anyOf:[object({family:evidenceFamily,report:text(180),state:{const:'available'},reportSha256:digest,status:text(80),complete:boolean,
+    countScope:object({kind:choices(['check','coverage','build']),packages:array(packageName,8),steps:array(checkStep,3),tooling:nullable(boolean),profile:nullable(text(120)),reportedOnly:{const:true}}),
+    startedAt:date,finishedAt:date}),object({family:evidenceFamily,report:text(180),state:{const:'rejected'},reason:rejectionReason})]};
+const evidenceCatalog=object({evidence:{const:'recorded-local-evidence'},observedAt:logTime,entries:array(catalogEntry,20),
+    scan:object({entryLimit:{type:'integer',minimum:1,maximum:20},scanLimit:{const:128},scannedDirectories:integer(128),scannedEntries:integer(128),
+        attemptedReports:integer(128),truncated:boolean,complete:boolean,rejectedFamilies:array(object({family:evidenceFamily,reason:rejectionReason}),3)})});
+const sourceVerification=object({report:text(180),reportSha256:nullable(digest),observedAt:logTime,recorded:object({status:nullable(text(80)),complete:nullable(boolean)}),
+    comparison:object({state:choices(['match','mismatch','unknown']),reason:{type:'string',pattern:'^[A-Z][A-Z0-9_]{0,79}$'},
+        scope:choices(['check-v3-recorded-after','isolated-build-source-snapshot','unsupported-source-protocol']),currentSource:nullable(snapshot)}),limits:array(text(1200),16)});
+const traceCommon={schemaVersion:{const:1},kind:{const:'neurocenter-dev-trace'},timestamp:logTime,launchId};
+const traceEvent={anyOf:[object({...traceCommon,flow:{const:'tool-build'},event:choices(['requested','accepted','replayed','started','cancel-requested','succeeded','failed','cancelled']),
+    requestKey:requestId,buildId:requestId,operationId:{type:'string',pattern:'^tool-build-[a-f0-9-]{36}$'}},[...Object.keys(traceCommon),'flow','event','requestKey']),
+    object({...traceCommon,flow:{const:'saved-chat'},event:choices(['accepted','retried','started','cancel-requested','succeeded','failed','cancelled']),
+        conversationId:requestId,turnId:requestId,requestId,attemptId:requestId})]};
+const requestTrace=object({flow:choices(['tool-build','saved-chat']),request:requestId,observedAt:logTime,launch:nullable(launch),currentProcessCorrelation:correlation,
+    state:choices(['unavailable','observed','not-found']),events:array(traceEvent,100),rejectedRecords:integer(32769),truncated:boolean,scope:text(1000),evidence});
+const impactPlan=object({schemaVersion:{const:1},baseRevision:head,
+    sourceFingerprint:object({status:choices(['known','unknown']),head:nullable(head),sha256:nullable(digest),fileCount:nullable(integer(20000)),reason:nullable(text(80))}),
+    changedPathsStatus:choices(['known','unknown']),changedPathsDigest:nullable(digest),changedPathsCount:nullable(integer(20000)),
+    changedPathsReason:choices(['INPUT_LIMIT','GIT_UNAVAILABLE']),mode:choices(['scoped','fallback']),packages:array(packageName,8),
+    reasons:array(object({rule:choices(['SOURCE_UNKNOWN','CHANGES_UNKNOWN','UNSAFE_PATH','NO_CHANGES','SHARED_INPUT','PLANNER_INPUT','GLOBAL_CONFIGURATION',
+        'PACKAGE_OWNER','CATALOG_BUILDER','UNKNOWN_PATH','VERIFIED_CONSUMER']),package:packageName,count:{type:'integer',minimum:1}},['rule','count']),128),
+    plannedChecks:object({selection:object({packages:array(packageName,8),steps:array(checkStep,0)}),
+        checks:array(object({kind:choices(['npm','node','compose']),package:nullable(packageName),
+            check:choices(['typecheck','build','test','common-contracts','agent-kit','compose-embeddings','compose-dev'])}),64),
+        inputsCount:integer(20000),inputsSha256:digest,checksSha256:digest}),
+    additionalAcceptance:array(object({kind:choices(['database-migrations','native-runtime','rag-integration','package-tests-unavailable']),package:packageName,
+        count:{type:'integer',minimum:1},reason:choices(['OUTSIDE_DEFAULT_CHECK','NO_PACKAGE_TEST_SCRIPT'])},['kind','count','reason']),64),
+    limits:array(text(1200),24),planFingerprint:digest,evidence},
+    ['schemaVersion','baseRevision','sourceFingerprint','changedPathsStatus','changedPathsDigest','changedPathsCount','mode','packages','reasons','plannedChecks','additionalAcceptance','limits','planFingerprint','evidence']);
+
 /** Public closed schemas describe successful results; protocol/tool errors remain separate. */
-export const outputSchemas={workspace_status:workspace,services_health:health,service_logs:logs,verification_summary:{type:'object',anyOf:[coverage,check,build]},coverage_gaps:gaps,check_plan:plan};
+export const outputSchemas={workspace_status:workspace,services_health:health,service_logs:logs,verification_summary:{type:'object',anyOf:[coverage,check,build]},
+    coverage_gaps:gaps,check_plan:plan,evidence_catalog:evidenceCatalog,verify_source:sourceVerification,request_trace:requestTrace,impact_plan:impactPlan};

@@ -1,5 +1,4 @@
 import path from 'node:path';
-import {createHash} from 'node:crypto';
 import {packages,DiagnosticError,evidenceNote} from './constants.mjs';
 import {readOwnedFile} from './safe-file.mjs';
 import {redactLog} from './redact.mjs';
@@ -21,9 +20,9 @@ function summary(value,comparable){
 
 async function json(root,file,expectedSha){
     try{
-        const text=(await readOwnedFile(root,file,{limit:16*1024**2})).text;
-        if(expectedSha&&createHash('sha256').update(text).digest('hex')!==expectedSha)throw new DiagnosticError('FILE_CHANGED','The manifest changed between observations; retry this diagnostic.');
-        return {value:JSON.parse(text),sha256:createHash('sha256').update(text).digest('hex')};
+        const content=await readOwnedFile(root,file,{limit:16*1024**2});
+        if(expectedSha&&content.contentSha256!==expectedSha)throw new DiagnosticError('FILE_CHANGED','The manifest changed between observations; retry this diagnostic.');
+        return {value:JSON.parse(content.text),sha256:content.contentSha256};
     }
     catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
 }

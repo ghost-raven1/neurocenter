@@ -19,6 +19,14 @@ async function fixture(t,text='',serviceDetailsEnabled=true){
     return {root,filename,diagnostics:await createDiagnostics(root,{serviceDetailsEnabled})};
 }
 
+test('redaction expansion preserves the 32KiB byte limit without splitting a UTF8 character',async t=>{
+    const text='字'.repeat(10000)+'token=x '.repeat(300),f=await fixture(t,text);
+    assert.ok(Buffer.byteLength(text)<32768);
+    const value=await f.diagnostics.serviceLogs('catalog',1);
+    assert.ok(Buffer.byteLength(value.text)<=32768);assert.equal(value.text.includes('\ufffd'),false);
+    assert.equal(value.truncated,true);
+});
+
 test('a stale error carries its stable file timestamp without being attributed to the current process',async t=>{
     const text='Старая ошибка\ntoken=PRIVATE_VALUE\n',f=await fixture(t,text);
     const modified=new Date('2020-02-03T04:05:06.000Z');await utimes(f.filename,modified,modified);
