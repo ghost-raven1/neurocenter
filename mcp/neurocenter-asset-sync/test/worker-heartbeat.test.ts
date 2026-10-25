@@ -7,6 +7,8 @@ import { prepareJobRuntimeArtifacts } from '../src/bridge/job-runtime-artifacts.
 import { install } from '../src/bridge/installer.js';
 import { runWorker } from '../src/bridge/worker.js';
 import { packageFixture, workspaceFixture } from './bridge-fixture.js';
+import { idleSystemRoleMcpLane } from './worker-control-lane.fixture.js';
+import { stopFixtureWorker } from './worker-lifecycle.fixture.js';
 
 const socket = vi.hoisted(() => ({ auth: {}, on: vi.fn(), disconnect: vi.fn(), connect: vi.fn() }));
 vi.mock('socket.io-client', () => ({ io: vi.fn(() => socket) }));
@@ -33,15 +35,19 @@ describe('Heartbeat сохраняется во время длительной 
     let heartbeat: () => Promise<unknown>;
     let revoked: boolean;
     let credentials: state.Credentials;
+    let controlLane: ReturnType<typeof idleSystemRoleMcpLane>;
+    let controlLanes: Array<ReturnType<typeof idleSystemRoleMcpLane>>;
     const jobId = '11111111-1111-1111-1111-111111111111';
     const paused = () => { const pending = deferred(); releases.push(pending.resolve); return pending; };
     beforeEach(context => {
-        fixture = undefined; worker = undefined; setup = undefined; releases = []; vi.clearAllMocks();
+        fixture = undefined; worker = undefined; setup = undefined; releases = []; controlLanes = []; vi.clearAllMocks();
         previousSignals = new Map(['SIGTERM', 'SIGINT'].map(signal => [signal as NodeJS.Signals, new Set(process.listeners(signal))]));
         gate = paused(); entered = paused();
         setup = (async () => {
             fixture = await workspaceFixture(); context.signal.throwIfAborted();
             credentials = { token: 'fixture-token', deviceId: '33333333-3333-3333-3333-333333333333', email: 'fixture@example.test' };
+            controlLane = idleSystemRoleMcpLane(state.apiHub(), credentials.token); controlLanes.push(controlLane);
+            vi.stubGlobal('fetch', (...args: Parameters<typeof fetch>) => controlLane.network(...args));
             socket.disconnect.mockReturnValue(socket); socket.connect.mockReturnValue(socket);
             await state.writeState('credentials', credentials); context.signal.throwIfAborted();
             vi.spyOn(state, 'readState').mockImplementation(async name => name === 'credentials' ? credentials as never : originalReadState(name));
@@ -73,11 +79,7 @@ describe('Heartbeat сохраняется во время длительной 
     });
     const calls = (route: string) => vi.mocked(state.api).mock.calls.filter(([value]) => value === route).length;
     async function stop(): Promise<void> {
-        if (!vi.isMockFunction(process.exit) || process.exit.mock.calls.length) { return; }
-        const listener = process.listeners('SIGTERM').find(value => !previousSignals.get('SIGTERM')!.has(value));
-        if (!listener) { return; }
-        listener();
-        await vi.waitFor(() => expect(process.exit).toHaveBeenCalled());
+        await stopFixtureWorker(previousSignals);
     }
     afterEach(async () => {
         try {
@@ -86,10 +88,10 @@ describe('Heartbeat сохраняется во время длительной 
             for (const release of releases) { release(); }
             await worker;
         } finally {
-            try { await stop(); }
+            try { await stop(); for (const lane of controlLanes) expect(lane.unexpected).toEqual([]); }
             finally {
                 if (vi.isFakeTimers()) { vi.clearAllTimers(); vi.useRealTimers(); }
-                vi.restoreAllMocks(); vi.unstubAllEnvs();
+                vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals();
                 for (const [signal, previous] of previousSignals) for (const listener of process.listeners(signal)) if (!previous.has(listener)) process.off(signal, listener);
                 if (fixture) { await fs.rm(fixture.temporary, { recursive: true, force: true }); }
             }
@@ -145,6 +147,7 @@ describe('Heartbeat сохраняется во время длительной 
         expect(vi.mocked(state.api).mock.calls.find(([route]) => route === 'jobs/claim'))
             .toEqual(['jobs/claim', undefined, credentials.token]);
         credentials = { ...credentials, token: 'new-fixture-token', deviceId: '44444444-4444-4444-4444-444444444444' };
+        controlLane = idleSystemRoleMcpLane(state.apiHub(), credentials.token); controlLanes.push(controlLane);
         await vi.advanceTimersByTimeAsync(15_000);
         expect(socket.auth).toEqual({ token: credentials.token });
         gate.resolve(); await worker;
