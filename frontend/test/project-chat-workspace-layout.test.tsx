@@ -17,6 +17,8 @@ const h = vi.hoisted(() => ({
     send: vi.fn(), cancel: vi.fn(), configure: vi.fn(), close: vi.fn(), capture: () => () => true,
 }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner, captureOwner: h.capture})}));
+vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole: 'Главный админ', userRoles: ['Главный админ']}}})}));
+vi.mock('../src/features/SystemRoleChat/SystemRoleChat', () => ({SystemRoleChat: () => null}));
 vi.mock('../src/features/ProjectChat/useProjectChatRooms', () => ({useProjectChatRooms: () => {
     const [roomId, setRoomId] = useState(DEFAULT_PROJECT_CHAT_ROOM);
     return {roomId, data: {rooms: h.rooms, members: projectRoom().members, canCreate: h.canCreate}, loading: false, error: h.roomsError,

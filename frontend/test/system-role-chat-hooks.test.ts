@@ -17,17 +17,17 @@ import { systemRolesApi } from '../src/features/SystemRoles/api';
 import { clearServiceIntent, saveServiceIntent } from '../src/features/SystemRoleChat/intent';
 import { useSystemRoleChat } from '../src/features/SystemRoleChat/useSystemRoleChat';
 
-let project: string | undefined, enabled: boolean;
+let project: string | undefined, enabled: boolean, options: Parameters<typeof useSystemRoleChat>[2];
 const model = { id: 'model-one', name: 'Model', pin: 'a'.repeat(64) };
 const dialog = { id: 'dialog-one', title: 'Задача', projectId: 'prj-one', createdAt: '2026-10-25T00:00:00Z', updatedAt: '2026-10-25T00:00:00Z' };
 const selection = { projectId: 'prj-one', instruction: 'Проверь проект', diagnostics: [], targets: [] };
 const prepared: ServicePreview = { selection, prepared: { preview: 'Exact own context', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64), targets: [] } };
 const turn = (patch = {}): ServiceTurn => ({ id: 'explicit-request', agentId: 'agent-coordinator', instruction: selection.instruction, createdAt: dialog.createdAt, cancelRequested: false,
     run: { id: 'run-one', projectId: 'prj-one', state: 'succeeded', revision: 1, canCancel: false, canApply: false, canRollback: false, result: { summary: 'OWN ANSWER' }, ...patch } as RoleRun });
-const render = () => { h.hooks.begin(); const value = useSystemRoleChat(project, enabled); h.hooks.commit(); return value; };
+const render = () => { h.hooks.begin(); const value = useSystemRoleChat(project, enabled, options); h.hooks.commit(); return value; };
 const prepare = async () => { render(); await flushSetup(); await render().prepare('agent-coordinator', selection, false, model.id); return render(); };
 beforeEach(() => {
-    h.hooks.dispose(); vi.resetAllMocks(); h.owner = 'alice'; h.generation++; project = 'prj-one'; enabled = true;
+    h.hooks.dispose(); vi.resetAllMocks(); h.owner = 'alice'; h.generation++; project = 'prj-one'; enabled = true; options = undefined;
     const storage = new Map<string, string>(); vi.stubGlobal('sessionStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) });
     for (const owner of ['alice', 'bob']) for (const scope of ['prj-one', 'prj-two', null]) clearServiceIntent(JSON.stringify([owner, scope]));
     vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'explicit-request') }); vi.stubGlobal('window', { setInterval, clearInterval }); vi.stubGlobal('document', { visibilityState: 'visible' });
@@ -74,6 +74,27 @@ it('catalog failure keeps accepted history, cancellation and rollback usable whe
     const item = turn({ state: 'running', canCancel: true }); vi.mocked(api.read).mockResolvedValue({ dialog, turns: [item] }); vi.mocked(api.cancel).mockResolvedValue(turn({ state: 'cancelled' }));
     render(); await flushSetup(); expect(render().dialogs).toEqual([dialog]); expect(render().error).toContain('Часть данных');
     await render().select(dialog.id); await render().action(item, 'cancel'); expect(api.cancel).toHaveBeenCalledWith(dialog.id, item, 'explicit-request'); expect(api.start).not.toHaveBeenCalled();
+});
+it('uses the canonical origin binding rather than the provisional dialog UUID, and notifies only confirmed acceptance', async () => {
+    const create = vi.fn().mockResolvedValue({...dialog, id: 'canonical-origin-dialog'}), accepted = vi.fn();
+    options = {origin: 'origin-canonical', transport: {...api, create}, onAccepted: accepted};
+    await prepare();
+    expect(api.create).not.toHaveBeenCalled(); expect(api.prepare).toHaveBeenCalledWith('canonical-origin-dialog', 'agent-coordinator', selection, false);
+    expect(accepted).not.toHaveBeenCalled();
+    await render().start(model.id);
+    expect(api.start).toHaveBeenCalledWith('canonical-origin-dialog', 'agent-coordinator', expect.any(Object)); expect(accepted).toHaveBeenCalledOnce();
+});
+it('an unsaved host chat remains suspended and never reads unrelated legacy service history', async () => {
+    options = {suspended: true}; render(); await flushSetup();
+    expect(api.list).not.toHaveBeenCalled(); expect(systemRolesApi.overview).not.toHaveBeenCalled();
+    expect(render().loading).toBe(false);
+});
+it('origin switches isolate an unknown receipt while preserving exact recovery for its original chat', async () => {
+    options = {origin: 'origin-A'}; await prepare(); vi.mocked(api.start).mockRejectedValueOnce(Error('ACK LOST')); await render().start(model.id);
+    expect(render().receipt).toBeDefined(); options = {origin: 'origin-B'}; render(); await flushSetup();
+    expect(render().receipt).toBeUndefined(); expect(api.request).not.toHaveBeenCalled();
+    options = {origin: 'origin-A'}; enabled = false; render(); await flushSetup();
+    expect(api.request).toHaveBeenCalledWith('explicit-request', 'explicit-request'); expect(api.start).toHaveBeenCalledOnce();
 });
 it.each(['project', 'owner', 'project ABA', 'auth ABA', 'unmount'])('fences late previews, paid starts and retained handlers after %s', async change => {
     const pending = deferredSetup<ServicePreview>(); vi.mocked(api.prepare).mockReturnValueOnce(pending.promise);

@@ -1,5 +1,6 @@
 import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import type {ReactNode} from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {modelChatUrl} from '../ModelChat/model';
@@ -14,11 +15,12 @@ interface Props {
     messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
     onLoadEarlier: () => void; onReply: (message: ProjectChatMessage) => void; onRetry: (id: string) => void; onCancel: (id: string) => void;
     members?: ProjectChatMember[]; activity?: ProjectChatActivity; onVisible?: (ids: string[], currentVisible?: () => string[]) => void;
+    privateTasks?: ReactNode;
 }
 const stateText: Record<ProjectChatMessage['status'], string> = {queued: 'В очереди', running: 'Готовится ответ', done: '', failed: 'Ответ не получен', cancelled: 'Остановлено'};
 
 /** Every saved human question and agent answer keeps its author and an explicit reply anchor. */
-export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible}: Props): JSX.Element {
+export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible, privateTasks}: Props): JSX.Element {
     const inference = useFeatureAvailability('project_chat', 'group_chat');
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number}>();
     const [newMessages, setNewMessages] = useState(false);
@@ -64,5 +66,6 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
                 </Space>
             </article>;
         })}
+        {privateTasks}
     </div>{newMessages && <Button className="project-chat__latest" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setNewMessages(false);}}>К последним сообщениям</Button>}</div>;
 }

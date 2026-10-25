@@ -27,14 +27,15 @@ const render = () => { h.hooks.begin(); h.ui.nodes = []; const html = renderToSt
 const mode = (value: string) => uiNode(h.ui, 'RadioGroup').onChange({ target: { value } });
 beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.owner = 'alice'; h.role = 'Главный админ'; });
 afterEach(() => { h.hooks.dispose(); });
-it('the common Chat switches between personal, service and team without requiring a personal model for service history', async () => {
-    render(); expect(uiNode(h.ui, 'RadioGroup').options.map((item: { value: string }) => item.value)).toEqual(['team', 'personal', 'service']); expect(h.personal).toHaveBeenCalled();
-    mode('service'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи'); expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: true });
-    expect(h.ui.nodes.some(item => item.kind === 'Select' && item.props['aria-label'] === 'Модель чата')).toBe(false);
+it('the common Chat has only personal/team modes and keeps legacy private history beside the current chat', async () => {
+    render(); expect(uiNode(h.ui, 'RadioGroup').options.map((item: { value: string }) => item.value)).toEqual(['team', 'personal']); expect(h.personal).toHaveBeenCalled();
+    uiNode(h.ui, 'Button', 'Прежние сервисные диалоги').onClick(); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи');
+    expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: false, historyOnly: true });
+    expect(uiNode(h.ui, 'RadioGroup').value).toBe('personal');
     mode('team'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Общая команда'); expect(h.team).toHaveBeenCalledWith({ projectId: 'prj-one', projectName: 'Проект' });
     mode('personal'); render(); expect(uiNode(h.ui, 'RadioGroup').value).toBe('personal');
 });
 it('a demoted observer can still open service history with new execution disabled', async () => {
-    h.role = 'Наблюдатель'; render(); mode('service'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи');
-    expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: false });
+    h.role = 'Наблюдатель'; render(); uiNode(h.ui, 'Button', 'Прежние сервисные диалоги').onClick(); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи');
+    expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: false, historyOnly: true });
 });

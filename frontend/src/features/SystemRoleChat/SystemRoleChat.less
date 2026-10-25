@@ -22,3 +22,11 @@
 @media (max-width: 768px) {
     .service-chat { padding: 10px 12px; max-height: calc(100dvh - 220px); &__choices { flex-direction: column; gap: 0; } &__request { margin-left: 10px; } &__answer { margin-right: 10px; } }
 }
+.service-chat_embedded {
+  flex: none;
+  min-height: 0;
+  height: auto;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border, #d9d9d9);
+}

@@ -50,6 +50,8 @@ vi.mock('../src/features/ModelChat/ConversationList', async original => {
     return {ConversationList: (props: Parameters<typeof actual.ConversationList>[0]) => {ui.selectConversation = props.onSelect; return actual.ConversationList(props);}};
 });
 vi.mock('../src/features/ModelChat/useModelChat', () => ({useModelChat: () => ui.chat}));
+vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole: 'Главный админ', userRoles: ['Главный админ']}}})}));
+vi.mock('../src/features/SystemRoleChat/SystemRoleChat', () => ({SystemRoleChat: () => null}));
 vi.mock('../src/features/ModelChat/useChatContext', () => ({useChatContext: () => ({context: ui.context ?? detail().context, loading: false, error: '', rejected: false})}));
 vi.mock('../src/common/components/FileDropZone/FileDropZone', () => ({FileDropZone: ({hint}: {hint: string}) => createElement('p', null, hint)}));
 vi.mock('../src/features/ModelChat/ChatResearchControls', () => ({ChatResearchControls: () => null}));
@@ -63,7 +65,7 @@ vi.mock('antd', () => {
     });
     const Modal = Object.assign(({children, onCancel, open, title}: {children?: ReactNode; onCancel: () => void; open?: boolean; title?: ReactNode}) => {if (!open) return null; ui.modalClose = onCancel; return createElement('dialog', null, title, children);}, {confirm: (props: Confirmation) => {ui.confirmCalls(); ui.confirm = props; return {destroy: vi.fn()};}});
     const Empty = Object.assign(({description}: {description?: string}) => createElement('p', null, description), {PRESENTED_IMAGE_SIMPLE: null});
-    return {Modal, Input, Mentions: (props: typeof ui.mention & {value: string; disabled?: boolean}) => {ui.mention = props!; return createElement('textarea', {value: props!.value, disabled: props!.disabled, readOnly: true});}, Empty, Dropdown: ({children, menu}: {children?: ReactNode; menu: {items: Array<ButtonProps & {label: string}>}}) => {for (const item of menu.items) ui.buttons.set(item.label, item); return children;}, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
+    return {Modal, Input, Mentions: (props: NonNullable<typeof ui.mention> & {value: string; disabled?: boolean; onPaste: TextArea['onPaste']; onCompositionStart: () => void; onCompositionEnd: () => void}) => {ui.mention = props; ui.input = {...props, onChange: event => props.onChange(event.target.value), onKeyDown: props.onPressEnter}; return createElement('textarea', {value: props.value, disabled: props.disabled, readOnly: true});}, Empty, Dropdown: ({children, menu}: {children?: ReactNode; menu: {items: Array<ButtonProps & {label: string}>}}) => {for (const item of menu.items) ui.buttons.set(item.label, item); return children;}, Space: content, Spin: () => createElement('span', null, 'Загрузка'), Tooltip: content,
         Typography: {Text: content, Paragraph: content}, Alert: ({message}: {message?: string}) => createElement('p', {role: 'alert'}, message),
         Button: (props: ButtonProps) => {const key = props['aria-label'] ?? (typeof props.children === 'string' ? props.children : ''); if (key) ui.buttons.set(key, props); return createElement('button', {disabled: props.disabled, 'aria-label': props['aria-label']}, props.children);},
         Progress: ({percent}: {percent: number}) => createElement('div', {role: 'progressbar', 'aria-valuenow': percent}),

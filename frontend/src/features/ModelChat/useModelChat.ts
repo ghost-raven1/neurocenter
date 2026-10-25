@@ -140,6 +140,12 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
             catch (cause) {await reconcileDetachedSubmission(previous, selected, signal, owns); throw cause;}
         });
     };
+    const ensureConversation = async (): Promise<IModelChatDetail | undefined> => {
+        if (current.current) return current.current;
+        let selected: IModelChatDetail | undefined;
+        await run('saving', async (signal, owns) => {selected = await ensure(signal, owns);});
+        return mounted.current && captureOwner()() ? selected : undefined;
+    };
     const changed = !!detail && detail.conversation.modelPin !== model.modelPin;
     const blocked = changed ? 'Подключение модели изменилось. История сохранена; начните новый диалог.' : detail?.blockedReason || unavailableReason;
     const generate = (prompt: string, attachmentIds: string[], previous?: IModelChatTurn, research?: IChatResearchRequest): boolean => {
@@ -275,5 +281,5 @@ export function useModelChat(model: ICatalogModel, projectId?: string, unavailab
     const used = new Set(turns.flatMap(turn => turn.attachmentIds));
     return {items, detail, turns, uploads, attachments: detail?.attachments.filter(file => !used.has(file.id)) ?? [], activity, error, blocked, historyLoading, historyError, loadEarlier,
         busy: activity === 'sending' || turns.some(turn => turn.status === 'pending'), send, retry, stop, select, refresh, newChat, rename, remove, editFailed, configureParticipants, complete,
-        addFiles, cancelUploads, removeUpload, retryUpload, removeAttachment, captureOwner};
+        addFiles, cancelUploads, removeUpload, retryUpload, removeAttachment, captureOwner, ensureConversation};
 }

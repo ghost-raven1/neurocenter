@@ -12,13 +12,15 @@ import {tabNotifications} from '../TabNotifications/tracker';
 
 interface Prepared extends ServicePreview { agentId: SystemRoleId; dialogId: string; model: { id: string; pin: string }; }
 interface ChatState { owner: object; overview?: RoleOverview; dialogs: ServiceDialog[]; detail?: ServiceDetail; prepared?: Prepared; error: string; busy: boolean; loading: boolean; receipt?: ServiceReceipt; }
+interface Options {transport?: typeof api; origin?: string; suspended?: boolean; onAccepted?: (turn: ServiceTurn) => void;}
 const statusOf = (cause: unknown): number | undefined => (cause as { response?: { status?: number } })?.response?.status;
 const rejected = (cause: unknown): boolean => { const status = statusOf(cause); return !!status && status >= 400 && status < 500 && ![408, 429].includes(status); };
 
 /** Every callback owns one mount/scope generation; lost ACKs retain the original immutable request. */
-export function useSystemRoleChat(projectId: string | undefined, enabled: boolean) {
-    const { scope, captureOwner } = useAuthRequestOwner(), identity = JSON.stringify([scope, projectId ?? null]);
-    const intentScope = serviceIntentScope(scope, projectId);
+export function useSystemRoleChat(projectId: string | undefined, enabled: boolean, options: Options = {}) {
+    const { scope, captureOwner } = useAuthRequestOwner(), identity = JSON.stringify([scope, projectId ?? null, options.origin, !!options.suspended]);
+    const intentScope = serviceIntentScope(scope, projectId, options.origin), transport = options.transport ?? api;
+    const onAccepted = useRef(options.onAccepted); onAccepted.current = options.onAccepted;
     const owner = useMemo(() => ({ active: false, generation: 0 }), [identity]), currentOwner = useRef(owner); currentOwner.current = owner;
     const allowed = useRef(enabled); allowed.current = enabled;
     const empty = (): ChatState => ({ owner, dialogs: [], error: '', busy: false, loading: true });
@@ -43,7 +45,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     const refresh = async (): Promise<void> => {
         const owns = capture(); if (!owns()) return;
         const sequence = ++reads.current, dialogId = current.current.detail?.dialog.id;
-        const result = await Promise.allSettled([systemRolesApi.overview(projectId), api.list(projectId), ...(dialogId ? [api.read(dialogId)] : [])]);
+        const result = await Promise.allSettled([systemRolesApi.overview(projectId), transport.list(projectId), ...(dialogId ? [transport.read(dialogId)] : [])]);
         if (!owns() || sequence !== reads.current) return;
         const [overview, dialogs, detail] = result;
         const patch: Partial<ChatState> = { loading: false };
@@ -69,17 +71,18 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         const owns = capture();
         await perform(async () => {
             try {
-                const turn = await api.request(receipt.dialogId, receipt.requestId);
+                const turn = await transport.request(receipt.dialogId, receipt.requestId);
                 if (!owns()) return undefined;
-                return { turn, detail: await api.read(receipt.dialogId) };
+                return { turn, detail: await transport.read(receipt.dialogId) };
             }
             catch (cause) {
                 if (owns() && statusOf(cause) === 404) throw new Error('Сервер пока не подтвердил запрос. Повторите чтение или тот же сохранённый запрос. Новая отправка остаётся заблокирована.');
                 throw cause;
             }
-        }, result => { if (result) { update({ detail: result.detail }); accept(receipt.dialogId, result.turn); forget(); void refresh(); } }, 'Принятие запроса пока не подтверждено. Повторите проверку: нового вызова модели она не создаёт.');
+        }, result => { if (result) { update({ detail: result.detail }); accept(receipt.dialogId, result.turn); forget(); onAccepted.current?.(result.turn); void refresh(); } }, 'Принятие запроса пока не подтверждено. Повторите проверку: нового вызова модели она не создаёт.');
     };
     useEffect(() => {
+        if (options.suspended) {owner.active = false; current.current = {...empty(), loading: false}; setState(current.current); return;}
         owner.active = true; owner.generation++; busy.current = false; reads.current++; previews.current++; draftDialog.current = undefined;
         const receipt = serviceReceipt(intentScope); const initial = { ...empty(), receipt }; current.current = initial; setState(initial);
         void refresh(); if (receipt) void recover();
@@ -93,7 +96,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     const invalidate = (): void => { if (!capture()()) return; previews.current++; update({ prepared: undefined }); };
     const select = async (dialogId: string): Promise<void> => {
         if (!capture()() || busy.current) return; reads.current++; invalidate();
-        await perform(() => api.read(dialogId), detail => {
+        await perform(() => transport.read(dialogId), detail => {
             if (detail.dialog.projectId !== (projectId ?? null)) { update({ error: 'Диалог относится к другому проекту. Обновите историю.' }); return; }
             update({ detail });
         }, 'Диалог не открылся. Сохранённая история доступна после повторного чтения.');
@@ -103,16 +106,16 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         const model = current.current.overview?.models.find(item => item.id === modelId); if (!model) return;
         const selectedModel = { id: model.id, pin: model.pin };
         const owns = capture(), sequence = ++previews.current;
-        const dialogId = current.current.detail?.dialog.id ?? (draftDialog.current ??= crypto.randomUUID());
+        let dialogId = current.current.detail?.dialog.id ?? (draftDialog.current ??= crypto.randomUUID());
         update({ prepared: undefined });
         await perform(async () => {
             if (!current.current.detail) {
-                const dialog = await api.create({ id: dialogId, title: selection.instruction.trim().slice(0, 60), projectId: projectId ?? null });
+                const dialog = await transport.create({ id: dialogId, title: selection.instruction.trim().slice(0, 60), projectId: projectId ?? null });
                 if (!owns() || !allowed.current || sequence !== previews.current) return undefined;
-                update({ detail: { dialog, turns: [] } });
+                dialogId = dialog.id; draftDialog.current = dialog.id; update({ detail: { dialog, turns: [] } });
             }
             if (!owns() || !allowed.current || sequence !== previews.current) return undefined;
-            return api.prepare(dialogId, agentId, selection, includeContext);
+            return transport.prepare(dialogId, agentId, selection, includeContext);
         }, result => {
             if (!result || sequence !== previews.current || !allowed.current) return;
             if (current.current.overview?.models.find(item => item.id === selectedModel.id)?.pin !== selectedModel.pin) { update({ error: 'Модель изменилась. Проверьте её и подготовьте контекст заново.' }); return; }
@@ -127,9 +130,9 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         update({ receipt: { dialogId: intent.dialogId, requestId: intent.input.requestId } });
         const rejectExpected = tabNotifications.expect(scope, serviceTabSource(intent.dialogId, projectId), [intent.input.requestId]);
         await perform(async () => {
-            try { return await api.start(intent.dialogId, intent.agentId, intent.input); }
+            try { return await transport.start(intent.dialogId, intent.agentId, intent.input); }
             catch (cause) { if (!replay && rejected(cause)) { rejectExpected(); if (owns()) { forget(); update({ prepared: undefined }); } } throw cause; }
-        }, turn => { accept(intent.dialogId, turn); forget(); update({ prepared: undefined }); void refresh(); }, 'Подтверждение отправки потеряно. Проверьте сохранённый запрос перед следующей задачей.');
+        }, turn => { accept(intent.dialogId, turn); forget(); update({ prepared: undefined }); onAccepted.current?.(turn); void refresh(); }, 'Подтверждение отправки потеряно. Проверьте сохранённый запрос перед следующей задачей.');
     };
     const start = async (modelId: string): Promise<void> => {
         const prepared = current.current.prepared, model = current.current.overview?.models.find(item => item.id === modelId);
@@ -145,7 +148,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         reads.current++;
         const rejectExpected = tabNotifications.expect(scope, serviceTabSource(selected.dialog.id, projectId), [turn.id]);
         await perform(async () => {
-            try {return await (action === 'cancel' ? api.cancel(selected.dialog.id, turn, crypto.randomUUID()) : systemRolesApi.action(run, action, crypto.randomUUID()).then(value => ({ ...turn, run: value })));}
+            try {return await (action === 'cancel' ? transport.cancel(selected.dialog.id, turn, crypto.randomUUID()) : systemRolesApi.action(run, action, crypto.randomUUID()).then(value => ({ ...turn, run: value })));}
             catch (cause) {if (rejected(cause)) rejectExpected(); throw cause;}
         },
             value => { accept(selected.dialog.id, value); void refresh(); }, 'Исход действия не подтверждён. Перечитайте состояние перед повтором.');

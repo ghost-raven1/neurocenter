@@ -6,15 +6,20 @@ import {CHAT_FILE_ACCEPT} from './files';
 import {chatRecipients} from './participants';
 import type {IModelChatParticipant} from './types';
 import {ChatToolPopover} from './ChatToolPopover';
+import {chatSystemRoleMention, chatSystemRoleOptions} from '../ChatSystemRoles/mentions';
+import type {SystemRoleId} from '../SystemRoles/types';
 
-interface Props {draft: string; disabled: boolean; canSend: boolean; sending: boolean; uploading: boolean; onDraft: (value: string) => void; onSend: () => void; onStop: () => void; onCancelUpload: () => void; onFiles: (files: File[]) => void; onReject: (message: string) => void; participants?: IModelChatParticipant[]; filesOpen?: boolean; onFilesOpenChange?: (open: boolean) => void;}
+interface Props {draft: string; disabled: boolean; canSend: boolean; sending: boolean; uploading: boolean; onDraft: (value: string) => void; onSend: () => void; onStop: () => void; onCancelUpload: () => void; onFiles: (files: File[]) => void; onReject: (message: string) => void; participants?: IModelChatParticipant[]; filesOpen?: boolean; onFilesOpenChange?: (open: boolean) => void; onSystemRole?: (agentId: SystemRoleId, instruction: string) => void;}
 
 export function ChatComposer(props: Props): JSX.Element {
     const composing = useRef(false);
-    const targets = props.participants ? chatRecipients(props.draft, props.participants) : undefined;
+    const role = props.onSystemRole ? chatSystemRoleMention(props.draft, props.participants) : undefined;
+    const targets = props.participants && !role?.agentId && !role?.error ? chatRecipients(props.draft, props.participants) : undefined;
+    const targetError = role?.error || targets?.error;
+    const send = (): void => {if (targetError) return; if (role?.agentId) props.onSystemRole?.(role.agentId, role.instruction); else props.onSend();};
     const enter = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
         if (event.defaultPrevented) return;
-        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) {event.preventDefault(); if (props.canSend && !targets?.error) props.onSend();}
+        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229) {event.preventDefault(); if (props.canSend && !targetError) send();}
     };
     const input = {id: 'model-chat-message', 'aria-describedby': `model-chat-keyboard-hint model-chat-context-status${targets ? ' model-chat-recipients' : ''}`, value: props.draft, autoSize: {minRows: 1, maxRows: 4}, disabled: props.disabled,
         onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => {const files = Array.from(event.clipboardData.files); if (files.length) props.onFiles(files);},
@@ -29,17 +34,19 @@ export function ChatComposer(props: Props): JSX.Element {
             } catch {props.onReject('Не удалось прочитать файлы. Выберите их кнопкой.');}
         }}>
         <div className="model-chat__composer-heading"><label htmlFor="model-chat-message" className="model-chat__label">Сообщение</label>
+        {props.onSystemRole && <Button type="text" size="small" disabled={props.disabled} onClick={() => props.onSystemRole?.('agent-coordinator', props.draft)}>Системный агент</Button>}
         {targets && <Typography.Text id="model-chat-recipients" type={targets.error ? 'warning' : 'secondary'} className="model-chat__recipients" role="status">{targets.error || (targets.ids.length ? `Получат: ${props.participants!.filter(agent => targets.ids.includes(agent.agentId)).map(agent => agent.name).join(', ')}` : 'Команде')}</Typography.Text>}
         <div className="model-chat__file-picker"><ChatToolPopover label="Прикрепить документы" open={props.filesOpen ?? false} onOpenChange={props.onFilesOpenChange ?? (() => undefined)} disabled={props.disabled}>
             <FileDropZone label="Документы для чата" title="Перетащите документы сюда" buttonText="Выбрать файлы"
             hint="PDF, DOCX, текст, CSV и исходный код · до 5 файлов по 10 МиБ · до 100 КиБ извлечённого текста в файле · сканы и изображения пока не поддерживаются" accept={CHAT_FILE_ACCEPT} multiple disabled={props.disabled} busy={props.uploading} onFiles={props.onFiles} onReject={props.onReject}/>
         </ChatToolPopover></div>
         </div>
-        {props.participants ? <Mentions {...input} placeholder="Сообщение команде или @имя…" onChange={props.onDraft} onPressEnter={enter} placement="top"
-            options={props.participants.filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`}))}
-            filterOption={(search, option) => `${option.value} ${props.participants?.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}/>
+        {props.participants || props.onSystemRole ? <Mentions {...input} placeholder="Сообщение или @имя агента…" onChange={props.onDraft} onPressEnter={enter} placement="top"
+            options={[...(props.participants ?? []).filter(agent => agent.status === 'active').map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`})), ...(props.onSystemRole ? chatSystemRoleOptions : [])]}
+            filterOption={(search, option) => `${option.value} ${chatSystemRoleOptions.find(role => role.value === option.value)?.label ?? ''} ${props.participants?.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}/>
             : <Input.TextArea {...input} placeholder="Задайте вопрос по документам или напишите сообщение…" onChange={event => props.onDraft(event.target.value)} onKeyDown={enter}/>}
+        {(role?.agentId || role?.error) && <Typography.Text type={role.error ? 'warning' : 'secondary'} role="status">{role.error || 'Сначала проверим задачу, модель и контекст. Ничего не отправляется без вашего согласия.'}</Typography.Text>}
         <div className="model-chat__composer-actions"><Typography.Text id="model-chat-keyboard-hint" type="secondary" className="model-chat__keyboard-hint">Enter — отправить · Shift+Enter — новая строка</Typography.Text>
-            {props.sending ? <Button icon={<StopOutlined/>} onClick={props.onStop}>Остановить</Button> : props.uploading ? <Button onClick={props.onCancelUpload}>Отменить загрузку</Button> : <Button type="primary" icon={<SendOutlined/>} disabled={!props.canSend || !!targets?.error} onClick={props.onSend}>Отправить</Button>}</div>
+            {props.sending ? <Button icon={<StopOutlined/>} onClick={props.onStop}>Остановить</Button> : props.uploading ? <Button onClick={props.onCancelUpload}>Отменить загрузку</Button> : <Button type="primary" icon={<SendOutlined/>} disabled={!props.canSend || !!targetError} onClick={send}>{role?.agentId ? 'Подготовить задачу' : 'Отправить'}</Button>}</div>
     </div>;
 }
