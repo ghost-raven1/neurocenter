@@ -6,8 +6,12 @@ import {BuildError,digest} from './isolated-build-source.mjs';
 
 /** Only numeric state for the newly created group; commands and foreign processes are never selected for termination. */
 function groupMembers(pgid){
-    const output=execFileSync('/bin/ps',['-ax','-o','pid=,pgid=,stat='],{encoding:'utf8',timeout:1000,maxBuffer:1024**2,
-        env:{PATH:'/usr/bin:/bin',LANG:'C'}});
+    let output;
+    // A busy host may time out one probe; permission failures and sustained unavailability remain fatal.
+    for(let attempt=0;;attempt++)try{
+        output=execFileSync('/bin/ps',['-ax','-o','pid=,pgid=,stat='],{encoding:'utf8',timeout:1000,maxBuffer:1024**2,
+            env:{PATH:'/usr/bin:/bin',LANG:'C'}});break;
+    }catch(error){if(attempt>=2||!['ETIMEDOUT','EAGAIN'].includes(error.code))throw error;}
     return output.split('\n').map(line=>/^\s*(\d+)\s+(\d+)\s+(\S+)/.exec(line)).filter(match=>match&&Number(match[2])===pgid)
         .map(match=>({pid:Number(match[1]),zombie:match[3].startsWith('Z')}));
 }
@@ -17,7 +21,7 @@ function signalGroup(pgid,signal){try{process.kill(-pgid,signal);return true;}ca
 export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutMs=180000,graceMs=1000,logLimit=32*1024**2,onSpawn,ownerFile}){
     if(process.platform==='win32')throw new BuildError('UNSUPPORTED_PLATFORM','Owned process-group cleanup is currently supported on POSIX only.');
     const log=await fs.open(logFile,'wx',0o600),started=Date.now();
-    let child,pid,exit,spawnError,primary=null,closed=false,leaderExited=false,groupInspectionFailed=false;
+    let child,pid,exit,spawnError,inspectionError,primary=null,closed=false,leaderExited=false,groupInspectionFailed=false;
     const signals=[];let termAt=null,killAt=null;
     const fail=code=>{primary??={code};};
     const terminate=()=>{if(!pid||termAt!==null)return;termAt=Date.now();try{if(signalGroup(pid,'SIGTERM'))signals.push('SIGTERM');}catch{fail('PROCESS_CLEANUP_FAILED');}};
@@ -36,7 +40,7 @@ export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutM
             if(!primary&&(await log.stat()).size>logLimit){fail('BUILD_LOG_LIMIT');terminate();}
             if(spawnError&&!pid)break;
             let members;
-            try{members=pid?groupMembers(pid):[];}catch{groupInspectionFailed=true;fail('PROCESS_INSPECTION_FAILED');terminate();members=null;}
+            try{members=pid?groupMembers(pid):[];}catch(error){inspectionError=error.code;groupInspectionFailed=true;fail('PROCESS_INSPECTION_FAILED');terminate();members=null;}
             if(leaderExited&&members?.some(item=>!item.zombie)&&termAt===null){fail('SURVIVING_DESCENDANTS');terminate();}
             if(primary&&termAt===null)terminate();
             if(termAt!==null&&killAt===null&&Date.now()-termAt>=graceMs){
@@ -50,7 +54,7 @@ export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutM
         return {ok:!primary&&closed&&leaderExited&&exit?.code===0&&noLiveDescendants,pid,exitCode:exit?.code??null,signal:exit?.signal??null,
             durationMs:Date.now()-started,leaderReaped:leaderExited,cleanup:{noLiveDescendants,zombiePids:finalMembers.filter(item=>item.zombie).map(item=>item.pid),signals,
                 note:'Node reaps its direct npm child. Orphan descendant reaping belongs to the OS; zombie state is reported separately.'},
-            ...(primary?{failure:{...primary,...spawnError?{errno:spawnError}:{}}}:{}),log:{path:logFile}};
+            ...(primary?{failure:{...primary,...(spawnError||inspectionError?{errno:spawnError||inspectionError}:{})}}:{}),log:{path:logFile}};
     }finally{
         signal?.removeEventListener('abort',abort);await log.close();
     }

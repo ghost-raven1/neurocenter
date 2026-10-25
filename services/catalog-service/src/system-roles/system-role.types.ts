@@ -16,13 +16,21 @@ export interface RoleTargetSnapshot {
     key: string; kind: RoleTargetKind; id: string; version: number; pin: string;
     modelContent: string; before: Record<string, unknown>; editable: boolean;
 }
-export interface RolePrepared { selection: RoleSelection; definitionPin: string; consentDigest: string; preview: string; targets: RoleTargetSnapshot[]; mcp?:RoleMcpPreparedTarget[]; }
+/** Project knowledge is a separate whole-index read grant, never a target/path write permission. */
+export interface RoleProjectGrant { scope: 'project-index'; projectId: string; projectName: string; identity: string; recipients: SystemRoleId[]; generation?: string; snapshot?: string; }
+export interface RoleProjectEvidence {
+    status: 'metadata' | 'ready' | 'empty' | 'unavailable'; project: { id: string; name: string }; generation?: string; snapshot?: string;
+    sources: Array<{ id: string; path: string; title?: string; startLine?: number; endLine?: number }>; message?: string;
+}
+export interface RoleInvocation { content: string; projectContext?: RoleProjectEvidence; }
+export interface RolePrepared { selection: RoleSelection; definitionPin: string; consentDigest: string; preview: string; targets: RoleTargetSnapshot[]; mcp?:RoleMcpPreparedTarget[]; projectContext?: RoleProjectGrant; }
 export interface RoleChange { targetKey: string; replacement: string; explanation: string; }
 export interface RoleResult {
     kind: 'diagnosis' | 'proposal'; summary: string;
     findings: Array<{ evidenceId: string; detail: string }>;
     nextSteps: string[]; changes: RoleChange[];
     delegations?: RoleDelegationResult[];
+    projectContext?: RoleProjectEvidence;
 }
 /** Child answers belong to the same actor, consent, deadline and durable run; they cannot schedule more work. */
 export interface RoleDelegationResult { roleId: SystemRoleId; state: 'succeeded' | 'failed'; result?: Omit<RoleResult, 'delegations'>; message?: string; }
@@ -40,4 +48,6 @@ export interface RoleRunView {
     modelId: string; modelPin: string; facts: DiagnosticFact[]; result: RoleResult | null; steps: RoleStep[]; applied: RoleApplyReceipt[];
     targets: Array<{ key: string; kind: RoleTargetKind; id: string; version: number; content: string; editable: boolean }>;
     canApply: boolean; canRollback: boolean; canCancel: boolean;
+    /** Original owner input for a fresh preview; accepted pins and grants are never copied. */
+    prepareAgain?: { reason: 'definition_changed'; selection: RoleSelection; modelId: string };
 }

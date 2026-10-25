@@ -8,13 +8,15 @@ import { remoteModelOptions, assertRemoteModelOptions } from '../models/remote-m
 import { allowRequest } from '../access/access-policy';
 import type { AgentOverrides } from '../agents/agent.types';
 import type { SystemRolePolicy } from './system-role.policy';
-import { ROLE_BUDGET, roleDefinitionPin, roleHash } from './system-role.definitions';
+import { ROLE_BUDGET, ROLE_RAG_POLICY, roleDefinitionPin, roleHash } from './system-role.definitions';
+import { acceptedLegacyDefinition, legacyRoleDefinitionPin } from './system-role.legacy-contract';
 import { restoreRoleProjection, roleProjection, type PrivateProjection } from './system-role.privacy';
 import { readRolePackageSource } from './system-role.package-source';
 import { readRoleDialogContext } from './system-role.dialog-context';
 import { coordinatorContext } from './system-role.coordinator';
 import type {SystemRoleMcpAccess} from '../system-role-mcp/system-role-mcp.types';
-import type { RoleApplyReceipt, RolePrepared, RoleSelection, RoleTargetSelection, RoleTargetSnapshot, SystemRoleId } from './system-role.types';
+import type { ModelChatProjectContext } from '../model-chat/chat-project-context';
+import type { RoleApplyReceipt, RolePrepared, RoleRunRow, RoleSelection, RoleTargetSelection, RoleTargetSnapshot, SystemRoleId } from './system-role.types';
 
 type Skill = { body: string; meta: { version: number; [key: string]: unknown } };
 const changed = (): never => { throw new ConflictException('Выбранная версия изменилась. Подготовьте и просмотрите контекст заново.'); };
@@ -22,7 +24,7 @@ const changed = (): never => { throw new ConflictException('Выбранная �
 export class SystemRoleTargets {
     constructor(private readonly policy: SystemRolePolicy, private readonly agents: AgentsService, private readonly catalog: CatalogService,
         private readonly connections: RemoteConnectionService, private readonly request: typeof fetch = globalThis.fetch, private readonly chats?: ProjectChatService,
-        private readonly mcp?:SystemRoleMcpAccess) {}
+        private readonly mcp?:SystemRoleMcpAccess, private readonly projectContext?: ModelChatProjectContext) {}
     async publicChatChoices(req: Request, project: string | null) {
         if (!project || !this.chats) return [];
         return (await this.chats.rooms(req, project)).rooms.filter(room => room.visibility === 'PUBLIC').slice(0, 50)
@@ -107,19 +109,33 @@ export class SystemRoleTargets {
         return { key: target.kind + ':' + target.id, kind: target.kind, id: target.id, version, pin: roleHash({ version, before }),
             modelContent: projection.content, before: structuredClone({ ...before, projection }), editable };
     }
-    /** acceptedMcp is supplied only from a server-owned run snapshot; new admissions always discover fresh authority. */
-    async prepare(req: Request, id: SystemRoleId, selection: RoleSelection, acceptedMcp?: RolePrepared['mcp']): Promise<RolePrepared> {
+    /** Only Runner supplies acceptedRun; new admissions always use current definitions and fresh authority. */
+    async prepare(req: Request, id: SystemRoleId, selection: RoleSelection, acceptedMcp?: RolePrepared['mcp'], accepted?: Pick<RolePrepared, 'projectContext'>, acceptedRun?: RoleRunRow): Promise<RolePrepared> {
+        const legacy = acceptedRun?.agent_id === id && acceptedRun.snapshot === accepted ? acceptedLegacyDefinition(acceptedRun) : undefined;
         selection = { projectId: selection.projectId, instruction: selection.instruction, diagnostics: selection.diagnostics, targets: selection.targets,...(selection.mcp?.length?{mcp:selection.mcp}:{}) };
         const targets: RoleTargetSnapshot[] = [];
         for (const target of selection.targets) targets.push(await this.read(req, selection, target));
         if(selection.mcp?.length&&!acceptedMcp&&!this.mcp)throw new ConflictException('Исполнитель MCP системных агентов не настроен. Сохраните выбор и повторите позже.');
         const mcp=selection.mcp?.length?acceptedMcp??await this.mcp!.prepare(req,selection.projectId,selection.mcp):undefined;
+        let projectContext = accepted?.projectContext;
+        if (accepted === undefined && selection.projectId && this.projectContext) {
+            const captured = await this.projectContext.capture(req, selection.projectId);
+            if (captured.searchEnabled) projectContext = { scope: 'project-index', projectId: selection.projectId,
+                projectName: captured.evidence.project!.name, identity: captured.identity,
+                recipients: [id, ...(id === 'agent-coordinator' ? coordinatorContext({ selection, targets, mcp }).roles.map(role => role.id) : [])],
+                ...(captured.evidence.generation ? { generation: captured.evidence.generation } : {}), ...(captured.evidence.snapshot ? { snapshot: captured.evidence.snapshot } : {}) };
+        }
+        if (projectContext) {
+            if (!this.projectContext || projectContext.projectId !== selection.projectId) throw new ConflictException('Разрешение базы знаний относится к другому проекту.');
+            await this.projectContext.assertIdentity(req, projectContext.projectId, projectContext.identity);
+        }
         const preview = JSON.stringify({ instruction: roleProjection(selection.instruction).content, diagnostics: selection.diagnostics,
             targets: targets.map(target => ({ key: target.key, kind: target.kind, version: target.version, content: target.modelContent })),
-            ...(mcp?{mcp}:{}),...(id === 'agent-coordinator' ? { delegation: coordinatorContext({ selection, targets,mcp }) } : {}) }, null, 2);
+            ...(projectContext ? { projectContext: { ...projectContext, policy: ROLE_RAG_POLICY, sharesModelCallBudget: true } } : {}),
+            ...(mcp?{mcp}:{}),...(id === 'agent-coordinator' ? { delegation: coordinatorContext({ selection, targets,mcp }, !!legacy) } : {}) }, null, 2);
         if (Buffer.byteLength(preview) > ROLE_BUDGET.contextBytes) throw new ConflictException('Общий выбранный контекст больше 64 КиБ. Уменьшите выбор.');
-        const definitionPin = roleDefinitionPin(id), consentDigest = roleHash({ definitionPin, selection, targets: targets.map(({ key, pin, modelContent }) => ({ key, pin, modelContent })),...(mcp?{mcp}:{}) });
-        return { selection, definitionPin, consentDigest, preview, targets,...(mcp?{mcp}:{}) };
+        const definitionPin = legacy ? legacyRoleDefinitionPin(id) : roleDefinitionPin(id), consentDigest = roleHash({ definitionPin, selection, targets: targets.map(({ key, pin, modelContent }) => ({ key, pin, modelContent })),...(mcp?{mcp}:{}), ...(projectContext ? { projectContext, projectKnowledge: ROLE_RAG_POLICY } : {}) });
+        return { selection, definitionPin, consentDigest, preview, targets,...(mcp?{mcp}:{}), ...(projectContext ? { projectContext } : {}) };
     }
     replacement(target: RoleTargetSnapshot, content: string): string {
         const restored = restoreRoleProjection(content, target.before.projection as unknown as PrivateProjection, target.kind === 'adapter');

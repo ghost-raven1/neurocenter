@@ -1,3 +1,6 @@
+import {CHAT_SEARCH_SCHEMA_SQL} from '../chat-search/chat-search.schema';
+import {CHAT_SEARCH_SCHEMA_ASSERT_SQL} from '../chat-search/chat-search.schema-verification';
+import {BROWSER_AUTH_SESSION_SCHEMA_SQL} from '../browser-auth-sessions/browser-auth-session.schema';
 import {PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL} from '../models/project-rag-authorization.schema';
 import {PROJECT_RAG_AUTHORIZATION_SCHEMA_ASSERT_SQL} from '../models/project-rag-authorization.schema-verification';
 import {DEVICE_CODEX_SCHEMA_SQL} from '../models/device-codex.schema';
@@ -99,4 +102,6 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:35,name:'private-system-role-service-chat',sql:SYSTEM_ROLE_CHAT_SCHEMA_SQL},
     {version:36,name:'bounded-system-role-mcp-execution',sql:SYSTEM_ROLE_MCP_SCHEMA_SQL},
     {version:37,name:'durable-device-mcp-cleanup',sql:SYSTEM_ROLE_MCP_MAINTENANCE_SCHEMA_SQL},
+    {version:38,name:'durable-opaque-browser-sessions',sql:BROWSER_AUTH_SESSION_SCHEMA_SQL},
+    {version:39,name:'public-chat-semantic-search',sql:CHAT_SEARCH_SCHEMA_SQL+'\n'+CHAT_SEARCH_SCHEMA_ASSERT_SQL},
 ];

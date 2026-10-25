@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import type { Request } from 'express';
+import type { PoolClient } from 'pg';
 import type { ModelsService } from '../models/models.service';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import type { IModel } from '../models/model.types';
@@ -10,9 +11,9 @@ import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import {readFeatures,FeatureFlagError} from '../../../shared/feature-client.cjs';
-import { chatContext, type IChatContextSettings } from './chat-context';
+import { chatContext } from './chat-context';
 import type { ChatMessage } from './chat.types';
-import type { ChatProjectEvidence, ChatProjectSource, PreparedProjectContext } from './chat-project-context.types';
+import type { ChatProjectEvidence, ChatProjectSource, PreparedProjectContext, ProjectContextCapture } from './chat-project-context.types';
 
 const NONE: ChatProjectEvidence = { status: 'none', sources: [] };
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && Buffer.byteLength(value) <= max && !value.includes('\0');
@@ -25,8 +26,8 @@ export class ModelChatProjectContext {
     private readonly selections: ProjectEmbeddingRepository;
     constructor(private readonly models: ModelsService, private readonly runtime: IModelInferenceRuntime) { this.selections = new ProjectEmbeddingRepository(models.pool); }
 
-    private async state(req: Request, projectId: string) {
-        const project = await this.models.resolveProject(req, projectId, 2), selected = await this.selections.read(project.id);
+    private async state(req: Request, projectId: string, db?: Pick<PoolClient, 'query'>) {
+        const project = await this.models.resolveProject(req, projectId, 2), selected = await this.selections.read(project.id, db);
         const evidence: ChatProjectEvidence = {
             status: selected.blocker ? 'metadata' : selected.activeSnapshot ? 'ready' : 'unavailable',
             project: { id: project.id, name: project.name, state: project.state, headRevision: project.headRevision },
@@ -39,11 +40,34 @@ export class ModelChatProjectContext {
     async overview(req: Request, projectId: string | null): Promise<ChatProjectEvidence> {
         return projectId ? (await this.state(req, projectId)).evidence : { ...NONE };
     }
+    /** Free consent capture: metadata and canonical identity, never an embedding or retrieval. */
+    async capture(req: Request, projectId: string, signal?: AbortSignal): Promise<ProjectContextCapture> {
+        signal?.throwIfAborted(); const state = await this.state(req, projectId);
+        try { const searchEnabled = (await readFeatures(process.env, globalThis.fetch, signal)).flags.project_search;
+            signal?.throwIfAborted(); return { identity: state.identity, evidence: state.evidence, searchEnabled };
+        } catch (error) { signal?.throwIfAborted(); if (error instanceof FeatureFlagError) throw new HttpException({ code: error.code, message: error.message }, error.status); throw error; }
+    }
+    /** Paid results retain receipts after flag OFF. Optional db must be the caller's active acceptance transaction. */
+    async assertIdentity(req: Request, projectId: string, identity: string, signal?: AbortSignal, db?: Pick<PoolClient, 'query'>): Promise<void> {
+        signal?.throwIfAborted();
+        if (db) {
+            // Canonical sync/reindex/settings writers hold this parent FOR UPDATE, including first-time settings inserts.
+            await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [projectId]);
+            await db.query('SELECT project_id FROM project_embedding_settings WHERE project_id=$1 FOR SHARE', [projectId]);
+            await db.query(`SELECT m.id FROM model_catalog m JOIN project_models pm ON pm.model_id=m.id
+                JOIN project_embedding_settings e ON e.model_id=m.id AND e.project_id=pm.project_id WHERE e.project_id=$1 FOR SHARE OF m,pm`, [projectId]);
+        }
+        if ((await this.state(req, projectId, db)).identity !== identity) throw new ConflictException('Контекст проекта или embedding-модель изменились. Повторите сообщение с актуальным индексом.');
+        const pending = await (db ?? this.models.pool).query("SELECT 1 FROM project_rag_sync_intents WHERE project_id=$1 AND state IN ('pending','uncertain') LIMIT 1", [projectId]);
+        if (pending.rowCount) throw new ConflictException('Синхронизация индекса ещё проверяется. Дождитесь её завершения и повторите сообщение.');
+        signal?.throwIfAborted();
+    }
     async prepare(req: Request, projectId: string | null, prompt: string, signal: AbortSignal, beforeSearch?: () => Promise<void>,
-        embedding?: (model: IModel, body: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>): Promise<PreparedProjectContext> {
+        embedding?: (model: IModel, body: Record<string, unknown>, signal: AbortSignal) => Promise<Record<string, unknown>>, expectedIdentity?: string): Promise<PreparedProjectContext> {
         signal.throwIfAborted();
         if (!projectId) return this.prepared({ ...NONE }, async () => { signal.throwIfAborted(); });
         const initial = await this.state(req, projectId);
+        if (expectedIdentity !== undefined && initial.identity !== expectedIdentity) throw new ConflictException('Подтверждённый индекс проекта изменился. Подготовьте контекст заново.');
         let searchEnabled:boolean;
         try{searchEnabled=(await readFeatures(process.env,globalThis.fetch,signal)).flags.project_search;}
         catch(error){signal.throwIfAborted();if(error instanceof FeatureFlagError)throw new HttpException({code:error.code,message:error.message},error.status);throw error;}
@@ -58,14 +82,7 @@ export class ModelChatProjectContext {
             await assertMetadata();
             return this.prepared({...initial.evidence,status:'metadata',generation:undefined,snapshot:undefined,sources:[],message:'Поиск по проекту отключён главным администратором.'},assertMetadata);
         }
-        const assertCurrent = async () => {
-            signal.throwIfAborted();
-            const current = await this.state(req, projectId);
-            if (initial.identity !== current.identity) throw new ConflictException('Контекст проекта или embedding-модель изменились. Повторите сообщение с актуальным индексом.');
-            const pending = await this.models.pool.query("SELECT 1 FROM project_rag_sync_intents WHERE project_id=$1 AND state IN ('pending','uncertain') LIMIT 1", [projectId]);
-            if (pending.rowCount) throw new ConflictException('Синхронизация индекса ещё проверяется. Дождитесь её завершения и повторите сообщение.');
-            signal.throwIfAborted();
-        };
+        const assertCurrent = () => this.assertIdentity(req, projectId, initial.identity, signal);
         const admit = async () => { signal.throwIfAborted(); await requireFeatureEnabled('project_search'); await assertCurrent(); };
         await admit();
         const { selected } = initial;
@@ -152,19 +169,24 @@ export class ModelChatProjectContext {
     }
     private prepared(evidence: ChatProjectEvidence, assertCurrent: () => Promise<void>, beforeInference = assertCurrent,
         requiredFeatures: PreparedProjectContext['requiredFeatures'] = []): PreparedProjectContext {
-        return { evidence, messages: this.messages(evidence), assertCurrent, beforeInference, requiredFeatures, fit: (history: ChatMessage[], settings: IChatContextSettings) => {
-            let fitted = { ...evidence, sources: evidence.sources.map(source => ({ ...source })) };
-            while (chatContext([...this.messages(fitted), ...history], settings).exceeded && fitted.sources.length) {
+        return { evidence, messages: this.messages(evidence), assertCurrent, beforeInference, requiredFeatures, fit: (history, settings, limits) => {
+            let fitted = { ...evidence, sources: evidence.sources.flatMap(source => {
+                const projected = limits?.projectSource ? limits.projectSource({ ...source }) : { ...source }; return projected ? [projected] : [];
+            }) };
+            if (evidence.sources.length && !fitted.sources.length) fitted = { ...fitted, status: 'metadata', message: 'Фрагменты проекта не переданы: превышен предел безопасных сведений об источниках.' };
+            const exceeded = (messages: ChatMessage[]) => chatContext(messages, settings).exceeded
+                || limits?.maxBytes !== undefined && messages.reduce((size, message) => size + Buffer.byteLength(message.content), 0) > limits.maxBytes;
+            while (exceeded([...this.messages(fitted), ...history]) && fitted.sources.length) {
                 if (fitted.sources.length > 1) fitted = { ...fitted, sources: fitted.sources.slice(0, -1) };
                 else if (Array.from(fitted.sources[0].excerpt).length > 257) fitted.sources[0].excerpt = cut(fitted.sources[0].excerpt, Math.max(256, Math.floor(Array.from(fitted.sources[0].excerpt).length / 2))) + '…';
                 else fitted = { ...fitted, status: 'metadata', sources: [], message: 'Фрагменты проекта не переданы модели: для них недостаточно места в окне контекста.' };
             }
             let messages = [...this.messages(fitted), ...history];
-            if (chatContext(messages, settings).exceeded && !chatContext(history, settings).exceeded) {
+            if (exceeded(messages) && !exceeded(history)) {
                 messages = [...history];
                 fitted = { ...fitted, sources: [], message: fitted.message ?? 'Сведения о проекте не переданы модели: для них недостаточно места в окне контекста.' };
             }
-            if (chatContext(messages, settings).exceeded) throw new BadRequestException('Контекст проекта вместе с сообщением не помещается в окно этой модели. Сократите сообщение или выберите модель с большим окном.');
+            if (exceeded(messages)) throw new BadRequestException('Контекст проекта вместе с сообщением не помещается в окно этой модели. Сократите сообщение или выберите модель с большим окном.');
             return { messages, evidence: fitted };
         } };
     }

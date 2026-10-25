@@ -26,6 +26,12 @@ describe('AuthGuardService source authority',()=>{
  it.each([401,403])('rejects revoked browser authority (%s), without stale identity reuse',async status=>{
   const guard=service();client.get.mockResolvedValueOnce({status:200,data:valid()}).mockResolvedValueOnce({status,data:valid()});expect(await guard.authenticate(req())).not.toBeNull();expect(await guard.authenticate(req())).toBeNull();expect(client.get).toHaveBeenCalledTimes(2);
  });
+ it('preserves a session-store503 after an accepted identity without converting it to logout or cached grants',async()=>{
+  const guard=service(),request=req({cookie:'bridge_session=synthetic'});
+  client.get.mockResolvedValueOnce({status:200,data:valid()}).mockResolvedValueOnce({status:503,data:valid()});
+  expect(await guard.authenticate(request)).not.toBeNull();await expect(guard.authenticate(request)).rejects.toMatchObject({status:503,message:'Проверка входа временно недоступна. Повторите запрос позже.'});
+  expect(client.get).toHaveBeenCalledTimes(2);expect(client.post).not.toHaveBeenCalled();
+ });
  it.each([201,302,429,500])('maps unavailable browser authority %s to a generic 503',async status=>{
   client.get.mockResolvedValue({status,data:valid()});await expect(service().authenticate(req())).rejects.toMatchObject({status:503,message:'Проверка входа временно недоступна. Повторите запрос позже.'});
  });

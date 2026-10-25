@@ -47,8 +47,12 @@ export function serviceReceipt(scope: string): ServiceReceipt | undefined {
     const input = serviceIntent(scope);
     if (input) return { dialogId: input.dialogId, requestId: input.input.requestId };
     try {
-        const value = JSON.parse(sessionStorage.getItem(storageKey(scope)) || 'null') as ServiceReceipt | null;
-        if (value && identifier(value.dialogId) && identifier(value.requestId)) return value;
+        const value: unknown = JSON.parse(sessionStorage.getItem(storageKey(scope)) || 'null');
+        if (object(value) && value.version === 1 && object(value.intent) && object(value.intent.input)) {
+            const saved = value.intent, input = value.intent.input;
+            if (input.projectId === JSON.parse(scope)[1] && identifier(saved.dialogId) && identifier(input.requestId)) return { dialogId: saved.dialogId, requestId: input.requestId };
+        }
+        if (object(value) && identifier(value.dialogId) && identifier(value.requestId)) return { dialogId: value.dialogId, requestId: value.requestId };
     } catch { /* A broken receipt cannot restore a different user's request. */ }
     return undefined;
 }

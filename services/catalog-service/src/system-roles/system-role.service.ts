@@ -13,10 +13,12 @@ import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { listTargets } from '../catalog-requests/request.targets';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleCallBudget, roleDefinitionPin, roleHash, systemRole } from './system-role.definitions';
+import { acceptedLegacyDefinition } from './system-role.legacy-contract';
 import { SystemRoleRepository, type RoleDb, type RoleExecutionLane } from './system-role.repository';
 import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
 import { SystemRoleRunner, SystemRoleStepTimeout } from './system-role.runner';
+import { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { SystemRoleApplication } from './system-role.apply';
 import { notifyRoleOperations } from './system-role.operations';
 import { roleAction, roleRequestId, roleSelection, startRoleRun } from './system-role.validation';
@@ -46,8 +48,9 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     private stopped = false;
     constructor(private readonly models: ModelsService, agents: AgentsService, catalog: CatalogService, connections: RemoteConnectionService, runtime: ModelRuntime, chats: ProjectChatService,@Optional()@Inject('SYSTEM_ROLE_MCP')readonly mcp?:SystemRoleMcpAccess) {
         this.repository = new SystemRoleRepository(models.pool); this.policy = new SystemRolePolicy(models);
-        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats,mcp);
-        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready(),undefined,undefined,mcp);
+        const projectContext = new ModelChatProjectContext(models, runtime);
+        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats,mcp,projectContext);
+        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready(),undefined,undefined,mcp,projectContext);
         this.application = new SystemRoleApplication(this.repository, this.policy, this.targets);
     }
     async onModuleInit(): Promise<void> {
@@ -90,7 +93,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         if (selection.mcp?.length) await this.mcp?.assertAdmission(req, selection.projectId, selection.mcp);
         const prepared = await this.targets.prepare(req, id, selection);
         return { preview: prepared.preview, consentDigest: prepared.consentDigest, definitionPin: prepared.definitionPin,
-            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })),...(prepared.mcp?{mcp:prepared.mcp}:{}) };
+            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })),...(prepared.mcp?{mcp:prepared.mcp}:{}), ...(prepared.projectContext ? { projectContext: prepared.projectContext } : {}) };
     }
     async start(req: Request, agentId: string, raw: unknown, receipt?: RoleAdmissionReceipt): Promise<RoleRunView> {
         const id = this.role(agentId), input = startRoleRun(id, raw), actor = await this.policy.actor(req, input.projectId), requestHash = roleHash({ id, input });
@@ -150,11 +153,16 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     }
     private view(row: RoleRunRow, actor?: IModelActor): RoleRunView {
         const manage = !actor || (row.project_id ? projectLevel(actor.claims, actor.activeRole, row.project_id) >= 3 : actor.activeRole === 'Главный админ');
+        const currentDefinition = row.request.expectedDefinitionPin === roleDefinitionPin(row.agent_id);
+        const prepareAgain: RoleRunView['prepareAgain'] = !currentDefinition && manage && actor?.email === row.actor
+            && row.state === 'awaiting_review' && row.result?.kind === 'proposal' && acceptedLegacyDefinition(row)
+            ? { reason: 'definition_changed', selection: structuredClone(row.snapshot.selection), modelId: row.request.modelId } : undefined;
         return { id: row.id, agentId: row.agent_id, projectId: row.project_id, actor: row.actor, state: row.state, phase: row.phase, revision: row.revision,
             operationId: 'system-role-' + row.id, message: row.message, createdAt: new Date(row.created_at).toISOString(), finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
             callsStarted: row.calls_started, modelCallBudget: roleCallBudget(row.agent_id, !!row.request.mcp?.length), modelId: row.request.modelId, modelPin: row.request.expectedModelPin, facts: row.facts, result: row.result, steps: row.steps, applied: row.applied,
             targets: row.snapshot.targets.map(({ key, kind, id, version, modelContent, editable }) => ({ key, kind, id, version, content: modelContent, editable })),
-            canApply: manage && row.state === 'awaiting_review' && !!row.result?.changes.length && row.result.changes.every(change => row.snapshot.targets.find(target => target.key === change.targetKey)?.editable),
+            ...(prepareAgain ? { prepareAgain } : {}),
+            canApply: currentDefinition && manage && row.state === 'awaiting_review' && !!row.result?.changes.length && row.result.changes.every(change => row.snapshot.targets.find(target => target.key === change.targetKey)?.editable),
             canRollback: manage && ['succeeded', 'failed', 'interrupted'].includes(row.state) && !!row.applied.length,
             canCancel: ['queued', 'running', 'awaiting_review'].includes(row.state) };
     }

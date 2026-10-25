@@ -7,7 +7,11 @@ export type RoleMcpTarget=({runtime:'server'}|{runtime:'device';deviceId:string;
 export type RoleMcpSelection=RoleMcpTarget&{discoveryId:string;tools:Array<{name:string;schemaDigest:string}>};
 export interface RoleMcpTool {name:string;description:string;schemaDigest:string;inputSchema:Record<string,unknown>;annotations?:Record<string,unknown>}
 export interface RoleSelection { projectId: string | null; instruction: string; diagnostics: DiagnosticKind[]; targets: Array<{ kind: TargetKind; id: string; text?: string }>; mcp?:RoleMcpSelection[]; }
-export interface RolePrepared { preview: string; consentDigest: string; definitionPin: string; targets: Array<{ key: string; kind: TargetKind; id: string; version: number; editable: boolean }>; mcp?:Array<{target:RoleMcpSelection;tools:Array<RoleMcpTool&{toolKey:string}>}>; }
+/** Server-owned read grant; it is never part of a client selection or start request. */
+export interface RoleProjectContextGrant { scope: 'project-index'; projectId: string; projectName: string; identity: string; recipients: SystemRoleId[]; generation?: string; snapshot?: string; }
+export interface RoleProjectContextSource { id: string; path: string; title?: string; startLine?: number; endLine?: number; }
+export interface RoleProjectContextReceipt { status: 'metadata' | 'ready' | 'empty' | 'unavailable'; project: { id: string; name: string }; generation?: string; snapshot?: string; sources: RoleProjectContextSource[]; message?: string; }
+export interface RolePrepared { preview: string; consentDigest: string; definitionPin: string; targets: Array<{ key: string; kind: TargetKind; id: string; version: number; editable: boolean }>; mcp?:Array<{target:RoleMcpSelection;tools:Array<RoleMcpTool&{toolKey:string}>}>; projectContext?: RoleProjectContextGrant; }
 export interface RoleStart extends RoleSelection { requestId: string; modelId: string; expectedModelPin: string; expectedDefinitionPin: string; consentDigest: string; }
 export interface RoleOverview { definitions: RoleDefinition[]; budget: { calls: number; diagnostics: number; targets: number; deadlineMs: number }; models: Array<{ id: string; name: string; pin: string }>; targets: Array<{ kind: TargetKind; id: string; name: string }>; projectId: string | null; }
 export interface RoleRun {
@@ -18,8 +22,11 @@ export interface RoleRun {
     steps: Array<{ at: string; phase: string; message: string }>; applied: Array<{ targetKey: string; version: number; pin: string; owner: string }>;
     targets: Array<{ key: string; kind: TargetKind; id: string; version: number; content: string; editable: boolean }>;
     canApply: boolean; canRollback: boolean; canCancel: boolean;
+    /** Owner draft for current preparation; no accepted pins or execution grant. */
+    prepareAgain?: { reason: 'definition_changed'; selection: RoleSelection; modelId: string };
 }
 export interface RoleResult { kind: 'diagnosis' | 'proposal'; summary: string; findings: Array<{ evidenceId: string; detail: string }>; nextSteps: string[]; changes: Array<{ targetKey: string; replacement: string; explanation: string }>;
+    projectContext?: RoleProjectContextReceipt;
     delegations?: Array<{ roleId: SystemRoleId; state: 'succeeded' | 'failed'; result?: Omit<RoleResult, 'delegations'>; message?: string }>; }
 export const roleName = (id: SystemRoleId): string => id === 'agent-coordinator' ? 'Координатор' : id === 'agent-packager' ? 'Упаковщик' : id === 'agent-ai-admin' ? 'AI-админ' : id === 'agent-indexer' ? 'Индексатор' : 'Автоконфигуратор';
 export const roleFlag = (id: SystemRoleId): RoleFlag => id === 'agent-coordinator' ? 'system_coordinator' : id === 'agent-packager' ? 'tool_build_agent' : id === 'agent-ai-admin' ? 'system_ai_admin' : id === 'agent-indexer' ? 'system_indexer' : 'system_autoconfigurator';

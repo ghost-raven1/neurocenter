@@ -16,5 +16,8 @@ export interface PreparedProjectContext {
     /** Identity and access remain checked after a paid result; feature admission only precedes a new dispatch. */
     assertCurrent(): Promise<void>;
     beforeInference(): Promise<void>;
-    fit(history: ChatMessage[], settings: IChatContextSettings): { messages: ChatMessage[]; evidence: ChatProjectEvidence };
+    fit(history: ChatMessage[], settings: IChatContextSettings, limits?: ProjectContextFit): { messages: ChatMessage[]; evidence: ChatProjectEvidence };
 }
+/** Internal consumers may project optional source text and impose their smaller prompt envelope before fitting. */
+export interface ProjectContextFit { maxBytes?: number; projectSource?: (source: ChatProjectSource) => ChatProjectSource | null; }
+export interface ProjectContextCapture { identity: string; evidence: ChatProjectEvidence; searchEnabled: boolean; }

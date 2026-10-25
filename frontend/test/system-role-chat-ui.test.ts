@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { modalAntd, uiNode } from './modal-actions.fixture';
+import type { RoleProjectContextGrant } from '../src/features/SystemRoles/types';
 
 const h = await vi.hoisted(async () => {
     const { adminSetupHooks } = await import('./admin-setup-hooks.fixture'), { modalUi } = await import('./modal-actions.fixture');
@@ -20,11 +21,12 @@ import { ServiceComposer } from '../src/features/SystemRoleChat/ServiceComposer'
 import { ServiceTurnContent } from '../src/features/SystemRoleChat/ServiceTurnContent';
 import { Modal } from 'antd';
 
-const render = () => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(ServiceComposer, { value: h.values as any, projectId: 'prj-one' })); h.hooks.commit(); return html; };
+const render = (projectId = 'prj-one') => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(ServiceComposer, { value: h.values as any, projectId })); h.hooks.commit(); return html; };
 const button = (text: string) => uiNode(h.ui, 'Button', text);
 const field = (kind: string, label: string) => h.ui.nodes.find(node => node.kind === kind && node.props['aria-label'] === label)!.props;
 const fill = () => { field('Select', 'Модель сервисного чата').onChange('model-one'); field('TextArea', 'Задача сервисного чата').onChange({ target: { value: 'Проверь текущую готовность' } }); render(); };
-const preview = () => { h.values.prepared = { dialogId: 'dialog-one', agentId: 'agent-coordinator', selection: { projectId: 'prj-one', instruction: 'Проверь текущую готовность', diagnostics: [], targets: [] }, prepared: { preview: 'Показан точный контекст', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64) } }; render(); };
+const projectContext: RoleProjectContextGrant = { scope: 'project-index', projectId: 'prj-one', projectName: 'Мой проект', identity: 'index-one', recipients: ['agent-coordinator', 'agent-ai-admin'], generation: 'generation-one', snapshot: 'snapshot-one' };
+const preview = (withProjectContext = false) => { h.values.prepared = { dialogId: 'dialog-one', agentId: 'agent-coordinator', selection: { projectId: 'prj-one', instruction: 'Проверь текущую готовность', diagnostics: [], targets: [] }, prepared: { preview: 'Показан выбранный контекст', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64), ...(withProjectContext ? { projectContext } : {}) } }; render(); };
 beforeEach(() => {
     h.hooks.dispose(); vi.clearAllMocks(); h.enabled = true; h.owner = 'alice'; h.values = {
         overview: { definitions: [{ id: 'agent-coordinator', targets: ['prompt'], diagnostics: ['project'] }, { id: 'agent-ai-admin', targets: [], diagnostics: ['health'] }], models: [{ id: 'model-one', name: 'Model', pin: 'a'.repeat(64) }], targets: [] },
@@ -45,7 +47,7 @@ it('editing a task invalidates consent synchronously and fences a retained submi
     render(); expect(button('Отправить').disabled).toBe(true); expect(field('TextArea', 'Задача сервисного чата').value).toBe('Другая задача');
 });
 it('a refreshed model pin clears consent and invalidates a retained submit handler', () => {
-    render(); fill(); preview(); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); const old = button('Отправить').onClick;
+    render(); fill(); preview(true); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); const old = button('Отправить').onClick;
     h.values.overview.models[0].pin = 'd'.repeat(64); render(); old(); expect(h.values.start).not.toHaveBeenCalled(); render(); expect(button('Отправить').disabled).toBe(true);
 });
 it('retained handlers cannot start a paid call after flag-off or an actor switch', () => {
@@ -64,9 +66,22 @@ it('an unavailable catalog explains setup while retaining the entered task', () 
     render(); fill(); h.values.overview.models = []; const html = render(); expect(html).toContain('Подключите модель'); expect(field('TextArea', 'Задача сервисного чата').value).toBe('Проверь текущую готовность'); expect(button('Проверить контекст').disabled).toBe(true);
 });
 it('changing roles clears selected context and requires a fresh preview', () => {
-    render(); fill(); preview(); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); field('Select', 'Системный агент').onChange('agent-ai-admin');
+    render(); fill(); preview(true); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); field('Select', 'Системный агент').onChange('agent-ai-admin');
     render(); expect(field('Select', 'Системный агент').value).toBe('agent-ai-admin'); expect(button('Отправить').disabled).toBe(true); button('Проверить контекст').onClick();
     expect(h.values.prepare).toHaveBeenLastCalledWith('agent-ai-admin', expect.objectContaining({ diagnostics: [], targets: [] }), false, 'model-one');
+});
+it('includes described search in the existing consent while clearly showing scope, recipients and the shared call budget', () => {
+    render(); fill(); preview(true); const html = render();
+    expect(html).toContain('поиск охватывает весь индекс проекта'); expect(html).toContain('он не ограничивает пути в индексе'); expect(html).toContain('Фрагменты могут получить: Координатор, AI-админ.');
+    expect(html).toContain('Не более одного поиска за запуск'); expect(html).toContain('общий лимит вызовов модели'); expect(html).toContain('Найденные фрагменты станут известны после запуска');
+    expect(html).not.toContain('Другие чаты и файлы не добавляются автоматически'); expect(uiNode(h.ui, 'Checkbox', 'Разрешаю').children).toContain('результаты описанного поиска');
+    expect(button('Отправить').disabled).toBe(true); expect(h.values.start).not.toHaveBeenCalled();
+    uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); button('Отправить').onClick(); expect(h.values.start).toHaveBeenCalledExactlyOnceWith('model-one');
+});
+it('changing project clears whole-index consent and fences a retained send handler', () => {
+    render(); fill(); preview(true); uiNode(h.ui, 'Checkbox', 'Разрешаю').onChange({ target: { checked: true } }); render(); const old = button('Отправить').onClick;
+    render('prj-two'); old(); expect(h.values.start).not.toHaveBeenCalled(); render('prj-two');
+    expect(uiNode(h.ui, 'Checkbox', 'Разрешаю').checked).toBe(false); expect(button('Отправить').disabled).toBe(true);
 });
 it('only explicitly selected actual MCP capabilities enter preparation and changing them revokes consent', () => {
     render(); fill(); const mcp = [{ runtime: 'server', assetId: 'asset-one', version: 1, manifest: 'd'.repeat(64), discoveryId: 'discovery-one', tools: [{ name: 'search', schemaDigest: 'e'.repeat(64) }] }];

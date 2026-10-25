@@ -24,6 +24,7 @@ import {useCallback} from 'react';
 import {ChatLauncher} from '../../features/ModelChat/ChatLauncher';
 import {useChatPresence} from '../../features/ChatActivity/useChatPresence';
 import {useTabNotifications} from '../../features/TabNotifications/useTabNotifications';
+import {useNotificationSounds} from '../../features/NotificationSounds/useNotificationSounds';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
@@ -64,6 +65,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
     const { isAuth, user, authorizationUnconfirmed, processing, error } = useSelector((state: RootState) => state.userBlock);
     useChatPresence(isAuth);
     useTabNotifications(isAuth, user?.email ?? '');
+    useNotificationSounds(isAuth);
     const [menuOpen, setMenuOpen] = useState(false);
     const [opsOpen, setOpsOpen] = useState(false);
     const operationsTrigger = useRef<HTMLButtonElement>(null);

@@ -94,7 +94,7 @@ export class ProxyService {
         if (/^\/api\/(?:model-chats|chat-presence|help|discussions|catalog-reactions)(?:\/|$)/.test(canonicalPath || '')) res.setHeader('Cache-Control','no-store');
         const learningRoute=/^\/api\/projects\/[^/]+\/learning(?:[/%]|$)/.test(canonicalPath||'');
         const agentTrialRoute=/^\/api\/projects\/[^/]+\/agents\/(?:readiness(?:[/%]|$)|.*\/readiness-trials(?:[/%]|$))/.test(canonicalPath||'');
-        const projectChatRoute=/^\/api\/projects\/[^/]+\/team-chat(?:[/%]|$)/.test(canonicalPath||'');
+        const projectChatRoute=/^\/api\/projects\/[^/]+\/(?:team-chat|chat-search)(?:[/%]|$)/.test(canonicalPath||'');
         if(learningRoute||agentTrialRoute||projectChatRoute)res.setHeader('Cache-Control','no-store');
         if(auth.deviceId&&(canonicalPath===undefined||learningRoute||agentTrialRoute||projectChatRoute)){
             res.status(403).json({message:projectChatRoute?'Командный чат доступен пользователям через интерфейс проекта.':agentTrialRoute?'Испытания агента доступны только пользователю через интерфейс проекта.':'Проектное обучение доступно мосту только через проверенную привязку папки.'});return;

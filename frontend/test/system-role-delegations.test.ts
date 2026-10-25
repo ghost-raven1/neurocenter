@@ -17,3 +17,13 @@ it('shows the successful answer beside the independent failure and retains the a
     expect(html).toContain('Роль недоступна. Проверьте настройки.'); expect(html).toContain('Уточнённый текст промпта.');
     expect(html).toContain('Применение изменений выполняется отдельным подтверждённым действием.');
 });
+it('keeps a child source attached to its own answer and distinguishes shared diagnostic facts', () => {
+    const html = renderToStaticMarkup(createElement(RoleDelegations, { diagnosticIds: ['fact-one'], delegations: [
+        { roleId: 'agent-ai-admin', state: 'succeeded', result: { kind: 'diagnosis', summary: 'Первый ответ.', findings: [{ evidenceId: 'source-a', detail: 'По базе знаний.' }, { evidenceId: 'fact-one', detail: 'По измерению.' }], nextSteps: [], changes: [],
+            projectContext: { status: 'ready', project: { id: 'prj-one', name: 'Мой проект' }, sources: [{ id: 'source-a', path: 'docs/child-a.md', startLine: 8 }] } } },
+        { roleId: 'agent-packager', state: 'succeeded', result: { kind: 'diagnosis', summary: 'Второй ответ.', findings: [{ evidenceId: 'source-a', detail: 'Нет собственной квитанции.' }], nextSteps: [], changes: [] } },
+    ] }));
+    const second = html.indexOf('<summary>Упаковщик'), firstChild = html.slice(0, second), secondChild = html.slice(second);
+    expect(firstChild).toContain('Источник базы знаний:'); expect(firstChild).toContain('docs/child-a.md'); expect(firstChild).toContain('строка 8'); expect(firstChild).toContain('ID измерения: fact-one');
+    expect(secondChild).toContain('Основание (ID): source-a'); expect(secondChild).not.toContain('docs/child-a.md'); expect(secondChild).not.toContain('Источник базы знаний:');
+});

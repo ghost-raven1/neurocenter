@@ -1,4 +1,4 @@
-import {compareTabOrder, TAB_PENDING_POLL_MS, TAB_ROOM_POLL_MS, tabSourceKey, type TabRow, type TabSnapshot, type TabSource} from './types';
+import {compareTabOrder, TAB_PENDING_POLL_MS, TAB_ROOM_POLL_MS, tabSourceKey, type TabCompletion, type TabRow, type TabSnapshot, type TabSource} from './types';
 
 interface Expected {before?: TabRow; rejected: boolean;}
 interface Watch {source: TabSource; rows: Map<string, TabRow>; expected: Map<string, Expected>; revision?: number; watermark: string; attention: boolean; nextRead: number; offset: number; baselined: boolean;}
@@ -9,6 +9,7 @@ export function createTabNotificationTracker(now: () => number = () => Date.now(
     const watches = new Map<string, Watch>(), open = new Map<string, number>(), listeners = new Set<() => void>();
     const denied = new Set<string>();
     const configurationListeners = new Set<() => void>();
+    const completionListeners = new Set<(event: TabCompletion) => void>();
     const emit = (): void => {listeners.forEach(listener => listener());};
     const allowed = (scope: string): boolean => enabled && !!owner && owner === scope;
     const pending = (watch: Watch): boolean => !!watch.expected.size || [...watch.rows.values()].some(row => row.state === 'pending');
@@ -27,7 +28,7 @@ export function createTabNotificationTracker(now: () => number = () => Date.now(
         if (denied.has(key)) return;
         if (previous?.revision !== undefined && value.revision !== undefined && value.revision < previous.revision) return;
         const watch: Watch = previous ?? {source: value.source, rows: new Map(), expected: new Map(), watermark: '', attention: false, nextRead: now(), offset: 0, baselined: false};
-        const rows = new Map<string, TabRow>();
+        const rows = new Map<string, TabRow>(); let completed = false;
         for (const row of value.rows) {
             const old = watch.rows.get(row.id), expected = watch.expected.get(row.id), before = expected?.before;
             if (old && ((old.version ?? 0) > (row.version ?? 0)
@@ -39,7 +40,7 @@ export function createTabNotificationTracker(now: () => number = () => Date.now(
                 : row.state !== before.state || !!row.stamp && !!before.stamp && row.stamp !== before.stamp));
             const expectedResult = changed && row.state !== 'pending';
             const arrived = watch.baselined && !old && row.state !== 'pending' && compareTabOrder(value.source, row.order, watch.watermark) > 0;
-            if (previous && (settled || arrived || expectedResult) && row.actor !== actor && (hidden || !open.has(key))) watch.attention = true;
+            if (previous && (settled || arrived || expectedResult) && row.actor !== actor && (hidden || !open.has(key))) {watch.attention = true; completed = true;}
             if (settled || expectedResult || expected?.rejected && !changed) watch.expected.delete(row.id);
             rows.set(row.id, row);
         }
@@ -49,6 +50,10 @@ export function createTabNotificationTracker(now: () => number = () => Date.now(
         watch.rows = rows; watch.revision = value.revision ?? watch.revision; watch.baselined = true;
         if (!previous) watch.nextRead = now() + (pending(watch) ? TAB_PENDING_POLL_MS : TAB_ROOM_POLL_MS);
         watches.set(key, watch); clearVisible(); removeUnused(); emit();
+        if (completed) {
+            const token = generation, isCurrent = (): boolean => allowed(scope) && generation === token && watches.get(key) === watch && watch.attention && (hidden || !open.has(key));
+            if (isCurrent()) completionListeners.forEach(listener => {try {listener({scope, source: value.source, isCurrent});} catch {/* Optional cues cannot interrupt badge or status delivery. */}});
+        }
     };
     const expect = (scope: string, source: TabSource, ids: readonly string[]): (() => void) => {
         if (!allowed(scope) || !ids.length) return () => undefined;
@@ -100,6 +105,7 @@ export function createTabNotificationTracker(now: () => number = () => Date.now(
         count: (): number => [...watches.values()].filter(watch => watch.attention).length,
         subscribe: (listener: () => void): (() => void) => {listeners.add(listener); return () => {listeners.delete(listener);};},
         subscribeConfiguration: (listener: () => void): (() => void) => {configurationListeners.add(listener); return () => {configurationListeners.delete(listener);};},
+        subscribeCompletion: (listener: (event: TabCompletion) => void): (() => void) => {completionListeners.add(listener); return () => {completionListeners.delete(listener);};},
     };
 }
 
