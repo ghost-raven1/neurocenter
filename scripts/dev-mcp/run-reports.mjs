@@ -4,7 +4,9 @@ import {readOwnedFile} from './safe-file.mjs';
 
 const limit=1024**2,maxSteps=64;
 const ids=new Set(packages.map(([id])=>id)),folders=new Map(packages.map(([id,folder])=>[folder,id]));
-const specialSteps=new Set(['Agent kit: актуальность генерации','Общие контракты, production и упаковка','Compose: dev','Compose: локальные эмбеддинги']);
+const toolingGate='Инструменты разработки: локальные контракты';
+const toolingSteps=['Agent kit: актуальность генерации',toolingGate];
+const specialSteps=new Set(['Agent kit: актуальность генерации','Общие контракты, production и упаковка','Compose: dev','Compose: локальные эмбеддинги',toolingGate]);
 const stepTypes=new Set(['typecheck','build','test']);
 const signals=new Set(['SIGABRT','SIGALRM','SIGBUS','SIGCHLD','SIGCONT','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGIO','SIGIOT','SIGKILL',
     'SIGPIPE','SIGPOLL','SIGPROF','SIGPWR','SIGQUIT','SIGSEGV','SIGSTKFLT','SIGSTOP','SIGSYS','SIGTERM','SIGTRAP','SIGTSTP','SIGTTIN',
@@ -48,7 +50,7 @@ function testCounters(value){
     if(own(value,'cancelled')&&!count(value.cancelled))throw malformed();
     return {...Object.fromEntries(['passed','failed','skipped','todo'].map(key=>[key,value[key]])),...(own(value,'cancelled')?{cancelled:value.cancelled}:{})};
 }
-const nodeGate=name=>name==='Общие контракты, production и упаковка';
+const nodeGate=name=>name==='Общие контракты, production и упаковка'||name===toolingGate;
 const testGate=step=>step.step==='test'||nodeGate(step.name);
 function observation(git){
     return {available:git?.available===true,head:git?.available===true&&head(git.head)?git.head:null,
@@ -88,15 +90,21 @@ function checkSummary(value,currentGit){
     const selectionKnown=own(value,'selection');
     if(!selectionKnown&&value.schemaVersion!==undefined||selectionKnown&&!object(value.selection))throw malformed();
     const requested=selectionKnown?{packages:uniqueStrings(value.selection.packages,ids,{max:8}),steps:uniqueStrings(value.selection.steps,stepTypes,{max:3})}:null;
+    if(selectionKnown&&own(value.selection,'tooling')){
+        if(value.selection.tooling!==true||requested.packages.length||requested.steps.length||value.schemaVersion!==3)throw malformed();
+        requested.tooling=true;
+    }
     const times=timing(value),seen=new Set();
     const validateIdentity=name=>{
         const item=stepIdentity(name);
+        if(requested?.tooling?!toolingSteps.includes(item.name):item.name===toolingGate)throw malformed();
         if((requested?.packages.length&&(!item.package||!requested.packages.includes(item.package)))
             ||(requested?.steps.length&&(!item.step||!requested.steps.includes(item.step))))throw malformed();
         return item;
     };
     const steps=value.steps.map(raw=>{
         if(!object(raw))throw malformed();const identity=validateIdentity(raw.name);
+        if(requested?.tooling&&(raw.name===toolingGate?raw.testRunner!=='node':own(raw,'tests')||own(raw,'testRunner')))throw malformed();
         if(seen.has(identity.name))throw malformed();seen.add(identity.name);
         const item={...identity,...processResult(raw),...(value.schemaVersion===3?cleanupResult(raw):{})};
         if(own(raw,'testRunner')){
@@ -117,6 +125,7 @@ function checkSummary(value,currentGit){
         if(!Array.isArray(value.plannedSteps)||!value.plannedSteps.length||value.plannedSteps.length>maxSteps
             ||new Set(value.plannedSteps).size!==value.plannedSteps.length||!(value.schemaVersion===3?['running','passed','failed','cancelled']:['running','passed','failed']).includes(value.state))throw malformed();
         plannedSteps=value.plannedSteps.map(name=>validateIdentity(name).name);
+        if(requested?.tooling&&JSON.stringify(plannedSteps)!==JSON.stringify(toolingSteps))throw malformed();
         if(steps.length>plannedSteps.length||steps.some((step,index)=>step.name!==plannedSteps[index])
             ||value.state==='running'&&(times.finishedAt||value.success)
             ||value.state!=='running'&&!times.finishedAt
