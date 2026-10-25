@@ -25,10 +25,12 @@ const report={success:true,numPassedTests:files.length,numFailedTests:0,numPendi
 await fs.writeFile(args.find(arg=>arg.startsWith('--outputFile=')).slice('--outputFile='.length),JSON.stringify(report));
 const coverage={};for(const[name,hits]of[['entry.ts',files.length],['never.ts',0]]){const file=path.join(cwd,'src',name);coverage[file]={path:file,statementMap:{0:{start:{line:1,column:0},end:{line:1,column:21}}},fnMap:{},branchMap:{},s:{0:hits},f:{},b:{}};}
 await fs.mkdir(process.env.NEUROCENTER_COVERAGE_DIR,{recursive:true});await fs.writeFile(path.join(process.env.NEUROCENTER_COVERAGE_DIR,'coverage-final.json'),JSON.stringify(coverage));
+if(process.env.FOCUSED_CASE==='tracked-source')await fs.writeFile(path.join(cwd,'src/entry.ts'),'export const value=2;\n');
+if(process.env.FOCUSED_CASE==='untracked-source')await fs.writeFile(path.join(cwd,'src/draft.ts'),'export const draft=2;\n');
 `;
 
 /** Run the actual orchestration on private packages; only the explicit synthetic worker is substituted. */
-async function fixture(t,{realVitest=false,pgTypes=false,helper=false}={}){
+async function fixture(t,{realVitest=false,pgTypes=false,helper=false,realIdentity=false}={}){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-focused-coverage-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),output=path.join(root,'output'),calls=path.join(root,'worker-calls.jsonl');
  for(const directory of[tools,path.join(root,'scripts/workspace'),path.join(root,'services/shared')])await fs.mkdir(directory,{recursive:true});
@@ -37,7 +39,8 @@ async function fixture(t,{realVitest=false,pgTypes=false,helper=false}={}){
  }
  await fs.copyFile(path.join(repository,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
  for(const file of['feature-flags.cjs','feature-flag-catalog.json','test-coverage.mjs'])await fs.copyFile(path.join(repository,'services/shared',file),path.join(root,'services/shared',file));
- await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
+ if(realIdentity)await fs.copyFile(path.join(repository,'scripts/coverage/source-identity.mjs'),path.join(tools,'source-identity.mjs'));
+ else await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
  await fs.symlink(path.join(repository,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
  for(const[id,relative]of coveragePackages){
   const pkg=path.join(root,relative);await fs.mkdir(path.join(pkg,'src'),{recursive:true});await fs.mkdir(path.join(pkg,'test'),{recursive:true});
@@ -66,6 +69,12 @@ async function fixture(t,{realVitest=false,pgTypes=false,helper=false}={}){
  assert.ok(start>=marker.length&&end>start);
  const audited={['services/feature-flags-service/'+selected]:{sha256:createHash('sha256').update(await fs.readFile(path.join(pkg,selected))).digest('hex'),helpers}};
  await fs.writeFile(policyFile,policy.slice(0,start)+JSON.stringify(audited)+policy.slice(end));
+ if(realIdentity){
+  const git=args=>spawnSync('git',['-c','core.hooksPath=/dev/null','-c','commit.gpgsign=false',...args],{cwd:root,env:{PATH:process.env.PATH,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'},encoding:'utf8'});
+  assert.equal(git(['add','.']).status,0);
+  const committed=git(['-c','user.name=Coverage fixture','-c','user.email=coverage-fixture@example.invalid','commit','--quiet','-m','Private coverage fixture']);
+  assert.equal(committed.status,0,committed.stderr);
+ }
  function run(args=[],{scenario='selected',destination=output}={}){
   const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),...args,'--max-workers','1','--output',destination],{cwd:root,
    env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,FOCUSED_CALLS:calls,FOCUSED_CASE:scenario,TEST_PG_URL:'postgres://forbidden-caller',TEST_S3_SECRET:'forbidden-caller'},encoding:'utf8',timeout:30000,maxBuffer:2*1024**2});
@@ -73,6 +82,25 @@ async function fixture(t,{realVitest=false,pgTypes=false,helper=false}={}){
  }
  return{root,tools,pkg,output,calls,helperFile,run,manifest:async()=>JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8'))};
 }
+
+test('A stable private Git source completes with the successful worker result and retained coverage',async t=>{
+ const f=await fixture(t,{realIdentity:true}),result=f.run(['--package','feature-flags-service']);
+ assert.equal(result.status,0,result.stdout+result.stderr);const manifest=await f.manifest();
+ assert.equal(manifest.sourceChangedDuringRun,false);assert.equal(manifest.complete,true);assert.equal(manifest.suiteCompletion,true);
+ assert.equal(manifest.packages[0].exitCode,0);assert.ok(manifest.finishedAt);
+ assert.ok(JSON.parse(await fs.readFile(path.join(f.output,'merged/coverage-final.json'),'utf8'))[path.join(f.pkg,'src/entry.ts')]);
+});
+
+for(const scenario of ['tracked-source','untracked-source'])test('A successful worker cannot complete coverage after changing '+scenario,async t=>{
+ const f=await fixture(t,{realIdentity:true});
+ if(scenario==='untracked-source')await fs.writeFile(path.join(f.pkg,'src/draft.ts'),'export const draft=1;\n');
+ const result=f.run(['--package','feature-flags-service'],{scenario}),manifest=await f.manifest();
+ assert.equal(manifest.packages[0].exitCode,0);assert.equal(manifest.packages[0].failed,0);assert.ok(manifest.packages[0].passed>0);
+ assert.equal(manifest.sourceChangedDuringRun,true);assert.ok(manifest.finishedAt);
+ assert.equal(manifest.complete,false);assert.equal(manifest.suiteCompletion,false);assert.equal(result.status,1,result.stdout+result.stderr);
+ assert.ok(JSON.parse(await fs.readFile(path.join(f.output,'merged/coverage-final.json'),'utf8'))[path.join(f.pkg,'src/entry.ts')]);
+ assert.equal(JSON.parse(await fs.readFile(path.join(f.output,'gaps.json'),'utf8')).sourceChangedDuringRun,true);
+});
 
 test('Reviewed type-only pg unit executes in full and focused orchestration with the complete source denominator',async t=>{
  for(const focused of [false,true]){

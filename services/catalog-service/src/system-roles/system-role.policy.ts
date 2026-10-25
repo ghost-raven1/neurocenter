@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { ModelsService } from '../models/models.service';
 import type { IModelActor } from '../models/model-access';
@@ -60,6 +60,7 @@ export class SystemRolePolicy {
     }
     async read(req: Request, row: RoleRunRow): Promise<IModelActor> {
         const actor = await this.actor(req, row.project_id, 1);
+        if (row.request.source?.kind === 'system-role-chat' && actor.email !== row.actor) throw new NotFoundException('Личный запуск сервисного чата недоступен.');
         if (actor.email !== row.actor) await this.actor(req, row.project_id, 3);
         return actor;
     }

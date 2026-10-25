@@ -8,7 +8,7 @@ export const rolePhaseLabel = (phase: string): string => phases[phase] ?? 'Об�
 /** Measured facts stay separate from interpretation; proposals show the exact selected version and full replacement. */
 export function RoleRunContent({ run }: { run: RoleRun }): JSX.Element {
     return <div className="system-role__result">
-        <Space wrap><Typography.Text strong>{roleName(run.agentId)}</Typography.Text><Tag>{rolePhaseLabel(run.phase)}</Tag><Typography.Text type="secondary">Зарезервировано шагов модели: {run.callsStarted} / {roleCallBudget(run.agentId)}</Typography.Text></Space>
+        <Space wrap><Typography.Text strong>{roleName(run.agentId)}</Typography.Text><Tag>{rolePhaseLabel(run.phase)}</Tag><Typography.Text type="secondary">Зарезервировано шагов модели: {run.callsStarted} / {run.modelCallBudget ?? roleCallBudget(run.agentId)}</Typography.Text></Space>
         <Alert showIcon type={['failed', 'interrupted'].includes(run.state) ? 'warning' : 'info'} message={run.message} />
         {run.agentId === 'agent-indexer' && <IndexerOwnerActions projectId={run.projectId} />}
         <Descriptions size="small" column={1}><Descriptions.Item label="Операция"><Typography.Text copyable>{run.operationId}</Typography.Text></Descriptions.Item>

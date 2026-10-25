@@ -11,6 +11,13 @@ const quirks=(kind:'mcp'|'plugin')=>({name:'OpenCodeRAG',description:'Reported q
     entrypoint:kind==='mcp'?'opencode-rag.mjs':'rag-plugin.mjs',extra:{runtimeArtifacts:[artifact(kind==='mcp'?'opencode-rag.mjs':'rag-plugin.mjs')],
         localUi:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs',args:['ui','--port','0','--no-open']},
         learningQuirks:{schemaVersion:1,format:'opencode-rag-quirks-jsonl',sourceSha256:QUIRKS_SOURCE_SHA256}}}});
+/** A reviewed engine package does not need to ship the optional browser interface. */
+function coreQuirks(kind:'mcp'|'plugin'){
+    const value=quirks(kind),{localUi:_ui,...extra}=value.config.extra;
+    return {...value,config:{...value.config,extra:{...extra,
+        ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},
+        hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}};
+}
 
 describe('Learning producer descriptors survive the actual catalog publication boundary',()=>{
     it('published Memory remains an eligible installed target after package normalization',()=>{
@@ -21,6 +28,21 @@ describe('Learning producer descriptors survive the actual catalog publication b
     it.each(['mcp','plugin'] as const)('published RAG %s retains its exact reviewed JSONL source marker',kind=>{
         const value=validatePublication(quirks(kind)),pkg=buildPackage({id:'qa-rag',name:value.name,kind,version:1},[],'',value.config);
         expect(verifyPackage(pkg)).toBe(true);expect(supportsLearningQuirks(pkg)).toBe(true);
+    });
+    it.each(['mcp','plugin'] as const)('publishes core-only RAG %s with the exact reviewed source and no UI',kind=>{
+        const value=validatePublication(coreQuirks(kind)),pkg=buildPackage({id:'qa-rag-core',name:value.name,kind,version:1},[],'',value.config);
+        expect(verifyPackage(pkg)).toBe(true);expect(supportsLearningQuirks(pkg)).toBe(true);
+        expect(pkg.config?.extra?.learningQuirks).toEqual({schemaVersion:1,format:'opencode-rag-quirks-jsonl',sourceSha256:QUIRKS_SOURCE_SHA256});
+        expect(pkg.config?.extra?.ragCore).toEqual(coreQuirks(kind).config.extra.ragCore);expect(pkg.config?.extra).not.toHaveProperty('localUi');
+    });
+    it.each([null,{schemaVersion:1,application:'opencode-rag',entrypoint:'other.mjs'},{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs',args:['ui']}])('rejects invalid explicit core even with a valid legacy UI: %j',ragCore=>{
+        const value=coreQuirks('mcp');
+        expect(()=>validatePublication({...value,config:{...value.config,extra:{...value.config.extra,localUi:quirks('mcp').config.extra.localUi,ragCore}}})).toThrow();
+    });
+    it('does not grant the core-only source marker to remote or missing runtime packages',()=>{
+        const value=coreQuirks('mcp');
+        expect(()=>validatePublication({...value,config:{...value.config,transport:'remote',url:'https://example.test/mcp'}})).toThrow();
+        expect(()=>validatePublication({...value,config:{...value.config,extra:{...value.config.extra,runtimeArtifacts:[]}}})).toThrow();
     });
     it.each([null,{...MEMORY_RECIPE,version:'99.0.0'},{...MEMORY_RECIPE,shell:'sh'},{schemaVersion:1}])('rejects malformed Memory ABI: %j',learningMemory=>{
         const value=memory();expect(()=>validatePublication({...value,config:{...value.config,extra:{...value.config.extra,learningMemory}}})).toThrow();

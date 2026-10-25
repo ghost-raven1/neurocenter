@@ -7,15 +7,16 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
-import { DEVICE_CODEX_JOB, DEVICE_CODEX_PROTOCOL, normalizeDeviceCodexPayload, normalizeDeviceCodexRequest, normalizeDeviceCodexContext, type DeviceCodexSource, type DeviceCodexPayload, type DeviceCodexResult, type DeviceCodexRequest } from '../../../shared/device-codex-inference.cjs';
+import { DEVICE_CODEX_JOB, DEVICE_CODEX_PROTOCOL,DEVICE_CODEX_DISPATCH_CAPABILITY, normalizeDeviceCodexPayload, normalizeDeviceCodexRequest, normalizeDeviceCodexContext, type DeviceCodexSource, type DeviceCodexPayload, type DeviceCodexResult, type DeviceCodexRequest } from '../../../shared/device-codex-inference.cjs';
 import type { IOpenCodeModelCandidate } from '../../../shared/opencode-model-scan.cjs';
 import { requiredInferenceFeatures } from '../../../shared/feature-policy.cjs';
 import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import {isFeatureFlagKey} from '../../../shared/feature-flags.cjs';
 import { type IAccessActor } from '../access/access.model';
 import { DeviceStore, digest, type Device } from '../devices/device-store';
 import { DeviceArtifacts } from '../devices/device-artifacts';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { currentModelUsage } from '../model-usage/model-usage.context';
+import { currentModelUsage,ModelDispatchNotStarted } from '../model-usage/model-usage.context';
 import {currentModelDispatchMetrics,createModelDispatchMetrics,withModelDispatchMetrics} from '../model-usage/model-dispatch-metrics';
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { ModelsService } from './models.service';
@@ -67,16 +68,23 @@ export class DeviceCodexService {
             throw new BadRequestException('Codex поддерживает текст и изображения, reasoningEffort и store:false. Температура, topP и лимит ответа недоступны.');
         }
         const connection = await this.connections.read(model.id);
+        const dispatchOnlyFeatures=[...(context.dispatchOnlyFeatures??[])];
+        if(dispatchOnlyFeatures.length>8||new Set(dispatchOnlyFeatures).size!==dispatchOnlyFeatures.length||dispatchOnlyFeatures.some(key=>!isFeatureFlagKey(key)))throw new BadRequestException('Некорректные ограничения отправки модели.');
         request.options = { ...connection.options, ...request.options };
         const flags: FeatureFlagKey[] = [...new Set<FeatureFlagKey>(['device_codex_inference', ...requiredInferenceFeatures(context.purpose, context.agentId), ...(context.requiredFeatures ?? [])])];
         await requireFeaturesEnabled(flags);
-        await this.connections.assertCurrent(connection, { email: context.actorEmail, activeRole: context.actorRole }, context.projectId ?? null, model);
+        const device=await this.connections.assertCurrent(connection, { email: context.actorEmail, activeRole: context.actorRole }, context.projectId ?? null, model);
+        if(dispatchOnlyFeatures.length&&(!Array.isArray(device.report?.capabilities)||!device.report.capabilities.includes(DEVICE_CODEX_DISPATCH_CAPABILITY)))
+            throw new ModelDispatchNotStarted('Обновите локальный мост на странице «Начало работы»: планирование MCP требует новой возможности Codex. Обычный ответ остаётся доступен.');
         const metrics=currentModelDispatchMetrics(),admissionMetrics=createModelDispatchMetrics();
         // The durable marker records one-send admission; it cannot prove the provider received a request.
         return withModelDispatchMetrics(admissionMetrics,()=>this.admission.run(model, signal, async () => {
             signal?.throwIfAborted();
             const callId = randomUUID(), jobId = randomUUID(), deadlineAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-            const payload: DeviceCodexPayload = { protocol: DEVICE_CODEX_PROTOCOL, callId, modelId: model.id, modelPin: projectEmbeddingPin(model), connectionRevision: connection.revision, source: connection.source, deadlineAt };
+            const payload: DeviceCodexPayload = normalizeDeviceCodexPayload({ protocol: DEVICE_CODEX_PROTOCOL, callId, modelId: model.id, modelPin: projectEmbeddingPin(model), connectionRevision: connection.revision, source: connection.source, deadlineAt,
+                ...(dispatchOnlyFeatures.length?{dispatchOnlyFeatures}:{}) });
+            await requireFeaturesEnabled(flags);
+            signal?.throwIfAborted();
             const db = await this.models.pool.connect();
             let dispatchedAt:number|null=null;
             const observeDispatch=async(call:Call)=>{
@@ -87,7 +95,6 @@ export class DeviceCodexService {
             try {
                 await db.query('BEGIN');
                 await this.connections.assertCurrent(connection, { email: context.actorEmail!, activeRole: context.actorRole! }, context.projectId ?? null, model, db);
-                await requireFeaturesEnabled(flags);
                 signal?.throwIfAborted();
                 await db.query(`INSERT INTO bridge_jobs(id,device_id,email,role,project_id,kind,payload,request_key,request_hash,message) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$1,$8,$9)`, [jobId, connection.device_id, context.actorEmail, context.actorRole, context.projectId ?? null, DEVICE_CODEX_JOB, JSON.stringify(payload), deviceCodexIdentityDigest(payload), 'Ожидает Codex на компьютере']);
                 await db.query(`INSERT INTO device_model_calls(id,job_id,model_id,device_id,owner_email,actor_role,project_id,model_pin,runtime_model,connection_revision,request,required_features,deadline_at)
@@ -110,6 +117,16 @@ export class DeviceCodexService {
                         throw new ServiceUnavailableException('Запрос Codex отменён. Полученная квитанция сохранена без применения результата.');
                     if (result && 'response' in result)
                         return { ...result.response };
+                    if(!call.dispatched_at&&context.beforeDispatch){
+                        try{await context.beforeDispatch();}
+                        catch(error){
+                            if(!(error instanceof ModelDispatchNotStarted))throw error;
+                            // The worker may win the race after this pending snapshot. Never turn that paid work into a retry.
+                            const stopped=await this.cancel(jobId,true);
+                            if(stopped.undispatched)throw error;
+                            continue;
+                        }
+                    }
                     if (result && 'error' in result) {
                         if (!call.dispatched_at && result.error.code === 'runtime-cache-full')
                             throw new ServiceUnavailableException('На компьютере заполнен кэш готовых комплектов. Запрос остановлен до отправки в Codex. Попросите владельца компьютера открыть «Мои компьютеры → Подробнее → Кэш комплектов» и увеличить лимит. Затем повторите запрос. Автоматический повтор не выполняется.');
@@ -131,6 +148,7 @@ export class DeviceCodexService {
                 }
             }
             catch (e) {
+                if(e instanceof ModelDispatchNotStarted)throw e; // Only the committed no-dispatch cancellation above can reach here.
                 await this.cancel(jobId);
                 await this.call(jobId).then(observeDispatch).catch(()=>undefined);
                 throw e;
@@ -150,14 +168,14 @@ export class DeviceCodexService {
             deviceCodexConflict();
         return call;
     }
-    private async assertCall(call: Call, db: Db = this.models.pool, mode: 'active' | 'poll' = 'active') {
+    private async assertCall(call: Call, db: Db = this.models.pool, mode: 'active' | 'poll' = 'active',featureHttp=true) {
         if (call.cancelled_at || call.result || !['queued', 'running'].includes(call.state) || new Date(call.deadline_at).getTime() <= Date.now())
             throw new ConflictException('Вызов Codex завершён, отменён или его срок истёк.');
         const payload = normalizeDeviceCodexPayload(call.payload), connection = await this.connections.read(call.model_id, db), model = await this.models.get(call.model_id);
         if (call.id !== payload.callId || call.model_pin !== payload.modelPin || call.connection_revision !== connection.revision || payload.connectionRevision !== connection.revision || deviceCodexIdentityDigest(payload.source) !== deviceCodexIdentityDigest(connection.source) || projectEmbeddingPin(model) !== call.model_pin)
             deviceCodexConflict();
         await this.connections.assertCurrent(connection, { email: call.owner_email, activeRole: call.actor_role }, call.project_id, model, db);
-        await requireFeaturesEnabled(call.required_features);
+        if(featureHttp)await requireFeaturesEnabled([...call.required_features,...(!call.dispatched_at?payload.dispatchOnlyFeatures??[]:[])]);
         const fresh = await db.query(`SELECT c.id FROM device_model_calls c JOIN bridge_jobs j ON j.id=c.job_id
    JOIN model_device_connections m ON m.model_id=c.model_id JOIN bridge_devices d ON d.id=c.device_id
    JOIN model_catalog model ON model.id=c.model_id JOIN platform_users u ON u.email=c.owner_email
@@ -196,16 +214,19 @@ export class DeviceCodexService {
     }
     async dispatch(device: Device, input: unknown) {
         const { jobId, lease, callId } = this.input(input, true);
-        await this.leased(device, jobId, lease);
+        const admitted=await this.leased(device, jobId, lease),payload=normalizeDeviceCodexPayload(admitted.payload);
+        // External availability may wait; current authority is rechecked under row locks after that wait.
+        const featurePin=deviceCodexIdentityDigest(admitted.required_features),payloadPin=deviceCodexIdentityDigest(admitted.payload);
+        await requireFeaturesEnabled([...admitted.required_features,...(!admitted.dispatched_at?payload.dispatchOnlyFeatures??[]:[])]);
         const db = await this.models.pool.connect();
         try {
             await db.query('BEGIN');
             await db.query('SELECT id FROM bridge_jobs WHERE id=$1 FOR UPDATE', [jobId]);
             await db.query('SELECT id FROM device_model_calls WHERE job_id=$1 FOR UPDATE', [jobId]);
             const call = await this.call(jobId, db);
-            if (call.id !== callId)
+            if (call.id !== callId||deviceCodexIdentityDigest(call.payload)!==payloadPin||deviceCodexIdentityDigest(call.required_features)!==featurePin)
                 deviceCodexConflict();
-            await this.assertCall(call, db);
+            await this.assertCall(call, db,'active',false);
             const updated = await db.query(`UPDATE device_model_calls c SET dispatched_at=clock_timestamp() FROM bridge_jobs j,model_device_connections m,bridge_devices d,model_catalog card
    WHERE c.job_id=$1 AND c.id=$2 AND c.device_id=$3 AND j.id=c.job_id AND j.lease=$4 AND j.state='running' AND j.lease_until>clock_timestamp()
    AND c.cancelled_at IS NULL AND c.result IS NULL AND c.dispatched_at IS NULL AND c.deadline_at>clock_timestamp()
@@ -244,17 +265,25 @@ export class DeviceCodexService {
             deviceCodexConflict();
         return this.call(jobId);
     }
-    async cancel(jobId: string) {
+    /** onlyUndispatched fences a planning downgrade; a committed physical marker always wins that race. */
+    async cancel(jobId: string,onlyUndispatched=false) {
         const db = await this.models.pool.connect();
         let projected=false;
-        let outcome:{cancelled:boolean;state:string};
+        let outcome:{cancelled:boolean;state:string;undispatched?:boolean};
         try {
             await db.query('BEGIN');
             const current=(await db.query<{id:string;kind:string;state:string;project_id:string|null;email:string;message:string}>('SELECT id,kind,state,project_id,email,message FROM bridge_jobs WHERE id=$1 FOR UPDATE', [jobId])).rows[0];
+            if(onlyUndispatched){
+                const call=(await db.query<{dispatched_at:Date|null;result:DeviceCodexResult|null;cancelled_at:Date|null}>('SELECT dispatched_at,result,cancelled_at FROM device_model_calls WHERE job_id=$1 FOR UPDATE',[jobId])).rows[0];
+                if(current?.kind!==DEVICE_CODEX_JOB||!['queued','running','reconciling','failed'].includes(current.state)||!call||call.dispatched_at!==null||call.cancelled_at!==null||call.result&&'response'in call.result){
+                    await db.query('COMMIT');return {cancelled:false,state:current?.state??'missing',undispatched:false};
+                }
+                if(current.state==='failed'){await db.query('COMMIT');return {cancelled:false,state:current.state,undispatched:true};}
+            }
             if(current?.kind===DEVICE_CODEX_JOB&&['queued','running','reconciling','cancelled'].includes(current.state)){
                 await db.query("UPDATE device_model_calls SET cancelled_at=COALESCE(cancelled_at,clock_timestamp()) WHERE job_id=$1 AND result IS NULL", [jobId]);
                 await db.query("UPDATE bridge_jobs SET state='cancelled',message='Запрос Codex остановлен; автоматический повтор не выполняется.',updated_at=clock_timestamp() WHERE id=$1 AND kind=$2 AND state IN ('queued','running','reconciling')", [jobId, DEVICE_CODEX_JOB]);
-                await projectDeviceCodexOperation(db,jobId);projected=true;outcome={cancelled:true,state:'cancelled'};
+                await projectDeviceCodexOperation(db,jobId);projected=true;outcome={cancelled:true,state:'cancelled',...(onlyUndispatched?{undispatched:true}:{})};
             }else outcome={cancelled:false,state:current?.state??'missing'};
             await db.query('COMMIT');
         }

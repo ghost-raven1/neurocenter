@@ -6,6 +6,8 @@ import {runWorker} from '../src/bridge/worker.js';
 import {publishProjectSnapshot} from '../src/features/project-snapshot/publish.js';
 import {workspaceFixture} from './bridge-fixture.js';
 import {BRIDGE_CAPABILITIES} from '../src/bridge/protocol.js';
+import {idleSystemRoleMcpLane} from './worker-control-lane.fixture.js';
+import {stopFixtureWorker} from './worker-lifecycle.fixture.js';
 const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.fn()}));
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
 vi.mock('../src/bridge/state.js',async original=>({...await original<typeof import('../src/bridge/state.js')>(),api:vi.fn()}));
@@ -13,13 +15,15 @@ vi.mock('../src/features/project-snapshot/publish.js',()=>({publishProjectSnapsh
 
 describe('Leased full-image worker intent',()=>{
  let fixture:Awaited<ReturnType<typeof workspaceFixture>>,signals:Map<NodeJS.Signals,Set<(...args:unknown[])=>void>>,bindingId:string;
+ let controlLane:ReturnType<typeof idleSystemRoleMcpLane>;
  const id='11111111-1111-4111-8111-111111111111',lease='22222222-2222-4222-8222-222222222222',deviceId='33333333-3333-4333-8333-333333333333',snapshotId='44444444-4444-4444-8444-444444444444';
  beforeEach(async()=>{fixture=await workspaceFixture();vi.clearAllMocks();signals=new Map(['SIGTERM','SIGINT'].map(signal=>[signal as NodeJS.Signals,new Set(process.listeners(signal))]));
   await state.writeState('credentials',{token:'fixture',deviceId,email:'fixture@example.test'});bindingId=await workspace.projectBindingId('test-project');vi.spyOn(workspace,'workspaceReport').mockResolvedValue({} as never);
+  controlLane=idleSystemRoleMcpLane(state.apiHub(),'fixture');vi.stubGlobal('fetch',controlLane.network);
   vi.spyOn(process.stderr,'write').mockReturnValue(true);vi.spyOn(process,'exit').mockImplementation((()=>undefined) as never);socket.disconnect.mockReturnValue(socket);socket.connect.mockReturnValue(socket);
  });
- afterEach(async()=>{const stop=process.listeners('SIGTERM').find(listener=>!signals.get('SIGTERM')!.has(listener));stop?.();if(stop)await vi.waitFor(()=>expect(process.exit).toHaveBeenCalled());
-  for(const [signal,previous]of signals)for(const listener of process.listeners(signal))if(!previous.has(listener))process.off(signal,listener);vi.restoreAllMocks();vi.unstubAllEnvs();await fs.rm(fixture.temporary,{recursive:true,force:true});});
+ afterEach(async()=>{try{await stopFixtureWorker(signals);expect(controlLane.unexpected).toEqual([]);}finally{
+  for(const [signal,previous]of signals)for(const listener of process.listeners(signal))if(!previous.has(listener))process.off(signal,listener);vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals();await fs.rm(fixture.temporary,{recursive:true,force:true});}});
  function queue(protocol='project-snapshots-v1',binding=bindingId){let claimed=false;vi.mocked(state.api).mockImplementation(async route=>{if(route==='jobs/claim'){if(claimed)return null as never;claimed=true;return{id,lease,kind:'publish-project-snapshot',project_id:'test-project',payload:{snapshotId,snapshotProtocol:protocol,bindingId:binding}} as never;}return{} as never;});}
  const completion=()=>vi.mocked(state.api).mock.calls.find(([route])=>route===`jobs/${id}/complete`)?.[1];
  it('advertises the exact new capability and preserves selected binding and live job context',async()=>{

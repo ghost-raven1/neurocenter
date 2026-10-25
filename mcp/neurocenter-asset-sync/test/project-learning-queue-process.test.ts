@@ -41,7 +41,8 @@ describe('Private queue — actual independent processes and crash recovery',()=
         const stat=await fs.stat(path.join(directory,LEARNING_QUEUE_MUTEX));expect(stat.mode&0o077).toBe(0);
     },20000);
     it.each(['before-mutex','hold'])('recovers a killed process at %s without PID or stale-owner removal',async mode=>{
-        const owner=await start(mode);await owner.wait(mode==='hold'?'entered':'before-mutex');owner.process.kill('SIGKILL');await owner.exit;
+        const owner=await start(mode);await owner.wait(mode==='hold'?'entered':'before-mutex');expect(owner.process.kill('SIGKILL')).toBe(true);
+        expect(await owner.exit,owner.stderr()).toBeNull();expect(owner.process.signalCode).toBe('SIGKILL');
         // Only the test's overlap sentinel is removed; the mutex database is never removed or replaced.
         await fs.rm(path.join(directory,'critical'),{force:true});const before=await fs.stat(path.join(directory,LEARNING_QUEUE_MUTEX));
         const contenders=await Promise.all(Array.from({length:3},()=>start('write')));
@@ -56,7 +57,8 @@ describe('Private queue — actual independent processes and crash recovery',()=
         expect(await records()).toHaveLength(LEARNING_QUEUE_LIMIT.entries);expect(await fs.readFile(path.join(bucket(),first.requestKey+'.json'),'utf8')).toBe(source);
     },20000);
     it.each(['queue-before-sync','queue-before','queue-after'])('recovers the original immutable payload after kill at %s publication',async mode=>{
-        const owner=await start(mode),stage=await owner.wait(mode),input=stage.input as ReturnType<typeof observation>;owner.process.kill('SIGKILL');await owner.exit;
+        const owner=await start(mode),stage=await owner.wait(mode),input=stage.input as ReturnType<typeof observation>;expect(owner.process.kill('SIGKILL')).toBe(true);
+        expect(await owner.exit,owner.stderr()).toBeNull();expect(owner.process.signalCode).toBe('SIGKILL');
         const orphan=(await fs.readdir(bucket())).find(name=>name.endsWith('.tmp'))!;let dataSynced=false;
         const open=fs.open.bind(fs),link=fs.link.bind(fs);
         vi.spyOn(fs,'open').mockImplementation(async(...args:Parameters<typeof fs.open>)=>{const handle=await open(...args);if(String(args[0])===path.join(bucket(),orphan)){const sync=handle.sync.bind(handle);handle.sync=async()=>{await sync();dataSynced=true;};}return handle;});
@@ -98,7 +100,8 @@ describe('Private queue — actual independent processes and crash recovery',()=
         try{
             await holder.wait(holder.entered);const contender=await start('write');await new Promise(resolve=>setTimeout(resolve,100));
             expect(contender.events.some(event=>event.type==='entered')).toBe(false);const before=await fs.stat(path.join(directory,LEARNING_QUEUE_MUTEX));
-            holder.child.kill('SIGKILL');await holder.exit;expect(await contender.exit,contender.stderr()).toBe(0);expect((await fs.stat(path.join(directory,LEARNING_QUEUE_MUTEX))).ino).toBe(before.ino);
+            expect(holder.child.kill('SIGKILL')).toBe(true);expect(await holder.exit,holder.errors()).toBeNull();expect(holder.child.signalCode).toBe('SIGKILL');
+            expect(await contender.exit,contender.stderr()).toBe(0);expect((await fs.stat(path.join(directory,LEARNING_QUEUE_MUTEX))).ino).toBe(before.ino);
         }finally{await holder.close();}
     },60000);
 });

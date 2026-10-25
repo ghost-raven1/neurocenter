@@ -40,9 +40,9 @@ export async function bridgeCliProfileFixture(kind:'http'|'https'|'proxy'='http'
     await fs.writeFile(path.join(install,'dist/index.js'),"throw Error('Worker fixture must never execute.');\n");
     await fs.mkdir(path.join(install,'dist/shared'),{recursive:true});
     // The owned standalone fixture carries the same explicitly shipped contracts as scripts/build.mjs.
-    for(const name of ['device-codex-inference.cjs','runtime-cache-policy.cjs','codex-connector-pin.json','codex-connector-source.cjs',
-        'runtime-artifacts.cjs','rag-index-contract.cjs','rag-ui-contract.cjs','opencode-model-scan.cjs','adapter-parameters.cjs','opencode-providers.cjs',
-        'project-snapshot.cjs','project-agents.cjs','project-configuration.cjs','project-learning.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs'])
+    for(const name of ['device-codex-inference.cjs','runtime-cache-policy.cjs','bridge-update-cleanup.cjs','codex-connector-pin.json','codex-connector-source.cjs',
+        'runtime-artifacts.cjs','rag-index-contract.cjs','rag-ui-contract.cjs','rag-core-contract.cjs','opencode-model-scan.cjs','adapter-parameters.cjs','opencode-providers.cjs',
+        'project-snapshot.cjs','project-agents.cjs','project-configuration.cjs','project-learning.cjs','project-learning-memory-sync.cjs','project-learning-quirks.cjs','system-role-mcp.cjs'])
         await fs.copyFile(fileURLToPath(new URL('../../../services/shared/'+name,import.meta.url)),path.join(install,'dist/shared',name));
     await fs.writeFile(path.join(install,'package.json'),JSON.stringify({type:'module',version:'0.9.18'}));
     await fs.mkdir(path.join(install,'bin'));await fs.symlink(process.execPath,path.join(install,'bin/node'));

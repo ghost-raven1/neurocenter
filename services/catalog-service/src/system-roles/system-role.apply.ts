@@ -16,7 +16,7 @@ export class SystemRoleApplication {
         private readonly features = requireFeaturesEnabled) {}
     async apply(req: Request, input: RoleRunRow, revision: number, requestId: string, rollback = false): Promise<RoleRunRow> {
         const actor = await this.policy.actor(req, input.project_id);
-        if (!rollback) await this.features([systemRole(input.agent_id).flag]);
+        if (!rollback) await this.features([systemRole(input.agent_id).flag, ...(input.request.sourceFeature ? [input.request.sourceFeature] : [])]);
         const intent = await this.repository.transaction(async db => {
             const current = await this.repository.get(input.id, db, true);
             if (!current) throw new ConflictException('Задание недоступно.');
@@ -34,7 +34,7 @@ export class SystemRoleApplication {
             const changes = rollback ? row.result!.changes.filter(change => row.applied.some(receipt => receipt.targetKey === change.targetKey)).reverse() : row.result!.changes;
             for (const change of changes) {
                 await this.policy.actor(req, row.project_id);
-                if (!rollback) await this.features([systemRole(row.agent_id).flag]);
+                if (!rollback) await this.features([systemRole(row.agent_id).flag, ...(row.request.sourceFeature ? [row.request.sourceFeature] : [])]);
                 await this.repository.transaction(async db => {
                     const current = await this.repository.applying(row.id, row.phase, db);
                     await this.policy.authorize(db, await this.policy.actor(req, current.project_id), current.project_id);

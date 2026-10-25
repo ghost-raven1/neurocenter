@@ -41,7 +41,7 @@ function fixture() {
  createPool.mockReturnValue(pool as unknown as Pool);
  const limits = new ModelRateLimitsService({} as ModelsService), gate = new ModelApiAdmission(limits), metrics = createModelDispatchMetrics();
  const send = (provider: () => Promise<string>, beforeInference?: () => Promise<void>, signal?: AbortSignal) => withModelDispatchMetrics(metrics,
-  () => withModelUsage({ purpose: 'project-search', projectId: 'prj-rate-commit', beforeInference },
+  () => withModelUsage({ purpose: 'project-search', projectId: 'prj-rate-commit', beforeInference, beforeDispatch: undefined },
    () => gate.run(model, signal, provider)));
  const close = async (pending: Promise<unknown>) => { commit.resolve(); await pending.catch(() => undefined); await limits.onApplicationShutdown(); };
  return { atCommit, commit, calls, release, pool, metrics, send, close };

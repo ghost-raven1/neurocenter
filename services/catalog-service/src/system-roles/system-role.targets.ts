@@ -13,6 +13,7 @@ import { restoreRoleProjection, roleProjection, type PrivateProjection } from '.
 import { readRolePackageSource } from './system-role.package-source';
 import { readRoleDialogContext } from './system-role.dialog-context';
 import { coordinatorContext } from './system-role.coordinator';
+import type {SystemRoleMcpAccess} from '../system-role-mcp/system-role-mcp.types';
 import type { RoleApplyReceipt, RolePrepared, RoleSelection, RoleTargetSelection, RoleTargetSnapshot, SystemRoleId } from './system-role.types';
 
 type Skill = { body: string; meta: { version: number; [key: string]: unknown } };
@@ -20,7 +21,8 @@ const changed = (): never => { throw new ConflictException('Выбранная �
 /** Domain owners keep their own CAS, permission, history and validation; no target writes use raw SQL. */
 export class SystemRoleTargets {
     constructor(private readonly policy: SystemRolePolicy, private readonly agents: AgentsService, private readonly catalog: CatalogService,
-        private readonly connections: RemoteConnectionService, private readonly request: typeof fetch = globalThis.fetch, private readonly chats?: ProjectChatService) {}
+        private readonly connections: RemoteConnectionService, private readonly request: typeof fetch = globalThis.fetch, private readonly chats?: ProjectChatService,
+        private readonly mcp?:SystemRoleMcpAccess) {}
     async publicChatChoices(req: Request, project: string | null) {
         if (!project || !this.chats) return [];
         return (await this.chats.rooms(req, project)).rooms.filter(room => room.visibility === 'PUBLIC').slice(0, 50)
@@ -105,16 +107,19 @@ export class SystemRoleTargets {
         return { key: target.kind + ':' + target.id, kind: target.kind, id: target.id, version, pin: roleHash({ version, before }),
             modelContent: projection.content, before: structuredClone({ ...before, projection }), editable };
     }
-    async prepare(req: Request, id: SystemRoleId, selection: RoleSelection): Promise<RolePrepared> {
-        selection = { projectId: selection.projectId, instruction: selection.instruction, diagnostics: selection.diagnostics, targets: selection.targets };
+    /** acceptedMcp is supplied only from a server-owned run snapshot; new admissions always discover fresh authority. */
+    async prepare(req: Request, id: SystemRoleId, selection: RoleSelection, acceptedMcp?: RolePrepared['mcp']): Promise<RolePrepared> {
+        selection = { projectId: selection.projectId, instruction: selection.instruction, diagnostics: selection.diagnostics, targets: selection.targets,...(selection.mcp?.length?{mcp:selection.mcp}:{}) };
         const targets: RoleTargetSnapshot[] = [];
         for (const target of selection.targets) targets.push(await this.read(req, selection, target));
+        if(selection.mcp?.length&&!acceptedMcp&&!this.mcp)throw new ConflictException('Исполнитель MCP системных агентов не настроен. Сохраните выбор и повторите позже.');
+        const mcp=selection.mcp?.length?acceptedMcp??await this.mcp!.prepare(req,selection.projectId,selection.mcp):undefined;
         const preview = JSON.stringify({ instruction: roleProjection(selection.instruction).content, diagnostics: selection.diagnostics,
             targets: targets.map(target => ({ key: target.key, kind: target.kind, version: target.version, content: target.modelContent })),
-            ...(id === 'agent-coordinator' ? { delegation: coordinatorContext({ selection, targets }) } : {}) }, null, 2);
+            ...(mcp?{mcp}:{}),...(id === 'agent-coordinator' ? { delegation: coordinatorContext({ selection, targets,mcp }) } : {}) }, null, 2);
         if (Buffer.byteLength(preview) > ROLE_BUDGET.contextBytes) throw new ConflictException('Общий выбранный контекст больше 64 КиБ. Уменьшите выбор.');
-        const definitionPin = roleDefinitionPin(id), consentDigest = roleHash({ definitionPin, selection, targets: targets.map(({ key, pin, modelContent }) => ({ key, pin, modelContent })) });
-        return { selection, definitionPin, consentDigest, preview, targets };
+        const definitionPin = roleDefinitionPin(id), consentDigest = roleHash({ definitionPin, selection, targets: targets.map(({ key, pin, modelContent }) => ({ key, pin, modelContent })),...(mcp?{mcp}:{}) });
+        return { selection, definitionPin, consentDigest, preview, targets,...(mcp?{mcp}:{}) };
     }
     replacement(target: RoleTargetSnapshot, content: string): string {
         const restored = restoreRoleProjection(content, target.before.projection as unknown as PrivateProjection, target.kind === 'adapter');

@@ -9,7 +9,7 @@ import {DISCUSSIONS_SCHEMA_SQL} from '../src/discussions/discussions.schema';
 import {deviceCompletionFixture,ownedDeviceTestAdminUrl} from './device-completion-postgres.fixture';
 
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeatureEnabled:vi.fn(async()=>undefined)}));
-vi.mock('../../../shared/feature-client.cjs',()=>({readFeatures:vi.fn(async()=>({flags:{discussions:true,discussion_attachments:false}}))}));
+vi.mock('../../shared/feature-client.cjs',()=>({readFeatures:vi.fn(async()=>({flags:{discussions:true,discussion_attachments:false}}))}));
 const adminUrl=process.env.DISCUSSIONS_TEST_ADMIN_PG_URL;
 const actor:DiscussionActor={email:'writer@fixture.test',activeRole:'Разработчик',displayName:'Writer',claims:{email:'writer@fixture.test',projects:[],userRoles:['Разработчик'],pluginIds:[],skillPaths:[]}};
 
@@ -30,9 +30,9 @@ describe.skipIf(!adminUrl).sequential('Discussion counters on owned PostgreSQL w
   for(let index=0;index<51;index++)await add('catalog','mcp:sample');
   await add('catalog','mcp:sample',null,true);await add('catalog','mcp:other');await add('help','mcp:sample');
   const page=await service.list({} as Request,{targetType:'catalog',targetId:'mcp:sample'});
-  expect(page.items).toHaveLength(50);expect(page.nextCursor).toBeTypeOf('string');expect(page).toMatchObject({totalCount:53});
+  expect(page.items).toHaveLength(50);expect(page.nextCursor).toBeTypeOf('string');expect(page).toMatchObject({totalCount:53,canComment:true,canAttach:false});
   const second=await service.list({} as Request,{targetType:'catalog',targetId:'mcp:sample',cursor:page.nextCursor!});
-  expect(second).toMatchObject({totalCount:53});expect(second.items).toHaveLength(4);
+  expect(second).toMatchObject({totalCount:53,canComment:true,canAttach:false});expect(second.items).toHaveLength(4);
   expect(second.items.some(item=>page.items.some(prior=>prior.id===item.id))).toBe(false);
   await expect(service.list({} as Request,{targetType:'catalog',targetId:'mcp:other',cursor:page.nextCursor!})).rejects.toMatchObject({status:400});
   expect(await service.reaction({} as Request,'mcp:sample')).toEqual({liked:false,count:0,commentCount:53});

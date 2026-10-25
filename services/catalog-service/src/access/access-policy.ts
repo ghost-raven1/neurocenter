@@ -1,4 +1,6 @@
 import {allowSystemRoleRoute} from '../system-roles/system-role.access';
+import {allowSystemRoleChatRoute} from '../system-role-chat/system-role-chat.access';
+import {allowSystemRoleMcpRoute} from '../system-role-mcp/system-role-mcp.access';
 import { canReadCommon, IAccessClaims, projectLevel } from './access.model';
 import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 import {allowLearningRoute} from './learning-access-policy';
@@ -16,6 +18,10 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === undefined) { return false; }
     const body = request.body ?? {};
     const verb = request.method.toUpperCase();
+    const systemMcp = allowSystemRoleMcpRoute(activeRole, verb, route);
+    if (typeof systemMcp === 'boolean') return systemMcp;
+    const systemChat = allowSystemRoleChatRoute(activeRole, verb, route);
+    if (typeof systemChat === 'boolean') return systemChat;
     const systemRole = allowSystemRoleRoute(activeRole, verb, route);
     if (typeof systemRole === 'boolean') return systemRole;
     if(route==='/api/chat-presence/session')return verb==='PUT';

@@ -115,15 +115,15 @@ export class InstallPlans {
     }
 
     /** Повторная проверка и восстановление используют действующее одобрение именно установленного SHA. */
-    async approvedInstalled(projectId: string, pkg: IPackage) {
-        const { rows } = await this.store.pool.query<InstallPlanRow>(`SELECT * FROM device_install_plans
+    async approvedInstalled(projectId: string, pkg: IPackage, db:Pick<PoolClient,'query'>=this.store.pool) {
+        const { rows } = await db.query<InstallPlanRow>(`SELECT * FROM device_install_plans
             WHERE project_id=$1 AND asset_kind=$2 AND asset_id=$3 AND version=$4 AND package->'manifest'->>'sha256'=$5
-                AND status='approved' ORDER BY updated_at DESC,id LIMIT 1`,
+                AND status='approved' ORDER BY updated_at DESC,id LIMIT 1 FOR SHARE`,
         [projectId,pkg.plugin.kind,pkg.plugin.id,pkg.plugin.version,pkg.manifest.sha256]);
         const row = rows[0];
         if (!row) { throw new ConflictException('Для этой установленной версии нужно действующее одобрение админа проекта. Откройте план установки и одобрите точный SHA.'); }
         this.assertRow(row);
-        await this.catalog(row);
+        await this.catalog(row,db,true);
         return { planId:row.id,planRevision:row.revision,package:row.package,
             ...(row.installation_set ? {installSet:row.installation_set} : {}) };
     }

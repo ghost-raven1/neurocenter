@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { OwnedHostedStdio } from './owned-stdio';
+import {operationRemoteTransport} from './operation-remote';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -22,7 +23,7 @@ const IDLE_TTL_MS = 30 * 60 * 1000;
 const START_TIMEOUT_MS = 20000;
 const TOOL_OUTPUT_LIMIT = 8 * 1024 * 1024;
 
-interface HostSession { claim: HostedMcpClaim; client: Client; lastUsed: number; listeners: number }
+interface HostSession { claim: HostedMcpClaim; client: Client; lastUsed: number; listeners: number; deadline?:ReturnType<typeof setTimeout> }
 
 class McpHostService {
     private readonly hosts = new Map<string, HostSession>();
@@ -33,10 +34,10 @@ class McpHostService {
         this.idleTimer=setInterval(() => { this.reap(); }, 60 * 1000);this.idleTimer.unref();
     }
     private hostKey(claim:HostedMcpClaim):string{
-        return JSON.stringify([claim.artifactSha256,claim.session?.projectId,claim.session?.deviceId,claim.session?.manifest,claim.researchSessionId]);
+        return JSON.stringify([claim.artifactSha256,claim.session?.projectId,claim.session?.deviceId,claim.session?.manifest,claim.researchSessionId,claim.operationSessionId]);
     }
 
-    private async adopt(claim: HostedMcpClaim): Promise<HostSession> {
+    private async adopt(claim: HostedMcpClaim,signal?:AbortSignal): Promise<HostSession> {
         const key=this.hostKey(claim);let session = this.hosts.get(key);
         if (!session) {
             const starting = this.starting.get(key);
@@ -44,13 +45,15 @@ class McpHostService {
             else {
                 this.reap();
                 if (this.hosts.size + this.starting.size >= MAX_HOSTS) { throw httpError(503, 'Лимит хостов MCP площадки исчерпан. Вернитесь позже.'); }
-                const task = this.spawn(claim).finally(() => this.starting.delete(key));
+                const task = this.spawn(claim,claim.operationSessionId||claim.researchSessionId?signal:undefined).finally(() => this.starting.delete(key));
                 this.starting.set(key, task);
                 session = await task;
                 this.hosts.set(key, session);
             }
         }
-        if (session.claim.entrypoint !== claim.entrypoint || session.claim.executable !== claim.executable) {
+        if (session.claim.entrypoint !== claim.entrypoint || session.claim.executable !== claim.executable
+            ||JSON.stringify(session.claim.operationRemote)!==JSON.stringify(claim.operationRemote)
+            ||JSON.stringify(session.claim.operationArgs)!==JSON.stringify(claim.operationArgs)) {
             throw httpError(503, 'Комплект хоста конфликтует. Повторите подключение.');
         }
         session.lastUsed = Date.now();
@@ -65,15 +68,35 @@ class McpHostService {
 
     /** Server research uses the same approved Gateway artifact, with cancellation on each actual MCP operation. */
     async researchTools(claim:HostedMcpClaim,signal:AbortSignal){
-        signal.throwIfAborted();const session=await this.adopt(claim);
+        signal.throwIfAborted();const session=await this.adopt(claim,signal);
         try{signal.throwIfAborted();return await session.client.listTools(undefined,{signal,timeout:15000});}
         finally{this.release(claim,session);}
     }
 
     async researchCall(claim:HostedMcpClaim,name:string,args:Record<string,unknown>,signal:AbortSignal){
-        signal.throwIfAborted();const session=await this.adopt(claim);
+        signal.throwIfAborted();const session=await this.adopt(claim,signal);
         try{signal.throwIfAborted();return await session.client.callTool({name,arguments:args},undefined,{signal,timeout:30000});}
         finally{this.release(claim,session);}
+    }
+    /** Role operations reuse this same host and child; a browser survives navigation followed by snapshot. */
+    async operationTools(claim:HostedMcpClaim,signal:AbortSignal){
+        signal.throwIfAborted();const session=await this.adopt(claim,signal);
+        try{
+            const tools:unknown[]=[],seen=new Set<string>();let cursor:string|undefined;
+            for(let page=0;page<8;page++){
+                signal.throwIfAborted();const result=await session.client.listTools(cursor?{cursor}:undefined,{signal,timeout:15000});
+                tools.push(...result.tools);if(tools.length>128)throw httpError(502,'MCP объявил слишком много инструментов.');
+                cursor=result.nextCursor;if(!cursor)return {tools};
+                if(seen.has(cursor))throw httpError(502,'MCP повторил страницу инструментов.');seen.add(cursor);
+            }
+            throw httpError(502,'MCP превысил предел страниц инструментов.');
+        }finally{this.release(claim,session);}
+    }
+    async operationCall(claim:HostedMcpClaim,name:string,args:Record<string,unknown>,signal:AbortSignal){return this.researchCall(claim,name,args,signal);}
+    async closeOperationSession(claim:HostedMcpClaim):Promise<void>{
+        if(!claim.operationSessionId)return;
+        const key=this.hostKey(claim),starting=this.starting.get(key);if(starting)await starting.catch(()=>undefined);
+        const session=this.hosts.get(key);this.hosts.delete(key);if(session){if(session.deadline)clearTimeout(session.deadline);await session.client.close();}
     }
     /** Only a request's own research child is closed; public project sessions and shared artifact bytes stay intact. */
     async closeResearchSession(claim:HostedMcpClaim):Promise<void>{
@@ -82,31 +105,37 @@ class McpHostService {
         if(session)await session.client.close();
     }
 
-    private async spawn(claim: HostedMcpClaim): Promise<HostSession> {
-        const root = await materializeArtifact(claim, this.catalogUrl, this.internalToken);
-        const entry = entryPath(root, claim.entrypoint);
+    private async spawn(claim: HostedMcpClaim,signal?:AbortSignal): Promise<HostSession> {
+        const root = claim.operationRemote?undefined:await materializeArtifact(claim, this.catalogUrl, this.internalToken);
+        signal?.throwIfAborted();
+        const entry = root?entryPath(root, claim.entrypoint):undefined;
         let started: HostSession | undefined;
-        const transport = new StdioClientTransport({
-            command: claim.executable ? entry : process.execPath,
-            args: claim.executable ? [] : [entry],
-            cwd: root,
-            env: hostedMcpEnvironment(),
-            stderr: 'pipe',
-        });
-        transport.stderr?.on('data',()=>undefined);
+        const transport = claim.operationRemote?operationRemoteTransport(claim.operationRemote):new OwnedHostedStdio(claim.executable ? entry! : process.execPath,
+            [...(claim.executable ? [] : [entry!]),...(claim.operationArgs??[])],root!,hostedMcpEnvironment());
         const client = new Client({ name: 'neurocenter-mcp-host', version: '1' }, { capabilities: {} });
         try {
-            await withTimeout(client.connect(transport), START_TIMEOUT_MS, 'Запуск сервера MCP на площадке превысил время ожидания.');
+            await withTimeout(client.connect(transport,{signal,timeout:START_TIMEOUT_MS}), START_TIMEOUT_MS, 'Запуск сервера MCP на площадке превысил время ожидания.');
             started = { claim, client, lastUsed: Date.now(), listeners: 0 };
+            if(claim.operationSessionId){
+                const owned=started;owned.deadline=setTimeout(()=>{
+                    const key=this.hostKey(claim);if(this.hosts.get(key)===owned)this.hosts.delete(key);
+                    void client.close().catch(()=>undefined);
+                },Math.max(1,Math.min(120000,claim.exp-Date.now())));owned.deadline.unref();
+            }
         } catch (error) {
             await transport.close().catch(() => undefined);
             throw httpError(502, (error as Error).message || 'Сервер MCP не запустился на площадке.');
         }
+        const onclose=transport.onclose;
         transport.onclose = () => {
-            const key=this.hostKey(claim),current = this.hosts.get(key);
-            if (current && current.client === client) {
-                this.hosts.delete(key);
-                void client.close().catch(() => undefined);
+            // Preserve SDK rejection of pending calls and its request-timeout cleanup.
+            try{onclose?.();}finally{
+                const key=this.hostKey(claim),current = this.hosts.get(key);
+                if (current && current.client === client) {
+                    if(current.deadline)clearTimeout(current.deadline);
+                    this.hosts.delete(key);
+                    void client.close().catch(() => undefined);
+                }
             }
         };
         return started;
@@ -126,6 +155,7 @@ class McpHostService {
         clearInterval(this.idleTimer);
         await Promise.allSettled([...this.starting.values()]);
         const sessions=[...this.hosts.values()];this.hosts.clear();
+        for(const session of sessions)if(session.deadline)clearTimeout(session.deadline);
         await Promise.allSettled(sessions.map(session=>session.client.close()));
     }
 

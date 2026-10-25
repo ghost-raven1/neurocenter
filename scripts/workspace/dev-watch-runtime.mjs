@@ -6,6 +6,8 @@ import {servicePackages} from './dev-watch-plan.mjs';
 import {devProcessIdentity,ownsDevProcess} from './dev-processes.mjs';
 import {stopWatchGroup} from './dev-watch-owned.mjs';
 import {entryGeneration,pruneWatchGenerations,writeWatchFile} from './dev-watch-files.mjs';
+const orderedServices=services=>[...services.filter(service=>service.name==='flags'),...services.filter(service=>service.name!=='flags')];
+export const WATCH_SERVICE_READY_TIMEOUT_MS=20000;
 export async function saveWatchProcesses(root,records){const file=path.join(root,'.run/processes.json'),temporary=file+'.watch-'+process.pid;await fs.writeFile(temporary,JSON.stringify(records,null,2)+'\n',{mode:0o600});await fs.rename(temporary,file);}
 /** Mutable help and prepared delivery assets belong to the original checkout, outside disposable generations. */
 export function watchServiceEnvironment(root,service,environment){
@@ -24,21 +26,22 @@ export class WatchRuntime {
         if(!record.identity){child.kill('SIGKILL');throw Error('WATCH_PROCESS_IDENTITY');}
         this.guardian({kind:'group',record:{pid:record.pid,identity:record.identity}});child.send({kind:'run',args:[entry],environment});this.active.set(service.name,{service,child,record,environment});await this.persist();return this.active.get(service.name);
     }
-    async start(generation){this.mcpEntry=path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
-        for(const service of this.config.services){const pkg=servicePackages[service.name],entry=pkg?path.join(generation.repository,service.dir,'dist/main.js'):service.entry;
-            await this.launch(service,entry,{...service.environment,...pkg?{ASSET_SYNC_MCP_BIN:this.mcpEntry}:{}});}
+    /** Consumers start only after the selected flag definitions and preceding backend services are ready. */
+    async start(generation,signal){this.mcpEntry=path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
+        for(const service of orderedServices(this.config.services)){signal?.throwIfAborted();const pkg=servicePackages[service.name],entry=pkg?path.join(generation.repository,service.dir,'dist/main.js'):service.entry;
+            const item=await this.launch(service,entry,{...service.environment,...pkg?{ASSET_SYNC_MCP_BIN:this.mcpEntry}:{}});if(pkg)await this.ready(item,signal);}
     }
     async stopOne(item){
         if(!item)return;if(devProcessIdentity(item.record.pid)&&!ownsDevProcess(item.record,this.config.root,item.service))throw Error('WATCH_PROCESS_OWNERSHIP');
         await stopWatchGroup(item.record);this.guardian({kind:'release',pid:item.record.pid});this.active.delete(item.service.name);await this.persist();
     }
-    async ready(item,signal){const deadline=Date.now()+20000;while(Date.now()<deadline){signal?.throwIfAborted();if(this.closed)throw Error('WATCH_STOPPED');if(item.child.exitCode!==null||item.child.signalCode!==null)throw Error('WATCH_SERVICE_EXITED');
+    async ready(item,signal){const deadline=Date.now()+WATCH_SERVICE_READY_TIMEOUT_MS;while(Date.now()<deadline){signal?.throwIfAborted();if(this.closed)throw Error('WATCH_STOPPED');if(item.child.exitCode!==null||item.child.signalCode!==null)throw Error('WATCH_SERVICE_EXITED');
             try{const response=await fetch('http://127.0.0.1:'+item.service.port+(item.service.healthPath||'/health'),{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(1000)]):AbortSignal.timeout(1000)});if(response.ok&&(await response.json()).ok===true)return;}catch(error){if(signal?.aborted)throw error;}await delay(150);}
         throw Error('WATCH_SERVICE_NOT_READY');
     }
     async publish(generation,selection,signal){
         const selected=new Set(selection.map(([id])=>id)),previousMcp=this.mcpEntry;if(selected.has('bridge'))this.mcpEntry=path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
-        try{for(const service of this.config.services){if(!selected.has(servicePackages[service.name]))continue;signal?.throwIfAborted();const previous=this.active.get(service.name);await this.stopOne(previous);let next;
+        try{for(const service of orderedServices(this.config.services)){if(!selected.has(servicePackages[service.name]))continue;signal?.throwIfAborted();const previous=this.active.get(service.name);await this.stopOne(previous);let next;
                 try{next=await this.launch(service,path.join(generation.repository,service.dir,'dist/main.js'),{...service.environment,ASSET_SYNC_MCP_BIN:this.mcpEntry});await this.ready(next,signal);}
                 catch(error){if(next)await this.stopOne(next);if(previous&&!this.closed&&!signal?.aborted){const restored=await this.launch(service,previous.record.entry,previous.environment);await this.ready(restored,signal);}throw error;}
             }

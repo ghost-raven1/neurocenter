@@ -44,6 +44,15 @@ describe('Явное восстановление сохранённых лок�
     }
     const preview = (saved: Awaited<ReturnType<typeof backup>>,paths?: string[]) => prepareLocalRestore('test-project',saved.pkg,saved.set,{recoveryId:saved.recoveryId,...(paths ? {paths} : {})},authorize);
 
+    /** Журнал 0.7 не содержал descriptor восстановления и метаданные прав файла. */
+    async function legacySkillBackup() {
+        const saved = await skillBackup(); delete saved.journal.recovery;
+        for (const change of saved.journal.changes) { delete change.beforeMode; }
+        await fs.writeFile(saved.result.recoveryPath,JSON.stringify(saved.journal));
+        await fs.rm(variantIndexDirectory(await projectInstanceId('test-project')),{recursive:true});
+        return saved;
+    }
+
     it('Список не раскрывает bytes и пути; применение возвращает ручной вариант без изменения approved receipt и ledger', async () => {
         const secret = '<script>мой_секрет</script>'; const saved = await skillBackup(secret);
         const receipt = await read(receiptPath(saved.pkg)); const ledger = await read(LEDGER_PATH);
@@ -150,13 +159,27 @@ describe('Явное восстановление сохранённых лок�
         await expect(preview(saved)).rejects.toThrow();
     });
     it('Журнал 0.7 доступен только при точном совпадении private plan; неподтверждённый v1 остаётся view-only', async () => {
-        const saved = await skillBackup(); delete saved.journal.recovery; await fs.writeFile(saved.result.recoveryPath,JSON.stringify(saved.journal));
-        await fs.rm(variantIndexDirectory(await projectInstanceId('test-project')),{recursive:true});
+        const saved = await legacySkillBackup();
         expect((await listLocalVariants('test-project',saved.pkg,undefined,authorize)).entries.find(item => item.recoveryId === saved.recoveryId)?.eligible).toBe(true);
         saved.journal.changes[0]!.before = Buffer.from('подменённый архив').toString('base64'); await fs.writeFile(saved.result.recoveryPath,JSON.stringify(saved.journal));
         const variants = await listLocalVariants('test-project',saved.pkg,undefined,authorize);
         expect(variants.entries.find(item => item.recoveryId === saved.recoveryId)).toMatchObject({eligible:false,reason:'legacy-unverified'});
         await expect(preview(saved)).rejects.toThrow();
+    });
+    it('Подтверждённый журнал 0.7 восстанавливает сохранённый вариант без метаданных нового формата', async () => {
+        const saved = await legacySkillBackup();
+        await applyLocalRestore('test-project',saved.pkg,options(await preview(saved)),authorize,progress);
+        expect(await read(assetBase(saved.pkg) + '/SKILL.md')).toBe('мой локальный вариант');
+    });
+    it('Неподтверждённые права в журнале 0.7 не разрешают восстановление и не меняют текущий файл', async () => {
+        const saved = await legacySkillBackup(), target = assetBase(saved.pkg) + '/SKILL.md';
+        const bytes = await read(target), mode = (await fs.stat(file(target))).mode & 0o777;
+        saved.journal.changes[0]!.beforeMode = 0o751;
+        await fs.writeFile(saved.result.recoveryPath,JSON.stringify(saved.journal));
+        expect((await listLocalVariants('test-project',saved.pkg,undefined,authorize)).entries.find(item => item.recoveryId === saved.recoveryId))
+            .toMatchObject({eligible:false,reason:'legacy-unverified'});
+        await expect(preview(saved)).rejects.toThrow();
+        expect(await read(target)).toBe(bytes); expect((await fs.stat(file(target))).mode & 0o777).toBe(mode);
     });
     it('Подмена копии после preview и выбор marker или receipt не дают произвольной записи', async () => {
         const saved = await skillBackup(); const plan = await preview(saved);

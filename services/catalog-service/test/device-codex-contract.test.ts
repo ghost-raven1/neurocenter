@@ -18,6 +18,16 @@ describe('Local Codex protocol preserves privacy and declared capabilities',()=>
         expect(normalizeDeviceCodexPayload(payload)).toEqual(payload);
         for(const extra of [{messages:[]},{connectorPackage:{}},{source:{scope:'global',path:'/private'}}])expect(()=>normalizeDeviceCodexPayload({...payload,...extra})).toThrow();
     });
+    it('keeps legacy job identity unchanged and binds optional bounded dispatch-only features to the immutable payload',()=>{
+        const legacy=normalizeDeviceCodexPayload(payload);expect(JSON.stringify(legacy)).toBe(JSON.stringify(payload));expect(legacy).not.toHaveProperty('dispatchOnlyFeatures');
+        const guarded={...payload,dispatchOnlyFeatures:['system_role_mcp','tool_catalog']};
+        expect(normalizeDeviceCodexPayload(guarded)).toEqual(guarded);
+        expect(deviceCodexIdentityDigest(guarded)).not.toBe(deviceCodexIdentityDigest(payload));
+        expect(deviceCodexIdentityDigest({...guarded,dispatchOnlyFeatures:['system_role_mcp']})).not.toBe(deviceCodexIdentityDigest(guarded));
+    });
+    it.each([[],['system_role_mcp','system_role_mcp'],['unsafe/header'],Array.from({length:9},(_,i)=>'feature_'+i),{system_role_mcp:true}].map(value=>[value]))('rejects malformed dispatch-only metadata: %j',dispatchOnlyFeatures=>{
+        expect(()=>normalizeDeviceCodexPayload({...payload,dispatchOnlyFeatures})).toThrow();
+    });
     it.each([{temperature:0},{top_p:0.5},{num_predict:256},{num_ctx:8192},{store:true}])('unsupported explicit wire option never disappears: %j',options=>{
         expect(()=>normalizeDeviceCodexRequest({messages:[{role:'user',content:'test'}],options},'chat')).toThrow();
     });

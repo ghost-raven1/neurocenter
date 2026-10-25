@@ -6,7 +6,7 @@ import { assertConfigurationReport, configurationSchemaDigest, validConfiguratio
 
 export interface ConfigurationStatusScope {deviceId:string;projectId:string;bindingId:string;instanceId:string;package:IPackage}
 /** После разрешения локальной записи прежний ready больше не подтверждает параметры, даже при потере ответа формы. */
-export async function readConfigurationState(pool:Pool,email:string,scope:ConfigurationStatusScope):Promise<{status?:ConfigurationStatus;invalidatedAt?:string;observedAt?:string}>{
+export async function readConfigurationState(pool:Pick<Pool,'query'>,email:string,scope:ConfigurationStatusScope):Promise<{status?:ConfigurationStatus;invalidatedAt?:string;observedAt?:string}>{
     const {rows}=await pool.query(`SELECT invalid.at AS "invalidatedAt",checked.result,checked.state,checked.observed_at AS "observedAt" FROM
         (SELECT max((changed.payload->>'configurationInvalidatedAt')::timestamptz) AS at FROM bridge_jobs changed
             WHERE changed.email=$1 AND changed.device_id=$2 AND changed.project_id=$3 AND changed.kind='open-mcp-configuration'
@@ -25,10 +25,10 @@ export async function readConfigurationState(pool:Pool,email:string,scope:Config
     try{assertConfigurationReport('get-mcp-configuration-status',rows[0].result,{...scope,projectId:scope.projectId});return {status:rows[0].result as ConfigurationStatus,invalidatedAt,observedAt};}
     catch{return {invalidatedAt,observedAt};}
 }
-export async function latestConfigurationStatus(pool:Pool,email:string,scope:ConfigurationStatusScope):Promise<ConfigurationStatus|undefined>{return (await readConfigurationState(pool,email,scope)).status;}
+export async function latestConfigurationStatus(pool:Pick<Pool,'query'>,email:string,scope:ConfigurationStatusScope):Promise<ConfigurationStatus|undefined>{return (await readConfigurationState(pool,email,scope)).status;}
 
 /** Ревизии не являются хэшами секретов и не переносят настройки между инструментами графа. */
-export async function configurationRevisionsForProbe(pool:Pool,email:string,scope:{deviceId:string;projectId:string;bindingId:string;instanceId:string;packages:IPackage[]}):Promise<ConfigurationRevision[]>{
+export async function configurationRevisionsForProbe(pool:Pick<Pool,'query'>,email:string,scope:{deviceId:string;projectId:string;bindingId:string;instanceId:string;packages:IPackage[]}):Promise<ConfigurationRevision[]>{
     const configured=scope.packages.filter(pkg=>configurationSchemaDigest(pkg));const result:ConfigurationRevision[]=[];
     for(const pkg of configured){
         const status=await latestConfigurationStatus(pool,email,{...scope,package:pkg});
@@ -37,7 +37,7 @@ export async function configurationRevisionsForProbe(pool:Pool,email:string,scop
     }
     return result.sort((a,b)=>a.assetId===b.assetId?0:a.assetId<b.assetId?-1:1);
 }
-export async function assertRuntimeConfigurationRevisions(pool:Pool,email:string,deviceId:string,projectId:string,payload:Record<string,unknown>){
+export async function assertRuntimeConfigurationRevisions(pool:Pick<Pool,'query'>,email:string,deviceId:string,projectId:string,payload:Record<string,unknown>){
     const pkg=payload.package as IPackage;const packages=(payload.installSet as {packages:IPackage[]}|undefined)?.packages??[pkg];
     if(!packages.some(member=>configurationSchemaDigest(member)))return;
     const revisions=await configurationRevisionsForProbe(pool,email,{deviceId,projectId,bindingId:String(payload.bindingId),instanceId:String(payload.instanceId),packages});

@@ -38,8 +38,8 @@ export function publicationRuntimeExtra(value: unknown, kind: 'mcp' | 'plugin', 
         const memory=source.learningMemory,quirks=source.learningQuirks as Record<string,unknown>|undefined;
         if(memory!==undefined&&(!artifacts.length||artifacts.some(item=>item.executable||item.entrypoint!=='entrypoint.mjs')||!memoryRecipeSupported(declaration)))
             throw new Error('learningMemory требует точный ABI локального MCP Memory и готовые платформенные комплекты.');
-        if(quirks!==undefined&&(!artifacts.length||!ui||!supportsLearningQuirks(declaration)))
-            throw new Error('learningQuirks требует закреплённый источник OpenCodeRAG с локальным интерфейсом и готовыми комплектами.');
+        if(quirks!==undefined&&(!artifacts.length||!core||!supportsLearningQuirks(declaration)))
+            throw new Error('learningQuirks требует закреплённый источник ядра OpenCodeRAG и готовые комплекты.');
         const hosted = source.hostedEmbedding;
         const marker = hosted as {schemaVersion?: unknown;profileSchemaVersion?: unknown;reindexSchemaVersion?:unknown}|undefined;
         if (hosted !== undefined && (!hosted || typeof hosted !== 'object' || Array.isArray(hosted)

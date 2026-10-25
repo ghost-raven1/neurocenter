@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, writeState } from '../src/bridge/state.js';
+import { api, apiHub, writeState } from '../src/bridge/state.js';
 import { commitProjectBinding, prepareProjectBinding, projectBindingId } from '../src/bridge/workspace.js';
 import * as workspace from '../src/bridge/workspace.js';
 import { install } from '../src/bridge/installer.js';
@@ -11,6 +11,8 @@ import * as inspection from '../src/bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../src/bridge/inspection-identity.js';
 import { packageFixture, workspaceFixture } from './bridge-fixture.js';
 import type { InstallationInspection } from '../src/bridge/installation-inspection.model.js';
+import { idleSystemRoleMcpLane } from './worker-control-lane.fixture.js';
+import { stopFixtureWorker } from './worker-lifecycle.fixture.js';
 
 vi.mock('socket.io-client', () => ({ io: vi.fn(() => ({ auth: {}, on: vi.fn(), disconnect: vi.fn(), connect: vi.fn() })) }));
 vi.mock('../src/bridge/state.js', async importOriginal => ({ ...await importOriginal<typeof import('../src/bridge/state.js')>(), api: vi.fn() }));
@@ -18,6 +20,7 @@ vi.mock('../src/bridge/state.js', async importOriginal => ({ ...await importOrig
 describe('Идентичность результата инспекции закреплена за исходным заданием', () => {
     let fixture: Awaited<ReturnType<typeof workspaceFixture>>;
     let signals: Map<NodeJS.Signals, Set<(...args: unknown[]) => void>>;
+    let controlLane: ReturnType<typeof idleSystemRoleMcpLane>;
     const pkg = packageFixture();
     const jobId = '11111111-1111-1111-1111-111111111111';
     const lease = '22222222-2222-2222-2222-222222222222';
@@ -25,11 +28,16 @@ describe('Идентичность результата инспекции за�
     beforeEach(async () => {
         fixture = await workspaceFixture(); vi.mocked(api).mockReset();
         signals = new Map(['SIGINT', 'SIGTERM'].map(signal => [signal as NodeJS.Signals, new Set(process.listeners(signal).map(listener => listener as (...args: unknown[]) => void))]));
+        controlLane = idleSystemRoleMcpLane(apiHub(), 'a'.repeat(64)); vi.stubGlobal('fetch', controlLane.network);
+        vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     });
     afterEach(async () => {
-        vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs();
-        for (const [signal, previous] of signals) { for (const listener of process.listeners(signal)) { if (!previous.has(listener)) { process.off(signal, listener); } } }
-        await fs.rm(fixture.temporary, { recursive: true, force: true });
+        try { await stopFixtureWorker(signals); expect(controlLane.unexpected).toEqual([]); }
+        finally {
+            vi.clearAllTimers(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals();
+            for (const [signal, previous] of signals) { for (const listener of process.listeners(signal)) { if (!previous.has(listener)) { process.off(signal, listener); } } }
+            await fs.rm(fixture.temporary, { recursive: true, force: true });
+        }
     });
     it('Переключение A → B внутри scanner доставляет failed completion с binding A без зависшего pending', async () => {
         await install('test-project', pkg, async () => undefined, async () => undefined);
