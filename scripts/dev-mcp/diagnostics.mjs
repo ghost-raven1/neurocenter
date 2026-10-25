@@ -9,6 +9,7 @@ import {healthReader} from './health.mjs';
 import {readCoverageGaps} from './coverage-gaps.mjs';
 import {readCheckPlan} from './check-plan.mjs';
 import {readRunSummary} from './run-reports.mjs';
+import {coverageLifecycleSummary} from './coverage-lifecycle.mjs';
 import {coverageReportPattern,verificationReportPattern} from './tool-catalog.mjs';
 
 const execute=promisify(execFile),sha=/^[a-f0-9]{40,64}$/;
@@ -116,8 +117,8 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             try{const text=(await readOwnedFile(root,report,{limit:16*1024**2})).text;value=JSON.parse(text);reportSha256=createHash('sha256').update(text).digest('hex');}catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
             if(!value||typeof value!=='object'||Array.isArray(value)||![1,2].includes(value.schemaVersion)||typeof value.profile!=='string'
                 ||!/^[a-zA-Z0-9][a-zA-Z0-9+._-]{0,119}$/.test(value.profile)||!Array.isArray(value.packages)||value.packages.length>32)throw malformed();
-            const finished=date(value.finishedAt),comparable=value.comparablePercentages===true;
-            if(value.finishedAt!==undefined&&!finished)throw malformed();
+            const lifecycle=coverageLifecycleSummary(value),finished=date(value.finishedAt),comparable=value.comparablePercentages===true;
+            if(value.finishedAt!==undefined&&!finished&&!(lifecycle&&value.finishedAt===null))throw malformed();
             const results=value.packages.map(item=>{
                 if(!packages.some(([name])=>name===item?.name))throw malformed();
                 return {name:item.name,...counters(item),exitCode:Number.isInteger(item.exitCode)?item.exitCode:null,
@@ -130,7 +131,7 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             const external=[value.native,value.integration,...retainedRaw.flatMap(item=>[item.native,item.integration])].filter(Boolean);
             const externalCounters=[native,integration,...retained.flatMap(item=>[item.native,item.integration])].filter(Boolean);
             const coverageSummary=value.summary??(value.coverageKind==='experimental-mixed-instrumentation'&&!comparable?value.experimentalSummary:null);
-            if(finished&&(!coverageSummary||typeof value.complete!=='boolean'||results.some(item=>[item.passed,item.failed,item.skipped,item.exitCode,item.excludedSuites].some(value=>value===null))
+            if(finished&&(!lifecycle||lifecycle.state==='passed')&&(!coverageSummary||typeof value.complete!=='boolean'||results.some(item=>[item.passed,item.failed,item.skipped,item.exitCode,item.excludedSuites].some(value=>value===null))
                 ||external.some(item=>[count(item.passed),count(item.failed),count(item.skipped),count(item.cancelled),count(item.exitCode)].some(value=>value===null))))throw malformed();
             const current=await gitObservation(root),recordedHead=sha.test(value.sourceAfter?.head)?value.sourceAfter.head:sha.test(value.sourceBefore?.head)?value.sourceBefore.head:null;
             const currentHeadMatches=!!recordedHead&&current.available?recordedHead===current.head:null;
@@ -145,9 +146,9 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             const incomplete=results.some(item=>item.todo===null||item.todo>0||item.skipped>0||item.cancelled>0||item.fileInventory!=='complete'||item.reportValid!=='valid')
                 ||externalCounters.some(item=>item.todo===null||item.todo>0||item.skipped>0||item.cancelled!==0)
                 ||external.some(item=>Array.isArray(item.excludedSuites)&&item.excludedSuites.length>0)||value.sourceInventory?.inventoryComplete===false;
-            const status=!finished?'in-progress':failed?'failed':value.complete===true&&!incomplete?'requested-suites-complete':'incomplete';
+            const status=!finished?'in-progress':lifecycle?.state==='cancelled'?'cancelled':lifecycle?.state==='failed'||failed?'failed':value.complete===true&&!incomplete?'requested-suites-complete':'incomplete';
             return {report,reportSha256,profile:value.profile,coverageKind:['vitest-ast-v8','native-c8-v8','experimental-mixed-instrumentation'].includes(value.coverageKind)?value.coverageKind:null,
-                status,startedAt:date(value.startedAt),finishedAt:finished,
+                status,startedAt:date(value.startedAt),finishedAt:finished,...(lifecycle?{lifecycle}:{}),
                 complete:status==='requested-suites-complete',comparablePercentages:comparable,packages:results,native,integration,retainedProfiles:retained,
                 countScope:value.profile==='retained-runs-merge'?'Counts are per retained run and can overlap; do not sum them as unique tests.':'Counters describe the selected requested suites only.',
                 summary,sourceFiles:count(value.sourceFiles),source:{recordedHead,currentHead:current.available?current.head:null,currentHeadMatches,sourceChangedDuringRun,status:sourceStatus},

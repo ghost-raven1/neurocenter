@@ -21,6 +21,8 @@ const expectedFiles=[
     'scripts/test/coverage-inventory.test.mjs','scripts/test/coverage-profiles.test.mjs','scripts/test/coverage-completion.test.mjs',
     'scripts/test/coverage-source-inventory.test.mjs','scripts/test/coverage-focused.test.mjs','scripts/test/dev-mcp-coverage.test.mjs',
     'scripts/test/dev-mcp-output.test.mjs','scripts/test/dev-mcp.test.mjs','scripts/test/dev-mcp-plan.test.mjs','scripts/test/dev-mcp-logs.test.mjs',
+    'scripts/test/coverage-lifecycle.test.mjs','scripts/test/dev-mcp-coverage-lifecycle.test.mjs',
+    'scripts/test/run-manifest.test.mjs','scripts/test/workspace-process-failure.test.mjs',
 ].sort();
 const exists=file=>fs.access(file).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
 async function put(root,name,content){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,content);}

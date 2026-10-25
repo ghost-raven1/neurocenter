@@ -46,13 +46,19 @@ const logs=object({service:choices(logServices),text:text(32768),lines:integer(1
 const coverageSource=object({recordedHead:nullable(head),currentHead:nullable(head),currentHeadMatches:nullable(boolean),sourceChangedDuringRun:nullable(boolean),
     status:choices(['changed','clean-head-match','not-fully-verified'])});
 const baseReport={report:text(180),reportSha256:digest,startedAt:date,finishedAt:date,status:text(80),complete:boolean,evidence};
-const coverage=object({...baseReport,status:choices(['in-progress','failed','incomplete','requested-suites-complete']),profile:text(120),
+const coverageLifecycle=object({schemaVersion:{const:1},state:choices(['preparing','running','finalizing','passed','failed','cancelled']),
+    plannedSteps:array(choices([...packages.map(([id])=>'unit:'+id),'native','integration']),10),
+    steps:array(object({id:choices([...packages.map(([id])=>'unit:'+id),'native','integration']),startedAt:date,finishedAt:date,
+        result:nullable(object({...processFields,leaderReaped:boolean,cleanup,failure},[...Object.keys(processFields),'leaderReaped','cleanup']))}),10),
+    failure,cancellation:nullable(object({signal:nullable(choices(['SIGINT','SIGTERM']))})),finalizationErrors:array(object({code:text(80)}),16)});
+const coverageProperties={...baseReport,status:choices(['in-progress','failed','cancelled','incomplete','requested-suites-complete']),profile:text(120),
     coverageKind:nullable(choices(['vitest-ast-v8','native-c8-v8','experimental-mixed-instrumentation'])),comparablePercentages:boolean,
     packages:array(object({name:packageName,passed:nullable(integer()),failed:nullable(integer()),skipped:nullable(integer()),todo:nullable(integer()),cancelled:nullable(integer()),
         exitCode:nullable({type:'integer'}),excludedSuites:nullable(integer()),fileInventory:choices(['complete','incomplete','not-reported']),reportValid:choices(['valid','invalid','not-reported'])},
         ['name','passed','failed','skipped','todo','exitCode','excludedSuites','fileInventory','reportValid']),32),native:nullable(counters),integration:nullable(counters),retainedProfiles:array(object({native:nullable(counters),integration:nullable(counters)}),64),
     countScope:text(500),summary:object(metrics.properties,[]),sourceFiles:nullable(integer()),source:coverageSource,
-    denominator:object({allWorkspaceSourcesIncluded:nullable(boolean),configuredPackageSourcesIncluded:nullable(boolean),httpOnlyExecutedSources:nullable(boolean),fileInventoryIsNotLineCoverage:nullable(boolean)})});
+    denominator:object({allWorkspaceSourcesIncluded:nullable(boolean),configuredPackageSourcesIncluded:nullable(boolean),httpOnlyExecutedSources:nullable(boolean),fileInventoryIsNotLineCoverage:nullable(boolean)})};
+const coverage=object({...coverageProperties,lifecycle:coverageLifecycle},Object.keys(coverageProperties));
 
 const checkSource=object({status:choices(['unknown','capturing','unchanged','changed']),available:boolean,head:nullable(head),workingTree,
     currentSourceEquivalent:{const:'unknown'},before:nullable(snapshot),after:nullable(snapshot),reason:nullable(text(100)),note:text(1000)},['status','currentSourceEquivalent']);
