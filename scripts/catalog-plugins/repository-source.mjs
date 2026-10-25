@@ -1,3 +1,4 @@
+import diagnostics from '../../services/shared/package-build-diagnostics.cjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -156,7 +157,7 @@ export async function prepareRepository(recipe, context, { extractRelease, prepa
         return { ...result, upstream: { ...result.upstream, repository: source.url, commit: source.commit, release: source.release } };
     }
     const cache = context.cacheDirectory ?? path.join(path.dirname(context.directory), '.repository-cache');
-    const archive = await downloadRepositoryArchive(source, cache);
+    const archive = await diagnostics.withBuildDiagnostic('download',context.target,()=>downloadRepositoryArchive(source, cache));
     if (source.snapshotSha256 && archive.sha256 !== source.snapshotSha256) throw new Error('Снимок репозитория изменился после проверки.');
     const root = await repositoryRoot(archive.archivePath, source);
     const extracted = await fs.mkdtemp(path.join(path.dirname(context.directory), '.repository-source-'));

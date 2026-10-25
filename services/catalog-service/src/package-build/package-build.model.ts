@@ -1,3 +1,5 @@
+import type {BuildSourceInventory,ExecutableBuildPlan} from '../../../shared/package-build-plan.cjs';
+import type {BuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
 import {validateUploadBuildSource,type UploadBuildSource,type PinnedUploadSource} from '../source-upload/source-upload.model';
 import { BadRequestException } from '@nestjs/common';
 import { packageFiles, publicationHash, filePath } from '../publication/publication-validation';
@@ -13,11 +15,11 @@ export type BuildState = 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SU
 export interface BuildSourceNpm { type: 'npm'; specifier: string; entrypoint?: string }
 export interface BuildSourceFiles { type: 'files'; files: SkillSourceFile[]; entrypoint: string; args?: string[] }
 export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin' | 'skill'; name: string; description: string; tags?: string[]; targets?: string[]; publication?:BuildPublicationTarget; agent?:PackageAgentInput; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource}
-export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source' | 'publication'> {publication?:PinnedBuildPublication;agentCandidates?:string[];targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
+export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source' | 'publication'> {recipeVersion?:2;recipeInventory?:BuildSourceInventory;buildPlan?:ExecutableBuildPlan;buildDiagnostics?:Array<{attempt:number;report:BuildDiagnostic}>;publication?:PinnedBuildPublication;agentCandidates?:string[];targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
 export interface BuildResult {catalogId: string; name: string; version: number; kind?:'skill';assetId?:string;sourceVersion?:string;sourceSha256?:string}
 export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string; publication_started_at?: string | null;execution_nonce?:string|null;execution_host?:string|null;execution_pid?:number|null;execution_started?:boolean}
 export const buildView = (row: BuildRow) => ({id: row.id, requestKey:row.request_key, publicationStartedAt:row.publication_started_at??null, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
-    message: row.message, result: row.result, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at});
+    buildDiagnostics:row.config?.buildDiagnostics??[], message: row.message, result: row.result, error: row.error, createdAt: row.created_at, updatedAt: row.updated_at});
 export const requestHash = (input: BuildInput) => publicationHash({...input, requestKey: undefined});
 export const validId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);

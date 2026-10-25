@@ -1,3 +1,7 @@
+import {validateBuildPlan} from '../../services/shared/package-build-plan.cjs';
+import {projectInventory} from './source-inventory.mjs';
+import diagnostics from '../../services/shared/package-build-diagnostics.cjs';
+import {validateSourceDependencies} from './source-dependency-lock.mjs';
 import archiveSource from '../../services/shared/archive-source.cjs';
 import {inspectArchiveSource,prepareArchiveSource} from './archive-source.mjs';
 import { createRequire } from 'node:module';
@@ -64,7 +68,7 @@ export function ignoredProjectSource(name,entrypoint){
         ||name==='dist'&&!entrypoint.split('/').includes('dist')||/^\.env(?:\.|$)/.test(name);
 }
 
-async function projectFiles(source, recipeDirectory, limits = { filesCount: 100, totalBytes: 5 * 1048576, fileBytes: 1048576 }) {
+export async function projectFiles(source, recipeDirectory, limits = { filesCount: 100, totalBytes: 5 * 1048576, fileBytes: 1048576 }) {
     const directory = path.resolve(recipeDirectory, source.directory);
     if (!within(recipeDirectory, directory)) throw new Error('Исходники выходят за папку рецепта.');
     let parent = recipeDirectory;
@@ -142,35 +146,64 @@ async function prepareProject(recipe, { directory, recipeDirectory, target }, { 
             const after = await fs.lstat(file.filename);
             if (!after.isFile() || after.nlink !== 1 || after.ino !== file.ino || after.size !== file.size || after.mtimeMs !== file.mtimeMs) { throw new Error('Исходный файл изменился во время подготовки.'); }
         }
+        let plan;
+        if(recipe.schemaVersion===2){
+            const inventory=await projectInventory({...recipe.source,directory:'.'},staging,recipe.inventory.entrypoints.map(item=>item.path),recipe.targets,projectFiles);
+            plan=validateBuildPlan(recipe.buildPlan,inventory);
+            if(plan.entrypoint!==recipe.source.entrypoint)throw Object.assign(new Error('Файл запуска не совпадает с рецептом.'),{code:'SOURCE_RECIPE_INVALID'});
+        }
         const metadata = source.files.find(file => file.path === 'package.json');
         if (metadata?.size > 1048576) { throw new Error('package.json превышает 1 МиБ.'); }
         const metadataBytes = metadata ? await fs.readFile(path.join(staging, 'package.json')) : undefined;
         const manifest = metadataBytes ? JSON.parse(metadataBytes.toString('utf8')) : {};
         const dependencies = manifest.dependencies ?? {},optionalDependencies=manifest.optionalDependencies ?? {};
-        for(const group of [dependencies,optionalDependencies])if (!exact(group, Object.keys(group)) || Object.entries(group).some(([name, version]) =>
-            !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name) || typeof version !== 'string'
-            || !/^[~^]?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version))) throw new Error('Зависимости исходников должны задавать npm-пакеты с точной, ^ или ~ semver версией. Git, file и install hooks не используются.');
         const lockFile = source.files.find(file => file.path === 'package-lock.json');
         if (lockFile?.size > 16 * 1048576) { throw new Error('package-lock.json превышает 16 МиБ.'); }
+        const sourceLock=lockFile?JSON.parse(await fs.readFile(path.join(staging,lockFile.path),'utf8')):undefined;
+        await diagnostics.withBuildDiagnostic('dependencies',target,async()=>validateSourceDependencies(manifest,sourceLock));
         if (lockFile) for (const entry of Object.values(JSON.parse(await fs.readFile(path.join(staging, lockFile.path), 'utf8')).packages ?? {})) {
             if (!entry.resolved) continue;
             const resolved = new URL(entry.resolved);
             if (resolved.protocol !== 'https:' || resolved.hostname !== 'registry.npmjs.org' || resolved.username || resolved.password) throw new Error('Lock-файл должен ссылаться только на официальный npm registry.');
         }
         if (Object.keys(dependencies).length||Object.keys(optionalDependencies).length) {
-            await installDependencies(staging, dependencies, target,{optionalDependencies});
+            await diagnostics.withBuildDiagnostic('dependencies',target,()=>installDependencies(staging, dependencies, target,{optionalDependencies}));
             // npm helper создаёт служебный package.json; компилятор должен видеть исходный module type/imports.
             if (metadataBytes) { await fs.writeFile(path.join(staging, 'package.json'), metadataBytes); }
             const modules = path.join(staging, 'node_modules');
             const installed = await fs.stat(modules).catch(error => { if(error.code==='ENOENT')return undefined;throw error; });
+            if(installed&&plan)await diagnostics.withBuildDiagnostic('dependencies',target,()=>assertNodeOnlyDependencies(modules));
             if(installed)await fs.cp(modules, path.join(directory, 'node_modules'), { recursive: true, errorOnExist: true, force: false });
         }
-        const compiled = await compileRuntimeEntry({ directory, workingDirectory: staging, sourceEntry: recipe.source.entrypoint });
-        await fs.writeFile(path.join(directory, 'package.json'), '{"private":true,"type":"module"}\n');
+        let compiled;
+        if(plan?.steps[1].mode==='preserve'){
+            for(const file of source.files.filter(file=>/\.[cm]?js$/.test(file.path)||file.path==='package.json')){
+                const destination=path.join(directory,file.path);await fs.mkdir(path.dirname(destination),{recursive:true});
+                await fs.copyFile(path.join(staging,file.path),destination,constants.COPYFILE_EXCL);
+            }
+            compiled={entrypoint:plan.entrypoint,upstream:{compiler:'preserve-js',layout:'source'}};
+            if(!metadataBytes)await fs.writeFile(path.join(directory,'package.json'),'{"private":true}\n');
+        }else{
+            compiled=await diagnostics.withBuildDiagnostic('compile',target,()=>compileRuntimeEntry({directory,workingDirectory:staging,sourceEntry:recipe.source.entrypoint}));
+            await fs.writeFile(path.join(directory,'package.json'),'{"private":true,"type":"module"}\n');
+        }
+        if(plan)for(const relative of plan.steps[2].paths){
+            const destination=path.join(directory,relative);await fs.mkdir(path.dirname(destination),{recursive:true});
+            await fs.copyFile(path.join(staging,relative),destination,constants.COPYFILE_EXCL);
+        }
         try { await fs.copyFile(path.join(staging, 'package-lock.json'), path.join(directory, 'package-lock.json')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
         return { ...compiled, upstream: { ...compiled.upstream, files: source.files.length } };
     } finally { await fs.rm(staging, { recursive: true, force: true }); }
+}
+
+/** The generic v2 profile cannot claim a cross-platform native dependency build. */
+async function assertNodeOnlyDependencies(directory){
+    for(const entry of await fs.readdir(directory,{withFileTypes:true})){
+        const filename=path.join(directory,entry.name);
+        if(entry.isDirectory())await assertNodeOnlyDependencies(filename);
+        else if(/\.(?:node|dll|dylib|so|exe)$/i.test(entry.name))throw Object.assign(new Error('Зависимости содержат нативную программу. Нужен отдельный проверенный платформенный адаптер.'),{code:'SOURCE_RUNTIME_UNSUPPORTED'});
+    }
 }
 
 export async function extractRelease(archive, asset, directory) {

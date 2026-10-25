@@ -13,6 +13,7 @@ vi.mock('../src/database/pool',()=>({createPool:()=>mocks.pool}));
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:mocks.reserve}));
 vi.mock('../src/devices/device-operations',()=>({notifyDeviceOperations:vi.fn()}));
 import {PackageBuildService} from '../src/package-build/package-build.service';
+import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
 
 function deferred(){let resolve:()=>void=()=>{};const promise=new Promise<void>(done=>{resolve=done;});return{promise,resolve};}
 const actor={email:'admission@example.test',activeRole:'Главный админ'};
@@ -36,6 +37,34 @@ describe('Приём сборки не переживает владельца �
         Object.assign(service,{lease,repository,stagingRoot:async()=>'/unused-admission-stage',execute:vi.fn(()=>worker.promise)});
     });
     afterEach(async()=>{unblock();worker.resolve();if(!destroyed)await service.onModuleDestroy();});
+    it('pins v2 source inventory once for a new explicit agent build',async()=>{
+        const input={...request(),agent:{modelId:'model-fixture',expectedModelPin:'a'.repeat(64),maxAttempts:2}};
+        repository.enqueue.mockImplementation(async(_actor,_key,_hash,config)=>({id:randomUUID(),state:'QUEUED',config}));
+        await service.create(actor,input);
+        expect(repository.enqueue.mock.calls[0][3]).toMatchObject({recipeVersion:2,recipeInventory:{entrypoints:[{path:'index.mjs',runtime:'node24'}]}});
+    });
+    it('keeps accepted v1 replay before new recipe feature decisions or inspection',async()=>{
+        const input=request(),config={kind:input.kind,name:input.name,source:input.source,targets:input.targets,tags:[]};
+        repository.existing.mockResolvedValue({id:randomUUID(),state:'FAILED',config,message:'Saved v1 outcome'});
+        vi.mocked(requireFeaturesEnabled).mockClear();
+        const replay=await service.create(actor,input);
+        expect(replay.message).toBe('Saved v1 outcome');expect(config).not.toHaveProperty('recipeVersion');
+        expect(requireFeaturesEnabled).not.toHaveBeenCalled();expect(repository.enqueue).not.toHaveBeenCalled();
+    });
+    it('recipe flag OFF keeps the existing v1 admission without changing its files',async()=>{
+        const input={...request(),agent:{modelId:'model-fixture',expectedModelPin:'a'.repeat(64),maxAttempts:2}};
+        vi.mocked(requireFeaturesEnabled).mockImplementation(async keys=>{if(keys.includes('tool_build_agent_recipes'))throw new ForbiddenException('Recipe feature disabled');});
+        repository.enqueue.mockImplementation(async(_actor,_key,_hash,config)=>({id:randomUUID(),state:'QUEUED',config}));
+        try{await service.create(actor,input);expect(repository.enqueue.mock.calls[0][3]).not.toHaveProperty('recipeVersion');}
+        finally{vi.mocked(requireFeaturesEnabled).mockImplementation(async()=>undefined);}
+    });
+    it('rejects Bun before enqueue and before a paid agent proposal',async()=>{
+        const input={...request(),agent:{modelId:'model-fixture',expectedModelPin:'a'.repeat(64),maxAttempts:2},
+            source:{type:'files',entrypoint:'index.ts',files:[{path:'index.ts',content:'const dir=import.meta.dir;export default async()=>({event:async()=>Bun.file(dir)})'}]}};
+        const propose=vi.fn();Object.assign(service,{agent:{propose}});
+        await expect(service.create(actor,input)).rejects.toThrow('Bun');
+        expect(repository.enqueue).not.toHaveBeenCalled();expect(propose).not.toHaveBeenCalled();
+    });
     it.each(['55P03','57014'])('SQL %s при приёме даёт безопасный 503 и сохраняет причину без запуска worker',async code=>{
         const raw=Object.assign(new Error('private SQL details: tool_source_uploads'),{code});
         repository.enqueue.mockRejectedValue(raw);

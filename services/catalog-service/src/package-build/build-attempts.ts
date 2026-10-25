@@ -1,3 +1,6 @@
+import {parseBuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
+import {BuildDiagnosticError} from './build-process';
+import {agentHash,packageAgentRecipe,packageAgentReport} from './package-agent.recipe';
 import {ConflictException} from '@nestjs/common';
 import type {BuildConfiguration} from './package-build.model';
 import type {PackageAgentService} from './package-agent.service';
@@ -20,15 +23,24 @@ const infrastructureFailures=new Set(['isolation-unavailable','no-host-artifact'
 /** One durable queue owner, bounded paid calls, and no publication of a failed or different candidate. */
 export async function buildVerifiedAttempts(original:BuildConfiguration,context:BuildAttemptContext):Promise<VerifiedBuildAttempt> {
     if(original.agent&&!context.agent)throw new ConflictException('Агент «Упаковщик» недоступен. Создайте ручную сборку или повторите позже.');
-    let config=original,feedback:PackageAgentRuntimeReport|undefined;
+    let config=original,feedback:PackageAgentRuntimeReport|undefined,failedRecipeHash:string|undefined;
     const attempts=original.agent?.maxAttempts??1;
     for(let attempt=1;attempt<=attempts;attempt++){
         await context.authorize();
         if(attempt>1)await context.reset();
         if(original.agent)config=await context.agent!.propose(config,context.context(attempt,feedback));
+        if(failedRecipeHash&&failedRecipeHash===agentHash(packageAgentRecipe(config)))throw new ConflictException('Агент не изменил нерабочий рецепт сборки. Повтор остановлен.');
+        failedRecipeHash=undefined;
         await context.authorize();
-        // Infrastructure failures have no trusted recipe diagnostic and must not spend on automatic inference retries.
-        const manifest=await context.build(config,attempt);
+        let manifest:string;
+        try{manifest=await context.build(config,attempt);}catch(error){
+            const report=error instanceof BuildDiagnosticError?parseBuildDiagnostic(error.report,config.targets):undefined;
+            // Only newly accepted v2 budgets may repair a classified source failure; unknown sends/infrastructure never retry.
+            if(original.recipeVersion!==2||!original.agent||!report?.repairable||attempt>=attempts)throw error;
+            feedback=packageAgentReport({passed:false,summary:'Сборка не завершена: '+report.stage,diagnostics:[report.reason],build:report});
+            failedRecipeHash=agentHash(packageAgentRecipe(config));
+            continue;
+        }
         await context.authorize();
         const identity=context.identity(attempt),report=await context.verify(manifest,identity);
         await context.record(attempt,report);

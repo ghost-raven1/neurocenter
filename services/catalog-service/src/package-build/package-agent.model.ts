@@ -1,3 +1,5 @@
+import type {BuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
+import type {ExecutableBuildPlan} from '../../../shared/package-build-plan.cjs';
 import type {PoolClient} from 'pg';
 import {BadRequestException} from '@nestjs/common';
 import type {FeatureFlagKey} from '../../../shared/feature-flags.cjs';
@@ -10,8 +12,8 @@ export const PACKAGE_AGENT_MAX_CALLS=6;
 export interface PackageAgentInput {modelId:string;expectedModelPin:string;maxAttempts:number}
 export type AgentBuildConfiguration=BuildConfiguration&{agent?:PackageAgentInput};
 export type PackageAgentStage='propose'|'review';
-export interface PackageAgentRecipe {entrypoint:string;args?:string[]}
-export interface PackageAgentRuntimeReport {passed:boolean;summary?:string;diagnostics?:readonly string[]}
+export type PackageAgentRecipe=ExecutableBuildPlan|{schemaVersion:2}|{entrypoint:string;args?:string[]};
+export interface PackageAgentRuntimeReport {build?:BuildDiagnostic;passed:boolean;summary?:string;diagnostics?:readonly string[]}
 export type PackageAgentReview={decision:'publish'}|{decision:'repair';config:BuildConfiguration};
 export type PackageAgentDb=Pick<PoolClient,'query'>;
 export interface PackageAgentContext {

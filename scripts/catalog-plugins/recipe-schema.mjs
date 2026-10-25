@@ -1,3 +1,4 @@
+import {validateBuildPlan} from '../../services/shared/package-build-plan.cjs';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { additionalSourceTargets, validateAdditionalSource } from './source-adapters.mjs';
 import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
@@ -20,8 +21,8 @@ export function javascriptEntrypoint(value) {
 
 /** Декларация описывает данные и закреплённый источник, без shell-команд и install hooks. */
 export function validateRecipe(input) {
-    if (!exact(input, ['schemaVersion', 'key', 'name', 'kind', 'description', 'revision', 'tags', 'config', 'source', 'targets'])
-        || input.schemaVersion !== 1 || !text(input.key, 128) || !/^[a-z0-9][a-z0-9._-]*$/.test(input.key)
+    if (!exact(input, ['schemaVersion', 'key', 'name', 'kind', 'description', 'revision', 'tags', 'config', 'source', 'targets',...(input.schemaVersion===2?['inventory','buildPlan']:[])])
+        || ![1,2].includes(input.schemaVersion) || !text(input.key, 128) || !/^[a-z0-9][a-z0-9._-]*$/.test(input.key)
         || !text(input.name, 128) || !['mcp', 'plugin'].includes(input.kind)
         || typeof input.description !== 'string' || input.description.length > 2000 || input.description.includes('\0')
         || !text(input.revision, 200) || /^(?:latest|main|master|HEAD)$/i.test(input.revision)) {
@@ -64,6 +65,12 @@ export function validateRecipe(input) {
     if (!Array.isArray(targets) || !targets.length || targets.length > 8 || new Set(targets).size !== targets.length
         || targets.some(target => !runtime.TARGETS.includes(target) || !supported.includes(target))) {
         throw new Error('targets содержит повторяющуюся, неизвестную или неподдерживаемую источником платформу.');
+    }
+    if(input.schemaVersion===2){
+        if(!['project','repository'].includes(normalizedSource.type)||normalizedSource.runtimeSource||normalizedSource.release||normalizedSource.snapshotSha256
+            ||ragSource.isPreparedRagRepository(normalizedSource)||codexSource.isPreparedCodexRepository(normalizedSource))throw new Error('Рецепт v2 поддерживает только исходники JS/TS без готового адаптера.');
+        const plan=validateBuildPlan(input.buildPlan,input.inventory);
+        if(plan.entrypoint!==normalizedSource.entrypoint)throw Object.assign(new Error('Файл запуска не совпадает с рецептом.'),{code:'SOURCE_RECIPE_INVALID'});
     }
     return { ...structuredClone(input), source: structuredClone(normalizedSource), tags: [...new Set(input.tags ?? [])], config: structuredClone(config), targets: [...targets] };
 }

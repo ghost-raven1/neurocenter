@@ -26,6 +26,15 @@ async function fixture(stdout:string,code:number,stderr='',configuration=config)
 }
 
 describe('Builder progress and failure protocol',()=>{
+    it('Keeps a bounded classified dependency diagnostic while redacting child secrets',async()=>{
+        const report={schemaVersion:1,stage:'dependencies',target:'darwin-arm64',code:'SOURCE_DEPENDENCY_INVALID',
+            reason:'Invalid dependency token=DO_NOT_KEEP https://private.invalid /Users/private/project',repairable:false};
+        const f=await fixture(JSON.stringify({type:'build-error',...report})+'\n',1,'PRIVATE stderr');
+        try{await f.run();throw Error('Expected build failure');}catch(error){
+            expect(error).toMatchObject({report:{schemaVersion:1,stage:'dependencies',target:'darwin-arm64',code:'SOURCE_DEPENDENCY_INVALID',repairable:false}});
+            expect(JSON.stringify(error)).not.toMatch(/DO_NOT_KEEP|private\.invalid|\/Users\/private|PRIVATE stderr/);
+        }
+    });
     it('Maps the known resource error to a clear message without forwarding child content',async()=>{
         const f=await fixture(JSON.stringify({type:'build-error',code:'SOURCE_RESOURCE_UNSUPPORTED',message:'PRIVATE token https://private.invalid'})+'\n',1,'PRIVATE stderr');
         await expect(f.run()).rejects.toThrow('Исходники читают соседний runtime-ресурс, который не переносится при сборке JS/TS. Выберите готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом с ресурсами.');

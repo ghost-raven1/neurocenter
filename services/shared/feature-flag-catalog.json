@@ -59,6 +59,17 @@
     "defaultEnabled": true
   },
   {
+    "key": "tool_build_agent_recipes",
+    "name": "Исполняемые рецепты Упаковщика",
+    "description": "Агент составляет проверяемый рецепт по закреплённым исходникам, зависимостям и ресурсам. История и отмена остаются доступны.",
+    "group": "catalog",
+    "dependsOn": [
+      "tool_build_agent",
+      "tool_build_validation"
+    ],
+    "defaultEnabled": true
+  },
+  {
     "key": "tool_build_validation",
     "name": "Проверка runtime пакетов",
     "description": "Проверка работоспособности MCP и плагинов перед публикацией новых комплектов.",

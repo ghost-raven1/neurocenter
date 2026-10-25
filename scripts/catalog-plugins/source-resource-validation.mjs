@@ -80,7 +80,7 @@ export async function assertPortableSourceResources(source,filename){
             if(!value.value||seen.has(value))return false;
             return anchored(value.value,value.scope,new Set([...seen,value]));
         }
-        if(node.type==='MemberExpression'&&node.object.type==='MetaProperty'&&node.object.meta.name==='import'&&property(node)==='url')return true;
+        if(node.type==='MemberExpression'&&node.object.type==='MetaProperty'&&node.object.meta.name==='import'&&['url','dirname','filename','dir','path','file'].includes(property(node)))return true;
         if(node.type==='MemberExpression')return anchored(node.object,scope,seen)||node.computed&&anchored(node.property,scope,seen);
         if(node.type==='NewExpression'&&node.callee.type==='Identifier'&&node.callee.name==='URL'&&typeof node.arguments[0]?.value==='string'
             &&/^(?:[a-zA-Z][a-zA-Z\d+.-]*:|\/)/.test(node.arguments[0].value))return false;

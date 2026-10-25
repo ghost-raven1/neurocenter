@@ -1,3 +1,4 @@
+import {parseBuildDiagnostic,type BuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {hostname} from 'node:os';
@@ -33,6 +34,18 @@ export class PackageBuildRepository {
             if(row?.state==='CANCELLING'||row?.state==='CANCELLED')throw new BuildCancelledError();
             if(row?.state!=='RUNNING'||row.execution_nonce!==nonce||row.publication_started_at)throw new ConflictException('Проверка запуска потеряла владельца сборки.');
             await client.query('INSERT INTO tool_build_runtime_checks(build_id,attempt,execution_nonce,report) VALUES($1,$2,$3,$4::jsonb)',[id,attempt,nonce,report]);
+        },lease);
+    }
+    /** Persist safe evidence while the exact queue owner still holds its lease, before staging cleanup. */
+    async recordBuildDiagnostic(id:string,nonce:string,attempt:number,report:BuildDiagnostic,lease:PoolClient):Promise<void>{
+        await this.transaction(async client=>{
+            const row=(await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE',[id])).rows[0];
+            if(row?.state==='CANCELLING'||row?.state==='CANCELLED')throw new BuildCancelledError();
+            if(row?.state!=='RUNNING'||row.execution_nonce!==nonce||row.publication_started_at)throw new ConflictException('Диагностика потеряла владельца сборки.');
+            const safe=parseBuildDiagnostic(report,row.config.targets);
+            if(!safe||!Number.isSafeInteger(attempt)||attempt<1||attempt>3)throw new ConflictException('Некорректная диагностика сборки.');
+            const evidence=[...(row.config.buildDiagnostics??[]),{attempt,report:safe}].slice(-3);
+            await client.query("UPDATE tool_build_jobs SET config=jsonb_set(config,'{buildDiagnostics}',$2::jsonb),updated_at=now() WHERE id=$1",[id,JSON.stringify(evidence)]);
         },lease);
     }
     async existing(actor: string, key: string, fingerprint: string): Promise<BuildRow | undefined> {

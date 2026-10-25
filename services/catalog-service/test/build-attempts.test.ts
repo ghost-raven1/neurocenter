@@ -7,7 +7,7 @@ import type {BuildConfiguration} from '../src/package-build/package-build.model'
 import type {PackageAgentService} from '../src/package-build/package-agent.service';
 import type {PackageAgentContext,PackageAgentReview,PackageAgentRuntimeReport} from '../src/package-build/package-agent.model';
 import {BuildCancelledError} from '../src/package-build/build-cancellation';
-import {BuildProcessUnreapedError} from '../src/package-build/build-process';
+import {BuildDiagnosticError,BuildProcessUnreapedError} from '../src/package-build/build-process';
 import {buildVerifiedAttempts} from '../src/package-build/build-attempts';
 import type {BuildRuntimeReport} from '../src/package-build/build-runtime';
 
@@ -53,6 +53,38 @@ async function fixture(agentEnabled=false,maxAttempts=3){
 }
 
 describe('The actual bounded build attempt helper',()=>{
+    it('passes a classified compile failure to one accepted v2 repair without reviewing a nonexistent runtime',async()=>{
+        const f=await fixture(true,2);f.config.recipeVersion=2;
+        const failure=new BuildDiagnosticError('Compile failed',{schemaVersion:1,stage:'compile',target:'darwin-arm64',code:'SOURCE_COMPILE_FAILED',reason:'Cannot resolve helper token=PRIVATE',repairable:true});
+        f.build.mockRejectedValueOnce(failure);
+        f.agent.propose.mockImplementationOnce(async config=>config).mockImplementationOnce(async config=>({...config,source:{...config.source,entrypoint:'good.js'}}));
+        const result=await buildVerifiedAttempts(f.config,f.options);
+        expect(f.build).toHaveBeenCalledTimes(2);expect(f.verify).toHaveBeenCalledOnce();expect(f.agent.review).toHaveBeenCalledOnce();expect(f.reset).toHaveBeenCalledOnce();
+        expect(f.agent.propose.mock.calls[1][1].feedback).toMatchObject({passed:false,build:{stage:'compile',target:'darwin-arm64',code:'SOURCE_COMPILE_FAILED'}});
+        expect(JSON.stringify(f.agent.propose.mock.calls[1][1].feedback)).not.toContain('PRIVATE');expect(result.identity).toBe(f.identity(2));
+    });
+    it('does not reinterpret accepted v1 jobs or exceeded budgets as v2 compile repair',async()=>{
+        for(const version of [undefined,2] as const){
+            const f=await fixture(true,1);if(version)f.config.recipeVersion=version;
+            const failure=new BuildDiagnosticError('Compile failed',{schemaVersion:1,stage:'compile',target:'darwin-arm64',code:'SOURCE_COMPILE_FAILED',reason:'Syntax failed',repairable:true});
+            f.build.mockRejectedValue(failure);await expect(buildVerifiedAttempts(f.config,f.options)).rejects.toBe(failure);
+            expect(f.agent.propose).toHaveBeenCalledOnce();expect(f.reset).not.toHaveBeenCalled();
+        }
+        const legacy=await fixture(true,3),failure=new BuildDiagnosticError('Compile failed',{schemaVersion:1,stage:'compile',target:'darwin-arm64',code:'SOURCE_COMPILE_FAILED',reason:'Syntax failed',repairable:true});
+        legacy.build.mockRejectedValue(failure);await expect(buildVerifiedAttempts(legacy.config,legacy.options)).rejects.toBe(failure);expect(legacy.agent.propose).toHaveBeenCalledOnce();
+    });
+    it.each(['BUILD_FAILED','SOURCE_RUNTIME_UNSUPPORTED','SOURCE_DEPENDENCY_INVALID'])('never spends a v2 retry for nonrepairable %s',async code=>{
+        const f=await fixture(true,3);f.config.recipeVersion=2;
+        const failure=new BuildDiagnosticError('Infrastructure or unsupported source',{schemaVersion:1,stage:'build',target:'darwin-arm64',code,reason:'Controlled reason',repairable:true});
+        f.build.mockRejectedValue(failure);await expect(buildVerifiedAttempts(f.config,f.options)).rejects.toBe(failure);
+        expect(f.agent.propose).toHaveBeenCalledOnce();expect(f.reset).not.toHaveBeenCalled();
+    });
+    it('stops an unchanged v2 build repair before repeating the broken recipe',async()=>{
+        const f=await fixture(true,3);f.config.recipeVersion=2;
+        f.build.mockRejectedValue(new BuildDiagnosticError('Compile failed',{schemaVersion:1,stage:'compile',target:'darwin-arm64',code:'SOURCE_COMPILE_FAILED',reason:'Syntax failed',repairable:true}));
+        await expect(buildVerifiedAttempts(f.config,f.options)).rejects.toThrow('не изменил');
+        expect(f.agent.propose).toHaveBeenCalledTimes(2);expect(f.build).toHaveBeenCalledOnce();expect(f.verify).not.toHaveBeenCalled();
+    });
     it('waits for the mandatory manual runtime gate before it can return a candidate',async()=>{
         const f=await fixture();let complete=false,release:(report:BuildRuntimeReport)=>void=()=>{};
         f.verify.mockImplementation(async()=>{f.events.push('verify');return new Promise(resolve=>{release=resolve;});});

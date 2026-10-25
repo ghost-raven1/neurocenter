@@ -1,3 +1,4 @@
+import {pinBuildRecipe} from './package-agent.inventory';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
 import {buildFeatures,assertCodexBuildKind,assertCodexBuildPublication,publishedCodexConnectors} from './codex-connector-build';
@@ -32,7 +33,7 @@ import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { resolveRepositorySource, validateRepositorySource, type RepositoryInput } from '../../../shared/repository-source.cjs';
 import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
 import { RAG_PLUGIN_SOURCE, isPreparedRagRepository } from '../../../shared/opencode-rag-source.cjs';
-import { builderScript, BuildProcessUnreapedError, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
+import { builderScript, BuildDiagnosticError, BuildProcessUnreapedError, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
 import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
 import { PackageBuildRepository } from './package-build.repository';
@@ -301,7 +302,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         } else {source = input.source;}
         const {requestKey: _requestKey, publication:_publication, ...configuration} = input;
         if(source.type==='files')agentCandidates=source.files.filter(file=>isSourceEntrypoint(file.path)&&file.content.trim()).map(file=>file.path);
-        const config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
+        let config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
         assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
@@ -325,6 +326,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const supported = RAG_PLUGIN_SOURCE.supportedTargets;
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...supported];}
             else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('Для плагина OpenCodeRAG нет готового комплекта Intel Mac. Выберите поддерживаемые платформы.');}
+        }
+        if(config.agent){
+            let enabled=true;
+            try{await requireFeaturesEnabled(['tool_build_agent_recipes']);}catch(error){if(error instanceof ForbiddenException)enabled=false;else throw error;}
+            config=await pinBuildRecipe(config,await this.stagingRoot(),enabled);
         }
         await this.requireMain(actor);
         const lease = this.currentLease();
@@ -430,7 +436,10 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 build:(config,attempt)=>runPackageBuilder(config,stage,child=>{
                     this.child=child;cancellation.observe(child);if(child&&(this.stopping||!this.lease))stopBuildProcess(child);
                 },event=>this.progress(row.id,30+Math.floor(30*event.completed/event.total),`Попытка ${attempt}: собрано ${event.completed}/${event.total}: ${event.target}`),cancellation.controller.signal,
-                {nonce:row.execution_nonce!,reaped:()=>{reaped=true;},markStarted:async()=>{await authorize();await this.withLease(ownerLease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,ownerLease));started=true;}}),
+                {nonce:row.execution_nonce!,reaped:()=>{reaped=true;},markStarted:async()=>{await authorize();await this.withLease(ownerLease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,ownerLease));started=true;}}).catch(async error=>{
+                    if(error instanceof BuildDiagnosticError)await this.withLease(ownerLease,()=>this.repository.recordBuildDiagnostic(row.id,row.execution_nonce!,attempt,error.report,ownerLease));
+                    throw error;
+                }),
                 verify:async(manifest,identity)=>{await this.progress(row.id,65,'Проверка запуска MCP/plugin в изолированном профиле');return verifyBuildRuntime(manifest,identity,cancellation.controller.signal);},
                 record:(attempt,report)=>this.withLease(ownerLease,()=>this.repository.recordRuntime(row.id,row.execution_nonce!,attempt,report,ownerLease)),
             });
