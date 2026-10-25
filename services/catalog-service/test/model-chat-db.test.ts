@@ -11,7 +11,7 @@ import { ModelChatService } from '../src/model-chat/chat.service';
 import { chatAttachmentIds, chatBody, chatPrompt, chatRevision, chatUpload } from '../src/model-chat/chat-validation';
 import type { ChatDetail } from '../src/model-chat/chat.types';
 import type { ModelsService } from '../src/models/models.service';
-import type { ModelRuntime } from '../src/models/model-runtime';
+import type { IModelInferenceRuntime, ModelRuntime } from '../src/models/model-runtime';
 import type { IModel } from '../src/models/model.types';
 import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
 import { ChatAttachmentStorage } from '../src/model-chat/chat-attachment-storage';
@@ -21,7 +21,7 @@ import { COMPACTION_INSTRUCTION } from '../src/model-chat/chat-compaction';
 vi.mock('../src/features/require-feature-enabled', () => ({ requireFeatureEnabled: vi.fn(async () => undefined), requireFeaturesEnabled: vi.fn(async () => undefined) }));
 vi.mock('../src/model-chat/chat-project-context', () => ({ ModelChatProjectContext: class {
     async overview() { return { status: 'metadata', sources: [] }; }
-    async prepare() { return { messages: [], evidence: { status: 'metadata', sources: [] }, assertCurrent: async () => undefined, fit: (messages: unknown[]) => ({ messages, evidence: { status: 'metadata', sources: [] } }) }; }
+    async prepare() { return { messages: [], evidence: { status: 'metadata', sources: [] }, assertCurrent: async () => undefined, beforeInference: async () => undefined, requiredFeatures: [], fit: (messages: unknown[]) => ({ messages, evidence: { status: 'metadata', sources: [] } }) }; }
 } }));
 
 const connection = process.env.MODEL_CHAT_FILES_TEST_PG_URL;
@@ -57,9 +57,9 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         getUsable: vi.fn(async () => { if (!allowed) throw new ForbiddenException('Доступ отозван'); return model; }),
         resolveProject: vi.fn(async (_req: Request, name: string) => { if (!['prj-chat-test', 'Chat project'].includes(name)) throw new ForbiddenException('Нет проекта'); return { id: 'prj-chat-test' }; }),
     };
-    const runtime = { infer: vi.fn(async () => ({ model: model.model, done_reason: 'stop', message: { role: 'assistant', content: 'Ответ' }, prompt_eval_count: 9, eval_count: 4, usage_reported: true })) };
+    const runtime = { infer: vi.fn(async (..._args: Parameters<IModelInferenceRuntime['infer']>): ReturnType<IModelInferenceRuntime['infer']> => ({ model: model.model, done_reason: 'stop', message: { role: 'assistant', content: 'Ответ' }, prompt_eval_count: 9, eval_count: 4, usage_reported: true })) };
     const create = (req = request()) => service.create(req, { modelId: model.id, projectId: 'prj-chat-test', expectedModelPin: projectEmbeddingPin(model) });
-    const send = (detail: ChatDetail, prompt = 'Привет', attachmentIds: string[] = [], requestId = randomUUID(), req = request(), abort = signal()) => service.send(req, detail.conversation.id, { expectedRevision: detail.conversation.revision, expectedModelPin: detail.conversation.modelPin, requestId, prompt, attachmentIds }, abort);
+    const send = (detail: ChatDetail, prompt = 'Привет', attachmentIds: string[] = [], requestId: string = randomUUID(), req = request(), abort = signal()) => service.send(req, detail.conversation.id, { expectedRevision: detail.conversation.revision, expectedModelPin: detail.conversation.modelPin, requestId, prompt, attachmentIds }, abort);
     beforeAll(async () => {
         const url = new URL(connection!);
         if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port || url.port === '5432') throw new Error('Use an explicit disposable localhost PostgreSQL port other than 5432');
@@ -134,12 +134,12 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         await expect(send(detail, 'Изменить', [], tail.requestId)).rejects.toBeInstanceOf(ConflictException);
     });
     it('keeps a durably accepted turn running after browser abort and reopens the saved result', async () => {
-        let began!: () => void, release!: () => void, providerSignal!: AbortSignal;
+        let began!: () => void, release!: () => void, providerSignal: AbortSignal | undefined;
         const started = new Promise<void>(resolve => { began = resolve; }), gate = new Promise<void>(resolve => { release = resolve; });
-        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort: AbortSignal) => { providerSignal = abort; began(); await gate;
+        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort) => { providerSignal = abort; began(); await gate;
             return { message: { role: 'assistant', content: 'Server-owned result' }, done_reason: 'stop' } as never; });
         const abort = new AbortController(), created = await create(), pending = send(created, 'Wait', [], randomUUID(), request(), abort.signal);
-        try { await started; abort.abort(); expect(providerSignal.aborted).toBe(false);
+        try { await started; abort.abort(); expect(providerSignal).toHaveProperty('aborted', false);
             expect((await service.read(request(), created.conversation.id)).turns[0].status).toBe('pending');
             release(); await pending; const reopened = await service.read(request(), created.conversation.id);
             expect(reopened.turns[0]).toMatchObject({ status: 'done', answer: { content: 'Server-owned result' } });
@@ -157,9 +157,9 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
         const oldBegan = new Promise<void>(resolve => { oldStarted = resolve; }), newBegan = new Promise<void>(resolve => { newStarted = resolve; });
         const committed = new Promise<void>(resolve => { cancelCommitted = resolve; }), oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
         const newGate = new Promise<void>(resolve => { releaseNew = resolve; }), cancelGate = new Promise<void>(resolve => { releaseCancel = resolve; });
-        let newSignal!: AbortSignal;
+        let newSignal: AbortSignal | undefined;
         runtime.infer.mockImplementationOnce(async () => { oldStarted(); await oldGate; return { message: { role: 'assistant', content: 'old' }, done_reason: 'stop' } as never; });
-        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort: AbortSignal) => { newSignal = abort; newStarted(); await newGate; return { message: { role: 'assistant', content: 'new' }, done_reason: 'stop' } as never; });
+        runtime.infer.mockImplementationOnce(async (_m, _e, _b, abort) => { newSignal = abort; newStarted(); await newGate; return { message: { role: 'assistant', content: 'new' }, done_reason: 'stop' } as never; });
         const detail = await create(), oldRequestId = randomUUID(), oldPending = send(detail, 'retry me', [], oldRequestId);
         await oldBegan; const progress = await service.read(request(), detail.conversation.id), original = service.repository.owned.bind(service.repository);
         const interceptor = vi.spyOn(service.repository, 'owned').mockImplementation(async (...args) => {
@@ -169,7 +169,7 @@ describe.skipIf(!connection || !storageConfig)('Personal model chats — disposa
             const cancelling = service.cancel(request(), detail.conversation.id, progress.turns[0].id, { expectedRevision: progress.conversation.revision });
             await committed; const cancelled = await service.read(request(), detail.conversation.id);
             const retried = service.retry(request(), detail.conversation.id, progress.turns[0].id, { expectedRevision: cancelled.conversation.revision, expectedModelPin: cancelled.conversation.modelPin, requestId: randomUUID() }, signal());
-            await newBegan; releaseCancel(); await cancelling; expect(newSignal.aborted).toBe(false);
+            await newBegan; releaseCancel(); await cancelling; expect(newSignal).toHaveProperty('aborted', false);
             releaseNew(); expect((await retried).turns[0].answer?.content).toBe('new'); releaseOld(); await oldPending;
             expect((await service.read(request(), detail.conversation.id)).turns[0].answer?.content).toBe('new');
         } finally { interceptor.mockRestore(); releaseCancel(); releaseOld(); releaseNew(); }

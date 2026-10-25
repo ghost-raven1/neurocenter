@@ -23,7 +23,8 @@ describe('Gate on the physical provider boundary', () => {
  it('runs the dispatch-only guard after a held rate permit and never sends an obsolete planning request',async()=>{
   let release!:()=>void,entered!:()=>void,available=true;const held=new Promise<void>(resolve=>release=resolve),started=new Promise<void>(resolve=>entered=resolve);
   const provider=vi.fn(async()=> 'answer'),guard=vi.fn(async()=>{if(!available)throw new Error('planning unavailable');}),metrics=createModelDispatchMetrics();
-  const gate=new ModelApiAdmission({acquire:async(_model,_signal,beforeAttempt)=>{await beforeAttempt();entered();await held;}}as never);
+  const acquire:ModelRateLimitsService['acquire']=async(_model,_signal,beforeAttempt)=>{await beforeAttempt?.();entered();await held;};
+  const gate=new ModelApiAdmission({acquire}as never);
   const pending=withModelDispatchMetrics(metrics,()=>withModelUsage({purpose:'direct',beforeDispatch:guard},()=>gate.run(local,undefined,provider)));
   const rejected=pending.catch(error=>error);await started;available=false;release();expect(await rejected).toMatchObject({message:'planning unavailable'});
   expect(guard).toHaveBeenCalledOnce();expect(provider).not.toHaveBeenCalled();expect(metrics.dispatchCount).toBe(0);

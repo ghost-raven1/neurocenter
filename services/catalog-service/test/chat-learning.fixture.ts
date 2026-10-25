@@ -54,7 +54,7 @@ export async function chatLearningFixture() {
         });
         service = new ModelChatService(models as unknown as ModelsService, runtime as unknown as ModelRuntime);
         const evidence = { status: 'metadata' as const, project: { id: projectId, name: 'Learning project', state: 'active', headRevision: 0 }, sources: [] };
-        service.projectContext = { overview: async () => evidence, prepare: async () => ({ evidence, messages: [], assertCurrent: async () => undefined,
+        service.projectContext = { overview: async () => evidence, prepare: async () => ({ evidence, messages: [], assertCurrent: async () => undefined, beforeInference: async () => undefined, requiredFeatures: [],
             fit: (history: unknown[]) => ({ messages: history, evidence }) }) } as unknown as ModelChatProjectContext;
     };
     const agent = async (name: string) => {

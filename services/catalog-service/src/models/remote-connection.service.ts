@@ -12,6 +12,7 @@ import { ModelUsageService } from '../model-usage/model-usage.service';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
+import {isModelProviderUnavailable,markModelProviderUnavailable} from './model-provider-availability';
 
 /** Все запросы провайдеру выполняются сервером; bridge получает только Gateway API и project pin. */
 @Injectable()
@@ -115,7 +116,8 @@ export class RemoteConnectionService {
             signal?.throwIfAborted();
             if (cause instanceof RemoteModelError) {
                 await this.repository.failure(row, cause.message).catch(() => undefined);
-                throw new ServiceUnavailableException(cause.message);
+                const error=new ServiceUnavailableException(cause.message);
+                throw isModelProviderUnavailable(cause)?markModelProviderUnavailable(error):error;
             }
             throw cause;
         }

@@ -364,15 +364,17 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
                 }); return this.read(req, scope.row.id);
             }
             const project = await prepareProject(), settings = await this.settings(this.pool, model), minimal = project.fit([{ role: 'user', content: turn.input_text }], settings);
-            const overhead = [...minimal.messages.slice(0, -1), ...research.overhead(turn.research_request)], history = await this.compact(scope, turn, combined, undefined, overhead, project.assertCurrent);
+            const requiredFeatures = [...project.requiredFeatures, ...(turn.research_request?.project ? ['project_search' as const] : [])];
+            const overhead = [...minimal.messages.slice(0, -1), ...research.overhead(turn.research_request)], history = await withModelUsage({ purpose: 'compaction', requiredFeatures },
+                () => this.compact(scope, turn, combined, undefined, overhead, project.assertCurrent, undefined, undefined, project.beforeInference));
             const fitted = project.fit(history, settings), researched = await research.run({ req, owner: scope.owner,actorRole:scope.actorRole, row: scope.row, turn, model,
                 messages: fitted.messages, initialProjectSources: fitted.evidence.sources, settings, signal: combined, options: model.runtime === 'ollama' && this.localContextWindow !== null ? { num_ctx: this.localContextWindow } : {},
-                budget: { externalCalls: 0 }, assertCurrent: async () => { await scope.authorize(true); await project.assertCurrent(); } });
+                budget: { externalCalls: 0 }, assertCurrent: async () => { await scope.authorize(true); await project.assertCurrent(); }, beforeInference: project.beforeInference, requiredFeatures });
             const messages = researched.messages; combined.throwIfAborted();
             await this.repository.owned(scope.owner, scope.row.id, researched.assertCurrent, (db, row) => this.repository.stage(db, row, turn, 'responding'));
             if (chatContext(messages, settings).exceeded) throw new BadRequestException('Контекст проекта и сообщение не помещаются в окно модели.');
-            await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); combined.throwIfAborted();
-            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, operationId: turn.request_id, beforeInference: async () => { await beforeInference(); await researched.assertCurrent(); }, ...(turn.research_request ? { requiredFeatures: ['research_tools' as const] } : {}) }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
+            await requireFeatureEnabled('model_hosting'); if (turn.research_request) await requireFeatureEnabled('research_tools'); await researched.assertCurrent(); await project.beforeInference(); combined.throwIfAborted();
+            const result = await withModelUsage({ purpose: 'chat', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, operationId: turn.request_id, beforeInference: async () => { await beforeInference(); await researched.assertCurrent(); await project.beforeInference(); }, requiredFeatures: [...requiredFeatures, ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.runtime.infer(model, 'chat', modelInferenceBody('chat', { messages,
                 ...(model.runtime === 'ollama' && this.localContextWindow !== null ? { options: { num_ctx: this.localContextWindow } } : {}), stream: false }), combined));
             combined.throwIfAborted(); await researched.assertCurrent();
             const message = result.message as Record<string, unknown> | undefined;

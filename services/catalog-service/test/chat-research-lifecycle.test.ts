@@ -76,6 +76,13 @@ describe('Research external-call lifecycle fences', () => {
         expect(f.steps).toHaveLength(1); expect(f.steps[0]).toMatchObject({ status: 'done', output: 'Paid tool evidence' });
         expect(f.call).toHaveBeenCalledOnce(); expect(f.runtime.infer).toHaveBeenCalledOnce();
     });
+    it('retains a received receipt but stops the next planner when explicit project research is disabled', async () => {
+        const f = fixture(); f.turn.research_request!.project = true; f.scope.requiredFeatures = [];
+        f.call.mockImplementation(async () => { flags.project_search = false; return { text: 'Received evidence', sources: [] }; });
+        await expect(f.executor.run(f.scope)).rejects.toMatchObject({ status: 403 });
+        expect(f.steps).toHaveLength(1); expect(f.steps[0]).toMatchObject({ status: 'done', output: 'Received evidence' });
+        expect(f.call).toHaveBeenCalledOnce(); expect(f.runtime.infer).toHaveBeenCalledOnce();
+    });
     it('does not silently retry an external call with an unknown ACK and records only a safe failure', async () => {
         const f = fixture(); f.call.mockRejectedValue(new Error('PRIVATE provider token and address'));
         await expect(f.executor.run(f.scope)).rejects.toThrow('PRIVATE provider token and address');
