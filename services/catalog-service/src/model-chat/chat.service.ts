@@ -400,8 +400,9 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             });
             if(published)traceSavedChat('succeeded',{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
         } catch (error) {
-            const applied = await this.repository.fail(scope.row.id, turn.id, turn.request_id, combined.aborted ? 'cancelled' : 'failed', combined.aborted ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException || error instanceof ServiceUnavailableException || error instanceof ConflictException || error instanceof ForbiddenException && error.message.startsWith('Функция «') ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
-            if(applied)traceSavedChat(combined.aborted?'cancelled':'failed',{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
+            const terminalStatus = combined.aborted ? 'cancelled' : 'failed';
+            const applied = await this.repository.fail(scope.row.id, turn.id, turn.request_id, terminalStatus, terminalStatus==='cancelled' ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException || error instanceof ServiceUnavailableException || error instanceof ConflictException || error instanceof ForbiddenException && error.message.startsWith('Функция «') ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
+            if(applied)traceSavedChat(terminalStatus,{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
             if (error instanceof ForbiddenException || error instanceof ConflictException) throw error;
         } finally { if (this.active.get(turn.id)?.abort === abort) this.active.delete(turn.id); }
         return this.read(req, scope.row.id);

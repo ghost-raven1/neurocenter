@@ -101,6 +101,12 @@ describe('Production ToolBuild methods preserve the request, build and operation
         await f.run();expect(f.row.state).toBe('FAILED');
         expect(f.capture.records().map(row=>row.event)).toEqual(['requested','accepted','started','failed']);
     });
+    it('an unreaped failed producer keeps a partial trace despite its committed FAILED row',async()=>{
+        const f=await fixture();await f.service.create(f.actor,f.input);f.row.state='RUNNING';mocks.build.mockRejectedValue(new BuildProcessUnreapedError());
+        await f.run();expect(f.row.state).toBe('FAILED');expect((await fs.stat(path.join(f.root,f.row.id))).isDirectory()).toBe(true);
+        expect(f.repository.cancellationAwaitingOwner).not.toHaveBeenCalled();expect(f.repository.completeCancellation).not.toHaveBeenCalled();
+        expect(f.capture.records().map(row=>row.event)).toEqual(['requested','accepted','started']);
+    });
     it.each(['throw','other-terminal','no-return'] as const)('an unacknowledged FAILED transition stays partial: %s',async outcome=>{
         const f=await fixture(),primary=Error('private-SQL-failure');await f.service.create(f.actor,f.input);f.row.state='RUNNING';
         f.repository.progress.mockImplementation(async(_id,state)=>{

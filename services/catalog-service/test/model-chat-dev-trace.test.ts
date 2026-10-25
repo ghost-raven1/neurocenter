@@ -87,6 +87,12 @@ describe('Production saved-chat methods trace the durable turn and each request 
         await f.send();expect(f.current()!.status).toBe('failed');expect(f.repository.fail).toHaveResolvedWith(true);
         expect(f.capture.records().map(record=>record.event)).toEqual(['accepted','started','failed']);
     });
+    it('a late abort during failure acknowledgment cannot relabel the committed status',async()=>{
+        const f=fixture(),entered=deferred(),released=deferred();f.runtime.infer.mockRejectedValueOnce(Error('private-provider-error'));
+        f.repository.fail.mockImplementationOnce(async(_id,_turn,_request,status)=>{entered.resolve();await released.promise;f.current()!.status=status;return true;});
+        const pending=f.send();await entered.promise;expect(f.repository.fail.mock.calls[0][3]).toBe('failed');f.abortCurrent();released.resolve();await pending;
+        expect(f.current()!.status).toBe('failed');expect(f.capture.records().map(record=>record.event)).toEqual(['accepted','started','failed']);
+    });
     it('server-owned cancellation publishes its terminal event only when cleanup applies it',async()=>{
         const f=fixture(),dispatched=deferred();
         f.runtime.infer.mockImplementationOnce(async(_model:unknown,_endpoint:unknown,_body:unknown,signal:AbortSignal)=>{
