@@ -199,8 +199,8 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         }
         return device;
     }
-    async owned(actor: IAccessActor, id: string, allowExpired = false): Promise<Device> {
-        const { rows } = await this.pool.query(
+    async owned(actor: IAccessActor, id: string, allowExpired = false, db:Pick<PoolClient,'query'>=this.pool): Promise<Device> {
+        const { rows } = await db.query(
             'SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND ($3::boolean OR expires_at>now())',
             [id, actor.email, allowExpired],
         );

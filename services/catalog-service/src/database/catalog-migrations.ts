@@ -1,3 +1,5 @@
+import {PLUGIN_AUTO_UPDATE_SCHEMA_SQL} from '../plugin-auto-updates/auto-update.schema';
+import {PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL} from '../plugin-auto-updates/auto-update.schema-verification';
 import {CHAT_SYSTEM_ROLE_SCHEMA_SQL} from '../chat-system-roles/chat-system-roles.schema';
 import {CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL} from '../chat-system-roles/chat-system-roles.schema-verification';
 import {CHAT_SEARCH_SCHEMA_SQL} from '../chat-search/chat-search.schema';
@@ -107,4 +109,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:38,name:'durable-opaque-browser-sessions',sql:BROWSER_AUTH_SESSION_SCHEMA_SQL},
     {version:39,name:'public-chat-semantic-search',sql:CHAT_SEARCH_SCHEMA_SQL+'\n'+CHAT_SEARCH_SCHEMA_ASSERT_SQL},
     {version:40,name:'private-system-role-chat-origins',sql:CHAT_SYSTEM_ROLE_SCHEMA_SQL+'\n'+CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL},
+    {version:41,name:'approved-plugin-auto-updates',sql:PLUGIN_AUTO_UPDATE_SCHEMA_SQL+'\n'+PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL},
 ];

@@ -1,3 +1,4 @@
+import type {PoolClient} from 'pg';
 import {LEARNING_QUIRKS_KIND,quirksJobPayload,assertQuirksJob} from '../learning-quirks/learning-quirks-jobs';
 import {MEMORY_SYNC_JOB} from '../../../shared/project-learning-memory-sync.cjs';
 import {memorySyncJobPayload,assertMemorySyncJob} from '../learning-memory-sync/jobs';
@@ -19,7 +20,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { IAccessActor, projectLevel } from '../access/access.model';
-import { Device, DeviceStore, digest } from './device-store';
+import { Device, DeviceStore } from './device-store';
 import { DeviceArtifacts } from './device-artifacts';
 import {DeviceInstallations} from './device-installations';
 import {assertDeviceCatalogAsset} from './device-catalog-access';
@@ -27,7 +28,7 @@ import type { IPackage } from '../catalog/bundle-package';
 import {InstallPlans} from './install-plans';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
 import { enqueueDeviceJob } from './device-enqueue';
-import {findDeviceJobRequest} from './device-job-requests';
+import {deviceJobRequestHash,findDeviceJobRequest} from './device-job-requests';
 import {readDeviceJobReceipt} from './device-job-receipt';
 import { assertManagedBridge, assertPackageBridge, assertInstallationSetBridge, assertInstallationInspectionBridge, assertExpectedBinding, managedBinding } from './device-compatibility';
 import {assertInstallablePackage,verifyInstallationSet,type IInstallationSet} from './installation-set';
@@ -124,7 +125,7 @@ export class DeviceJobs {
         const approved=await ragInstallationJobPayload(this.installations,this.plans,device,{...target,projectId,kind:'connect-rag-model',requestKey:randomUUID()},'core');
         if((approved?.package.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1)throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
     }
-    async create(actor: IAccessActor, input: JobInput) {
+    async create(actor: IAccessActor, input: JobInput, admit?: (db:PoolClient)=>Promise<void>) {
         if (
             !input ||
             ![
@@ -172,9 +173,7 @@ export class DeviceJobs {
         if (input.kind !== 'choose-root' && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
             throw new BadRequestException('Выберите серверный проект.');
         }
-        const requestHash = digest(
-            JSON.stringify({role:actor.activeRole,request:Object.entries(input).sort(([a],[b])=>a.localeCompare(b))}),
-        );
+        const requestHash = deviceJobRequestHash(actor.activeRole,input);
         const previous=await findDeviceJobRequest(this.store.pool,view,{email:actor.email,deviceId:input.deviceId,requestKey:input.requestKey,requestHash});
         if(previous)return previous;
         if(input.kind!==PROJECT_AGENTS_JOB)await requireFeaturesEnabled(requiredJobFeatures(input.kind,input));
@@ -266,7 +265,7 @@ export class DeviceJobs {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },async()=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));return this.store.access.claims(actor.email);});
+        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await admit?.(db);return this.store.access.claims(actor.email);});
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
     private async readScope(actor: IAccessActor) {

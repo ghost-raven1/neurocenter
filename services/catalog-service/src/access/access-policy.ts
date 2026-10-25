@@ -42,6 +42,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if(/^\/api\/catalog-requests\/[a-f0-9-]{36}\/actions$/.test(route)){return request.method.toUpperCase()==='POST';}
     if (/^\/api\/(devices|device-jobs|device-pairs)(\/|$)/.test(route)) { return true; }
     if(route==='/api/device-installations'){return read;}
+    if(route==='/api/plugin-auto-updates')return read||verb==='PUT';
     if (/^\/api\/device-install-plans(?:\/|$)/.test(route)) { return read || ['Разработчик','Админ проекта','Главный админ'].includes(activeRole); }
     const project = /^\/api\/projects\/([^/]+)(?:\/(.*))?$/.exec(route);
     if (project && project[1] !== 'import-local') {

@@ -61,8 +61,8 @@ interface InstallationInput {
 export class DeviceInstallations {
     constructor(private readonly store: DeviceStore) {}
     /** Для миграции берём замороженную историю выбранной привязки, а не текущую версию магазина. */
-    async workspacePackages(email: string, deviceId: string, projectId: string, bindingId?: string): Promise<IPackage[]> {
-        const { rows } = await this.store.pool.query<{ kind: string; package: IPackage }>(`${latest}
+    async workspacePackages(email: string, deviceId: string, projectId: string, bindingId?: string, db:Pick<PoolClient,'query'>=this.store.pool): Promise<IPackage[]> {
+        const { rows } = await db.query<{ kind: string; package: IPackage }>(`${latest}
             SELECT installed_action AS kind,installed_package AS package FROM latest WHERE device_id=$2 AND project_id=$3
                 AND installed_binding IS NOT DISTINCT FROM $4 ORDER BY installed_package->'plugin'->>'kind',installed_package->'plugin'->>'id'`,
         [email, deviceId, projectId, bindingId ?? null]);

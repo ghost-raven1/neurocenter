@@ -1,3 +1,4 @@
+import {PluginAutoUpdateControl} from '../PluginAutoUpdates/PluginAutoUpdateControl';
 import { Alert, Button, Card, Collapse, List, Modal, Space, Tabs, Tag, Typography } from 'antd';
 import { ApiOutlined, AppstoreOutlined, DownOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useEffect, useId, useRef, useState, type FC } from 'react';
@@ -154,6 +155,7 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
                 {inspectionJob?.state === 'failed' && <Typography.Text type="warning">Проверка не завершена: {inspectionJob.message}</Typography.Text>}
                 {historical && inspectionError?.key === key && <Alert role="alert" type="error" showIcon message={inspectionError.message} />}
             </div>
+            {!historical && item.assetKind === 'plugin' && <PluginAutoUpdateControl installation={item} canManage={canManage} onChanged={() => { void bridge.reload(); }} />}
             <details className="local-installations__details">
                 <summary>Сверка и запуск<DownOutlined aria-hidden="true"/></summary>
                 <div className="local-installations__details-content">
