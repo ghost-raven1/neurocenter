@@ -42,6 +42,10 @@ describe('Common bounded role runner', () => {
         const f = fixture(); f.infer.mockRejectedValue(new Error('provider timeout with unknown outcome'));
         await expect(f.run()).rejects.toThrow('provider timeout'); expect(f.infer).toHaveBeenCalledOnce();
     });
+    it('reports incomplete length output explicitly and never buys an automatic continuation or repair', async () => {
+        const f = fixture(); f.infer.mockResolvedValue({done_reason: 'length',message: {role: 'assistant',content: JSON.stringify(result)}});
+        await expect(f.run()).rejects.toThrow('Ответ не завершён'); expect(f.infer).toHaveBeenCalledOnce(); expect(f.row.result).toBeNull();
+    });
     it.each(['feature', 'valid', 'selected'] as const)('rechecks %s after admission wait before physical request', async key => {
         const f = fixture(); let physical = 0;
         f.infer.mockImplementation(async () => { f.control[key] = false; await currentModelUsage().beforeInference?.(); physical++; return { done_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(result) } }; });

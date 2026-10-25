@@ -20,7 +20,7 @@ import type { RolePrepared, RoleRunRow, RoleSelection, SystemRoleId } from '../.
 import { embeddingModel } from './project-context-port';
 import type { SystemRoleMcpAccess } from '../../src/system-role-mcp/system-role-mcp.types';
 
-export const diagnosis = (id?: string) => JSON.stringify({ kind: 'diagnosis', summary: 'Проверяемый ответ',
+export const diagnosis = (id?: string) => JSON.stringify({ kind: 'diagnosis', summary: 'Проверяемый ответ', answer: 'Проверены доступные источники. Контекст проекта получен из разрешённого индекса. Изменения не применялись. Проверьте приведённые рекомендации перед изменением настроек.',
     findings: id ? [{ evidenceId: id, detail: 'Данные из переданного источника' }] : [], nextSteps: [], changes: [] });
 export const delegation = (roleId: SystemRoleId, targetKeys: string[] = []) => ({ roleId, instruction: 'Проверь свою часть.', targetKeys, diagnostics: [] });
 export const snippet = (id = 'source-one', excerpt = 'PROJECT KNOWLEDGE') => ({ id, path: 'docs/unrelated-name.md', startLine: 3, endLine: 7, score: 0.9, excerpt });

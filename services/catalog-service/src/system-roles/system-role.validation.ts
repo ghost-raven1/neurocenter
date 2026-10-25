@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import {normalizeRoleMcpSelection} from '../../../shared/system-role-mcp.cjs';
 import { validateModelId } from '../models/model-validation';
-import { ROLE_BUDGET, roleDefinitionPin, systemRole } from './system-role.definitions';
+import { ROLE_BUDGET, ROLE_GUIDANCE_POLICY, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, systemRole } from './system-role.definitions';
+import type {RoleGuidanceEvidence} from './system-role.types';
 import { legacyRoleDefinitionPin } from './system-role.legacy-contract';
+import { previousRoleDefinitionPin } from './system-role.previous-contract';
 import type { DiagnosticFact, RolePrepared, RoleResult, RoleSelection, RoleTargetSelection, StartRoleRun, SystemRoleId } from './system-role.types';
 
 export const roleObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -53,15 +55,17 @@ export function roleAction(value: unknown): { expectedRevision: number; requestI
     return { expectedRevision: Number(raw.expectedRevision), requestId: roleRequestId(raw.requestId) };
 }
 /** Model output can reference only server-held evidence and explicitly selected target identities. */
-export function roleResult(content: string, prepared: RolePrepared, facts: DiagnosticFact[], projectContext?: RoleResult['projectContext']): RoleResult {
+export function roleResult(content: string, prepared: RolePrepared, facts: DiagnosticFact[], projectContext?: RoleResult['projectContext'], guidance?: RoleGuidanceEvidence): RoleResult {
     const invalid = (): never => { throw new ConflictException('Ответ системного агента не прошёл проверку JSON-контракта.'); };
     if (Buffer.byteLength(content) > ROLE_BUDGET.outputBytes) return invalid();
     let value: unknown; try { value = JSON.parse(content); } catch { return invalid(); }
-    if (!roleObject(value) || Object.keys(value).sort().join(',') !== 'changes,findings,kind,nextSteps,summary'
+    const fullAnswer = SYSTEM_ROLE_DEFINITIONS.some(role => prepared.definitionPin === roleDefinitionPin(role.id));
+    if (!roleObject(value) || Object.keys(value).sort().join(',') !== (fullAnswer || roleObject(value) && 'answer' in value ? 'answer,changes,findings,kind,nextSteps,summary' : 'changes,findings,kind,nextSteps,summary')
+        || (fullAnswer || 'answer' in value) && !text(value.answer, ROLE_GUIDANCE_POLICY.answerBytes)
         || !['diagnosis', 'proposal'].includes(String(value.kind)) || !text(value.summary, 2048)
         || !Array.isArray(value.findings) || value.findings.length > 20 || !Array.isArray(value.nextSteps) || value.nextSteps.length > 10
         || value.nextSteps.some(step => !text(step, 1024)) || !Array.isArray(value.changes) || value.changes.length > ROLE_BUDGET.targets) return invalid();
-    const evidence = new Set([...facts.map(fact => fact.id), ...(projectContext?.sources.map(source => source.id) ?? [])]), targets = new Map(prepared.targets.map(target => [target.key, target]));
+    const evidence = new Set([...facts.map(fact => fact.id), ...(projectContext?.sources.map(source => source.id) ?? []), ...(guidance?.sources.map(source => source.id) ?? [])]), targets = new Map(prepared.targets.map(target => [target.key, target]));
     for (const finding of value.findings) if (!roleObject(finding) || Object.keys(finding).sort().join(',') !== 'detail,evidenceId'
         || !text(finding.detail, 2048) || !evidence.has(String(finding.evidenceId))) return invalid();
     for (const change of value.changes) if (!roleObject(change) || Object.keys(change).sort().join(',') !== 'explanation,replacement,targetKey'
@@ -69,6 +73,6 @@ export function roleResult(content: string, prepared: RolePrepared, facts: Diagn
     if (new Set(value.changes.map(change => (change as { targetKey: string }).targetKey)).size !== value.changes.length
         || (value.kind === 'diagnosis' ? value.changes.length !== 0 : value.changes.length === 0)
         || ['agent-packager', 'agent-coordinator'].some(id => prepared.definitionPin === roleDefinitionPin(id as SystemRoleId)
-            || prepared.definitionPin === legacyRoleDefinitionPin(id as SystemRoleId)) && value.kind !== 'diagnosis') return invalid();
-    return { ...value, ...(projectContext ? { projectContext } : {}) } as unknown as RoleResult;
+            || prepared.definitionPin === legacyRoleDefinitionPin(id as SystemRoleId) || prepared.definitionPin === previousRoleDefinitionPin(id as SystemRoleId)) && value.kind !== 'diagnosis') return invalid();
+    return { ...value, ...(projectContext ? { projectContext } : {}), ...(guidance ? {guidance} : {}) } as unknown as RoleResult;
 }

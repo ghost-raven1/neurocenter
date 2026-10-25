@@ -5,7 +5,7 @@ import {currentModelUsage} from '../src/model-usage/model-usage.context';
 import {normalizeRoleMcpTool,roleMcpToolKey} from '../../shared/system-role-mcp.cjs';
 import type {RoleRunRow,RoleSelection} from '../src/system-roles/system-role.types';
 
-const final={kind:'diagnosis',summary:'Accepted evidence retained',findings:[],changes:[],nextSteps:[]};
+const final={kind:'diagnosis',summary:'Accepted evidence retained',answer:'The measured tool evidence was retained. No changes were applied. Review the saved result before a new explicit action.',findings:[],changes:[],nextSteps:[]};
 /** Actual target preparation and runner checkpoints; domain authority is controlled without network or SQL. */
 async function fixture(failure:string){
  const target={runtime:'server' as const,assetId:'selected',version:1,manifest:'a'.repeat(64),discoveryId:'00000000-0000-0000-0000-000000000003',tools:[]};

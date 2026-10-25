@@ -1,5 +1,5 @@
 import { Typography } from 'antd';
-import { roleName, type RoleProjectContextGrant, type RoleProjectContextReceipt, type RoleProjectContextSource } from './types';
+import { roleName, type RoleProjectContextGrant, type RoleProjectContextReceipt, type RoleProjectContextSource, type RoleGuidanceEvidence } from './types';
 import './RoleProjectContext.less';
 
 /** The existing confirmation covers the whole approved index and its pinned recipients. */
@@ -20,8 +20,10 @@ function SourceLocation({ source }: { source: RoleProjectContextSource }): JSX.E
 }
 
 /** A finding resolves only against the sources delivered to this particular answer. */
-export function RoleFindingEvidence({ evidenceId, context, diagnosticIds = [] }: { evidenceId: string; context?: RoleProjectContextReceipt; diagnosticIds?: string[] }): JSX.Element {
+export function RoleFindingEvidence({ evidenceId, context, guidance, diagnosticIds = [] }: { evidenceId: string; context?: RoleProjectContextReceipt; guidance?: RoleGuidanceEvidence; diagnosticIds?: string[] }): JSX.Element {
     const source = context?.status === 'ready' ? context.sources.slice(0, 6).find(item => item.id === evidenceId) : undefined;
+    const checked = guidance?.sources.find(item => item.id === evidenceId);
+    if (checked) return <Typography.Text type="secondary">Проверенный источник: {checked.title} · {checked.id}</Typography.Text>;
     return <Typography.Text type="secondary">{source ? <>Источник базы знаний: <SourceLocation source={source} /></> : <>{diagnosticIds.includes(evidenceId) ? 'ID измерения' : 'Основание (ID)'}: {evidenceId}</>}</Typography.Text>;
 }
 
