@@ -64,6 +64,8 @@ node scripts/agent-kit/evals/run.mjs --scenario check-source-unknown --trace .ru
 
 Результат сохраняет отдельные оценки цели, свидетельств, полномочий и ясности, версии и SHA сценария/инструкций/trace. Выдуманные свидетельства и запрещённые действия дают hard fail. Содержимое capture и идентичность модели не аутентифицируются самим оценщиком; live runner и оценка реальных моделей этим не подтверждаются. `NEUROCENTER_AGENT_EVALS=0` отключает запуск controls и новых live-серий, сохраняя чтение ранее захваченных traces; неверное значение отклоняется. [Контракт и rubric](../scripts/agent-kit/evals/rubric.md).
 
+Kit 0.2.0 добавляет отдельный `node scripts/agent-kit/evals/roles.mjs --controls`: четыре роли, 12 controls по свидетельствам, ownership и границам handoff. Команда проверяет только оценщик, не запускает модель или действия из trace. `NEUROCENTER_AGENT_ROLE_CONTRACTS=0` блокирует новые role-controls и добавленный раздел doctor, сохраняя чтение истории и прежние файловые проверки. [Контракты и границы ролей](agent-kit.md#контракт-роли).
+
 Для отдельно разрешённой серии предусмотрен `scripts/agent-kit/evals/live-runner.mjs`: `--prepare <run>` готовит шесть сценариев без обращения к модели, `--preflight <run>` проверяет metadata, `--run-six <run>` выполняет по одной попытке. Перед запуском нужны явный бюджет пользователя и свежий совместимый preflight. Runner переносит точные model/provider/reasoning в отдельный private Codex home и подключает только тестовый MCP. Ограниченный адаптер допускает встроенный OpenAI provider без профиля; неподдержанные настройки маршрутизации, каталога или записи identity отклоняются до копирования auth. Модель получает общий формат ответа и словарь идентификаторов; правильные ответы отдельных сценариев и controls ей не передаются.
 
 Preflight выполняет 20 фиксированных локальных команд: версию CLI, `debug models --bundled` без обновления каталога и по три проверки features/MCP/rendered prompt для каждого из шести homes. Проверяются точный slug модели и reasoning, выключенные возможности, единственный mock MCP, отдельные native permissions `read-only`/`never` и cwd. Статус `compatible` относится к metadata; доступ аккаунта к inference и полный список tools фактического запроса остаются `unverified`. `--inventory <run>` доступен как отдельная диагностика и не заменяет этот допуск.
@@ -164,6 +166,38 @@ npm run build:isolated -- --all
 
 Канонические идентификаторы: `frontend`, `catalog-service`, `api-gateway`, `feature-flags-service`, `oauth2-bridge`, `rag-sync-service`, `skills-service`, `bridge`. Тяжёлые сборки и профили покрытия запускай по очереди. Сохраняй отдельно пройденное, пропущенное и непроверенное; бэклог обновляй после реализации и проверок.
 
+## Подготовить локальный QA PostgreSQL
+
+Opt-in CLI использует явно выбранную существующую установку **PostgreSQL 16.15** (`initdb`, `pg_ctl`, `postgres` из одного абсолютного каталога) и уже установленный драйвер **`pg` 8.16.3**, разрешаемый из Catalog. Он не скачивает runtime, не устанавливает зависимости и не подставляет основную БД при отказе. Нужны Node 24 и средства POSIX-наблюдения процессов/listener. `plan` проверяет версии и SHA бинарных файлов без создания кластера:
+
+```sh
+npm run qa:postgres -- plan --bin-dir /ABS/POSTGRES_16_15/bin
+npm run qa:postgres -- create --bin-dir /ABS/POSTGRES_16_15/bin
+npm run qa:postgres -- inspect --run UUID
+```
+
+Замени `/ABS/POSTGRES_16_15/bin` на канонический путь без ссылок, `UUID` — на `runId`, возвращённый `create`. Каждый запуск размещается в приватном `.run/qa-postgres/<UUID>/`: `data/`, `owner.json`, `connection.json`, `receipt.json`, пароль и журналы. Каталоги QA/run имеют режим `0700`, метаданные и секреты — `0600`. Сервер слушает только `127.0.0.1` на отдельном временном порту, отличном от `5432`, без Unix socket. Допуск связывает файлы, SHA бинарных файлов/конфигурации, текущую OS-идентичность процесса, listener, SQL-настройки и наблюдавшийся SCRAM.
+
+Lease по умолчанию — 3600 секунд; `plan/create` принимают `--lease-seconds` от 1 до 14400. Истечение lease блокирует новый native-допуск, но не останавливает сервер автоматически. После работы явно выполни `close`: свежая проверка владения обязательна перед остановкой, неизвестный владелец не получает сигнал. `close` сохраняет данные, журналы и квитанции; команды purge нет.
+
+Для фиксированного native-сценария сначала собери `catalog-service` через `build:isolated` и выбери абсолютный путь его `receipt.json` в `.run/isolated-build/<BUILD_UUID>/`. В примере `/ABS_ISOLATED_RECEIPT` обозначает именно этот файл:
+
+```sh
+npm run qa:native -- plan --run UUID --candidate /ABS_ISOLATED_RECEIPT --scenario publication-rollback
+npm run qa:native -- run --run UUID --candidate /ABS_ISOLATED_RECEIPT --scenario publication-rollback
+npm run qa:postgres -- close --run UUID
+```
+
+`qa:native plan` читает candidate/harness и не проверяет готовность кластера. `run` повторяет допуск к собственному живому кластеру с действующим lease и выполняет ровно **два SQL-кейса** `PluginRepository own transaction`: обычный rollback и недоставленный rollback, с проверкой отсутствия ошибочной публикации до/после постороннего COMMIT и судьбы сессии. Skills/native-публикация, CAS и остальные harness-кейсы этим запуском не проверяются. Candidate сверяется по текущим и сохранённым Catalog/shared source bytes и скомпилированным артефактам; SHA harness проверяется до/после. Подключённые существующие зависимости не заморожены.
+
+Попытка сохраняет отдельную квитанцию и журнал в `scenarios/<attempt UUID>/` внутри run, а кластер оставляет для явного `close`. Успех требует двух полных кейсов, очистки собственной тестовой БД/процессов, сохранности исходных БД и неизменных candidate/harness. Это локальная SQL-проверка выбранного сценария; она не подтверждает production, IdP, Ceph или весь native-набор.
+
+Локальный `NEUROCENTER_QA_POSTGRES=0` запрещает `create` и новые native-запуски, сохраняя help, оба `plan`, `inspect`, `close` и сохранённые свидетельства. Допустимы только `0`/`1`, по умолчанию `1`; обычный `check` не поднимает PostgreSQL. Отдельный тест настоящего lifecycle включается только явным каталогом бинарных файлов; без переменной он пропускается:
+
+```sh
+QA_POSTGRES_TEST_BIN=/ABS/POSTGRES_16_15/bin node --test --test-concurrency=1 scripts/test/native/qa-postgres-lifecycle.test.mjs
+```
+
 ## Проверить отмену упаковки на реальной БД
 
 Сначала собери `catalog-service` через `build:isolated`. Возьми абсолютный путь `repository/services/catalog-service/dist` из полученного кандидата и задай `TOOL_BUILD_TEST_DIST`. Проверки используют этот код, не рабочий `dist`.
@@ -214,7 +248,7 @@ node --test --test-concurrency=1 \
   scripts/test/package-publication-rollback-finalizer.test.mjs
 ```
 
-Для углублённого аудита сохранены `scripts/test/native/package-publication-rollback.test.mjs` и `scripts/test/tool-build-version-cas.mjs`: реальный SQL с потерянным ACK, последующим чужим COMMIT, блокировками и отзывом прав. Сейчас они требуют специально подготовленный собственный PostgreSQL 16.15 с приватной описью владельца, PID, сроком lease и source-freeze receipt; один PG URL не заменяет этот допуск. Исторический `connection.json` остановленного стенда использовать нельзя. Универсальная переносимая команда подготовки такого стенда ещё не поставляется; эти два harness не входят в обычный `check` и не должны запускать чужую инфраструктуру. Общая команда roundtrip выше от этой исторической описи не зависит.
+Для углублённого аудита сохранены `scripts/test/native/package-publication-rollback.test.mjs` и `scripts/test/tool-build-version-cas.mjs`: реальный SQL с потерянным ACK, последующим чужим COMMIT, блокировками и отзывом прав. Два rollback-кейса первого harness подключены к [локальному QA CLI](#подготовить-локальный-qa-postgresql); остальные кейсы и CAS пока требуют отдельного приватного допуска PostgreSQL 16.15 с описью владельца, PID, lease и source-freeze receipt. Один PG URL или исторический `connection.json` остановленного стенда не заменяет свежий допуск. Эти harness не входят в обычный `check`. Общая команда roundtrip выше использует собственный URL-контракт.
 
 [Контракт новой версии](tool-build-versions.md) отделяет общую редакцию каталога, закрепление проекта и локальную установку.
 
@@ -236,11 +270,11 @@ node --test --test-concurrency=1 \
   scripts/test/tool-build-publication-recovery-guard.test.mjs
 ```
 
-`tool-build-publication-deadline.mjs` отдельно проверяет три вида блокировок, меньшие SQL-лимиты, COMMIT/ROLLBACK и skill. Пока он использует тот же специальный приватный допуск PostgreSQL 16.15, что B09/CAS, а не только URL; переносимый bootstrap ещё не поставляется. Ни один из этих opt-in CLI не запускает PostgreSQL из обычного `check`. [Поведение, доказательства и пределы проверки](tool-build-publication-deadline.md).
+`tool-build-publication-deadline.mjs` отдельно проверяет три вида блокировок, меньшие SQL-лимиты, COMMIT/ROLLBACK и skill. Пока он использует специальный приватный допуск PostgreSQL 16.15, а не только URL; этот профиль ещё не подключён к `qa:native`. Ни один из этих opt-in CLI не запускает PostgreSQL из обычного `check`. [Поведение, доказательства и пределы проверки](tool-build-publication-deadline.md).
 
 ## Проверить доступ и восстановление публикации skill
 
-`scripts/test/skill-build-authorization.mjs` проверяет сборку skill и публичный `Service.importAsset(skill)` на настоящих Catalog/Skills методах, SQL и файловом хранилище. Нужны Node 24/POSIX, один явно собранный кандидат всех восьми пакетов и его квитанция замороженных исходников. Он использует специальный приватный допуск собственного PostgreSQL 16.15; одного PG URL недостаточно, переносимый bootstrap остаётся B12.
+`scripts/test/skill-build-authorization.mjs` проверяет сборку skill и публичный `Service.importAsset(skill)` на настоящих Catalog/Skills методах, SQL и файловом хранилище. Нужны Node 24/POSIX, один явно собранный кандидат всех восьми пакетов и его квитанция замороженных исходников. Он использует специальный приватный допуск собственного PostgreSQL 16.15; одного PG URL недостаточно. Этот профиль ещё не подключён к `qa:native`.
 
 Явные параметры окружения:
 
@@ -259,7 +293,7 @@ Skills transport и доставка файлового аудита задаю�
 
 ## Проверить адрес исполнителя и сохранённые запросы
 
-`scripts/test/actor-canonical-publication.mjs` воспроизводит прохождение исходного dev-principal через настоящий profile HTTP, Gateway headers и Catalog actor decoding до SQL/native-публикации. Он проверяет регистр/внешние пробелы, канонические контроли, повтор запроса, отмену и поздний POST, сохраняя прежнего владельца. Нужны Node 24/POSIX и тот же специальный допуск собственного PostgreSQL 16.15; переносимый bootstrap остаётся B12.
+`scripts/test/actor-canonical-publication.mjs` воспроизводит прохождение исходного dev-principal через настоящий profile HTTP, Gateway headers и Catalog actor decoding до SQL/native-публикации. Он проверяет регистр/внешние пробелы, канонические контроли, повтор запроса, отмену и поздний POST, сохраняя прежнего владельца. Нужны Node 24/POSIX и специальный допуск собственного PostgreSQL 16.15; этот профиль ещё не подключён к `qa:native`.
 
 Явно задай абсолютные пути `ACTOR_CANONICAL_PUBLICATION_CANDIDATE` к `repository` отдельной сборки всех восьми пакетов, `ACTOR_CANONICAL_PUBLICATION_SOURCE_RECEIPT` к source/SHA-квитанции и `ACTOR_CANONICAL_PUBLICATION_CONNECTION_FILE` к приватной описи свежего собственного кластера. Фаза `candidate` требует совпадения текущих исходников с кандидатом до подключения к БД.
 
@@ -275,7 +309,7 @@ ACTOR_CANONICAL_PUBLICATION_PHASE=candidate node scripts/test/actor-canonical-pu
 
 `scripts/test/build-admission-reliability.mjs` — opt-in проверка B13. На старом кандидате подтверждены пять ожиданий с `lock_timeout=0` / `statement_timeout=0`: строка READY upload, asset-lock обновления, dependency graph, общая очередь и строка задания перед барьером публикации. Исправленный кандидат прошёл 8/8: ограниченный отказ, сохранение UUID/исходников, повтор отмены и восстановление очереди. [Контракт и границы](tool-build-admission-deadline.md).
 
-Нужны Node 24/POSIX, абсолютные `BUILD_ADMISSION_CANDIDATE` к одному изолированному `repository`, `BUILD_ADMISSION_SOURCE_RECEIPT` к source/SHA-квитанции и `BUILD_ADMISSION_CONNECTION_FILE` к приватной описи свежего собственного PostgreSQL 16.15. Используется тот же специальный допуск B12, что у B14/B15; одного URL недостаточно. Для baseline выберите снимок до исправления, для candidate — текущую сборку и её source-квитанцию; переключение фазы само не меняет исходники. После задания соответствующих параметров:
+Нужны Node 24/POSIX, абсолютные `BUILD_ADMISSION_CANDIDATE` к одному изолированному `repository`, `BUILD_ADMISSION_SOURCE_RECEIPT` к source/SHA-квитанции и `BUILD_ADMISSION_CONNECTION_FILE` к приватной описи свежего собственного PostgreSQL 16.15. Этот профиль ещё не подключён к `qa:native`; одного URL недостаточно. Для baseline выберите снимок до исправления, для candidate — текущую сборку и её source-квитанцию; переключение фазы само не меняет исходники. После задания соответствующих параметров:
 
 ```sh
 BUILD_ADMISSION_PHASE=baseline node scripts/test/build-admission-reliability.mjs

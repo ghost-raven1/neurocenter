@@ -23,6 +23,8 @@ const expectedFiles=[
     'scripts/test/dev-mcp-output.test.mjs','scripts/test/dev-mcp.test.mjs','scripts/test/dev-mcp-plan.test.mjs','scripts/test/dev-mcp-logs.test.mjs',
     'scripts/test/coverage-lifecycle.test.mjs','scripts/test/dev-mcp-coverage-lifecycle.test.mjs',
     'scripts/test/run-manifest.test.mjs','scripts/test/workspace-process-failure.test.mjs',
+    'scripts/agent-kit/test/role-contracts.test.mjs','scripts/agent-kit/test/role-evals.test.mjs',
+    'scripts/test/qa-cli.test.mjs','scripts/test/qa-postgres.test.mjs','scripts/test/qa-native.test.mjs',
 ].sort();
 const exists=file=>fs.access(file).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
 async function put(root,name,content){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,content);}

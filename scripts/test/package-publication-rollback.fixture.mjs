@@ -26,7 +26,12 @@ export async function checkQaSourcesAndClose({readHashes,expectedHashes,onHashes
 /** A private identity file is admitted before any PostgreSQL client or pool exists. */
 export async function ownedConnection(file){
     assert.ok(file&&path.isAbsolute(file),'Select the private connection file explicitly.');
-    const real=path.resolve(file);assert.ok(real.startsWith(output+path.sep+'cluster-'));
+    const real=path.resolve(file);
+    if(real.startsWith(path.join(root,'.run/qa-postgres')+path.sep)){
+        const {admitManagedPostgres}=await import('../qa/postgres-admission.mjs');
+        return admitManagedPostgres(real,{root:path.resolve(root)});
+    }
+    assert.ok(real.startsWith(output+path.sep+'cluster-'));
     assert.equal((await stat(real)).mode&0o777,0o600);
     const config=JSON.parse(await readFile(real,'utf8')),url=ownedTestPostgresAdmin(config.adminUrl);
     const owner=JSON.parse(await readFile(config.ownerFile,'utf8'));
@@ -77,6 +82,7 @@ export function faultClient(raw,{rollback='normal',writePattern,primary=new Erro
 export async function publicationFixture(){
     await admit(process.env.PACKAGE_PUBLICATION_ROLLBACK_CONNECTION_FILE);
     const admitted=await ownedConnection(process.env.PACKAGE_PUBLICATION_ROLLBACK_CONNECTION_FILE);
+    const runOutput=admitted.proof?admitted.owner.runDirectory:output;
     const candidate=process.env.PACKAGE_PUBLICATION_ROLLBACK_CANDIDATE;
     assert.ok(candidate&&path.isAbsolute(candidate),'Select the frozen compiled candidate repository.');
     const load=relative=>require(path.join(candidate,'services/catalog-service/dist',relative));
@@ -84,7 +90,7 @@ export async function publicationFixture(){
     const sourceFiles=['services/catalog-service/src/package-build/package-build.service.ts','services/catalog-service/src/publication/plugin-repository.ts'];
     const sourceReceiptFile=process.env.PACKAGE_PUBLICATION_ROLLBACK_SOURCE_RECEIPT;
     const frozenReceipt=sourceReceiptFile?JSON.parse(await readFile(sourceReceiptFile,'utf8')):undefined;
-    const baselineCommit=execFileSync('git',['rev-parse','365d973'],{cwd:root,encoding:'utf8'}).trim(),sourceHashes={},liveSourceHashes={};
+    const baselineCommit=frozenReceipt?null:execFileSync('git',['rev-parse','365d973'],{cwd:root,encoding:'utf8'}).trim(),sourceHashes={},liveSourceHashes={};
     for(const file of frozenReceipt?.sourceFiles??sourceFiles){
         const frozen=sha(await readFile(path.join(candidate,file))),expected=frozenReceipt?.hashes[file]??sha(execFileSync('git',['show',baselineCommit+':'+file],{cwd:root}));
         assert.equal(frozen,expected,'Candidate source mismatch with explicit frozen receipt/baseline '+file);
@@ -104,16 +110,16 @@ export async function publicationFixture(){
         try{const after=(await admin.query('SELECT datname FROM pg_database ORDER BY datname')).rows;receipt.originalDatabasesPreserved=JSON.stringify(before)===JSON.stringify(after);}catch(error){errors.push({resource:'database inventory',message:error.message});}
         try{await admin.end();}catch(error){errors.push({resource:'admin',message:error.message});}
         for(const key of Object.keys(process.env))if(!(key in original))delete process.env[key];Object.assign(process.env,original);
-        receipt.cleanupErrors=errors;receipt.finishedAt=new Date().toISOString();await writeFile(path.join(output,receiptName),JSON.stringify(receipt,null,2)+'\n');return receipt;
+        receipt.cleanupErrors=errors;receipt.finishedAt=new Date().toISOString();await writeFile(path.join(runOutput,receiptName),JSON.stringify(receipt,null,2)+'\n',{mode:0o600});return receipt;
     };
     try{
-        await mkdir(output,{recursive:true});await admin.query('CREATE DATABASE "'+name+'"');created=true;
+        await mkdir(runOutput,{recursive:true});await admin.query('CREATE DATABASE "'+name+'"');created=true;
         const url=new URL(admitted.url);url.pathname='/'+name;
         const {FEATURE_FLAG_KEYS,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
         const evaluated=evaluateFeatureFlags(Object.fromEntries(FEATURE_FLAG_KEYS.map(key=>[key,true]))),token=randomUUID();
         server=createServer((req,res)=>{if(req.headers['x-neurocenter-internal']!==token){req.resume();res.writeHead(403).end();return;}if(req.url==='/internal/feature-flags/evaluated'){res.setHeader('content-type','application/json');res.end(JSON.stringify(evaluated));}else{req.resume();res.writeHead(req.url==='/internal/events'?204:404).end();}});
         await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const gateway='http://127.0.0.1:'+server.address().port;
-        Object.assign(process.env,{CATALOG_PG_URL:url.href,NODE_ENV:'production',SSO_DISABLE:'false',FEATURE_FLAGS_SERVICE_URL:gateway,API_GATEWAY_URL:gateway,NEUROCENTER_INTERNAL_TOKEN:token,CAPACITY_REQUIRED:'false',RUNTIME_ARTIFACT_DIR:path.join(output,'runtime')});
+        Object.assign(process.env,{CATALOG_PG_URL:url.href,NODE_ENV:'production',SSO_DISABLE:'false',FEATURE_FLAGS_SERVICE_URL:gateway,API_GATEWAY_URL:gateway,NEUROCENTER_INTERNAL_TOKEN:token,CAPACITY_REQUIRED:'false',RUNTIME_ARTIFACT_DIR:path.join(runOutput,'runtime')});
         pool=new Pool({connectionString:url.href,max:6,connectionTimeoutMillis:3000,statement_timeout:5000,application_name:'owned-publication-rollback-control'});observer=new Pool({connectionString:url.href,max:1,connectionTimeoutMillis:3000,statement_timeout:5000,application_name:'owned-publication-rollback-observer'});
         await load('database/catalog-schema.js').ensureCatalogSchema(pool);
         const actor='publication-rollback@example.test';await pool.query("INSERT INTO platform_users(email,display_name,is_main_admin) VALUES($1,'Owned rollback QA',true)",[actor]);
@@ -122,7 +128,7 @@ export async function publicationFixture(){
         const writer=()=>{const value=new Pool({connectionString:url.href,max:1,connectionTimeoutMillis:3000,statement_timeout:5000,application_name:'owned-publication-rollback-writer'});extras.push(()=>value.end());return value;};
         const createService=sources=>{const service=new (load('package-build/package-build.service.js').PackageBuildService)(access,{}, {ensureSchema:async()=>{}},sources);const originalPool=service.pool;service.scheduleOwnershipRetry=()=>{};extras.push(()=>originalPool.end());return service;};
         const skillSources=async slug=>{
-            const folder=await mkdtemp(path.join(output,'skills-'));
+            const folder=await mkdtemp(path.join(runOutput,'skills-'));
             const {FsSkillsStorage}=loadSkills('storage/fs-skills-storage.js'),{SkillsService}=loadSkills('skills/skills.service.js'),{SkillAssetImportController}=loadSkills('skills/asset-import.controller.js');
             const storage=new FsSkillsStorage(path.join(folder,'native'),entries=>load('publication/skill-dependency-registry.js').reserveSkillDependencies(pool,{entries}),async()=>undefined),skills=new SkillsService(storage),controller=new SkillAssetImportController(skills);
             extras.push(()=>storage.onModuleDestroy());
