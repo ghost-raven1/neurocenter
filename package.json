@@ -27,7 +27,8 @@
     "build:isolated": "node scripts/workspace/isolated-build-cli.mjs",
     "qa:postgres": "node scripts/qa/cli.mjs postgres",
     "qa:native": "node scripts/qa/cli.mjs native",
-    "agent-kit:role-evals": "node scripts/agent-kit/evals/roles.mjs --controls"
+    "agent-kit:role-evals": "node scripts/agent-kit/evals/roles.mjs --controls",
+    "check:impact": "node scripts/workspace/impact-plan-cli.mjs"
   },
   "version": "0.10.1"
 }

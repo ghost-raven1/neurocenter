@@ -36,9 +36,10 @@ export function parseCheckOptions(args) {
 }
 
 /** Общие контракты и builder входят в приёмку вместе с сервисами, каждый файл ровно один раз. */
-export function nodeTestFiles(root, {readFile = name => fs.readFileSync(path.join(root,name),'utf8')} = {}) {
+export function nodeTestFiles(root, {readFile = name => fs.readFileSync(path.join(root,name),'utf8'),
+    readDirectory = directory => fs.readdirSync(path.join(root,directory))} = {}) {
     return ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test'].flatMap(directory =>
-        fs.readdirSync(path.join(root, directory)).filter(file => /\.(?:mjs|cjs)$/.test(file)
+        readDirectory(directory).filter(file => /\.(?:mjs|cjs)$/.test(file)
             && /(?:from\s*['"]node:test['"]|require\(['"]node:test['"]\))/.test(readFile(path.join(directory,file))))
             .map(file => path.join(directory, file))).sort();
 }
@@ -95,13 +96,14 @@ export function checkPlan(root, options = {}, {readManifest = directory => JSON.
 }
 
 /** Capture the exact manifest and test-discovery bytes used to admit a plan. */
-export function captureCheckPlan(root,options){
+export function captureCheckPlan(root,options,{readFileBytes=name=>fs.readFileSync(path.join(root,name)),
+    readDirectory=directory=>fs.readdirSync(path.join(root,directory))}={}){
     const files=new Map(),inputs={};
     const readFile=name=>{
-        if(!files.has(name)){const bytes=fs.readFileSync(path.join(root,name));files.set(name,bytes.toString('utf8'));inputs[name]=createHash('sha256').update(bytes).digest('hex');}
+        if(!files.has(name)){const bytes=readFileBytes(name);files.set(name,bytes.toString('utf8'));inputs[name]=createHash('sha256').update(bytes).digest('hex');}
         return files.get(name);
     };
-    const steps=checkPlan(root,options,{readManifest:directory=>JSON.parse(readFile(path.join(directory,'package.json'))),readTestFiles:()=>nodeTestFiles(root,{readFile}),
+    const steps=checkPlan(root,options,{readManifest:directory=>JSON.parse(readFile(path.join(directory,'package.json'))),readTestFiles:()=>nodeTestFiles(root,{readFile,readDirectory}),
         readToolingFiles:()=>toolingTestFiles(root,{readFile})});
     return {steps,inputs};
 }
