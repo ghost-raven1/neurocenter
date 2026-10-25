@@ -7,6 +7,8 @@ import type { PackageRef } from './install-set.js';
 export interface FileChange {
     relative: string; before: string | null; after: string | null; encoding?: 'base64';
     beforeFingerprint?: string | null;
+    /** Отсутствие поля в старом журнале означает неизвестные исходные права. */
+    beforeMode?: number;
 }
 export interface ChangeIdentity {
     action: 'install' | 'uninstall'; assetKey: string; manifest: string; result?: Record<string, unknown>;
@@ -48,6 +50,7 @@ export function validateChanges(changes: FileChange[]): void {
             || change.relative.split('/').some(part => !part || part === '.' || part === '..' || part.includes(':') || part.includes('\0'))
             || ![undefined, 'base64'].includes(change.encoding) || ![change.before, change.after].every(value => value === null || typeof value === 'string')
             || change.encoding === 'base64' && [change.before, change.after].some(value => value !== null && Buffer.from(value, 'base64').toString('base64') !== value)
+            || change.beforeMode !== undefined && (change.before === null || !Number.isSafeInteger(change.beforeMode) || change.beforeMode < 0 || change.beforeMode > 0o777)
             || change.beforeFingerprint !== undefined && change.beforeFingerprint !== null && (typeof change.beforeFingerprint !== 'string'
                 || change.beforeFingerprint.length > 200 || !/^\d+:\d+:\d+:-?\d+:-?\d+$/.test(change.beforeFingerprint))) {
             throw new Error('Некорректное изменение файла в журнале установки.');

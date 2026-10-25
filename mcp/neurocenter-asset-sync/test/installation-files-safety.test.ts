@@ -30,6 +30,15 @@ describe('Безопасность файлов, места и резервны�
             changes: [{ relative: 'файл.txt', before: 'до', after: 'после' }] };
         await fs.writeFile(pending(), JSON.stringify(journal)); await fs.writeFile(target(), 'после'); return journal;
     }
+    /** Сохранённый prepared воспроизводит остановку процесса после удаления исполняемого файла. */
+    async function prepareDeletedExecutable(beforeMode?: number) {
+        const before = Buffer.from('#!/bin/sh\nprintf "до\\n"\n'); const file = path.join(fixture.root, 'old.sh');
+        const journal = { ...identity, version: 1, root: fixture.root, id: randomUUID(), state: 'prepared',
+            changes: [{ relative: 'old.sh', before: before.toString('base64'), after: null, encoding: 'base64',
+                ...(beforeMode !== undefined ? { beforeMode } : {}) }] };
+        await fs.mkdir(journalDirectory(fixture.root), { recursive: true }); await fs.writeFile(pending(), JSON.stringify(journal));
+        return { before, file, journal };
+    }
 
     it('Снимок замечает замену inode при совпадающем содержимом', async () => {
         await fs.writeFile(target(), 'до'); const plan = new InstallationPlan(fixture.root);
@@ -138,6 +147,107 @@ describe('Безопасность файлов, места и резервны�
         await expect(commitChanges(fixture.root, [{ relative: 'файл.txt', before: 'до', after: 'после' }, { relative: 'второй.txt', before: null, after: 'новый' }], identity)).rejects.toMatchObject({ code: 'ENOSPC' });
         expect(await readText(target())).toBe('до'); expect(await readText(path.join(fixture.root, 'второй.txt'))).toBeNull(); expect(await readText(pending())).toBeNull();
         expect(await fs.readdir(path.join(journalDirectory(fixture.root), 'history'))).toHaveLength(1);
+    });
+    it.skipIf(process.platform === 'win32')('ENOSPC после удаления сохраняет режим исполняемого файла при откате', async () => {
+        const executable = path.join(fixture.root, 'old.sh'); const second = path.join(fixture.root, 'second.txt');
+        const before = Buffer.from('#!/bin/sh\nprintf "до\\n"\n');
+        await fs.writeFile(executable, before); await fs.chmod(executable, 0o751);
+        const link = fs.link.bind(fs); let failed = false;
+        vi.spyOn(fs, 'link').mockImplementation(async (from, to) => {
+            if (to === second && !failed) {
+                failed = true; expect(await readText(executable)).toBeNull();
+                throw Object.assign(new Error('диск полон'), { code: 'ENOSPC' });
+            }
+            await link(from, to);
+        });
+        await expect(withProjectFiles('test-project', async root => {
+            const plan = new InstallationPlan(root);
+            await plan.write('old.sh', null, 'base64'); await plan.write('second.txt', 'новый');
+            await plan.verifySnapshot(); return commitChanges(root, plan.changes(), identity);
+        })).rejects.toMatchObject({ code: 'ENOSPC' });
+        expect(failed).toBe(true); expect(await fs.readFile(executable)).toEqual(before);
+        expect(await readText(second)).toBeNull(); expect(await readText(pending())).toBeNull();
+        const historyDirectory = path.join(journalDirectory(fixture.root), 'history'); const archives = await fs.readdir(historyDirectory);
+        expect(archives).toHaveLength(1);
+        expect(JSON.parse(await fs.readFile(path.join(historyDirectory, archives[0]!), 'utf8')).state).toBe('rolled-back');
+        expect((await fs.stat(executable)).mode & 0o777).toBe(0o751);
+    });
+    it.skipIf(process.platform === 'win32')('Прямой commitChanges сохраняет режим удалённого файла в prepared и откате', async () => {
+        const executable = path.join(fixture.root, 'old.sh'); const second = path.join(fixture.root, 'second.txt');
+        const before = Buffer.from('#!/bin/sh\nprintf "до\\n"\n');
+        await fs.writeFile(executable, before); await fs.chmod(executable, 0o751);
+        const link = fs.link.bind(fs); let failed = false;
+        vi.spyOn(fs, 'link').mockImplementation(async (from, to) => {
+            if (to === second && !failed) {
+                failed = true; expect(await readText(executable)).toBeNull();
+                const prepared = JSON.parse(await fs.readFile(pending(), 'utf8'));
+                expect(prepared.state).toBe('prepared'); expect(prepared.changes[0].beforeMode).toBe(0o751);
+                expect(prepared.changes[1]).not.toHaveProperty('beforeMode');
+                throw Object.assign(new Error('диск полон'), { code: 'ENOSPC' });
+            }
+            await link(from, to);
+        });
+        await expect(withProjectFiles('test-project', root => commitChanges(root, [
+            { relative: 'old.sh', before: before.toString('base64'), after: null, encoding: 'base64' },
+            { relative: 'second.txt', before: null, after: 'новый' },
+        ], identity))).rejects.toMatchObject({ code: 'ENOSPC' });
+        expect(failed).toBe(true); expect(await fs.readFile(executable)).toEqual(before);
+        expect((await fs.stat(executable)).mode & 0o777).toBe(0o751);
+        expect(await readText(second)).toBeNull(); expect(await readText(pending())).toBeNull();
+        const historyDirectory = path.join(journalDirectory(fixture.root), 'history'); const archives = await fs.readdir(historyDirectory);
+        expect(archives).toHaveLength(1);
+        const archived = JSON.parse(await fs.readFile(path.join(historyDirectory, archives[0]!), 'utf8'));
+        expect(archived.state).toBe('rolled-back'); expect(archived.changes[0].beforeMode).toBe(0o751);
+    });
+    it.skipIf(process.platform === 'win32')('Сохранённый prepared восстанавливает удалённый файл с известным режимом', async () => {
+        const { before, file, journal } = await prepareDeletedExecutable(0o751);
+        expect(await readText(file)).toBeNull();
+        await withProjectFiles('test-project', async () => undefined);
+        expect(await fs.readFile(file)).toEqual(before); expect((await fs.stat(file)).mode & 0o777).toBe(0o751);
+        expect(await readText(pending())).toBeNull();
+        const archived = JSON.parse(await fs.readFile(path.join(journalDirectory(fixture.root), 'history', journal.id + '.json'), 'utf8'));
+        expect(archived.state).toBe('rolled-back'); expect(archived.changes[0].beforeMode).toBe(0o751);
+    });
+    it.skipIf(process.platform === 'win32')('Старый prepared без режима восстанавливает байты с закрытыми правами 0600', async () => {
+        const { before, file, journal } = await prepareDeletedExecutable();
+        await withProjectFiles('test-project', async () => undefined);
+        expect(await fs.readFile(file)).toEqual(before); expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+        expect(await readText(pending())).toBeNull();
+        const archived = JSON.parse(await fs.readFile(path.join(journalDirectory(fixture.root), 'history', journal.id + '.json'), 'utf8'));
+        expect(archived.state).toBe('rolled-back'); expect(archived.changes[0]).not.toHaveProperty('beforeMode');
+    });
+    it.skipIf(process.platform === 'win32')('Откат сохраняет ручной chmod существующего файла после записи', async () => {
+        const second = path.join(fixture.root, 'second.txt'); await fs.writeFile(target(), 'до'); await fs.chmod(target(), 0o751);
+        const link = fs.link.bind(fs); let failed = false;
+        vi.spyOn(fs, 'link').mockImplementation(async (from, to) => {
+            if (to === second && !failed) {
+                failed = true; expect(await readText(target())).toBe('после'); await fs.chmod(target(), 0o641);
+                throw Object.assign(new Error('диск полон'), { code: 'ENOSPC' });
+            }
+            await link(from, to);
+        });
+        await expect(withProjectFiles('test-project', root => commitChanges(root, [
+            { relative: 'файл.txt', before: 'до', after: 'после' }, { relative: 'second.txt', before: null, after: 'новый' },
+        ], identity))).rejects.toMatchObject({ code: 'ENOSPC' });
+        expect(failed).toBe(true); expect(await readText(target())).toBe('до'); expect((await fs.stat(target())).mode & 0o777).toBe(0o641);
+        expect(await readText(second)).toBeNull(); expect(await readText(pending())).toBeNull();
+    });
+    it.each([null, -1, 0o1000, 1.5, '0751', true])('Некорректный beforeMode %j отклоняется до pending и изменения файла', async beforeMode => {
+        await fs.writeFile(target(), 'до');
+        await expect(commitChanges(fixture.root, [{ relative: 'файл.txt', before: 'до', after: 'после', beforeMode: beforeMode as number }], identity)).rejects.toThrow('Некорректное изменение');
+        expect(await readText(target())).toBe('до'); expect(await readText(pending())).toBeNull();
+    });
+    it('Режим при отсутствующем исходном файле отклоняется до pending', async () => {
+        await expect(commitChanges(fixture.root, [{ relative: 'файл.txt', before: null, after: 'новый', beforeMode: 0o751 }], identity)).rejects.toThrow('Некорректное изменение');
+        expect(await readText(target())).toBeNull(); expect(await readText(pending())).toBeNull();
+    });
+    it.skipIf(process.platform === 'win32')('Неверный beforeMode вызывающего кода сохраняет реальные байты и права до pending', async () => {
+        await fs.writeFile(target(), 'до'); await fs.chmod(target(), 0o600);
+        await expect(withProjectFiles('test-project', root => commitChanges(root, [
+            { relative: 'файл.txt', before: 'до', after: 'после', beforeMode: 0o751 },
+        ], identity))).rejects.toThrow('Файл изменился');
+        expect(await readText(target())).toBe('до'); expect((await fs.stat(target())).mode & 0o777).toBe(0o600);
+        expect(await readText(pending())).toBeNull();
     });
     it('Правка существующего файла во время staging не заменяется готовым временным файлом', async () => {
         await fs.writeFile(target(), 'до'); const rename = fs.rename.bind(fs); let changed = false;
