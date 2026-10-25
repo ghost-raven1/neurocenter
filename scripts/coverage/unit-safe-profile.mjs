@@ -65,6 +65,10 @@ export const auditedUnits=Object.freeze({
   "sha256": "5848ed517e39cb205493aa4ce52d7f2e711a1290087e0cb8b512f872ed05aa98",
   "helpers": {}
  },
+ "services/catalog-service/test/learning-quirks-core.test.ts": {
+  "sha256": "fef98679a8de74953351a8d40af381d9a3b3bf64cb7afb75621a3ebef60318ce",
+  "helpers": {}
+ },
  "services/catalog-service/test/mcp-configuration.test.ts": {
   "sha256": "6814dfefc7d9f898609d3e43e1a2e5c04dcf342cf35dad54e74f2f0045edba27",
   "helpers": {}
