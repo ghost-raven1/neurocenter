@@ -29,6 +29,7 @@ export class ModelApiAdmission {
   let enabled = await enforcement();
   if (!enabled) enabled = await modelRateBeforeAttempt(beforeAttempt, signal);
   if (enabled) await this.limits.acquire(model, signal, beforeAttempt, ms => { if (metrics) metrics.rateWaitMs += ms; });
+  await modelRateBeforeAttempt(beforeAttempt, signal);
   signal?.throwIfAborted();
   if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
   const started=performance.now();let activeWrite:Promise<void>|undefined;
