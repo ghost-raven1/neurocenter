@@ -30,7 +30,8 @@
     "rxjs": "^7.8.1",
     "smol-toml": "1.9.1",
     "tar": "7.5.22",
-    "yauzl": "3.4.0"
+    "yauzl": "3.4.0",
+    "semver": "7.8.5"
   },
   "devDependencies": {
     "@nestjs/cli": "11.0.24",

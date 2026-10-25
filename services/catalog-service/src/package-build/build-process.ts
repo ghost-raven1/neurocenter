@@ -1,3 +1,4 @@
+import {parseBuildDiagnostic,type BuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
 import {stageUploadSource} from '../source-upload/stage-upload';
 import {createHash} from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -10,11 +11,17 @@ export const builderScript = (): string => path.resolve(process.env.TOOL_BUILD_S
 export const stagingLimit = 4 * 1024 ** 3;
 interface BuildProgress {type: 'build-progress'; target: string; completed: number; total: number}
 const buildFailures: Record<string, string> = {
+    SOURCE_DEPENDENCY_INVALID:'Зависимости исходников не соответствуют закреплённому npm lock-файлу. Проверьте версии и integrity.',
+    SOURCE_DEPENDENCY_LOCK_REQUIRED:'Для диапазона зависимостей нужен package-lock.json с точными версиями и integrity.',
+    SOURCE_RUNTIME_UNSUPPORTED:'Исходнику требуется runtime, для которого пока нет изолированной проверки. Сборка остановлена до запроса модели.',
+    SOURCE_COMPILE_FAILED:'Не удалось скомпилировать выбранный исходник. Подробности сохранены в диагностике сборки.',
     SOURCE_RESOURCE_UNSUPPORTED: 'Исходники читают соседний runtime-ресурс, который не переносится при сборке JS/TS. Выберите готовый JavaScript npm-пакет; готовый MCP также можно добавить runtime-архивом с ресурсами.',
     PYTHON_DEPENDENCIES_UNAVAILABLE: 'Не удалось подготовить зависимости Python для выбранной платформы. Проверьте requirements.txt или pyproject.toml: для зависимостей нужны совместимые готовые wheel-пакеты из PyPI и доступ к PyPI.',
     PYTHON_RUNTIME_UNAVAILABLE: 'Не удалось подготовить встроенный Python. Проверьте доступ к источнику runtime и повторите сборку. Поставка с непроверенным или отсутствующим интерпретатором не опубликована.',
     PYTHON_SOURCE_INVALID: 'Не удалось проверить исходники Python. Проверьте файл запуска и статические зависимости в pyproject.toml или requirements.txt, затем заново выберите источник.',
 };
+/** Safe structured evidence survives staging cleanup; raw child stderr stays private. */
+export class BuildDiagnosticError extends Error{constructor(message:string,readonly report:BuildDiagnostic){super(message);this.name='BuildDiagnosticError';}}
 export class BuildProcessUnreapedError extends Error{constructor(){super('Остановка дочернего сборщика ещё не подтверждена. Временные файлы сохранены. Можно продолжить работу с другими сборками.');}}
 
 /** Лимит включает npm-cache, промежуточные файлы и готовые архивы одного задания. */
@@ -71,7 +78,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     signal?.throwIfAborted();
     const source = path.join(stage, 'source');
     await fs.mkdir(source, {mode: 0o700});
-    const {publication:_publication,agent:_agent,agentCandidates:_agentCandidates,...content}=config;
+    const {publication:_publication,agent:_agent,agentCandidates:_agentCandidates,buildDiagnostics:_diagnostics,...content}=config;
     const identity=config.source.type==='upload'?{...content,source:{...config.source,uploadId:undefined}}:content;
     const key = 'tool-' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0,32);
     let recipeSource: Record<string, unknown>;
@@ -115,6 +122,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         if(execution)supervised.add(child);
         observe(child);
         let reason = '', checking = false, finished = false, pending = '', stdoutBytes = 0, completed = 0,ready=false;
+        let diagnostic:BuildDiagnostic|undefined;
         let startupFailure:unknown,startAdmitted=false,reaped=false;
         let progressChain = Promise.resolve();
         const fail = (message: string) => {if (finished) {return;} reason ||= message; stopBuildProcess(child); };
@@ -147,6 +155,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
                 let event: BuildProgress | {type:'build-error';code?:unknown};
                 try {event = JSON.parse(line) as typeof event;} catch {continue;}
                 if(event?.type==='build-error'){
+                    diagnostic??=parseBuildDiagnostic(event,config.targets);
                     if(typeof event.code==='string'&&Object.prototype.hasOwnProperty.call(buildFailures,event.code))reason||=buildFailures[event.code];
                     continue;
                 }
@@ -162,7 +171,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         child.once('close', code => {void progressChain.then(async() => {
             if(execution&&startAdmitted&&!reaped){reaped=await hasBuildReapProof(stage,execution.nonce);if(reaped)execution.reaped?.();
                 if(!reaped&&!(process.platform==='win32'&&code===0&&!reason)){cleanup();reject(new BuildProcessUnreapedError());return;}}
-            cleanup();code===0&&!reason?resolve():reject(startupFailure??new Error(reason||'Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.'));
+            cleanup();code===0&&!reason?resolve():reject(startupFailure??(diagnostic?new BuildDiagnosticError(reason||'Сборка не выполнена. Диагностика сохранена.',diagnostic):new Error(reason||'Сборка не выполнена. Проверьте npm-пакет, файл запуска и его зависимости.')));
         }).catch(()=>{cleanup();reject(new BuildProcessUnreapedError());});});
     });
     await stagingBytes(stage);

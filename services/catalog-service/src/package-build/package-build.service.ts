@@ -32,7 +32,7 @@ import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { resolveRepositorySource, validateRepositorySource, type RepositoryInput } from '../../../shared/repository-source.cjs';
 import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
 import { RAG_PLUGIN_SOURCE, isPreparedRagRepository } from '../../../shared/opencode-rag-source.cjs';
-import { builderScript, BuildProcessUnreapedError, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
+import { builderScript, BuildDiagnosticError, BuildProcessUnreapedError, runPackageBuilder, stagingLimit, stopBuildProcess } from './build-process';
 import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
 import { PackageBuildRepository } from './package-build.repository';
@@ -430,7 +430,10 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 build:(config,attempt)=>runPackageBuilder(config,stage,child=>{
                     this.child=child;cancellation.observe(child);if(child&&(this.stopping||!this.lease))stopBuildProcess(child);
                 },event=>this.progress(row.id,30+Math.floor(30*event.completed/event.total),`Попытка ${attempt}: собрано ${event.completed}/${event.total}: ${event.target}`),cancellation.controller.signal,
-                {nonce:row.execution_nonce!,reaped:()=>{reaped=true;},markStarted:async()=>{await authorize();await this.withLease(ownerLease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,ownerLease));started=true;}}),
+                {nonce:row.execution_nonce!,reaped:()=>{reaped=true;},markStarted:async()=>{await authorize();await this.withLease(ownerLease,()=>this.repository.markExecutionStarted(row.id,row.execution_nonce!,ownerLease));started=true;}}).catch(async error=>{
+                    if(error instanceof BuildDiagnosticError)await this.withLease(ownerLease,()=>this.repository.recordBuildDiagnostic(row.id,row.execution_nonce!,attempt,error.report,ownerLease));
+                    throw error;
+                }),
                 verify:async(manifest,identity)=>{await this.progress(row.id,65,'Проверка запуска MCP/plugin в изолированном профиле');return verifyBuildRuntime(manifest,identity,cancellation.controller.signal);},
                 record:(attempt,report)=>this.withLease(ownerLease,()=>this.repository.recordRuntime(row.id,row.execution_nonce!,attempt,report,ownerLease)),
             });

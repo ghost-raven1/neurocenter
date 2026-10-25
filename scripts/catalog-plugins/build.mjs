@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import diagnostics from '../../services/shared/package-build-diagnostics.cjs';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import {toolRuntimePath} from './supply-layout.mjs';
 import { readyManifest } from './manifest.mjs';
@@ -199,7 +200,7 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
             await onProgress?.({ type: 'build-progress', target, completed: descriptors.length, total: recipe.targets.length });
             const directory = await fs.mkdtemp(path.join(destination, '.build-'));
             try {
-                const prepared = await prepareSource(recipe, { target, directory, recipeDirectory, cacheDirectory: path.join(destination, '.source-cache') }, files);
+                const prepared = await diagnostics.withBuildDiagnostic('build',target,()=>prepareSource(recipe, { target, directory, recipeDirectory, cacheDirectory: path.join(destination, '.source-cache') }, files));
                 let { entrypoint } = prepared;
                 const { executables = [], config } = prepared;
                 if (preparedConfig && !isDeepStrictEqual(sourceConfig, config)) { throw new Error('Платформенные источники задают разную конфигурацию подключения.'); }
@@ -273,7 +274,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         console.log(JSON.stringify(result, null, progress ? undefined : 2));
     })
         .catch(error => {
-            if(progressOutput&&['SOURCE_RESOURCE_UNSUPPORTED','PYTHON_DEPENDENCIES_UNAVAILABLE','PYTHON_RUNTIME_UNAVAILABLE','PYTHON_SOURCE_INVALID'].includes(error?.code))process.stdout.write(JSON.stringify({type:'build-error',code:error.code})+'\n');
+            if(progressOutput&&error?.buildDiagnostic)process.stdout.write(JSON.stringify({type:'build-error',...error.buildDiagnostic})+'\n');
+            else if(progressOutput&&['SOURCE_RESOURCE_UNSUPPORTED','PYTHON_DEPENDENCIES_UNAVAILABLE','PYTHON_RUNTIME_UNAVAILABLE','PYTHON_SOURCE_INVALID'].includes(error?.code))process.stdout.write(JSON.stringify({type:'build-error',code:error.code})+'\n');
             console.error(error instanceof Error ? error.message : 'Сборка не выполнена.'); process.exitCode = 1;
         });
 }

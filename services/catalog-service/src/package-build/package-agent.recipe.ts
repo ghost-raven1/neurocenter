@@ -12,7 +12,8 @@ export const agentHash=(value:unknown):string=>createHash('sha256').update(JSON.
 /** Only the launch declaration may vary; every source pin and publication target stays fixed. */
 export function packageAgentSourceHash(config:BuildConfiguration):string {
     const {entrypoint:_entrypoint,args:_args,...source}=config.source as BuildConfiguration['source']&{args?:string[]};
-    return agentHash({...config,source});
+    const {buildDiagnostics:_diagnostics,...identity}=config;
+    return agentHash({...identity,source});
 }
 const argsOf=(config:BuildConfiguration):string[]=>config.source.type==='files'?[...(config.source.args??[])]:[];
 export function packageAgentRecipe(config:BuildConfiguration):PackageAgentRecipe {

@@ -1,3 +1,5 @@
+import diagnostics from '../../services/shared/package-build-diagnostics.cjs';
+import {validateSourceDependencies} from './source-dependency-lock.mjs';
 import archiveSource from '../../services/shared/archive-source.cjs';
 import {inspectArchiveSource,prepareArchiveSource} from './archive-source.mjs';
 import { createRequire } from 'node:module';
@@ -147,25 +149,24 @@ async function prepareProject(recipe, { directory, recipeDirectory, target }, { 
         const metadataBytes = metadata ? await fs.readFile(path.join(staging, 'package.json')) : undefined;
         const manifest = metadataBytes ? JSON.parse(metadataBytes.toString('utf8')) : {};
         const dependencies = manifest.dependencies ?? {},optionalDependencies=manifest.optionalDependencies ?? {};
-        for(const group of [dependencies,optionalDependencies])if (!exact(group, Object.keys(group)) || Object.entries(group).some(([name, version]) =>
-            !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(name) || typeof version !== 'string'
-            || !/^[~^]?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version))) throw new Error('Зависимости исходников должны задавать npm-пакеты с точной, ^ или ~ semver версией. Git, file и install hooks не используются.');
         const lockFile = source.files.find(file => file.path === 'package-lock.json');
         if (lockFile?.size > 16 * 1048576) { throw new Error('package-lock.json превышает 16 МиБ.'); }
+        const sourceLock=lockFile?JSON.parse(await fs.readFile(path.join(staging,lockFile.path),'utf8')):undefined;
+        await diagnostics.withBuildDiagnostic('dependencies',target,async()=>validateSourceDependencies(manifest,sourceLock));
         if (lockFile) for (const entry of Object.values(JSON.parse(await fs.readFile(path.join(staging, lockFile.path), 'utf8')).packages ?? {})) {
             if (!entry.resolved) continue;
             const resolved = new URL(entry.resolved);
             if (resolved.protocol !== 'https:' || resolved.hostname !== 'registry.npmjs.org' || resolved.username || resolved.password) throw new Error('Lock-файл должен ссылаться только на официальный npm registry.');
         }
         if (Object.keys(dependencies).length||Object.keys(optionalDependencies).length) {
-            await installDependencies(staging, dependencies, target,{optionalDependencies});
+            await diagnostics.withBuildDiagnostic('dependencies',target,()=>installDependencies(staging, dependencies, target,{optionalDependencies}));
             // npm helper создаёт служебный package.json; компилятор должен видеть исходный module type/imports.
             if (metadataBytes) { await fs.writeFile(path.join(staging, 'package.json'), metadataBytes); }
             const modules = path.join(staging, 'node_modules');
             const installed = await fs.stat(modules).catch(error => { if(error.code==='ENOENT')return undefined;throw error; });
             if(installed)await fs.cp(modules, path.join(directory, 'node_modules'), { recursive: true, errorOnExist: true, force: false });
         }
-        const compiled = await compileRuntimeEntry({ directory, workingDirectory: staging, sourceEntry: recipe.source.entrypoint });
+        const compiled = await diagnostics.withBuildDiagnostic('compile',target,()=>compileRuntimeEntry({ directory, workingDirectory: staging, sourceEntry: recipe.source.entrypoint }));
         await fs.writeFile(path.join(directory, 'package.json'), '{"private":true,"type":"module"}\n');
         try { await fs.copyFile(path.join(staging, 'package-lock.json'), path.join(directory, 'package-lock.json')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
