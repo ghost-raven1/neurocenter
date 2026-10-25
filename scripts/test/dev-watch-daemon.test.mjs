@@ -28,8 +28,14 @@ for(const prepared of [false,true])test('actual guardian/daemon '+(prepared?'use
  const initialGeneration=prepared?await initialWatchGeneration(root):undefined;
  if(prepared)for(const [,folder]of backendSelection)await fs.rm(path.join(root,folder,'dist'),{recursive:true});
  watcher=await startDevWatch({root,node:process.execPath,logDir:path.join(root,'.run/logs'),services:[service],initialGeneration});const version=async()=>fetch('http://127.0.0.1:'+port+'/version').then(r=>r.json(),()=>null);
- await until(async()=>{const status=await devWatchStatus(root);return status?.phase==='watching'&&status.lastBuild?.ok;});assert.equal((await version()).value,'initial');
- await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"edited"');await until(async()=>(await version())?.value==='edited');const before=JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog').pid;
- await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"FAIL"');await until(async()=>(await devWatchStatus(root))?.phase==='build-failed');assert.equal((await version()).value,'edited');assert.equal(JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog').pid,before);
+ // HTTP can answer while launch admission is still proving the new PID/FD, before process publication.
+ const published=async previous=>{const status=await devWatchStatus(root);if(status?.phase!=='watching'||!status.lastBuild?.ok)return;
+  const record=JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog');assert.ok(record,'watching must contain the published Catalog record');
+  if(previous&&(record.launchId===previous.record.launchId||record.entry===previous.record.entry||status.updatedAt===previous.status.updatedAt))return;
+  return {status,record};};
+ const initial=await until(()=>published());assert.equal((await version()).value,'initial');
+ await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"edited"');await until(async()=>(await version())?.value==='edited');const before=(await until(()=>published(initial))).record;
+ await fs.writeFile(path.join(root,service.dir,'src/value.json'),'"FAIL"');await until(async()=>(await devWatchStatus(root))?.phase==='build-failed');assert.equal((await version()).value,'edited');
+ const after=JSON.parse(await fs.readFile(path.join(root,'.run/processes.json'),'utf8')).find(record=>record.name==='catalog');assert.equal(after.pid,before.pid);assert.equal(after.serviceWitness.pid,before.serviceWitness.pid);assert.equal(after.launchId,before.launchId);
  assert.doesNotMatch(await fs.readFile(path.join(root,'.run/processes.json'),'utf8'),/DO_NOT_PERSIST/);await stopDevWatch(root,watcher.record);watcher=undefined;assert.equal((await devWatchStatus(root)).alive,false);assert.equal(await version(),null);
 });

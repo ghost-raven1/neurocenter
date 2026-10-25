@@ -131,7 +131,8 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
+            'workspace/dev-launch-provenance.mjs','workspace/dev-launch-ack.mjs','workspace/dev-launch-inspection.mjs','workspace/dev-launch-recovery.mjs','workspace/dev-watch-child.mjs','workspace/dev-watch-owned.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         // This copied hook records the dev integration boundary without installing a real bridge.

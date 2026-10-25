@@ -20,6 +20,7 @@ async function fixture(t, mode = 'ready') {
     const checkout = path.join(directory, 'checkout'), logs = path.join(directory, 'логи сервисов'), bin = path.join(directory, 'bin');
     const record = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
+    await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
     await fs.mkdir(logs);
     await fs.mkdir(bin);
     for (const command of ['docker', 'ps']) {
@@ -28,7 +29,7 @@ async function fixture(t, mode = 'ready') {
             process.exitCode=92;`, {mode: 0o700});
     }
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs', 'dev-mcp/safe-file.mjs', 'dev-mcp/constants.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
