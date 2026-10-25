@@ -3,6 +3,7 @@ import {ModuleRef} from '@nestjs/core';
 import type {Request} from 'express';
 import {setTimeout as delay} from 'node:timers/promises';
 import {isDeepStrictEqual} from 'node:util';
+import {projectChatModels} from '../project-chat-inference/project-chat-models';
 import {ModelsService} from '../models/models.service';
 import {createPool} from '../database/pool';
 import {ModelRuntime} from '../models/model-runtime';
@@ -72,7 +73,7 @@ export class AgentToolsService implements OnModuleDestroy {
   const callerSignal=scope.signal;
   scope={...scope,signal:AbortSignal.any([scope.signal,AbortSignal.timeout(120000)])};
   const found=new Map(initial.evidence.sources.map(source=>[source.id,source])),checks:Array<(db?:Parameters<AgentToolScope['assertCurrent']>[0])=>Promise<void>>=[];
-  const assertCurrent:AgentToolScope['assertCurrent']=async db=>{await scope.assertCurrent(db);await initial.assertCurrent();for(const check of checks)await check(db);};
+  const assertCurrent:AgentToolScope['assertCurrent']=async db=>{await scope.assertCurrent(db);await initial.assertCurrent(db);for(const check of checks)await check(db);};
   const tools:AgentToolScope={...scope,assertCurrent,
    infer:async(messages,current)=>{
     const model=await this.models.getUsable(scope.owner.modelId,req,scope.owner.projectId);
@@ -98,10 +99,10 @@ export class AgentToolsService implements OnModuleDestroy {
     const ref=value as {jobId?:string;status?:string};if(!ref.jobId||ref.status!=='ready')return value;
     const search=this.modules.get(ChatSearchService,{strict:false}),job=await search.get(req,scope.owner.projectId,ref.jobId);
     if(job.state!=='SUCCEEDED')throw new ConflictException('Прежний поиск публичного чата больше недоступен.');
-    const results=job.results??[],check=async()=>{
-     const selected=scope.owner.grant.publicChats!,model=await this.models.getUsable(selected.modelId,req,scope.owner.projectId);
+    const results=job.results??[],check=async(db?:Parameters<AgentToolScope['assertCurrent']>[0])=>{
+     const selected=scope.owner.grant.publicChats!,model=await (db?projectChatModels(this.models,db):this.models).getUsable(selected.modelId,req,scope.owner.projectId);
      if(projectEmbeddingPin(model)!==selected.expectedModelPin)throw new ConflictException('Embedding-модель публичного поиска изменилась.');
-     const current=await search.get(req,scope.owner.projectId,ref.jobId!);if(current.state!=='SUCCEEDED'||!isDeepStrictEqual(current.results??[],results))throw new ConflictException('Публичный источник изменён, удалён или закрыт. Прежний текст не отправлен модели.');
+     const current=await search.get(req,scope.owner.projectId,ref.jobId!,db);if(current.state!=='SUCCEEDED'||!isDeepStrictEqual(current.results??[],results))throw new ConflictException('Публичный источник изменён, удалён или закрыт. Прежний текст не отправлен модели.');
     };
     await check();checks.push(check);return {...ref,results};
    },
@@ -139,7 +140,7 @@ export class AgentToolsService implements OnModuleDestroy {
       message:'Справка и диагностика выполнены в пределах вашего проекта. Изменения не применялись. Полная системная задача запускается пользователем отдельно с собственными правами.'}};
    }};
   const messages=await this.loop.run(tools);
-  return {messages,assertCurrent:async(db?:Parameters<AgentToolScope['assertCurrent']>[0])=>{await (scope.assertAuthorized?scope.assertAuthorized(db):scope.assertCurrent(db));await initial.assertCurrent();for(const check of checks)await check(db);}};
+  return {messages,assertCurrent:async(db?:Parameters<AgentToolScope['assertCurrent']>[0])=>{await (scope.assertAuthorized?scope.assertAuthorized(db):scope.assertCurrent(db));await initial.assertCurrent(db);for(const check of checks)await check(db);}};
  }
  async history(req:Request,projectId:string,turnId:string){
   const actor=await this.models.actor(req);await this.models.resolveProject(req,projectId,1);

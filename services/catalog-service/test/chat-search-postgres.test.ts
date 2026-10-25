@@ -70,6 +70,18 @@ describe.skipIf(!adminUrl).sequential('Semantic chat owner — disposable Postgr
         expect((await f.pool.query('SELECT count(*) FROM chat_search_vectors WHERE project_id=$1',[project])).rows[0].count).toBe('2');
         expect((await f.pool.query('SELECT state FROM operations WHERE operation_id=$1',['chat-search-'+result.id])).rows[0].state).toBe('SUCCEEDED');
     });
+    it('hydrates under the existing single-connection owner transaction and retains public source locks',async()=>{
+        const id=await message('Грузовик отвезли механику');await index();const result=await search(),calls=provider.mock.calls.length,db=await f.pool.connect();
+        try{
+            await db.query('BEGIN');expect(f.pool.options.max).toBe(1);
+            expect((await service.get(request(),project,result.id,db)).results?.map(hit=>hit.messageId)).toEqual([id]);
+            await f.observer.query("SET lock_timeout='100ms'");
+            await expect(f.observer.query('DELETE FROM project_chat_messages WHERE id=$1',[id])).rejects.toMatchObject({code:'55P03'});
+            await db.query('COMMIT');
+            await f.observer.query('DELETE FROM project_chat_messages WHERE id=$1',[id]);
+        }finally{await db.query('ROLLBACK');db.release();await f.observer.query("SET lock_timeout='0'");}
+        expect((await service.get(request(),project,result.id)).results).toEqual([]);expect(provider).toHaveBeenCalledTimes(calls);
+    });
     it('never indexes or returns private messages, including the caller’s own private dialogue',async()=>{
         const room=randomUUID();await f.pool.query(`INSERT INTO project_chat_rooms(project_id,id,title,visibility,creator_email,create_request_key,create_request_hash) VALUES($1,$2,'Secret','PRIVATE',$3,$4,$5)`,[project,room,actor,randomUUID(),'a'.repeat(64)]);
         await message('Грузовик PRIVATE SECRET',room);expect(await index()).toMatchObject({state:'SUCCEEDED',indexedChunks:0,hasMore:false});expect(await search()).toMatchObject({state:'SUCCEEDED',results:[]});expect(provider).not.toHaveBeenCalled();

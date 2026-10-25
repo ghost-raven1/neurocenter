@@ -83,12 +83,12 @@ export class ChatSearchRepository {
           AND v.dimension=$7 AND ($4::uuid IS NULL OR m.room_id=$4) AND ($5::uuid IS NULL OR (v.message_id,v.chunk_index)>($5,$6)) ORDER BY v.message_id,v.chunk_index LIMIT $8`,
         [row.project_id,row.model_id,row.model_pin,roomId??null,cursor?.id??null,cursor?.chunk??0,row.dimension,limit])).rows;
     }
-    async hydrate(db:Db,row:ChatSearchJobRow,hits:ChatSearchStoredHit[]):Promise<ChatSearchHit[]>{
+    async hydrate(db:Db,row:ChatSearchJobRow,hits:ChatSearchStoredHit[],lock=false):Promise<ChatSearchHit[]>{
         if(!hits.length)return [];
         return (await db.query<ChatSearchHit>(`SELECT m.id AS "messageId",m.room_id AS "roomId",room.title AS "roomTitle",r.revision::text AS revision,h.chunk AS chunk,h.score,
           substring(m.content FROM h.chunk*${CHAT_SEARCH_CHUNK}+1 FOR ${CHAT_SEARCH_CHUNK}) AS content,m.position::text,m.author_name AS "authorName"
           FROM jsonb_to_recordset($4::jsonb) AS h("messageId" uuid,revision bigint,chunk integer,score double precision)
           JOIN chat_search_vectors v ON v.message_id=h."messageId" AND v.revision=h.revision AND v.chunk_index=h.chunk ${live}
-          ORDER BY h.score DESC,m.position DESC`,[row.project_id,row.model_id,row.model_pin,JSON.stringify(hits)])).rows;
+          ORDER BY h.score DESC,m.position DESC${lock?' FOR SHARE OF room,m,r,v':''}`,[row.project_id,row.model_id,row.model_pin,JSON.stringify(hits)])).rows;
     }
 }

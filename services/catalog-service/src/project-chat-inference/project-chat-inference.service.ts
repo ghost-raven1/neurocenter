@@ -74,18 +74,18 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         if (actor.email !== source.author_email) throw new ConflictException('Автор принятого запроса изменился.');
         const learning = await this.groups.learning.prepare(req, { project_id: projectId, owner_email: actor.email }, snapshot.agentId, signal);
         let privateRoomId: string | undefined;
-        const authorize = async (beforeCall = true) => {
-            signal.throwIfAborted(); await this.assert(req, projectId, snapshot);
-            if (beforeCall) await learning.beforeInference(); else await learning.assertAuthorized();
-            const room = (await this.models.pool.query<ProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [projectId, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM])).rows[0];
+        const authorize = async (beforeCall = true,db:ProjectChatDb=this.models.pool,publication=false) => {
+            signal.throwIfAborted(); await this.assert(req, projectId, snapshot,db);
+            if (beforeCall) await learning.beforeInference(); else await learning.assertAuthorized(db);
+            const room = (await db.query<ProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [projectId, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM])).rows[0];
             if (!room) throw new ConflictException('Диалог недоступен.');
-            await assertProjectChatRoomAccess(this.models.pool, room, actor.email);
+            await assertProjectChatRoomAccess(db, room, actor.email);
             privateRoomId = room.visibility === 'PRIVATE' ? source.room_id : undefined;
             if (!room?.agent_ids.includes(snapshot.agentId)) throw new ConflictException('Агент исключён из общей комнаты. Готовые ответы сохранены.');
-            const active = await this.models.pool.query(`SELECT 1 FROM project_chat_messages s JOIN project_chat_messages r ON r.project_id=s.project_id AND r.room_id=s.room_id AND r.source_message_id=s.id
+            const active = await db.query(`SELECT 1 FROM project_chat_messages s JOIN project_chat_messages r ON r.project_id=s.project_id AND r.room_id=s.room_id AND r.source_message_id=s.id
                 WHERE s.project_id=$1 AND s.id=$2 AND r.id=$3 AND s.generation=$4 AND r.generation=$4
-                AND s.status='running' AND r.status='running' AND s.lease_until>now() AND r.lease_until>now()`,
-                [projectId, source.id, response.id, response.generation]);
+                AND s.status='running' AND s.lease_until>now() AND ((r.status='running' AND r.lease_until>now()) OR ($5 AND r.status='done'))`,
+                [projectId, source.id, response.id, response.generation,publication]);
             if (!active.rowCount) throw new ConflictException('Обработка этого сообщения уже остановлена или завершена.');
             signal.throwIfAborted();
         };
@@ -93,16 +93,16 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const model = await this.base(req, projectId, snapshot.modelId, snapshot.modelPin), settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
         let messages=projectChatContext(snapshot.definition.prompt,source,ancestors,learning.messages,settings);
-        let toolsCurrent:()=>Promise<void>=()=>authorize(false);
+        let toolsCurrent:(db?:ProjectChatDb)=>Promise<void>=db=>authorize(false,db,true);
         if(source.agent_tools_request){
             if(!this.agentTools)throw new BadRequestException('Инструменты агентов недоступны.');
             if(chatContext([...agentToolContext(projectId,source.agent_tools_request),...messages],settings).exceeded)throw new BadRequestException('Сообщение и инструменты не помещаются в окно модели.');
             await this.agentTools.admit(req,projectId,source.agent_tools_request);
             const none={status:'none' as const,sources:[]};
-            const project:PreparedProjectContext=source.agent_tools_request.rag?await withModelUsage({purpose:'project-search',actorEmail:actor.email,actorRole:actor.activeRole,projectId,turnId:source.id,agentId:snapshot.agentId,privateProjectChatRoomId:privateRoomId,requiredFeatures:['project_agent_tools'],beforeInference:()=>authorize()},()=>new ModelChatProjectContext(this.models,this.runtime).prepare(req,projectId,source.content,signal,()=>authorize())):{messages:[],evidence:none,requiredFeatures:[],assertCurrent:()=>authorize(false),beforeInference:()=>authorize(),fit:history=>({messages:history,evidence:none})};
+            const project:PreparedProjectContext=source.agent_tools_request.rag?await withModelUsage({purpose:'project-search',actorEmail:actor.email,actorRole:actor.activeRole,projectId,turnId:source.id,agentId:snapshot.agentId,privateProjectChatRoomId:privateRoomId,requiredFeatures:['project_agent_tools'],beforeInference:()=>authorize()},()=>new ModelChatProjectContext(this.models,this.runtime).prepare(req,projectId,source.content,signal,()=>authorize())):{messages:[],evidence:none,requiredFeatures:[],assertCurrent:db=>authorize(false,db,true),beforeInference:()=>authorize(),fit:history=>({messages:history,evidence:none})};
             const fitted=project.fit(messages,settings);
-            const toolResult=await this.agentTools.run(req,{owner:{kind:'project-chat',originId:source.room_id??DEFAULT_PROJECT_CHAT_ROOM,turnId:source.id,recipientId:response.id,generation:response.generation,ownerEmail:actor.email,actorRole:actor.activeRole,projectId,agentId:snapshot.agentId,modelId:model.id,modelPin:projectEmbeddingPin(model),grant:source.agent_tools_request},messages:fitted.messages,settings,signal,assertCurrent:()=>authorize(false)},project,source.content);
-            messages=toolResult.messages;toolsCurrent=()=>toolResult.assertCurrent();
+            const toolResult=await this.agentTools.run(req,{owner:{kind:'project-chat',originId:source.room_id??DEFAULT_PROJECT_CHAT_ROOM,turnId:source.id,recipientId:response.id,generation:response.generation,ownerEmail:actor.email,actorRole:actor.activeRole,projectId,agentId:snapshot.agentId,modelId:model.id,modelPin:projectEmbeddingPin(model),grant:source.agent_tools_request},messages:fitted.messages,settings,signal,assertAuthorized:db=>authorize(false,db,true),assertCurrent:db=>authorize(false,db)},project,source.content);
+            messages=toolResult.messages;toolsCurrent=db=>toolResult.assertCurrent(db);
         }
         const options = automaticModelOptions(model,{}, { ...(snapshot.definition.temperature === undefined ? {} : { temperature: snapshot.definition.temperature }),
             ...(snapshot.definition.topP === undefined ? {} : { top_p: snapshot.definition.topP }),
@@ -114,7 +114,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         const message = result.message as Record<string, unknown> | undefined;
         if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim()
             || Buffer.byteLength(message.content) > 128 * 1024 || !['stop', 'length'].includes(String(result.done_reason))) throw new BadRequestException('Агент не вернул допустимый ответ. Остальные ответы и сообщения сохранены.');
-        return { content: message.content + (result.done_reason === 'length' ? '\n\n[Ответ ограничен лимитом модели. Можно задать уточняющий вопрос.]' : ''), usage: chatUsage(result), learning: learning.receipt };
+        return { content: message.content + (result.done_reason === 'length' ? '\n\n[Ответ ограничен лимитом модели. Можно задать уточняющий вопрос.]' : ''), usage: chatUsage(result), learning: learning.receipt,...(source.agent_tools_request?{assertCurrent:toolsCurrent}:{}) };
     }
     private group(db: ProjectChatDb): ChatGroup { return new ChatGroup(projectChatModels(this.models, db), this.assignments); }
     private async base(req: Request, projectId: string, id: string, pin: string, db: ProjectChatDb = this.models.pool): Promise<IModel> {

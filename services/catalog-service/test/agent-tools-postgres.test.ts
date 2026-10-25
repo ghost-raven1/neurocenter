@@ -106,9 +106,11 @@ describe.skipIf(!connection).sequential('Agent tools on explicitly owned Postgre
  it('stores only public-search references and hydrates history through current visibility',async()=>{
   const {owner,model}=await source('project-chat',false,{protocol:'json-actions-v1',rag:false,publicChats:{modelId:'model-embed',expectedModelPin:'d'.repeat(64),consent:true}});
   vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags(defaultFeatureFlags())))));
-  const embedding={...model,id:'model-embed',capability:'embedding' as const,dimension:3},selectedPin=projectEmbeddingPin(embedding);owner.grant.publicChats!.expectedModelPin=selectedPin;
+  const embedding={...model,id:'model-embed',name:model.name+' embedding',capability:'embedding' as const,dimension:3},selectedPin=projectEmbeddingPin(embedding);owner.grant.publicChats!.expectedModelPin=selectedPin;
   // A new fixture holds the exact accepted grant; it is never rewritten after dispatch.
   const current=await source('project-chat',false,owner.grant),actualOwner=current.owner;let visible=true;
+  await pool.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3::jsonb)',[embedding.id,embedding.name,JSON.stringify(embedding)]);
+  await pool.query('INSERT INTO project_models(project_id,model_id,added_by) VALUES($1,$2,$3)',[actualOwner.projectId,embedding.id,email]);
   const actor={email,activeRole:role,claims:{email,userRoles:[role],projects:[{projectId:actualOwner.projectId,role}],pluginIds:[],skillPaths:[]}};
   const models={pool,ready:async()=>{},actor:async()=>actor,resolveProject:async()=>({id:actualOwner.projectId}),getUsable:async(id:string)=>id==='model-embed'?embedding:current.model} as unknown as ModelsService;
   const jobId=randomUUID(),search={create:vi.fn(async()=>({id:jobId,state:'SUCCEEDED'})),get:vi.fn(async()=>({id:jobId,state:'SUCCEEDED',results:visible?[{messageId:randomUUID(),content:'public text only while visible'}]:[]})),cancel:vi.fn()};
