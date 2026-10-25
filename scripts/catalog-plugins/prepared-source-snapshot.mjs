@@ -18,6 +18,8 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'scripts/catalog-plugins/retain-supply.mjs','scripts/catalog-plugins/supply-layout.mjs',
     'scripts/catalog-plugins/run.mjs','scripts/catalog-plugins/runtime-source.mjs','scripts/catalog-plugins/source-adapters.mjs',
     'scripts/catalog-plugins/source-envelope.mjs','scripts/catalog-plugins/source-resource-validation.mjs','scripts/catalog-plugins/upload-inspection.mjs',
+    'scripts/catalog-plugins/source-inventory.mjs','scripts/catalog-plugins/inspect-build-source.mjs',
+    'services/shared/package-build-plan.cjs','services/shared/package-build-plan.d.cts',
     'scripts/catalog-plugins/source-dependency-lock.mjs','services/shared/package-build-diagnostics.cjs','services/shared/package-build-diagnostics.d.cts',
     'scripts/catalog-plugins/plugins/git-context.mjs','scripts/catalog-plugins/plugins/project-context.mjs',
     'scripts/catalog-plugins/recipes/fetch-mcp.mjs','scripts/catalog-plugins/recipes/opencode-rag.mjs',

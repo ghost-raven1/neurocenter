@@ -11,6 +11,7 @@ export const builderScript = (): string => path.resolve(process.env.TOOL_BUILD_S
 export const stagingLimit = 4 * 1024 ** 3;
 interface BuildProgress {type: 'build-progress'; target: string; completed: number; total: number}
 const buildFailures: Record<string, string> = {
+    SOURCE_RECIPE_INVALID:'Рецепт не соответствует закреплённым исходникам или разрешённым операциям. Пакет не опубликован.',
     SOURCE_DEPENDENCY_INVALID:'Зависимости исходников не соответствуют закреплённому npm lock-файлу. Проверьте версии и integrity.',
     SOURCE_DEPENDENCY_LOCK_REQUIRED:'Для диапазона зависимостей нужен package-lock.json с точными версиями и integrity.',
     SOURCE_RUNTIME_UNSUPPORTED:'Исходнику требуется runtime, для которого пока нет изолированной проверки. Сборка остановлена до запроса модели.',
@@ -99,7 +100,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         }
         recipeSource = {type: 'project', directory: 'source', entrypoint: config.source.entrypoint};
     }
-    const recipe = {schemaVersion: 1, key, name: config.name, kind: config.kind, description: config.description,
+    const recipe = {schemaVersion: config.recipeVersion===2&&config.recipeInventory?2:1, ...(config.recipeVersion===2&&config.recipeInventory?{inventory:config.recipeInventory,buildPlan:config.buildPlan}:{}), key, name: config.name, kind: config.kind, description: config.description,
         revision: config.source.type==='upload'?'source-'+config.source.sha256:config.source.type === 'npm' ? config.source.version : config.source.type === 'repository' ? 'git-' + config.source.commit : 'source-' + createHash('sha256').update(JSON.stringify(config.source)).digest('hex'), tags: config.tags, source: recipeSource,
         config: config.kind === 'mcp' ? {transport: 'stdio', args: config.source.type === 'files' ? config.source.args ?? [] : []} : {}, targets: config.targets};
     const recipePath = path.join(stage, 'recipe.json'), output = path.join(stage, 'output');

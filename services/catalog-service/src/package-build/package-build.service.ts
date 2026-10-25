@@ -1,3 +1,4 @@
+import {pinBuildRecipe} from './package-agent.inventory';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {requiredAssetFeatures} from '../../../shared/feature-policy.cjs';
 import {buildFeatures,assertCodexBuildKind,assertCodexBuildPublication,publishedCodexConnectors} from './codex-connector-build';
@@ -301,7 +302,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         } else {source = input.source;}
         const {requestKey: _requestKey, publication:_publication, ...configuration} = input;
         if(source.type==='files')agentCandidates=source.files.filter(file=>isSourceEntrypoint(file.path)&&file.content.trim()).map(file=>file.path);
-        const config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
+        let config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
         assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
@@ -325,6 +326,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const supported = RAG_PLUGIN_SOURCE.supportedTargets;
             if (!Object.prototype.hasOwnProperty.call(raw, 'targets')) {config.targets = [...supported];}
             else if (config.targets.some(target => !supported.includes(target as typeof supported[number]))) {throw new BadRequestException('Для плагина OpenCodeRAG нет готового комплекта Intel Mac. Выберите поддерживаемые платформы.');}
+        }
+        if(config.agent){
+            let enabled=true;
+            try{await requireFeaturesEnabled(['tool_build_agent_recipes']);}catch(error){if(error instanceof ForbiddenException)enabled=false;else throw error;}
+            config=await pinBuildRecipe(config,await this.stagingRoot(),enabled);
         }
         await this.requireMain(actor);
         const lease = this.currentLease();

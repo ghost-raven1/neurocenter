@@ -18,8 +18,8 @@ export async function publishedCodexConnectors(pool:Pool,pin:{sourceCommit:strin
 }
 
 /** The immutable repository layout alone selects this adapter; arbitrary extra metadata grants no capability. */
-export function buildFeatures(config:{kind:BuildConfiguration['kind'];source:unknown;agent?:unknown}):FeatureFlagKey[]{
-    return ['tool_builds',...requiredAssetFeatures(config.kind),...(config.kind==='skill'?[]:['tool_build_validation' as const]),...(config.agent?['tool_build_agent' as const]:[]),...(isPreparedCodexRepository(config.source)?['codex_connector' as const]:[])];
+export function buildFeatures(config:{kind:BuildConfiguration['kind'];source:unknown;agent?:unknown;recipeVersion?:number}):FeatureFlagKey[]{
+    return ['tool_builds',...requiredAssetFeatures(config.kind),...(config.kind==='skill'?[]:['tool_build_validation' as const]),...(config.agent?['tool_build_agent' as const]:[]),...(config.recipeVersion===2?['tool_build_agent_recipes' as const]:[]),...(isPreparedCodexRepository(config.source)?['codex_connector' as const]:[])];
 }
 export function assertCodexBuildKind(config:Pick<BuildConfiguration,'kind'|'source'>):void{
     if(isPreparedCodexRepository(config.source)&&config.kind!=='plugin')throw new BadRequestException('Коннектор Codex устанавливается как плагин провайдера моделей.');

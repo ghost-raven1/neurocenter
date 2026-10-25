@@ -1,6 +1,8 @@
+import {cleanBuildReason,parseBuildDiagnostic} from '../../../shared/package-build-diagnostics.cjs';
+import {validateBuildPlan} from '../../../shared/package-build-plan.cjs';
 import {ConflictException} from '@nestjs/common';
 import {createHash} from 'node:crypto';
-import {portablePath} from '../../../shared/runtime-artifacts.cjs';
+import {portablePath,TARGETS} from '../../../shared/runtime-artifacts.cjs';
 import {isSourceEntrypoint} from '../../../shared/source-entrypoint.cjs';
 import type {BuildConfiguration} from './package-build.model';
 import type {PackageAgentContext,PackageAgentRecipe,PackageAgentRuntimeReport} from './package-agent.model';
@@ -9,14 +11,15 @@ export const agentObject=(value:unknown):value is Record<string,unknown>=>!!valu
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):agentObject(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 export const agentHash=(value:unknown):string=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 
-/** Only the launch declaration may vary; every source pin and publication target stays fixed. */
+/** Recipe choices may vary; source, inventory, model and publication pins remain immutable. */
 export function packageAgentSourceHash(config:BuildConfiguration):string {
     const {entrypoint:_entrypoint,args:_args,...source}=config.source as BuildConfiguration['source']&{args?:string[]};
-    const {buildDiagnostics:_diagnostics,...identity}=config;
+    const {buildDiagnostics:_diagnostics,buildPlan:_plan,...identity}=config;
     return agentHash({...identity,source});
 }
 const argsOf=(config:BuildConfiguration):string[]=>config.source.type==='files'?[...(config.source.args??[])]:[];
 export function packageAgentRecipe(config:BuildConfiguration):PackageAgentRecipe {
+    if(config.recipeVersion===2&&config.recipeInventory)return config.buildPlan??{schemaVersion:2};
     return {entrypoint:config.source.entrypoint,...(config.source.type==='files'?{args:argsOf(config)}:{})};
 }
 interface RecipeChoices {entrypoints:string[];arguments:string[][]}
@@ -40,6 +43,11 @@ export function packageAgentChoices(original:BuildConfiguration,context:PackageA
 
 /** Model text is data: exact JSON keys and trusted choices replace executable tools. */
 export function parsePackageAgentRecipe(value:unknown,current:BuildConfiguration,original:BuildConfiguration,context:PackageAgentContext):BuildConfiguration {
+    if(original.recipeVersion===2&&original.recipeInventory){
+        if(packageAgentSourceHash(current)!==packageAgentSourceHash(original))throw new ConflictException('Закреплённый исходник рецепта изменился.');
+        const buildPlan=validateBuildPlan(value,original.recipeInventory);
+        return {...current,buildPlan,source:{...current.source,entrypoint:buildPlan.entrypoint}};
+    }
     if(!agentObject(value)||Object.keys(value).some(key=>!['entrypoint','args'].includes(key))||typeof value.entrypoint!=='string')
         throw new ConflictException('Агент вернул некорректный рецепт. Нужен JSON с entrypoint и args.');
     const choices=packageAgentChoices(original,context),args=value.args===undefined?[]:value.args;
@@ -54,15 +62,16 @@ export function parsePackageAgentRecipe(value:unknown,current:BuildConfiguration
 export function packageAgentReport(report:PackageAgentRuntimeReport):PackageAgentRuntimeReport {
     if(typeof report.passed!=='boolean'||report.diagnostics!==undefined&&(!Array.isArray(report.diagnostics)||report.diagnostics.some(value=>typeof value!=='string'))
         ||report.summary!==undefined&&typeof report.summary!=='string')throw new ConflictException('Нужен результат реальной проверки runtime.');
-    const clean=(value:string)=>value.slice(0,4096).replace(/[\x00-\x1f\x7f]/g,' ')
-        .replace(/https?:\/\/\S+/gi,'[url]').replace(/(?:Bearer\s+\S+|(?:password|secret|token|api[_-]?key)\s*[:=]\s*\S+)/gi,'[secret]')
-        .replace(/(?:\/Users\/|\/home\/|[A-Z]:\\Users\\)[^\s:]+/gi,'[private-path]').slice(0,1000);
-    return {passed:report.passed,...(report.summary?{summary:clean(report.summary)}:{}),...(report.diagnostics?{diagnostics:report.diagnostics.slice(0,6).map(clean)}:{})};
+    const build=report.build===undefined?undefined:parseBuildDiagnostic(report.build,TARGETS);
+    if(report.build!==undefined&&!build)throw new ConflictException('Некорректная диагностика сборки.');
+    return {passed:report.passed,...(build?{build}:{}),...(report.summary?{summary:cleanBuildReason(report.summary)}:{}),
+        ...(report.diagnostics?{diagnostics:report.diagnostics.slice(0,6).map(cleanBuildReason)}:{})};
 }
 export function packageAgentRecipeAudit(config:BuildConfiguration):Record<string,unknown> {
-    const recipe=packageAgentRecipe(config);
+    const recipe={entrypoint:config.source.entrypoint,args:argsOf(config)};
+    if(config.recipeVersion===2)return {schemaVersion:2,...(config.buildPlan?{entrypoint:config.buildPlan.entrypoint,plan:config.buildPlan,planSha256:agentHash(config.buildPlan)}:{})};
     return {entrypoint:recipe.entrypoint,argumentCount:recipe.args?.length??0,argsSha256:agentHash(recipe.args??[])};
 }
 export function packageAgentReportAudit(report?:PackageAgentRuntimeReport):Record<string,unknown> {
-    return report?{passed:report.passed,diagnosticCount:report.diagnostics?.length??0,diagnosticsSha256:agentHash(report)}:{};
+    return report?{passed:report.passed,...(report.build?{buildStage:report.build.stage,buildCode:report.build.code}:{}),diagnosticCount:report.diagnostics?.length??0,diagnosticsSha256:agentHash(report)}:{};
 }

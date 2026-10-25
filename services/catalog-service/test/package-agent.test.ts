@@ -45,6 +45,21 @@ function fixture() {
 }
 
 describe('Bounded Packager model planning on the existing build job',()=>{
+    it('writes and journals a v2 executable recipe from bounded pinned source inventory',async()=>{
+        const f=fixture(),inventory={schemaVersion:1 as const,sourceSha256:'c'.repeat(64),targets:f.config.targets,lockSha256:null,dependencies:[],
+            entrypoints:[{path:'good.js',runtime:'node24' as const,modes:['bundle' as const,'preserve' as const],imports:['node:fs']}],resources:['public/index.html'],
+            files:[{path:'public/index.html',sha256:'d'.repeat(64),bytes:42}]};
+        Object.assign(f.config,{recipeVersion:2,recipeInventory:inventory});
+        const plan={schemaVersion:2,sourceSha256:inventory.sourceSha256,entrypoint:'good.js',targets:f.config.targets,steps:[
+            {op:'dependencies',mode:'none',lockSha256:null},{op:'compile',runtime:'node24',mode:'preserve'},
+            {op:'copy-resources',paths:inventory.resources},{op:'verify',profile:'isolated-startup'}]};
+        f.infer.mockResolvedValue({done:true,done_reason:'stop',message:{content:JSON.stringify({recipe:plan})}});
+        const changed=await f.service.propose(f.config,f.context);
+        expect(changed.buildPlan).toEqual(plan);expect(f.steps.get('1:propose')).toMatchObject({state:'SUCCEEDED',recipe:{schemaVersion:2,plan}});
+        const request=JSON.stringify((f.infer.mock.calls as unknown as unknown[][])[0][2]);
+        expect(request).toContain('copy-resources');expect(request).toContain(inventory.sourceSha256);expect(request).not.toContain('private source');
+        expect(()=>parsePackageAgentRecipe({...plan,steps:[...plan.steps,{op:'shell',command:'npm install'}]},changed,f.config,f.context)).toThrow('неподдерживаемую операцию');
+    });
     it('chooses a verified recipe and attributes one bounded call without copying private source or arguments into audit',async()=>{
         const f=fixture(),changed=await f.service.propose(f.config,f.context);
         expect(changed.source.entrypoint).toBe('good.js');expect(changed.source).toMatchObject({files:f.config.source.type==='files'?f.config.source.files:[],args:[]});
