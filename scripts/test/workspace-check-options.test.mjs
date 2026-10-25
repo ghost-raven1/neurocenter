@@ -17,7 +17,7 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
     const checkout = path.join(directory, 'checkout'), workspace = path.join(checkout, 'scripts/workspace');
     const callsFile = path.join(directory, 'calls.jsonl'), npm = path.join(directory, 'npm-cli.js');
     await fs.mkdir(workspace, {recursive: true});
-    for (const name of ['check.mjs', 'check-plan.mjs', 'check-report.mjs', 'node-runtime.mjs']) {
+    for (const name of ['check.mjs','check-plan.mjs','check-report.mjs','check-node-reporter.mjs','check-source.mjs','check-process.mjs','isolated-build-process.mjs','isolated-build-source.mjs','node-runtime.mjs']) {
         await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
     }
     if (withPackages) for (const folder of packageFolders) {
@@ -30,16 +30,23 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
         await fs.mkdir(path.join(checkout, folder), {recursive: true});
     }
     await fs.writeFile(npm, '');
+    const executor = path.join(directory, 'execute.mjs');
+    await fs.writeFile(executor, `import fs from 'node:fs';
+        const output=process.argv.find(value=>value.startsWith('--outputFile='));
+        if(output)fs.writeFileSync(output.slice('--outputFile='.length),JSON.stringify({success:true,numPassedTests:1,numFailedTests:0,numPendingTests:0,numTodoTests:0,numTotalTests:1,numFailedTestSuites:0}));
+        const nodeOutput=process.argv.find(value=>value.startsWith('--test-reporter-destination=')&&!value.endsWith('=stdout'));
+        if(nodeOutput)fs.writeFileSync(nodeOutput.slice('--test-reporter-destination='.length),JSON.stringify({schemaVersion:1,success:true,counts:{tests:1,passed:1,failed:0,skipped:0,todo:0,cancelled:0}}));`);
     const preload = path.join(directory, 'intercept.mjs');
     await fs.writeFile(preload, `import child from 'node:child_process';
         import fs from 'node:fs';
         import {syncBuiltinESMExports} from 'node:module';
+        const record=(command,args,options)=>fs.appendFileSync(${JSON.stringify(callsFile)},JSON.stringify({command,args,cwd:options?.cwd??null})+'\\n');
+        const spawn=child.spawn;
+        child.spawn=(command,args,options)=>{record(command,args,options);return spawn(process.execPath,[${JSON.stringify(executor)},...args],options);};
         child.spawnSync=(command,args,options)=>{
-            fs.appendFileSync(${JSON.stringify(callsFile)},JSON.stringify({command,args,cwd:options?.cwd??null})+'\\n');
+            record(command,args,options);
             if(args[0]==='-p')return {status:0,stdout:JSON.stringify({version:process.versions.node,binary:process.execPath})};
-            const output=args.find(value=>value.startsWith('--outputFile='));
-            if(output)fs.writeFileSync(output.slice('--outputFile='.length),JSON.stringify({success:true,numPassedTests:1,numFailedTests:0,numPendingTests:0,numTodoTests:0,numTotalTests:1,numFailedTestSuites:0}));
-            return {status:0,signal:null};
+            throw Error('Unexpected synchronous command in CLI fixture.');
         };
         syncBuiltinESMExports();`);
     const result = spawnSync(process.execPath, ['--import', preload, path.join(workspace, 'check.mjs'), ...args], {
@@ -79,6 +86,8 @@ for (const args of [['--unknown'], ['--package'], ['--step'], ['--package', 'ser
 test('package and step selection execute only their intersection, without shared contracts or Compose', async t => {
     const value = await fixture(t, ['--package', 'frontend', '--step', 'test'], {packageFolders: ['frontend']});
     assert.equal(value.status, 0, value.stderr); assert.equal(value.report.success, true);
+    assert.equal(value.report.schemaVersion, 3); assert.equal(value.report.state, 'passed');
+    assert.deepEqual(value.report.plannedSteps, ['frontend: test']); assert.ok(value.report.finishedAt);
     assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: test']);
     assert.deepEqual(value.report.selection, {packages: ['frontend'], steps: ['test']});
     const commands = value.calls.filter(call => call.args[0] !== '-p');
@@ -123,10 +132,13 @@ test('an empty selected test plan fails before runtime and outputs', async t => 
     assert.equal(value.hasRun, false); assert.deepEqual(value.calls, []);
 });
 
-test('no selectors preserves all package phases followed by shared contracts and both Compose checks', async t => {
+test('full check starts with the generation gate then preserves package phases and shared checks', async t => {
     const value = await fixture(t, []);
     assert.equal(value.status, 0, value.stderr); assert.equal(value.report.success, true);
-    assert.deepEqual(value.report.steps.slice(0, 8).map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
-    assert.deepEqual(value.report.steps.slice(8, 16).map(step => step.name), workspacePackages.map(folder => folder+': build'));
+    assert.equal(value.report.steps[0].name, 'Agent kit: актуальность генерации');
+    assert.deepEqual(value.calls.find(call => call.args[0] === 'scripts/agent-kit/generate.mjs').args, ['scripts/agent-kit/generate.mjs', '--check']);
+    assert.deepEqual(value.report.steps.slice(1, 9).map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
+    assert.deepEqual(value.report.steps.slice(9, 17).map(step => step.name), workspacePackages.map(folder => folder+': build'));
+    assert.deepEqual(value.report.plannedSteps, value.report.steps.map(step => step.name));
     assert.deepEqual(value.report.steps.slice(-3).map(step => step.name), ['Общие контракты, production и упаковка', 'Compose: dev', 'Compose: локальные эмбеддинги']);
 });

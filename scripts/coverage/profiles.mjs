@@ -56,5 +56,34 @@ export function safeEnvironment(environment=process.env,nodeExecutable=process.e
 /** A missing TAP footer is an incomplete result, never an inferred zero-test success. */
 export function tapCounts(log){
  const count=key=>{const match=log.match(new RegExp('^# '+key+' (\\d+)$','m'));return match?Number(match[1]):null;};
- return {passed:count('pass'),failed:count('fail'),skipped:count('skipped'),cancelled:count('cancelled')};
+ return {passed:count('pass'),failed:count('fail'),skipped:count('skipped'),cancelled:count('cancelled'),todo:count('todo')};
+}
+
+const knownCount=value=>Number.isSafeInteger(value)&&value>=0;
+
+/** Legacy reports keep unknown counters; only explicit zero omissions prove suite completion. */
+export function suiteCountersComplete(item,native=false){
+ const keys=['passed','failed','skipped','todo',...(native?['cancelled']:[])];
+ return !!item&&keys.every(key=>knownCount(item[key]))&&item.exitCode===0
+  &&item.failed===0&&item.skipped===0&&item.todo===0&&(!native||item.cancelled===0)
+  &&(!Object.hasOwn(item,'cancelled')||item.cancelled===0);
+}
+
+/** Preserve each retained HTTP profile separately: overlapping runs are never unique-test totals. */
+export function retainedCoverageProfiles(manifest,depth=0){
+ if(depth>8)throw Error('Coverage retained profile nesting exceeds the bounded report scope.');
+ const rows=[];
+ if(manifest.native||manifest.integration)rows.push({native:manifest.native??null,integration:manifest.integration??null});
+ if(Array.isArray(manifest.retainedProfiles))rows.push(...manifest.retainedProfiles);
+ else if(Array.isArray(manifest.inputs))for(const input of manifest.inputs)rows.push(...retainedCoverageProfiles(input,depth+1));
+ if(rows.length>64)throw Error('Coverage retained profiles exceed the bounded report scope.');
+ return rows;
+}
+
+/** Recheck requested-suite evidence before retaining a completion claim across merges. */
+export function coverageCountersComplete(manifest){
+ return Array.isArray(manifest.packages)&&manifest.packages.every(item=>suiteCountersComplete(item)
+  &&item.testFileInventory?.complete===true&&item.reportValidation?.ok===true)
+  &&retainedCoverageProfiles(manifest).every(row=>[row.native,row.integration].filter(Boolean).every(item=>suiteCountersComplete(item,true)
+   &&Array.isArray(item.excludedSuites)&&item.excludedSuites.length===0));
 }

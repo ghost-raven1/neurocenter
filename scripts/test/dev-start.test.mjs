@@ -6,6 +6,8 @@ import path from 'node:path';
 import {test,after} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
+import {healthHttpHook} from './dev-health-http-hook.fixture.mjs';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const nativeStartupEvidence=[];
 after(async()=>{if(process.env.DEV_START_TEST_EVIDENCE)await fs.writeFile(process.env.DEV_START_TEST_EVIDENCE,JSON.stringify(nativeStartupEvidence,null,2)+'\n',{mode:0o600});});
@@ -43,7 +45,7 @@ async function fixture(t, mode) {
     });
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -218,6 +220,7 @@ async function fixture(t, mode) {
         http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;
         net.Server.prototype.listen=deny;
         syncBuiltinESMExports();
+        ${healthHttpHook}
     `);
     const env = {
         PATH: [bin, path.dirname(process.execPath), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter),
@@ -236,8 +239,11 @@ async function fixture(t, mode) {
         const timer = setTimeout(() => cli.kill('SIGKILL'), 30000);
         let cancelling=false;
         const cancel=mode==='model-runtime-cancel'||mode.startsWith('native-cancel-')?setInterval(async()=>{
-            const awaited=mode==='model-runtime-cancel'?'model-runtime-wait':'health-start';
-            if(!cancelling&&(await eventsFrom(calls)).some(event=>event.kind===awaited)){
+            const events=await eventsFrom(calls);
+            // Admit every intended probe, including the verifier's async token read, before cancelling.
+            const ready=mode==='model-runtime-cancel'?events.some(event=>event.kind==='model-runtime-wait')
+                :events.filter(event=>event.kind==='health-start').length===12;
+            if(!cancelling&&ready){
                 cancelling=true;cli.kill(mode==='native-cancel-int'?'SIGINT':'SIGTERM');
             }
         },20):undefined;
@@ -267,7 +273,7 @@ async function fixture(t, mode) {
 
 test('Unavailable local Ceph starts all applications without pulling legacy MinIO or exposing partial S3 settings',async t=>{
     const f=await fixture(t,'profile-ready-no-ceph'),result=await f.run('--profile=fast');
-    assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stdout+result.stderr,/Ceph.*недоступен/);
+    assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Сервисы запущены/);assert.match(result.stdout+result.stderr,/Ceph.*недоступен/);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
     assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.some(arg=>String(arg).endsWith('/compose.chat-storage.dev.yml'))).length,0);
     assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.some(arg=>String(arg).endsWith('/compose.chat-storage.ceph.dev.yml'))).length,1);
@@ -374,7 +380,7 @@ for(const [mode,code] of [['native-cancel-int',130],['native-cancel-term',143]])
         assert.doesNotMatch(result.stdout,/Готов к работе/);
         assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
         for(const child of result.events.filter(event=>event.kind==='child-spawn'))assert.equal(child.modelKeyFile,child.entry.includes('/services/catalog-service/')?path.join(f.checkout,'.run/model-credentials/secrets/model_credential_key'):null);
-        assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,8);
+        assert.equal(result.events.filter(event=>event.kind==='health-cancel').length,12);
         await assert.rejects(fs.access(path.join(f.checkout,'.run/processes.json')),{code:'ENOENT'});
     });
 }
@@ -421,7 +427,7 @@ test('Занятый порт объясняется до запуска сер�
 for(const profile of ['fast','standard','full']) {
     test(`Профиль ${profile} действительно выбирает поставку и запускает семь приложений и verifier`,async t=>{
         const f=await fixture(t,'profile-ready'),result=await f.run('--profile',profile);
-        assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);
+        assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Сервисы запущены/);
         assert.match(result.stdout,new RegExp(`Профиль запуска: ${profile}`));
         assert.match(result.stdout,/\[2\/16\] Выбор и подготовка ассетов/);
         assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
@@ -449,17 +455,17 @@ test('Ошибка standard-поставки сохраняет прежний �
 test('Установленный мост обновляется только после всех health ACK серверов',async t=>{
     const f=await fixture(t,'profile-ready'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);
     const migration=result.events.findIndex(event=>event.kind==='installed-bridge-update'),health=result.events.map((event,index)=>event.kind==='health-end'?index:-1).filter(index=>index>=0);
-    assert.equal(health.length,8);assert.ok(migration>Math.max(...health),JSON.stringify(result.events));assert.equal(result.events.filter(event=>event.kind==='installed-bridge-update').length,1);
+    assert.equal(health.length,12);assert.ok(migration>Math.max(...health),JSON.stringify(result.events));assert.equal(result.events.filter(event=>event.kind==='installed-bridge-update').length,1);
 });
 test('Отказ необязательного обновления моста сохраняет уже готовый стек до явной команды down',async t=>{
-    const f=await fixture(t,'profile-ready-bridge-deferred'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stderr,/Обновление установленного моста отложено/);assert.match(result.stderr,/Сервисы продолжают работать/);
+    const f=await fixture(t,'profile-ready-bridge-deferred'),result=await f.run('--profile=fast');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Сервисы запущены/);assert.match(result.stderr,/Обновление установленного моста отложено/);assert.match(result.stderr,/Сервисы продолжают работать/);
     const manualDown=result.events.findIndex(event=>event.kind==='test-stops-healthy-stack'),update=result.events.findIndex(event=>event.kind==='installed-bridge-update');assert.ok(update>=0&&manualDown>update);assert.equal(result.events.slice(0,manualDown).filter(event=>event.kind==='child-stop').length,0);
     assert.equal(result.events.filter(event=>event.kind==='child-stop').length,8);
 });
 
 test('Недоступная поставка ассетов не блокирует готовность приложений и отложенное обновление моста',async t=>{
-    const f=await fixture(t,'profile-ready-assets-unavailable'),result=await f.run('--profile=standard');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stderr,/Ассеты.*недоступн|[Пп]оставка.*недоступн/i);
+    const f=await fixture(t,'profile-ready-assets-unavailable'),result=await f.run('--profile=standard');assert.equal(result.code,0,result.stdout+result.stderr);assert.match(result.stdout,/Сервисы запущены/);assert.match(result.stderr,/Ассеты.*недоступн|[Пп]оставка.*недоступн/i);
     assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,1);assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
     const manualDown=result.events.findIndex(event=>event.kind==='test-stops-healthy-stack'),migration=result.events.findIndex(event=>event.kind==='installed-bridge-update'),health=result.events.map((event,index)=>event.kind==='health-end'?index:-1).filter(index=>index>=0);
-    assert.equal(health.length,8);assert.ok(migration>Math.max(...health));assert.equal(result.events.slice(0,manualDown).filter(event=>event.kind==='child-stop').length,0);
+    assert.equal(health.length,12);assert.ok(migration>Math.max(...health));assert.equal(result.events.slice(0,manualDown).filter(event=>event.kind==='child-stop').length,0);
 });

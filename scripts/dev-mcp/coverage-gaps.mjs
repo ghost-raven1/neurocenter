@@ -66,7 +66,7 @@ export async function readCoverageGaps(root,report,packageName,limit,verificatio
     if(measured.some(item=>!Array.isArray(item.excludedInfrastructureSuites)||item.excludedInfrastructureSuites.some(file=>!testPath(file))))throw malformed();
     const excluded=[...new Set(measured.flatMap(item=>item.excludedInfrastructureSuites))].sort();
     return {report,reportSha256:verification.reportSha256,gapsSha256,package:packageName,profile:verification.profile,coverageKind:verification.coverageKind,comparablePercentages:comparable,
-        verificationStatus:verification.status,source:verification.source,totalTargets:targets.length,targets:targets.slice(0,limit),
+        verificationStatus:verification.status,complete:verification.complete,testCounters:verification.packages.filter(item=>item.name===packageName).map(({passed,failed,skipped,todo,cancelled})=>({passed,failed,skipped,todo,...(cancelled!==undefined?{cancelled}:{})})),source:verification.source,totalTargets:targets.length,targets:targets.slice(0,limit),
         unrepresentedFileCount:missing.length,unrepresentedFiles:missing.sort().slice(0,limit),excludedSuiteCount:excluded.length,excludedSuites:excluded.slice(0,limit),
         exclusionScope:'Distinct unit suite paths across all retained entries for this package; HTTP-only exclusions are not attributed to packages.',
         truncated:targets.length>limit||missing.length>limit||excluded.length>limit,

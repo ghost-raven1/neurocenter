@@ -6,6 +6,8 @@ import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
+import {healthHttpHook} from './dev-health-http-hook.fixture.mjs';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
 /** Настоящий CLI запускается в отдельной копии; сеть и пользовательские сервисы недоступны. */
@@ -17,7 +19,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(caller, 'runtime'), {recursive: true});
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -40,7 +42,8 @@ async function fixture(t) {
             return url.port==='5173'
                 ? new Response('body { color: #24344a; }',{headers:{'Content-Type':'text/css'}})
                 : new Response('{"ok":true}',{status:200});};
-        http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;syncBuiltinESMExports();`);
+        http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny;syncBuiltinESMExports();
+        ${healthHttpHook}`);
     const env = {PATH: [path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter),
         NODE_BIN: process.execPath, NO_COLOR: '1', TERM: 'dumb', DEV_CWD_RECORD: record,
         NODE_OPTIONS: `--import=${pathToFileURL(hook).href}`};
@@ -70,7 +73,7 @@ for (const action of ['--help', 'status']) {
         assert.equal(result.status, 0, result.stderr);
         assert.doesNotMatch(result.stderr, /uv_cwd|process\.cwd|REAL_NETWORK_FORBIDDEN/);
         assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
-        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
+        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
         else assert.match(result.stdout, /Использование: scripts\/dev\.sh/);
         await assert.rejects(fs.access(path.join(f.checkout, action==='status'?'.run/processes.json':'.run')), {code: 'ENOENT'});
     });
@@ -86,14 +89,14 @@ test('CLI восстанавливает корень проекта после 
 test('CLI сохраняет выбранный Node через относительный NODE_BIN из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: './runtime/node'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 
 test('CLI находит Node в относительном PATH из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: '', PATH: 'runtime:/usr/bin:/bin'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 8);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 

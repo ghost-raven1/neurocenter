@@ -7,13 +7,14 @@ import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {workspacePackages} from '../workspace/check-plan.mjs';
 import {readVitestReport} from '../workspace/check-report.mjs';
+import {readRunSummary} from '../dev-mcp/run-reports.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const valid = {success: true, numPassedTests: 2, numFailedTests: 0, numPendingTests: 1,
     numTodoTests: 0, numTotalTests: 3, numFailedTestSuites: 0};
 
 /** Настоящий CLI пишет отчёт в отдельном checkout; npm и Docker не выходят за fixture. */
-async function fixture(t, {report = valid, raw, code = 0, signal, missing = false} = {}) {
+async function fixture(t, {report = valid, raw, code = 0, signal, missing = false, generationExit = 0, nodeTests, nodeReporter} = {}) {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter check report ')));
     t.after(() => fs.rm(directory, {recursive: true, force: true}));
     const checkout = path.join(directory, 'checkout'), workspace = path.join(checkout, 'scripts/workspace');
@@ -21,13 +22,16 @@ async function fixture(t, {report = valid, raw, code = 0, signal, missing = fals
     await fs.mkdir(workspace, {recursive: true});
     await fs.mkdir(bin);
     for (const name of await fs.readdir(path.join(root, 'scripts/workspace'))) {
-        if (/^check.*\.mjs$/.test(name) || name === 'node-runtime.mjs') {
+        if (/^check.*\.mjs$/.test(name) || ['node-runtime.mjs','isolated-build-process.mjs','isolated-build-source.mjs'].includes(name)) {
             await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
         }
     }
     for (const name of ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test']) {
         await fs.mkdir(path.join(checkout, name), {recursive: true});
     }
+    if(nodeTests)await fs.writeFile(path.join(checkout,'scripts/test/mini.test.mjs'),nodeTests);
+    if(nodeReporter!==undefined)await fs.writeFile(path.join(workspace,'check-node-reporter.mjs'),`export default async function*(events){for await(const event of events){}yield ${JSON.stringify(nodeReporter)};}`);
+    await fs.writeFile(path.join(checkout, 'scripts/agent-kit/generate.mjs'), `process.exitCode=${generationExit};`);
     for (const [index, name] of workspacePackages.entries()) {
         await fs.mkdir(path.join(checkout, name), {recursive: true});
         await fs.writeFile(path.join(checkout, name, 'package.json'), JSON.stringify({scripts: {
@@ -53,8 +57,8 @@ async function fixture(t, {report = valid, raw, code = 0, signal, missing = fals
         const directories = await fs.readdir(path.join(checkout, '.run/check'));
         assert.equal(directories.length, 1);
         const reportFile = path.join(checkout, '.run/check', directories[0], 'report.json');
-        return {...processResult, report: JSON.parse(await fs.readFile(reportFile, 'utf8')),
-            calls: (await fs.readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse)};
+        return {...processResult, root:checkout, reportFile, report: JSON.parse(await fs.readFile(reportFile, 'utf8')),
+            calls: await fs.readFile(calls, 'utf8').then(text => text.trim().split('\n').map(JSON.parse), error => {if(error.code==='ENOENT')return [];throw error;})};
     }
     return {result};
 }
@@ -63,8 +67,18 @@ test('Успех check сохраняет раздельные passed/skipped и
     const actual = await (await fixture(t)).result();
     assert.equal(actual.status, 0, actual.stderr);
     assert.equal(actual.report.success, true);
+    assert.equal(actual.report.state, 'passed'); assert.equal(actual.report.schemaVersion, 3);
+    assert.deepEqual(actual.report.plannedSteps, actual.report.steps.map(step => step.name));
     assert.deepEqual(actual.report.steps.find(step => step.tests)?.tests, {passed: 2, failed: 0, skipped: 1, todo: 0});
     assert.equal(actual.report.steps.at(-1).name, 'Compose: локальные эмбеддинги');
+});
+
+test('Отказ gate генерации сохраняет полный план и останавливает check до npm и сборки', async t => {
+    const actual = await (await fixture(t, {generationExit: 1})).result();
+    assert.equal(actual.status, 1); assert.equal(actual.report.state, 'failed'); assert.equal(actual.report.success, false);
+    assert.equal(actual.report.steps.length, 1); assert.equal(actual.report.steps[0].name, 'Agent kit: актуальность генерации');
+    assert.ok(actual.report.plannedSteps.length > actual.report.steps.length); assert.ok(actual.report.finishedAt);
+    assert.deepEqual(actual.calls, []);
 });
 
 for (const [description, options] of [
@@ -108,6 +122,26 @@ test('TODO сохраняется отдельно от passed и skipped', asyn
     assert.equal(actual.status, 0, actual.stderr);
     assert.deepEqual(actual.report.steps.find(step => step.tests)?.tests, {passed: 2, failed: 0, skipped: 1, todo: 1});
 });
+
+test('real shared Node gate retains pass, skip, TODO and cancelled through runCheck and MCP summary',async t=>{
+    const actual=await(await fixture(t,{report:{...valid,numPendingTests:0,numTotalTests:2},nodeTests:`import {test} from 'node:test';test('pass',()=>{});test.skip('skip',()=>{});test.todo('todo');`})).result();
+    assert.equal(actual.status,0,actual.stderr);
+    const node=actual.report.steps.find(step=>step.name==='Общие контракты, production и упаковка');
+    assert.equal(node.testRunner,'node');assert.deepEqual(node.tests,{passed:1,failed:0,skipped:1,todo:1,cancelled:0});
+    const summary=await readRunSummary(actual.root,path.relative(actual.root,actual.reportFile),{available:false});
+    assert.equal(summary.complete,false);assert.equal(summary.status,'incomplete');
+    assert.equal(summary.testCounters.passed,3);assert.equal(summary.testCounters.skipped,1);assert.equal(summary.testCounters.todo,1);
+    assert.equal(summary.testCounters.cancelled,null);assert.equal(summary.testCounters.countedSteps,2);
+});
+
+for(const [name,output]of [['malformed','{broken'],['missing',''],['incomplete',JSON.stringify({success:true,counts:{tests:1,passed:1,failed:0,skipped:0,todo:0}})]]){
+    test(`Node gate ${name} structured report fails before Compose despite exit zero`,async t=>{
+        const actual=await(await fixture(t,{nodeReporter:output})).result();
+        assert.equal(actual.status,1,actual.stderr);assert.equal(actual.report.failure.code,'TEST_REPORT_FAILED');
+        const node=actual.report.steps.at(-1);assert.equal(node.name,'Общие контракты, production и упаковка');
+        assert.equal(node.exitCode,0);assert.equal(node.ok,false);assert.match(node.reportError,/Node/);assert.equal(node.tests,undefined);
+    });
+}
 
 test('Остановка процесса сигналом не теряет итоговую сводку', {skip: process.platform === 'win32'}, async t => {
     const actual = await (await fixture(t, {signal: 'SIGTERM', missing: true})).result();

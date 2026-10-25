@@ -131,7 +131,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs']) {
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         // This copied hook records the dev integration boundary without installing a real bridge.
@@ -164,7 +164,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         assert.equal(result.status, 0, result.stderr);
         const events = (await fs.readFile(records, 'utf8')).trim().split('\n').map(value => JSON.parse(value));
         assert.deepEqual(events.map(event=>event.kind),[...Array(workspacePackages.length+1).fill('npm'),'bridge-pipeline']);
-        assert.deepEqual(events.at(-1),{kind:'bridge-pipeline',root:checkout+path.sep,node:process.execPath,home:temporary});
+        assert.deepEqual(events.at(-1),{kind:'bridge-pipeline',root:checkout,node:process.execPath,home:temporary});
         const calls=events.filter(event=>event.kind==='npm');
         assert.deepEqual(calls.map(call => path.relative(checkout, call.cwd)).sort(), ['',...workspacePackages].sort());
         for (const call of calls) {
@@ -194,7 +194,8 @@ test('Общий check проверяет свежий dist, новые конт
         const typecheck = plan.findIndex(step => step.directory === directory && step.args.includes('typecheck'));
         assert.ok(typecheck >= 0 && build > typecheck);
     }
-    const common = plan.findIndex(step => step.type === 'node');
+    assert.deepEqual(plan[0].args, ['scripts/agent-kit/generate.mjs', '--check']);
+    const common = plan.findIndex(step => step.type === 'node' && step.args.includes('--test'));
     assert.ok(plan.slice(common + 1).every(step => step.type === 'compose'));
     assert.ok(plan.slice(0, common).some(step => step.directory === 'mcp/neurocenter-asset-sync' && step.args.includes('build')));
 });

@@ -13,6 +13,7 @@ import {readOwnedFile} from '../dev-mcp/safe-file.mjs';
 import {redactLog} from '../dev-mcp/redact.mjs';
 import {healthReader} from '../dev-mcp/health.mjs';
 import {packages,services} from '../dev-mcp/constants.mjs';
+import {expectedToolNames,serverVersion} from '../dev-mcp/tool-catalog.mjs';
 
 const require=createRequire(new URL('../../mcp/neurocenter-asset-sync/package.json',import.meta.url));
 const {Client}=require('@modelcontextprotocol/sdk/client/index.js');
@@ -27,13 +28,14 @@ async function fixture(t){
     await mkdir(root);t.after(()=>rm(parent,{recursive:true,force:true}));
     await writeFile(path.join(root,'package.json'),JSON.stringify({name:'neurocenter-workspace'}));
     await writeFile(path.join(root,'.gitignore'),'.run/\n');
-    for(const [,folder]of packages){await mkdir(path.join(root,folder),{recursive:true});await writeFile(path.join(root,folder,'package.json'),JSON.stringify({version:'0.10.1'}));}
+    for(const [name,folder]of packages){await mkdir(path.join(root,folder),{recursive:true});await writeFile(path.join(root,folder,'package.json'),JSON.stringify({version:'0.10.1',
+        scripts:{typecheck:'fixture',build:'fixture',...(name==='frontend'?{test:'vitest run'}:{})}}));}
     const git=args=>execFileSync('git',['-c','core.hooksPath=/dev/null',...args],{cwd:root,encoding:'utf8',env:{PATH:process.env.PATH,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'}}).trim();
     git(['init','-q','-b','main']);git(['add','.']);git(['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-qm','fixture']);
     const head=git(['rev-parse','HEAD']);
     const report={schemaVersion:2,profile:'unit-safe',coverageKind:'vitest-ast-v8',comparablePercentages:true,startedAt:'2026-10-23T00:00:00Z',finishedAt:'2026-10-23T00:01:00Z',complete:true,
         sourceBefore:{head,status:''},sourceAfter:{head,status:''},sourceChangedDuringRun:false,
-        packages:[{name:'catalog-service',passed:10,failed:0,skipped:0,exitCode:0,excludedInfrastructureSuites:[],testFileInventory:{complete:true},reportValidation:{ok:true}}],
+        packages:[{name:'catalog-service',passed:10,failed:0,skipped:0,todo:0,exitCode:0,excludedInfrastructureSuites:[],testFileInventory:{complete:true},reportValidation:{ok:true}}],
         summary:Object.fromEntries(['lines','statements','functions','branches'].map(key=>[key,{total:100,covered:80,skipped:0,pct:80}])),
         denominator:{allWorkspaceSourcesIncluded:false,configuredPackageSourcesIncluded:false,httpOnlyExecutedSources:true,fileInventoryIsNotLineCoverage:true},sourceFiles:1};
     const reportPath='.run/coverage/final/manifest.json';await mkdir(path.join(root,'.run/coverage/final'),{recursive:true});
@@ -163,7 +165,7 @@ test('readiness distinguishes JSON okfalse, HTML200, wrong CSS type and large va
         else response.writeHead(200,{'content-type':'text/html'}).end('<html>not ready</html>');
     });
     for(const [name,route,ready]of [['catalog','/ok',true],['catalog','/false',false],['catalog','/html',false],['frontend','/wrong',false],['frontend','/css',true]]){
-        const value=await healthReader([{name,port:target.port,path:route}])();assert.equal(value.services[0].ready,ready);assert.equal(value.services[0].state,'http-ok');
+        const value=await healthReader([{name,port:target.port,path:route,readinessPath:route}])();assert.equal(value.services[0].ready,ready);assert.equal(value.services[0].state,'http-ok');
         assert.ok(!JSON.stringify(value).includes('NEVER_RETURN'));if(name==='frontend')assert.equal(value.services[0].partialProbe,true);
     }
 });
@@ -178,16 +180,36 @@ async function sdkFixture(t,definitions=[],fixtureEnvironment={}){
     return {...f,client,transport};
 }
 
-test('actual SDK stdio initializes, lists five readonly tools, calls them and returns safe input/file errors',async t=>{
+test('actual SDK stdio lists the current readonly catalogue, calls it and returns safe input/file errors',async t=>{
     let requests=0;const target=await localHttp(t,(_request,response)=>{requests++;response.end('DO_NOT_RETURN_RAW_BODY');});
     let proxies=0;const proxy=await localHttp(t,(_request,response)=>{proxies++;response.writeHead(502).end();});
     const f=await sdkFixture(t,[{name:'catalog',port:target.port,path:'/health'}],{HTTP_PROXY:'http://127.0.0.1:'+proxy.port,HTTPS_PROXY:'http://127.0.0.1:'+proxy.port,NO_PROXY:'',NODE_USE_ENV_PROXY:'1'});assert.equal(requests,0);
-    const list=await f.client.listTools();assert.equal(list.tools.length,5);assert.ok(list.tools.every(tool=>tool.annotations.readOnlyHint&&tool.annotations.idempotentHint&&!tool.annotations.destructiveHint&&!tool.annotations.openWorldHint));
+    const list=await f.client.listTools();assert.deepEqual(list.tools.map(tool=>tool.name),expectedToolNames);assert.ok(list.tools.every(tool=>tool.annotations.readOnlyHint&&tool.annotations.idempotentHint&&!tool.annotations.destructiveHint&&!tool.annotations.openWorldHint));
+    assert.ok(list.tools.every(tool=>tool.outputSchema?.type==='object'));
     const call=async(name,args={})=>(await f.client.callTool({name,arguments:args}));
     const status=await call('workspace_status');assert.equal(status.structuredContent.workspace,'neurocenter-workspace');
-    const health=await call('services_health');assert.equal(health.structuredContent.services[0].state,'http-ok');assert.equal(requests,1);assert.equal(proxies,0);assert.ok(!JSON.stringify(health).includes('DO_NOT_RETURN'));
+    assert.equal(status.structuredContent.developerTools.version,serverVersion);
+    assert.deepEqual(status.structuredContent.developerTools.tools,expectedToolNames);
+    const plan=await call('check_plan',{packages:['frontend'],steps:['test']});
+    assert.deepEqual(plan.structuredContent.steps.map(step=>step.command),['npm run test']);
+    await assert.rejects(readFile(path.join(f.root,'.run/check/report.json')),{code:'ENOENT'});
+    const health=await call('services_health');assert.equal(health.structuredContent.services[0].state,'http-ok');assert.equal(requests,2);assert.equal(proxies,0);assert.ok(!JSON.stringify(health).includes('DO_NOT_RETURN'));
+    assert.equal(health.structuredContent.services[0].ready,false);
+    assert.ok(health.structuredContent.services[0].liveness);assert.ok(health.structuredContent.services[0].ownership);
     await writeFile(path.join(f.root,'.run/logs/neurocenter-catalog.log'),'token=SDK_SECRET\nready');const logs=await call('service_logs',{service:'catalog',lines:5});assert.ok(!JSON.stringify(logs).includes('SDK_SECRET'));
     const verification=await call('verification_summary',{report:f.reportPath});assert.equal(verification.structuredContent.packages[0].passed,10);
+    await mkdir(path.join(f.root,'.run/check/sdk'),{recursive:true});
+    const checkReport={schemaVersion:2,selection:{packages:['frontend'],steps:['typecheck']},plannedSteps:['frontend: typecheck'],state:'passed',success:true,
+        startedAt:'2026-10-23T00:00:00Z',finishedAt:'2026-10-23T00:01:00Z',steps:[{name:'frontend: typecheck',ok:true,exitCode:0,signal:null,durationMs:10}],secret:'DO_NOT_RETURN_CHECK_SECRET'};
+    await writeFile(path.join(f.root,'.run/check/sdk/report.json'),JSON.stringify(checkReport));
+    const check=await call('verification_summary',{report:'.run/check/sdk/report.json'});
+    assert.equal(check.structuredContent.status,'requested-steps-complete');assert.equal(check.structuredContent.source.status,'unknown');
+    assert.ok(!JSON.stringify(check).includes('DO_NOT_RETURN_CHECK_SECRET'));
+    await mkdir(path.join(f.root,'.run/isolated-build/sdk'),{recursive:true});
+    await writeFile(path.join(f.root,'.run/isolated-build/sdk/receipt.json'),JSON.stringify({schemaVersion:1,ok:false,status:'preparing',
+        selectedPackages:['frontend'],builds:[],inputs:null,startedAt:'2026-10-23T00:00:00Z'}));
+    const build=await call('verification_summary',{report:'.run/isolated-build/sdk/receipt.json'});
+    assert.equal(build.structuredContent.kind,'isolated-build');assert.equal(build.structuredContent.status,'in-progress');
     const metrics=Object.fromEntries(['lines','statements','functions','branches'].map(name=>[name,{total:2,covered:1}]));
     f.report.sourceInventory={files:[{path:'services/catalog-service/src/example.ts',role:'production',measurement:'represented'}]};await f.saveReport(f.report);
     await writeFile(path.join(f.root,'.run/coverage/final/gaps.json'),JSON.stringify({schemaVersion:1,profile:f.report.profile,coverageKind:f.report.coverageKind,
@@ -197,11 +219,37 @@ test('actual SDK stdio initializes, lists five readonly tools, calls them and re
     assert.equal(gaps.structuredContent.totalTargets,1);assert.equal(gaps.structuredContent.targets[0].uncoveredFunctions[0].name,'recover');
     assert.equal(gaps.structuredContent.source.status,'clean-head-match');assert.match(gaps.structuredContent.reportSha256,/^[a-f0-9]{64}$/);
     assert.equal((await call('coverage_gaps',{report:f.reportPath,package:'catalog-service',limit:21})).isError,true);
-    for(const [name,args]of [['services_health',{url:'http://secret:token@example.test'}],['service_logs',{service:'../../private-secret'}],['verification_summary',{report:'.env'}]]){
+    for(const [name,args]of [['services_health',{url:'http://secret:token@example.test'}],['service_logs',{service:'../../private-secret'}],['verification_summary',{report:'.env'}],
+        ['check_plan',{packages:['frontend'],command:'SECRET_COMMAND'}],['check_plan',{packages:['../../private-secret']}],['check_plan',{packages:[]}],['check_plan',{packages:['frontend','frontend']}],
+        ['coverage_gaps',{report:'.run/check/sdk/report.json',package:'frontend'}]]){
         const result=await call(name,args);assert.equal(result.isError,true);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes('secret:token'));
     }
     assert.equal((await call('service_logs',{service:'rag'})).isError,true);
     await assert.rejects(call('unknown'));await assert.rejects(call('toString'));assert.equal((await call('workspace_status')).isError,undefined);
+});
+
+test('output-schema flag removes advertised schemas while calls retain their bounded response',async t=>{
+    const f=await sdkFixture(t,[],{NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS:'0'}),list=await f.client.listTools();
+    assert.deepEqual(list.tools.map(tool=>tool.name),expectedToolNames);assert.ok(list.tools.every(tool=>!tool.outputSchema));
+    const result=await f.client.callTool({name:'workspace_status',arguments:{}});
+    assert.equal(result.structuredContent.workspace,'neurocenter-workspace');
+    assert.equal(result.structuredContent.developerTools.version,serverVersion);
+});
+
+test('disabled service-details flag keeps liveness but sends no readiness probe',async t=>{
+    const paths=[];const target=await localHttp(t,(request,response)=>{paths.push(request.url);response.end('{"ok":true}');});
+    const f=await sdkFixture(t,[{name:'catalog',port:target.port,path:'/health'}],{NEUROCENTER_DEV_MCP_SERVICE_DETAILS:'0'});
+    const result=await f.client.callTool({name:'services_health',arguments:{}}),service=result.structuredContent.services[0];
+    assert.deepEqual(paths,['/health']);assert.equal(service.liveness.ok,true);assert.equal(service.ready,null);
+    assert.equal(service.readiness.state,'skipped');assert.equal(service.ownership.state,'disabled');
+});
+
+test('disabled check-plan flag hides and rejects the tool while retained evidence stays readable',async t=>{
+    const f=await sdkFixture(t,[],{NEUROCENTER_DEV_MCP_CHECK_PLAN:'0'}),list=await f.client.listTools();
+    assert.deepEqual(list.tools.map(tool=>tool.name),expectedToolNames.filter(name=>name!=='check_plan'));
+    await assert.rejects(f.client.callTool({name:'check_plan',arguments:{packages:['frontend']}}));
+    const report=await f.client.callTool({name:'verification_summary',arguments:{report:f.reportPath}});
+    assert.equal(report.structuredContent.status,'requested-suites-complete');
 });
 
 test('actual SDK request cancellation closes the owned health socket and keeps stdio usable',async t=>{

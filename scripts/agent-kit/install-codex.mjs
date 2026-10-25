@@ -92,14 +92,15 @@ function legacyPlan(codexHome, selected) {
   return { file, owner, files };
 }
 
-function removeLegacy(plan) {
+/** Delete verified obsolete bytes, pruning empty skill directories but preserving manual neighbours. */
+function removeOwnedFiles(files, home, skillPrefix) {
   const directories = new Set();
-  for (const file of plan.files) {
+  for (const file of files) {
     unchanged(file.target, file.bytes);
     if (file.bytes) unlinkSync(file.target);
     let directory = path.posix.dirname(file.relative);
-    while (directory.startsWith('skills/aleksei-')) {
-      directories.add(path.join(path.dirname(plan.file), directory));
+    while (directory.startsWith(skillPrefix)) {
+      directories.add(path.join(home, directory));
       directory = path.posix.dirname(directory);
     }
   }
@@ -107,6 +108,10 @@ function removeLegacy(plan) {
     if (!inspect(directory, true)) continue;
     try { rmdirSync(directory); } catch (error) { if (!['ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
   }
+}
+
+function removeLegacy(plan) {
+  removeOwnedFiles(plan.files, path.dirname(plan.file), 'skills/aleksei-');
   if (plan.owner.bytes) {
     for (const file of plan.files) unchanged(file.target, null);
     unchanged(plan.file, plan.owner.bytes);
@@ -132,7 +137,10 @@ function writeAtomic(file, bytes, expected, mode = 0o644) {
 }
 
 /** Plan or install verified personal skills and roles without changing Codex configuration. */
-export function installCodexKit({ kitRoot = repoRoot, codexHome = process.env.CODEX_HOME || path.join(homedir(), '.codex'), apply = false, check = false } = {}) {
+export function installCodexKit({ kitRoot = repoRoot, codexHome = process.env.CODEX_HOME || path.join(homedir(), '.codex'), apply = false, check = false, environment = process.env } = {}) {
+  const retirementFlag = environment.NEUROCENTER_AGENT_KIT_RETIRE;
+  if (retirementFlag !== undefined && !['0', '1'].includes(retirementFlag)) throw new Error('NEUROCENTER_AGENT_KIT_RETIRE must be 0 or 1');
+  const retirementEnabled = retirementFlag !== '0';
   if (apply && check) throw new Error('Choose either --apply or --check');
   kitRoot = path.resolve(kitRoot);
   codexHome = path.resolve(codexHome);
@@ -160,20 +168,30 @@ export function installCodexKit({ kitRoot = repoRoot, codexHome = process.env.CO
   const roles = files.filter((file) => rolePattern.test(file.relative));
   if (skills.size !== 65 || !skills.has('neurocenter-task-flow') || roles.length !== 64 || roles.some((file) => !skills.has(path.basename(file.relative, '.toml'))) || files.some((file) => file.relative.startsWith('skills/') && !skills.has(file.relative.split('/')[1]))) throw new Error('The kit must contain 64 roles, their skills, and the common task flow');
   const legacy = legacyPlan(codexHome, new Set(files.map((file) => file.relative)));
+  const selected = new Set(files.map((file) => file.relative));
+  const obsolete = Object.entries(owner.files).filter(([relative]) => !selected.has(relative)).map(([relative, hash]) => {
+    const target = path.join(codexHome, relative), bytes = read(target, true);
+    if (bytes && digest(bytes) !== hash) throw new Error(`Modified obsolete user file preserved: ${target}`);
+    return { relative, target, bytes };
+  });
   const manifestHash = digest(manifestBytes);
-  const receipt = Buffer.from(`${JSON.stringify({ schemaVersion: 1, version: manifest.version, manifestHash, files: { ...owner.files, ...Object.fromEntries(files.map((file) => [file.relative, file.hash])) } }, null, 2)}\n`);
-  if (check && (files.some((file) => file.state !== 'unchanged') || !owner.bytes?.equals(receipt) || legacy.owner.bytes)) throw new Error('The installed kit is missing, differs from the verified source, or requires legacy migration');
+  const retained = Object.fromEntries(Object.entries(owner.files).filter(([relative]) => selected.has(relative)));
+  const receipt = Buffer.from(`${JSON.stringify({ schemaVersion: 1, version: manifest.version, manifestHash, files: { ...retained, ...Object.fromEntries(files.map((file) => [file.relative, file.hash])) } }, null, 2)}\n`);
+  if (check && (files.some((file) => file.state !== 'unchanged') || !owner.bytes?.equals(receipt) || legacy.owner.bytes || obsolete.length)) throw new Error('The installed kit is missing, differs from the verified source, or requires legacy migration'+(obsolete.length?`; obsolete: ${obsolete.map((file) => file.relative).join(', ')}`:''));
   if (apply) {
+    if (!retirementEnabled && obsolete.length) throw new Error(`NEUROCENTER_AGENT_KIT_RETIRE=0 blocks installation requiring retirement: ${obsolete.map((file) => file.relative).join(', ')}`);
     for (const file of files) unchanged(file.target, file.existing);
     unchanged(ownerFile, owner.bytes);
     for (const file of legacy.files) unchanged(file.target, file.bytes);
+    for (const file of obsolete) unchanged(file.target, file.bytes);
     unchanged(legacy.file, legacy.owner.bytes);
     for (const file of files) if (file.state !== 'unchanged') writeAtomic(file.target, file.bytes, file.existing);
-    if (!owner.bytes?.equals(receipt)) writeAtomic(ownerFile, receipt, owner.bytes, 0o600);
     for (const file of files) unchanged(file.target, file.bytes);
+    removeOwnedFiles(obsolete, codexHome, 'skills/neurocenter-');
     removeLegacy(legacy);
+    if (!owner.bytes?.equals(receipt)) writeAtomic(ownerFile, receipt, owner.bytes, 0o600);
   }
-  return { mode: check ? 'check' : apply ? 'apply' : 'plan', version: manifest.version, manifestHash, codexHome, skillCount: skills.size, roleCount: roles.length, fileCount: files.length, legacyFiles: legacy.files.filter((file) => file.bytes).map((file) => file.relative), changed: files.filter((file) => file.state !== 'unchanged').map((file) => file.relative), ...Object.fromEntries(['created', 'updated', 'unchanged'].map((state) => [state, files.filter((file) => file.state === state).length])) };
+  return { mode: check ? 'check' : apply ? 'apply' : 'plan', version: manifest.version, manifestHash, codexHome, retirementEnabled, skillCount: skills.size, roleCount: roles.length, fileCount: files.length, legacyFiles: legacy.files.filter((file) => file.bytes).map((file) => file.relative), obsolete: obsolete.map((file) => file.relative), changed: files.filter((file) => file.state !== 'unchanged').map((file) => file.relative), ...Object.fromEntries(['created', 'updated', 'unchanged'].map((state) => [state, files.filter((file) => file.state === state).length])) };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
