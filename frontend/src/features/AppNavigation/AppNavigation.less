@@ -1,0 +1,10 @@
+.app-navigation {
+    .ant-menu.ant-menu-dark .ant-menu-item, .ant-menu-submenu-title { height: 42px; line-height: 42px; margin: 4px 0; border-radius: 8px; }
+    .ant-menu-submenu-title { color: #b9c9d9; font-weight: 600; }
+    .ant-menu-submenu-selected > .ant-menu-submenu-title { color: @brand-on-dark; }
+    .ant-menu-submenu-title:hover { color: #fff; }
+    .ant-menu-sub.ant-menu-inline { background: transparent; }
+    .ant-menu-sub.ant-menu-inline > .ant-menu-item { font-size: 13px; }
+    &__external-item { position: relative; }
+    &__external-link { position: static; &::after { position: absolute; inset: 0; content: ''; } }
+}
