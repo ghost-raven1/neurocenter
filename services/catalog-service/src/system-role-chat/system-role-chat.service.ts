@@ -1,3 +1,4 @@
+import {assertChatSystemRoleOrigin} from '../chat-system-roles/chat-system-roles.origin-policy';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
@@ -54,6 +55,7 @@ export class SystemRoleChatService {
         const dialog = await this.owned(req, dialogId, 3), { agentId, selection, includeContext } = prepareSystemTurn(raw);
         this.scope(dialog, selection.projectId);
         if (selection.targets.some(target => target.kind === 'dialog-context')) throw new ConflictException('Контекст диалога выбирается отдельным подтверждением.');
+        await this.assertOrigin(req, dialog);
         await requireFeaturesEnabled(['system_role_chat', systemRole(agentId).flag]);
         if (includeContext) {
             const id = randomUUID();
@@ -61,6 +63,7 @@ export class SystemRoleChatService {
                 const actor = await this.roles.policy.actor(req, dialog.project_id);
                 await this.roles.policy.authorize(db, actor, dialog.project_id);
                 await this.repository.dialog(dialog.id, actor.email, db, true);
+                await assertChatSystemRoleOrigin(db, dialog.id, actor.email, dialog.project_id);
                 const context = await systemDialogContext(db, actor.email, dialog.id);
                 await db.query('INSERT INTO system_role_dialog_contexts(id,dialog_id,owner_email,refs,pin) VALUES($1,$2,$3,$4::jsonb,$5)', [id, dialog.id, actor.email, JSON.stringify(context.references), context.pin]);
             });
@@ -79,6 +82,7 @@ export class SystemRoleChatService {
             return this.turnView(req, old);
         }
         await this.roles.policy.actor(req, dialog.project_id);
+        await this.assertOrigin(req, dialog);
         const contexts = input.targets.filter(target => target.kind === 'dialog-context');
         if (contexts.length && (contexts.length !== 1 || !(await this.models.pool.query('SELECT id FROM system_role_dialog_contexts WHERE id::text=$1 AND dialog_id=$2 AND owner_email=$3', [contexts[0].id, dialog.id, dialog.owner_email])).rowCount)) throw new ConflictException('Подтвердите контекст этого диалога заново.');
         const run = await this.roles.start(req, agentId, input, {
@@ -101,6 +105,13 @@ export class SystemRoleChatService {
     private async owned(req: Request, dialogId: string, minimum = 1): Promise<SystemDialogRow> {
         await this.models.ready(); const actor = await this.models.actor(req), dialog = await this.repository.dialog(roleRequestId(dialogId), actor.email);
         await this.roles.policy.actor(req, dialog.project_id, minimum); return dialog;
+    }
+    private async assertOrigin(req: Request, dialog: SystemDialogRow): Promise<void> {
+        await this.roles.repository.transaction(async db => {
+            const actor = await this.roles.policy.actor(req, dialog.project_id);
+            await this.roles.policy.authorize(db, actor, dialog.project_id);
+            await assertChatSystemRoleOrigin(db, dialog.id, actor.email, dialog.project_id);
+        });
     }
     private scope(dialog: SystemDialogRow, project: string | null): void {
         if (dialog.project_id !== project) throw new ConflictException('Сообщение относится к другому проекту.');

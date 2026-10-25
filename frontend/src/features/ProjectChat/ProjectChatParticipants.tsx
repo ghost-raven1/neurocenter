@@ -34,6 +34,11 @@ export function ProjectChatParticipants({projectId, detail, saving, error, onClo
     }, [projectId, modelId, captureOwner, attempt]);
     const assigned = new Set(models.catalog?.assignedModelIds ?? []);
     const availableModels = models.catalog?.items.filter(model => !modelChatUnavailableReason(model, true, true, assigned.has(model.id))) ?? [];
+    const defaultChosen = useRef(!!detail.room.modelId);
+    useEffect(() => {
+        if (defaultChosen.current || modelTouched || detail.room.modelId || models.loading || models.error || !flags.enabled || !availableModels.length) return;
+        defaultChosen.current = true; setModelId(availableModels[0].id);
+    }, [models.catalog, models.loading, models.error, flags.enabled, modelTouched, detail.room.modelId]);
     const model = availableModels.find(value => value.id === modelId);
     const roster = new Map([...detail.agents, ...items].map(value => [value.agentId, value]));
     const invalid = selected.some(id => roster.get(id)?.status !== 'active'), changed = configuration(detail) !== base;
@@ -54,8 +59,8 @@ export function ProjectChatParticipants({projectId, detail, saving, error, onClo
     return <section className="project-chat__settings" aria-label="Настройка агентов команды">
         <div className="project-chat__settings-heading"><Typography.Title level={5}>Агенты команды</Typography.Title><Button disabled={saving} onClick={onClose}>Закрыть настройку</Button></div>
         <Typography.Paragraph type="secondary">{detail.room.visibility === 'PRIVATE' ? 'Доступ имеют только выбранные люди диалога.' : 'Люди проекта уже в чате.'} Выберите модель и агентов, если хотите спрашивать их здесь. Обычное сообщение коллегам не вызывает модель.</Typography.Paragraph>
-        <label>Базовая модель<Select aria-label="Базовая модель агентов команды" value={modelId || undefined} placeholder="Выберите готовую модель проекта" showSearch optionFilterProp="label" loading={models.loading} disabled={saving || !flags.enabled || !detail.canConfigure}
-            options={availableModels.map(value => ({value: value.id, label: value.name}))} onChange={value => {setModelId(value); setModelTouched(true); setLoadError('');}}/></label>
+        <label>Базовая модель<Select aria-label="Базовая модель агентов команды" value={modelId || undefined} placeholder="Выберите готовую модель проекта" showSearch optionFilterProp="label" loading={models.loading} disabled={saving || !flags.enabled || !detail.canConfigure} allowClear
+            options={availableModels.map(value => ({value: value.id, label: value.name}))} onChange={value => {defaultChosen.current = true; setModelId(value ?? ''); setModelTouched(true); setLoadError('');}}/></label>
         {models.error && <Alert type="error" showIcon message={models.error} action={<Button onClick={() => {void models.refresh();}}>Повторить проверку моделей</Button>}/>}
         {!modelTouched && model?.modelPin && model.modelPin !== detail.room.modelPin && <Alert type="info" showIcon message="В каталоге обновилась версия модели" description="Ранее отправленные вопросы сохраняют свою версию. Для следующих вопросов можно принять проверенную версию из каталога."
             action={<Button disabled={!flags.enabled || saving} onClick={() => setModelTouched(true)}>Принять новую версию</Button>}/>}

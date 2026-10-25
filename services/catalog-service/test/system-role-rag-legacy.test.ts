@@ -118,7 +118,8 @@ describe('Authentic eacf600 grantless accepted run compatibility', () => {
         const proposal = JSON.stringify({ ...answer, kind: 'proposal', changes: [{ targetKey: prepared.targets[0].key,
             replacement: 'Предлагаемый полный новый текст', explanation: 'Корректная структура изменения явно выбранной цели.' }] });
         // Same actual parser/target/payload: only the approved role capability distinguishes these controls.
-        expect(roleResult(proposal, { ...prepared, definitionPin: roleDefinitionPin('agent-autoconfigurator') }, [])).toMatchObject({ kind: 'proposal' });
+        const currentProposal = JSON.stringify({...JSON.parse(proposal), answer: 'Полное объяснение предлагаемого изменения выбранной цели. Изменение не применено.'});
+        expect(roleResult(currentProposal, { ...prepared, definitionPin: roleDefinitionPin('agent-autoconfigurator') }, [])).toMatchObject({ kind: 'proposal' });
         expect(() => roleResult(proposal, { ...prepared, definitionPin: roleDefinitionPin(id) }, [])).toThrow('JSON-контракта');
         expect(() => roleResult(proposal, prepared, [])).toThrow('JSON-контракта');
         expect(accepted.snapshot).toEqual(prepared);

@@ -23,10 +23,17 @@ export interface RoleProjectEvidence {
     sources: Array<{ id: string; path: string; title?: string; startLine?: number; endLine?: number }>; message?: string;
 }
 export interface RoleInvocation { content: string; projectContext?: RoleProjectEvidence; }
-export interface RolePrepared { selection: RoleSelection; definitionPin: string; consentDigest: string; preview: string; targets: RoleTargetSnapshot[]; mcp?:RoleMcpPreparedTarget[]; projectContext?: RoleProjectGrant; }
+export interface RoleGuidanceGrant {version: 1; projectId: string | null;}
+export interface RoleGuidanceSource {id: string; kind: 'help' | 'diagnostic'; title: string; slug?: string; revision?: string;}
+export interface RoleGuidanceEvidence {status: 'ready' | 'unavailable'; checkedAt: string; sources: RoleGuidanceSource[]; message?: string;}
+export interface RoleGuidanceAction {id: string; label: string; path: string; requiresPermission?: boolean;}
+export interface RolePrepared { selection: RoleSelection; definitionPin: string; consentDigest: string; preview: string; targets: RoleTargetSnapshot[]; mcp?:RoleMcpPreparedTarget[]; projectContext?: RoleProjectGrant; guidance?: RoleGuidanceGrant; }
 export interface RoleChange { targetKey: string; replacement: string; explanation: string; }
 export interface RoleResult {
     kind: 'diagnosis' | 'proposal'; summary: string;
+    answer?: string;
+    guidance?: RoleGuidanceEvidence;
+    actions?: RoleGuidanceAction[];
     findings: Array<{ evidenceId: string; detail: string }>;
     nextSteps: string[]; changes: RoleChange[];
     delegations?: RoleDelegationResult[];

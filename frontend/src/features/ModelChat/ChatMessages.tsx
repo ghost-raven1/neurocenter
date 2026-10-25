@@ -1,19 +1,20 @@
 import {MessageOutlined} from '@ant-design/icons';
 import {Alert, Button, Empty, Space, Spin, Typography} from 'antd';
 import {useLayoutEffect, useRef, useState} from 'react';
+import type {ReactNode} from 'react';
 import {ChatResearchHistory} from './ChatResearchHistory';
 import {ChatAnswer} from './ChatAnswer';
 import type {IModelChatAttachment, IModelChatTurn} from './types';
 import type {TFeatureFlagKey} from '../FeatureFlags/types';
 import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
 
-interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string;}
+interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string; privateTasks?: ReactNode;}
 
 const retryFeatures = (group: boolean | undefined, turn: IModelChatTurn): TFeatureFlagKey[] => [group ? 'group_chat' : 'model_chat',
     ...(turn.research ? ['research_tools' as const, ...(turn.research.project ? ['project_search' as const] : []), ...(turn.research.external ? ['tool_catalog' as const] : [])] : [])];
 
 /** Markdown stays inert; files are explicitly opened and never auto-fetch third-party resources. */
-export function ChatMessages({turns, attachments, modelName, blocked, busy, onRetry, onEdit, onPreview, hasEarlier, historyLoading, historyError, onLoadEarlier, onComplete, group, conversationId}: Props): JSX.Element {
+export function ChatMessages({turns, attachments, modelName, blocked, busy, onRetry, onEdit, onPreview, hasEarlier, historyLoading, historyError, onLoadEarlier, onComplete, group, conversationId, privateTasks}: Props): JSX.Element {
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number; stamp: string}>();
     const [showLatest, setShowLatest] = useState(false);
     useLayoutEffect(() => {
@@ -45,5 +46,6 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
             {!turn.discussion && ['failed', 'cancelled'].includes(turn.status) && index === turns.length - 1 && <Space wrap className="model-chat__retry"><FeatureButton features={retryFeatures(group, turn)} disabled={busy || blocked} onClick={onRetry}>{turn.responses?.length ? 'Повторить неуспешные ответы' : 'Повторить запрос'}</FeatureButton>
                 {turn.responses?.some(response => response.status === 'done') ? <Button disabled={busy} onClick={onComplete}>Продолжить с готовыми ответами</Button> : <Button disabled={busy} onClick={onEdit}>Изменить сообщение</Button>}</Space>}
         </section>)}
+        {privateTasks}
     </div>{showLatest && <Button className="model-chat__latest" size="small" onClick={() => {const node = viewport.current; if (node) node.scrollTop = node.scrollHeight; nearBottom.current = true; setShowLatest(false);}}>К последним сообщениям</Button>}</div>;
 }

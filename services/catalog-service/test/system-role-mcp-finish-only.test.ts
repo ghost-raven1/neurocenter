@@ -6,7 +6,7 @@ import {currentModelUsage} from '../src/model-usage/model-usage.context';
 import {normalizeRoleMcpTool,roleMcpToolKey,type RoleMcpReceipt} from '../../shared/system-role-mcp.cjs';
 import type {RoleRunRow} from '../src/system-roles/system-role.types';
 
-const final={kind:'diagnosis',summary:'Saved tool evidence retained',findings:[],changes:[],nextSteps:[]};
+const final={kind:'diagnosis',summary:'Saved tool evidence retained',answer:'The saved tool evidence remains available. New tools are unavailable. No changes were applied. Review the saved evidence and check the connection before a new explicit task.',findings:[],changes:[],nextSteps:[]};
 function fixture(actor='owner@example.test',device=false){
  const target={runtime:device?'device':'server',assetId:'selected',version:1,manifest:'a'.repeat(64),
   ...(device?{deviceId:'00000000-0000-0000-0000-000000000002',bindingId:'binding',instanceId:'instance',configurationRevisions:[]}:{}),

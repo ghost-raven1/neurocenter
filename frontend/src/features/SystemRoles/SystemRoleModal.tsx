@@ -25,7 +25,12 @@ export function SystemRoleModal({ id, projectId, initialRunId, onClose }: { id: 
         .map(target => ({ kind: target.kind, id: target.id, name: target.id + ' · проверьте доступность' })) ?? [])];
     const originalPrompts = originalSelection?.targets.filter(target => target.kind === 'prompt') ?? [], budget = roleCallBudget(id, !!originalSelection?.mcp?.length);
     const revision = useRef(0);
+    const modelChosen = useRef(false);
     const invalidate = (): void => { revision.current++; value.invalidate(); setConsent(false); };
+    useEffect(() => {
+        if (modelChosen.current || initialRunId || value.run || !value.overview?.models.length) return;
+        modelChosen.current = true; setModelId(value.overview.models[0].id); invalidate();
+    }, [value.overview?.models, initialRunId, value.run?.id]);
     useEffect(() => { invalidate(); }, [id, projectId, model?.id, model?.pin]);
     const selection = (): RoleSelection => ({ projectId: projectId ?? null, instruction, diagnostics, targets: [...targetChoices.filter(item => selected.includes(item.kind + ':' + item.id)).map(({ kind, id }) => ({ kind, id })),
         ...(usePrompt ? [{ kind: 'prompt' as const, id: originalPrompts[0]?.id ?? 'selected-text', text: prompt }, ...originalPrompts.slice(1)] : [])],
@@ -37,7 +42,7 @@ export function SystemRoleModal({ id, projectId, initialRunId, onClose }: { id: 
         const draft = value.run?.prepareAgain;
         if (!draft || locked || currentIdentity.current !== identity || !captureOwner()() || draft.selection.projectId !== (projectId ?? null)) return;
         const source = structuredClone(draft.selection), text = source.targets.find(target => target.kind === 'prompt');
-        invalidate(); setOriginalSelection(source); setInstruction(source.instruction); setModelId(draft.modelId); setDiagnostics(source.diagnostics);
+        invalidate(); modelChosen.current = true; setOriginalSelection(source); setInstruction(source.instruction); setModelId(draft.modelId); setDiagnostics(source.diagnostics);
         setSelected(source.targets.filter(target => target.kind !== 'prompt').map(target => target.kind + ':' + target.id));
         setPrompt(text?.text ?? ''); setUsePrompt(!!text); setPreparingAgain(true);
     };
@@ -60,7 +65,7 @@ export function SystemRoleModal({ id, projectId, initialRunId, onClose }: { id: 
             {id === 'agent-indexer' && !value.run && <IndexerOwnerActions projectId={projectId ?? null} />}
             <details open={!value.run || preparingAgain}><summary>Новый запуск · до {budget} вызовов модели, до 2 минут</summary><Form layout="vertical" disabled={locked}>
                 {id === 'agent-coordinator' && <Alert type="info" showIcon message="Координатор выберет до трёх системных агентов" description="Каждый получит разрешённую часть выбранных данных. Доступ к базе знаний показан при подготовке контекста. Ответы и недоступные шаги сохранятся вместе; изменения применяются отдельно." />}
-                <Form.Item label="Проверенная модель" required><Select aria-label="Модель системного агента" placeholder="Выберите модель явно" value={modelId} onChange={id => { setModelId(id); invalidate(); }} options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
+                <Form.Item label="Проверенная модель" required><Select aria-label="Модель системного агента" placeholder="Выберите подходящую модель" value={modelId} allowClear onChange={id => { modelChosen.current = true; setModelId(id); invalidate(); }} options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} /></Form.Item>
                 <Form.Item label="Задача" required><Input.TextArea value={instruction} maxLength={2048} autoSize={{ minRows: 2, maxRows: 6 }} onChange={event => { setInstruction(event.target.value); invalidate(); }} placeholder="Что проверить или улучшить и какой результат нужен" /></Form.Item>
                 {!!definition?.diagnostics.length && <Form.Item label="Разрешённые измерения"><Checkbox.Group value={diagnostics} onChange={items => { setDiagnostics(items as DiagnosticKind[]); invalidate(); }} options={definition.diagnostics.filter(kind => kind !== 'containers' || !projectId).map(kind => ({ value: kind, label: diagnosticNames[kind] }))} /></Form.Item>}
                 {preparingAgain && modelId && value.overview && !model && <Alert type="info" showIcon message="Выбранная ранее модель сейчас недоступна" description="Выберите проверенную модель. Введённая задача сохранена." />}

@@ -7,13 +7,13 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 const identifier = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256;
 const pin = (value: unknown): boolean => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 /** Pending work belongs to a person and project; changing current rights only fences live callbacks. */
-export function serviceIntentScope(authScope: string, projectId: string | undefined): string {
+export function serviceIntentScope(authScope: string, projectId: string | undefined, origin?: string): string {
     let principal = authScope;
     try {
         const value: unknown = JSON.parse(authScope);
         if (object(value) && identifier(value.id) && identifier(value.email)) principal = JSON.stringify([value.id, value.email]);
     } catch { /* Unknown scope formats retain their own isolation. */ }
-    return JSON.stringify([principal, projectId ?? null]);
+    return JSON.stringify([principal, projectId ?? null, ...(origin ? [origin] : [])]);
 }
 /** Restore only the original bounded request for this principal/project; the server revalidates every pin. */
 function validIntent(value: unknown, scope: string): value is ServiceIntent {

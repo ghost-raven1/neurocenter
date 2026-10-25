@@ -7,7 +7,7 @@ import { currentModelUsage } from '../src/model-usage/model-usage.context';
 import { requiredRouteFeatures } from '../../shared/feature-policy.cjs';
 import { allowSystemRoleRoute } from '../src/system-roles/system-role.access';
 import type { RolePrepared, RoleRunRow, SystemRoleId } from '../src/system-roles/system-role.types';
-const diagnosis = (summary: string) => ({ kind: 'diagnosis', summary, findings: [], nextSteps: [], changes: [] });
+const diagnosis = (summary: string) => ({ kind: 'diagnosis', summary, answer: 'Проверены доступные сведения. ' + summary + ' Изменения не применялись. Следующий шаг — проверить рекомендации и доступность зависимостей.', findings: [], nextSteps: [], changes: [] });
 const task = (roleId: SystemRoleId, targetKeys: string[] = [], diagnostics: string[] = []) => ({ roleId, instruction: 'Проверь свою часть задачи.', targetKeys, diagnostics });
 const plan = (...delegations: ReturnType<typeof task>[]) => JSON.stringify({ delegations });
 function fixture(tasks = [task('agent-ai-admin'), task('agent-indexer')]) {

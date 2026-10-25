@@ -24,7 +24,7 @@ async function fixture(current = false) {
         row.request_hash = roleHash({ id: row.agent_id, input: row.request });
     }
     row.state = 'awaiting_review'; row.phase = 'review'; row.lease_until = null; row.calls_started = 1;
-    row.result = roleResult(JSON.stringify({ kind: 'proposal', summary: 'Сохранённое предложение', findings: [], nextSteps: [], changes: [{ targetKey: row.snapshot.targets[0].key,
+    row.result = roleResult(JSON.stringify({ kind: 'proposal', summary: 'Сохранённое предложение', ...(current ? {answer: 'Предлагается уточнить выбранный промпт. Версия проверена; изменение ещё не применено. Проверьте полный текст перед подтверждением.'} : {}), findings: [], nextSteps: [], changes: [{ targetKey: row.snapshot.targets[0].key,
         replacement: 'Полный новый выбранный промпт', explanation: 'Уточнение выбранной задачи.' }] }), row.snapshot, []);
     const port = legacyAuthorityPort(row), originalQuery = port.db.query;
     const query = async (sql: string, values: unknown[] = []) => {

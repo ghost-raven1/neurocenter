@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { RoleRunContent, rolePhaseLabel } from '../SystemRoles/RoleRunContent';
+import {RoleAnswer} from '../SystemRoles/RoleGuidance';
 import { roleFlag, roleName } from '../SystemRoles/types';
 import type { ServiceTurn } from './types';
 
@@ -20,9 +21,9 @@ export function ServiceTurnContent({ turn, busy, onAction }: { turn: ServiceTurn
     return <article className="service-chat__turn">
         <div className="service-chat__request"><Typography.Text strong>Вы</Typography.Text><Typography.Paragraph>{turn.instruction}</Typography.Paragraph></div>
         <div className="service-chat__answer"><Space wrap><Typography.Text strong>{roleName(turn.agentId)}</Typography.Text><Tag>{run ? rolePhaseLabel(run.phase) : 'Проверяем состояние'}</Tag></Space>
-            <div role="status"><Typography.Paragraph>{run?.result?.summary || run?.message || 'Перечитайте состояние задачи.'}</Typography.Paragraph></div>
+            {run?.result ? <RoleAnswer result={run.result} /> : <div role="status"><Typography.Paragraph>{run?.message || 'Перечитайте состояние задачи.'}</Typography.Paragraph></div>}
             {!!run?.result?.delegations?.length && <div className="service-chat__delegations">{run.result.delegations.map(item => <Tag key={item.roleId} color={item.state === 'succeeded' ? 'success' : 'warning'}>{roleName(item.roleId)} · {item.state === 'succeeded' ? 'Ответ получен' : 'Не завершено'}</Tag>)}</div>}
-            {run && <details><summary>Измерения, предложения и этапы</summary><RoleRunContent run={run} /></details>}
+            {run && <details><summary>Измерения, предложения и этапы</summary><RoleRunContent run={run} showAnswer={false} /></details>}
             <Space wrap>
                 {run?.canCancel && <Button size="small" disabled={busy || turn.cancelRequested} onClick={() => { if (captureOwner()()) void onAction(turn, 'cancel'); }}>{turn.cancelRequested ? 'Отмена запрошена' : 'Отменить задачу'}</Button>}
                 {run?.canApply && <Button size="small" type="primary" disabled={busy || !availability.enabled} onClick={() => confirm('apply')}>Применить предложение</Button>}

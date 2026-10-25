@@ -36,6 +36,7 @@ export function legacyAuthorityPort(accepted?: RoleRunRow) {
         if (sql.includes('FROM project_members')) return rows(values[0] === project.id && values[1] === actor.email ? [{ role: state.membership }] : []);
         if (sql.includes('FROM projects WHERE id=$1')) return rows(values[0] === project.id ? [{ id: project.id }] : []);
         if (sql.includes('FROM system_role_dialog_intents')) return rows(state.sourceAccepted && JSON.stringify(values) === JSON.stringify(acceptedSource) ? [{ id: LEGACY_IDS.turn }] : []);
+        if (sql.includes('FROM chat_system_role_origins')) return rows([]);
         if (sql.includes('FROM project_models')) return rows(state.assigned && values[0] === project.id && values[1] === modelRow.id ? [{ model_id: modelRow.id }] : []);
         if (sql.includes('FROM model_catalog WHERE id=$1')) return rows(values[0] === modelRow.id ? [modelRow] : []);
         if (sql.includes('FROM model_remote_connections') || sql.includes('FROM project_rag_sync_intents')) return rows([]);

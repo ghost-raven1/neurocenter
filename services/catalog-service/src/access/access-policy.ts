@@ -18,6 +18,7 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === undefined) { return false; }
     const body = request.body ?? {};
     const verb = request.method.toUpperCase();
+    if (route === '/api/chat-system-roles/origin') return read || verb === 'POST';
     const systemMcp = allowSystemRoleMcpRoute(activeRole, verb, route);
     if (typeof systemMcp === 'boolean') return systemMcp;
     const systemChat = allowSystemRoleChatRoute(activeRole, verb, route);

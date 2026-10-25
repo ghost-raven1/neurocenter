@@ -14,6 +14,9 @@ import { listTargets } from '../catalog-requests/request.targets';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleCallBudget, roleDefinitionPin, roleHash, systemRole } from './system-role.definitions';
 import { acceptedLegacyDefinition } from './system-role.legacy-contract';
+import { acceptedPreviousDefinition } from './system-role.previous-contract';
+import { HelpService } from '../help/help.service';
+import { SystemRoleGuidance } from './system-role.guidance';
 import { SystemRoleRepository, type RoleDb, type RoleExecutionLane } from './system-role.repository';
 import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
@@ -46,11 +49,11 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     private draining = false;
     private wakeAgain = false;
     private stopped = false;
-    constructor(private readonly models: ModelsService, agents: AgentsService, catalog: CatalogService, connections: RemoteConnectionService, runtime: ModelRuntime, chats: ProjectChatService,@Optional()@Inject('SYSTEM_ROLE_MCP')readonly mcp?:SystemRoleMcpAccess) {
+    constructor(private readonly models: ModelsService, agents: AgentsService, catalog: CatalogService, connections: RemoteConnectionService, runtime: ModelRuntime, chats: ProjectChatService,@Optional()@Inject('SYSTEM_ROLE_MCP')readonly mcp?:SystemRoleMcpAccess, @Optional() help?: HelpService) {
         this.repository = new SystemRoleRepository(models.pool); this.policy = new SystemRolePolicy(models);
         const projectContext = new ModelChatProjectContext(models, runtime);
-        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats,mcp,projectContext);
-        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready(),undefined,undefined,mcp,projectContext);
+        this.targets = new SystemRoleTargets(this.policy, agents, catalog, connections, globalThis.fetch, chats,mcp,projectContext,true);
+        this.runner = new SystemRoleRunner(this.repository, this.policy, this.targets, runtime, () => models.ready(),undefined,undefined,mcp,projectContext,new SystemRoleGuidance(models,help));
         this.application = new SystemRoleApplication(this.repository, this.policy, this.targets);
     }
     async onModuleInit(): Promise<void> {
@@ -93,7 +96,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         if (selection.mcp?.length) await this.mcp?.assertAdmission(req, selection.projectId, selection.mcp);
         const prepared = await this.targets.prepare(req, id, selection);
         return { preview: prepared.preview, consentDigest: prepared.consentDigest, definitionPin: prepared.definitionPin,
-            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })),...(prepared.mcp?{mcp:prepared.mcp}:{}), ...(prepared.projectContext ? { projectContext: prepared.projectContext } : {}) };
+            targets: prepared.targets.map(({ key, kind, id, version, editable }) => ({ key, kind, id, version, editable })),...(prepared.mcp?{mcp:prepared.mcp}:{}), ...(prepared.projectContext ? { projectContext: prepared.projectContext } : {}), ...(prepared.guidance ? {guidance: prepared.guidance} : {}) };
     }
     async start(req: Request, agentId: string, raw: unknown, receipt?: RoleAdmissionReceipt): Promise<RoleRunView> {
         const id = this.role(agentId), input = startRoleRun(id, raw), actor = await this.policy.actor(req, input.projectId), requestHash = roleHash({ id, input });
@@ -155,7 +158,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         const manage = !actor || (row.project_id ? projectLevel(actor.claims, actor.activeRole, row.project_id) >= 3 : actor.activeRole === 'Главный админ');
         const currentDefinition = row.request.expectedDefinitionPin === roleDefinitionPin(row.agent_id);
         const prepareAgain: RoleRunView['prepareAgain'] = !currentDefinition && manage && actor?.email === row.actor
-            && row.state === 'awaiting_review' && row.result?.kind === 'proposal' && acceptedLegacyDefinition(row)
+            && row.state === 'awaiting_review' && row.result?.kind === 'proposal' && (acceptedLegacyDefinition(row) || acceptedPreviousDefinition(row))
             ? { reason: 'definition_changed', selection: structuredClone(row.snapshot.selection), modelId: row.request.modelId } : undefined;
         return { id: row.id, agentId: row.agent_id, projectId: row.project_id, actor: row.actor, state: row.state, phase: row.phase, revision: row.revision,
             operationId: 'system-role-' + row.id, message: row.message, createdAt: new Date(row.created_at).toISOString(), finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,

@@ -72,6 +72,17 @@ it('keeps legacy results readable without adding source receipts', () => {
     const html = render(result({ findings: [{ evidenceId: 'fact-one', detail: 'Каталог готов.' }] }));
     expect(html).toContain('Каталог готов.'); expect(html).toContain('ID измерения: fact-one'); expect(html).not.toContain('Источники базы знаний');
 });
+it('shows a full standalone answer and safe guidance actions directly in the conversation', () => {
+    const answer = result({answer: '## Почему не работает RAG\n\nИндекс проверен. Модель не подключена.\n\n1. Откройте каталог.\n2. Назначьте модель и повторите проверку.\n\nИзменения не применялись.', findings: [],
+        guidance: {status: 'ready',checkedAt: '2026-10-25T00:00:00Z',sources: [{id: 'help:models:one',kind: 'help',title: 'Подключение моделей',slug: 'models',revision: 'one'}]},
+        actions: [{id: 'models',label: 'Открыть модели',path: '/store?tab=models'}, {id: 'invalid',label: 'Bad action',path: '//outside.example'}]});
+    const turn = {id: 'turn',agentId: 'agent-coordinator',instruction: 'Проверь RAG',createdAt: '2026-10-25T00:00:00Z',cancelRequested: false,run: run(answer)} as ServiceTurn;
+    const html = renderToStaticMarkup(createElement(ServiceTurnContent,{turn,busy: false,onAction: async () => undefined}));
+    const visible = html.slice(0,html.indexOf('<details><summary>Измерения, предложения и этапы'));
+    expect(visible).toContain('Почему не работает RAG'); expect(visible).toContain('Модель не подключена'); expect(visible).toContain('Назначьте модель'); expect(visible).toContain('Изменения не применялись');
+    expect(visible).toContain('href="/store?tab=models"'); expect(visible).toContain('href="/help/models"'); expect(html).not.toContain('//outside.example');
+    expect(html.match(/Почему не работает RAG/g)).toHaveLength(1);
+});
 
 it('resolves a child finding only from its own receipt, never a parent or sibling receipt', () => {
     const html = render(result({ projectContext: context({ sources: [{ id: 'shared-id', path: 'parent/source.md' }] }), findings: [], delegations: [

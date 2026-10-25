@@ -13,6 +13,27 @@ beforeEach(() => {vi.clearAllMocks(); ui.flags.clear(); ui.owner = 'alice'; prop
 afterEach(() => harness.dispose());
 
 describe('Команда: явная отправка и безопасные ответы', () => {
+    it('системное @ открывает частную подготовку без публикации, а подтверждение не стирает новый черновик', () => {
+        const launch = vi.fn(); props.onSystemRole = launch; type('@Индексатор проверь знания');
+        ui.buttons.get('Подготовить задачу')!();
+        expect(onSend).not.toHaveBeenCalled(); expect(launch).toHaveBeenCalledOnce();
+        expect(launch.mock.calls[0][0]).toMatchObject({agentId: 'agent-indexer', instruction: 'проверь знания'});
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@Индексатор проверь знания');
+        type('Новый текст коллегам'); launch.mock.calls[0][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('Новый текст коллегам');
+    });
+    it('подтверждённая системная задача очищает только исходный черновик своего владельца', () => {
+        const launch = vi.fn(); props.onSystemRole = launch; type('@sys-ai-admin помоги');
+        ui.buttons.get('Подготовить задачу')!(); launch.mock.calls[0][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe(''); expect(onSend).not.toHaveBeenCalled();
+        type('@sys-ai-admin другая задача'); ui.buttons.get('Подготовить задачу')!(); ui.owner = 'bob'; launch.mock.calls[1][0].onAccepted(); renderProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@sys-ai-admin другая задача');
+    });
+    it('смешанные системные и обычные @ сохраняют текст и не запускают ни одну ветку', () => {
+        props.onSystemRole = vi.fn(); type('@sys-indexer @reviewer проверь');
+        expect(renderProjectUi(element).html).toContain('отдельно'); expect(onSend).not.toHaveBeenCalled(); expect(props.onSystemRole).not.toHaveBeenCalled();
+        expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('@sys-indexer @reviewer проверь');
+    });
     it('По умолчанию пишет людям без модельного запроса; работающие агенты не блокируют новый вопрос', async () => {
         props.detail.messages = [projectMessage({status: 'running'})]; type('Коллеги, обсудим?');
         expect(ui.selects.get('Адресаты сообщения')!.value).toBe('people'); ui.buttons.get('Отправить')!(); await settleProjectUi(element);

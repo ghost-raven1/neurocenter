@@ -17,7 +17,7 @@ beforeEach(()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags(flags)))));
 });
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
-const final={kind:'diagnosis',summary:'Already dispatched Codex answer retained',findings:[],changes:[],nextSteps:[]};
+const final={kind:'diagnosis',summary:'Already dispatched Codex answer retained',answer:'The already dispatched answer was retained. No request was repeated and no changes were applied. Review this answer before another explicit task.',findings:[],changes:[],nextSteps:[]};
 
 /** Real DeviceCodex polling/admission and role runner; the database/device authority boundary is controlled. */
 function fixture(mode:'dispatched'|'queued'|'dispatch-wins'|'stop-unknown'|'old-bridge'|'worker-denied'|'human-cancel'='dispatched'){

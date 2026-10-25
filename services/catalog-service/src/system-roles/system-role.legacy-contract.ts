@@ -39,7 +39,7 @@ export const legacyRoleDefinitionPin = (id: SystemRoleId): string => roleHash(id
 /** Recognizes only a complete persisted old grantless acceptance; HTTP selection/pins alone never opt in. */
 export function acceptedLegacyDefinition(row: RoleRunRow): RoleDefinition | undefined {
     const { request, snapshot } = row, definitionPin = legacyRoleDefinitionPin(row.agent_id);
-    if (snapshot.projectContext !== undefined || request.expectedDefinitionPin !== definitionPin || snapshot.definitionPin !== definitionPin
+    if (snapshot.projectContext !== undefined || snapshot.guidance !== undefined || request.expectedDefinitionPin !== definitionPin || snapshot.definitionPin !== definitionPin
         || request.consentDigest !== snapshot.consentDigest || roleHash({ id: row.agent_id, input: request }) !== row.request_hash) return undefined;
     const selection = { projectId: request.projectId, instruction: request.instruction, diagnostics: request.diagnostics, targets: request.targets,
         ...(request.mcp?.length ? { mcp: request.mcp } : {}) };
