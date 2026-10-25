@@ -16,6 +16,7 @@ export function usePackagingAgent(scope: string, active: boolean, enabled: boole
     const context = useRef({scope, captureOwner});
     if (context.current.scope !== scope || context.current.captureOwner !== captureOwner) context.current = {scope, captureOwner};
     const view = context.current;
+    const initialized = useRef<typeof view>();
     const currentContext = useRef({view, active, enabled, checked, locked}); currentContext.current = {view, active, enabled, checked, locked};
     const owned = useRef(view); // A selection belongs to one authenticated scope.
     const ownsSelection = owned.current === view;
@@ -30,7 +31,14 @@ export function usePackagingAgent(scope: string, active: boolean, enabled: boole
         setLoading(true); setError(''); setModels([]);
         void modelCatalogApi.list().then(value => {
             const catalog = requireModelCatalog(value);
-            if (current()) setModels(catalog.items.filter(packagingAgentModelAvailable));
+            if (current()) {
+                const available = catalog.items.filter(packagingAgentModelAvailable);
+                setModels(available);
+                if (initialized.current !== view && available.length) {
+                    initialized.current = view;
+                    setSelection({modelId: available[0].id, expectedModelPin: available[0].modelPin!, maxAttempts: 3});
+                }
+            }
         }).catch(cause => { if (current()) setError(errorMessage(cause, 'Не удалось загрузить модели. Повторите проверку или выключите помощь Упаковщика.')); })
             .finally(() => { if (current()) setLoading(false); });
         return () => { closed = true; };
@@ -44,8 +52,8 @@ export function usePackagingAgent(scope: string, active: boolean, enabled: boole
         checked: ownsSelection && checked, selection: selected, models, loading, error, blocker,
         setChecked: (value: boolean) => {if (canEdit() && (!value || currentContext.current.enabled)) setChecked(value);},
         refresh: () => {if (canEdit() && currentContext.current.enabled) setRevision(value => value + 1);},
-        choose: (id: string) => {const next = models.find(item => item.id === id); if (canEdit() && currentContext.current.enabled && next && packagingAgentModelAvailable(next)) setSelection({modelId: next.id, expectedModelPin: next.modelPin!, maxAttempts: 3});},
-        restore: (value?: ToolBuildAgent) => {owned.current = view; setChecked(!!value); setSelection(value);},
-        clear: () => {setChecked(false); setSelection(undefined);},
+        choose: (id: string) => {const next = models.find(item => item.id === id); if (canEdit() && currentContext.current.enabled && next && packagingAgentModelAvailable(next)) {initialized.current = view; setSelection({modelId: next.id, expectedModelPin: next.modelPin!, maxAttempts: 3});}},
+        restore: (value?: ToolBuildAgent) => {initialized.current = view; owned.current = view; setChecked(!!value); setSelection(value);},
+        clear: () => {initialized.current = undefined; setChecked(false); setSelection(undefined);},
     };
 }
