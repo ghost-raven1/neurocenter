@@ -34,13 +34,15 @@ export function DeviceCodexConnectionModal({model, onClose, onConfigureOpenCode}
     </Space>}>
         <Typography.Paragraph>Запросы чатов и агентов выполняются через выбранный компьютер. Вход Codex и ключи остаются на нём. Этим подключением пользуется владелец компьютера.</Typography.Paragraph>
         {loading && !connection && <Spin tip="Проверяем доступность компьютера…"/>}
-        {error && <Alert type="error" showIcon message={error}/>}
+        {error && <Alert type="error" showIcon message={error} className="model-catalog__notice"/>}
         {connection && <Space direction="vertical" className="model-opencode__source">
             <Descriptions column={1} size="small">
                 <Descriptions.Item label="Компьютер">{connection.deviceName}</Descriptions.Item>
                 <Descriptions.Item label="Источник">{connection.scope === 'project' ? 'Конфигурация проекта' : 'Общие настройки компьютера'}</Descriptions.Item>
             </Descriptions>
-            <Alert showIcon type={connection.state === 'ready' ? 'success' : connection.state === 'error' ? 'error' : 'info'} message={connection.message}/>
+            <Alert showIcon type={error ? 'warning' : loading ? 'info' : connection.state === 'ready' ? 'success' : connection.state === 'error' ? 'error' : 'info'}
+                message={loading || error ? 'Предыдущая проверка: актуальный статус не подтверждён' : connection.message}
+                description={loading || error ? connection.message : undefined}/>
             <Typography.Text type="secondary">Эта проверка не обращается к модели. Чтобы проверить ответ Codex, откройте чат и отправьте сообщение.</Typography.Text>
             {onConfigureOpenCode && <Button onClick={() => onConfigureOpenCode(connection.deviceId)}>Настроить в OpenCode</Button>}
         </Space>}

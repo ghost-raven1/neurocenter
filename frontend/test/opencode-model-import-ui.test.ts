@@ -8,9 +8,9 @@ import { bridgeApi, type IBridgeJob } from '../src/features/McpBridge/api';
 
 const ui = vi.hoisted(() => ({
     cursor: 0, states: [] as unknown[], refs: [] as unknown[], refCursor: 0, owner: 'admin-a',
-    buttons: new Map<string, { click?: () => void; disabled?: boolean }>(), imported: vi.fn(), configureCodex: vi.fn(), canConfigureCodex: true, reload: vi.fn(), job: undefined as IBridgeJob | undefined,
+    buttons: new Map<string, { click?: () => void; disabled?: boolean; href?: string }>(), imported: vi.fn(), configureCodex: vi.fn(), canConfigureCodex: true, reload: vi.fn(), job: undefined as IBridgeJob | undefined,
     selects:new Map<string,{change:(value:string)=>void;disabled:boolean}>(),projectId:'project-one' as string|undefined,
-    bound:true,online:true,capabilities:['opencode-model-scan-v2'],
+    bound:true,online:true,hasDevices:true,capabilities:['opencode-model-scan-v2'],
 }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(),
     useState: (initial: unknown) => { const index = ui.cursor++; if (!(index in ui.states)) ui.states[index] = initial; return [ui.states[index], (value: unknown) => { ui.states[index] = value; }]; },
@@ -20,15 +20,18 @@ vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequest
 vi.mock('../src/core/api/base', () => ({ default: { post: vi.fn() } }));
 vi.mock('../src/features/McpBridge/api', () => ({ bridgeApi: { create: vi.fn() } }));
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => ({
-    devices: [{ id: 'computer-one', name: 'Компьютер', online: ui.online, report: { bindings: ui.bound?[{ projectId: 'project-one', bindingId: 'binding-one', instanceId: 'instance-one' }]:[], capabilities: ui.capabilities } }],
+    devices: ui.hasDevices ? [{ id: 'computer-one', name: 'Компьютер', online: ui.online, report: { bindings: ui.bound?[{ projectId: 'project-one', bindingId: 'binding-one', instanceId: 'instance-one' }]:[], capabilities: ui.capabilities } }] : [],
     jobs: ui.job ? [ui.job] : [], errors: {}, devicesReady: true, reload: ui.reload,
 }) }));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     const List = Object.assign(({ dataSource, renderItem }: { dataSource: unknown[]; renderItem: (value: unknown) => ReactNode }) => createElement('div', null, dataSource.map((value, index) => createElement('div', { key: index }, renderItem(value)))), { Item: content });
     return { Modal: content, Space: content, Tag: content, List, Select: (props:{'aria-label':string;onChange:(value:string)=>void;disabled:boolean}) => {ui.selects.set(props['aria-label'],{change:props.onChange,disabled:props.disabled});return null;}, Spin: () => null,
-        Typography: { Paragraph: content, Text: content }, Alert: ({ message, description }: { message: string; description?: string }) => createElement('div', null, message, description),
-        Button: ({ children, disabled, onClick }: { children?: ReactNode; disabled?: boolean; onClick?: () => void }) => { if (typeof children === 'string') ui.buttons.set(children, { disabled, click: onClick }); return children; },
+        Typography: { Paragraph: content, Text: content }, Alert: ({ message, description, action }: { message: ReactNode; description?: ReactNode; action?: ReactNode }) => createElement('div', null, message, description, action),
+        Button: ({ children, disabled, onClick, href }: { children?: ReactNode; disabled?: boolean; onClick?: () => void; href?: string }) => {
+            if (typeof children === 'string') ui.buttons.set(children, { disabled, click: onClick, href });
+            return href ? createElement('a', { href }, children) : children;
+        },
     };
 });
 
@@ -39,9 +42,19 @@ function render() { ui.cursor = 0; ui.refCursor = 0; ui.buttons.clear();ui.selec
 const flush = async () => { for (let index = 0; index < 16; index++) await Promise.resolve(); };
 async function read(job = scan()) { vi.mocked(bridgeApi.create).mockResolvedValueOnce(job); render(); ui.buttons.get('Прочитать OpenCode')!.click!(); await flush(); return render(); }
 
-beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.job = undefined;ui.projectId='project-one';ui.bound=true;ui.online=true;ui.canConfigureCodex=true;ui.capabilities=['opencode-model-scan-v2']; ui.imported.mockResolvedValue(undefined); });
+beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.job = undefined;ui.projectId='project-one';ui.bound=true;ui.online=true;ui.hasDevices=true;ui.canConfigureCodex=true;ui.capabilities=['opencode-model-scan-v2']; ui.imported.mockResolvedValue(undefined); });
 
 describe('Импорт модели из доступной конфигурации OpenCode', () => {
+    it('Без компьютеров показывает доступный переход к подключению вместо тупика с неактивным чтением', () => {
+        ui.hasDevices = false;
+        const html = render();
+        expect(ui.buttons.get('Прочитать OpenCode')?.disabled).toBe(true);
+        expect(html).toContain('Подключить компьютер');
+        expect(html).toContain('href="/start"');
+        expect(ui.buttons.get('Подключить компьютер')).toMatchObject({ href: '/start' });
+        expect(ui.buttons.get('Подключить компьютер')?.disabled).not.toBe(true);
+        expect(bridgeApi.create).not.toHaveBeenCalled(); expect(baseApi.post).not.toHaveBeenCalled();
+    });
     it('Показывает Responses и точную политику false до импорта',async()=>{
         const html=await read(scan({options:{apiFormat:'responses',reasoningEffort:'high',store:false}}));
         expect(html).toContain('API: Responses');expect(html).toContain('Рассуждения: high');expect(html).toContain('Хранение ответа: выключено');
@@ -94,6 +107,20 @@ describe('Импорт модели из доступной конфигурац
     it('Истёкший снимок не предлагает импорт; отсутствие необязательных параметров не выдумывает defaults', async () => {
         const job = scan({ options: undefined, timeoutMs: undefined }); (job.result as { expiresAt: string }).expiresAt = '2020-01-01T00:00:00Z';
         const html = await read(job); expect(ui.buttons.get('Импортировать')?.disabled).toBe(true); expect(html).not.toContain('Температура:'); expect(html).not.toContain('Ожидание ответа:');
+    });
+    it('Истёкший снимок сразу объясняет запрет импорта и позволяет заново прочитать тот же источник', async () => {
+        const expired = scan(); (expired.result as { expiresAt: string }).expiresAt = '2020-01-01T00:00:00Z';
+        const html = await read(expired);
+        expect(ui.buttons.get('Импортировать')?.disabled).toBe(true);
+        expect(html).toContain('Снимок конфигурации устарел');
+        expect(ui.buttons.get('Прочитать OpenCode')?.disabled).not.toBe(true);
+        vi.mocked(bridgeApi.create).mockResolvedValueOnce({ ...scan(), id: 'job-fresh' });
+        ui.buttons.get('Прочитать OpenCode')!.click!(); await flush();
+        expect(render()).not.toContain('Снимок конфигурации устарел');
+        expect(ui.buttons.get('Импортировать')?.disabled).toBe(false);
+        expect(bridgeApi.create).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(bridgeApi.create).mock.calls[1][0]).toMatchObject({kind: 'scan-opencode-models', scope: 'project', deviceId: 'computer-one', projectId: 'project-one', expectedBindingId: 'binding-one'});
+        expect(baseApi.post).not.toHaveBeenCalled(); expect(ui.imported).not.toHaveBeenCalled();
     });
     it('Общий источник читается без проекта и без связанной папки',async()=>{
         ui.projectId=undefined;ui.bound=false;const job=scan();Object.assign(job.result!,{scope:'global',deviceId:'computer-one',projectId:undefined,bindingId:undefined,instanceId:undefined});
