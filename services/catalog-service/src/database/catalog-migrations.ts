@@ -1,3 +1,5 @@
+import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
+import {AGENT_TOOLS_SCHEMA_ASSERT_SQL} from '../agent-tools/agent-tools.schema-verification';
 import {PLUGIN_AUTO_UPDATE_SCHEMA_SQL} from '../plugin-auto-updates/auto-update.schema';
 import {PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL} from '../plugin-auto-updates/auto-update.schema-verification';
 import {CHAT_SYSTEM_ROLE_SCHEMA_SQL} from '../chat-system-roles/chat-system-roles.schema';
@@ -110,4 +112,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:39,name:'public-chat-semantic-search',sql:CHAT_SEARCH_SCHEMA_SQL+'\n'+CHAT_SEARCH_SCHEMA_ASSERT_SQL},
     {version:40,name:'private-system-role-chat-origins',sql:CHAT_SYSTEM_ROLE_SCHEMA_SQL+'\n'+CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL},
     {version:41,name:'approved-plugin-auto-updates',sql:PLUGIN_AUTO_UPDATE_SCHEMA_SQL+'\n'+PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL},
+    {version:42,name:'bounded-project-agent-tools',sql:AGENT_TOOLS_SCHEMA_SQL+'\n'+AGENT_TOOLS_SCHEMA_ASSERT_SQL},
 ];
