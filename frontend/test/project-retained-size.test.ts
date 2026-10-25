@@ -70,17 +70,17 @@ for (const kind of ['list', 'detail'] as const) {
     describe(`Размер копии знаний: ${kind}`, () => {
         it.each([null, undefined, -1, NaN, Infinity, '0'])('Не выдаёт неизвестный или некорректный размер %s за пустую копию', bytes => {
             setup(bytes, reason); const markup = render(kind);
-            expect(markup).toContain('Недоступно'); expect(markup).toContain(reason);
+            expect(markup).toContain('Размер неизвестен'); expect(markup).toContain(reason);
             expect(ui.retry).toBeTypeOf('function');
         });
         it('Отличает реальный нулевой размер от недоступного', () => {
             setup(0); const markup = render(kind);
-            expect(markup).toContain('0 Б'); expect(markup).not.toContain('Недоступно'); expect(ui.retry).toBeUndefined();
+            expect(markup).toContain('0 Б'); expect(markup).not.toContain('Размер неизвестен'); expect(ui.retry).toBeUndefined();
         });
         it('Здоровое повторное измерение убирает прежнее предупреждение', () => {
             expect(render(kind)).toContain(reason);
             setup(2048, reason); const markup = render(kind);
-            expect(markup).toContain('2 КБ'); expect(markup).not.toContain(reason); expect(markup).not.toContain('Недоступно');
+            expect(markup).toContain('2 КБ'); expect(markup).not.toContain(reason); expect(markup).not.toContain('Размер неизвестен');
         });
         it('Отсутствующее пояснение получает понятную замену', () => {
             setup(null, '   '); expect(render(kind)).toContain('Не удалось измерить копию знаний. Повторите попытку.');
@@ -105,7 +105,9 @@ for (const kind of ['list', 'detail'] as const) {
             const project = (ui.state.projects as { selected: Record<string, unknown> }).selected;
             project.logicalBytes = logicalBytes; project.logicalSizeError = 'Файлы проекта временно недоступны.';
             const markup = render(kind);
-            expect(markup).toContain('Недоступно'); expect(markup).toContain('Файлы проекта временно недоступны.');
+            expect(markup).toContain('Размер неизвестен'); expect(markup).toContain('Файлы проекта временно недоступны.');
+            expect(markup).toContain('серверной папки .opencode');
+            if (kind === 'detail') {expect(markup).toContain('Размер данных'); expect(markup).not.toContain('Данные проекта');}
             expect(ui.logicalRetry).toBeTypeOf('function'); ui.logicalRetry!();
             if (kind === 'list') expect(ui.listRead).toHaveBeenCalledExactlyOnceWith({ page: 3, size: 10, query: 'нужный проект' });
             else expect(ui.detailRead).toHaveBeenCalledExactlyOnceWith('prj-a');
