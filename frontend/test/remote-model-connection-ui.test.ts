@@ -152,6 +152,30 @@ describe('API-ключ и параметры подключения', () => {
         expect(modelCatalogApi.configure).toHaveBeenCalledOnce(); expect(modelCatalogApi.get).toHaveBeenCalledTimes(2);
         expect(modelCatalogApi.operate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ revision: 4 }), 'check'); expect(ui.close).toHaveBeenCalledOnce();
     });
+    it('Принятую проверку API не объявляет незапущенной, если затем не удалось обновить каталог', async () => {
+        await open(); ui.saved.mockRejectedValueOnce(new Error('Каталог временно недоступен'));
+        Object.assign(ui.values, {baseUrl: 'https://provider.example/v1', apiKey: 'fixture-write-only', options: {temperature: 0.4}});
+        submit(); await flush();
+        expect(modelCatalogApi.operate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ revision: 4 }), 'check');
+        expect(ui.saved).toHaveBeenCalledOnce(); expect(ui.close).not.toHaveBeenCalled();
+        const html = render();
+        expect(html).not.toContain('Проверка не запущена');
+        expect(html).toContain('Проверка запущена'); expect(html).toContain('Каталог временно недоступен');
+        expect(ui.values.baseUrl).toBe('https://provider.example/v1'); expect(ui.values.apiKey).toBeUndefined();
+        expect(ui.values.options).toEqual({temperature: 0.4});
+        expect(modelCatalogApi.configure).toHaveBeenCalledOnce();
+    });
+    it('После принятой проверки повтор обновляет каталог без второго сохранения и запроса к модели', async () => {
+        await open(); ui.saved.mockRejectedValueOnce(new Error('Каталог временно недоступен'));
+        Object.assign(ui.values, {baseUrl: 'https://provider.example/v1', apiKey: 'fixture-write-only', options: {temperature: 0.4}});
+        submit(); await flush(); const recovery = render();
+        expect(ui.close).not.toHaveBeenCalled(); expect(ui.values.options).toEqual({temperature: 0.4});
+        submit(); await flush();
+        expect(modelCatalogApi.operate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({revision: 4}), 'check');
+        expect(modelCatalogApi.configure).toHaveBeenCalledOnce(); expect(modelCatalogApi.get).toHaveBeenCalledOnce();
+        expect(ui.saved).toHaveBeenCalledTimes(2); expect(ui.close).toHaveBeenCalledOnce();
+        expect(recovery).toContain('Обновить каталог');
+    });
     it('Редактирование после сохранения и ошибки перечитывания обновляет ревизию до следующего сохранения', async () => {
         await open(); vi.mocked(modelCatalogApi.get).mockRejectedValueOnce(new Error('Сеть недоступна'));
         submit({ apiKey: 'fixture-write-only' }); await flush(); render();
