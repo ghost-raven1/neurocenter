@@ -110,7 +110,7 @@ describe.skipIf(!connection).sequential('Agent tools on explicitly owned Postgre
   // A new fixture holds the exact accepted grant; it is never rewritten after dispatch.
   const current=await source('project-chat',false,owner.grant),actualOwner=current.owner;let visible=true;
   await pool.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3::jsonb)',[embedding.id,embedding.name,JSON.stringify(embedding)]);
-  await pool.query('INSERT INTO project_models(project_id,model_id) VALUES($1,$2)',[actualOwner.projectId,embedding.id]);
+  await pool.query('INSERT INTO project_models(project_id,model_id,added_by) VALUES($1,$2,$3)',[actualOwner.projectId,embedding.id,email]);
   const actor={email,activeRole:role,claims:{email,userRoles:[role],projects:[{projectId:actualOwner.projectId,role}],pluginIds:[],skillPaths:[]}};
   const models={pool,ready:async()=>{},actor:async()=>actor,resolveProject:async()=>({id:actualOwner.projectId}),getUsable:async(id:string)=>id==='model-embed'?embedding:current.model} as unknown as ModelsService;
   const jobId=randomUUID(),search={create:vi.fn(async()=>({id:jobId,state:'SUCCEEDED'})),get:vi.fn(async()=>({id:jobId,state:'SUCCEEDED',results:visible?[{messageId:randomUUID(),content:'public text only while visible'}]:[]})),cancel:vi.fn()};
