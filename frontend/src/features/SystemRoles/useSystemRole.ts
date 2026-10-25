@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
+import { roleOperationTabSnapshot } from '../TabNotifications/snapshots';
+import { tabNotifications } from '../TabNotifications/tracker';
+import { useTabWatch } from '../TabNotifications/useTabWatch';
 import { systemRolesApi } from './api';
 import { pendingRole, type RoleOverview, type RolePrepared, type RoleRun, type RoleSelection, type RoleStart, type SystemRoleId } from './types';
 
@@ -10,6 +13,8 @@ export function useSystemRole(id: SystemRoleId, projectId?: string, initialRunId
     const [overview, setOverview] = useState<RoleOverview>(), [history, setHistory] = useState<RoleRun[]>([]), [run, setRun] = useState<RoleRun | null>(null);
     const [prepared, setPrepared] = useState<RolePrepared>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false);
     const sequence = useRef(0), busyRef = useRef(false), intent = useRef<{ input: RoleStart; identity: string }>(), dataIdentity = useRef(identity), knownRejection = useRef(false);
+    const current = dataIdentity.current === identity;
+    useTabWatch(scope, current && run?.agentId === id && run.projectId === (projectId ?? null) && run.operationId ? [roleOperationTabSnapshot(run)] : []);
     const capture = () => { const owns = captureOwner(), owner = identity; return () => owns() && currentIdentity.current === owner; };
     const refresh = useCallback(async () => {
         const owns = captureOwner(), owner = identity, generation = ++sequence.current;
@@ -42,17 +47,29 @@ export function useSystemRole(id: SystemRoleId, projectId?: string, initialRunId
     const prepare = async (selection: RoleSelection) => perform(() => systemRolesApi.prepare(id, selection), setPrepared, 'Контекст не подготовлен. Сохраните выбор и повторите.');
     const send = async (input: RoleStart) => {
         if (busyRef.current) return; const owns = capture();
-        const value = await perform(() => systemRolesApi.start(id, input), item => { setRun(item); setHistory(items => [item, ...items.filter(old => old.id !== item.id)].slice(0, 20)); intent.current = undefined; setUncertain(false); },
+        const value = await perform(() => systemRolesApi.start(id, input), item => {
+            if (item.agentId === id && item.projectId === (projectId ?? null) && item.operationId && pendingRole(item)) {
+                const snapshot = roleOperationTabSnapshot(item); tabNotifications.expect(scope, snapshot.source, [item.operationId]); tabNotifications.accept(scope, snapshot);
+            }
+            setRun(item); setHistory(items => [item, ...items.filter(old => old.id !== item.id)].slice(0, 20)); intent.current = undefined; setUncertain(false);
+        },
             'Запуск не подтверждён. Повторите тот же запрос или перечитайте историю.');
         if (!value && owns()) { if (knownRejection.current) { intent.current = undefined; setUncertain(false); } else setUncertain(true); }
     };
-    const current = dataIdentity.current === identity;
     return { overview: current ? overview : undefined, history: current ? history : [], run: current ? run : null, prepared: current ? prepared : undefined,
         error: current ? error : '', busy: current && busy, uncertain: current && uncertain, refresh,
         invalidate: () => setPrepared(undefined), prepare,
         start: async (input: RoleStart) => { if (intent.current || busyRef.current || !capture()()) return; intent.current = { input, identity }; await send(input); },
         replay: async () => { const saved = intent.current; if (saved?.identity === identity) await send(saved.input); },
         select: (item: RoleRun) => { setRun(item); setError(''); },
-        action: async (action: 'cancel' | 'apply' | 'rollback') => { if (!run) return; await perform(() => systemRolesApi.action(run, action, crypto.randomUUID()), item => { setRun(item); void refresh(); }, 'Исход действия не подтверждён. Перечитайте состояние перед следующим действием.'); },
+        action: async (action: 'cancel' | 'apply' | 'rollback') => {
+            if (!run || !current || busyRef.current || !capture()()) return;
+            const rejectExpected = run.operationId && run.agentId === id && run.projectId === (projectId ?? null)
+                ? tabNotifications.expect(scope, roleOperationTabSnapshot(run).source, [run.operationId]) : () => undefined;
+            await perform(async () => {
+                try {return await systemRolesApi.action(run, action, crypto.randomUUID());}
+                catch (cause) {const status = (cause as {response?:{status?:number}})?.response?.status; if (status && status >= 400 && status < 500 && ![408,429].includes(status)) rejectExpected(); throw cause;}
+            }, item => { setRun(item); void refresh(); }, 'Исход действия не подтверждён. Перечитайте состояние перед следующим действием.');
+        },
     };
 }

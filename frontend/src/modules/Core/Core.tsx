@@ -23,6 +23,7 @@ import {selectConnectedComputer} from '../../features/McpBridge/pairingProgress'
 import {useCallback} from 'react';
 import {ChatLauncher} from '../../features/ModelChat/ChatLauncher';
 import {useChatPresence} from '../../features/ChatActivity/useChatPresence';
+import {useTabNotifications} from '../../features/TabNotifications/useTabNotifications';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
@@ -62,6 +63,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
     const compact = !screens.lg;
     const { isAuth, user, authorizationUnconfirmed, processing, error } = useSelector((state: RootState) => state.userBlock);
     useChatPresence(isAuth);
+    useTabNotifications(isAuth, user?.email ?? '');
     const [menuOpen, setMenuOpen] = useState(false);
     const [opsOpen, setOpsOpen] = useState(false);
     const operationsTrigger = useRef<HTMLButtonElement>(null);
