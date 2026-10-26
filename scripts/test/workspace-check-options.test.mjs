@@ -40,7 +40,7 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
     await fs.writeFile(preload, `import child from 'node:child_process';
         import fs from 'node:fs';
         import {syncBuiltinESMExports} from 'node:module';
-        const record=(command,args,options)=>fs.appendFileSync(${JSON.stringify(callsFile)},JSON.stringify({command,args,cwd:options?.cwd??null})+'\\n');
+        const record=(command,args,options)=>fs.appendFileSync(${JSON.stringify(callsFile)},JSON.stringify({command,args,cwd:options?.cwd??null,tls:options?.env?.NODE_TLS_REJECT_UNAUTHORIZED,strict:options?.env?.NPM_CONFIG_STRICT_SSL,npmStrict:options?.env?.npm_config_strict_ssl})+'\\n');
         const spawn=child.spawn;
         child.spawn=(command,args,options)=>{record(command,args,options);return spawn(process.execPath,[${JSON.stringify(executor)},...args],options);};
         child.spawnSync=(command,args,options)=>{
@@ -52,7 +52,7 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
     const result = spawnSync(process.execPath, ['--import', preload, path.join(workspace, 'check.mjs'), ...args], {
         // The full plan starts many real Node children, even though each command is intercepted.
         cwd: checkout, encoding: 'utf8', timeout: 30000,
-        env: {NODE_BIN: process.execPath, NPM_CLI_JS: npm, PATH: path.dirname(process.execPath)},
+        env: {NODE_BIN: process.execPath, NPM_CLI_JS: npm, PATH: path.dirname(process.execPath),NODE_TLS_REJECT_UNAUTHORIZED:'1',NPM_CONFIG_STRICT_SSL:'true',npm_config_strict_ssl:'true'},
     });
     assert.equal(result.error, undefined);
     const exists = async filename => fs.access(filename).then(() => true, error => {if (error.code === 'ENOENT') return false; throw error;});
@@ -103,6 +103,8 @@ test('all eight canonical package IDs select their own builds and duplicate sele
         assert.equal(value.status, 0, value.stderr);
         assert.deepEqual(value.report.steps.map(step => step.name), [folder+': build']);
         assert.equal(value.calls.filter(call => call.args[0] !== '-p').length, 1);
+        const build=value.calls.find(call=>call.args[0]!=='-p');
+        assert.equal(build.tls,'0');assert.equal(build.strict,'false');assert.equal(build.npmStrict,'false');
     }
 });
 
@@ -117,6 +119,9 @@ test('package-only selection retains normal phase order and excludes every other
     const value = await fixture(t, ['--package', 'frontend']);
     assert.equal(value.status, 0, value.stderr);
     assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: typecheck', 'frontend: build', 'frontend: test']);
+    const commands=value.calls.filter(call=>call.args[0]!=='-p');
+    assert.deepEqual(commands.map(call=>call.tls),['1','0','1']);
+    assert.deepEqual(commands.map(call=>call.strict),['true','false','true']);
 });
 
 test('multiple package and step selectors retain workspace phase order without implicit builds', async t => {

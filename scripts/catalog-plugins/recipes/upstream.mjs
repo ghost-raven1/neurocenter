@@ -23,7 +23,7 @@ export async function download(url, sha256) {
     if (await valid(destination)) return destination;
     const temporary = destination + '.' + process.pid + '.tmp';
     try {
-        await run('curl', ['-fsSL', '--retry', '2', '--connect-timeout', '20', '--max-time', '180', url, '-o', temporary]);
+        await run('curl', ['-fsSL', '--insecure', '--retry', '2', '--connect-timeout', '20', '--max-time', '180', url, '-o', temporary]);
         if (!await valid(temporary)) throw new Error('Не совпала SHA256 внешнего пакета.');
         await fs.rename(temporary, destination);
         return destination;
@@ -89,10 +89,10 @@ export async function installDependencies(directory, dependencies, target, {opti
     try {
         const locked = await fs.stat(path.join(directory, 'package-lock.json')).then(() => true).catch(error => { if (error.code === 'ENOENT') return false; throw error; });
         const args = [locked ? 'ci' : 'install', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--include=optional', '--no-bin-links', '--no-audit', '--no-fund',
-            '--registry=https://registry.npmjs.org', '--cache', path.join(cache, 'npm'), '--userconfig', userconfig, '--globalconfig', globalconfig,
+            '--registry=https://registry.npmjs.org', '--strict-ssl=false', '--cache', path.join(cache, 'npm'), '--userconfig', userconfig, '--globalconfig', globalconfig,
             '--os', platform.os, '--cpu', platform.cpu, ...(platform.libc ? ['--libc', platform.libc] : [])];
         const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
-        await run(process.execPath, [await npmCli(), ...args], { env: { ...environment, HOME: home, USERPROFILE: home, npm_config_update_notifier: 'false' } });
+        await run(process.execPath, [await npmCli(), ...args], { env: { ...environment, HOME: home, USERPROFILE: home, npm_config_update_notifier: 'false', NPM_CONFIG_STRICT_SSL: 'false', npm_config_strict_ssl: 'false', NODE_TLS_REJECT_UNAUTHORIZED: '0' } });
         await assertRegularTree(directory);
     } finally { await fs.rm(home, { recursive: true, force: true }); }
 }

@@ -16,9 +16,12 @@ async function fixture(t, mode = 'ready') {
     const checkout = path.join(directory, 'checkout'), bin = path.join(directory, 'bin');
     const dockerConfig = path.join(directory, 'docker'), records = path.join(directory, 'calls.jsonl');
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
+    await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
     for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
+        'workspace/dev-launch-provenance.mjs','workspace/dev-launch-ack.mjs','workspace/dev-launch-inspection.mjs','workspace/dev-launch-recovery.mjs',
+        'workspace/dev-watch-owned.mjs','workspace/dev-watch-child.mjs','workspace/check-plan.mjs','workspace/node24-cli.mjs','dev-mcp/safe-file.mjs','dev-mcp/constants.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'scripts/assets'));
@@ -90,12 +93,12 @@ test('dev install проверяет готовый Compose до установ�
     for (const event of npm) {
         assert.equal(event.node, process.versions.node);
         const base = event.cwd===f.checkout?['ci', '--ignore-scripts', '--no-audit', '--no-fund']:['ci', '--no-audit', '--no-fund'];
-        const strict = path.relative(f.checkout,event.cwd)==='services/api-gateway'?'false':'true';
+        const strict = 'false';
         assert.deepEqual(event.args,[...base,'--registry=https://registry.npmjs.org/','--strict-ssl='+strict,'--userconfig='+path.join(event.home,'user.npmrc'),'--globalconfig='+path.join(event.home,'global.npmrc')]);
         assert.match(path.basename(event.home),/^neurocenter-npm-build-/);
         await assert.rejects(fs.access(event.home),{code:'ENOENT'});
     }
-    assert.deepEqual(result.events.at(-1),{kind:'bridge-pipeline',root:f.checkout+path.sep,node:process.execPath,home:f.directory});
+    assert.deepEqual(result.events.at(-1),{kind:'bridge-pipeline',root:f.checkout,node:process.execPath,home:f.directory});
     assert.match(result.stdout, /Compose 2\.40\.3 уже установлен/);
     assert.deepEqual(await fs.readdir(f.dockerConfig), ['config.json']);
 });

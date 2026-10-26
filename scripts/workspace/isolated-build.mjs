@@ -58,7 +58,7 @@ async function privateEnvironment(folder,node){
     await fs.writeFile(userconfig,'',{mode:0o600});await fs.writeFile(globalconfig,'',{mode:0o600});
     return {PATH:[path.dirname(node),'/usr/bin','/bin','/usr/sbin','/sbin'].join(path.delimiter),HOME:home,USERPROFILE:home,TMPDIR:temporary,TMP:temporary,TEMP:temporary,
         XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache'),XDG_DATA_HOME:path.join(home,'data'),XDG_STATE_HOME:path.join(home,'state'),
-        NODE_ENV:'production',CI:'1',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',
+        NODE_ENV:'production',CI:'1',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',NODE_TLS_REJECT_UNAUTHORIZED:'0',NPM_CONFIG_STRICT_SSL:'false',npm_config_strict_ssl:'false',
         npm_config_cache:cache,npm_config_userconfig:userconfig,npm_config_globalconfig:globalconfig,npm_config_offline:'true',npm_config_fetch_retries:'0',
         npm_config_update_notifier:'false',npm_config_audit:'false',npm_config_fund:'false'};
 }

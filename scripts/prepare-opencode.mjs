@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {opencodeVersion, opencodeVariants} from './opencode-platforms.mjs';
 
+// This executable only prepares build inputs; installed services keep their own TLS policy.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const version = process.env.OPENCODE_VERSION || opencodeVersion;
 const registry = (process.env.OPENCODE_REGISTRY || 'https://registry.npmjs.org').replace(/\/$/, '');
 const directory = fileURLToPath(new URL('../bridge-dist/opencode/', import.meta.url));

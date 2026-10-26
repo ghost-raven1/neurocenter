@@ -40,7 +40,7 @@ test('Compiled gateway entry applies TLS=0 before loading runtime validation or 
     assert.equal(loaded,true);
 });
 
-test('Actual dev npm commands apply the exception to gateway without changing other package environments',async()=>{
+test('Actual dev npm commands relax build TLS for every package without changing the parent environment',async()=>{
     const source=await fs.readFile(path.join(root,'scripts/dev.mjs'),'utf8'),tree=ts.createSourceFile('dev.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const functions=tree.statements.filter(node=>ts.isFunctionDeclaration(node)&&['run','installDependencies'].includes(node.name?.text)).map(node=>node.getText(tree)).join('\n');
     const calls=[],environment={NODE_TLS_REJECT_UNAUTHORIZED:'1',KEEP:'original'};
@@ -52,7 +52,7 @@ test('Actual dev npm commands apply the exception to gateway without changing ot
     assert.equal(calls.length,2);
     assert.equal(calls[0].options.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');assert.equal(calls[0].options.env.NPM_CONFIG_STRICT_SSL,'false');
     assert.ok(calls[0].args.includes('--strict-ssl=false'));assert.ok(!calls[0].args.includes('--strict-ssl=true'));
-    assert.equal(calls[1].options.env.NODE_TLS_REJECT_UNAUTHORIZED,'1');assert.ok(calls[1].args.includes('--strict-ssl=true'));
+    assert.equal(calls[1].options.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');assert.ok(calls[1].args.includes('--strict-ssl=false'));
     assert.equal(environment.NODE_TLS_REJECT_UNAUTHORIZED,'1');assert.equal(environment.NPM_CONFIG_STRICT_SSL,undefined);
 });
 

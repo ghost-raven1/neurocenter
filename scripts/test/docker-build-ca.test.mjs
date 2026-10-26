@@ -161,7 +161,7 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
     for(const record of records){assert.deepEqual(record.args,['compose','build','frontend']);assert.match(record.sha,/^[a-f0-9]{64}$/);assert.match(record.name,/^ca-[a-f0-9-]{36}\.pem$/);}
 });
 
-test('All Node Dockerfiles verify optional CA before npm and preserve explicit gateway and snapshot npm TLS exceptions',async()=>{
+test('All Node Dockerfiles verify optional CA before npm and scope relaxed TLS to build commands',async()=>{
     for(const file of sourceFiles){
         const source=await fs.readFile(path.join(root,file),'utf8');
         assert.match(source,/ARG NEUROCENTER_BUILD_CA_SHA256/,file);
@@ -169,15 +169,16 @@ test('All Node Dockerfiles verify optional CA before npm and preserve explicit g
         assert.match(source,/COPY docker\/build-ca\/\$\{NEUROCENTER_BUILD_CA_NAME\} \/usr\/local\/share\/neurocenter\/build-ca\/extra\.pem/,file);
         assert.match(source,/sha256sum --check --status/,file);assert.match(source,/chmod 0444/,file);
         assert.match(source,/: > \/usr\/local\/share\/neurocenter\/build-ca\/extra.pem/,file);
-        assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=')<source.indexOf('RUN npm ci'),file);
+        const install=source.indexOf('npm ci ');assert(install>=0,file);
+        assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=')<install,file);
+        assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);assert.match(source,/--strict-ssl=false/,file);
+        assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
+        const commands=[...source.matchAll(/^RUN ([^\n]+)/gm)].flatMap(match=>match[1].split(/\s*&&\s*/)).filter(command=>/\bnpm\s/.test(command));
+        assert(commands.length>0,file);
+        for(const command of commands)assert.match(command,/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
         if(file==='services/api-gateway/Dockerfile'){
             assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
-            assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);assert.match(source,/--strict-ssl=false/,file);
-            assert.doesNotMatch(source,/strict-ssl=true/,file);
-        }else if(file==='services/catalog-service/snapshot-verifier.Dockerfile'){
-            assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);assert.match(source,/--strict-ssl=false/,file);
-            assert.doesNotMatch(source,/strict-ssl=true|NODE_TLS_REJECT_UNAUTHORIZED/,file);
-        }else assert.doesNotMatch(source,/strict-ssl=false|NODE_TLS_REJECT_UNAUTHORIZED/,file);
+        }else assert.doesNotMatch(source,/^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m,file);
     }
     for(const file of ['docker-compose.yml','compose.production.yml']){
         const source=await fs.readFile(path.join(root,file),'utf8');
@@ -192,8 +193,14 @@ test('All Node Dockerfiles verify optional CA before npm and preserve explicit g
 
 test('Catalog system trust splits a PEM bundle into one certificate per CRT before HTTPS downloads',async t=>{
     const {directory}=await fixture(t),source=await fs.readFile(path.join(root,'services/catalog-service/Dockerfile'),'utf8');
-    assert.ok(source.indexOf('update-ca-certificates;')<source.indexOf('curl -fsSL https://'), 'curl must receive the configured CA');
+    const download=source.indexOf('curl -fsSL');assert.ok(download>=0);
+    assert.ok(source.indexOf('update-ca-certificates;')<download, 'system CA setup must precede the download');
     assert.ok(source.indexOf('update-ca-certificates;')<source.indexOf('https://apt.postgresql.org/'), 'HTTPS apt must receive the configured CA');
+    assert.match(source,/curl -fsSL --insecure https:\/\/www.postgresql.org\//);
+    const aptCommands=[...source.matchAll(/apt-get ([^\\\n&]+)/g)];assert.equal(aptCommands.length,4);
+    for(const [,args]of aptCommands){assert.ok(args.includes('Acquire::https::Verify-Peer=false'));assert.ok(args.includes('Acquire::https::Verify-Host=false'));}
+    assert.match(source,/signed-by=\/usr\/share\/postgresql-common\/pgdg\/apt.postgresql.org.asc/);
+    assert.doesNotMatch(source,/allow-unauthenticated|trusted=yes|AllowInsecureRepositories/);
     const program=source.match(/awk '([^']+)' "\$NODE_EXTRA_CA_CERTS"/)[1];
     const output=path.join(directory,'system-ca');await fs.mkdir(output);
     execFileSync('awk',[program.replace('/usr/local/share/ca-certificates/',output+'/')],{input:publicCa+'\n'+rootCertificates[1]+'\n'});

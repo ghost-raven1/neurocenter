@@ -49,6 +49,7 @@ test('SDK producer preserves independent bridge dependencies and carries the rea
     assert.deepEqual(nested.packages['node_modules/@opencode-ai/plugin/node_modules/zod'], source.packages['node_modules/zod']);
     assert.ok(f.calls[0].args.includes('--ignore-scripts')); assert.ok(f.calls[0].args.includes('--no-bin-links'));
     assert.ok(f.calls[1].args.includes('--offline')); assert.equal(f.calls[0].env.NPM_TOKEN, undefined); assert.equal(f.calls[0].env.npm_config_registry, undefined);
+    assert.ok(f.calls[0].args.includes('--strict-ssl=false'));assert.equal(f.calls[0].env.NODE_TLS_REJECT_UNAUTHORIZED,'0');assert.equal(f.calls[0].env.NPM_CONFIG_STRICT_SSL,'false');
     assert.notEqual(f.calls[0].env.HOME, os.homedir()); assert.ok(f.calls[0].args.includes('--registry=https://registry.npmjs.org/'));
     await assert.rejects(fs.access(f.calls[0].env.HOME), {code: 'ENOENT'}); await assert.rejects(fs.access(path.join(f.stage, 'sdk-install')), {code: 'ENOENT'});
     const files = new Map();

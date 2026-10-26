@@ -16,30 +16,32 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=true
+    NPM_CONFIG_STRICT_SSL=false
 
 # Официальный клиент PG16 создаёт полноценные дампы сервера pgvector:pg16.
 # https://www.postgresql.org/download/linux/debian/
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bubblewrap \
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates curl bubblewrap \
     && if [ -s "$NODE_EXTRA_CA_CERTS" ]; then \
       awk '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > ("/usr/local/share/ca-certificates/neurocenter-build-" n ".crt") }' "$NODE_EXTRA_CA_CERTS" \
       && update-ca-certificates; \
     fi \
     && mkdir -p /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && curl -fsSL --insecure https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
+    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY services/catalog-service/package*.json ./
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/catalog-service/ .
 COPY services/shared/ /shared/
 # Shared declarations resolve the same pinned contracts as the owning service.
 RUN ln -s /app/node_modules /shared/node_modules
-RUN npm run build
-RUN npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 
 # Сервер использует общий native builder; source assets приходят из единого репозитория.
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/

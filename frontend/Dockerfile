@@ -16,13 +16,13 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=true
+    NPM_CONFIG_STRICT_SSL=false
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY frontend/ .
 COPY services/shared/ /app/services/shared/
-RUN npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
 
 FROM nginx:1.30.6-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf

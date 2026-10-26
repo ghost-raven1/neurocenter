@@ -171,7 +171,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         for (const call of calls) {
             assert.equal(Number(call.node.split('.')[0]),24);
             const base=call.cwd===checkout?['ci','--ignore-scripts','--no-audit','--no-fund']:['ci','--no-audit','--no-fund'];
-            const strict=path.relative(checkout,call.cwd)==='services/api-gateway'?'false':'true';
+            const strict='false';
             assert.deepEqual(call.args,[...base,'--registry=https://registry.npmjs.org/','--strict-ssl='+strict,'--userconfig='+path.join(call.home,'user.npmrc'),'--globalconfig='+path.join(call.home,'global.npmrc')]);
             assert.match(path.basename(call.home),/^neurocenter-npm-build-/);await assert.rejects(fs.access(call.home),{code:'ENOENT'});
         }

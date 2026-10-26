@@ -16,14 +16,14 @@ ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=true
+    NPM_CONFIG_STRICT_SSL=false
 
 WORKDIR /app
 COPY services/feature-flags-service/package*.json ./
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=true --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/feature-flags-service/ .
 COPY services/shared/ /shared/
-RUN npm run build && npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build && NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=feature-flags-service

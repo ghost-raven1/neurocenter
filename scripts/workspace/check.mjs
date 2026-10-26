@@ -44,7 +44,9 @@ export async function runCheck(root,options,{signal,environment=process.env,time
             const args=step.type==='npm'?[npm,...step.args,...(step.vitest?['--','--reporter=json','--outputFile='+jsonFile]:[])]:step.nodeTests
                 ?[...step.args.slice(0,2),'--test-reporter=spec','--test-reporter-destination=stdout',
                     '--test-reporter='+new URL('./check-node-reporter.mjs',import.meta.url).href,'--test-reporter-destination='+jsonFile,...step.args.slice(2)]:step.args;
-            const result=await runCheckProcess({node,args,cwd:path.resolve(root,step.directory),env:runtime.env,logFile,signal,timeoutMs,graceMs});
+            const environment=step.type==='npm'&&step.args[0]==='run'&&step.args[1]==='build'
+                ?{...runtime.env,NODE_TLS_REJECT_UNAUTHORIZED:'0',NPM_CONFIG_STRICT_SSL:'false',npm_config_strict_ssl:'false'}:runtime.env;
+            const result=await runCheckProcess({node,args,cwd:path.resolve(root,step.directory),env:environment,logFile,signal,timeoutMs,graceMs});
             const entry={name:step.name,...result,log:path.relative(root,logFile)};
             if(step.vitest||step.nodeTests){
                 entry.testRunner=step.nodeTests?'node':'vitest';

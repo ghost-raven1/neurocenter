@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {mkdir,open,lstat,link,readlink,symlink,rename,rm,chmod} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
+import {withBuildNetwork} from './npm-build-environment.mjs';
 
 export const composeLock = JSON.parse(readFileSync(new URL('./compose.lock.json', import.meta.url), 'utf8'));
 
@@ -40,6 +41,7 @@ export function checkCompose(env = process.env) {
 }
 
 async function download(asset, filename, fetchImpl) {
+    return withBuildNetwork(async () => {
     const handle = await open(filename, 'wx', 0o600);
     const hash = createHash('sha256');
     let size = 0;
@@ -61,6 +63,7 @@ async function download(asset, filename, fetchImpl) {
     } finally {await handle.close();}
     if (size !== asset.size || hash.digest('hex') !== asset.sha256) throw new Error('SHA-256 или размер Compose не совпали с закреплённым выпуском. Установка остановлена.');
     await chmod(filename, 0o755);
+    });
 }
 
 /** Устанавливает пользовательский CLI-плагин, сохраняя config.json, credentials и прежний бинарник при отказе. */

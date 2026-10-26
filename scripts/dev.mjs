@@ -16,7 +16,7 @@ import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs'
 import {privateSnapshotFile} from './snapshots/control.mjs';
 import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
-import {withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
+import {withBuildNetwork,withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 import {launchDevService,currentDevLaunchId} from './workspace/dev-launch-provenance.mjs';
 import {recoverDevLaunch} from './workspace/dev-launch-recovery.mjs';
 
@@ -42,9 +42,7 @@ function progress(total) {
 
 /** Выполняет команду с передачей её ошибки вызывающему процессу. */
 function run(command, args, cwd = root, env = process.env) {
-    const gateway = path.resolve(cwd) === path.join(root, 'services/api-gateway');
-    const childEnvironment = gateway ? {...env, NODE_TLS_REJECT_UNAUTHORIZED: '0', NPM_CONFIG_STRICT_SSL: 'false'} : env;
-    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: childEnvironment });
+    const result = spawnSync(command, args, { cwd, stdio: 'inherit', env });
     if (result.error) { throw result.error; }
     if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
 }
@@ -52,8 +50,7 @@ function run(command, args, cwd = root, env = process.env) {
 /** Общий source contract устанавливается по HTTPS и integrity корневого lock-файла. */
 async function installDependencies(cwd = root, extra = []) {
     const npm = npmCli(process.env);
-    const gateway = path.resolve(cwd) === path.join(root, 'services/api-gateway');
-    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args.map(arg => gateway && arg === '--strict-ssl=true' ? '--strict-ssl=false' : arg)], cwd, env));
+    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args], cwd, env));
 }
 async function prepareWorkspaceDependencies() {
     await installDependencies(root, ['--ignore-scripts']);
@@ -68,13 +65,14 @@ async function forPackages(command, next) {
         const cwd = path.join(root, dir);
         if (command === 'install') { await installDependencies(cwd); }
         else {
-            try { run(node, [ npm, 'run', 'build' ], cwd); }
+            const build = () => withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [ npm, 'run', 'build', ...args ], cwd, env));
+            try { await build(); }
             catch {
                 // Повреждённый или неполный node_modules (прерванная установка, сбой диска) восстанавливаем
                 // из lock-файла и повторяем сборку один раз; настоящая ошибка кода проявится повторно.
                 output.warning(`Сборка «${label}» не прошла; восстанавливаем зависимости из lock-файла и повторяем.`);
                 await installDependencies(cwd);
-                run(node, [ npm, 'run', 'build' ], cwd);
+                await build();
             }
         }
         output.success(`${label} · ${((Date.now() - started) / 1000).toFixed(1)} с`);
@@ -222,7 +220,7 @@ async function start(profile,watchMode=false) {
     output.success('Docker готов к запуску');
     next('Выбор и подготовка ассетов');
     await prepareWorkspaceDependencies();
-    if (prepareAssets) { await prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels}); }
+    if (prepareAssets) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels})); }
     else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
     await forPackages('build', next);

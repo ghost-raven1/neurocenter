@@ -21,7 +21,7 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
 
 WORKDIR /app
 COPY services/api-gateway/package*.json ./
-RUN npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/api-gateway/ .
 COPY services/shared/ /shared/
 COPY bridge-dist/ /app/bridge-dist/
@@ -35,8 +35,8 @@ COPY services/api-gateway/src/ /openapi/services/api-gateway/src/
 COPY services/api-gateway/package.json /openapi/services/api-gateway/package.json
 COPY services/shared/ /openapi/services/shared/
 RUN ln -s /app/node_modules /openapi/node_modules
-RUN NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
-RUN npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 RUN rm -rf /openapi /scripts/openapi
 
 ENV NODE_ENV=production

@@ -276,7 +276,7 @@ test('Ошибка сборки видна в stderr и не подменяет�
     assert.equal(installs.length,1);
     assert.deepEqual(installs[0].args.slice(0,4),['ci','--ignore-scripts','--no-audit','--no-fund']);
     assert.ok(installs[0].args.includes('--registry=https://registry.npmjs.org/'));
-    assert.ok(installs[0].args.includes('--strict-ssl=true'));
+    assert.ok(installs[0].args.includes('--strict-ssl=false'));
     assert.ok(installs[0].args.some(arg=>arg.startsWith('--userconfig=')));
     assert.ok(installs[0].args.some(arg=>arg.startsWith('--globalconfig=')));
     assert.doesNotMatch(result.stdout, /Нейроцентр готов|Сборка завершена/);
@@ -284,12 +284,12 @@ test('Ошибка сборки видна в stderr и не подменяет�
 
 test('Dev build dependency install ignores hostile global/user config and removes its temporary HOME after failure',async t=>{
     const f=await fixture(t),home=path.join(f.checkout,'host-home'),globalconfig=path.join(f.checkout,'host-global.npmrc');
-    await fs.mkdir(home);const hostile='registry=http://127.0.0.1:9/\n@fixture:registry=http://127.0.0.1:9/\nstrict-ssl=false\n';
+    await fs.mkdir(home);const hostile='registry=http://127.0.0.1:9/\n@fixture:registry=http://127.0.0.1:9/\nstrict-ssl=true\n';
     await fs.writeFile(path.join(home,'.npmrc'),hostile);await fs.writeFile(globalconfig,hostile);
     Object.assign(f.env,{HOME:home,NPM_CONFIG_GLOBALCONFIG:globalconfig,npm_config_registry:'http://127.0.0.1:9/',NPM_CONFIG_OFFLINE:'true',NPM_TOKEN:'synthetic',NODE_AUTH_TOKEN:'synthetic'});
     const result=await f.run('build'),call=result.events.find(event=>event.kind==='npm');
-    assert.equal(result.status,1);assert.deepEqual(call.configKeys,[]);assert.equal(call.hasToken,false);assert.notEqual(call.home,home);
-    assert.ok(call.args.includes('--registry=https://registry.npmjs.org/'));assert.ok(call.args.includes('--strict-ssl=true'));
+    assert.equal(result.status,1);assert.deepEqual(call.configKeys.sort(),['NPM_CONFIG_STRICT_SSL','npm_config_strict_ssl'].sort());assert.equal(call.hasToken,false);assert.notEqual(call.home,home);
+    assert.ok(call.args.includes('--registry=https://registry.npmjs.org/'));assert.ok(call.args.includes('--strict-ssl=false'));
     await assert.rejects(fs.stat(call.home),{code:'ENOENT'});
     assert.equal(await fs.readFile(path.join(home,'.npmrc'),'utf8'),hostile);assert.equal(await fs.readFile(globalconfig,'utf8'),hostile);
 });

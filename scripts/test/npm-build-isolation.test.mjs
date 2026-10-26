@@ -11,33 +11,35 @@ import {withNpmBuildEnvironment} from '../workspace/npm-build-environment.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const tracked=execFileSync('git',['ls-files'],{cwd:root,encoding:'utf8'}).trim().split('\n');
 const dockerfiles=tracked.filter(file=>/(?:^|\/)Dockerfile$|\.Dockerfile$/.test(file));
-const npmTlsExceptions=new Set(['services/api-gateway/Dockerfile','services/catalog-service/snapshot-verifier.Dockerfile']);
 
-test('Real npm ignores hostile user/global/scoped config and inherited npm options',async t=>{
+test('Real npm pins relaxed build TLS despite hostile config and preserves lifecycle isolation',async t=>{
     const folder=await fs.mkdtemp(path.join(os.tmpdir(),'nc-hostile-npm-'));
     t.after(()=>fs.rm(folder,{recursive:true,force:true}));
     const home=path.join(folder,'host-home'),project=path.join(folder,'project'),globalconfig=path.join(folder,'global.npmrc');
     await fs.mkdir(home);await fs.mkdir(project);
-    const hostile='registry=http://127.0.0.1:9/\n@fixture:registry=http://127.0.0.1:9/\nstrict-ssl=false\n';
+    const hostile='registry=http://127.0.0.1:9/\n@fixture:registry=http://127.0.0.1:9/\nstrict-ssl=true\n';
     await fs.writeFile(path.join(home,'.npmrc'),hostile);await fs.writeFile(globalconfig,hostile);
-    await fs.writeFile(path.join(project,'package.json'),JSON.stringify({name:'isolated-build-fixture',version:'1.0.0',private:true}));
+    await fs.writeFile(path.join(project,'package.json'),JSON.stringify({name:'isolated-build-fixture',version:'1.0.0',private:true,scripts:{postinstall:'node tls-probe.cjs'}}));
+    await fs.writeFile(path.join(project,'tls-probe.cjs'),`const assert=require('node:assert/strict'),{execFileSync}=require('node:child_process');assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');assert.equal(execFileSync(process.execPath,[process.env.npm_execpath,'config','get','strict-ssl'],{encoding:'utf8'}).trim(),'false');assert.equal(process.env.NPM_TOKEN,undefined);assert.equal(process.env.NODE_AUTH_TOKEN,undefined);console.log('BUILD_TLS_LIFECYCLE_OK');\n`);
     await fs.writeFile(path.join(project,'package-lock.json'),JSON.stringify({name:'isolated-build-fixture',version:'1.0.0',lockfileVersion:3,packages:{'':{name:'isolated-build-fixture',version:'1.0.0'}}}));
-    const environment={...process.env,HOME:home,USERPROFILE:home,NPM_CONFIG_GLOBALCONFIG:globalconfig,
+    const environment={...process.env,HOME:home,USERPROFILE:home,CI:'1',PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,NPM_CONFIG_GLOBALCONFIG:globalconfig,
         npm_config_registry:'http://127.0.0.1:9/',NPM_CONFIG_REGISTRY:'http://127.0.0.1:9/',
-        'npm_config_@fixture:registry':'http://127.0.0.1:9/',NPM_CONFIG_STRICT_SSL:'false',NPM_CONFIG_OFFLINE:'true',
+        'npm_config_@fixture:registry':'http://127.0.0.1:9/',NPM_CONFIG_STRICT_SSL:'true',npm_config_strict_ssl:'true',NODE_TLS_REJECT_UNAUTHORIZED:'1',NPM_CONFIG_OFFLINE:'true',
         NPM_TOKEN:'fixture-token',NODE_AUTH_TOKEN:'fixture-token',HTTPS_PROXY:'http://corporate-proxy.invalid:3128'};
     let isolatedHome;
     await withNpmBuildEnvironment(environment,async({env,args})=>{
         isolatedHome=env.HOME;assert.notEqual(env.HOME,home);assert.equal(env.USERPROFILE,env.HOME);
-        assert.deepEqual(Object.keys(env).filter(key=>/^npm_config_/i.test(key)),[]);
+        assert.deepEqual(Object.keys(env).filter(key=>/^npm_config_/i.test(key)).sort(),['NPM_CONFIG_STRICT_SSL','npm_config_strict_ssl']);
+        assert.equal(env.NPM_CONFIG_STRICT_SSL,'false');assert.equal(env.npm_config_strict_ssl,'false');assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED,'0');
         assert.equal(env.NPM_TOKEN,undefined);assert.equal(env.NODE_AUTH_TOKEN,undefined);
         assert.equal(env.HTTPS_PROXY,environment.HTTPS_PROXY);
         const config=JSON.parse(execFileSync(process.execPath,[npmCli(),'config','list','--json',...args],{cwd:project,env,encoding:'utf8'}));
-        assert.equal(config.registry,'https://registry.npmjs.org/');assert.equal(config['strict-ssl'],true);
+        assert.equal(config.registry,'https://registry.npmjs.org/');assert.equal(config['strict-ssl'],false);
         assert.equal(config['@fixture:registry'],undefined);assert.equal(config.offline,false);
         assert.notEqual(config.userconfig,config.globalconfig);
         for(const file of [config.userconfig,config.globalconfig])assert.equal(await fs.readFile(file,'utf8'),'');
-        execFileSync(process.execPath,[npmCli(),'ci','--offline','--no-audit','--no-fund',...args],{cwd:project,env,stdio:'pipe'});
+        const output=execFileSync(process.execPath,[npmCli(),'ci','--offline','--no-audit','--no-fund',...args],{cwd:project,env,encoding:'utf8'});
+        assert.match(output,/BUILD_TLS_LIFECYCLE_OK/);
     });
     await assert.rejects(fs.stat(isolatedHome),{code:'ENOENT'});
     assert.equal(await fs.readFile(path.join(home,'.npmrc'),'utf8'),hostile);
@@ -50,19 +52,23 @@ test('Temporary npm configuration is removed after a failed build',async()=>{
     await assert.rejects(fs.stat(home),{code:'ENOENT'});
 });
 
-test('Every Node Docker build pins npm registry and empty configs with explicit gateway and snapshot npm TLS exceptions',async()=>{
+test('Every Node Docker build pins npm registry, empty configs and build-only relaxed TLS',async()=>{
     assert.ok(dockerfiles.includes('frontend/Dockerfile'));assert.ok(dockerfiles.includes('services/catalog-service/snapshot-verifier.Dockerfile'));
     for(const file of dockerfiles){
-        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile',relaxedNpm=npmTlsExceptions.has(file);
+        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile';
         assert.match(source,/ENV NPM_CONFIG_REGISTRY=https:\/\/registry\.npmjs\.org\//,file);
         assert.match(source,/NPM_CONFIG_USERCONFIG=\/dev\/null/,file);
         assert.match(source,/NPM_CONFIG_GLOBALCONFIG=\/tmp\/neurocenter-empty-global\.npmrc/,file);
-        assert.match(source,relaxedNpm?/NPM_CONFIG_STRICT_SSL=false/:/NPM_CONFIG_STRICT_SSL=true/,file);
-        assert.doesNotMatch(source,relaxedNpm?/strict-ssl=true/:/strict-ssl=false/,file);
+        assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);
+        assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
         if(gateway)assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
-        else assert.doesNotMatch(source,/NODE_TLS_REJECT_UNAUTHORIZED/,file);
-        for(const command of source.matchAll(/\bRUN npm ci ([^\n]+)/g)){
-            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl='+!relaxedNpm])assert.ok(command[1].includes(flag),file+' missing '+flag);
+        else assert.doesNotMatch(source,/^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m,file);
+        const commands=[...source.matchAll(/^RUN ([^\n]+)/gm)].flatMap(match=>match[1].split(/\s*&&\s*/)).filter(command=>/\bnpm\s/.test(command));
+        assert(commands.length>0,file);
+        for(const command of commands){
+            assert.match(command,/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
+            if(!/\bnpm ci /.test(command))continue;
+            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false'])assert.ok(command.includes(flag),file+' missing '+flag);
         }
         assert.doesNotMatch(source,/^\s*(?:ARG|COPY|ADD)\s+[^\n]*(?:npm_config_|\.npmrc|\.yarnrc)/im,file);
     }
@@ -81,19 +87,19 @@ test('Real Docker contexts reject host npmrc/scoped registry contamination', {sk
         const source=await fs.readFile(path.join(root,dockerfile),'utf8');
         const image=source.match(/^ARG NODE_IMAGE=(.+)$/m)[1],config=source.match(/^ENV NPM_CONFIG_REGISTRY=[\s\S]*?NPM_CONFIG_STRICT_SSL=(?:true|false)/m)[0];
         const gateway=dockerfile==='services/api-gateway/Dockerfile',tls=source.match(/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m)?.[0]||'';
-        const flags=source.match(/^RUN npm ci ([^\n]+)/m)[1].split(' ').filter(flag=>/^(?:--registry|--userconfig|--globalconfig|--strict-ssl)=/.test(flag));
+        const flags=source.match(/^RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci ([^\n]+)/m)[1].split(' ').filter(flag=>/^(?:--registry|--userconfig|--globalconfig|--strict-ssl)=/.test(flag));
         await fs.writeFile(path.join(directory,'probe.cjs'),`
             const assert=require('node:assert/strict'),fs=require('node:fs'),{execFileSync}=require('node:child_process');
             for(const name of ['.npmrc','.yarnrc','.yarnrc.yml','nested/.npmrc','nested/.yarnrc','nested/.yarnrc.yml'])assert.equal(fs.existsSync('/probe/'+name),false,name);
             assert.equal(process.env['npm_config_@fixture:registry'],undefined);
             const config=JSON.parse(execFileSync('npm',['config','list','--json',...${JSON.stringify(flags)}],{encoding:'utf8'}));
-            assert.equal(config.registry,'https://registry.npmjs.org/');assert.equal(config['strict-ssl'],${!gateway});
-            assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,${gateway?"'0'":'undefined'});
+            assert.equal(config.registry,'https://registry.npmjs.org/');assert.equal(config['strict-ssl'],false);
+            assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');
             assert.equal(config['@fixture:registry'],undefined);assert.equal(config.userconfig,'/dev/null');
             assert.equal(config.globalconfig,'/tmp/neurocenter-empty-global.npmrc');
             console.log('NEUROCENTER_NPM_ISOLATION_OK');
         `);
-        await fs.writeFile(path.join(directory,'Dockerfile'),`FROM ${image}\n${config}\n${tls}\nWORKDIR /probe\nCOPY . .\nRUN node probe.cjs\n`);
+        await fs.writeFile(path.join(directory,'Dockerfile'),`FROM ${image}\n${config}\n${tls}\nWORKDIR /probe\nCOPY . .\nRUN NODE_TLS_REJECT_UNAUTHORIZED=0 node probe.cjs\nRUN node -e "require('node:assert/strict').equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,${gateway?"'0'":'undefined'})"\n`);
         const tag='neurocenter-npm-isolation-'+process.pid+'-'+index;
         try{
             const result=spawnSync('docker',['build','--network=none','--pull=false','--no-cache','--progress=plain','--tag',tag,directory],{

@@ -37,13 +37,14 @@ test('Закреплённый lock использует ci без lifecycle и 
         const directory = path.join(root, 'package');
         await fs.mkdir(directory);
         await fs.writeFile(path.join(directory, 'package-lock.json'), '{}');
-        await fs.writeFile(cli, `const fs=require('node:fs');const path=require('node:path');const args=process.argv.slice(2);const directory=args[args.indexOf('--prefix')+1];fs.writeFileSync(path.join(directory,'invocation.json'),JSON.stringify({args,home:process.env.HOME,userconfig:args[args.indexOf('--userconfig')+1]}));`);
+        await fs.writeFile(cli, `const fs=require('node:fs');const path=require('node:path');const args=process.argv.slice(2);const directory=args[args.indexOf('--prefix')+1];fs.writeFileSync(path.join(directory,'invocation.json'),JSON.stringify({args,home:process.env.HOME,userconfig:args[args.indexOf('--userconfig')+1],tls:process.env.NODE_TLS_REJECT_UNAUTHORIZED,strict:process.env.NPM_CONFIG_STRICT_SSL}));`);
         process.env.NPM_CLI_JS = cli;
         await installDependencies(directory, { example: '1.0.0' }, 'linux-arm64-musl');
         const invocation = JSON.parse(await fs.readFile(path.join(directory, 'invocation.json')));
         assert.equal(invocation.args[0], 'ci');
         assert.ok(invocation.args.includes('--ignore-scripts'));
         assert.ok(invocation.args.includes('--no-bin-links'));
+        assert.ok(invocation.args.includes('--strict-ssl=false'));assert.equal(invocation.tls,'0');assert.equal(invocation.strict,'false');
         assert.ok(invocation.args.includes('arm64'));
         assert.ok(invocation.args.includes('musl'));
         assert.notEqual(invocation.home, os.homedir());
