@@ -18,7 +18,7 @@ async function fixture(t, mode = 'ready') {
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
+    for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs',
         'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
         'workspace/dev-launch-provenance.mjs','workspace/dev-launch-ack.mjs','workspace/dev-launch-inspection.mjs','workspace/dev-launch-recovery.mjs',
         'workspace/dev-watch-owned.mjs','workspace/dev-watch-child.mjs','workspace/check-plan.mjs','workspace/node24-cli.mjs','dev-mcp/safe-file.mjs','dev-mcp/constants.mjs']) {

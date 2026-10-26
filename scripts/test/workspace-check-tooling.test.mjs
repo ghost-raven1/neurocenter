@@ -32,6 +32,7 @@ const expectedFiles=[
     'scripts/test/workspace-impact-plan.test.mjs','scripts/test/dev-processes.test.mjs','scripts/test/dev-snapshots-build.test.mjs','scripts/test/dev-start.test.mjs',
     'scripts/test/dev-watch-prepared-start.test.mjs','scripts/test/dev-watch-start-order.test.mjs','scripts/test/dev-watch-native.test.mjs',
     'scripts/test/dev-watch-queue.test.mjs','scripts/test/dev-watch-root.test.mjs','scripts/test/dev-watch-daemon.test.mjs',
+    'scripts/test/docker-build-progress.test.mjs',
 ].sort();
 const exists=file=>fs.access(file).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
 async function put(root,name,content){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,content);}
