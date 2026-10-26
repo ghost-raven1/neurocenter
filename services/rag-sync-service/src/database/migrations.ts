@@ -28,16 +28,17 @@ async function verifyQuota(db:PoolClient):Promise<boolean>{
     await verifySchema(db,QUOTA_MIGRATION);return true;
 }
 
+/** Неизвестный откат не возвращает собственную READ ONLY-сессию следующему писателю. */
 export async function checkRagQuotaMigration(pool:Pool):Promise<boolean>{
-    const client=await pool.connect();try{
+    const client=await pool.connect();let discard=false;try{
         await client.query('BEGIN READ ONLY');await client.query("SET LOCAL search_path=public,pg_catalog");
         const applied=await verifyQuota(client);await client.query('COMMIT');return applied;
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }
 
 /** Bootstrap is limited to the migration ledger; application tables are created exclusively by registered SQL. */
 export async function migrateRag(pool:Pool,migrations:readonly RagMigration[]):Promise<void>{
-    const client=await pool.connect();
+    const client=await pool.connect();let discard=false;
     try{
         await client.query('BEGIN');await client.query("SET LOCAL search_path=public,pg_catalog");await client.query(lock);
         // Keep the previous lock too: an older process cannot race generation adoption during a rolling upgrade.
@@ -55,12 +56,12 @@ export async function migrateRag(pool:Pool,migrations:readonly RagMigration[]):P
             else if(applied.checksum===null)await client.query('UPDATE neurocenter_rag_schema_versions SET checksum=$2 WHERE version=$1 AND checksum IS NULL',[migration.version,checksum]);
         }
         await client.query('COMMIT');
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }
 
 /** Compatibility inspection never creates a ledger, adopts history, or changes application data. */
 export async function checkRagMigrations(pool:Pool,migrations:readonly RagMigration[]):Promise<{applied:string[];pending:string[]}>{
-    const client=await pool.connect();try{
+    const client=await pool.connect();let discard=false;try{
         await client.query('BEGIN READ ONLY');await client.query("SET LOCAL search_path=public,pg_catalog");
         const present=(await client.query("SELECT to_regclass('public.neurocenter_rag_schema_versions') AS name")).rows[0].name;
         if(!present){await client.query('COMMIT');return {applied:[],pending:migrations.map(item=>item.version)};}
@@ -70,5 +71,5 @@ export async function checkRagMigrations(pool:Pool,migrations:readonly RagMigrat
         for(const migration of migrations){const row=rows.find(item=>item.version===migration.version);
             if(row){await verifySchema(client,migration);(row.checksum===null?pending:applied).push(migration.version);}else pending.push(migration.version);}
         await client.query('COMMIT');return {applied,pending};
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }
