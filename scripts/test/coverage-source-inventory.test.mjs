@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {collectSourceInventory,reconcileSourceInventory,mergeSourceInventories,repositorySourceFiles,writeSourceInventory} from '../coverage/source-inventory.mjs';
 import {nodeTestFiles} from '../workspace/check-plan.mjs';
+import {copyCoverageRuntime} from './coverage-runtime.fixture.mjs';
 
 const sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
 async function fixture(t){
@@ -132,8 +133,7 @@ test('Source inventory regressions participate in normal workspace check discove
 
 for(const mode of ['same-source','legacy','mixed-instrumentation'])test('Actual merge CLI handles '+mode+' denominator evidence without running application code',async t=>{
     const {root}=await fixture(t),tools=path.join(root,'scripts/coverage');
-    for(const file of ['merge.mjs','profiles.mjs','methods.mjs','report.mjs','source-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
-    await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
+    await copyCoverageRuntime(root,'merge');
     const file=path.join(root,'frontend/src/main.ts'),map={[file]:{path:file,statementMap:{0:{start:{line:1,column:0},end:{line:1,column:21}}},fnMap:{},branchMap:{},s:{0:1},f:{},b:{}}};
     const inventory=await collectSourceInventory(root,['frontend/src/main.ts','scripts/production/recovery.mjs','bridge-dist/install.sh']);
     const runs=[];
@@ -154,11 +154,8 @@ for(const mode of ['same-source','legacy','mixed-instrumentation'])test('Actual 
 
 for(const todo of [false,true])test('Actual native runner retains c8 hits and TODO '+todo+' for a production CLI outside every package src tree',async t=>{
     const {root,put}=await fixture(t),tools=path.join(root,'scripts/coverage');
-    for(const file of ['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
-    await fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true});await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
-    for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
-    await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
-    await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
+    await copyCoverageRuntime(root,'run');
+    await fs.writeFile(path.join(tools,'source-identity.mjs'),"export const sourceIdentity=()=>({head:'a'.repeat(40),status:'',trackedDiffSha256:'b'.repeat(64),untrackedContentSha256:'c'.repeat(64)});\n");
     const profiles=await fs.readFile(path.join(tools,'profiles.mjs'),'utf8');await fs.writeFile(path.join(tools,'profiles.mjs'),profiles.replace(/export const nativeSuites = \[[\s\S]*?\];/,'export const nativeSuites = ["owned-native.test.mjs"];'));
     await put('scripts/production/recovery.mjs','export function run(value){return value+1;}\n');
     await put('scripts/test/owned-native.test.mjs','import {test} from "node:test";import assert from "node:assert/strict";import {run} from "../production/recovery.mjs";test("safe fixture CLI",()=>assert.equal(run(1),2));\n'+(todo?'test.todo("unfinished native case");\n':''));

@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import InventoryReporter from '../coverage/inventory-reporter.mjs';
 import {reconcileTestFileInventory} from '../coverage/test-file-inventory.mjs';
+import {copyCoverageRuntime} from './coverage-runtime.fixture.mjs';
 import {nodeTestFiles} from '../workspace/check-plan.mjs';
 
 const cwd=path.resolve('synthetic coverage project');
@@ -85,19 +86,15 @@ await fs.writeFile(path.join(process.env.NEUROCENTER_COVERAGE_DIR,'coverage-fina
 `;
 
 for(const scenario of ['success','missing','suite-failed','todo','invalid-todo'])test('Actual runner preserves evidence and '+scenario+' receipts determine completion independently of worker exit0',async t=>{
- const sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-runner-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),pkg=path.join(root,'services/feature-flags-service'),output=path.join(root,'output');
- await Promise.all([fs.mkdir(tools,{recursive:true}),fs.mkdir(path.join(root,'scripts/workspace'),{recursive:true}),fs.mkdir(path.join(root,'services/shared'),{recursive:true}),fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
- for(const file of ['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json'])await fs.copyFile(path.join(sourceRoot,'scripts/coverage',file),path.join(tools,file));
- await fs.copyFile(path.join(sourceRoot,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
- for(const file of ['feature-flags.cjs','feature-flag-catalog.json'])await fs.copyFile(path.join(sourceRoot,'services/shared',file),path.join(root,'services/shared',file));
+ await Promise.all([fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
+ await copyCoverageRuntime(root,'run');
  const policyFile=path.join(tools,'unit-safe-profile.mjs'),policy=await fs.readFile(policyFile,'utf8');
  await fs.writeFile(policyFile,policy.replace(/export async function validateUnitSafeProfile[\s\S]*$/,'export async function validateUnitSafeProfile() {}\n'));
  // The classifier has its own real-policy fixture tests; this fixture admits only synthetic worker receipts.
  // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.
- await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
- await fs.symlink(path.join(sourceRoot,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
+ await fs.writeFile(path.join(tools,'source-identity.mjs'),"export const sourceIdentity=()=>({head:'a'.repeat(40),status:'',trackedDiffSha256:'b'.repeat(64),untrackedContentSha256:'c'.repeat(64)});\n");
  await fs.writeFile(path.join(pkg,'src/entry.ts'),'export const value=1;\n');
  for(const file of ['selected.test.ts','workspace-bounds.test.ts','excluded-db.test.ts'])await fs.writeFile(path.join(pkg,'test',file),'// synthetic test file\n');
  await fs.writeFile(path.join(pkg,'node_modules/vitest/vitest.mjs'),syntheticVitest);

@@ -1,7 +1,6 @@
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {createHash} from 'node:crypto';
 import {workspaceName,packages,logServices,evidenceNote,DiagnosticError} from './constants.mjs';
 import {readOwnedFile} from './safe-file.mjs';
 import {redactLog} from './redact.mjs';
@@ -9,7 +8,13 @@ import {healthReader} from './health.mjs';
 import {readCoverageGaps} from './coverage-gaps.mjs';
 import {readCheckPlan} from './check-plan.mjs';
 import {readRunSummary} from './run-reports.mjs';
-import {coverageReportPattern,verificationReportPattern} from './tool-catalog.mjs';
+import {coverageLifecycleSummary} from './coverage-lifecycle.mjs';
+import {coverageReportPattern,verificationReportPattern,launchIdPattern} from './tool-catalog.mjs';
+import {listEvidence} from './evidence-catalog.mjs';
+import {verifySource} from './verify-source.mjs';
+import {readDevLaunchLog} from './launch-logs.mjs';
+import {readRequestTrace} from './request-trace.mjs';
+import {planImpact} from '../workspace/impact-plan.mjs';
 
 const execute=promisify(execFile),sha=/^[a-f0-9]{40,64}$/;
 const count=value=>Number.isSafeInteger(value)&&value>=0?value:null;
@@ -77,6 +82,7 @@ function retainedProfiles(value,depth=0){
 
 /** Feature-local read-only operations; injected service definitions exist only for owned fixture constructors. */
 export async function createDiagnostics(root,{services,serviceDetailsEnabled=true}={}){
+    root=path.resolve(root);
     await validateWorkspace(root);
     const health=healthReader(services,{root,detailsEnabled:serviceDetailsEnabled});
     return {
@@ -92,32 +98,45 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
         },
         async servicesHealth(signal){return {...await health(signal),evidence:evidenceNote};},
         async checkPlan(selection){return readCheckPlan(root,selection);},
+        async impactPlan(selection,signal){
+            try{return {...await planImpact(root,selection,{signal}),evidence:evidenceNote};}
+            catch(error){if(typeof error?.code==='string'&&/^IMPACT_[A-Z_]{1,64}$/.test(error.code))
+                throw new DiagnosticError(error.code,'The impact plan was not admitted. Use a complete local commit, inspect the fixed reason code and retry after source edits settle. No checks were executed.');
+                throw error;}
+        },
+        async evidenceCatalog(selection,signal){return listEvidence(root,selection,{readSummary:report=>this.verificationSummary(report),signal});},
+        async verifySource(selection,signal){return verifySource(root,selection,{readSummary:report=>this.verificationSummary(report),signal});},
+        async requestTrace(selection,signal){return readRequestTrace(root,selection,{signal,readLog:(workspace,service,options)=>
+            readDevLaunchLog(workspace,service,{...options,inspect:serviceDetailsEnabled})});},
         async coverageGaps(report,packageName,limit=10){
             if(typeof report!=='string'||!new RegExp(coverageReportPattern).test(report))throw new DiagnosticError('INVALID_ARGUMENT','Choose a coverage manifest for coverage gaps.');
             const verification=await this.verificationSummary(report);
             return readCoverageGaps(root,report,packageName,limit,verification);
         },
-        async serviceLogs(service,lines=50){
-            if(!logServices.includes(service)||!Number.isInteger(lines)||lines<1||lines>100)throw new DiagnosticError('INVALID_ARGUMENT','Choose a listed service and between 1 and 100 lines.');
-            const file=await readOwnedFile(root,'.run/logs/neurocenter-'+service+'.log',{limit:32768,tail:true});
+        async serviceLogs(service,lines=50,{launchId,signal}={}){
+            if(!logServices.includes(service)||!Number.isInteger(lines)||lines<1||lines>100||launchId!==undefined&&!new RegExp(launchIdPattern).test(launchId))
+                throw new DiagnosticError('INVALID_ARGUMENT','Choose a listed service, canonical launch UUID and between 1 and 100 lines.');
+            const file=await readDevLaunchLog(root,service,{launchId,signal,inspect:serviceDetailsEnabled});
             let text=file.text;
             if(file.truncated){const newline=text.indexOf('\n');text=newline<0?'':text.slice(newline+1);}
             text=redactLog(text);
             const available=text.replace(/\n$/,'').split('\n'),selected=available.slice(-lines).join('\n');
-            const bytes=Buffer.from(selected),bounded=bytes.subarray(Math.max(0,bytes.length-32768)).toString('utf8');
+            const bytes=Buffer.from(selected);let start=Math.max(0,bytes.length-32768);
+            while(start<bytes.length&&(bytes[start]&0xc0)===0x80)start++;
+            const bounded=bytes.subarray(start).toString('utf8');
             return {service,text:bounded,lines:bounded?bounded.split('\n').length:0,truncated:file.truncated||bytes.length>32768||available.length>lines,
                 ...(serviceDetailsEnabled?{details:{observedAt:file.observedAt,fileModifiedAt:file.fileModifiedAt,fileBytes:file.fileBytes,bytesRead:file.bytesRead,
-                    currentProcessCorrelation:{state:'unknown',reason:'append-log-without-launch-provenance'}}}:{}),evidence:evidenceNote};
+                    ...(file.launch?{launch:file.launch}:{}),currentProcessCorrelation:file.currentProcessCorrelation}}:{}),evidence:evidenceNote};
         },
         async verificationSummary(report){
             if(typeof report!=='string'||report.length>180||!new RegExp(verificationReportPattern).test(report))throw new DiagnosticError('INVALID_ARGUMENT','Choose one coverage manifest, check report or isolated-build receipt in a single run directory.');
             if(!new RegExp(coverageReportPattern).test(report))return readRunSummary(root,report,await gitObservation(root));
             let value,reportSha256;
-            try{const text=(await readOwnedFile(root,report,{limit:16*1024**2})).text;value=JSON.parse(text);reportSha256=createHash('sha256').update(text).digest('hex');}catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
+            try{const file=await readOwnedFile(root,report,{limit:16*1024**2});value=JSON.parse(file.text);reportSha256=file.contentSha256;}catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
             if(!value||typeof value!=='object'||Array.isArray(value)||![1,2].includes(value.schemaVersion)||typeof value.profile!=='string'
                 ||!/^[a-zA-Z0-9][a-zA-Z0-9+._-]{0,119}$/.test(value.profile)||!Array.isArray(value.packages)||value.packages.length>32)throw malformed();
-            const finished=date(value.finishedAt),comparable=value.comparablePercentages===true;
-            if(value.finishedAt!==undefined&&!finished)throw malformed();
+            const lifecycle=coverageLifecycleSummary(value),finished=date(value.finishedAt),comparable=value.comparablePercentages===true;
+            if(value.finishedAt!==undefined&&!finished&&!(lifecycle&&value.finishedAt===null))throw malformed();
             const results=value.packages.map(item=>{
                 if(!packages.some(([name])=>name===item?.name))throw malformed();
                 return {name:item.name,...counters(item),exitCode:Number.isInteger(item.exitCode)?item.exitCode:null,
@@ -130,7 +149,7 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             const external=[value.native,value.integration,...retainedRaw.flatMap(item=>[item.native,item.integration])].filter(Boolean);
             const externalCounters=[native,integration,...retained.flatMap(item=>[item.native,item.integration])].filter(Boolean);
             const coverageSummary=value.summary??(value.coverageKind==='experimental-mixed-instrumentation'&&!comparable?value.experimentalSummary:null);
-            if(finished&&(!coverageSummary||typeof value.complete!=='boolean'||results.some(item=>[item.passed,item.failed,item.skipped,item.exitCode,item.excludedSuites].some(value=>value===null))
+            if(finished&&(!lifecycle||lifecycle.state==='passed')&&(!coverageSummary||typeof value.complete!=='boolean'||results.some(item=>[item.passed,item.failed,item.skipped,item.exitCode,item.excludedSuites].some(value=>value===null))
                 ||external.some(item=>[count(item.passed),count(item.failed),count(item.skipped),count(item.cancelled),count(item.exitCode)].some(value=>value===null))))throw malformed();
             const current=await gitObservation(root),recordedHead=sha.test(value.sourceAfter?.head)?value.sourceAfter.head:sha.test(value.sourceBefore?.head)?value.sourceBefore.head:null;
             const currentHeadMatches=!!recordedHead&&current.available?recordedHead===current.head:null;
@@ -145,9 +164,9 @@ export async function createDiagnostics(root,{services,serviceDetailsEnabled=tru
             const incomplete=results.some(item=>item.todo===null||item.todo>0||item.skipped>0||item.cancelled>0||item.fileInventory!=='complete'||item.reportValid!=='valid')
                 ||externalCounters.some(item=>item.todo===null||item.todo>0||item.skipped>0||item.cancelled!==0)
                 ||external.some(item=>Array.isArray(item.excludedSuites)&&item.excludedSuites.length>0)||value.sourceInventory?.inventoryComplete===false;
-            const status=!finished?'in-progress':failed?'failed':value.complete===true&&!incomplete?'requested-suites-complete':'incomplete';
+            const status=!finished?'in-progress':lifecycle?.state==='cancelled'?'cancelled':lifecycle?.state==='failed'||failed?'failed':value.complete===true&&!incomplete?'requested-suites-complete':'incomplete';
             return {report,reportSha256,profile:value.profile,coverageKind:['vitest-ast-v8','native-c8-v8','experimental-mixed-instrumentation'].includes(value.coverageKind)?value.coverageKind:null,
-                status,startedAt:date(value.startedAt),finishedAt:finished,
+                status,startedAt:date(value.startedAt),finishedAt:finished,...(lifecycle?{lifecycle}:{}),
                 complete:status==='requested-suites-complete',comparablePercentages:comparable,packages:results,native,integration,retainedProfiles:retained,
                 countScope:value.profile==='retained-runs-merge'?'Counts are per retained run and can overlap; do not sum them as unique tests.':'Counters describe the selected requested suites only.',
                 summary,sourceFiles:count(value.sourceFiles),source:{recordedHead,currentHead:current.available?current.head:null,currentHeadMatches,sourceChangedDuringRun,status:sourceStatus},

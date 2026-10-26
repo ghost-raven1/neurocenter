@@ -15,7 +15,7 @@ async function supervisedProbe(t, errors) {
     let pid,calls=0;
     childProcess.execFileSync=(executable,args)=>{
         assert.equal(executable,'/bin/ps');assert.deepEqual(args,['-ax','-o','pid=,pgid=,stat=']);
-        const error=errors[calls++];if(error)throw Object.assign(new Error('Controlled process probe failure'),{code:error});
+        const error=errors[calls++];if(error)throw Object.assign(new Error('Controlled process probe failure'),typeof error==='string'?{code:error}:error);
         try{if(pid)process.kill(pid,0);else return '';}catch{return '';}
         return `${pid} ${pid} S\n`;
     };
@@ -43,4 +43,14 @@ test('three successive process-probe timeouts still terminate the check',async t
     const {result}=await supervisedProbe(t,['ETIMEDOUT','ETIMEDOUT','ETIMEDOUT']);
     assert.equal(result.ok,false);assert.equal(result.failure.code,'PROCESS_INSPECTION_FAILED');assert.equal(result.errorCode,'ETIMEDOUT');
     assert.equal(result.cleanup.noLiveDescendants,false);assert.deepEqual(result.cleanup.signals,['SIGTERM']);
+});
+
+for(const signal of ['SIGINT','SIGTERM'])test('a '+signal+' interrupted process probe is retried before deciding ownership cleanup',async t=>{
+    const {result,calls}=await supervisedProbe(t,[{signal}]);
+    assert.equal(result.ok,true);assert.equal(result.cleanup.noLiveDescendants,true);assert.deepEqual(result.cleanup.signals,[]);assert.ok(calls>=2);
+});
+
+test('sustained interrupted process probes retain an unverified cleanup outcome',async t=>{
+    const {result}=await supervisedProbe(t,Array.from({length:3},()=>({signal:'SIGTERM'})));
+    assert.equal(result.ok,false);assert.equal(result.failure.code,'PROCESS_INSPECTION_FAILED');assert.equal(result.cleanup.noLiveDescendants,false);
 });

@@ -1,4 +1,3 @@
-import {createHash} from 'node:crypto';
 import {DiagnosticError,evidenceNote,packages} from './constants.mjs';
 import {readOwnedFile} from './safe-file.mjs';
 
@@ -221,8 +220,8 @@ function buildSummary(value,currentGit){
 export async function readRunSummary(root,report,currentGit){
     const match=typeof report==='string'&&/^\.run\/(check|isolated-build)\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/(report|receipt)\.json$/.exec(report);
     if(!match||match[1]==='check'&&match[3]!=='report'||match[1]==='isolated-build'&&match[3]!=='receipt')throw new DiagnosticError('INVALID_ARGUMENT','Choose one .run/check/<run>/report.json or .run/isolated-build/<run>/receipt.json.');
-    const text=(await readOwnedFile(root,report,{limit})).text;let value;
-    try{value=JSON.parse(text);}catch{throw malformed();}
+    const file=await readOwnedFile(root,report,{limit});let value;
+    try{value=JSON.parse(file.text);}catch{throw malformed();}
     const summary=match[1]==='check'?checkSummary(value,currentGit):buildSummary(value,currentGit);
-    return {report,reportSha256:createHash('sha256').update(text).digest('hex'),...summary,evidence:evidenceNote};
+    return {report,reportSha256:file.contentSha256,...summary,evidence:evidenceNote};
 }

@@ -4,7 +4,7 @@
 
 ## Найти причину
 
-Для Codex настроен диагностический MCP `neurocenter-dev`: `workspace_status` показывает checkout и версии, `services_health` разделяет liveness, пассивную readiness и принадлежность listener, `service_logs` читает ограниченный журнал сервиса, `verification_summary` объясняет сохранённые отчёты покрытия/check/сборки, `coverage_gaps` выбирает цели для регресса, `check_plan` показывает ограниченный план. Доступность инструментов уже открытого чата проверяй отдельно от записи конфигурации. [Подключение и ограничения](agent-kit.md#mcp-для-разработки-neurocenter).
+Диагностический MCP `neurocenter-dev` 0.4.0 содержит десять инструментов: `workspace_status`, `services_health`, `service_logs`, `verification_summary`, `coverage_gaps`, `check_plan`, `evidence_catalog`, `verify_source`, `request_trace`, `impact_plan`. Они помогают выбрать проверки, найти сохранённые свидетельства и сопоставить их с текущим источником/запуском. Доступность инструментов уже открытого чата проверяй отдельно от записи конфигурации. [Подключение и ограничения](agent-kit.md#mcp-для-разработки-neurocenter).
 
 Сопоставляй действие пользователя с ошибкой, временем, загруженным артефактом и ревизией. Затем попроси Codex добавить воспроизводящий регрессионный тест, исправить причину и запустить относящиеся проверки. Код меняется обычными средствами редактирования; диагностический MCP не выполняет произвольные команды и не меняет рабочие данные.
 
@@ -26,6 +26,24 @@
 
 Также доступны `.run/isolated-build/<попытка>/receipt.json` и прежний `.run/coverage/<попытка>/manifest.json`. Общего поиска по `.run` нет; вложенные пути, ссылки и посторонние файлы отклоняются. Новые check/build-сводки ограничены 1 МиБ входного JSON и не выдают исходные журналы, команды, сообщения ошибок или окружение.
 
+Для выбора сохранённого свидетельства вызови `evidence_catalog`:
+
+```json
+{"families":["check","isolated-build"],"limit":10}
+```
+
+Допустимы только `check`, `coverage`, `isolated-build`, до 20 выходных записей и 128 просмотренных записей каталогов за вызов. Это ограниченная выборка в порядке файловой системы, без гарантии recent/latest. Неподходящая запись получает собственный `state: rejected` и фиксированную причину; `scan.truncated`, `scan.complete` и отклонённые семейства сохраняют неполноту наблюдения. SHA относится к точным байтам проверенного FD-чтения выбранного файла; доверенность содержимого им не устанавливается.
+
+Передай выбранный `report` и его `reportSha256` в `verify_source` как `expectedReportSha256`:
+
+```json
+{"report":".run/check/<попытка>/report.json","expectedReportSha256":"<64 lowercase hex из выбранного свидетельства>"}
+```
+
+Инструмент раздельно возвращает записанный `recorded.status/complete` и текущее `comparison.state: match|mismatch|unknown`. Для check v3 он сравнивает поддержанный recorded-after fingerprint; для изолированной сборки проверяет сохранённый source snapshot и текущий fingerprint. Смена отчёта, небезопасный путь, предел чтения, отмена или отсутствующие сведения не дают `match`. Coverage и legacy-протоколы остаются `unknown`. HEAD, tracked/new/deleted state и executable bits входят в поддержанную идентичность; mismatch не обязательно означает только правку байтов. Исключённая конфигурация, зависимости, артефакты сборки и загруженный runtime не сравниваются. Записанный успех не превращается в текущую приёмку сценария.
+
+`NEUROCENTER_DEV_MCP_EVIDENCE=0` скрывает и запрещает новые `evidence_catalog`/`verify_source`, сохраняя прежнее чтение истории через `verification_summary`. Допустимы `0`/`1`, по умолчанию `1`; флаг читается новым процессом MCP.
+
 Отчёт `check` версии 3 сохраняет запрошенный план, выполненные шаги, терминальное состояние, отдельные test counters и результат очистки собственной группы процессов. До и после проверки фиксируются ограниченные снимки текущих Git tracked/nonignored untracked файлов: SHA, HEAD, число новых/удалённых файлов и исключений. Обнаруженное изменение исходников завершает проверку отказом `SOURCE_CHANGED`. Неподготовленная Git-фикстура, лимит, отключённый capture или недоступный источник дают `unknown`, а не придуманное соответствие. MCP считает v3 завершённым только при согласованном результате, очистке процессов и неизменном источнике без пропусков/TODO.
 
 В 0.3.1 общий Node gate пишет отдельный JSONL-отчёт из итогового `test:summary`: passed, failed, skipped, TODO и cancelled. Отсутствующий или противоречивый отчёт даёт `TEST_REPORT_FAILED`; exit 0 не заменяет проверку счётчиков. Исторический Node gate без них остаётся неполным, а неизвестные totals возвращаются как `null`. Шаги build/typecheck без тестов сохраняют собственную область. Планировщик сверяет использованные bytes manifest и инвентаря общих тестов перед первым subprocess; смена входов, даже при том же списке шагов, даёт `PLAN_SOURCE_CHANGED`.
@@ -38,17 +56,47 @@
 
 Для проверки актуальности установленного kit используй `npm run agent-kit:doctor`. Команда не меняет файлы; без переданного каталога клиента обнаружение tools остаётся `unverified`. [Подробности и локальный флаг `check_plan`](agent-kit.md#диагностика-набора).
 
+### Выбрать проверки по изменениям
+
+```sh
+npm run check:impact -- --base FULL_LOCAL_COMMIT_SHA
+```
+
+MCP-эквивалент — `impact_plan` с `{baseRevision: "FULL_LOCAL_COMMIT_SHA"}`. Требуется полный 40/64-значный lowercase SHA уже имеющегося локального commit. Planner объединяет изменения base→current, index, dirty/deleted и nonignored untracked paths. Он использует source fingerprint и точные manifest/discovery inputs существующего check-планировщика; ничего не запускает, не записывает и не устанавливает.
+
+Известные owners и проверенные consumers дают `mode: scoped`. Shared/global/planner/неизвестные изменения и отсутствие изменений выбирают `mode: fallback`: настоящий default check с восемью пакетами, gate генерации, общими контрактами и Compose. Это не список всех восьми explicit `--package`, который исключил бы общие шаги. Причины, digest/count изменённых путей и дополнительные требования приёмки выдаются отдельно; raw Git pathnames и npm script contents не нужны для ответа. Отсутствующий package `test` не означает, что проверки не нужны.
+
+API `verifyImpactCurrent(root, plan)` повторно сверяет source, изменённые пути и plan inputs. Устаревший или изменённый сохранённый план отклоняется; два одинаковых `unknown` не дают `current: true`. Неизвестный capture сохраняет полный fallback без доказательства эквивалентности. Миграции, native и RAG требуют отдельной приёмки вне обычного check; impact-план не измеряет покрытие и не подтверждает выполнение. `NEUROCENTER_IMPACT_PLAN=0` блокирует новые планы и скрывает MCP-инструмент, сохраняя CLI `--help`; допустимы `0`/`1`, по умолчанию `1`.
+
 ### Готовность окружения
 
 `services_health` и dev CLI используют один каталог фиксированных loopback-портов. Ответ содержит отдельные `liveness`, `readiness`, `compilation` и `ownership`. Backend `/health` не доказывает готовность PostgreSQL. Пассивные `/ready` проверяются с отдельным бюджетом; skills и gateway пропускаются, поскольку их readiness прямо или транзитивно пишет временный файл. Этот пропуск виден и не означает готовность. Frontend CSS подтверждает только частичный compile probe.
 
 Принадлежность сопоставляет PID реально слушающего сокета с текущей OS-идентичностью процесса и cwd checkout. Чужой listener остаётся `foreign`; недоступность метаданных, неоднозначный ответ или невозможность OS inspection дают `unknown`. Старая запись PID сама по себе не подтверждает принадлежность. Это не проверка версии уже загруженного артефакта и не сравнение работающего приложения с нынешними исходниками. CLI не пишет «Все сервисы готовы» по одному HTTP probe; непроверенная ось отображается явно. MCP не посылает сигналы работающим сервисам.
 
-`NEUROCENTER_DEV_MCP_SERVICE_DETAILS=0` оставляет liveness/compile probe, отключая добавленные readiness и OS inspection. `NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS=0` отключает публикацию и проверку новых выходных схем. Оба локальных флага принимают `0`/`1`, по умолчанию включены; новый процесс MCP читает их при запуске. Схемы включённого режима описывают все шесть успешных ответов. Нарушение возвращает фиксированный `OUTPUT_CONTRACT_MISMATCH` без содержимого ответа; protocol/tool errors передаются отдельно. Чтение сохранённых свидетельств остаётся доступным.
+`NEUROCENTER_DEV_MCP_SERVICE_DETAILS=0` оставляет liveness/compile probe, отключая добавленные readiness и OS inspection/details. `NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS=0` отключает публикацию и проверку новых выходных схем. Оба локальных флага принимают `0`/`1`, по умолчанию включены; новый процесс MCP читает их при запуске. Схемы включённого режима описывают ответы опубликованного каталога. Нарушение возвращает фиксированный `OUTPUT_CONTRACT_MISMATCH` без содержимого ответа; protocol/tool errors передаются отдельно. Чтение сохранённых свидетельств и launch-журналов остаётся доступным.
 
 В 0.3.2 `service_logs.details` содержит `observedAt`, `fileModifiedAt`, `fileBytes`, `bytesRead` и `currentProcessCorrelation: {state: "unknown", reason: "append-log-without-launch-provenance"}`. Время и размеры получены из того же проверенного FD-чтения; bytesRead относится к входному хвосту до отбора строк и маскирования. Append-файл может содержать прежние запуски, а внешний `LOGDIR` не меняет область MCP. Свежий mtime или похожая на служебную метка в тексте не устанавливают текущий PID/поколение. При `NEUROCENTER_DEV_MCP_SERVICE_DETAILS=0` поле details отсутствует, журнал остаётся доступен.
 
 В 0.3.3 `service_logs.truncated` учитывает фактически пропущенные строки и байты. Завершающий перевод строки сам по себе не означает потерю данных.
+
+В 0.4.0 `service_logs` принимает необязательный `launchId` UUID. Launcher открывает отдельный журнал через `wx` и сохраняет receipt с PID/birth/cwd, launcher/owner identity и dev/inode stdout/stderr. Проверенное соответствие процесса и файловых дескрипторов может дать `owned`; завершившийся или явно выбранный прежний запуск — `historical`, а повтор PID, смена inode или недоступное наблюдение — `unknown`. Текстовая метка в журнале не создаёт это доказательство. Без launch receipt старый append-журнал остаётся `unknown`.
+
+`details.launch.entryDigest` связывает только байты entrypoint. `sourceSha256` — nullable fingerprint доступного исходного снимка, `generation` также может быть `null`; импортированные модули, зависимости и весь runtime ими не подтверждаются. Явный `launchId` позволяет читать сохранённую историю. `NEUROCENTER_DEV_LAUNCH_PROVENANCE=0` отключает новые provenance-записи, сохраняя историю и остановку принадлежащих launcher процессов. При `NEUROCENTER_DEV_MCP_SERVICE_DETAILS=0` OS inspection отключена, но выбранный launch-журнал читается.
+
+Публикация `current` сериализуется приватным `.run/dev-launches/<service>/index.lock`. При подтверждённо завершённом владельце оставшийся lock даёт `DEV_LAUNCH_LOCK_STALE`; автоматического удаления нет. Такой отказ блокирует новый запуск до разбора lock, сохраняя чтение истории и остановку уже запущенных процессов.
+
+При потере wrapper сохранённый witness позволяет остановить actual service даже с заблокированным JS event loop: перед единственным сигналом private group дважды проверяются birth, cwd, command SHA, stdout FD и PGID. Несовпадение оставляет процесс без сигнала и сохраняет state для разбора; выключенный provenance не отключает эту защиту.
+
+### Сопоставить запрос с событиями
+
+```json
+{"flow":"tool-build","request":"<requestKey UUID>","launchId":"<launch UUID>","limit":50}
+```
+
+`request_trace` принимает `flow: tool-build|saved-chat`; `request` — ToolBuild `requestKey` или saved-chat `requestId`, `launchId` необязателен, `limit` от 1 до 100. Читается только хвост до 32 КиБ одного фиксированного Catalog launch. Возвращаются закрытые этапы и UUID: для ToolBuild — `requested/accepted/replayed/started/cancel-requested/succeeded/failed/cancelled`, для saved-chat — `accepted/retried/started/cancel-requested/succeeded/failed/cancelled`. Prompt, payload, токены и текст ошибок не попадают в ответ.
+
+Best-effort emitter включается только с `NEUROCENTER_DEV_TRACES=1` и launcher-issued `NEUROCENTER_DEV_LAUNCH_ID`; по умолчанию tracing выключен (`0`). Ошибка записи не меняет бизнес-результат. Отсутствующие, отклонённые или обрезанные события и другие поколения остаются непроверенными; этот хвост не устанавливает полный порядок запроса или успешный исход. Флаг provenance `0` не создаёт новый launcher ID и новые связанные traces, но сохранённая история доступна.
 
 ### Сценарии использования инструментов
 
@@ -63,6 +111,8 @@ node scripts/agent-kit/evals/run.mjs --scenario check-source-unknown --trace .ru
 ```
 
 Результат сохраняет отдельные оценки цели, свидетельств, полномочий и ясности, версии и SHA сценария/инструкций/trace. Выдуманные свидетельства и запрещённые действия дают hard fail. Содержимое capture и идентичность модели не аутентифицируются самим оценщиком; live runner и оценка реальных моделей этим не подтверждаются. `NEUROCENTER_AGENT_EVALS=0` отключает запуск controls и новых live-серий, сохраняя чтение ранее захваченных traces; неверное значение отклоняется. [Контракт и rubric](../scripts/agent-kit/evals/rubric.md).
+
+Kit 0.2.0 добавляет отдельный `node scripts/agent-kit/evals/roles.mjs --controls`: четыре роли, 12 controls по свидетельствам, ownership и границам handoff. Команда проверяет только оценщик, не запускает модель или действия из trace. `NEUROCENTER_AGENT_ROLE_CONTRACTS=0` блокирует новые role-controls и добавленный раздел doctor, сохраняя чтение истории и прежние файловые проверки. [Контракты и границы ролей](agent-kit.md#контракт-роли).
 
 Для отдельно разрешённой серии предусмотрен `scripts/agent-kit/evals/live-runner.mjs`: `--prepare <run>` готовит шесть сценариев без обращения к модели, `--preflight <run>` проверяет metadata, `--run-six <run>` выполняет по одной попытке. Перед запуском нужны явный бюджет пользователя и свежий совместимый preflight. Runner переносит точные model/provider/reasoning в отдельный private Codex home и подключает только тестовый MCP. Ограниченный адаптер допускает встроенный OpenAI provider без профиля; неподдержанные настройки маршрутизации, каталога или записи identity отклоняются до копирования auth. Модель получает общий формат ответа и словарь идентификаторов; правильные ответы отдельных сценариев и controls ей не передаются.
 
@@ -132,6 +182,22 @@ npm run coverage -- --package frontend --test-file test/error-message.test.ts
 
 Без `--test-file` остаётся прежний режим покрытия пакетов; без `--package` он выбирает все восемь. HTML, исходный JSON и `manifest.json` сохраняются в новом `.run/coverage/<попытка>/`. Не смешивай AST unit-покрытие и native V8 как один процент.
 
+### Остановить coverage и прочитать частичный результат
+
+```sh
+npm run coverage -- --package frontend --test-file test/error-message.test.ts --timeout-ms 600000
+```
+
+`--timeout-ms` — положительное целое число миллисекунд на каждый тестовый subprocess; по умолчанию 600000. Это не общий срок подготовки, PostgreSQL cleanup, чтения исходников и генерации отчётов. Unit, native и integration используют тот же POSIX supervisor, что изолированная сборка: собственная группа процессов, ограничение журнала 32 МиБ, SIGTERM и ограниченное ожидание перед SIGKILL. SIGINT/SIGTERM сохраняют отмену и прекращают переход к следующим пакетам. Проверка ОС с прерванным `ps` повторяется ограниченно; устойчивый отказ наблюдения оставляет очистку неподтверждённой.
+
+Manifest версии 2 получает дополнительный `lifecycle` версии 1: план, выполненный префикс, фазы `preparing`/`running`/`finalizing` и итог `passed`/`failed`/`cancelled`. Начальная квитанция с `complete:false` сохраняется до первого subprocess. Замена manifest атомарна; первичная причина и ошибки финализации записываются отдельно. Корректные JSON/TAP-счётчики сохраняются и при ненулевом exit тестов. Отсутствующие результаты не заменяются нулями. `passed` описывает исполнение, а skipped/TODO могут сохранять `complete:false`.
+
+MCP 0.3.4 читает ранние failed/cancelled без итоговых метрик и возвращает проверенный `lifecycle`. Старые отчёты сохраняют прежний контракт. `coverage_gaps` объясняет отсутствие targets после раннего отказа кодом `COVERAGE_TARGETS_UNAVAILABLE`; корректные сохранённые partial targets остаются неполными. Merge повторно проверяет lifecycle входов и не повышает прерванное измерение до полного.
+
+`NEUROCENTER_COVERAGE_LIFECYCLE=0` запрещает новые прогоны; помощь и чтение сохранённой истории доступны. Флаг принимает только `0`/`1`, по умолчанию включён. Справка и проверка аргументов не требуют библиотек collector. Изменение флага не отключает обработчик отмены уже начатого запуска.
+
+После SIGKILL, отказа диска или невозможности финальной записи может остаться предыдущая неполная квитанция. `running` не подтверждает живой процесс; автоматический recovery/kill по сохранённому PID не выполняется. Успешно полученная owned-PG fixture закрывается общим finally; частичный отказ внутри её подготовки остаётся границей существующего bootstrap. Управляемая очистка Windows этим срезом не реализована.
+
 ## Собрать текущие правки отдельно
 
 ```sh
@@ -147,6 +213,38 @@ npm run build:isolated -- --all
 Это изоляция исходников и выходов, а не защитная песочница: уже установленные `node_modules` подключаются ссылками, содержимое зависимостей не заморожено. Доверенный build-скрипт может писать через ссылку; offline-настройка npm не является сетевым фильтром. Отмена завершает только собственную группу процессов; эта проверка жизненного цикла подтверждена на macOS. Сборка не подтверждает работу API, браузера, миграций или production.
 
 Канонические идентификаторы: `frontend`, `catalog-service`, `api-gateway`, `feature-flags-service`, `oauth2-bridge`, `rag-sync-service`, `skills-service`, `bridge`. Тяжёлые сборки и профили покрытия запускай по очереди. Сохраняй отдельно пройденное, пропущенное и непроверенное; бэклог обновляй после реализации и проверок.
+
+## Подготовить локальный QA PostgreSQL
+
+Opt-in CLI использует явно выбранную существующую установку **PostgreSQL 16.15** (`initdb`, `pg_ctl`, `postgres` из одного абсолютного каталога) и уже установленный драйвер **`pg` 8.16.3**, разрешаемый из Catalog. Он не скачивает runtime, не устанавливает зависимости и не подставляет основную БД при отказе. Нужны Node 24 и средства POSIX-наблюдения процессов/listener. `plan` проверяет версии и SHA бинарных файлов без создания кластера:
+
+```sh
+npm run qa:postgres -- plan --bin-dir /ABS/POSTGRES_16_15/bin
+npm run qa:postgres -- create --bin-dir /ABS/POSTGRES_16_15/bin
+npm run qa:postgres -- inspect --run UUID
+```
+
+Замени `/ABS/POSTGRES_16_15/bin` на канонический путь без ссылок, `UUID` — на `runId`, возвращённый `create`. Каждый запуск размещается в приватном `.run/qa-postgres/<UUID>/`: `data/`, `owner.json`, `connection.json`, `receipt.json`, пароль и журналы. Каталоги QA/run имеют режим `0700`, метаданные и секреты — `0600`. Сервер слушает только `127.0.0.1` на отдельном временном порту, отличном от `5432`, без Unix socket. Допуск связывает файлы, SHA бинарных файлов/конфигурации, текущую OS-идентичность процесса, listener, SQL-настройки и наблюдавшийся SCRAM.
+
+Lease по умолчанию — 3600 секунд; `plan/create` принимают `--lease-seconds` от 1 до 14400. Истечение lease блокирует новый native-допуск, но не останавливает сервер автоматически. После работы явно выполни `close`: свежая проверка владения обязательна перед остановкой, неизвестный владелец не получает сигнал. `close` сохраняет данные, журналы и квитанции; команды purge нет.
+
+Для фиксированного native-сценария сначала собери `catalog-service` через `build:isolated` и выбери абсолютный путь его `receipt.json` в `.run/isolated-build/<BUILD_UUID>/`. В примере `/ABS_ISOLATED_RECEIPT` обозначает именно этот файл:
+
+```sh
+npm run qa:native -- plan --run UUID --candidate /ABS_ISOLATED_RECEIPT --scenario publication-rollback
+npm run qa:native -- run --run UUID --candidate /ABS_ISOLATED_RECEIPT --scenario publication-rollback
+npm run qa:postgres -- close --run UUID
+```
+
+`qa:native plan` читает candidate/harness и не проверяет готовность кластера. `run` повторяет допуск к собственному живому кластеру с действующим lease и выполняет ровно **два SQL-кейса** `PluginRepository own transaction`: обычный rollback и недоставленный rollback, с проверкой отсутствия ошибочной публикации до/после постороннего COMMIT и судьбы сессии. Skills/native-публикация, CAS и остальные harness-кейсы этим запуском не проверяются. Candidate сверяется по текущим и сохранённым Catalog/shared source bytes и скомпилированным артефактам; SHA harness проверяется до/после. Подключённые существующие зависимости не заморожены.
+
+Попытка сохраняет отдельную квитанцию и журнал в `scenarios/<attempt UUID>/` внутри run, а кластер оставляет для явного `close`. Успех требует двух полных кейсов, очистки собственной тестовой БД/процессов, сохранности исходных БД и неизменных candidate/harness. Это локальная SQL-проверка выбранного сценария; она не подтверждает production, IdP, Ceph или весь native-набор.
+
+Локальный `NEUROCENTER_QA_POSTGRES=0` запрещает `create` и новые native-запуски, сохраняя help, оба `plan`, `inspect`, `close` и сохранённые свидетельства. Допустимы только `0`/`1`, по умолчанию `1`; обычный `check` не поднимает PostgreSQL. Отдельный тест настоящего lifecycle включается только явным каталогом бинарных файлов; без переменной он пропускается:
+
+```sh
+QA_POSTGRES_TEST_BIN=/ABS/POSTGRES_16_15/bin node --test --test-concurrency=1 scripts/test/native/qa-postgres-lifecycle.test.mjs
+```
 
 ## Проверить отмену упаковки на реальной БД
 
@@ -198,7 +296,7 @@ node --test --test-concurrency=1 \
   scripts/test/package-publication-rollback-finalizer.test.mjs
 ```
 
-Для углублённого аудита сохранены `scripts/test/native/package-publication-rollback.test.mjs` и `scripts/test/tool-build-version-cas.mjs`: реальный SQL с потерянным ACK, последующим чужим COMMIT, блокировками и отзывом прав. Сейчас они требуют специально подготовленный собственный PostgreSQL 16.15 с приватной описью владельца, PID, сроком lease и source-freeze receipt; один PG URL не заменяет этот допуск. Исторический `connection.json` остановленного стенда использовать нельзя. Универсальная переносимая команда подготовки такого стенда ещё не поставляется; эти два harness не входят в обычный `check` и не должны запускать чужую инфраструктуру. Общая команда roundtrip выше от этой исторической описи не зависит.
+Для углублённого аудита сохранены `scripts/test/native/package-publication-rollback.test.mjs` и `scripts/test/tool-build-version-cas.mjs`: реальный SQL с потерянным ACK, последующим чужим COMMIT, блокировками и отзывом прав. Два rollback-кейса первого harness подключены к [локальному QA CLI](#подготовить-локальный-qa-postgresql); остальные кейсы и CAS пока требуют отдельного приватного допуска PostgreSQL 16.15 с описью владельца, PID, lease и source-freeze receipt. Один PG URL или исторический `connection.json` остановленного стенда не заменяет свежий допуск. Эти harness не входят в обычный `check`. Общая команда roundtrip выше использует собственный URL-контракт.
 
 [Контракт новой версии](tool-build-versions.md) отделяет общую редакцию каталога, закрепление проекта и локальную установку.
 
@@ -220,11 +318,11 @@ node --test --test-concurrency=1 \
   scripts/test/tool-build-publication-recovery-guard.test.mjs
 ```
 
-`tool-build-publication-deadline.mjs` отдельно проверяет три вида блокировок, меньшие SQL-лимиты, COMMIT/ROLLBACK и skill. Пока он использует тот же специальный приватный допуск PostgreSQL 16.15, что B09/CAS, а не только URL; переносимый bootstrap ещё не поставляется. Ни один из этих opt-in CLI не запускает PostgreSQL из обычного `check`. [Поведение, доказательства и пределы проверки](tool-build-publication-deadline.md).
+`tool-build-publication-deadline.mjs` отдельно проверяет три вида блокировок, меньшие SQL-лимиты, COMMIT/ROLLBACK и skill. Пока он использует специальный приватный допуск PostgreSQL 16.15, а не только URL; этот профиль ещё не подключён к `qa:native`. Ни один из этих opt-in CLI не запускает PostgreSQL из обычного `check`. [Поведение, доказательства и пределы проверки](tool-build-publication-deadline.md).
 
 ## Проверить доступ и восстановление публикации skill
 
-`scripts/test/skill-build-authorization.mjs` проверяет сборку skill и публичный `Service.importAsset(skill)` на настоящих Catalog/Skills методах, SQL и файловом хранилище. Нужны Node 24/POSIX, один явно собранный кандидат всех восьми пакетов и его квитанция замороженных исходников. Он использует специальный приватный допуск собственного PostgreSQL 16.15; одного PG URL недостаточно, переносимый bootstrap остаётся B12.
+`scripts/test/skill-build-authorization.mjs` проверяет сборку skill и публичный `Service.importAsset(skill)` на настоящих Catalog/Skills методах, SQL и файловом хранилище. Нужны Node 24/POSIX, один явно собранный кандидат всех восьми пакетов и его квитанция замороженных исходников. Он использует специальный приватный допуск собственного PostgreSQL 16.15; одного PG URL недостаточно. Этот профиль ещё не подключён к `qa:native`.
 
 Явные параметры окружения:
 
@@ -243,7 +341,7 @@ Skills transport и доставка файлового аудита задаю�
 
 ## Проверить адрес исполнителя и сохранённые запросы
 
-`scripts/test/actor-canonical-publication.mjs` воспроизводит прохождение исходного dev-principal через настоящий profile HTTP, Gateway headers и Catalog actor decoding до SQL/native-публикации. Он проверяет регистр/внешние пробелы, канонические контроли, повтор запроса, отмену и поздний POST, сохраняя прежнего владельца. Нужны Node 24/POSIX и тот же специальный допуск собственного PostgreSQL 16.15; переносимый bootstrap остаётся B12.
+`scripts/test/actor-canonical-publication.mjs` воспроизводит прохождение исходного dev-principal через настоящий profile HTTP, Gateway headers и Catalog actor decoding до SQL/native-публикации. Он проверяет регистр/внешние пробелы, канонические контроли, повтор запроса, отмену и поздний POST, сохраняя прежнего владельца. Нужны Node 24/POSIX и специальный допуск собственного PostgreSQL 16.15; этот профиль ещё не подключён к `qa:native`.
 
 Явно задай абсолютные пути `ACTOR_CANONICAL_PUBLICATION_CANDIDATE` к `repository` отдельной сборки всех восьми пакетов, `ACTOR_CANONICAL_PUBLICATION_SOURCE_RECEIPT` к source/SHA-квитанции и `ACTOR_CANONICAL_PUBLICATION_CONNECTION_FILE` к приватной описи свежего собственного кластера. Фаза `candidate` требует совпадения текущих исходников с кандидатом до подключения к БД.
 
@@ -259,7 +357,7 @@ ACTOR_CANONICAL_PUBLICATION_PHASE=candidate node scripts/test/actor-canonical-pu
 
 `scripts/test/build-admission-reliability.mjs` — opt-in проверка B13. На старом кандидате подтверждены пять ожиданий с `lock_timeout=0` / `statement_timeout=0`: строка READY upload, asset-lock обновления, dependency graph, общая очередь и строка задания перед барьером публикации. Исправленный кандидат прошёл 8/8: ограниченный отказ, сохранение UUID/исходников, повтор отмены и восстановление очереди. [Контракт и границы](tool-build-admission-deadline.md).
 
-Нужны Node 24/POSIX, абсолютные `BUILD_ADMISSION_CANDIDATE` к одному изолированному `repository`, `BUILD_ADMISSION_SOURCE_RECEIPT` к source/SHA-квитанции и `BUILD_ADMISSION_CONNECTION_FILE` к приватной описи свежего собственного PostgreSQL 16.15. Используется тот же специальный допуск B12, что у B14/B15; одного URL недостаточно. Для baseline выберите снимок до исправления, для candidate — текущую сборку и её source-квитанцию; переключение фазы само не меняет исходники. После задания соответствующих параметров:
+Нужны Node 24/POSIX, абсолютные `BUILD_ADMISSION_CANDIDATE` к одному изолированному `repository`, `BUILD_ADMISSION_SOURCE_RECEIPT` к source/SHA-квитанции и `BUILD_ADMISSION_CONNECTION_FILE` к приватной описи свежего собственного PostgreSQL 16.15. Этот профиль ещё не подключён к `qa:native`; одного URL недостаточно. Для baseline выберите снимок до исправления, для candidate — текущую сборку и её source-квитанцию; переключение фазы само не меняет исходники. После задания соответствующих параметров:
 
 ```sh
 BUILD_ADMISSION_PHASE=baseline node scripts/test/build-admission-reliability.mjs
@@ -268,4 +366,4 @@ BUILD_ADMISSION_PHASE=candidate node scripts/test/build-admission-reliability.mj
 
 Для принятия baseline нужны одновременно exit 1 и `causalRed:true`: пять точных графов блокировок, три здоровых контроля, продолжение очереди после снятия каждой блокировки и успешная очистка. Произвольная ошибка таким RED не считается. Входы проверяются настоящими compiled-валидаторами до подключения к БД; барьер одноразовый, watchdog дренирует собственные операции. SHA, исходники, прежние версии и список остальных БД проверяются после прогона.
 
-Фаза `candidate` требует exit 0 и `ok:true` для всех восьми случаев. Реальный timeout записи FAILED проверяется отдельно от timeout первого барьера; внешняя блокировка может оставить строку RUNNING до unlock. DELETE общей очереди также может вернуть 503: после unlock стенд повторяет тот же DELETE и проверяет tombstone до позднего POST. Ограничения 5 с на отдельную попытку блокировки и 30 с на SQL-запрос не образуют общий HTTP deadline. Методы контроллера вызываются внутри процесса; Gateway HTTP, браузер, настоящий MCP builder/установка и другие ОС не входят в этот профиль. Переносимый bootstrap остаётся B12.
+Фаза `candidate` требует exit 0 и `ok:true` для всех восьми случаев. Реальный timeout записи FAILED проверяется отдельно от timeout первого барьера; внешняя блокировка может оставить строку RUNNING до unlock. DELETE общей очереди также может вернуть 503: после unlock стенд повторяет тот же DELETE и проверяет tombstone до позднего POST. Ограничения 5 с на отдельную попытку блокировки и 30 с на SQL-запрос не образуют общий HTTP deadline. Методы контроллера вызываются внутри процесса; Gateway HTTP, браузер, настоящий MCP builder/установка и другие ОС не входят в этот профиль. Профиль B13 ещё не подключён к новому `qa:native` и требует отдельного допуска.

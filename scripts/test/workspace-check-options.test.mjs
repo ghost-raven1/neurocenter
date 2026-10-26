@@ -50,7 +50,8 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
         };
         syncBuiltinESMExports();`);
     const result = spawnSync(process.execPath, ['--import', preload, path.join(workspace, 'check.mjs'), ...args], {
-        cwd: checkout, encoding: 'utf8', timeout: 5000,
+        // The full plan starts many real Node children, even though each command is intercepted.
+        cwd: checkout, encoding: 'utf8', timeout: 30000,
         env: {NODE_BIN: process.execPath, NPM_CLI_JS: npm, PATH: path.dirname(process.execPath)},
     });
     assert.equal(result.error, undefined);

@@ -4,19 +4,17 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {pathToFileURL,fileURLToPath} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {safeEnvironment} from '../coverage/profiles.mjs';
+import {copyCoverageRuntime} from './coverage-runtime.fixture.mjs';
 
-const repository=fileURLToPath(new URL('../../',import.meta.url));
 const consumers=['SYSTEM_ROLE_CHAT_TEST_ADMIN_URL','SYSTEM_ROLE_MCP_TEST_ADMIN_URL','SYSTEM_ROLE_MCP_CHANNEL_TEST_ADMIN_URL'];
 
 /** Exercise the actual owned-PG environment/cleanup while replacing only the PostgreSQL driver boundary. */
 async function fixture(t){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-owned-env-')));
  t.after(()=>fs.rm(root,{recursive:true,force:true}));
- for(const name of ['scripts/coverage/owned-pg.mjs','scripts/coverage/profiles.mjs','services/shared/feature-flags.cjs','services/shared/feature-flag-catalog.json']){
-  const target=path.join(root,name);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(path.join(repository,name),target);
- }
+ await copyCoverageRuntime(root,'owned-pg');
  const catalog=path.join(root,'services/catalog-service');await fs.mkdir(path.join(catalog,'node_modules/pg'),{recursive:true});
  await fs.writeFile(path.join(catalog,'package.json'),'{}');
  await fs.writeFile(path.join(catalog,'node_modules/pg/index.js'),`const events=[];

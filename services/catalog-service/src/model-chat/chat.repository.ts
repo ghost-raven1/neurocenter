@@ -136,14 +136,15 @@ export class ChatRepository {
         await this.bump(db, row);
     }
     /** Trusted cleanup records only a safe terminal state; it cannot append a revoked model response. */
-    async fail(conversation: string, turnId: string, requestId: string, status: 'failed' | 'cancelled', message: string): Promise<void> {
-        await this.transaction(async db => {
+    async fail(conversation: string, turnId: string, requestId: string, status: 'failed' | 'cancelled', message: string): Promise<boolean> {
+        return this.transaction(async db => {
             const row = (await db.query<ConversationRow>('SELECT * FROM model_chat_conversations WHERE id=$1 FOR UPDATE', [conversation])).rows[0];
-            if (!row) return;
+            if (!row) return false;
             const result = await db.query('UPDATE model_chat_turns SET status=$4,error=$5,lease_until=NULL WHERE conversation_id=$1 AND id=$2 AND request_id=$3 AND status=\'pending\' AND removed_at IS NULL', [conversation, turnId, requestId, status, message]);
             await db.query("UPDATE model_chat_agent_responses SET status=$4,error=$5,updated_at=now() WHERE conversation_id=$1 AND turn_id=$2 AND request_id=$3 AND status='pending'", [conversation, turnId, requestId, status, message]);
             await db.query("UPDATE model_chat_discussion_steps SET status=$3,error=$4,finished_at=now() WHERE turn_id=$1 AND request_id=$2 AND status='pending'",[turnId,requestId,status,'Обсуждение прервано. Готовые ответы сохранены.']);
             if (result.rowCount) await this.bump(db, row);
+            return !!result.rowCount;
         });
     }
     async finish(db: ChatDb, row: ConversationRow, turn: TurnRow, answer: NonNullable<ChatTurn['answer']>): Promise<boolean> {

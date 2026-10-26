@@ -1,4 +1,5 @@
 import {runModelChatAgentTools} from '../agent-tools/agent-tools.model-chat';
+import {traceSavedChat} from '../../../shared/dev-trace.cjs';
 import {AgentToolsService} from '../agent-tools/agent-tools.service';
 import {agentToolGrant,agentToolContext} from '../agent-tools/agent-tools.validation';
 import {modelPlanningOptions} from '../models/model-planning-options';
@@ -272,6 +273,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             return { turn };
         });
         if (!prepared) return this.read(req, id);
+        traceSavedChat('accepted',{conversationId:id,turnId:prepared.turn.id,requestId:prepared.turn.request_id});
         return this.execute(req, scope, prepared.turn);
     }
 
@@ -299,7 +301,9 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             await this.repository.stage(db, row, turn, context.compactionNeeded ? 'compacting' : 'responding');
             await this.repository.bump(db, row); return { turn };
         });
-        if (!prepared) return this.read(req, id); return this.execute(req, scope, prepared.turn);
+        if (!prepared) return this.read(req, id);
+        traceSavedChat('retried',{conversationId:id,turnId:prepared.turn.id,requestId:prepared.turn.request_id});
+        return this.execute(req, scope, prepared.turn);
     }
     async cancel(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
         chatUuid(turnId); const body = chatBody(raw, ['expectedRevision']), revision = chatRevision(body.expectedRevision), scope = await this.scope(req, id);
@@ -310,7 +314,8 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             await db.query("UPDATE model_chat_agent_responses SET status='cancelled',error='Раунд остановлен.',updated_at=now() WHERE conversation_id=$1 AND turn_id=$2 AND status='pending'", [id, turnId]);
             await this.discussions.cancel(db, [turnId], 'Обсуждение остановлено. Готовые ответы сохранены.');
             return changed.rows[0].request_id;
-        }); const active = this.active.get(turnId); if (active?.requestId === cancelledRequest) active.abort.abort(); return this.read(req, id);
+        }); traceSavedChat('cancel-requested',{conversationId:id,turnId,requestId:cancelledRequest});
+        const active = this.active.get(turnId); if (active?.requestId === cancelledRequest) active.abort.abort(); return this.read(req, id);
     }
     async removeTurn(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
         chatUuid(turnId); const body = chatBody(raw, ['expectedRevision']), revision = chatRevision(body.expectedRevision), scope = await this.scope(req, id);
@@ -339,6 +344,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         // Durable acceptance transfers cancellation to the server owner; hiding a browser is not Stop.
         const abort = new AbortController(), combined = AbortSignal.any([abort.signal, AbortSignal.timeout(MODEL_CHAT_ROUND_TIMEOUT_MS)]);
         this.active.set(turn.id, { conversationId: scope.row.id, requestId: turn.request_id, abort });
+        traceSavedChat('started',{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
         try {
             combined.throwIfAborted();
             const active = await this.repository.owned(scope.owner, scope.row.id, () => scope.authorize(true), async db => {
@@ -389,11 +395,14 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             const message = result.message as Record<string, unknown> | undefined;
             if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || !message.content.trim() || Buffer.byteLength(JSON.stringify(message.content)) > 8 * 1024 ** 2
                 || !['stop', 'length'].includes(String(result.done_reason))) throw new Error('invalid-chat-response');
-            await this.repository.owned(scope.owner, scope.row.id, researched.assertCurrent, async (db, row) => {
-                combined.throwIfAborted(); await this.repository.finish(db, row, turn, { content: message.content as string, finishReason: result.done_reason as 'stop' | 'length', usage: chatUsage(result), evidence: researchEvidence(fitted.evidence, researched.projectSources), ...(researched.externalSources.length ? { researchSources: researched.externalSources } : {}), ...(researched.limitReached ? { researchLimited: true } : {}) });
+            const published = await this.repository.owned(scope.owner, scope.row.id, researched.assertCurrent, async (db, row) => {
+                combined.throwIfAborted(); return this.repository.finish(db, row, turn, { content: message.content as string, finishReason: result.done_reason as 'stop' | 'length', usage: chatUsage(result), evidence: researchEvidence(fitted.evidence, researched.projectSources), ...(researched.externalSources.length ? { researchSources: researched.externalSources } : {}), ...(researched.limitReached ? { researchLimited: true } : {}) });
             });
+            if(published)traceSavedChat('succeeded',{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
         } catch (error) {
-            await this.repository.fail(scope.row.id, turn.id, turn.request_id, combined.aborted ? 'cancelled' : 'failed', combined.aborted ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException || error instanceof ServiceUnavailableException || error instanceof ConflictException || error instanceof ForbiddenException && error.message.startsWith('Функция «') ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
+            const terminalStatus = combined.aborted ? 'cancelled' : 'failed';
+            const applied = await this.repository.fail(scope.row.id, turn.id, turn.request_id, terminalStatus, terminalStatus==='cancelled' ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException || error instanceof ServiceUnavailableException || error instanceof ConflictException || error instanceof ForbiddenException && error.message.startsWith('Функция «') ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
+            if(applied)traceSavedChat(terminalStatus,{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
             if (error instanceof ForbiddenException || error instanceof ConflictException) throw error;
         } finally { if (this.active.get(turn.id)?.abort === abort) this.active.delete(turn.id); }
         return this.read(req, scope.row.id);

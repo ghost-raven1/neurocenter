@@ -33,7 +33,7 @@ async function fixture(t,{installed=true}={}){
     if(installed)installCodexKit({kitRoot,codexHome,apply:true});
     const run=options=>doctorKit({kitRoot,codexHome,expectedTools,...options});
     const cli=async args=>{
-        for(const name of ['doctor.mjs','generate.mjs','install-codex.mjs'])await put(kitRoot,'scripts/agent-kit/'+name,await fs.readFile(new URL('../'+name,import.meta.url)));
+        for(const name of ['doctor.mjs','generate.mjs','install-codex.mjs','contracts.mjs'])await put(kitRoot,'scripts/agent-kit/'+name,await fs.readFile(new URL('../'+name,import.meta.url)));
         await put(kitRoot,'scripts/dev-mcp/tool-catalog.mjs','export const expectedToolNames='+JSON.stringify(expectedTools)+';\nexport const toolFlags=(env=process.env)=>({checkPlanEnabled:env.NEUROCENTER_DEV_MCP_CHECK_PLAN!=="0"});\nexport const toolDefinitions=({checkPlanEnabled=true}={})=>expectedToolNames.filter(name=>checkPlanEnabled||name!=="second_tool").map(name=>({name}));\n');
         return spawnSync(process.execPath,[path.join(kitRoot,'scripts/agent-kit/doctor.mjs'),...args],{env:{...process.env,CODEX_HOME:codexHome,NEUROCENTER_DEV_MCP_CHECK_PLAN:'1'},encoding:'utf8'});
     };
@@ -66,6 +66,9 @@ test('a matching installation leaves live discovery unknown and does not write a
     assert.equal(result.installedCopy.skills,65);
     assert.equal(result.observedClient.status,'unknown');
     assert.equal(result.observedClient.evidence,'not-supplied');
+    assert.equal(result.roleContracts.roles,64);assert.equal(result.roleContracts.effectivePermissions,'unknown');
+    assert.equal(result.roleContracts.loadedRoles,'unverified');assert.equal(result.roleContracts.generated.status,'pass');
+    assert.equal(result.roleContracts.installed.status,'pass');assert.match(result.roleContracts.source.sha256,/^[a-f0-9]{64}$/);
     assert.doesNotMatch(JSON.stringify(result),/private account|private-config|nc-agent-kit-doctor-/);
     assert.deepEqual(await snapshot(f.root),before);
 });
@@ -161,7 +164,18 @@ test('tool comparison identifies missing and unexpected public names as caller-s
     assert.deepEqual(result.observedClient.missing,['second_tool']);
     assert.deepEqual(result.observedClient.unexpected,['older_tool']);
     assert.equal((await f.run({observedTools:[...expectedTools].reverse()})).status,'pass');
+    const declared=await f.run({observedTools:[...expectedTools]});
+    assert.equal(declared.roleContracts.effectivePermissions,'unknown');assert.equal(declared.roleContracts.loadedRoles,'unverified');
     assert.deepEqual((await f.run({observedTools:[]})).observedClient.missing,expectedTools);
+    assert.deepEqual(await snapshot(f.root),before);
+});
+
+test('role diagnostics can be disabled without changing historical file or caller-supplied checks',async t=>{
+    const f=await fixture(t),before=await snapshot(f.root);
+    const result=await f.run({observedTools:expectedTools,environment:{NEUROCENTER_AGENT_ROLE_CONTRACTS:'0'}});
+    assert.equal(result.status,'pass');assert.equal(Object.hasOwn(result,'roleContracts'),false);
+    assert.equal(result.repository.status,'pass');assert.equal(result.installedCopy.status,'pass');
+    await assert.rejects(f.run({environment:{NEUROCENTER_AGENT_ROLE_CONTRACTS:'yes'}}),/NEUROCENTER_AGENT_ROLE_CONTRACTS/);
     assert.deepEqual(await snapshot(f.root),before);
 });
 

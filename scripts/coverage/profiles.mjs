@@ -1,5 +1,7 @@
 import path from 'node:path';
 import {readFile} from 'node:fs/promises';
+import {runLifecycleSucceeded} from '../workspace/run-lifecycle.mjs';
+import {coveragePackages} from './source-inventory.mjs';
 
 export const nativeSuites = [
  'feature-flags-gateway.test.cjs','model-chat-gateway.test.cjs','project-embedding-gateway.test.cjs',
@@ -80,9 +82,29 @@ export function retainedCoverageProfiles(manifest,depth=0){
  return rows;
 }
 
+/** A modern lifecycle must retain exactly the package/profile rows in its admitted plan. */
+function lifecycleScopeComplete(manifest){
+ if(!Object.hasOwn(manifest,'lifecycle'))return true;
+ if(!runLifecycleSucceeded(manifest.lifecycle)||Object.hasOwn(manifest,'retainedProfiles')||Object.hasOwn(manifest,'inputs'))return false;
+ if(manifest.sourceChangedDuringRun!==false)return false;
+ if(Object.hasOwn(manifest,'sourceBefore')||Object.hasOwn(manifest,'sourceAfter')){
+  const keys=['head','status','trackedDiffSha256','untrackedContentSha256'],before=manifest.sourceBefore,after=manifest.sourceAfter;
+  if(!before||!after||keys.some(key=>typeof before[key]!=='string'||typeof after[key]!=='string'||before[key]!==after[key]))return false;
+ }
+ const plan=manifest.lifecycle.plannedSteps,known=new Set([...coveragePackages.map(([id])=>'unit:'+id),'native','integration']);
+ if(plan.length>known.size||plan.some(id=>!known.has(id)))return false;
+ const units=plan.filter(id=>id.startsWith('unit:')).map(id=>id.slice(5));
+ if(!Array.isArray(manifest.packages)||manifest.packages.length!==units.length
+  ||manifest.packages.some((item,index)=>item?.name!==units[index]))return false;
+ return ['native','integration'].every(name=>plan.includes(name)
+  ?manifest[name]!==null&&typeof manifest[name]==='object'&&!Array.isArray(manifest[name])
+  :manifest[name]===null||manifest[name]===undefined);
+}
+
 /** Recheck requested-suite evidence before retaining a completion claim across merges. */
 export function coverageCountersComplete(manifest){
- return Array.isArray(manifest.packages)&&manifest.packages.every(item=>suiteCountersComplete(item)
+ return lifecycleScopeComplete(manifest)
+  &&Array.isArray(manifest.packages)&&manifest.packages.every(item=>suiteCountersComplete(item)
   &&item.testFileInventory?.complete===true&&item.reportValidation?.ok===true)
   &&retainedCoverageProfiles(manifest).every(row=>[row.native,row.integration].filter(Boolean).every(item=>suiteCountersComplete(item,true)
    &&Array.isArray(item.excludedSuites)&&item.excludedSuites.length===0));

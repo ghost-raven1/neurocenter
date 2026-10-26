@@ -35,6 +35,19 @@ test('complete v2 check reports requested scope and counters without claiming so
     assert.equal(value.reportSha256,createHash('sha256').update(JSON.stringify(report)).digest('hex'));assert.match(value.evidence,/Untrusted local evidence/);
 });
 
+test('report SHA identifies original FD bytes even when invalid UTF8 decodes to the same text',async t=>{
+    const f=await fixture(t),json=JSON.stringify({...checkReport(),ignored:'BYTE_MARKER'}),[before,after]=json.split('BYTE_MARKER');
+    const hashes=[];
+    for(const byte of [0xff,0xfe]){
+        const bytes=Buffer.concat([Buffer.from(before),Buffer.from([byte]),Buffer.from(after)]);
+        await writeFile(path.join(f.root,checkPath),bytes);
+        const summary=await f.read();assert.equal(summary.reportSha256,createHash('sha256').update(bytes).digest('hex'));
+        assert.notEqual(summary.reportSha256,createHash('sha256').update(bytes.toString('utf8')).digest('hex'));
+        hashes.push(summary.reportSha256);
+    }
+    assert.notEqual(hashes[0],hashes[1]);
+});
+
 test('legacy success and passing prefixes remain incomplete because planned scope and final state are absent',async t=>{
     const f=await fixture(t),report=checkReport();delete report.schemaVersion;delete report.state;delete report.plannedSteps;delete report.updatedAt;
     await f.save(checkPath,report);let value=await f.read();assert.equal(value.status,'incomplete');assert.equal(value.complete,false);assert.equal(value.plannedStepCount,null);

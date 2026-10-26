@@ -7,6 +7,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {evaluateTrace,validateScenario,EVALUATOR_VERSION} from '../evals/evaluate.mjs';
 import {loadScenarios,runControls,scoreCapturedTrace} from '../evals/run.mjs';
+import {KIT_VERSION} from '../generate.mjs';
 
 const root=fileURLToPath(new URL('../../../',import.meta.url));
 const scenarios=await loadScenarios();
@@ -21,7 +22,7 @@ test('six fixed scenarios classify all good and bad controls with preserved vers
     for(const item of result.results){
         const score=item.score;
         assert.equal(item.matched,true);assert.equal(score.versions.evaluator,EVALUATOR_VERSION);
-        assert.equal(score.versions.kit,'0.1.2');
+        assert.equal(score.versions.kit,KIT_VERSION);
         for(const key of ['kitManifestSha256','promptContentSha256','scenarioSha256','traceSha256'])assert.match(score.versions[key],/^[a-f0-9]{64}$/);
         assert.equal(score.capture.model.parameters.modelCalls,0);
         assert.match(score.capture.prompts.sha256,/^[a-f0-9]{64}$/);

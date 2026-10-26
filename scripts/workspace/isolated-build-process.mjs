@@ -7,18 +7,18 @@ import {BuildError,digest} from './isolated-build-source.mjs';
 /** Only numeric state for the newly created group; commands and foreign processes are never selected for termination. */
 function groupMembers(pgid){
     let output;
-    // A busy host may time out one probe; permission failures and sustained unavailability remain fatal.
+    // A busy host or a wrapper signal may interrupt one probe; persistent failures remain fatal.
     for(let attempt=0;;attempt++)try{
         output=execFileSync('/bin/ps',['-ax','-o','pid=,pgid=,stat='],{encoding:'utf8',timeout:1000,maxBuffer:1024**2,
             env:{PATH:'/usr/bin:/bin',LANG:'C'}});break;
-    }catch(error){if(attempt>=2||!['ETIMEDOUT','EAGAIN'].includes(error.code))throw error;}
+    }catch(error){if(attempt>=2||!(['ETIMEDOUT','EAGAIN'].includes(error.code)||['SIGINT','SIGTERM'].includes(error.signal)))throw error;}
     return output.split('\n').map(line=>/^\s*(\d+)\s+(\d+)\s+(\S+)/.exec(line)).filter(match=>match&&Number(match[2])===pgid)
         .map(match=>({pid:Number(match[1]),zombie:match[3].startsWith('Z')}));
 }
 function signalGroup(pgid,signal){try{process.kill(-pgid,signal);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}}
 
 /** Supervise npm and its compiler descendants in one owned POSIX group, even after the leader exits. */
-export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutMs=180000,graceMs=1000,logLimit=32*1024**2,onSpawn,ownerFile}){
+export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutMs=180000,graceMs=1000,logLimit=32*1024**2,onSpawn,ownerFile,inspectLog=handle=>handle.stat()}){
     if(process.platform==='win32')throw new BuildError('UNSUPPORTED_PLATFORM','Owned process-group cleanup is currently supported on POSIX only.');
     const log=await fs.open(logFile,'wx',0o600),started=Date.now();
     let child,pid,exit,spawnError,inspectionError,primary=null,closed=false,leaderExited=false,groupInspectionFailed=false;
@@ -29,7 +29,8 @@ export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutM
     try{
         if(signal?.aborted)return {ok:false,failure:{code:'CANCELLED'},exitCode:null,signal:null,durationMs:0,leaderReaped:false,cleanup:{noLiveDescendants:true,signals:[]}};
         child=spawn(node,ownerFile?[ownerFile]:args,{cwd,env,stdio:ownerFile?['ignore',log.fd,log.fd,'ipc']:['ignore',log.fd,log.fd],detached:true,windowsHide:true});pid=child.pid;
-        child.once('spawn',()=>{onSpawn?.(child.pid);if(ownerFile)child.send({kind:'run',args,environment:env});});
+        child.once('spawn',()=>{try{onSpawn?.(child.pid);if(ownerFile)child.send({kind:'run',args,environment:env});}
+            catch{fail('BUILD_PROCESS_FAILED');terminate();}});
         child.once('error',error=>{spawnError=error.code||'UNKNOWN';fail('SPAWN_FAILED');});
         child.once('exit',(code,endedBy)=>{leaderExited=true;exit={code,signal:endedBy};if(code!==0||endedBy)fail('BUILD_FAILED');});
         child.once('close',()=>{closed=true;});
@@ -37,7 +38,9 @@ export async function runBuildProcess({node,args,cwd,env,logFile,signal,timeoutM
         let finalMembers=[];
         while(true){
             if(!primary&&Date.now()-started>=timeoutMs){fail('BUILD_TIMEOUT');terminate();}
-            if(!primary&&(await log.stat()).size>logLimit){fail('BUILD_LOG_LIMIT');terminate();}
+            // An I/O or caller observation failure still drains our group through the same cleanup loop.
+            if(!primary)try{if((await inspectLog(log)).size>logLimit){fail('BUILD_LOG_LIMIT');terminate();}}
+            catch{fail('BUILD_PROCESS_FAILED');terminate();}
             if(spawnError&&!pid)break;
             let members;
             try{members=pid?groupMembers(pid):[];}catch(error){inspectionError=error.code;groupInspectionFailed=true;fail('PROCESS_INSPECTION_FAILED');terminate();members=null;}

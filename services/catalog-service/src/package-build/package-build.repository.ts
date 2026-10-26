@@ -135,10 +135,12 @@ export class PackageBuildRepository {
             await client.query('UPDATE tool_build_jobs SET publication_started_at=COALESCE(publication_started_at,now()),updated_at=now() WHERE id=$1',[id]);
         },lease);
     }
-    async completeCancellation(id:string):Promise<void>{
-        await this.transaction(async client=>{
-            const {rows}=await client.query<BuildRow>(`UPDATE tool_build_jobs SET state='CANCELLED',message='Сборка отменена. Исходники и опубликованные версии сохранены.',error=NULL,updated_at=now() WHERE id=$1 AND state='CANCELLING' AND publication_started_at IS NULL RETURNING *`,[id]);
+    /** A terminal trace needs the existing transition's committed acknowledgment. */
+    async completeCancellation(id:string):Promise<boolean>{
+        return this.transaction(async client=>{
+            const {rows,rowCount}=await client.query<BuildRow>(`UPDATE tool_build_jobs SET state='CANCELLED',message='Сборка отменена. Исходники и опубликованные версии сохранены.',error=NULL,updated_at=now() WHERE id=$1 AND state='CANCELLING' AND publication_started_at IS NULL RETURNING *`,[id]);
             if(rows[0])await this.operation(client,rows[0]);
+            return !!rowCount;
         });
     }
     /** A passive supervisor may start its builder only after this durable, lease-bound acknowledgment. */

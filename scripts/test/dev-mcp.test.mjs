@@ -14,6 +14,9 @@ import {redactLog} from '../dev-mcp/redact.mjs';
 import {healthReader} from '../dev-mcp/health.mjs';
 import {packages,services} from '../dev-mcp/constants.mjs';
 import {expectedToolNames,serverVersion} from '../dev-mcp/tool-catalog.mjs';
+import {captureCheckSource,checkSourceResult} from '../workspace/check-source.mjs';
+import {launchFixture} from './dev-launch.fixture.mjs';
+import {stopWatchGroup} from '../workspace/dev-watch-owned.mjs';
 
 const require=createRequire(new URL('../../mcp/neurocenter-asset-sync/package.json',import.meta.url));
 const {Client}=require('@modelcontextprotocol/sdk/client/index.js');
@@ -210,6 +213,15 @@ test('actual SDK stdio lists the current readonly catalogue, calls it and return
         selectedPackages:['frontend'],builds:[],inputs:null,startedAt:'2026-10-23T00:00:00Z'}));
     const build=await call('verification_summary',{report:'.run/isolated-build/sdk/receipt.json'});
     assert.equal(build.structuredContent.kind,'isolated-build');assert.equal(build.structuredContent.status,'in-progress');
+    const catalog=await call('evidence_catalog',{limit:20});
+    assert.equal(catalog.isError,undefined);
+    assert.deepEqual(new Set(catalog.structuredContent.entries.filter(row=>row.state==='available').map(row=>row.family)),new Set(['check','coverage','isolated-build']));
+    assert.ok(!JSON.stringify(catalog).includes('DO_NOT_RETURN_CHECK_SECRET'));
+    const compared=await call('verify_source',{report:f.reportPath,expectedReportSha256:verification.structuredContent.reportSha256});
+    assert.equal(compared.structuredContent.comparison.state,'unknown');
+    assert.equal(compared.structuredContent.comparison.reason,'UNSUPPORTED_SOURCE_PROTOCOL');
+    const trace=await call('request_trace',{flow:'tool-build',request:'11111111-1111-4111-8111-111111111111'});
+    assert.equal(trace.structuredContent.state,'unavailable');assert.deepEqual(trace.structuredContent.events,[]);
     const metrics=Object.fromEntries(['lines','statements','functions','branches'].map(name=>[name,{total:2,covered:1}]));
     f.report.sourceInventory={files:[{path:'services/catalog-service/src/example.ts',role:'production',measurement:'represented'}]};await f.saveReport(f.report);
     await writeFile(path.join(f.root,'.run/coverage/final/gaps.json'),JSON.stringify({schemaVersion:1,profile:f.report.profile,coverageKind:f.report.coverageKind,
@@ -221,11 +233,70 @@ test('actual SDK stdio lists the current readonly catalogue, calls it and return
     assert.equal((await call('coverage_gaps',{report:f.reportPath,package:'catalog-service',limit:21})).isError,true);
     for(const [name,args]of [['services_health',{url:'http://secret:token@example.test'}],['service_logs',{service:'../../private-secret'}],['verification_summary',{report:'.env'}],
         ['check_plan',{packages:['frontend'],command:'SECRET_COMMAND'}],['check_plan',{packages:['../../private-secret']}],['check_plan',{packages:[]}],['check_plan',{packages:['frontend','frontend']}],
-        ['coverage_gaps',{report:'.run/check/sdk/report.json',package:'frontend'}]]){
+        ['coverage_gaps',{report:'.run/check/sdk/report.json',package:'frontend'}],['evidence_catalog',{families:['../secret']}],
+        ['evidence_catalog',{limit:21}],['verify_source',{report:f.reportPath,expectedReportSha256:'bad'}],
+        ['request_trace',{flow:'tool-build',request:'../private-secret'}],['service_logs',{service:'catalog',launchId:'../private-secret'}]]){
         const result=await call(name,args);assert.equal(result.isError,true);assert.ok(!JSON.stringify(result).includes('private-secret'));assert.ok(!JSON.stringify(result).includes('secret:token'));
     }
     assert.equal((await call('service_logs',{service:'rag'})).isError,true);
     await assert.rejects(call('unknown'));await assert.rejects(call('toString'));assert.equal((await call('workspace_status')).isError,undefined);
+});
+
+test('actual SDK source comparison separates a recorded result from current fingerprint match and later edits',async t=>{
+    const f=await sdkFixture(t),before=await captureCheckSource(f.root),report='.run/check/source/report.json';
+    assert.ok(before.snapshot);
+    await mkdir(path.dirname(path.join(f.root,report)),{recursive:true});
+    await writeFile(path.join(f.root,report),JSON.stringify({schemaVersion:3,selection:{packages:['frontend'],steps:['typecheck']},
+        plannedSteps:['frontend: typecheck'],state:'passed',success:true,startedAt:'2026-10-23T00:00:00.000Z',finishedAt:'2026-10-23T00:01:00.000Z',
+        failure:null,cancellation:null,source:checkSourceResult(before,before),
+        steps:[{name:'frontend: typecheck',ok:true,exitCode:0,signal:null,durationMs:1,leaderReaped:true,cleanup:{noLiveDescendants:true,signals:[],zombieCount:0}}]}));
+    const summary=(await f.client.callTool({name:'verification_summary',arguments:{report}})).structuredContent;
+    const selection={report,expectedReportSha256:summary.reportSha256};
+    const matched=(await f.client.callTool({name:'verify_source',arguments:selection})).structuredContent;
+    assert.equal(matched.recorded.complete,true);assert.equal(matched.comparison.state,'match');
+    await writeFile(path.join(f.root,'new-untracked-source.ts'),'export const changed=true;');
+    const changed=(await f.client.callTool({name:'verify_source',arguments:selection})).structuredContent;
+    assert.equal(changed.recorded.complete,true);assert.equal(changed.comparison.state,'mismatch');
+});
+
+test('actual SDK impact plan scopes a known frontend change without executing its checks',async t=>{
+    const f=await sdkFixture(t);
+    await mkdir(path.join(f.root,'frontend/src'),{recursive:true});
+    await writeFile(path.join(f.root,'frontend/src/example.ts'),'export const change=true;');
+    const result=await f.client.callTool({name:'impact_plan',arguments:{baseRevision:f.head}});
+    assert.equal(result.isError,undefined);assert.equal(result.structuredContent.mode,'scoped');
+    assert.deepEqual(result.structuredContent.packages,['frontend']);assert.equal(result.structuredContent.sourceFingerprint.status,'known');
+    assert.ok(result.structuredContent.plannedChecks.checks.length>0);
+    await assert.rejects(readFile(path.join(f.root,'.run/check/report.json')),{code:'ENOENT'});
+    const invalid=await f.client.callTool({name:'impact_plan',arguments:{baseRevision:'0'.repeat(40)}});
+    assert.equal(invalid.isError,true);assert.match(JSON.stringify(invalid),/IMPACT_INVALID_BASE/);
+});
+
+test('actual SDK reads emitted request events from an owned launch and retained history after stop',async t=>{
+    const f=await launchFixture(t),request='11111111-1111-4111-8111-111111111111',buildId='22222222-2222-4222-8222-222222222222';
+    await writeFile(path.join(f.root,'package.json'),JSON.stringify({name:'neurocenter-workspace'}));
+    await writeFile(f.entry,`const {traceToolBuild}=require(${JSON.stringify(path.join(directory,'services/shared/dev-trace.cjs'))});
+traceToolBuild('requested',{requestKey:${JSON.stringify(request)}});
+traceToolBuild('accepted',{requestKey:${JSON.stringify(request)},buildId:${JSON.stringify(buildId)}});
+setInterval(()=>{},1000);`);
+    const launched=await f.launch({environment:{NEUROCENTER_DEV_TRACES:'1'}}),entry=path.join(f.root,'sdk-entry.mjs');
+    await writeFile(entry,`import {startDevMcp} from ${JSON.stringify(serverUrl)};await startDevMcp({workspace:${JSON.stringify(f.root)},services:[]});`);
+    const transport=new StdioClientTransport({command:process.execPath,args:[entry],cwd:f.root,
+        env:{PATH:process.env.PATH,HOME:f.root,USERPROFILE:f.root,XDG_CONFIG_HOME:f.root},stderr:'pipe'});
+    let stderr='';transport.stderr.on('data',chunk=>{stderr+=chunk;});
+    const client=new Client({name:'owned-launch-trace-fixture',version:'1.0.0'});
+    try{
+        await client.connect(transport,{timeout:5000});
+        const observed=(await client.callTool({name:'request_trace',arguments:{flow:'tool-build',request}})).structuredContent;
+        assert.equal(observed.state,'observed');assert.equal(observed.currentProcessCorrelation.state,'owned');
+        assert.deepEqual(observed.events.map(event=>event.event),['requested','accepted']);assert.equal(Object.hasOwn(observed,'complete'),false);
+        const selected=(await client.callTool({name:'service_logs',arguments:{service:'catalog',launchId:launched.record.launchId}})).structuredContent;
+        assert.equal(selected.details.launch.launchId,launched.record.launchId);assert.equal(selected.details.currentProcessCorrelation.state,'historical');
+        await stopWatchGroup(launched.record);
+        const history=(await client.callTool({name:'request_trace',arguments:{flow:'tool-build',request,launchId:launched.record.launchId}})).structuredContent;
+        assert.equal(history.currentProcessCorrelation.state,'historical');assert.equal(history.events.length,2);
+        assert.equal(stderr,'');
+    }finally{await client.close();}
 });
 
 test('output-schema flag removes advertised schemas while calls retain their bounded response',async t=>{
@@ -250,6 +321,20 @@ test('disabled check-plan flag hides and rejects the tool while retained evidenc
     await assert.rejects(f.client.callTool({name:'check_plan',arguments:{packages:['frontend']}}));
     const report=await f.client.callTool({name:'verification_summary',arguments:{report:f.reportPath}});
     assert.equal(report.structuredContent.status,'requested-suites-complete');
+});
+
+test('disabled evidence flag hides new observations while retained verification summaries remain readable',async t=>{
+    const f=await sdkFixture(t,[],{NEUROCENTER_DEV_MCP_EVIDENCE:'0'}),list=await f.client.listTools();
+    assert.deepEqual(list.tools.map(tool=>tool.name),expectedToolNames.filter(name=>!['evidence_catalog','verify_source'].includes(name)));
+    for(const name of ['evidence_catalog','verify_source'])await assert.rejects(f.client.callTool({name,arguments:{}}));
+    assert.equal((await f.client.callTool({name:'verification_summary',arguments:{report:f.reportPath}})).structuredContent.status,'requested-suites-complete');
+});
+
+test('disabled impact flag hides new planning while retained verification summaries remain readable',async t=>{
+    const f=await sdkFixture(t,[],{NEUROCENTER_IMPACT_PLAN:'0'}),list=await f.client.listTools();
+    assert.deepEqual(list.tools.map(tool=>tool.name),expectedToolNames.filter(name=>name!=='impact_plan'));
+    await assert.rejects(f.client.callTool({name:'impact_plan',arguments:{baseRevision:f.head}}));
+    assert.equal((await f.client.callTool({name:'verification_summary',arguments:{report:f.reportPath}})).structuredContent.status,'requested-suites-complete');
 });
 
 test('actual SDK request cancellation closes the owned health socket and keeps stdio usable',async t=>{

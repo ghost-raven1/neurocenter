@@ -62,7 +62,7 @@ test('output-schema flag only changes the advertised contract and preserves evid
     assert.ok(disabled.every(tool=>!Object.hasOwn(tool,'outputSchema')));
     assert.ok(disabled.some(tool=>tool.name==='verification_summary'));
     assert.equal(disabled.length,toolDefinitions().length);
-    for(const name of ['NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS','NEUROCENTER_DEV_MCP_SERVICE_DETAILS'])
+    for(const name of ['NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS','NEUROCENTER_DEV_MCP_SERVICE_DETAILS','NEUROCENTER_DEV_MCP_EVIDENCE','NEUROCENTER_IMPACT_PLAN'])
         assert.throws(()=>toolFlags({[name]:'yes'}),error=>error.code==='INVALID_CONFIGURATION');
     assert.equal(toolFlags({NEUROCENTER_DEV_MCP_SERVICE_DETAILS:'0'}).serviceDetailsEnabled,false);
 });

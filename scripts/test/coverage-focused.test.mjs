@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {coveragePackages} from '../coverage/source-inventory.mjs';
+import {copyCoverageRuntime} from './coverage-runtime.fixture.mjs';
 
 const repository=fileURLToPath(new URL('../../',import.meta.url));
 const selected='test/selected.test.ts',second='test/second.test.mjs',collision='test/selected.test.tsx',unselected='test/unselected.test.ts',external='test/external-db.test.ts';
@@ -33,15 +34,8 @@ if(process.env.FOCUSED_CASE==='untracked-source')await fs.writeFile(path.join(cw
 async function fixture(t,{realVitest=false,pgTypes=false,helper=false,realIdentity=false}={}){
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-focused-coverage-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const tools=path.join(root,'scripts/coverage'),output=path.join(root,'output'),calls=path.join(root,'worker-calls.jsonl');
- for(const directory of[tools,path.join(root,'scripts/workspace'),path.join(root,'services/shared')])await fs.mkdir(directory,{recursive:true});
- for(const file of['run.mjs','focused-selection.mjs','unit-safe-profile.mjs','profiles.mjs','owned-pg.mjs','methods.mjs','report.mjs','source-inventory.mjs','test-file-inventory.mjs','inventory-reporter.mjs','package.json']){
-  try{await fs.copyFile(path.join(repository,'scripts/coverage',file),path.join(tools,file));}catch(error){if(file!=='focused-selection.mjs'||error.code!=='ENOENT')throw error;}
- }
- await fs.copyFile(path.join(repository,'scripts/workspace/check-report.mjs'),path.join(root,'scripts/workspace/check-report.mjs'));
- for(const file of['feature-flags.cjs','feature-flag-catalog.json','test-coverage.mjs'])await fs.copyFile(path.join(repository,'services/shared',file),path.join(root,'services/shared',file));
- if(realIdentity)await fs.copyFile(path.join(repository,'scripts/coverage/source-identity.mjs'),path.join(tools,'source-identity.mjs'));
- else await fs.writeFile(path.join(tools,'source-identity.mjs'),'export const sourceIdentity=()=>({synthetic:true});\n');
- await fs.symlink(path.join(repository,'scripts/coverage/node_modules'),path.join(tools,'node_modules'),'dir');
+ await copyCoverageRuntime(root,'run',{sharedFiles:['test-coverage.mjs']});
+ if(!realIdentity)await fs.writeFile(path.join(tools,'source-identity.mjs'),"export const sourceIdentity=()=>({head:'a'.repeat(40),status:'',trackedDiffSha256:'b'.repeat(64),untrackedContentSha256:'c'.repeat(64)});\n");
  for(const[id,relative]of coveragePackages){
   const pkg=path.join(root,relative);await fs.mkdir(path.join(pkg,'src'),{recursive:true});await fs.mkdir(path.join(pkg,'test'),{recursive:true});
   await fs.writeFile(path.join(pkg,'src/entry.ts'),'export const value=1;\n');await fs.writeFile(path.join(pkg,'src/never.ts'),'export const unused=2;\n');
@@ -99,7 +93,9 @@ for(const scenario of ['tracked-source','untracked-source'])test('A successful w
  assert.equal(manifest.sourceChangedDuringRun,true);assert.ok(manifest.finishedAt);
  assert.equal(manifest.complete,false);assert.equal(manifest.suiteCompletion,false);assert.equal(result.status,1,result.stdout+result.stderr);
  assert.ok(JSON.parse(await fs.readFile(path.join(f.output,'merged/coverage-final.json'),'utf8'))[path.join(f.pkg,'src/entry.ts')]);
- assert.equal(JSON.parse(await fs.readFile(path.join(f.output,'gaps.json'),'utf8')).sourceChangedDuringRun,true);
+ assert.equal(manifest.lifecycle.state,'failed');assert.equal(manifest.lifecycle.failure.code,'SOURCE_CHANGED');
+ for(const file of ['gaps.json','gaps.md'])await assert.rejects(fs.stat(path.join(f.output,file)),{code:'ENOENT'});
+ assert.ok(JSON.parse(await fs.readFile(path.join(f.output,'feature-flags-service/report/coverage-final.json'),'utf8'))[path.join(f.pkg,'src/entry.ts')]);
 });
 
 test('Reviewed type-only pg unit executes in full and focused orchestration with the complete source denominator',async t=>{

@@ -7,6 +7,9 @@ import {spawn, spawnSync} from 'node:child_process';
 import {once} from 'node:events';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {launchDevService} from '../workspace/dev-launch-provenance.mjs';
+import {blockedLaunch} from './dev-launch-recovery.fixture.mjs';
+import {groupAlive} from '../workspace/dev-watch-owned.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -31,7 +34,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(serviceDirectory, 'dist'), {recursive: true});
     await fs.mkdir(path.join(checkout, '.run'));
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -74,18 +77,34 @@ async function fixture(t) {
         assert.ok(Number.isSafeInteger(message.port) && message.port > 0);
         return {child, port: message.port};
     }
-    async function state(records) {await fs.writeFile(stateFile, JSON.stringify(records));}
-    function down() {
+    async function state(records) {await fs.writeFile(stateFile, JSON.stringify(records),{mode:0o600});}
+    function down(expectedStatus=0) {
         const result = spawnSync('/bin/bash', [path.join(checkout, 'scripts/dev.sh'), 'down'], {
             cwd: checkout, env: {PATH: [path.dirname(process.execPath), '/usr/bin', '/bin', '/usr/sbin'].join(path.delimiter),
                 NODE_BIN: process.execPath, NO_COLOR: '1', TERM: 'dumb'}, encoding: 'utf8', timeout: 20000,
         });
         assert.equal(result.error, undefined);
-        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.status, expectedStatus, result.stderr);
         return result;
     }
-    return {checkout, stateFile, listener, state, down};
+    return {checkout, stateFile, listener, state, down,entry};
 }
+
+for(const kind of ['birth','pgid','fd'])test('down preserves unknown '+kind+' witness and does not discover around the refusal',async t=>{
+    const f=await fixture(t),foreign=await f.listener({foreign:true}),service={name:'catalog',dir:'services/catalog-service'},logDir=path.join(f.checkout,'.run/logs');
+    await fs.mkdir(logDir,{recursive:true});
+    const owned=await blockedLaunch({root:f.checkout,entry:f.entry,service,launch:options=>launchDevService({root:f.checkout,node:process.execPath,service,entry:f.entry,logDir,...options,environment:{PATH:process.env.PATH,...options.environment}})});
+    await owned.killOwner();
+    try{
+        const record=structuredClone(owned.launched.record);
+        if(kind==='birth')record.serviceWitness.birth='Mon Jan 01 00:00:00 2001';
+        if(kind==='pgid')record.serviceWitness.pgid++;
+        if(kind==='fd')record.serviceWitness.log.ino++;
+        await f.state([record]);const before=await fs.readFile(f.stateFile,'utf8'),result=f.down(1);
+        assert.match(result.stderr,/DEV_LAUNCH_WITNESS/);assert.equal(await fs.readFile(f.stateFile,'utf8'),before);
+        assert.equal(groupAlive(record.pid),true);assert.equal((await portError(foreign.port))?.code,'EADDRINUSE');
+    }finally{await owned.cleanup();}
+});
 
 /** Проверяем фактическое освобождение сокета, не только текст CLI или сигнал процессу. */
 async function portError(port) {

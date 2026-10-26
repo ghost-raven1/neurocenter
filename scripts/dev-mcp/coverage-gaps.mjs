@@ -1,5 +1,4 @@
 import path from 'node:path';
-import {createHash} from 'node:crypto';
 import {packages,DiagnosticError,evidenceNote} from './constants.mjs';
 import {readOwnedFile} from './safe-file.mjs';
 import {redactLog} from './redact.mjs';
@@ -21,9 +20,9 @@ function summary(value,comparable){
 
 async function json(root,file,expectedSha){
     try{
-        const text=(await readOwnedFile(root,file,{limit:16*1024**2})).text;
-        if(expectedSha&&createHash('sha256').update(text).digest('hex')!==expectedSha)throw new DiagnosticError('FILE_CHANGED','The manifest changed between observations; retry this diagnostic.');
-        return {value:JSON.parse(text),sha256:createHash('sha256').update(text).digest('hex')};
+        const content=await readOwnedFile(root,file,{limit:16*1024**2});
+        if(expectedSha&&content.contentSha256!==expectedSha)throw new DiagnosticError('FILE_CHANGED','The manifest changed between observations; retry this diagnostic.');
+        return {value:JSON.parse(content.text),sha256:content.contentSha256};
     }
     catch(error){if(error instanceof SyntaxError)throw malformed();throw error;}
 }
@@ -33,9 +32,17 @@ export async function readCoverageGaps(root,report,packageName,limit,verificatio
     const entry=packages.find(([name])=>name===packageName);
     if(!entry||!Number.isInteger(limit)||limit<1||limit>20)throw new DiagnosticError('INVALID_ARGUMENT','Choose a canonical package and a limit between 1 and 20.');
     if(verification.status==='in-progress')throw new DiagnosticError('REPORT_IN_PROGRESS','Wait for this coverage run to finish before choosing regression targets.');
+    if(verification.lifecycle&&['failed','cancelled'].includes(verification.status)&&!verification.packages.some(item=>item.name===packageName))
+        throw new DiagnosticError('COVERAGE_TARGETS_UNAVAILABLE','This coverage run stopped before retaining package targets; inspect its lifecycle and rerun the selected profile.');
     if(!verification.packages.some(item=>item.name===packageName))throw new DiagnosticError('PACKAGE_NOT_MEASURED','Choose a report containing unit results for this package; HTTP-only reports have no unit package scope.');
     const {value:manifest}=await json(root,report,verification.reportSha256),gapReport=report.replace(/manifest\.json$/,'gaps.json');
-    const {value:gaps,sha256:gapsSha256}=await json(root,gapReport);
+    let gapResult;
+    try{gapResult=await json(root,gapReport);}catch(error){
+        if(error.code==='ENOENT'&&verification.lifecycle&&['failed','cancelled'].includes(verification.status))
+            throw new DiagnosticError('COVERAGE_TARGETS_UNAVAILABLE','This coverage run stopped before retaining targets; inspect its lifecycle and rerun the selected profile.');
+        throw error;
+    }
+    const {value:gaps,sha256:gapsSha256}=gapResult;
     if(gaps?.schemaVersion!==1||!Array.isArray(gaps.gaps)||!Array.isArray(manifest.sourceInventory?.files)
         ||['profile','coverageKind','comparablePercentages','complete','sourceChangedDuringRun'].some(key=>gaps[key]!==manifest[key])
         ||manifest.profile!==verification.profile||Date.parse(manifest.finishedAt)!==Date.parse(verification.finishedAt))throw malformed();

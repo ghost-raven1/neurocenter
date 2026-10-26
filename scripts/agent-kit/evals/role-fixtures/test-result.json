@@ -1,0 +1,7 @@
+{
+  "kind": "trusted-offline-execution-fixture",
+  "command": "node --test test/normalized-name.test.mjs",
+  "status": "passed",
+  "tests": {"passed": 2, "failed": 0, "skipped": 0, "todo": 0, "cancelled": 0},
+  "executionByThisEvaluation": false
+}

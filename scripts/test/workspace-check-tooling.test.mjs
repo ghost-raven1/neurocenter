@@ -21,6 +21,17 @@ const expectedFiles=[
     'scripts/test/coverage-inventory.test.mjs','scripts/test/coverage-profiles.test.mjs','scripts/test/coverage-completion.test.mjs',
     'scripts/test/coverage-source-inventory.test.mjs','scripts/test/coverage-focused.test.mjs','scripts/test/dev-mcp-coverage.test.mjs',
     'scripts/test/dev-mcp-output.test.mjs','scripts/test/dev-mcp.test.mjs','scripts/test/dev-mcp-plan.test.mjs','scripts/test/dev-mcp-logs.test.mjs',
+    'scripts/test/coverage-lifecycle.test.mjs','scripts/test/dev-mcp-coverage-lifecycle.test.mjs',
+    'scripts/test/run-manifest.test.mjs','scripts/test/workspace-process-failure.test.mjs',
+    'scripts/agent-kit/test/role-contracts.test.mjs','scripts/agent-kit/test/role-evals.test.mjs',
+    'scripts/test/qa-cli.test.mjs','scripts/test/qa-postgres.test.mjs','scripts/test/qa-native.test.mjs',
+    'scripts/test/dev-mcp-evidence.test.mjs','scripts/test/dev-mcp-request-trace.test.mjs','scripts/test/dev-launch.test.mjs',
+    'scripts/test/dev-cli.test.mjs','scripts/test/dev-cwd.test.mjs','scripts/test/dev-stop.test.mjs',
+    'scripts/test/coverage-unit-profile.test.mjs',
+    'scripts/test/dev-launch-recovery.test.mjs',
+    'scripts/test/workspace-impact-plan.test.mjs','scripts/test/dev-processes.test.mjs','scripts/test/dev-start.test.mjs',
+    'scripts/test/dev-watch-prepared-start.test.mjs','scripts/test/dev-watch-start-order.test.mjs','scripts/test/dev-watch-native.test.mjs',
+    'scripts/test/dev-watch-queue.test.mjs','scripts/test/dev-watch-root.test.mjs','scripts/test/dev-watch-daemon.test.mjs',
 ].sort();
 const exists=file=>fs.access(file).then(()=>true,error=>{if(error.code==='ENOENT')return false;throw error;});
 async function put(root,name,content){const file=path.join(root,name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,content);}
