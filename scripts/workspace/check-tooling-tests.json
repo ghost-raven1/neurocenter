@@ -28,6 +28,7 @@
   "scripts/test/dev-mcp-request-trace.test.mjs",
   "scripts/test/dev-mcp.test.mjs",
   "scripts/test/dev-processes.test.mjs",
+  "scripts/test/dev-snapshots-build.test.mjs",
   "scripts/test/dev-start.test.mjs",
   "scripts/test/dev-stop.test.mjs",
   "scripts/test/dev-watch-daemon.test.mjs",

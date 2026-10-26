@@ -29,7 +29,7 @@ const expectedFiles=[
     'scripts/test/dev-cli.test.mjs','scripts/test/dev-cwd.test.mjs','scripts/test/dev-stop.test.mjs',
     'scripts/test/coverage-unit-profile.test.mjs',
     'scripts/test/dev-launch-recovery.test.mjs',
-    'scripts/test/workspace-impact-plan.test.mjs','scripts/test/dev-processes.test.mjs','scripts/test/dev-start.test.mjs',
+    'scripts/test/workspace-impact-plan.test.mjs','scripts/test/dev-processes.test.mjs','scripts/test/dev-snapshots-build.test.mjs','scripts/test/dev-start.test.mjs',
     'scripts/test/dev-watch-prepared-start.test.mjs','scripts/test/dev-watch-start-order.test.mjs','scripts/test/dev-watch-native.test.mjs',
     'scripts/test/dev-watch-queue.test.mjs','scripts/test/dev-watch-root.test.mjs','scripts/test/dev-watch-daemon.test.mjs',
 ].sort();

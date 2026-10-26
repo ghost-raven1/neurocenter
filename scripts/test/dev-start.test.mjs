@@ -82,7 +82,10 @@ async function fixture(t, mode) {
         if(args.join(' ')==='--version')console.log('Docker version 28.0.0');
         else if(args.join(' ')==='compose version --short')console.log('2.40.3');
         else if(args.join(' ')==='compose up --help')console.log('--wait --wait-timeout');
-        else if(args[0]==='build')console.log('fixture verifier image built');
+        else if(args[0]==='build'){
+            if(process.env.DEV_START_MODE==='snapshot-build-exit'){console.error('fixture verifier build failure');process.exitCode=37;}
+            else console.log('fixture verifier image built');
+        }
         else if(args[0]==='image'&&args[1]==='inspect')console.log('sha256:'+'b'.repeat(64));
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
@@ -164,6 +167,14 @@ async function fixture(t, mode) {
         const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
         const spawn=childProcess.spawn;
+        const spawnSync=childProcess.spawnSync;
+        childProcess.spawnSync=function(command,args,options){
+            if(command==='docker'&&args[0]==='build'&&process.env.DEV_START_MODE==='snapshot-build-timeout'){
+                record({kind:'docker-build-timeout',timeout:options.timeout});
+                return {error:Object.assign(Error('owned Docker timeout'),{code:'ETIMEDOUT'}),status:null,signal:'SIGKILL'};
+            }
+            return spawnSync.call(this,command,args,options);
+        };
         childProcess.spawn=function(...args){
             const child=spawn.apply(this,args),entry=args[1]?.[0];
             const started=(pid,entry,environment)=>record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid,entry,modelKeyFile:environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string',chatS3Keys:Object.keys(environment||{}).filter(key=>key.startsWith('CHAT_S3_'))});
@@ -343,6 +354,15 @@ test('Полный запуск готовит файлы, сохраняя вы
     assert.ok(result.events.some(event => event.kind === 'health-start'));
     assert.ok(result.events.some(event => event.kind === 'child-exit' && event.service === 'catalog'));
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
+});
+
+for(const [mode,reason]of [['snapshot-build-timeout',/ETIMEDOUT.*600|600.*ETIMEDOUT/],['snapshot-build-exit',/код\S*\s+37/]])test('Snapshot build failure preserves the previous service state: '+mode,async t=>{
+    const f=await fixture(t,mode);await fs.mkdir(path.join(f.checkout,'.run'));
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
+    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,reason);
+    assert.match(result.stderr,/прежний запуск сохранён/i);assert.equal(await fs.readFile(filename,'utf8'),state);
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);
 });
 
 test('Ошибка общей поставки останавливает запуск до сборки и сохраняет прежние процессы', async t => {
