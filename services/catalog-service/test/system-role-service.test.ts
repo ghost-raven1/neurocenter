@@ -86,7 +86,9 @@ describe('Durable failures expose a safe next action', () => {
             await f.service.start({ headers: {} } as never, 'agent-coordinator', f.input);
             await vi.waitFor(async () => expect(await f.service.detail({ headers: {} } as never, 'agent-coordinator', f.row.id)).toMatchObject({ state: 'failed', callsStarted: 1 }));
             const receipt = await f.service.detail({ headers: {} } as never, 'agent-coordinator', f.row.id);
-            expect(receipt.message).toBe('Запуск не завершён: проверьте доступность, права, версии и выбранный контекст. Автоматического платного повтора нет.');
+            expect(receipt.message).toContain('Причина сбоя не определена');
+            expect(receipt.message).toContain('Зарезервировано шагов модели: 1');
+            expect(receipt.message).toContain('Автоматического повтора нет');
             expect(receipt.message).not.toContain('private provider detail'); expect(receipt.result).toBeNull(); expect(f.infer).toHaveBeenCalledOnce();
         } finally { await f.service.onApplicationShutdown(); }
     });
