@@ -47,7 +47,7 @@ async function fixture(t, mode) {
     await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
     for (const file of ['safe-file.mjs','constants.mjs']) await fs.copyFile(path.join(root,'scripts/dev-mcp',file),path.join(checkout,'scripts/dev-mcp',file));
     await fs.mkdir(bin);
-    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs',
+    for (const file of ['dev.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs',
         'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
@@ -167,15 +167,13 @@ async function fixture(t, mode) {
         const record=value=>fs.appendFileSync(process.env.DEV_START_CALLS,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
         const spawn=childProcess.spawn;
-        const spawnSync=childProcess.spawnSync;
-        childProcess.spawnSync=function(command,args,options){
-            if(command==='docker'&&args[0]==='build'&&process.env.DEV_START_MODE==='snapshot-build-timeout'){
-                record({kind:'docker-build-timeout',timeout:options.timeout});
-                return {error:Object.assign(Error('owned Docker timeout'),{code:'ETIMEDOUT'}),status:null,signal:'SIGKILL'};
-            }
-            return spawnSync.call(this,command,args,options);
-        };
         childProcess.spawn=function(...args){
+            if(args[0]==='docker'&&args[1]?.[0]==='build'&&process.env.DEV_START_MODE==='snapshot-build-timeout'){
+                record({kind:'docker-build-timeout',timeout:args[2].timeout});
+                const child=new EventEmitter();child.kill=()=>true;
+                queueMicrotask(()=>{child.emit('error',Object.assign(Error('owned Docker timeout'),{code:'ETIMEDOUT'}));child.emit('close',null,'SIGKILL');});
+                return child;
+            }
             const child=spawn.apply(this,args),entry=args[1]?.[0];
             const started=(pid,entry,environment)=>record({kind:entry.includes('/scripts/models/')||entry.includes('/scripts/assets/')?'model-child-spawn':'child-spawn',pid,entry,modelKeyFile:environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE||null,modelKeyInline:typeof environment?.NEUROCENTER_MODEL_CREDENTIAL_KEY==='string',chatS3Keys:Object.keys(environment||{}).filter(key=>key.startsWith('CHAT_S3_'))});
             if(entry?.endsWith('/scripts/workspace/dev-watch-child.mjs')){

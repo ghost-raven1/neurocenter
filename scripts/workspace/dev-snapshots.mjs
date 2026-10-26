@@ -5,6 +5,7 @@ import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {privateSnapshotFile} from '../snapshots/control.mjs';
 import {withDockerBuildCa} from './docker-build-ca.mjs';
+import {runDockerBuild} from './docker-build-progress.mjs';
 
 /** The first dependency download may need an explicit larger budget on a slow registry connection. */
 function buildTimeoutSeconds(environment){
@@ -56,10 +57,10 @@ export async function prepareDevSnapshots(root,environment=process.env){
  try{await privateSnapshotFile(tokenFile,1024);}catch(error){if(error.code!=='ENOENT')throw error;try{await fs.writeFile(tokenFile,randomBytes(32).toString('hex')+'\n',{flag:'wx',mode:0o600});}catch(writeError){if(writeError.code!=='EEXIST')throw writeError;}}
  const token=(await privateSnapshotFile(tokenFile,1024)).toString('utf8').trim();if(!/^[a-f0-9]{64,128}$/.test(token))throw new Error('Некорректный токен исполнителя снимков.');
  const image=environment.SNAPSHOT_VERIFIER_IMAGE||'neurocenter-snapshot-verifier:local';
- if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,({environment:buildEnvironment,args})=>{
+ if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,async({environment:buildEnvironment,args})=>{
   // Docker reads these values from its environment; credentials never become command arguments.
   const proxyArgs=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(name=>Object.hasOwn(buildEnvironment,name)&&buildEnvironment[name]!==undefined).flatMap(name=>['--build-arg',name]);
-  const build=spawnSync('docker',['build',...args,...proxyArgs,...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
+  const build=await runDockerBuild(['build',...args,...proxyArgs,...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
   if(failure)throw new Error(`Образ проверки снимков не собран: ${failure}. Прежний запуск сохранён.${build.error?.code==='ETIMEDOUT'?' Лимит сборки задаётся SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS (1–3600 с).':''}`,{cause:build.error});
  });}
  const inspected=spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{cwd:root,encoding:'utf8',timeout:15000,killSignal:'SIGKILL'}),failure=dockerFailure(inspected,15);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import {createHash,generateKeyPairSync} from 'node:crypto';
+import {EventEmitter} from 'node:events';
 import fs from 'node:fs/promises';
 import {syncBuiltinESMExports} from 'node:module';
 import os from 'node:os';
@@ -10,7 +11,7 @@ import {prepareDevSnapshots} from '../workspace/dev-snapshots.mjs';
 
 const setting='SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS',diagnostics='SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS',image='neurocenter-snapshot-verifier:local',digest='sha256:'+'a'.repeat(64);
 const proxyNames=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'];
-const diagnosticFlags=['--loglevel=http','--foreground-scripts','--fetch-timeout=30000','--fetch-retries=0','--logs-max=0'];
+const diagnosticFlags=['--fetch-timeout=30000','--fetch-retries=0','--logs-max=0'];
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const result=value=>({status:0,signal:null,error:undefined,stdout:'',stderr:'',...value});
 
@@ -37,13 +38,19 @@ async function fixture(t,{seed=true,build=result(),inspect=result({stdout:digest
             await fs.writeFile(file,value,{mode:0o600});saved.set(file,hash(value));
         }
     }
-    const original=childProcess.spawnSync;
+    const original=childProcess.spawnSync,originalSpawn=childProcess.spawn;
     childProcess.spawnSync=(command,args,options)=>{
         assert.equal(command,'docker');calls.push({command,args:[...args],options});
         if(args[0]==='build')return typeof build==='function'?build(options):build;
         assert.deepEqual(args,['image','inspect',image,'--format','{{.Id}}']);return inspect;
     };
-    syncBuiltinESMExports();t.after(()=>{childProcess.spawnSync=original;syncBuiltinESMExports();});
+    childProcess.spawn=(command,args,options)=>{
+        assert.equal(command,'docker');assert.equal(args[0],'build');calls.push({command,args:[...args],options});
+        const child=new EventEmitter();child.kill=()=>true;
+        queueMicrotask(()=>{const value=typeof build==='function'?build(options):build;if(value.error)child.emit('error',value.error);child.emit('close',value.status,value.signal);});
+        return child;
+    };
+    syncBuiltinESMExports();t.after(()=>{childProcess.spawnSync=original;childProcess.spawn=originalSpawn;syncBuiltinESMExports();});
     const environment={PATH:'/owned/no-executables',HOME:root,CATALOG_PG_URL:'postgresql://stub.invalid/never-connect',SNAPSHOT_MAX_BYTES:'21474836480'};
     const unchanged=async()=>{for(const [file,sha]of saved)assert.equal(hash(await fs.readFile(file)),sha,path.basename(file)+' changed');};
     const dbEvents=async()=>fs.readFile(events,'utf8').then(value=>value.trim().split('\n').filter(Boolean).map(JSON.parse),error=>{if(error.code==='ENOENT')return[];throw error;});
@@ -106,7 +113,7 @@ for(const value of ['0','1'])test('actual snapshot Docker RUN keeps HTTPS and TL
     const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile,NPM_TEST_WARNINGS:warningsFile}});
     assert.equal(run.error,undefined);assert.equal(run.status,0,run.stderr);
     const args=(await fs.readFile(argsFile,'utf8')).trim().split('\n');assert.equal(args[0],'ci');
-    for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false','--omit=dev','--no-audit','--no-fund'])assert.ok(args.includes(flag),flag+' missing');
+    for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false','--omit=dev','--no-audit','--no-fund','--loglevel=http','--foreground-scripts','--update-notifier=false'])assert.ok(args.includes(flag),flag+' missing');
     assert.equal(await fs.readFile(tlsFile,'utf8'),'0');
     assert.equal(await fs.readFile(warningsFile,'utf8'),'1');assert.doesNotMatch(instructions,/^ENV [^\n]*NODE_NO_WARNINGS=/m);
     for(const flag of diagnosticFlags)assert.equal(args.includes(flag),value==='1',flag);
