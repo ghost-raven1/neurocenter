@@ -36,7 +36,7 @@ function fixture(tasks = [task('agent-ai-admin'), task('agent-indexer')]) {
         return { done_reason: 'stop', message: { role: 'assistant', content } }; });
     const diagnostic = vi.fn(async (kind: string) => ({ id: 'fact-' + kind, kind, checkedAt: '2026-10-24T00:00:00Z', status: 'measured', data: {} }));
     const runner = new SystemRoleRunner(repository as never, policy as never, targets as never, { infer }, async () => undefined, features as never, diagnostic as never);
-    return { row, snapshot, control, controller, calls, infer, features, targets, repository, run: () => runner.run({} as never, row, controller.signal) };
+    return { row, snapshot, control, controller, calls, infer, features, targets, repository, policy, model, run: () => runner.run({} as never, row, controller.signal) };
 }
 
 describe('Coordinator plan is an untrusted bounded selection', () => {
@@ -64,6 +64,19 @@ describe('Coordinator plan is an untrusted bounded selection', () => {
 });
 
 describe('Coordinator delegates through the durable runtime', () => {
+    it('retains measured facts and reserves no call when the configured window is filled by the default output reserve', async () => {
+        const f=fixture();f.model.runtime='remote-openai';
+        f.policy.models.pool.query.mockResolvedValue({rows:[{options:{contextWindow:4096}}]} as never);
+        await expect(f.run()).rejects.toThrow('Оценка контекста с резервом для ответа');
+        expect(f.row).toMatchObject({phase:'validating_context',calls_started:0});expect(f.row.facts).toHaveLength(2);
+        expect(f.repository.reserveCall).not.toHaveBeenCalled();expect(f.infer).not.toHaveBeenCalled();
+    });
+    it('uses explicitly configured output limits without changing them to force a coordinator request', async () => {
+        const f=fixture();f.model.runtime='remote-openai';
+        f.policy.models.pool.query.mockResolvedValue({rows:[{options:{contextWindow:8192,maxOutputTokens:1024}}]} as never);
+        await f.run();expect(f.row.state).toBe('succeeded');expect(f.infer).toHaveBeenCalledTimes(4);
+        for(const call of f.infer.mock.calls)expect(call[2].options.num_predict).toBe(1024);
+    });
     it('keeps saved history and cancellation accessible after new work is disabled', () => {
         const root = '/api/system-roles/agent-coordinator', run = root + '/runs/12345678-1234-1234-1234-123456789abc';
         expect(requiredRouteFeatures('POST', root + '/prepare')).toEqual(['system_coordinator']);
