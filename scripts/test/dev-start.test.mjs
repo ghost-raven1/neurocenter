@@ -363,6 +363,17 @@ for(const [mode,reason]of [['snapshot-build-timeout',/ETIMEDOUT.*600|600.*ETIMED
     assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);
 });
 
+test('up loads opt-in verifier host networking from dotenv and preserves old services on build failure',async t=>{
+    const f=await fixture(t,'snapshot-build-exit');await fs.mkdir(path.join(f.checkout,'.run'));
+    await fs.writeFile(path.join(f.checkout,'.env'),'SNAPSHOT_VERIFIER_BUILD_NETWORK=host\n');
+    const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
+    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,/код\S*\s+37/);
+    const build=result.events.find(event=>event.kind==='docker'&&event.args[0]==='build');assert.ok(build);assert.ok(build.args.includes('--network=host'));
+    assert.equal(await fs.readFile(filename,'utf8'),state);assert.match(result.stderr,/прежний запуск сохранён/i);
+    assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);
+});
+
 test('Ошибка общей поставки останавливает запуск до сборки и сохраняет прежние процессы', async t => {
     const f = await fixture(t, 'assets-error');
     await fs.mkdir(path.join(f.checkout, '.run'));
