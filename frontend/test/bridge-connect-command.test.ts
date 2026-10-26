@@ -3,12 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { bridgeInstallerCommand, installedBridgeCommand } from '../src/features/McpBridge/connectionCommands';
+import { bridgeInstallerCommand, installedBridgeCommand, openCodeInstallerCommand } from '../src/features/McpBridge/connectionCommands';
 
 describe('Подключение установленного моста через выбранный Gateway', () => {
     it.each([false, true])('Формирует команду для текущей площадки и reconnect=%s', reconnect => {
         const command = installedBridgeCommand('https://panel.example.test:8443/projects?tab=local', false, reconnect);
-        expect(command).toBe(`curl -fsSL 'https://panel.example.test:8443/api/bridge/connect.sh${reconnect?'?reconnect=1':''}' | bash`);
+        expect(command).toBe(`curl -fsSL --insecure 'https://panel.example.test:8443/api/bridge/connect.sh${reconnect?'?reconnect=1':''}' | bash`);
         expect(command).not.toMatch(/NEUROCENTER_URL|INSTALL_DIR|bin\/node|dist\/index|\.local\/bin/);
         expect(command).not.toMatch(/install\.(?:sh|ps1)|--init|npm\s|npx\s/);
         expect(command).not.toContain('projects?tab=local');
@@ -16,14 +16,14 @@ describe('Подключение установленного моста чер�
 
     it.each([false,true])('PowerShell получает сценарий выбранной площадки и reconnect=%s', reconnect => {
         const command = installedBridgeCommand('http://127.0.0.1:4000', true, reconnect);
-        expect(command).toBe(`irm 'http://127.0.0.1:4000/api/bridge/connect.ps1${reconnect?'?reconnect=1':''}' | iex`);
+        expect(command).toContain(`$u='http://127.0.0.1:4000/api/bridge/connect.ps1${reconnect?'?reconnect=1':''}'`);
         expect(command).not.toContain('NEUROCENTER_URL');
         expect(command).not.toMatch(/USERPROFILE|neurocenter-bridge\.cmd|dist\/index\.js|--init|install\.ps1/);
     });
 
     it('PowerShell заключает выбранный origin в один литерал, сохраняя кавычки и метасимволы',()=>{
         expect(installedBridgeCommand("https://panel'$(false)'.example.test/ignored?secret=hidden",true,true))
-            .toBe("irm 'https://panel''$(false)''.example.test/api/bridge/connect.ps1?reconnect=1' | iex");
+            .toContain("$u='https://panel''$(false)''.example.test/api/bridge/connect.ps1?reconnect=1'");
     });
 
     it.each(['file:///tmp/bridge', 'javascript:alert(1)', 'ftp://example.test', 'not a URL'])('Отклоняет неподдерживаемый адрес %s', origin => {
@@ -50,7 +50,7 @@ describe('Подключение установленного моста чер�
                 expect(result.status, result.stderr).toBe(0);
                 expect(result.stdout).toBe('bridge-command-fixture');
                 expect((await readFile(argumentsFile,'utf8')).trim().split('\n')).toEqual([
-                    '-fsSL',`${new URL(address).origin}/api/bridge/connect.sh${reconnect?'?reconnect=1':''}`,
+                    '-fsSL','--insecure',`${new URL(address).origin}/api/bridge/connect.sh${reconnect?'?reconnect=1':''}`,
                 ]);
                 expect(command).not.toContain('secret');
                 if (address.includes('@')) { expect(command).not.toContain('$(false)'); }
@@ -92,8 +92,21 @@ describe('Установка моста для выбранной системы
             });
             expect(result.status, result.stderr).toBe(0);
             expect((await readFile(argumentsFile, 'utf8')).trim().split('\n')).toEqual([
-                '-fsSL', `${origin}/api/bridge/install.sh?reconnect=1`,
+                '-fsSL', '--insecure', `${origin}/api/bridge/install.sh?reconnect=1`,
             ]);
         } finally { await rm(temporary, { recursive: true, force: true }); }
+    });
+});
+
+describe('TLS-политика начальной загрузки команды',()=>{
+    it.each([installedBridgeCommand,bridgeInstallerCommand,openCodeInstallerCommand])('PowerShell восстанавливает callback до исполнения скачанного скрипта',command=>{
+        const source=command('https://gateway.example.test',true);
+        expect(source).toContain('$PSVersionTable.PSVersion.Major -ge 7');
+        expect(source).toContain('irm -SkipCertificateCheck -Uri $u -ErrorAction Stop');
+        expect(source).toContain('$p=[Net.ServicePointManager]::ServerCertificateValidationCallback');
+        expect(source).toContain('ServerCertificateValidationCallback=[NeurocenterBootstrapTls]::Accept');
+        expect(source).toContain('finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$p }');
+        expect(source.indexOf('ServerCertificateValidationCallback=$p')).toBeLessThan(source.indexOf('$s | iex'));
+        expect(source).not.toMatch(/CertificatePolicy|Set-ExecutionPolicy/);
     });
 });

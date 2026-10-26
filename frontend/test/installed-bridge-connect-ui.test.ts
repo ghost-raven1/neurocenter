@@ -62,7 +62,7 @@ describe('Подключение компьютера с уже установл
         expect(html).toContain(installerOrigin+'/api/bridge/connect.sh?reconnect=1');
         expect(html).not.toContain(origin+'/api/bridge/connect.sh');
         fixture.buttons.get('Копировать команду подключения')?.onClick?.();
-        expect(fixture.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
+        expect(fixture.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL --insecure 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
     });
 
     it.each(['loading','error'] as const)('Не выдаёт команду до подтверждения конфигурации Gateway: %s', state => {
@@ -85,12 +85,12 @@ describe('Подключение компьютера с уже установл
         const html=setup();expect(html).toContain(installerOrigin+'/api/bridge/connect.sh');
         expect(html).not.toContain('нет пакета');expect(html).not.toContain('/api/bridge/install.sh');
         fixture.buttons.get('Копировать команду подключения')?.onClick?.();
-        expect(fixture.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL 'https://gateway.example.test:9443/api/bridge/connect.sh' | bash");
+        expect(fixture.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL --insecure 'https://gateway.example.test:9443/api/bridge/connect.sh' | bash");
     });
 
     it('Повторная конфигурация убирает старую команду и выдаёт новый Gateway только после успешного ответа', () => {
         setup();fixture.buttons.get('Копировать команду подключения')?.onClick?.();
-        expect(fixture.copy).toHaveBeenLastCalledWith("curl -fsSL 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
+        expect(fixture.copy).toHaveBeenLastCalledWith("curl -fsSL --insecure 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
         fixture.installer.loading=true;
         expect(setup()).toContain('Получаем адрес подключения');expect(fixture.buttons.has('Копировать команду подключения')).toBe(false);
         fixture.installer.loading=false;fixture.installer.error='Не удалось подтвердить новый Gateway';
@@ -99,7 +99,7 @@ describe('Подключение компьютера с уже установл
         fixture.installer={origin:'https://next-gateway.example.test',loading:false,error:'',reload:vi.fn()};
         const html=setup();expect(html).not.toContain(installerOrigin+'/api/bridge/connect.sh');
         fixture.buttons.get('Копировать команду подключения')?.onClick?.();
-        expect(fixture.copy).toHaveBeenLastCalledWith("curl -fsSL 'https://next-gateway.example.test/api/bridge/connect.sh?reconnect=1' | bash");
+        expect(fixture.copy).toHaveBeenLastCalledWith("curl -fsSL --insecure 'https://next-gateway.example.test/api/bridge/connect.sh?reconnect=1' | bash");
         expect(fixture.copy).toHaveBeenCalledTimes(2);
     });
 
@@ -150,7 +150,7 @@ describe('Подключение компьютера с уже установл
         expect(html).toContain('?reconnect=1');
         expect(html).toMatch(/подтверд[а-яё]*.*(?:браузер|компьютер)|(?:браузер|компьютер).*подтверд/iu);
         fixture.buttons.get('Копировать команду подключения')?.onClick?.();
-        expect(onCopy).toHaveBeenCalledExactlyOnceWith("curl -fsSL 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
+        expect(onCopy).toHaveBeenCalledExactlyOnceWith("curl -fsSL --insecure 'https://gateway.example.test:9443/api/bridge/connect.sh?reconnect=1' | bash");
         expect(html).toContain('встроенный Node.js');expect(html).toContain('архив повторно не скачивается');
         expect(html).toContain('Если файлы моста отсутствуют, сценарий сам запустит установщик этой площадки');
         expect(html).toContain('При ошибке подключения сначала устраните причину, показанную в терминале');

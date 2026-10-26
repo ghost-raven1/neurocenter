@@ -17,7 +17,7 @@ install_bridge(){
     printf '%s\n' 'Нужно восстановить или обновить регистрацию моста. Запускаем установщик этой площадки.'
     local url="$BASE_URL/install.sh"
     if [ "$RECONNECT" = '1' ]; then url="$url?reconnect=1"; fi
-    curl -fsSL "$url" --connect-timeout 20 --max-time 60 -o "$STAGE/install.sh"
+    curl -fsSL "$url" --connect-timeout 20 --max-time 60 -o "$STAGE/install.sh" --insecure
     INSTALL_DIR="$INSTALL_DIR" bash "$STAGE/install.sh"
 }
 # Read the exact launcher emitted by installBridgeCommand as data; never source or execute it.

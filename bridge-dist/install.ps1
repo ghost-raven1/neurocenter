@@ -22,8 +22,18 @@ if ($BridgeBase -notmatch '/api/bridge/?$') { throw 'Нужен адрес API G
 function Step($Number, $Text) { Write-Host "`n[$Number/4] $Text" }
 function SafeText($Text) { return ([string]$Text -replace '[\x00-\x1f\x7f-\x9f]', ' ') }
 function Download($Url, $Target) {
-    try { Invoke-WebRequest $Url -OutFile $Target -UseBasicParsing -TimeoutSec 600 }
-    catch { throw 'Не удалось скачать пакет с площадки. Проверьте сеть и доверенный корпоративный CA в Windows. Проверка TLS остаётся включённой; прежняя версия сохранена.' }
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 7) { Invoke-WebRequest $Url -OutFile $Target -UseBasicParsing -TimeoutSec 600 -SkipCertificateCheck; return }
+        # A native delegate works on TLS threads without a PowerShell runspace.
+        if (-not ('NeurocenterBootstrapTls' -as [type])) {
+            Add-Type 'public static class NeurocenterBootstrapTls { public static readonly System.Net.Security.RemoteCertificateValidationCallback Accept = delegate { return true; }; }'
+        }
+        $PreviousCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+        try {
+            [Net.ServicePointManager]::ServerCertificateValidationCallback = [NeurocenterBootstrapTls]::Accept
+            Invoke-WebRequest $Url -OutFile $Target -UseBasicParsing -TimeoutSec 600
+        } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback = $PreviousCallback }
+    } catch { throw 'Не удалось скачать пакет с площадки. Проверьте адрес, прокси и сеть. Проверка сертификатов загрузки отключена; прежняя версия сохранена.' }
 }
 $Architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 if ($Architecture -eq 'x64') { $Arch = 'x64' } elseif ($Architecture -eq 'arm64') { $Arch = 'arm64' } else { throw 'Эта архитектура Windows не поддерживается.' }

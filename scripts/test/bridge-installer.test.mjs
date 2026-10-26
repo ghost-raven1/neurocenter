@@ -389,10 +389,11 @@ test('Старый архив без короткой команды не зам
 for(const code of [60,28,22])test(`Сетевая ошибка ${code} понятна, установка и lock сохраняют инварианты`,async()=>{
     const f=await fixture();await fs.mkdir(f.env.INSTALL_DIR);await fs.writeFile(path.join(f.env.INSTALL_DIR,'previous'),'keep');
     await fs.writeFile(path.join(f.root,'fake-bin/curl'),'#!/bin/sh\nprintf \'%s\\n\' "$*" > "$TEST_ROOT/curl-args"\nexit "$TEST_CURL_CODE"\n',{mode:0o755});
-    const result=f.run({TEST_CURL_CODE:String(code)});assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/CURL_CA_BUNDLE/:code===28?/вовремя/:/Не удалось скачать/);
+    const result=f.run({TEST_CURL_CODE:String(code)});assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/Проверка сертификатов.*отключена/:code===28?/вовремя/:/Не удалось скачать/);
     assert.equal(await fs.readFile(path.join(f.env.INSTALL_DIR,'previous'),'utf8'),'keep');
     await assert.rejects(fs.access(f.env.INSTALL_DIR+'.install-lock'),{code:'ENOENT'});
     assert.match(await fs.readFile(path.join(f.root,'curl-args'),'utf8'),/--connect-timeout 20 --max-time 600 --retry 2/);
+    assert.match(await fs.readFile(path.join(f.root,'curl-args'),'utf8'),/--insecure/);
 });
 test('API Gateway transport сохраняется отдельно от site identity',async()=>{
     const f=await fixture();const binary=path.join(f.root,'package/bin/node');await fs.writeFile(binary,(await fs.readFile(binary,'utf8')).replace('echo "$*" >> "$TEST_ROOT/events"','echo "$*" >> "$TEST_ROOT/events"\n        printf \'%s\\n\' "$NEUROCENTER_API_URL" >> "$TEST_ROOT/api-origins"'));await f.pack();

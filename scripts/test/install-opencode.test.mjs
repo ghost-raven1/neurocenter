@@ -61,9 +61,9 @@ for(const code of [60,28,22])test(`Отказ загрузки ${code} сохр�
     const f=await fixture();await mkdir(f.env.OPENCODE_INSTALL_DIR);await writeFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'previous');
     await writeFile(path.join(f.root,'fake-bin/curl'),'#!/bin/sh\nprintf \'%s\\n\' "$*" > "$TEST_ROOT/curl-args"\nexit "$TEST_CURL_CODE"\n',{mode:0o755});
     const result=f.run([],{TEST_ROOT:f.root,TEST_CURL_CODE:String(code),BASE_URL:'https://gateway.example.test/api/bridge'});
-    assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/CURL_CA_BUNDLE/:code===28?/вовремя/:/Не удалось скачать/);
+    assert.notEqual(result.status,0);assert.match(result.stderr,code===60?/Проверка сертификатов.*отключена/:code===28?/вовремя/:/Не удалось скачать/);
     assert.equal(await readFile(path.join(f.env.OPENCODE_INSTALL_DIR,'opencode'),'utf8'),'previous');
-    const args=await readFile(path.join(f.root,'curl-args'),'utf8');assert.match(args,/--connect-timeout 20 --max-time 600 --retry 2/);assert.doesNotMatch(args,/--insecure|strict-ssl=false/);
+    const args=await readFile(path.join(f.root,'curl-args'),'utf8');assert.match(args,/--connect-timeout 20 --max-time 600 --retry 2/);assert.match(args,/--insecure/);
 });
 
 test('Ошибка атомарной замены очищает staging, временный бинарник и свою блокировку',async()=>{

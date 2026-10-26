@@ -27,10 +27,10 @@ beforeEach(()=>{vi.clearAllMocks();hooks.reset();io.bridge={device:undefined,dev
 describe('Независимое подключение при ошибке списка устройств',()=>{
  it('Проверенный Gateway оставляет команду подключения и повтор списка устройств после отказа API',()=>{
   const html=render();expect(html).toContain('Devices unavailable');expect(html).not.toContain('Компьютер готов');expect(io.buttons.has('Выбрать папку проектов')).toBe(false);io.buttons.get('Повторить')!.onClick!();expect(io.bridge.reload).toHaveBeenCalledOnce();
-  expect(html).toContain('https://gateway.audit.test/api/bridge/connect.sh');io.buttons.get('Копировать команду подключения')!.onClick!();expect(io.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL 'https://gateway.audit.test/api/bridge/connect.sh' | bash");
+  expect(html).toContain('https://gateway.audit.test/api/bridge/connect.sh');io.buttons.get('Копировать команду подключения')!.onClick!();expect(io.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL --insecure 'https://gateway.audit.test/api/bridge/connect.sh' | bash");
  });
  it('Настоящая dev-поставка открывает команду установки при отказе списка устройств и каталога',()=>{
   expect(render()).toContain('Dev-поставка: 0.9.18');expect(io.buttons.get('Установить dev-мост')?.disabled).not.toBe(true);io.buttons.get('Установить dev-мост')!.onClick!();
-  const html=render();expect(io.buttons.has('Копировать команду')).toBe(true);expect(html).toContain('https://gateway.audit.test/api/bridge/install.sh');io.buttons.get('Копировать команду')!.onClick!();expect(io.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL 'https://gateway.audit.test/api/bridge/install.sh' | bash");
+  const html=render();expect(io.buttons.has('Копировать команду')).toBe(true);expect(html).toContain('https://gateway.audit.test/api/bridge/install.sh');io.buttons.get('Копировать команду')!.onClick!();expect(io.copy).toHaveBeenCalledExactlyOnceWith("curl -fsSL --insecure 'https://gateway.audit.test/api/bridge/install.sh' | bash");
  });
 });

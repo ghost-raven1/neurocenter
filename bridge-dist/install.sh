@@ -147,10 +147,10 @@ printf 'Версия %s · %s / %s%s\n' "$VERSION" "$PLATFORM" "$ARCH" "$SUFFIX"
 if [ "$LOCAL_MODE" = '1' ]; then step 1 'Готовим локальный архив'; else step 1 'Скачиваем автономный пакет'; fi
 download() {
     local status=0
-    curl -fsSL "$1" -o "$2" --connect-timeout 20 --max-time 600 --retry 2 --retry-delay 1 || status=$?
+    curl -fsSL "$1" -o "$2" --connect-timeout 20 --max-time 600 --retry 2 --retry-delay 1 --insecure || status=$?
     case "$status" in
         0) return 0 ;;
-        60) fail 'Сертификат площадки не подтверждён. Настройте корпоративный CA через CURL_CA_BUNDLE или SSL_CERT_FILE. Проверка TLS остаётся включённой.' ;;
+        60) fail 'Не удалось установить TLS-соединение. Проверьте адрес, прокси и сеть. Проверка сертификатов загрузки отключена.' ;;
         28) fail 'Площадка не ответила вовремя. Проверьте сеть и повторите установку; предыдущая версия сохранена.' ;;
         *) fail 'Не удалось скачать пакет MCP с площадки. Проверьте соединение и наличие подготовленного пакета. Предыдущая установка сохранена.' ;;
     esac

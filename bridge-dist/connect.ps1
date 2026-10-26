@@ -15,11 +15,23 @@ $User = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $Rule = New-Object System.Security.AccessControl.FileSystemAccessRule($User,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
 $Acl.AddAccessRule($Rule)
 Set-Acl -LiteralPath $Stage -AclObject $Acl
+function Download($Url, $Target) {
+    if ($PSVersionTable.PSVersion.Major -ge 7) { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Target -SkipCertificateCheck; return }
+    # Restore the process callback before running the downloaded installer.
+    if (-not ('NeurocenterBootstrapTls' -as [type])) {
+        Add-Type 'public static class NeurocenterBootstrapTls { public static readonly System.Net.Security.RemoteCertificateValidationCallback Accept = delegate { return true; }; }'
+    }
+    $PreviousCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+    try {
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = [NeurocenterBootstrapTls]::Accept
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Target
+    } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback = $PreviousCallback }
+}
 function Install-Bridge {
     Write-Host 'Нужно восстановить или обновить регистрацию моста. Запускаем установщик этой площадки.'
     $Url = $BaseUrl + '/install.ps1' + $(if ($Reconnect) { '?reconnect=1' } else { '' })
     $Script = Join-Path $Stage 'install.ps1'
-    Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Script
+    Download $Url $Script
     $env:INSTALL_DIR = $InstallDir
     & ([ScriptBlock]::Create([IO.File]::ReadAllText($Script)))
     if ($LASTEXITCODE -ne 0) { throw 'Установка моста не завершена.' }
