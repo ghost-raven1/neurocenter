@@ -7,7 +7,13 @@ import {syncBuiltinESMExports} from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import {test} from 'node:test';
-import {prepareDevSnapshots} from '../workspace/dev-snapshots.mjs';
+import {prepareDevSnapshots as prepareSnapshotRuntime,buildDevSnapshotImage,inspectDevSnapshotImage} from '../workspace/dev-snapshots.mjs';
+
+/** Exercise installation followed by runtime preparation with the same inspected immutable digest. */
+async function prepareDevSnapshots(root,environment){
+    const imageId=await buildDevSnapshotImage(root,environment);
+    return prepareSnapshotRuntime(root,environment,imageId);
+}
 
 const setting='SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS',diagnostics='SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS',image='neurocenter-snapshot-verifier:local',digest='sha256:'+'a'.repeat(64);
 const proxyNames=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'];
@@ -56,6 +62,36 @@ async function fixture(t,{seed=true,build=result(),inspect=result({stdout:digest
     const dbEvents=async()=>fs.readFile(events,'utf8').then(value=>value.trim().split('\n').filter(Boolean).map(JSON.parse),error=>{if(error.code==='ENOENT')return[];throw error;});
     return{root,calls,keyFile,tokenFile,stateFile,environment,unchanged,dbEvents};
 }
+
+test('image installation builds and inspects without PostgreSQL or signing state',async t=>{
+    const f=await fixture(t,{seed:false});assert.equal(await buildDevSnapshotImage(f.root,f.environment),digest);
+    assert.deepEqual(f.calls.map(call=>call.args[0]),['build','image']);assert.deepEqual(await f.dbEvents(),[]);
+    await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('runtime preparation inspects a ready image and ignores all build-only controls',async t=>{
+    const f=await fixture(t),prepared=await prepareSnapshotRuntime(f.root,{...f.environment,SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS:'unused',SNAPSHOT_VERIFIER_TLS_VERIFY:'unused',SNAPSHOT_VERIFIER_REGISTRY_IPV4:'unused'});
+    assert.deepEqual(f.calls.map(call=>call.args[0]),['image']);assert.equal(prepared.runner.SNAPSHOT_RUNNER_IMAGE,digest);
+    for(const key of ['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_TLS_VERIFY','SNAPSHOT_VERIFIER_REGISTRY_IPV4'])assert.equal(prepared.catalog[key],undefined);
+    await f.unchanged();
+});
+
+test('missing prepared image fails with install guidance before PostgreSQL and signing writes',async t=>{
+    const f=await fixture(t,{seed:false,inspect:result({status:1})});
+    assert.throws(()=>inspectDevSnapshotImage(f.root,f.environment),/scripts\/dev\.sh install/);
+    await assert.rejects(prepareSnapshotRuntime(f.root,f.environment),/scripts\/dev\.sh install/);
+    assert.deepEqual(f.calls.map(call=>call.args[0]),['image','image']);assert.deepEqual(await f.dbEvents(),[]);
+    await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('missing explicitly selected prebuilt image gives recovery that does not repeat the same selection',async t=>{
+    const f=await fixture(t,{seed:false,inspect:result({status:1})});
+    assert.throws(()=>inspectDevSnapshotImage(f.root,{...f.environment,SNAPSHOT_VERIFIER_IMAGE:image}),error=>{
+        assert.match(error.message,/Загрузите выбранный готовый образ/);assert.match(error.message,/уберите SNAPSHOT_VERIFIER_IMAGE/);return true;
+    });
+    assert.deepEqual(f.calls.map(call=>call.args[0]),['image']);assert.deepEqual(await f.dbEvents(),[]);
+    await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
 
 for(const seconds of [undefined,'1800'])test('snapshot Docker build uses explicit finite timeout and kill signal: '+(seconds??'default'),async t=>{
     const f=await fixture(t),env={...f.environment,...(seconds===undefined?{}:{[setting]:seconds})};

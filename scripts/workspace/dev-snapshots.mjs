@@ -53,9 +53,34 @@ function dockerFailure(result,seconds){
  return null;
 }
 
-/** A missing signing key must never be replaced while signed snapshots or profiles exist. */
-export async function prepareDevSnapshots(root,environment=process.env){
+/** Inspect only: startup must not install packages, build an image or mutate signing state. */
+export function inspectDevSnapshotImage(root,environment=process.env){
+ const image=environment.SNAPSHOT_VERIFIER_IMAGE||'neurocenter-snapshot-verifier:local';
+ const recovery=environment.SNAPSHOT_VERIFIER_IMAGE?'Загрузите выбранный готовый образ или уберите SNAPSHOT_VERIFIER_IMAGE и выполните scripts/dev.sh install или scripts/dev.sh build.':'Выполните scripts/dev.sh install или scripts/dev.sh build.';
+ const inspected=spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{cwd:root,encoding:'utf8',timeout:15000,killSignal:'SIGKILL'}),failure=dockerFailure(inspected,15);
+ if(failure)throw new Error(`Образ проверки снимков недоступен: ${failure}. ${recovery} Прежний запуск сохранён.`,{cause:inspected.error});
+ const imageId=String(inspected.stdout??'').trim();if(!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error(`Образ проверки снимков недоступен: Docker не вернул корректный digest. ${recovery} Прежний запуск сохранён.`);
+ return imageId;
+}
+
+/** Install/build own image preparation; this path has no PostgreSQL or signing-key dependency. */
+export async function buildDevSnapshotImage(root,environment=process.env){
  const buildSeconds=environment.SNAPSHOT_VERIFIER_IMAGE?600:buildTimeoutSeconds(environment),npmDiagnostics=environment.SNAPSHOT_VERIFIER_IMAGE?false:npmDiagnosticsEnabled(environment),network=environment.SNAPSHOT_VERIFIER_IMAGE?'default':buildNetwork(environment),registryAddress=environment.SNAPSHOT_VERIFIER_IMAGE?undefined:registryIpv4(environment),verifyTls=environment.SNAPSHOT_VERIFIER_IMAGE?true:tlsVerification(environment);
+ const image=environment.SNAPSHOT_VERIFIER_IMAGE||'neurocenter-snapshot-verifier:local';
+ if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,async({environment:buildEnvironment,args})=>{
+  // Docker reads these values from its environment; credentials never become command arguments.
+  const proxyArgs=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(name=>Object.hasOwn(buildEnvironment,name)&&buildEnvironment[name]!==undefined).flatMap(name=>['--build-arg',name]);
+  console.log(`Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter(name=>name!=='--build-arg').join(',')||'none (Docker client settings may apply)'}; registry-ipv4=${registryAddress??'DNS'}; tls-verify=${Number(verifyTls)}`);
+  const build=await runDockerBuild(['build',...args,...proxyArgs,...(network==='host'?['--network=host']:[]),...(registryAddress?['--add-host',`registry.npmjs.org:${registryAddress}`]:[]),...(!verifyTls?['--build-arg','NEUROCENTER_NPM_STRICT_SSL=false']:[]),...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
+  if(failure)throw new Error(`Образ проверки снимков не собран: ${failure}. Прежний запуск сохранён.${build.error?.code==='ETIMEDOUT'?' Лимит сборки задаётся SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS (1–3600 с).':''}`,{cause:build.error});
+ });}
+ return inspectDevSnapshotImage(root,environment);
+}
+
+/** A missing signing key must never be replaced while signed snapshots or profiles exist. */
+export async function prepareDevSnapshots(root,environment=process.env,checkedImageId){
+ const imageId=checkedImageId??inspectDevSnapshotImage(root,environment);
+ if(typeof imageId!=='string'||!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error('Некорректный digest подготовленного образа проверки снимков.');
  const directory=path.join(root,'.run/project-snapshots'),secrets=path.join(directory,'secrets');await fs.mkdir(secrets,{recursive:true,mode:0o700});
  const keyFile=path.resolve(root,environment.SNAPSHOT_SIGNING_KEY_FILE||path.join(secrets,'signing.pem'));
  const tokenFile=path.resolve(root,environment.SNAPSHOT_VERIFIER_TOKEN_FILE||path.join(secrets,'verifier-token'));
@@ -79,16 +104,6 @@ export async function prepareDevSnapshots(root,environment=process.env){
  }finally{await client.query('COMMIT').catch(()=>undefined);await client.end();}
  try{await privateSnapshotFile(tokenFile,1024);}catch(error){if(error.code!=='ENOENT')throw error;try{await fs.writeFile(tokenFile,randomBytes(32).toString('hex')+'\n',{flag:'wx',mode:0o600});}catch(writeError){if(writeError.code!=='EEXIST')throw writeError;}}
  const token=(await privateSnapshotFile(tokenFile,1024)).toString('utf8').trim();if(!/^[a-f0-9]{64,128}$/.test(token))throw new Error('Некорректный токен исполнителя снимков.');
- const image=environment.SNAPSHOT_VERIFIER_IMAGE||'neurocenter-snapshot-verifier:local';
- if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,async({environment:buildEnvironment,args})=>{
-  // Docker reads these values from its environment; credentials never become command arguments.
-  const proxyArgs=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(name=>Object.hasOwn(buildEnvironment,name)&&buildEnvironment[name]!==undefined).flatMap(name=>['--build-arg',name]);
-  console.log(`Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter(name=>name!=='--build-arg').join(',')||'none (Docker client settings may apply)'}; registry-ipv4=${registryAddress??'DNS'}; tls-verify=${Number(verifyTls)}`);
-  const build=await runDockerBuild(['build',...args,...proxyArgs,...(network==='host'?['--network=host']:[]),...(registryAddress?['--add-host',`registry.npmjs.org:${registryAddress}`]:[]),...(!verifyTls?['--build-arg','NEUROCENTER_NPM_STRICT_SSL=false']:[]),...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
-  if(failure)throw new Error(`Образ проверки снимков не собран: ${failure}. Прежний запуск сохранён.${build.error?.code==='ETIMEDOUT'?' Лимит сборки задаётся SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS (1–3600 с).':''}`,{cause:build.error});
- });}
- const inspected=spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{cwd:root,encoding:'utf8',timeout:15000,killSignal:'SIGKILL'}),failure=dockerFailure(inspected,15);
- if(failure)throw new Error(`Образ проверки снимков недоступен: ${failure}. Прежний запуск сохранён.`,{cause:inspected.error});
- const imageId=String(inspected.stdout??'').trim();if(!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error('Образ проверки снимков недоступен: Docker не вернул корректный digest. Прежний запуск сохранён.');
+
  return {catalog:{...Object.fromEntries(Object.entries(environment).filter(([key])=>key.startsWith('SNAPSHOT_')&&!key.startsWith('SNAPSHOT_RUNNER_')&&!['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS','SNAPSHOT_VERIFIER_BUILD_NETWORK','SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY'].includes(key))),SNAPSHOT_SIGNING_KEY_FILE:keyFile,SNAPSHOT_VERIFIER_TOKEN_FILE:tokenFile,SNAPSHOT_VERIFIER_IMAGE_DIGEST:imageId,...(environment.SNAPSHOT_TRUSTED_KEYS_FILE?{SNAPSHOT_TRUSTED_KEYS_FILE:path.resolve(root,environment.SNAPSHOT_TRUSTED_KEYS_FILE)}:{})},runner:{PATH:environment.PATH,HOME:environment.HOME,TMPDIR:environment.TMPDIR,SNAPSHOT_MAX_BYTES:environment.SNAPSHOT_MAX_BYTES||String(16*1024**3),SNAPSHOT_STAGING_MAX_BYTES:environment.SNAPSHOT_STAGING_MAX_BYTES||String(32*1024**3),SNAPSHOT_RUNNER_DIRECTORY:path.join(directory,'work'),SNAPSHOT_RUNNER_CATALOG_URL:'http://127.0.0.1:4100',SNAPSHOT_RUNNER_IMAGE:imageId,SNAPSHOT_RUNNER_TOKEN_FILE:tokenFile}};
 }

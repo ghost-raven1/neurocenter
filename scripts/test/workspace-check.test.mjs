@@ -150,6 +150,8 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             if(args==='--version')console.log('Docker version 27.5.1, build fixture');
             else if(args==='compose version --short')console.log('2.40.3');
             else if(args==='compose up --help')console.log('--wait --wait-timeout');
+            else if(args.startsWith('build '))console.log('owned image built');
+            else if(args.startsWith('image inspect '))console.log('sha256:'+'b'.repeat(64));
             else process.exitCode=91;`, {mode: 0o700});
         const tripwire = path.join(temporary, 'network-tripwire.mjs'), networkCalls = path.join(temporary, 'network-calls');
         await fs.writeFile(tripwire, `import http from 'node:http'; import https from 'node:https'; import net from 'node:net';

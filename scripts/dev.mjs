@@ -14,7 +14,7 @@ import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
 import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
 import {privateSnapshotFile} from './snapshots/control.mjs';
-import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
+import {buildDevSnapshotImage,inspectDevSnapshotImage,prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
 import {withBuildNetwork,withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 import {launchDevService,currentDevLaunchId} from './workspace/dev-launch-provenance.mjs';
@@ -57,7 +57,7 @@ async function prepareWorkspaceDependencies() {
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
-async function forPackages(command, next) {
+async function forPackages(command, next, {repairDependencies = true} = {}) {
     const npm = npmCli(process.env);
     for (const {dir, label} of packages) {
         next(`${command === 'install' ? 'Зависимости' : 'Сборка'} · ${label}`);
@@ -67,7 +67,8 @@ async function forPackages(command, next) {
         else {
             const build = () => withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [ npm, 'run', 'build', ...args ], cwd, env));
             try { await build(); }
-            catch {
+            catch (error) {
+                if (!repairDependencies) { throw new Error(error.message+' Проверьте исходники; для подготовки зависимостей выполните scripts/dev.sh install.'); }
                 // Повреждённый или неполный node_modules (прерванная установка, сбой диска) восстанавливаем
                 // из lock-файла и повторяем сборку один раз; настоящая ошибка кода проявится повторно.
                 output.warning(`Сборка «${label}» не прошла; восстанавливаем зависимости из lock-файла и повторяем.`);
@@ -218,12 +219,12 @@ async function start(profile,watchMode=false) {
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
+    const snapshotImageId = await inspectDevSnapshotImage(root,process.env);
     next('Выбор и подготовка ассетов');
-    await prepareWorkspaceDependencies();
     if (prepareAssets) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels})); }
     else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
-    await forPackages('build', next);
+    await forPackages('build', next, {repairDependencies:false});
     next('Запуск PostgreSQL');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
@@ -236,7 +237,7 @@ async function start(profile,watchMode=false) {
     output.info('Состав каталога', 'Выбирается главным администратором на странице «Ассеты». Запуск сохраняет текущие карточки.');
     const modelCredentials=await prepareDevModelCredentials(root,process.env);
     output.info('Снимки LanceDB','Проверка ключа и изолированного SDK-исполнителя');
-    const snapshots=await prepareDevSnapshots(root,process.env);
+    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId);
     output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
     const chatStorage=await prepareDevChatStorage(root,process.env,{output});
     const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
@@ -397,7 +398,7 @@ async function main() {
     const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',watch:'Запуск с пересборкой исходников',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
     output.heading(titles[command]);
     if (command === 'install') {
-        const next = progress(packages.length + 3);
+        const next = progress(packages.length + 4);
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
@@ -406,13 +407,18 @@ async function main() {
         next('Подготовка dev-поставки моста');
         const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
         await prepareDevBridge({root, node, environment: process.env, output});
+        next('Подготовка образа проверки снимков');
+        await buildDevSnapshotImage(root,process.env);
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }
     else if (command === 'build') {
-        const next = progress(packages.length + 1);
+        const next = progress(packages.length + 2);
         next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
-        await forPackages(command, next); output.success('Проект собран');
+        await forPackages(command, next);
+        next('Подготовка образа проверки снимков');
+        await buildDevSnapshotImage(root,process.env);
+        output.success('Проект собран');
     }
     else if (command === 'up'||command==='watch') { await start(profile,watchMode); }
     else if (command === 'down') {

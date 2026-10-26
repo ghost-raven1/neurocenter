@@ -41,6 +41,8 @@ async function fixture(t, mode = 'ready') {
         else if(command==='compose version --short') {if(mode==='provision-failure')process.exitCode=1;else console.log('2.40.3');}
         else if(command==='compose up --help')console.log('--wait --wait-timeout');
         else if(command==='info --format {{.ServerVersion}}') {if(mode==='daemon-down')process.exitCode=1;else console.log('27.5.1');}
+        else if(args[0]==='build'){if(mode==='verifier-build-exit'){console.error('owned build failure');process.exitCode=37;}else console.log('owned image built');}
+        else if(args[0]==='image'&&args[1]==='inspect')console.log('sha256:'+'b'.repeat(64));
         else {record({kind:'unexpected-command',args});process.exitCode=91;}`, {mode: 0o700});
     // Only the copied fixture supplies this hook; no real runtime, installer or home is reached.
     await fs.writeFile(path.join(checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `export async function prepareDevBridge({root,node,environment}) {
@@ -50,13 +52,26 @@ async function fixture(t, mode = 'ready') {
     }`);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `${record}
-        record({kind:'npm',node:process.versions.node,args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME});`);
+        record({kind:'npm',node:process.versions.node,args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME});
+        if(process.env.COMPOSE_TEST_MODE==='native-build-repair'&&process.argv[2]==='run'){
+            const builds=require('node:fs').readFileSync(process.env.COMPOSE_TEST_RECORD,'utf8').trim().split('\\n').map(JSON.parse).filter(event=>event.kind==='npm'&&event.args[0]==='run');
+            if(builds.length===1)process.exitCode=39;
+        }`);
     const hook = path.join(directory, 'network-tripwire.mjs');
     await fs.writeFile(hook, `import {appendFileSync} from 'node:fs';
         import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
+        import childProcess from 'node:child_process'; import {EventEmitter} from 'node:events';
         import {syncBuiltinESMExports} from 'node:module';
         const record=value=>appendFileSync(process.env.COMPOSE_TEST_RECORD,JSON.stringify(value)+'\\n');
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
+        const spawn=childProcess.spawn;
+        childProcess.spawn=function(...args){
+            if(process.env.COMPOSE_TEST_MODE==='verifier-build-timeout'&&args[0]==='docker'&&args[1]?.[0]==='build'){
+                record({kind:'docker-build-timeout',timeout:args[2].timeout});const child=new EventEmitter();child.kill=()=>true;
+                queueMicrotask(()=>{child.emit('error',Object.assign(Error('owned timeout'),{code:'ETIMEDOUT'}));child.emit('close',null,'SIGKILL');});return child;
+            }
+            return spawn.apply(this,args);
+        };
         globalThis.fetch=(...args)=>{
             if(process.env.COMPOSE_TEST_MODE!=='provision-failure')return deny();
             record({kind:'fetch-fixture',url:String(args[0])});return Promise.resolve(new Response('',{status:503}));
@@ -87,7 +102,7 @@ test('dev install проверяет готовый Compose до установ�
     assert.deepEqual(result.events.slice(0, 3).map(event => event.args), [
         ['--version'], ['compose', 'version', '--short'], ['compose', 'up', '--help'],
     ]);
-    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm'), 'bridge-pipeline']);
+    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm'), 'bridge-pipeline','docker','docker']);
     const npm = result.events.filter(event => event.kind === 'npm');
     assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), ['',...workspacePackages].sort());
     for (const event of npm) {
@@ -98,9 +113,35 @@ test('dev install проверяет готовый Compose до установ�
         assert.match(path.basename(event.home),/^neurocenter-npm-build-/);
         await assert.rejects(fs.access(event.home),{code:'ENOENT'});
     }
-    assert.deepEqual(result.events.at(-1),{kind:'bridge-pipeline',root:f.checkout,node:process.execPath,home:f.directory});
+    assert.deepEqual(result.events.at(-3),{kind:'bridge-pipeline',root:f.checkout,node:process.execPath,home:f.directory});
+    assert.equal(result.events.at(-2).args[0],'build');assert.deepEqual(result.events.at(-1).args,['image','inspect','neurocenter-snapshot-verifier:local','--format','{{.Id}}']);
+    await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
     assert.match(result.stdout, /Compose 2\.40\.3 уже установлен/);
     assert.deepEqual(await fs.readdir(f.dockerConfig), ['config.json']);
+});
+
+for(const command of ['install','build'])test('dev '+command+' builds the verifier using dotenv DNS/TLS options without PostgreSQL or signing state',async t=>{
+    const f=await fixture(t);await fs.writeFile(path.join(f.checkout,'.env'),'SNAPSHOT_VERIFIER_BUILD_NETWORK=host\nSNAPSHOT_VERIFIER_REGISTRY_IPV4=192.0.2.20\nSNAPSHOT_VERIFIER_TLS_VERIFY=0\n');
+    const result=await f.run(command);assert.equal(result.status,0,result.stdout+result.stderr);
+    const builds=result.events.filter(event=>event.kind==='docker'&&event.args[0]==='build');assert.equal(builds.length,1);
+    assert.ok(builds[0].args.includes('--network=host'));assert.ok(builds[0].args.includes('registry.npmjs.org:192.0.2.20'));assert.ok(builds[0].args.includes('NEUROCENTER_NPM_STRICT_SSL=false'));
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,1);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.includes('postgres')).length,0);
+    await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
+});
+
+for(const command of ['install','build'])for(const [mode,reason]of [['verifier-build-exit',/код\S*\s+37/],['verifier-build-timeout',/ETIMEDOUT.*600|600.*ETIMEDOUT/]])test('dev '+command+' reports verifier failure after package preparation: '+mode,async t=>{
+    const f=await fixture(t,mode),result=await f.run(command);assert.equal(result.status,1,result.stdout+result.stderr);assert.match(result.stderr,reason);
+    assert.doesNotMatch(result.stdout,/Зависимости установлены|Проект собран/);
+    assert.equal(result.events.filter(event=>event.kind==='npm').length,workspacePackages.length+1);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image').length,0);
+    await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
+});
+
+test('Explicit dev build retains one dependency repair after a failed native build',async t=>{
+    const f=await fixture(t,'native-build-repair'),result=await f.run('build');assert.equal(result.status,0,result.stdout+result.stderr);
+    const npm=result.events.filter(event=>event.kind==='npm');assert.equal(npm.filter(event=>event.args[0]==='ci').length,2);assert.equal(npm.filter(event=>event.args[0]==='run').length,workspacePackages.length+1);
+    assert.match(result.stderr,/восстанавливаем зависимости/);assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='build').length,1);
 });
 
 test('dev install reports bridge pipeline failure after all npm and does not claim completion',async t=>{
