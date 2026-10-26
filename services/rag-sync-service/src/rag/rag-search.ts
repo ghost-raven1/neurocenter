@@ -37,9 +37,9 @@ export function searchExcerpt(value: string, bytes = 3072): string {
     return result + '…';
 }
 
-/** Seal and rows share one repeatable-read snapshot. An incomplete index is never searched. */
+/** Seal and rows share one snapshot; an uncertain rollback never returns a read-only transaction to the pool. */
 export async function searchProjectIndex(pool: Pool, input: ProjectSearchInput): Promise<ProjectSearchResult> {
-    const db = await pool.connect();
+    const db = await pool.connect(); let discard = false;
     try {
         await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         await db.query("SET LOCAL statement_timeout='10s'");
@@ -61,6 +61,6 @@ export async function searchProjectIndex(pool: Pool, input: ProjectSearchInput):
             ...(Number.isSafeInteger(row.end_line) && row.end_line > 0 ? { endLine: row.end_line } : {}),
             score: Math.max(0, Math.min(1, Number(row.score))), excerpt: searchExcerpt(row.content),
         })) };
-    } catch (error) { await db.query('ROLLBACK').catch(() => undefined); throw error; }
-    finally { db.release(); }
+    } catch (error) { await db.query('ROLLBACK').catch(() => { discard = true; }); throw error; }
+    finally { db.release(discard); }
 }
