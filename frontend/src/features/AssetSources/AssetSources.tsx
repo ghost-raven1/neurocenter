@@ -9,7 +9,7 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { useAssetImports } from './useAssetImports';
 import type { ISourceAsset, ISourceList } from './types';
-import { activeImport } from './types';
+import { activeImport, ASSET_IMPORT_MAX_ITEMS } from './types';
 import StoreEditModal from '../Catalog/StoreEditModal';
 import { fromPlugin, fromSkill } from '../Catalog/catalogCards';
 import type { IStoreApp } from '../Catalog/types';
@@ -22,6 +22,7 @@ import {LocalAssetCards} from './LocalAssetCards';
 import {useSectionUpdates} from '../../core/socket/useSectionUpdates';
 import {formatBytes} from '../../common/utils/format';
 import {AssetArchiveModal} from './AssetArchiveModal';
+import {AssetArchiveStatus} from './AssetArchiveStatus';
 import {useAssetArchiveUpload} from './useAssetArchiveUpload';
 import {sourceAssetReady} from './archiveUpload';
 import './AssetSources.less';
@@ -62,11 +63,12 @@ export default function AssetSources():JSX.Element {
  const add=(ids:string[]):void=>{if(data?.source.verified&&data.source.commit&&!archiveLock.current&&!imports.blocked&&!catalogAction.current&&ids.every(id=>data.assets.some(asset=>asset.id===id&&sourceAssetReady(asset)&&!asset.imported?.archived&&!asset.imported?.unavailable))){const action={};catalogAction.current=action;void Promise.resolve(imports.start(ids,data.source.commit)).finally(()=>{if(catalogAction.current===action)catalogAction.current=undefined;});}};
  const offline=data?.source.mode==='offline';
  const fromArchive=!!data?.source.archiveSha256;
+ const readyUpdates=(data?.assets??[]).filter(asset=>sourceAssetReady(asset)&&asset.imported?.updateAvailable&&!asset.imported.archived&&!asset.imported.unavailable);
  return <section className="asset-sources"><PageHeading title="Ассеты" description="Выберите инструменты, модели и агентов для общего каталога."
   actions={<Space wrap><Button href="/settings#sources">Настройки источников</Button><FeatureButton features={['asset_sources']} disabled={archiveBlocked||archive.busy} onClick={()=>setArchiveOpen(true)}>Импортировать архив</FeatureButton><Button loading={loading} disabled={imports.blocked||archive.busy} onClick={()=>void load()}>Обновить список</Button><FeatureButton features={['asset_sources']} loading={loading} disabled={imports.blocked||archive.busy} onClick={()=>void load(true)}>{offline?'Перечитать поставку':fromArchive?'Проверить источник в GitHub':'Обновить источник'}</FeatureButton></Space>}/>
   <Space direction="vertical" size="middle" className="asset-sources__content">
    {error&&<Alert type="error" showIcon message={error}/>}
-   {fromArchive&&<Alert type="info" showIcon message="Из архива / без сетевой дозагрузки" description="Показана проверенная опись загруженного архива. Добавляются только карточки с готовыми файлами и точными зависимостями; недостающие файлы из GitHub не скачиваются."/>}
+   {fromArchive&&<AssetArchiveStatus assets={data?.assets??[]} blocked={archiveBlocked||archive.busy} onCompleteSupply={()=>{if(!archiveBlocked&&!archive.busy)setArchiveOpen(true);}}/>}
    {offline&&<Alert type="info" showIcon message="Автономная поставка" description={fromArchive?'Сервер работает автономно. «Перечитать поставку» перепроверяет выбранную локальную опись без обращения к GitHub.':'Описи и файлы читаются из локальной поставки, закреплённой точным commit. Новые ассеты появятся после загрузки обновлённой поставки на сервер. GitHub не запрашивается.'}/>}
    {data?.source.error&&<Alert type="warning" showIcon message={data.source.error} description="Показана последняя проверенная опись. Она закреплена точным commit; обновление не меняет уже добавленные карточки."/>}
    <Typography.Text type="secondary">{fromArchive?'Архив · '+data?.source.archiveSha256?.slice(0,12):offline?(data?.source.verified?'Локальная поставка · '+data.source.commit?.slice(0,8):'Загрузите архив или перечитайте локальную поставку.'):data?.source.verified?'Проверено '+new Date(data.source.checkedAt!).toLocaleString('ru-RU')+' · '+data.source.commit?.slice(0,8):'Загрузите архив или обновите источник.'}</Typography.Text>
@@ -79,11 +81,12 @@ export default function AssetSources():JSX.Element {
      {['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)&&<FeatureButton features={['asset_sources']} loading={imports.busy} onClick={()=>void imports.retry()}>{imports.job.state==='NEEDS_INPUT'&&imports.job.items.some(item=>item.action==='conflict')?'Проверить конфликт заново':'Повторить после исправления'}</FeatureButton>}
      <Button onClick={imports.clear}>Новый выбор</Button></>}</Space>
    </Space></Card>}
-   {!!data?.localAssets?.length&&<LocalAssetCards assets={localCards} actions={editControls} query={localQuery} onQuery={setLocalQuery} total={data.localAssets.length}/>}
    <section className="asset-sources__repository" aria-label="Из репозитория ассетов"><Typography.Title level={3}>Из репозитория ассетов</Typography.Title>
    <div className="asset-sources__section-toolbar"><Input.Search aria-label="Поиск ассетов в репозитории" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Найти в репозитории" allowClear/>
+    {!!readyUpdates.length&&<FeatureButton features={['asset_sources']} disabled={imports.blocked||archive.busy||!data?.source.verified} onClick={()=>{if(!imports.blocked&&!archive.busy&&data?.source.verified){setSelected(readyUpdates.slice(0,ASSET_IMPORT_MAX_ITEMS).map(asset=>asset.id));setQuery('');}}}>Выбрать готовые обновления</FeatureButton>}
     <FeatureButton features={['asset_sources',...new Set((data?.assets??[]).filter(asset=>selected.includes(asset.id)).map(asset=>assetCatalogFeature(asset.kind)))]} type="primary" disabled={!selected.length||!data?.source.verified||imports.blocked||archive.busy} loading={imports.busy} onClick={()=>add(selected)}>Добавить выбранные{selected.length?' ('+selected.length+')':''}</FeatureButton>
    </div>
+   {readyUpdates.length>ASSET_IMPORT_MAX_ITEMS&&<Typography.Paragraph type="secondary">За один импорт можно выбрать до {ASSET_IMPORT_MAX_ITEMS} карточек. Кнопка обновлений выбирает первые {ASSET_IMPORT_MAX_ITEMS}; остальные обновите после завершения этой порции.</Typography.Paragraph>}
    {loading&&!data?<Spin/>:cards.length?<div className="asset-sources__grid">{cards.map(asset=><Card key={asset.id} size="small" className="asset-sources__card"
     title={<Space align="start"><Checkbox aria-label={'Выбрать '+asset.name} disabled={imports.blocked||archive.busy||!data?.source.verified||!sourceAssetReady(asset)||asset.imported?.archived||asset.imported?.unavailable} checked={selected.includes(asset.id)} onChange={e=>setSelected(previous=>e.target.checked?[...new Set([...previous,asset.id])]:previous.filter(id=>id!==asset.id))}/><span>{asset.name}</span></Space>}>
     <div className="asset-sources__card-content"><Space wrap><Tag>{labels[asset.kind]}</Tag><Typography.Text type="secondary">{asset.version} · {asset.license}</Typography.Text></Space>
@@ -97,6 +100,7 @@ export default function AssetSources():JSX.Element {
     </div>
    </Card>)}</div>:<Empty description={data?.source.verified?'По выбранному запросу ассетов нет.':offline?'Загрузите архив или перечитайте локальную поставку, чтобы выбрать ассеты.':'Загрузите архив или обновите источник, чтобы выбрать ассеты.'}/>}
    </section>
+   {!!data?.localAssets?.length&&<LocalAssetCards assets={localCards} actions={editControls} query={localQuery} onQuery={setLocalQuery} total={data.localAssets.length}/>}
   </Space>
   <AssetArchiveModal key={'archive:'+scope} open={archiveOpen} blocked={archiveBlocked} upload={archive} onClose={()=>{if(captureOwner()())setArchiveOpen(false);}}/>
   <Modal open={resolving} title="Заменить локальные карточки источником?" onCancel={()=>{if(!imports.busy){setResolving(false);}}} confirmLoading={imports.busy} okText="Заменить содержимое" cancelText="Оставить локальные"

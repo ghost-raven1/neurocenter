@@ -4,6 +4,7 @@ import {ASSET_ARCHIVE_ACCEPT,assetArchiveError} from './archiveUpload';
 import {FileDropZone} from '../../common/components/FileDropZone/FileDropZone';
 import type {useAssetArchiveUpload} from './useAssetArchiveUpload';
 import {FeatureAvailabilityNotice,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
+import {formatBytes} from '../../common/utils/format';
 
 /** Verification imports source descriptions and files; catalogue cards are still selected explicitly. */
 export function AssetArchiveModal({open,onClose,upload,blocked}:{open:boolean;onClose:()=>void;upload:ReturnType<typeof useAssetArchiveUpload>;blocked:boolean}) {
@@ -18,13 +19,14 @@ export function AssetArchiveModal({open,onClose,upload,blocked}:{open:boolean;on
         <Space direction="vertical" className="asset-sources__content">
             <Typography.Paragraph>Выберите ZIP, TAR, TAR.GZ или TGZ до 8 ГиБ. Карточки появятся после проверки архива; затем выберите, что добавить в общий каталог.</Typography.Paragraph>
             <Typography.Paragraph type="secondary">Обычный Download ZIP с GitHub содержит описания: скиллы и агенты с файлами внутри описания могут быть готовы сразу. Для MCP, плагинов и локальных моделей нужна подготовленная поставка с бинарными файлами. Из архива сетевой дозагрузки нет.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">Архив с исходниками одного инструмента загружайте в каталоге через «Упаковать инструмент». Здесь нужен архив поставки ассетов с описью версий и готовыми файлами.</Typography.Paragraph>
             <FileDropZone label="Архив ассетов" title="Перетащите архив сюда" buttonText="Выбрать архив" hint="Один ZIP, TAR, TAR.GZ или TGZ · до 8 ГиБ"
                 accept={ASSET_ARCHIVE_ACCEPT} disabled={blocked||!availability.enabled} busy={upload.busy} onReject={setError} onFiles={files=>{
                     if(upload.busy||blocked||!availability.enabled)return;
                     const candidate=files[0];if(!candidate)return;
                     const invalid=assetArchiveError(candidate);setError(invalid);if(!invalid)setFile(candidate);
                 }}/>
-            {file&&<Typography.Text>{file.name}</Typography.Text>}
+            {file&&<Typography.Text>{file.name} · {file.size<1000?file.size+' Б':formatBytes(file.size)}</Typography.Text>}
             {(error||upload.error)&&<Alert type="error" showIcon message={error||upload.error}/>}
             {upload.busy&&<><Typography.Text role="status">{upload.stage==='validating'?'Архив передан. Сервер проверяет описи и файлы…':'Загружаем архив…'}</Typography.Text><Progress percent={upload.percent} status="active"/></>}
         </Space>
