@@ -18,7 +18,9 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_STRICT_SSL=false
 WORKDIR /verifier
 COPY services/catalog-service/package.json services/catalog-service/package-lock.json ./
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund
+ARG NEUROCENTER_NPM_DIAGNOSTICS=0
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund \
+    $(if [ "$NEUROCENTER_NPM_DIAGNOSTICS" = "1" ]; then printf '%s' '--loglevel=http --foreground-scripts --fetch-timeout=30000 --fetch-retries=0 --logs-max=0'; fi)
 COPY scripts/snapshots/verify-image.cjs ./scripts/snapshots/verify-image.cjs
 COPY services/shared/project-snapshot.cjs ./services/shared/project-snapshot.cjs
 ENV RAYON_NUM_THREADS=2
