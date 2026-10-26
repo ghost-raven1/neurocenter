@@ -6,6 +6,7 @@ import { safeTarget, workspaceDirectory as directory } from './workspace-paths.j
 import { commitWorkspaceIdentity, optionalText, readInstanceRegistry, recoverWorkspaceIdentity, registryFile, saveWorkspaceBindingCompletion, UUID, withWorkspaceIdentityLock } from './workspace-identity-state.js';
 import { WorkspaceIdentityError, type PhysicalDirectory, type VerifyWorkspaceFiles, type WorkspaceBindingInput, type WorkspaceBindingPreparation, type WorkspaceBindingResult, type WorkspaceInstance, type WorkspaceMarker, type WorkspaceVerificationRelease } from './workspace-instance.model.js';
 import { WorkspaceBindingError, workspaceBindingFailure } from './workspace-binding-error.js';
+import { projectDataSizeReport } from './project-data-size.js';
 
 export type { VerifyWorkspaceFiles, WorkspaceBindingInput, WorkspaceBindingMode, WorkspaceBindingPreparation, WorkspaceBindingResult, WorkspaceFileVerification } from './workspace-instance.model.js';
 const markerRelative = '.opencode/neurocenter.json';
@@ -77,8 +78,13 @@ export async function projectInstanceId(projectId: string): Promise<string> { re
 /** Недействительная привязка остаётся видимой; старый path-hash служит только историческим происхождением. */
 export async function workspaceBindingReport(projectId: string, folder: string) {
     try {
-        const instance = await workspaceInstanceAt(folder, projectId);
-        return { projectId, folderName: path.basename(folder), valid: true, bindingId: bindingId(instance), instanceId: instance.instanceId, identityStatus: 'verified' as const };
+        const instance = await selectedInstance(projectId);
+        if (await selectedFolder(projectId) !== folder) { throw new WorkspaceIdentityError('changed', 'Выбранная папка проекта изменилась во время проверки.'); }
+        const currentBindingId=bindingId(instance),identity=JSON.stringify(instance);
+        const dataSize=projectDataSizeReport({key:JSON.stringify([hub(),projectId,currentBindingId,instance.instanceId,instance.realpath,instance.physical]),root:instance.realpath,
+            isCurrent:async()=>JSON.stringify(await selectedInstance(projectId))===identity});
+        return { projectId, folderName: path.basename(folder), valid: true, bindingId: currentBindingId, instanceId: instance.instanceId, identityStatus: 'verified' as const,
+            ...(dataSize?{dataSize}:{}) };
     } catch (error) {
         const identityStatus = error instanceof WorkspaceIdentityError ? error.identityStatus : 'unavailable';
         let missingSource: WorkspaceInstance | undefined;
