@@ -3,6 +3,7 @@ import path from 'node:path';
 import {generateKeyPairSync,createPrivateKey,createPublicKey,createHash,randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
+import {isIPv4} from 'node:net';
 import {privateSnapshotFile} from '../snapshots/control.mjs';
 import {withDockerBuildCa} from './docker-build-ca.mjs';
 import {runDockerBuild} from './docker-build-progress.mjs';
@@ -28,6 +29,21 @@ function buildNetwork(environment){
  return value;
 }
 
+/** An explicit mapping bypasses only registry DNS in this build; it never changes daemon DNS. */
+function registryIpv4(environment){
+ const value=environment.SNAPSHOT_VERIFIER_REGISTRY_IPV4;
+ if(value===undefined)return undefined;
+ if(typeof value!=='string'||!isIPv4(value))throw new Error('SNAPSHOT_VERIFIER_REGISTRY_IPV4: задайте один IPv4, полученный через DNS вашего хоста.');
+ return value;
+}
+
+/** Certificate validation is enabled by default; relaxed builds require an explicit opt-out. */
+function tlsVerification(environment){
+ const value=environment.SNAPSHOT_VERIFIER_TLS_VERIFY===undefined?'1':environment.SNAPSHOT_VERIFIER_TLS_VERIFY;
+ if(value!=='0'&&value!=='1')throw new Error('SNAPSHOT_VERIFIER_TLS_VERIFY: задайте 0 или 1.');
+ return value==='1';
+}
+
 /** Preserve the process outcome without copying arbitrary Docker errors or environment values into the message. */
 function dockerFailure(result,seconds){
  if(result.error?.code==='ETIMEDOUT')return `превышен лимит ${seconds} с (ETIMEDOUT)`;
@@ -39,7 +55,7 @@ function dockerFailure(result,seconds){
 
 /** A missing signing key must never be replaced while signed snapshots or profiles exist. */
 export async function prepareDevSnapshots(root,environment=process.env){
- const buildSeconds=environment.SNAPSHOT_VERIFIER_IMAGE?600:buildTimeoutSeconds(environment),npmDiagnostics=environment.SNAPSHOT_VERIFIER_IMAGE?false:npmDiagnosticsEnabled(environment),network=environment.SNAPSHOT_VERIFIER_IMAGE?'default':buildNetwork(environment);
+ const buildSeconds=environment.SNAPSHOT_VERIFIER_IMAGE?600:buildTimeoutSeconds(environment),npmDiagnostics=environment.SNAPSHOT_VERIFIER_IMAGE?false:npmDiagnosticsEnabled(environment),network=environment.SNAPSHOT_VERIFIER_IMAGE?'default':buildNetwork(environment),registryAddress=environment.SNAPSHOT_VERIFIER_IMAGE?undefined:registryIpv4(environment),verifyTls=environment.SNAPSHOT_VERIFIER_IMAGE?true:tlsVerification(environment);
  const directory=path.join(root,'.run/project-snapshots'),secrets=path.join(directory,'secrets');await fs.mkdir(secrets,{recursive:true,mode:0o700});
  const keyFile=path.resolve(root,environment.SNAPSHOT_SIGNING_KEY_FILE||path.join(secrets,'signing.pem'));
  const tokenFile=path.resolve(root,environment.SNAPSHOT_VERIFIER_TOKEN_FILE||path.join(secrets,'verifier-token'));
@@ -67,12 +83,12 @@ export async function prepareDevSnapshots(root,environment=process.env){
  if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,async({environment:buildEnvironment,args})=>{
   // Docker reads these values from its environment; credentials never become command arguments.
   const proxyArgs=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(name=>Object.hasOwn(buildEnvironment,name)&&buildEnvironment[name]!==undefined).flatMap(name=>['--build-arg',name]);
-  console.log(`Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter(name=>name!=='--build-arg').join(',')||'none (Docker client settings may apply)'}`);
-  const build=await runDockerBuild(['build',...args,...proxyArgs,...(network==='host'?['--network=host']:[]),...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
+  console.log(`Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter(name=>name!=='--build-arg').join(',')||'none (Docker client settings may apply)'}; registry-ipv4=${registryAddress??'DNS'}; tls-verify=${Number(verifyTls)}`);
+  const build=await runDockerBuild(['build',...args,...proxyArgs,...(network==='host'?['--network=host']:[]),...(registryAddress?['--add-host',`registry.npmjs.org:${registryAddress}`]:[]),...(!verifyTls?['--build-arg','NEUROCENTER_NPM_STRICT_SSL=false']:[]),...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
   if(failure)throw new Error(`Образ проверки снимков не собран: ${failure}. Прежний запуск сохранён.${build.error?.code==='ETIMEDOUT'?' Лимит сборки задаётся SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS (1–3600 с).':''}`,{cause:build.error});
  });}
  const inspected=spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{cwd:root,encoding:'utf8',timeout:15000,killSignal:'SIGKILL'}),failure=dockerFailure(inspected,15);
  if(failure)throw new Error(`Образ проверки снимков недоступен: ${failure}. Прежний запуск сохранён.`,{cause:inspected.error});
  const imageId=String(inspected.stdout??'').trim();if(!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error('Образ проверки снимков недоступен: Docker не вернул корректный digest. Прежний запуск сохранён.');
- return {catalog:{...Object.fromEntries(Object.entries(environment).filter(([key])=>key.startsWith('SNAPSHOT_')&&!key.startsWith('SNAPSHOT_RUNNER_')&&!['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS','SNAPSHOT_VERIFIER_BUILD_NETWORK'].includes(key))),SNAPSHOT_SIGNING_KEY_FILE:keyFile,SNAPSHOT_VERIFIER_TOKEN_FILE:tokenFile,SNAPSHOT_VERIFIER_IMAGE_DIGEST:imageId,...(environment.SNAPSHOT_TRUSTED_KEYS_FILE?{SNAPSHOT_TRUSTED_KEYS_FILE:path.resolve(root,environment.SNAPSHOT_TRUSTED_KEYS_FILE)}:{})},runner:{PATH:environment.PATH,HOME:environment.HOME,TMPDIR:environment.TMPDIR,SNAPSHOT_MAX_BYTES:environment.SNAPSHOT_MAX_BYTES||String(16*1024**3),SNAPSHOT_STAGING_MAX_BYTES:environment.SNAPSHOT_STAGING_MAX_BYTES||String(32*1024**3),SNAPSHOT_RUNNER_DIRECTORY:path.join(directory,'work'),SNAPSHOT_RUNNER_CATALOG_URL:'http://127.0.0.1:4100',SNAPSHOT_RUNNER_IMAGE:imageId,SNAPSHOT_RUNNER_TOKEN_FILE:tokenFile}};
+ return {catalog:{...Object.fromEntries(Object.entries(environment).filter(([key])=>key.startsWith('SNAPSHOT_')&&!key.startsWith('SNAPSHOT_RUNNER_')&&!['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS','SNAPSHOT_VERIFIER_BUILD_NETWORK','SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY'].includes(key))),SNAPSHOT_SIGNING_KEY_FILE:keyFile,SNAPSHOT_VERIFIER_TOKEN_FILE:tokenFile,SNAPSHOT_VERIFIER_IMAGE_DIGEST:imageId,...(environment.SNAPSHOT_TRUSTED_KEYS_FILE?{SNAPSHOT_TRUSTED_KEYS_FILE:path.resolve(root,environment.SNAPSHOT_TRUSTED_KEYS_FILE)}:{})},runner:{PATH:environment.PATH,HOME:environment.HOME,TMPDIR:environment.TMPDIR,SNAPSHOT_MAX_BYTES:environment.SNAPSHOT_MAX_BYTES||String(16*1024**3),SNAPSHOT_STAGING_MAX_BYTES:environment.SNAPSHOT_STAGING_MAX_BYTES||String(32*1024**3),SNAPSHOT_RUNNER_DIRECTORY:path.join(directory,'work'),SNAPSHOT_RUNNER_CATALOG_URL:'http://127.0.0.1:4100',SNAPSHOT_RUNNER_IMAGE:imageId,SNAPSHOT_RUNNER_TOKEN_FILE:tokenFile}};
 }

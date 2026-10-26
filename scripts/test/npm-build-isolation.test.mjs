@@ -37,10 +37,10 @@ for(const mode of ['normal','transient','permanent'])test('Real verifier npm RUN
     await fs.writeFile(path.join(project,'package-lock.json'),JSON.stringify({name:'verifier-network-fixture',version:'1.0.0',lockfileVersion:3,packages}));
     await fs.writeFile(path.join(bin,'npm'),'#!/bin/sh\nexec "$NC_TEST_NODE" "$NC_TEST_NPM" "$@"\n',{mode:0o700});
     const source=(await fs.readFile(path.join(root,'services/catalog-service/snapshot-verifier.Dockerfile'),'utf8')).replace(/\\\r?\n/g,' ');
-    const command=source.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command);
+    const command=source.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=[^\n]+npm ci[^\n]*)/m)?.[1];assert.ok(command);
     const result=await new Promise((resolve,reject)=>{
         // Replace the shell with the owned npm process so the native timeout kills and reaps it.
-        const child=spawn('/bin/sh',['-c',command.replace(/\bnpm ci\b/,'exec npm ci')],{cwd:project,timeout:15000,killSignal:'SIGKILL',env:{PATH:bin+path.delimiter+path.dirname(process.execPath)+path.delimiter+'/usr/bin:/bin',HOME:folder,NEUROCENTER_NPM_DIAGNOSTICS:mode==='normal'?'0':'1',NC_TEST_NODE:process.execPath,NC_TEST_NPM:npmCli(),NPM_CONFIG_CACHE:path.join(folder,'fresh-cache')}}),chunks=[];
+        const child=spawn('/bin/sh',['-c',command.replace(/\bnpm ci\b/,'exec npm ci')],{cwd:project,timeout:15000,killSignal:'SIGKILL',env:{PATH:bin+path.delimiter+path.dirname(process.execPath)+path.delimiter+'/usr/bin:/bin',HOME:folder,NEUROCENTER_NPM_STRICT_SSL:'true',NEUROCENTER_NPM_DIAGNOSTICS:mode==='normal'?'0':'1',NC_TEST_NODE:process.execPath,NC_TEST_NPM:npmCli(),NPM_CONFIG_CACHE:path.join(folder,'fresh-cache')}}),chunks=[];
         child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.on('data',chunk=>chunks.push(chunk));child.once('error',reject);child.once('close',(status,signal)=>resolve({status,signal,output:Buffer.concat(chunks).toString()}));
     });
     assert.equal(result.status,mode==='permanent'?1:0,JSON.stringify({maximum,rejected,events,...result}));assert.equal(result.signal,null);
@@ -106,23 +106,23 @@ test('Temporary npm configuration is removed after a failed build',async()=>{
     await assert.rejects(fs.stat(home),{code:'ENOENT'});
 });
 
-test('Every Node Docker build pins npm registry, empty configs and build-only relaxed TLS',async()=>{
+test('Every Node Docker build pins npm registry, empty configs and its selected build TLS policy',async()=>{
     assert.ok(dockerfiles.includes('frontend/Dockerfile'));assert.ok(dockerfiles.includes('services/catalog-service/snapshot-verifier.Dockerfile'));
     for(const file of dockerfiles){
-        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile';
+        const source=await fs.readFile(path.join(root,file),'utf8'),gateway=file==='services/api-gateway/Dockerfile',verifier=file==='services/catalog-service/snapshot-verifier.Dockerfile';
         assert.match(source,/ENV NPM_CONFIG_REGISTRY=https:\/\/registry\.npmjs\.org\//,file);
         assert.match(source,/NPM_CONFIG_USERCONFIG=\/dev\/null/,file);
         assert.match(source,/NPM_CONFIG_GLOBALCONFIG=\/tmp\/neurocenter-empty-global\.npmrc/,file);
-        assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);
-        assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
+        assert.match(source,verifier?/NPM_CONFIG_STRICT_SSL=true/:/NPM_CONFIG_STRICT_SSL=false/,file);
+        if(!verifier)assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
         if(gateway)assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
         else assert.doesNotMatch(source,/^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m,file);
         const commands=[...source.matchAll(/^RUN ([^\n]+)/gm)].flatMap(match=>match[1].split(/\s*&&\s*/)).filter(command=>/\bnpm\s/.test(command));
         assert(commands.length>0,file);
         for(const command of commands){
-            assert.match(command,/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
+            assert.match(command,verifier?/^NODE_TLS_REJECT_UNAUTHORIZED=.*NPM_CONFIG_STRICT_SSL="\$NEUROCENTER_NPM_STRICT_SSL" NODE_NO_WARNINGS=1 npm ci/:/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
             if(!/\bnpm ci /.test(command))continue;
-            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false'])assert.ok(command.includes(flag),file+' missing '+flag);
+            for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc',verifier?'--strict-ssl="$NEUROCENTER_NPM_STRICT_SSL"':'--strict-ssl=false'])assert.ok(command.includes(flag),file+' missing '+flag);
         }
         assert.doesNotMatch(source,/^\s*(?:ARG|COPY|ADD)\s+[^\n]*(?:npm_config_|\.npmrc|\.yarnrc)/im,file);
     }

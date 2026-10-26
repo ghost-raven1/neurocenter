@@ -94,6 +94,29 @@ test('snapshot build logs effective settings and proxy names without secrets',as
     assert.doesNotMatch(output,/PRIVATE_PROXY_PASSWORD|proxy\.invalid|https:\/\/user/);await f.unchanged();
 });
 
+test('snapshot build pins an explicitly selected registry IPv4 and TLS mode only for Docker',async t=>{
+    const f=await fixture(t),env={...f.environment,SNAPSHOT_VERIFIER_REGISTRY_IPV4:'192.0.2.20',SNAPSHOT_VERIFIER_TLS_VERIFY:'0'},prepared=await prepareDevSnapshots(f.root,env),args=f.calls[0].args;
+    assert.deepEqual(args,['build','--add-host','registry.npmjs.org:192.0.2.20','--build-arg','NEUROCENTER_NPM_STRICT_SSL=false','-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.']);
+    for(const key of ['SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY']){assert.equal(prepared.catalog[key],undefined);assert.equal(prepared.runner[key],undefined);}
+    assert.equal(f.calls[1].args[0],'image');await f.unchanged();
+});
+
+for(const value of ['','localhost','192.0.2.999','192.0.2.1,203.0.113.1','192.0.2.1 --network=host','::1',1,null])test('invalid registry IPv4 '+JSON.stringify(value)+' fails before DB and secrets',async t=>{
+    const f=await fixture(t,{seed:false});await assert.rejects(prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_REGISTRY_IPV4:value}),/SNAPSHOT_VERIFIER_REGISTRY_IPV4/);
+    assert.deepEqual(f.calls,[]);assert.deepEqual(await f.dbEvents(),[]);await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+for(const value of ['', 'true','false','2',1,null])test('invalid TLS verify '+JSON.stringify(value)+' fails before DB and secrets',async t=>{
+    const f=await fixture(t,{seed:false});await assert.rejects(prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_TLS_VERIFY:value}),/SNAPSHOT_VERIFIER_TLS_VERIFY/);
+    assert.deepEqual(f.calls,[]);assert.deepEqual(await f.dbEvents(),[]);await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('an explicit verifier image ignores build-only DNS and TLS settings',async t=>{
+    const f=await fixture(t),prepared=await prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_IMAGE:image,SNAPSHOT_VERIFIER_REGISTRY_IPV4:'unused',SNAPSHOT_VERIFIER_TLS_VERIFY:'unused'});
+    assert.equal(f.calls.length,1);assert.equal(f.calls[0].args[0],'image');
+    for(const key of ['SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY']){assert.equal(prepared.catalog[key],undefined);assert.equal(prepared.runner[key],undefined);}
+});
+
 for(const value of ['default','host'])test('snapshot network '+value+' is explicit and limited to the image build',async t=>{
     const f=await fixture(t),key='SNAPSHOT_VERIFIER_BUILD_NETWORK',env={...f.environment,[key]:value};
     const prepared=await prepareDevSnapshots(f.root,env);
@@ -139,23 +162,24 @@ test('an explicit snapshot image does not validate build-only npm diagnostics',a
     assert.equal(f.calls.length,1);assert.equal(f.calls[0].args[0],'image');assert.equal(prepared.catalog[diagnostics],undefined);assert.equal(prepared.runner[diagnostics],undefined);
 });
 
-for(const value of ['0','1'])test('actual snapshot Docker RUN keeps HTTPS and TLS policy with bounded diagnostics '+value,async t=>{
+for(const value of ['0','1'])for(const strict of ['true','false'])test('actual snapshot Docker RUN keeps HTTPS and selected TLS '+strict+' with bounded diagnostics '+value,async t=>{
     const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-npm-run-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
-    const npm=path.join(directory,'npm'),argsFile=path.join(directory,'args'),tlsFile=path.join(directory,'tls'),warningsFile=path.join(directory,'warnings');
-    await fs.writeFile(npm,'#!/bin/sh\nprintf "%s\\n" "$@" > "$NPM_TEST_ARGS"\nprintf "%s" "$NODE_TLS_REJECT_UNAUTHORIZED" > "$NPM_TEST_TLS"\nprintf "%s" "$NODE_NO_WARNINGS" > "$NPM_TEST_WARNINGS"\n',{mode:0o700});
+    const npm=path.join(directory,'npm'),argsFile=path.join(directory,'args'),tlsFile=path.join(directory,'tls'),warningsFile=path.join(directory,'warnings'),strictFile=path.join(directory,'strict');
+    await fs.writeFile(npm,'#!/bin/sh\nprintf "%s\\n" "$@" > "$NPM_TEST_ARGS"\nprintf "%s" "$NODE_TLS_REJECT_UNAUTHORIZED" > "$NPM_TEST_TLS"\nprintf "%s" "$NODE_NO_WARNINGS" > "$NPM_TEST_WARNINGS"\nprintf "%s" "$NPM_CONFIG_STRICT_SSL" > "$NPM_TEST_STRICT"\n',{mode:0o700});
     const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
-    const instructions=dockerfile.replace(/\\\r?\n/g,' '),command=instructions.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
-    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile,NPM_TEST_WARNINGS:warningsFile}});
+    const instructions=dockerfile.replace(/\\\r?\n/g,' '),command=instructions.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=[^\n]+npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NEUROCENTER_NPM_STRICT_SSL:strict,NPM_CONFIG_STRICT_SSL:strict==='true'?'false':'true',NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile,NPM_TEST_WARNINGS:warningsFile,NPM_TEST_STRICT:strictFile}});
     assert.equal(run.error,undefined);assert.equal(run.status,0,run.stderr);
     const args=(await fs.readFile(argsFile,'utf8')).trim().split('\n');assert.equal(args[0],'ci');
-    for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false','--omit=dev','--no-audit','--no-fund','--loglevel=http','--foreground-scripts','--update-notifier=false'])assert.ok(args.includes(flag),flag+' missing');
-    assert.equal(await fs.readFile(tlsFile,'utf8'),'0');
+    for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl='+strict,'--omit=dev','--no-audit','--no-fund','--loglevel=http','--foreground-scripts','--update-notifier=false'])assert.ok(args.includes(flag),flag+' missing');
+    assert.equal(await fs.readFile(tlsFile,'utf8'),strict==='true'?'1':'0');assert.equal(await fs.readFile(strictFile,'utf8'),strict);
     assert.equal(await fs.readFile(warningsFile,'utf8'),'1');assert.doesNotMatch(instructions,/^ENV [^\n]*NODE_NO_WARNINGS=/m);
     for(const flag of diagnosticFlags)assert.equal(args.includes(flag),value==='1',flag);
     for(const flag of ['--maxsockets=1','--fetch-timeout=120000','--fetch-retries=1','--fetch-retry-mintimeout=2000','--fetch-retry-maxtimeout=5000'])assert.ok(args.includes(flag),flag+' missing');
     assert.ok(args.every(arg=>!/^--fetch-timeout=30000$|^--fetch-retries=0$/.test(arg)));
     assert.ok(args.every(arg=>!arg.startsWith('--ignore-scripts')&&!arg.startsWith('--ignore-platform')));
     assert.match(dockerfile,/^ARG NEUROCENTER_NPM_DIAGNOSTICS=0$/m);assert.doesNotMatch(dockerfile,/^ENV [^\n]*NEUROCENTER_NPM_DIAGNOSTICS=/m);
+    assert.match(dockerfile,/^ARG NEUROCENTER_NPM_STRICT_SSL=true$/m);assert.match(dockerfile,/NPM_CONFIG_STRICT_SSL=true/);
 });
 
 test('actual snapshot npm RUN suppresses Node warnings while preserving stderr errors and failure status',async t=>{
@@ -166,7 +190,7 @@ test('actual snapshot npm RUN suppresses Node warnings while preserving stderr e
     assert.equal(control.status,37);assert.match(control.stderr,/NC_NODE_WARNING_SENTINEL/);assert.match(control.stderr,/npm error NC_FAILURE_VISIBLE/);
     await fs.writeFile(path.join(directory,'npm'),'#!/bin/sh\nexec "$NPM_TEST_NODE" "$NPM_TEST_PROBE" "$@"\n',{mode:0o700});
     const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
-    const command=dockerfile.replace(/\\\r?\n/g,' ').match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const command=dockerfile.replace(/\\\r?\n/g,' ').match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=[^\n]+npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
     const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:'1',NPM_TEST_NODE:process.execPath,NPM_TEST_PROBE:probe}});
     assert.equal(run.error,undefined);assert.equal(run.status,37);assert.match(run.stderr,/npm error NC_FAILURE_VISIBLE/);assert.doesNotMatch(run.stderr,/NC_NODE_WARNING_SENTINEL/);
 });
