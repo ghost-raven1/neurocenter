@@ -324,6 +324,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     ? projectsLoading ? 'Загружаем доступные проекты…' : 'Загрузите список проектов, чтобы продолжить.'
                     : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог инструменты, модели и агентов.'}</Paragraph></div>
                 {!embedded && <Select aria-label="Каталог проекта" placeholder="Выберите проект" value={projectsReady ? targetProject?.id : undefined} loading={projectsLoading} disabled={!projectsReady} allowClear showSearch optionFilterProp="label" onChange={(projectId?: string) => switchTarget(projectId ?? null)} options={projects.map(project => ({value:project.id,label:project.name}))} style={{width:260,maxWidth:'100%'}} />}
+                {embedded && targetProject && canManage && canBrowseCommon && <Button type="primary" href={storeQueryUrl('', {project: targetProject.id})}>Добавить из общего каталога</Button>}
             </div>
             {projectLoadError && <Alert className="store__projects-error" type={projectsReady?'warning':'error'} showIcon
                 message={projectsReady?'Не удалось обновить проекты':'Не удалось загрузить проекты'}
@@ -373,7 +374,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             { loading
                 ? <Spin style={{ display: 'block', margin: '60px auto' }} />
                 : (shown.length === 0
-                    ? <Empty description={catalogIncomplete ? 'Каталог загружен не полностью. Повторите загрузку недоступного источника.' : search || installedOnly ? 'По этим условиям ничего не найдено' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); }}>Сбросить фильтры</Button></Empty>
+                    ? <Empty description={catalogIncomplete ? 'Каталог загружен не полностью. Повторите загрузку недоступного источника.' : search || installedOnly ? 'По этим условиям ничего не найдено' : embedded && projectCatalogUsable && assets.length === 0 ? 'В каталог проекта ещё не добавлены инструменты.' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); }}>Сбросить фильтры</Button></Empty>
                     : (
                         <Row gutter={[12, 12]} align="stretch">
                             { shown.map(a => (

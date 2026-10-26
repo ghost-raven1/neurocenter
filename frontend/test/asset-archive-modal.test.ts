@@ -47,3 +47,8 @@ it('Блокировка активным импортом/редактором 
 it('Выводит ошибку сервера для повторной загрузки',()=>{
     flow={...flow,error:'Превышен серверный лимит архива'};expect(render()).toContain('Превышен серверный лимит архива');
 });
+
+it('Выбранная поставка показывает размер и отличает её от исходников инструмента',()=>{
+    render();ui.drop!.onFiles([new File([new Uint8Array(2_000_000)],'supply.tar')]);const html=render();
+    expect(html).toContain('2.0 МБ');expect(html).toContain('Упаковать инструмент');expect(html).toContain('исходниками');
+});

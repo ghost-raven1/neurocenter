@@ -1,4 +1,4 @@
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IAiPlugin, IPage, IProjectAsset, ISkillListSummary } from '../src/core/api/interfaces';
@@ -18,14 +18,14 @@ const h = vi.hoisted(() => {
 });
 const ui = vi.hoisted(() => ({ scope: 'admin', owners: new Map<string, () => () => boolean>(), plugins: vi.fn(), skills: vi.fn(),
     refresh: undefined as (() => void) | undefined, buttons: new Map<string, () => void>(), missing: [] as IProjectAsset[],
-    assets: [] as IProjectAsset[], cards: [] as string[],
-    user: { activeRole: 'Главный админ', userRoles: ['Главный админ'], email: 'one@example.test', projectRoles: [] },
+    assets: [] as IProjectAsset[], cards: [] as string[], search: '?p=project-one',
+    user: { activeRole: 'Главный админ', userRoles: ['Главный админ'], email: 'one@example.test', projectRoles: [] as Array<{projectId:string;projectName:string;role:string}> },
 }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), useState: h.useState, useRef: h.useRef, useMemo: h.useMemo,
     useCallback: h.useCallback, useEffect: h.useEffect, useLayoutEffect: h.useEffect }));
 vi.mock('react-redux', () => ({ useSelector: (read: (state: unknown) => unknown) => read({ userBlock: { user: ui.user } }) }));
-vi.mock('react-router-dom', () => ({ useLocation: () => ({ pathname: '/store', search: '?p=project-one', hash: '' }),
-    useHistory: () => ({ replace: vi.fn(), push: vi.fn(), location: { pathname: '/store', search: '?p=project-one', hash: '' } }) }));
+vi.mock('react-router-dom', () => ({ useLocation: () => ({ pathname: '/store', search: ui.search, hash: '' }),
+    useHistory: () => ({ replace: vi.fn(), push: vi.fn(), location: { pathname: '/store', search: ui.search, hash: '' } }) }));
 vi.mock('../src/core/api/bff', () => ({ default: { listAiPlugins: (...args: unknown[]) => ui.plugins(...args), listSkills: (...args: unknown[]) => ui.skills(...args) } }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => {
     if (!ui.owners.has(ui.scope)) { const scope = ui.scope; ui.owners.set(scope, () => () => scope === ui.scope); }
@@ -57,7 +57,7 @@ vi.mock('../src/modules/Store/installPlans/InstallPlanFailureModal', () => ({ In
 vi.mock('antd', () => {
     const box = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
     return { Alert: ({ message, description, action }: { message: ReactNode; description?: ReactNode; action?: ReactNode }) => createElement('div', { role: 'alert' }, message, description, action),
-        Button: ({ children, onClick }: { children: ReactNode; onClick: () => void }) => { ui.buttons.set(Array.isArray(children) ? children.join('') : String(children), onClick); return createElement('button', null, children); },
+        Button: ({ children, onClick, href }: { children: ReactNode; onClick: () => void; href?: string }) => { ui.buttons.set(Array.isArray(children) ? children.join('') : String(children), onClick); return createElement(href ? 'a' : 'button', {href}, children); },
         Typography: { Text: box, Paragraph: box }, Row: box, Col: box, Space: box, Radio: { Group: () => null },
         Checkbox: () => null, Empty: ({ description }: { description: string }) => createElement('div', null, description), Input: { Search: () => null },
         Modal: () => null, Select: () => null, Spin: () => createElement('span', null, 'Загрузка'), message: {} };
@@ -67,10 +67,45 @@ const page = (items: IAiPlugin[], number = 1, total = items.length, size = 100):
 const skill: ISkillListSummary = { path: 'common/helper', meta: { name: 'Помощник', slug: 'helper', version: 1 } };
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 const flush = async () => { for (let n = 0; n < 25; n++) await Promise.resolve(); };
-function render() { h.begin(); ui.cards = []; ui.missing = []; ui.buttons.clear(); const html = renderToStaticMarkup(createElement(Store)); h.commit(); return html; }
-async function settle() { await flush(); return render(); }
-beforeEach(() => { vi.resetAllMocks(); ui.scope = 'admin'; ui.owners.clear(); ui.assets = []; ui.plugins.mockResolvedValue(page([plugin(1)])); ui.skills.mockResolvedValue([skill]); });
+function render(props: ComponentProps<typeof Store> = {}) { h.begin(); ui.cards = []; ui.missing = []; ui.buttons.clear(); const html = renderToStaticMarkup(createElement(Store, props)); h.commit(); return html; }
+async function settle(props: ComponentProps<typeof Store> = {}) { await flush(); return render(props); }
+beforeEach(() => { vi.resetAllMocks(); ui.scope = 'admin'; ui.owners.clear(); ui.assets = []; ui.search = '?p=project-one'; ui.user.activeRole = 'Главный админ'; ui.user.userRoles = ['Главный админ']; ui.user.projectRoles = []; ui.plugins.mockResolvedValue(page([plugin(1)])); ui.skills.mockResolvedValue([skill]); });
 afterEach(() => h.dispose());
+
+describe('Переход из каталога проекта в общий каталог', () => {
+    const props = {embedded: true, presetTarget: 'project-one'};
+    it('Объясняет пустой проект и предлагает администратору добавить инструменты', async () => {
+        render(props); const html = await settle(props);
+        expect(ui.cards).toEqual([]);
+        expect(html).toContain('В каталог проекта ещё не добавлены инструменты.');
+        expect(html).toContain('<a href="/store?p=project-one">Добавить из общего каталога</a>');
+    });
+    it('Сохраняет точный проект и не переносит поиск или вкладку в общий каталог', async () => {
+        ui.search = '?p=another-project&q=missing&tab=store';
+        render(props); const html = await settle(props);
+        expect(html).toContain('По этим условиям ничего не найдено');
+        expect(html).toContain('<a href="/store?p=project-one">Добавить из общего каталога</a>');
+    });
+    it('Оставляет добавление доступным после первого инструмента', async () => {
+        ui.assets = [{assetKind: 'mcp', assetId: 'mcp-1', addedBy: '', addedAt: ''}];
+        render(props); const html = await settle(props);
+        expect(ui.cards).toEqual(['MCP 1']);
+        expect(html).toContain('Добавить из общего каталога');
+    });
+    it.each(['Разработчик', 'Наблюдатель'])('Не предлагает изменение каталога для роли %s', async activeRole => {
+        ui.user.activeRole = activeRole; ui.user.userRoles = [activeRole];
+        ui.user.projectRoles = [{projectId: 'project-one', projectName: 'Первый', role: activeRole}];
+        render(props); expect(await settle(props)).not.toContain('Добавить из общего каталога');
+    });
+    it('Не переносит права администратора другого проекта в выбранный', async () => {
+        ui.user.activeRole = 'Админ проекта'; ui.user.userRoles = ['Админ проекта'];
+        ui.user.projectRoles = [{projectId: 'another-project', projectName: 'Другой', role: 'Админ проекта'}];
+        render(props); expect(await settle(props)).not.toContain('Добавить из общего каталога');
+    });
+    it('Не предлагает переход в общий каталог из самого общего каталога', async () => {
+        render(); expect(await settle()).not.toContain('Добавить из общего каталога');
+    });
+});
 
 describe('Источники инструментов не блокируют друг друга', () => {
     it('Готовый MCP виден, пока сервис скиллов не отвечает', async () => {

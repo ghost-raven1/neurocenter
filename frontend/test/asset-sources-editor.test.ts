@@ -165,3 +165,39 @@ it('Запрос редактора блокирует upload синхронно
 it('Нажатие добавить карточку блокирует upload до ответа POST и нового render',async()=>{
     vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();await settle();const pending=deferred<void>();archiveUi.start.mockReturnValueOnce(pending.promise);archiveUi.buttons.find(button=>button.label==='Добавить'&&!button.disabled)!.onClick();expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();pending.resolve();await settle();
 });
+
+it('Архив объясняет три шага обновления и позволяет дополнить неполную поставку',async()=>{
+    vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();const html=await settle();
+    expect(html).toContain('Опись архива проверена');expect(html).toContain('Файлы готовы: 1 из 2');expect(html).toContain('полную опись и описания ассетов');
+    expect(html).toContain('Загрузка архива не меняет версии общего каталога и проектов');
+    expect(html).toContain('Закрепить новую версию');expect(html).toContain('Обновить шаблон');
+    const complete=archiveUi.buttons.find(button=>button.label==='Дополнить поставку архивом');expect(complete?.disabled).toBe(false);
+    complete!.onClick();render();expect(archiveUi.modal?.open).toBe(true);
+});
+it('Выбор обновлений включает только готовые доступные карточки с новой версией и ничего не отправляет',async()=>{
+    const assets=[
+        {...source.assets[0],id:'ready-update',supply:{ready:true,missingFiles:0,missingBytes:0},imported:{...source.assets[0].imported,updateAvailable:true}},
+        {...source.assets[1],id:'missing-update',supply:{ready:false,missingFiles:1,missingBytes:64},imported:{...source.assets[1].imported,updateAvailable:true}},
+        {...source.assets[1],id:'current'},
+        {...source.assets[1],id:'archived-update',imported:{...source.assets[1].imported,updateAvailable:true,archived:true}},
+    ];
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets}});render();await settle();
+    archiveUi.buttons.find(button=>button.label==='Выбрать готовые обновления')!.onClick();render();
+    expect(archiveUi.checkboxes.filter(box=>box.checked).map(box=>box['aria-label'])).toEqual(['Выбрать Агент a']);
+    expect(archiveUi.start).not.toHaveBeenCalled();expect(baseApi.post).not.toHaveBeenCalled();
+    archiveUi.blocked=true;render();expect(archiveUi.buttons.find(button=>button.label==='Выбрать готовые обновления')?.disabled).toBe(true);
+});
+
+it('После загрузки поставки новые версии показаны перед прежними локальными упаковками',async()=>{
+    const local={...source.assets[0],id:'local',name:'Прежняя упаковка'};
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,localAssets:[local]}});render();const html=await settle();
+    expect(html.indexOf('Из репозитория ассетов')).toBeLessThan(html.indexOf('Упакованные на этой площадке'));
+    expect(html).toContain('Открыть в каталоге');
+});
+
+it('Массовый выбор обновлений ограничен серверной порцией из 50 карточек',async()=>{
+    const assets=Array.from({length:51},(_,index)=>({...source.assets[0],id:'update-'+index,name:'Update '+index,imported:{...source.assets[0].imported,updateAvailable:true}}));
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets}});render();await settle();
+    archiveUi.buttons.find(button=>button.label==='Выбрать готовые обновления')!.onClick();const html=render();
+    expect(archiveUi.checkboxes.filter(box=>box.checked)).toHaveLength(50);expect(html).toContain('первые 50');expect(html).toContain('Добавить выбранные (50)');expect(archiveUi.start).not.toHaveBeenCalled();
+});
