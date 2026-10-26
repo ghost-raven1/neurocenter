@@ -20,9 +20,11 @@ export function agentToolGrant(raw:unknown,projectId?:string|null):AgentToolGran
  }
  return {protocol:'json-actions-v1',rag:raw.rag,...(publicChats?{publicChats}:{}),...(raw.systemRoles===undefined?{}:{systemRoles:raw.systemRoles})};
 }
-/** JSON actions are parsed as data. The selected grant limits what the model may request. */
+/** Parse one complete JSON document, optionally fenced; never extract or repair actions from prose. */
 export function agentToolAction(content:string,grant:AgentToolGrant):AgentToolAction {
- let value:unknown;try{if(Buffer.byteLength(content)>8192)throw Error();value=JSON.parse(content);}catch{throw new BadRequestException('Модель не вернула законченный JSON шага инструмента. Автоматического повтора нет.');}
+ if(Buffer.byteLength(content)>8192)throw new BadRequestException('Ответ шага инструмента превышает предел 8 КиБ. Сузьте задачу перед новым явным запуском. Автоматического повтора нет.');
+ const source=content.trim(),fenced=/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(source);
+ let value:unknown;try{value=JSON.parse(fenced?fenced[1]:source);}catch{throw new BadRequestException('Модель вернула ответ не в формате JSON шага инструмента. Проверьте выбранную модель и её инструкции. Автоматического повтора нет.');}
  if(exact(value,['action'])&&value.action==='finish')return {action:'finish'};
  if(exact(value,['action','query'])&&text(value.query,8192)&&((value.action==='rag_search'&&grant.rag)||(value.action==='public_chat_search'&&grant.publicChats)))return {action:value.action,query:value.query};
  if(exact(value,['action','sourceId'])&&value.action==='rag_read'&&grant.rag&&text(value.sourceId,512))return {action:'rag_read',sourceId:value.sourceId};
@@ -30,7 +32,8 @@ export function agentToolAction(content:string,grant:AgentToolGrant):AgentToolAc
  throw new BadRequestException('Шаг не входит в подтверждённые возможности агента.');
 }
 export function agentToolPrompt(grant:AgentToolGrant):string {
- return 'Используется явный протокол json-actions-v1, не native function calling. Выбери один следующий шаг и верни только законченный JSON. '
+ return 'Сейчас выполняется только выбор следующего шага инструмента. Обычный ответ по профилю агента будет отдельным этапом после завершения работы инструментов. '
+  +'Используется явный протокол json-actions-v1, не native function calling. Выбери один следующий шаг и верни только законченный JSON, без пояснений и Markdown. '
   +'Доступен {"action":"finish"}, чтобы перейти к обычному ответу. '
   +(grant.rag?'Поиск проекта: {"action":"rag_search","query":"..."}, затем только найденный источник {"action":"rag_read","sourceId":"..."}. ':'')
   +(grant.publicChats?'Публичные чаты: {"action":"public_chat_search","query":"..."}. Приватные чаты исключены. ':'')
