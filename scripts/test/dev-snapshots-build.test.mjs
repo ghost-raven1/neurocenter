@@ -99,18 +99,32 @@ test('an explicit snapshot image does not validate build-only npm diagnostics',a
 
 for(const value of ['0','1'])test('actual snapshot Docker RUN keeps HTTPS and TLS policy with bounded diagnostics '+value,async t=>{
     const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-npm-run-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
-    const npm=path.join(directory,'npm'),argsFile=path.join(directory,'args'),tlsFile=path.join(directory,'tls');
-    await fs.writeFile(npm,'#!/bin/sh\nprintf "%s\\n" "$@" > "$NPM_TEST_ARGS"\nprintf "%s" "$NODE_TLS_REJECT_UNAUTHORIZED" > "$NPM_TEST_TLS"\n',{mode:0o700});
+    const npm=path.join(directory,'npm'),argsFile=path.join(directory,'args'),tlsFile=path.join(directory,'tls'),warningsFile=path.join(directory,'warnings');
+    await fs.writeFile(npm,'#!/bin/sh\nprintf "%s\\n" "$@" > "$NPM_TEST_ARGS"\nprintf "%s" "$NODE_TLS_REJECT_UNAUTHORIZED" > "$NPM_TEST_TLS"\nprintf "%s" "$NODE_NO_WARNINGS" > "$NPM_TEST_WARNINGS"\n',{mode:0o700});
     const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
-    const command=dockerfile.replace(/\\\r?\n/g,' ').match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
-    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile}});
+    const instructions=dockerfile.replace(/\\\r?\n/g,' '),command=instructions.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile,NPM_TEST_WARNINGS:warningsFile}});
     assert.equal(run.error,undefined);assert.equal(run.status,0,run.stderr);
     const args=(await fs.readFile(argsFile,'utf8')).trim().split('\n');assert.equal(args[0],'ci');
     for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false','--omit=dev','--no-audit','--no-fund'])assert.ok(args.includes(flag),flag+' missing');
     assert.equal(await fs.readFile(tlsFile,'utf8'),'0');
+    assert.equal(await fs.readFile(warningsFile,'utf8'),'1');assert.doesNotMatch(instructions,/^ENV [^\n]*NODE_NO_WARNINGS=/m);
     for(const flag of diagnosticFlags)assert.equal(args.includes(flag),value==='1',flag);
     assert.ok(args.every(arg=>!arg.startsWith('--ignore-scripts')&&!arg.startsWith('--ignore-platform')));
     assert.match(dockerfile,/^ARG NEUROCENTER_NPM_DIAGNOSTICS=0$/m);assert.doesNotMatch(dockerfile,/^ENV [^\n]*NEUROCENTER_NPM_DIAGNOSTICS=/m);
+});
+
+test('actual snapshot npm RUN suppresses Node warnings while preserving stderr errors and failure status',async t=>{
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-npm-warning-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+    const probe=path.join(directory,'warning.cjs');
+    await fs.writeFile(probe,"process.emitWarning('NC_NODE_WARNING_SENTINEL');console.error('npm error NC_FAILURE_VISIBLE');process.exitCode=37;\n");
+    const control=childProcess.spawnSync(process.execPath,[probe],{encoding:'utf8',env:{}});
+    assert.equal(control.status,37);assert.match(control.stderr,/NC_NODE_WARNING_SENTINEL/);assert.match(control.stderr,/npm error NC_FAILURE_VISIBLE/);
+    await fs.writeFile(path.join(directory,'npm'),'#!/bin/sh\nexec "$NPM_TEST_NODE" "$NPM_TEST_PROBE" "$@"\n',{mode:0o700});
+    const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
+    const command=dockerfile.replace(/\\\r?\n/g,' ').match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:'1',NPM_TEST_NODE:process.execPath,NPM_TEST_PROBE:probe}});
+    assert.equal(run.error,undefined);assert.equal(run.status,37);assert.match(run.stderr,/npm error NC_FAILURE_VISIBLE/);assert.doesNotMatch(run.stderr,/NC_NODE_WARNING_SENTINEL/);
 });
 
 for(const seconds of [undefined,'1800'])test('snapshot build timeout names its configured seconds and preserves the original cause: '+(seconds??'default'),async t=>{
