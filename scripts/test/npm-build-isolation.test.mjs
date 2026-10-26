@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import {execFileSync,spawnSync} from 'node:child_process';
+import {execFileSync,spawnSync,spawn} from 'node:child_process';
+import {createServer} from 'node:http';
+import {createHash} from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,6 +13,41 @@ import {withNpmBuildEnvironment} from '../workspace/npm-build-environment.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const tracked=execFileSync('git',['ls-files'],{cwd:root,encoding:'utf8'}).trim().split('\n');
 const dockerfiles=tracked.filter(file=>/(?:^|\/)Dockerfile$|\.Dockerfile$/.test(file));
+
+for(const mode of ['normal','transient','permanent'])test('Real verifier npm RUN uses a single connection and bounded retries: '+mode,{timeout:20000},async t=>{
+    const folder=await fs.mkdtemp(path.join(os.tmpdir(),'nc-verifier-serial-')),events=[];let active=0,maximum=0,rejected=0;
+    t.after(()=>fs.rm(folder,{recursive:true,force:true}));
+    const payload=path.join(folder,'payload'),project=path.join(folder,'project'),bin=path.join(folder,'bin');
+    for(const directory of [payload,project,bin])await fs.mkdir(directory);
+    await fs.mkdir(path.join(payload,'package'));await fs.writeFile(path.join(payload,'package/package.json'),JSON.stringify({name:'download-fixture',version:'1.0.0'}));
+    const archive=path.join(folder,'fixture.tgz');execFileSync('tar',['-czf',archive,'-C',payload,'package']);const bytes=await fs.readFile(archive),integrity='sha512-'+createHash('sha512').update(bytes).digest('base64');
+    const server=createServer((request,response)=>{
+        active++;maximum=Math.max(maximum,active);events.push(request.url);
+        if(active>1){rejected++;active--;response.writeHead(503);response.end('Only one active transfer is available');return;}
+        if(mode==='permanent'||mode==='transient'&&events.length===1){rejected++;active--;response.writeHead(503);response.end('Controlled registry outage');return;}
+        setTimeout(()=>{active--;response.writeHead(200,{'content-type':'application/octet-stream','content-length':bytes.length});response.end(bytes);},100);
+    });
+    t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const dependencies={},packages={'':{name:'verifier-network-fixture',version:'1.0.0',dependencies}};
+    for(let index=0;index<(mode==='permanent'?1:4);index++){
+        const name='download-fixture-'+index;dependencies[name]='1.0.0';packages['node_modules/'+name]={version:'1.0.0',resolved:`http://127.0.0.1:${server.address().port}/${name}.tgz`,integrity};
+    }
+    await fs.writeFile(path.join(project,'package.json'),JSON.stringify({name:'verifier-network-fixture',version:'1.0.0',private:true,dependencies}));
+    await fs.writeFile(path.join(project,'package-lock.json'),JSON.stringify({name:'verifier-network-fixture',version:'1.0.0',lockfileVersion:3,packages}));
+    await fs.writeFile(path.join(bin,'npm'),'#!/bin/sh\nexec "$NC_TEST_NODE" "$NC_TEST_NPM" "$@"\n',{mode:0o700});
+    const source=(await fs.readFile(path.join(root,'services/catalog-service/snapshot-verifier.Dockerfile'),'utf8')).replace(/\\\r?\n/g,' ');
+    const command=source.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command);
+    const result=await new Promise((resolve,reject)=>{
+        // Replace the shell with the owned npm process so the native timeout kills and reaps it.
+        const child=spawn('/bin/sh',['-c',command.replace(/\bnpm ci\b/,'exec npm ci')],{cwd:project,timeout:15000,killSignal:'SIGKILL',env:{PATH:bin+path.delimiter+path.dirname(process.execPath)+path.delimiter+'/usr/bin:/bin',HOME:folder,NEUROCENTER_NPM_DIAGNOSTICS:mode==='normal'?'0':'1',NC_TEST_NODE:process.execPath,NC_TEST_NPM:npmCli(),NPM_CONFIG_CACHE:path.join(folder,'fresh-cache')}}),chunks=[];
+        child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.on('data',chunk=>chunks.push(chunk));child.once('error',reject);child.once('close',(status,signal)=>resolve({status,signal,output:Buffer.concat(chunks).toString()}));
+    });
+    assert.equal(result.status,mode==='permanent'?1:0,JSON.stringify({maximum,rejected,events,...result}));assert.equal(result.signal,null);
+    assert.equal(maximum,1);assert.equal(rejected,mode==='permanent'?2:mode==='transient'?1:0);assert.equal(events.length,mode==='permanent'?2:mode==='transient'?5:4);
+    if(mode==='permanent'){assert.match(result.output,/npm error code E503/);return;}
+    for(const name of Object.keys(dependencies))assert.equal(JSON.parse(await fs.readFile(path.join(project,'node_modules',name,'package.json'),'utf8')).version,'1.0.0');
+});
 
 test('Snapshot verifier installs only its SDK closure with the existing Catalog pins and integrity',async()=>{
     const directory=path.join(root,'scripts/snapshots/verifier'),manifest=JSON.parse(await fs.readFile(path.join(directory,'package.json'),'utf8'));

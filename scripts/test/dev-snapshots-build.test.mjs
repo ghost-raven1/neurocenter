@@ -11,7 +11,7 @@ import {prepareDevSnapshots} from '../workspace/dev-snapshots.mjs';
 
 const setting='SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS',diagnostics='SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS',image='neurocenter-snapshot-verifier:local',digest='sha256:'+'a'.repeat(64);
 const proxyNames=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'];
-const diagnosticFlags=['--fetch-timeout=30000','--fetch-retries=0','--logs-max=0'];
+const diagnosticFlags=['--loglevel=verbose','--logs-max=0'];
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const result=value=>({status:0,signal:null,error:undefined,stdout:'',stderr:'',...value});
 
@@ -152,6 +152,8 @@ for(const value of ['0','1'])test('actual snapshot Docker RUN keeps HTTPS and TL
     assert.equal(await fs.readFile(tlsFile,'utf8'),'0');
     assert.equal(await fs.readFile(warningsFile,'utf8'),'1');assert.doesNotMatch(instructions,/^ENV [^\n]*NODE_NO_WARNINGS=/m);
     for(const flag of diagnosticFlags)assert.equal(args.includes(flag),value==='1',flag);
+    for(const flag of ['--maxsockets=1','--fetch-timeout=120000','--fetch-retries=1','--fetch-retry-mintimeout=2000','--fetch-retry-maxtimeout=5000'])assert.ok(args.includes(flag),flag+' missing');
+    assert.ok(args.every(arg=>!/^--fetch-timeout=30000$|^--fetch-retries=0$/.test(arg)));
     assert.ok(args.every(arg=>!arg.startsWith('--ignore-scripts')&&!arg.startsWith('--ignore-platform')));
     assert.match(dockerfile,/^ARG NEUROCENTER_NPM_DIAGNOSTICS=0$/m);assert.doesNotMatch(dockerfile,/^ENV [^\n]*NEUROCENTER_NPM_DIAGNOSTICS=/m);
 });
