@@ -87,6 +87,34 @@ test('snapshot Docker build leaves unset proxy arguments to Docker client config
     assert.ok(f.calls[0].args.every(arg=>!proxyNames.some(key=>arg===key||arg.startsWith(key+'='))));
 });
 
+for(const value of ['default','host'])test('snapshot network '+value+' is explicit and limited to the image build',async t=>{
+    const f=await fixture(t),key='SNAPSHOT_VERIFIER_BUILD_NETWORK',env={...f.environment,[key]:value};
+    const prepared=await prepareDevSnapshots(f.root,env);
+    assert.deepEqual(f.calls[0].args,['build',...(value==='host'?['--network=host']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.']);
+    assert.equal(prepared.catalog[key],undefined);assert.equal(prepared.runner[key],undefined);assert.equal(env[key],value);
+    assert.ok(!f.calls[1].args.some(arg=>arg.startsWith('--network')));await f.unchanged();
+});
+
+for(const value of ['', 'bridge','none','HOST','host --privileged',1,null,false])test('invalid snapshot build network '+JSON.stringify(value)+' fails before DB and secrets',async t=>{
+    const f=await fixture(t,{seed:false});
+    await assert.rejects(prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_BUILD_NETWORK:value}),error=>{assert.match(error.message,/SNAPSHOT_VERIFIER_BUILD_NETWORK/);return true;});
+    assert.deepEqual(f.calls,[]);assert.deepEqual(await f.dbEvents(),[]);await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('an explicit image ignores build network validation and never exports it to runtime',async t=>{
+    const f=await fixture(t),prepared=await prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_IMAGE:image,SNAPSHOT_VERIFIER_BUILD_NETWORK:'unused'});
+    assert.equal(f.calls.length,1);assert.equal(f.calls[0].args[0],'image');
+    assert.equal(prepared.catalog.SNAPSHOT_VERIFIER_BUILD_NETWORK,undefined);assert.equal(prepared.runner.SNAPSHOT_VERIFIER_BUILD_NETWORK,undefined);
+});
+
+test('host build network composes with proxy forwarding and bounded npm diagnostics',async t=>{
+    const f=await fixture(t),proxy='http://user:private-network-secret@proxy.invalid:3128';
+    const prepared=await prepareDevSnapshots(f.root,{...f.environment,HTTPS_PROXY:proxy,SNAPSHOT_VERIFIER_BUILD_NETWORK:'host',SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS:'1'});
+    assert.deepEqual(f.calls[0].args,['build','--build-arg','HTTPS_PROXY','--network=host','--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1','-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.']);
+    assert.equal(f.calls[0].options.env.HTTPS_PROXY,proxy);assert.ok(!f.calls[0].args.includes(proxy));
+    assert.equal(prepared.catalog.SNAPSHOT_VERIFIER_BUILD_NETWORK,undefined);await f.unchanged();
+});
+
 for(const value of ['0','1'])test('snapshot npm diagnostics '+value+' is build-only and opt-in',async t=>{
     const f=await fixture(t),env={...f.environment,[diagnostics]:value},prepared=await prepareDevSnapshots(f.root,env);
     assert.deepEqual(f.calls[0].args,['build',...(value==='1'?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.']);

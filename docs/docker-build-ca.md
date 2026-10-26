@@ -72,6 +72,16 @@ docker run --rm --pull=never \
 
 Команда не загружает образ и не меняет настройки daemon. Если образ не найден, это отсутствие локального образа, а не результат DNS-проверки. Успех на хосте не доказывает успех в контейнере; runtime-контейнер также не доказывает настройки отдельного BuildKit builder. [Docker описывает отдельные DNS-настройки контейнеров](https://docs.docker.com/engine/network/#dns-services). При корпоративном прокси отдельно проверьте его hostname без вывода пароля/токенов. Публичные DNS-серверы, изменение daemon.json и network=host не применяются автоматически. После выбора DNS/маршрута нужен повтор именно упавшей сборки с загрузкой не кэшированного пакета.
 
+Если обычный контейнер не разрешает имя, а повтор с `docker run --network=host` возвращает адреса, можно явно выбрать сеть хоста для RUN-этапов сборки verifier:
+
+```sh
+SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
+```
+
+`SNAPSHOT_VERIFIER_BUILD_NETWORK` принимает только `default` или `host`; без настройки дополнительный Docker-флаг не передаётся. `host` добавляет `--network=host` только к сборке исполнителя снимков. Этапы RUN используют сеть Docker-хоста; для удалённого daemon это другой компьютер, для Docker Desktop — его среда виртуализации. Настройка не передаётся сервисам/runner, не действует с готовым `SNAPSHOT_VERIFIER_IMAGE` и не меняет daemon.json, прокси, TLS или настройки остальных сборок. Неизвестное значение отклоняется до БД и подготовки ключей.
+
+[Docker build network](https://docs.docker.com/reference/cli/docker/buildx/build/#network) применяется к RUN. Если BuildKit запрещает `network.host`, нужен builder, где этот режим разрешён; CLI не включает дополнительные entitlements, не меняет builder и не повторяет сборку в другой сети автоматически. Отказ остаётся видимым. Успех DNS с host network — основание для этого явного повтора, но не доказательство успешного npm ci; B26 закрывается после проверки полной сборки на целевом Linux.
+
 Проверки: `node --test --test-concurrency=1 scripts/test/docker-build-ca.test.mjs scripts/test/docker-build-ca-lifecycle.test.mjs`. Новый набор: 32 PASS и один явный Docker-skip. Отдельно `DOCKER_BUILD_CA_TEST=1` дал 16/16 в основном файле: настоящие legacy/BuildKit сборки на уже доступном закреплённом Node-образе, без npm-загрузок. Проверены выбранный CA, неверный SHA, отсутствие CA и исключение старого пустого/приватного `extra.pem` из контекста. Эти16 пересекаются с основным набором и к32 не прибавляются. Полная сборка приложения и корпоративный Linux этим не приняты. Квитанции: `.run/docker-ca-isolation-20261022/{final,real-docker}/receipt.json`, `compose-receipt.json`.
 
 Основание: [CA в Docker](https://docs.docker.com/engine/network/ca-certs/), [NODE_EXTRA_CA_CERTS в Node.js](https://nodejs.org/docs/latest-v24.x/api/cli.html#node_extra_ca_certsfile).
