@@ -49,6 +49,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (project && project[1] !== 'import-local') {
         const level = projectLevel(claims,activeRole,project[1]);
         if (!level) { return false; }
+        // The service distinguishes a readable accepted receipt from admission of a new plan.
+        if(project[2]==='embedding/reindex'&&verb==='POST')return true;
         if(project[2]?.startsWith('chat-search'))return project[2]==='chat-search' ? read : /^chat-search\/jobs\/[a-f0-9-]{36}$/.test(project[2]) ? read||verb==='DELETE' : level>=2&&verb==='POST'&&/^chat-search\/(index|search)$/.test(project[2]);
         if(project[2]?.startsWith('team-chat'))return allowProjectChat(level,verb,project[2]);
         if(project[2]&&/^learning(?:[/%]|$)/.test(project[2]))return allowLearningRoute(level,request.method.toUpperCase(),project[2]);
