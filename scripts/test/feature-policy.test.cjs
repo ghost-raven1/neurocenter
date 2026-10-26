@@ -36,6 +36,10 @@ test('Transport failures and oversized bodies fail closed without exposing secre
  const abort=new AbortController();abort.abort(new Error('qa-cancel'));await assert.rejects(readFeatures(env,async()=>{throw Error('transport');},abort.signal),/qa-cancel/);
 });
 const routes=[
+ ['POST','/api/projects/p/embedding/reindex',{},[]],
+ ['POST','/api/projects/p/embedding/reindex/id/start',{},['rag_sync']],
+ ['POST','/api/projects/p/embedding/reindex/id/retry',{},['rag_sync']],
+ ['POST','/api/projects/p/embedding/reindex/id/cancel',{},[]],
  ['PUT','/api/help/getting-started',{},['help_center']],
  ['POST','/api/discussions/comments',{},[]],
  ['PATCH','/api/discussions/comments/id',{},['discussions']],

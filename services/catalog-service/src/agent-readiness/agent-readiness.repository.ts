@@ -13,14 +13,15 @@ export interface TrialRow {
 export const trialPending = (row: Pick<TrialRow, 'status'>): boolean => row.status === 'queued' || row.status === 'running';
 export class AgentTrialRepository {
     constructor(readonly pool: Pool) {}
+    /** Неизвестный откат уничтожает сессию, чтобы expire не зафиксировал прерванную вставку. */
     async transaction<T>(action: (db: TrialDb) => Promise<T>): Promise<T> {
-        const db = await this.pool.connect();
+        const db = await this.pool.connect(); let discard = false;
         try {
             await db.query('BEGIN');
             await db.query("SET LOCAL lock_timeout='1000ms'; SET LOCAL statement_timeout='3000ms'");
             const result = await action(db); await db.query('COMMIT'); return result;
         }
-        catch (error) { await db.query('ROLLBACK').catch(() => undefined); throw error; } finally { db.release(); }
+        catch (error) { await db.query('ROLLBACK').catch(() => { discard = true; }); throw error; } finally { db.release(discard); }
     }
     async prior(owner: string, request: string, db: TrialDb = this.pool): Promise<TrialRow | undefined> {
         return (await db.query<TrialRow>('SELECT * FROM agent_readiness_trials WHERE owner_email=$1 AND request_id=$2', [owner, request])).rows[0];
