@@ -60,6 +60,18 @@ SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
 
 При полностью закрытом GitHub первый build также не сможет получить закреплённую npm-зависимость `@neurocenter/asset-contract` с `codeload.github.com`. В таком окружении заранее собирайте образы для архитектуры рабочего сервера на машине с доступом к источникам и переносите их через `docker image save` / `docker image load`. Для native dev заранее загруженный исполнитель снимков можно выбрать через `SNAPSHOT_VERIFIER_IMAGE`; тогда `dev.sh up` проверяет существующий образ и не пересобирает его. Каталог ассетов после подготовки работает независимо от GitHub в [автономном режиме](assets.md#работа-без-доступа-к-github).
 
+Если npm пишет `attempt ... failed with EAI_AGAIN`, это временный отказ разрешения имени ([getaddrinfo](https://man7.org/linux/man-pages/man3/getaddrinfo.3.html)). На шаге npm ci кэшированные пакеты могут проходить сразу, тогда как отсутствующие архивы требуют сетевых запросов и повторяются до ошибки либо общего лимита. Отключение проверки сертификатов не исправляет этот этап. По URL npm нельзя установить, отказало имя registry или настроенного прокси.
+
+Для Linux сравните `getent ahosts registry.npmjs.org` на хосте с тем же запросом в уже скачанном базовом образе; из корня Neurocenter:
+
+```sh
+docker run --rm --pull=never \
+  "$(sed -n '1s/^FROM //p' services/catalog-service/snapshot-verifier.Dockerfile)" \
+  getent ahosts registry.npmjs.org
+```
+
+Команда не загружает образ и не меняет настройки daemon. Если образ не найден, это отсутствие локального образа, а не результат DNS-проверки. Успех на хосте не доказывает успех в контейнере; runtime-контейнер также не доказывает настройки отдельного BuildKit builder. [Docker описывает отдельные DNS-настройки контейнеров](https://docs.docker.com/engine/network/#dns-services). При корпоративном прокси отдельно проверьте его hostname без вывода пароля/токенов. Публичные DNS-серверы, изменение daemon.json и network=host не применяются автоматически. После выбора DNS/маршрута нужен повтор именно упавшей сборки с загрузкой не кэшированного пакета.
+
 Проверки: `node --test --test-concurrency=1 scripts/test/docker-build-ca.test.mjs scripts/test/docker-build-ca-lifecycle.test.mjs`. Новый набор: 32 PASS и один явный Docker-skip. Отдельно `DOCKER_BUILD_CA_TEST=1` дал 16/16 в основном файле: настоящие legacy/BuildKit сборки на уже доступном закреплённом Node-образе, без npm-загрузок. Проверены выбранный CA, неверный SHA, отсутствие CA и исключение старого пустого/приватного `extra.pem` из контекста. Эти16 пересекаются с основным набором и к32 не прибавляются. Полная сборка приложения и корпоративный Linux этим не приняты. Квитанции: `.run/docker-ca-isolation-20261022/{final,real-docker}/receipt.json`, `compose-receipt.json`.
 
 Основание: [CA в Docker](https://docs.docker.com/engine/network/ca-certs/), [NODE_EXTRA_CA_CERTS в Node.js](https://nodejs.org/docs/latest-v24.x/api/cli.html#node_extra_ca_certsfile).
