@@ -15,8 +15,8 @@ import type {SystemRoleId} from '../SystemRoles/types';
 import {emptyProjectChatDraft, PROJECT_CHAT_MESSAGE_BYTES, projectChatAmbiguous, projectChatAuthor, projectChatRequestKey} from './model';
 import type {ProjectChatDetail, ProjectChatDraft, ProjectChatIntent, ProjectChatMessage, ProjectChatReceipt} from './types';
 import {ProjectChatPanel} from './ProjectChatPanel';
+import {projectChatDraftScope, readProjectChatDraft, saveProjectChatDraft} from './draftStorage';
 
-const drafts = new Map<string, ProjectChatDraft>();
 interface Props {
     draftKey: string; detail: ProjectChatDetail; reply?: ProjectChatMessage;
     onCancelReply: () => void; onFrozenChange?: (value: boolean) => void;
@@ -29,7 +29,8 @@ interface Props {
 /** A shared-room post gets a short durable receipt; other questions can arrive while agents work. */
 export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onFrozenChange, onTyping, onSend, onSystemRole, systemTaskKey, systemAction, onSystemInstructionChange}: Props): JSX.Element {
     const {captureOwner} = useAuthRequestOwner(), availability = useFeatureAvailability('project_chat'), inference = useFeatureAvailability('group_chat');
-    const [draft, setDraft] = useState<ProjectChatDraft>(() => drafts.get(draftKey) ?? emptyProjectChatDraft());
+    const draftScope = projectChatDraftScope(draftKey);
+    const [draft, setDraft] = useState<ProjectChatDraft>(() => readProjectChatDraft(draftScope));
     const [sending, setSending] = useState(false), [error, setError] = useState('');
     const [recipientsOpen, setRecipientsOpen] = useState(false);
     const [toolsOpen,setToolsOpen] = useState(false), agentTools = useAgentTools(draftKey,detail.room.projectId);
@@ -42,7 +43,7 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
     const canSend = availability.enabled && (!custom || dialogs.enabled), privateRoom = detail.room.visibility === 'PRIVATE';
     useEffect(() => {if (frozen || !detail.canPost || !canSend) onTyping?.(''); return () => onTyping?.('');}, [onTyping, frozen, detail.canPost, canSend]);
     const audience = privateRoom ? 'Переписка видна только участникам этого диалога.' : 'Переписка видна участникам проекта.';
-    const update = (value: ProjectChatDraft): void => {latest.current = value; drafts.set(draftKey, value); setDraft(value);};
+    const update = (value: ProjectChatDraft): void => {latest.current = value; saveProjectChatDraft(draftScope, value); setDraft(value);};
     useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
     useEffect(() => {onFrozenChange?.(frozen);}, [frozen, onFrozenChange]);
     useEffect(() => {
@@ -73,7 +74,7 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
         activeTask.current = key;
         onSystemRole({key, origin, agentId, instruction, ...(detail.room.modelId ? {modelId: detail.room.modelId} : {}),
             onAccepted: accepted => {if (!owns() || !alive.current || activeTask.current !== key) return;
-                if (chatSystemRoleMention(latest.current.body, roomAgents).instruction.trim() === (accepted ?? instruction).trim()) {update(emptyProjectChatDraft()); drafts.delete(draftKey); onCancelReply();}
+                if (chatSystemRoleMention(latest.current.body, roomAgents).instruction.trim() === (accepted ?? instruction).trim()) {update(emptyProjectChatDraft()); onCancelReply();}
                 onSystemRole(undefined);}});
     };
     const send = async (): Promise<void> => {
@@ -90,17 +91,19 @@ export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onF
         }
         if (!draft.pending && asksAgents && agentTools.blocked) {setError(agentTools.reason || 'Проверяем инструменты. Дождитесь проверки или выключите их для обычного ответа.'); setToolsOpen(true); return;}
         const intent = draft.pending ?? {requestKey: projectChatRequestKey(), prompt: draft.body.trim(), ...(selectedReply ? {replyToId: selectedReply.id} : {}), targetAgentIds: [...targets],...(asksAgents && agentTools.request ? {agentTools: structuredClone(agentTools.request)} : {})};
+        const pendingDraft = {...draft, reply: selectedReply, pending: intent};
+        if (!saveProjectChatDraft(draftScope, pendingDraft)) {saveProjectChatDraft(draftScope, draft); setError('Не удалось сохранить запрос в браузере. Отправка не начата. Разрешите хранение данных сайта и повторите.'); return;}
         const acceptTools = intent.agentTools ? agentTools.afterSubmission() : undefined;
         onTyping?.('');
-        lock.current = true; update({...draft, reply: selectedReply, pending: intent}); setSending(true); setError('');
+        lock.current = true; update(pendingDraft); setSending(true); setError('');
         try {
             await onSend(intent);
             if (!owns() || !alive.current) return;
             acceptTools?.();
-            update(emptyProjectChatDraft()); drafts.delete(draftKey); onCancelReply(); text.current?.focus();
+            update(emptyProjectChatDraft()); onCancelReply(); text.current?.focus();
         } catch (cause) {
             if (!owns() || !alive.current) return;
-            if (!projectChatAmbiguous(cause)) update({...latest.current, pending: undefined});
+            if (!draft.pending && !projectChatAmbiguous(cause)) update({...latest.current, pending: undefined});
             setError(errorMessage(cause, 'Отправка не подтверждена. Повторите этот запрос: текст и адресаты сохранены.'));
         } finally {lock.current = false; if (owns() && alive.current) setSending(false);}
     };

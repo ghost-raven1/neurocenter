@@ -9,8 +9,8 @@ let props: Parameters<typeof ProjectChatComposer>[0];
 const onSend = vi.fn<Parameters<typeof ProjectChatComposer>[0]['onSend']>(), cancelReply = vi.fn();
 const element = () => ProjectChatComposer(props);
 const type = (body: string) => {renderProjectUi(element); ui.inputs.get('Текст сообщения команде')!.onChange({target: {value: body}}); renderProjectUi(element);};
-beforeEach(() => {vi.clearAllMocks(); ui.flags.clear(); ui.owner = 'alice'; props = {draftKey: 'composer-' + (++key), detail: projectRoom(), onCancelReply: cancelReply, onSend}; onSend.mockResolvedValue({message: projectMessage(), roomRevision: 2});});
-afterEach(() => harness.dispose());
+beforeEach(() => {const storage = new Map<string, string>(); vi.stubGlobal('sessionStorage', {getItem: (name: string) => storage.get(name) ?? null, setItem: (name: string, value: string) => storage.set(name, value), removeItem: (name: string) => storage.delete(name)}); vi.clearAllMocks(); ui.flags.clear(); ui.owner = 'alice'; props = {draftKey: 'composer-' + (++key), detail: projectRoom(), onCancelReply: cancelReply, onSend}; onSend.mockResolvedValue({message: projectMessage(), roomRevision: 2});});
+afterEach(() => {harness.dispose(); vi.unstubAllGlobals();});
 
 describe('Команда: явная отправка и безопасные ответы', () => {
     it('системное @ открывает частную подготовку без публикации, а подтверждение не стирает новый черновик', () => {
@@ -78,6 +78,31 @@ describe('Команда: явная отправка и безопасные о
         expect(view.html).toContain('Вопрос по стеку'); expect(ui.inputs.get('Текст сообщения команде')!.disabled).toBe(true);
         ui.flags.set('project_chat', false); ui.flags.set('group_chat', false); props.detail = {...props.detail, canPost: false}; renderProjectUi(element); ui.buttons.get('Проверить отправку')!(); view = await settleProjectUi(element);
         expect(onSend.mock.calls[1][0]).toEqual(sent); expect(cancelReply).toHaveBeenCalledOnce(); expect(view.html).not.toContain('Вопрос по стеку');
+    });
+    it('reload сохраняет точный неподтверждённый запрос, reply и адресатов до явного ACK', async () => {
+        props.reply = projectMessage({id: 'reply-before-reload'}); onSend.mockRejectedValueOnce(new Error('ACK lost'));
+        renderProjectUi(element); renderProjectUi(element); type('Вопрос после reload'); ui.selects.get('Адресаты сообщения')!.onChange('selected'); renderProjectUi(element);
+        ui.selects.get('Агенты для ответа')!.onChange(['reviewer']); renderProjectUi(element); ui.buttons.get('Спросить агентов')!(); await settleProjectUi(element);
+        const original = structuredClone(onSend.mock.calls[0][0]); harness.dispose(); props.reply = undefined; vi.resetModules();
+        const {ProjectChatComposer: Reloaded} = await import('../src/features/ProjectChat/ProjectChatComposer'); const reload = () => Reloaded(props);
+        const view = renderProjectUi(reload); expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('Вопрос после reload');
+        expect(view.html).toContain('Ответ · Алиса'); expect(ui.buttons.has('Проверить отправку')).toBe(true); expect(onSend).toHaveBeenCalledOnce();
+        ui.buttons.get('Проверить отправку')!(); await settleProjectUi(reload); expect(onSend.mock.calls[1][0]).toEqual(original);
+        harness.dispose(); vi.resetModules(); const {ProjectChatComposer: Acknowledged} = await import('../src/features/ProjectChat/ProjectChatComposer');
+        renderProjectUi(() => Acknowledged(props)); expect(ui.inputs.get('Текст сообщения команде')!.value).toBe(''); expect(ui.buttons.has('Проверить отправку')).toBe(false);
+    });
+    it('запрещённое сохранение не начинает POST и оставляет редактируемый черновик', async () => {
+        vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {throw new Error('QuotaExceeded');});
+        type('Не потерять при отказе storage'); ui.buttons.get('Отправить')!(); const view = await settleProjectUi(element);
+        expect(onSend).not.toHaveBeenCalled(); expect(ui.inputs.get('Текст сообщения команде')!.value).toBe('Не потерять при отказе storage');
+        expect(ui.inputs.get('Текст сообщения команде')!.disabled).toBe(false); expect(view.html).toContain('браузере');
+    });
+    it('403 при проверке потерянного ACK сохраняет прежний запрос до подтверждения', async () => {
+        onSend.mockRejectedValueOnce(new Error('ACK lost')); type('Не создать дубль'); ui.buttons.get('Отправить')!(); await settleProjectUi(element);
+        const original = structuredClone(onSend.mock.calls[0][0]);
+        onSend.mockRejectedValueOnce({isAxiosError: true, response: {status: 403}}); ui.buttons.get('Проверить отправку')!(); await settleProjectUi(element);
+        expect(ui.inputs.get('Текст сообщения команде')!.disabled).toBe(true); expect(ui.buttons.has('Проверить отправку')).toBe(true);
+        ui.buttons.get('Проверить отправку')!(); await settleProjectUi(element); expect(onSend.mock.calls[2][0]).toEqual(original);
     });
     it('Выключение group_chat сохраняет обычную переписку людей', async () => {
         ui.flags.set('group_chat', false); type('Работаем без модели'); ui.buttons.get('Отправить')!(); await settleProjectUi(element);
