@@ -305,14 +305,15 @@ export class RagDb {
         }));
     }
 
-    /** Страница и seal видят один PostgreSQL snapshot даже при параллельной active синхронизации. */
+    /** Страница и seal видят один PostgreSQL snapshot даже при параллельной active синхронизации.
+     * Неизвестный откат не возвращает READ ONLY-сессию следующему писателю. */
     public async exportPage(project:string,generation:string,limit:number,offset:number){
-        const client=await this.pool.connect();
+        const client=await this.pool.connect();let discard=false;
         try{
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const rows=await this.rowsPage(project,generation,limit,offset,client),summary=await readIndexSummary(client,project,generation);
             await client.query('COMMIT');return {chunks:rows,...summary};
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
     }
 
     /**
