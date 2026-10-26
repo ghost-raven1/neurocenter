@@ -75,6 +75,7 @@ async function fixture(t, mode) {
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `
         require('node:fs').appendFileSync(process.env.DEV_START_CALLS,JSON.stringify({kind:'npm',args:process.argv.slice(2)})+'\\n');
+        if(process.env.DEV_START_MODE==='native-build-failure'&&process.argv[2]==='run')process.exitCode=39;
     `);
     await fs.writeFile(path.join(bin, 'docker'), `#!${process.execPath}
         const args=process.argv.slice(2);
@@ -86,7 +87,10 @@ async function fixture(t, mode) {
             if(process.env.DEV_START_MODE==='snapshot-build-exit'){console.error('fixture verifier build failure');process.exitCode=37;}
             else console.log('fixture verifier image built');
         }
-        else if(args[0]==='image'&&args[1]==='inspect')console.log('sha256:'+'b'.repeat(64));
+        else if(args[0]==='image'&&args[1]==='inspect'){
+            if(process.env.DEV_START_MODE==='snapshot-image-missing'){console.error('owned image missing');process.exitCode=1;}
+            else console.log(process.env.DEV_START_MODE==='snapshot-image-invalid'?'invalid-image-id':'sha256:'+'b'.repeat(64));
+        }
         else if(args[0]==='info')console.log('28.0.0');
         else if(args.join(' ')==='compose up -d --wait --wait-timeout 45 postgres')console.log('fixture postgres ready');
         else if(args.join(' ')==='compose ps -q postgres')console.log('fixture-postgres');
@@ -295,7 +299,8 @@ async function fixture(t, mode) {
         const events = await eventsFrom(calls);
         assert.equal(status.signal, null, stdout + stderr);
         assert.ok(events.every(event => !['unexpected-network', 'unexpected-probe'].includes(event.kind)));
-        assert.ok(events.filter(event => event.kind === 'docker').every(event => !event.args.includes('down')));
+        assert.ok(events.filter(event => event.kind === 'docker').every(event => !event.args.includes('down')&&event.args[0]!=='build'));
+        assert.ok(events.filter(event=>event.kind==='npm').every(event=>event.args[0]!=='ci'),'up must never install dependencies');
         assert.doesNotMatch(stderr, /REAL_NETWORK_FORBIDDEN/);
         for (const child of events.filter(event => ['child-spawn','model-child-spawn'].includes(event.kind))) {
             const command = spawnSync('ps', ['-ww', '-p', String(child.pid), '-o', 'command='], {encoding: 'utf8'});
@@ -328,7 +333,7 @@ test('Запуск называет завершившийся сервис, п�
     assert.match(result.stderr, /код\S*\s+7/);
     assert.match(result.stderr, /neurocenter-catalog(?:-[a-f0-9-]{36})?\.log/);
     assert.doesNotMatch(result.stdout, /Готов к работе/);
-    assert.equal(result.events.filter(event => event.kind === 'npm').length, 9);
+    assert.equal(result.events.filter(event => event.kind === 'npm').length, 8);
     assert.equal(result.events.filter(event => event.kind === 'runtime-prepare').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'catalog-sync').length, 0);
 
@@ -354,25 +359,26 @@ test('Полный запуск готовит файлы, сохраняя вы
     assert.match(result.stderr, /Каталог/); // Ошибка тестового сервиса по-прежнему останавливает стек.
 });
 
-for(const [mode,reason]of [['snapshot-build-timeout',/ETIMEDOUT.*600|600.*ETIMEDOUT/],['snapshot-build-exit',/код\S*\s+37/]])test('Snapshot build failure preserves the previous service state: '+mode,async t=>{
+for(const mode of ['snapshot-image-missing','snapshot-image-invalid'])test('Missing or invalid verifier image stops up before dependencies, assets and service changes: '+mode,async t=>{
     const f=await fixture(t,mode);await fs.mkdir(path.join(f.checkout,'.run'));
     const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
-    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,reason);
-    assert.match(result.stderr,/прежний запуск сохранён/i);assert.equal(await fs.readFile(filename,'utf8'),state);
+    const result=await f.run('--profile=standard');assert.equal(result.code,1);assert.match(result.stderr,/scripts\/dev\.sh install/);
+    assert.equal(await fs.readFile(filename,'utf8'),state);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
-    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);
+    assert.equal(result.events.filter(event=>['npm','assets-sync','model-key-db'].includes(event.kind)).length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args.includes('up')&&!event.args.includes('--help')).length,0);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,1);
+    await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
 });
 
-test('up loads opt-in verifier host networking from dotenv and preserves old services on build failure',async t=>{
-    const f=await fixture(t,'snapshot-build-exit');await fs.mkdir(path.join(f.checkout,'.run'));
-    await fs.writeFile(path.join(f.checkout,'.env'),'SNAPSHOT_VERIFIER_BUILD_NETWORK=host\nSNAPSHOT_VERIFIER_REGISTRY_IPV4=192.0.2.20\nSNAPSHOT_VERIFIER_TLS_VERIFY=0\n');
+test('up fails native build once with an install hint and preserves the previous process state',async t=>{
+    const f=await fixture(t,'native-build-failure');await fs.mkdir(path.join(f.checkout,'.run'));
     const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
-    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,/код\S*\s+37/);
-    const build=result.events.find(event=>event.kind==='docker'&&event.args[0]==='build');assert.ok(build);assert.ok(build.args.includes('--network=host'));
-    assert.ok(build.args.includes('registry.npmjs.org:192.0.2.20'));assert.ok(build.args.includes('NEUROCENTER_NPM_STRICT_SSL=false'));
-    assert.equal(await fs.readFile(filename,'utf8'),state);assert.match(result.stderr,/прежний запуск сохранён/i);
+    const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,/код\S*\s+39/);assert.match(result.stderr,/scripts\/dev\.sh install/);
+    assert.equal(await fs.readFile(filename,'utf8'),state);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
-    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);
+    assert.equal(result.events.filter(event=>event.kind==='npm').length,1);
+    assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,1);
 });
 
 test('Ошибка общей поставки останавливает запуск до сборки и сохраняет прежние процессы', async t => {
@@ -383,7 +389,7 @@ test('Ошибка общей поставки останавливает зап
     const result = await f.run();
     assert.equal(result.code, 1); assert.match(result.stderr, /Поставка проекта не подготовлена/);
     assert.equal(await fs.readFile(filename, 'utf8'), state);
-    assert.equal(result.events.filter(event => event.kind === 'npm').length, 1);
+    assert.equal(result.events.filter(event => event.kind === 'npm').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'child-spawn').length, 0);
     assert.equal(result.events.filter(event => event.kind === 'docker' && event.args.includes('up') && !event.args.includes('--help')).length, 0);
 });
@@ -503,7 +509,7 @@ for(const profile of ['fast','standard','full']) {
         assert.match(result.stdout,new RegExp(`Профиль запуска: ${profile}`));
         assert.match(result.stdout,/\[2\/16\] Выбор и подготовка ассетов/);
         assert.equal(result.events.filter(event=>event.kind==='child-spawn').length,8);
-        assert.equal(result.events.filter(event=>event.kind==='npm').length,9);
+        assert.equal(result.events.filter(event=>event.kind==='npm').length,8);
         assert.equal(result.events.filter(event=>event.kind==='assets-sync').length,profile==='fast'?0:1);
         assert.equal(result.events.filter(event=>event.kind==='bridge-package').length,0);
         assert.equal(result.events.filter(event=>event.kind==='runtime-prepare').length,0);

@@ -1,6 +1,8 @@
 # Docker за корпоративным HTTPS-прокси
 
-`dev.sh install`, `build`, `up` и восстановление зависимостей после неудачной сборки выполняют `npm ci` с отдельными пустыми user/global конфигурациями, временным HOME и явным публичным registry. Глобальные `.npmrc`, scoped registry, `NPM_CONFIG_*`, `npm_config_*` и токены компьютера в установку не наследуются. Исходные файлы настроек сохраняются. Docker дополнительно исключает `.npmrc` на всех уровнях build context. Настроенные переменные HTTPS-прокси и доверенного публичного CA сохраняются.
+`dev.sh install`, `build` и восстановление зависимостей при явной сборке выполняют `npm ci` с отдельными пустыми user/global конфигурациями, временным HOME и явным публичным registry. Глобальные `.npmrc`, scoped registry, `NPM_CONFIG_*`, `npm_config_*` и токены компьютера в установку не наследуются. Исходные файлы настроек сохраняются. Docker дополнительно исключает `.npmrc` на всех уровнях build context. Настроенные переменные HTTPS-прокси и доверенного публичного CA сохраняются.
+
+После `install` образ проверщика снимков уже готов. `up`/`watch` выполняют только `docker image inspect` до подготовки ассетов, компиляции и PostgreSQL; отсутствующий образ даёт команду `scripts/dev.sh install` или `scripts/dev.sh build`. Ключи подписи при установке образа не создаются, PostgreSQL для неё не нужен. При старте ключи проверяются отдельно, с уже выбранным неизменяемым image ID. `up` также не выполняет общий `npm ci` и не устанавливает зависимости после ошибки локальной компиляции. Выбор профиля по-прежнему управляет ассетами и моделями; их загрузка отдельна от установки npm-зависимостей.
 
 Сборка исполнителя снимков сохраняет HTTPS и по умолчанию проверяет сертификаты. Её переключатель описан ниже. Остальные команды установки сохраняют ранее согласованную политику `strict-ssl=false` / `NODE_TLS_REJECT_UNAUTHORIZED=0`. Предупреждение `(node:7)` обозначает PID процесса внутри контейнера, а не версию Node. Оно печатается при подготовке первого TLS-подключения и само по себе не означает остановку; последующей видимой строкой может стать лишь ответ сети или ошибка по таймауту. По запросу пользователя для `npm ci` исполнителя снимков добавлен command-scoped `NODE_NO_WARNINGS=1`: он скрывает предупреждения Node и унаследовавших эту настройку lifecycle-процессов, сохраняя stderr/код ошибки npm и диагностический HTTP-вывод. Это не runtime ENV образа и не устранение сетевой задержки. [Поведение параметра в Node](https://r2.nodejs.org/docs/latest-v24.x/api/cli.html#node_no_warnings1). Внешний Docker build имеет собственный бюджет, описанный ниже.
 
@@ -13,7 +15,7 @@ NEUROCENTER_BUILD_CA_FILE=/absolute/path/corporate-ca.pem
 SNAPSHOT_VERIFIER_TLS_VERIFY=1
 ```
 
-`scripts/dev.sh up` передаст этот CA сборке исполнителя снимков. Для остальных образов и production используйте:
+`scripts/dev.sh install` и `scripts/dev.sh build` передают этот CA сборке исполнителя снимков. `up` только проверяет уже готовый образ. Для остальных образов и production используйте:
 
 ```sh
 export NEUROCENTER_BUILD_CA_FILE=/absolute/path/corporate-ca.pem
@@ -35,14 +37,14 @@ node scripts/production/setup.mjs build --directory /srv/neurocenter/config
 
 Сборка работает с обычным Docker builder и BuildKit. При прямом `docker build` или `docker compose build` без обёртки используется пустой CA по умолчанию. Для передачи корпоративного CA используйте команды обёртки выше: они передают согласованные имя файла и SHA. Общая блокировка сборок и перезапись старого `extra.pem` больше не используются.
 
-При `dev.sh up` подготовка образа исполнителя снимков сразу печатает этап и лимит, затем каждые 15 секунд — прошедшее время, даже если Docker ничего не выводит. stdout/stderr Docker передаются сразу: объём скачанных слоёв виден, когда его сообщает сам Docker. Для BuildKit по умолчанию выбирается `BUILDKIT_PROGRESS=plain`; явно заданное значение сохраняется, legacy builder не получает неподдерживаемого CLI-флага.
+При `dev.sh install` / `dev.sh build` подготовка образа исполнителя снимков сразу печатает этап и лимит, затем каждые 15 секунд — прошедшее время, даже если Docker ничего не выводит. stdout/stderr Docker передаются сразу: объём скачанных слоёв виден, когда его сообщает сам Docker. Для BuildKit по умолчанию выбирается `BUILDKIT_PROGRESS=plain`; явно заданное значение сохраняется, legacy builder не получает неподдерживаемого CLI-флага.
 
 `npm ci` в этом образе всегда показывает HTTP-события и вывод lifecycle-скриптов. Эти события сообщают о завершённых запросах, повторах и отказах; они не дают достоверного общего процента или числа уже скачанных байт npm. Периодическая строка отражает только ожидание Docker. Уведомление о новой версии npm отключено через `--update-notifier=false`, остальные ошибки и код выхода сохраняются. Остановка по лимиту или Ctrl+C дожидается завершения собственного Docker CLI; это не подтверждение остановки задания Docker daemon.
 
 Если сборка исполнителя снимков останавливается примерно через 10 минут, проверьте итоговую причину: `ETIMEDOUT` означает лимит ожидания Docker в dev CLI. По умолчанию он равен 600 секундам. Для медленной первой загрузки можно явно выбрать от 1 до 3600 секунд в `.env` или на один запуск:
 
 ```sh
-SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS=1800 ./scripts/dev.sh up --profile=fast
+SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS=1800 ./scripts/dev.sh build
 ```
 
 Параметр относится только к подготовке образа, в окружение сервисов не передаётся. При выбранном `SNAPSHOT_VERIFIER_IMAGE` сборка пропускается. Ошибка указывает таймаут, код выхода, сигнал или код отказа запуска Docker; прежние сервисы до успешной подготовки не останавливаются. Предупреждение `NODE_TLS_REJECT_UNAUTHORIZED=0` само по себе не означает отказ npm.
@@ -50,7 +52,8 @@ SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS=1800 ./scripts/dev.sh up --profile=fast
 Для остановки после этого предупреждения включите диагностический режим на один запуск:
 
 ```sh
-SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
+SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh build
+./scripts/dev.sh up --profile=fast
 ```
 
 Допустимы только `0` и `1`, по умолчанию `0`. Диагностика включает verbose-вывод и отключает запись debug-логов npm; HTTP/lifecycle-вывод доступен и без неё. Сетевая политика одинакова в обоих режимах: `maxsockets=1` (одно соединение на origin; все текущие архивы verifier используют registry.npmjs.org), `fetch-timeout=120000`, `fetch-retries=1`, задержка повтора от 2000 до 5000 мс. Один повтор означает не более двух попыток запроса; обычно для единственного повтора применяется минимальная задержка 2 с. Прежний диагностический лимит 30 с без повторов убран после подтверждённого FETCH_ERROR/network timeout на Linux.
@@ -80,7 +83,8 @@ docker run --rm --pull=never \
 Если обычный контейнер не разрешает имя, а повтор с `docker run --network=host` возвращает адреса, можно явно выбрать сеть хоста для RUN-этапов сборки verifier:
 
 ```sh
-SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
+SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh build
+./scripts/dev.sh up --profile=fast
 ```
 
 Перед сборкой CLI показывает фактически выбранные `network`, `npm-diagnostics`, `timeout` и имена явно заданных proxy-переменных. Значения proxy и пароли не печатаются; для отсутствующих переменных могут действовать настройки Docker client. Внутри Docker отдельный шаг печатает фактическое значение `npm-diagnostics`: строка инструкции `ARG ...=0` сама по себе показывает значение по умолчанию и не доказывает, что диагностика выключена.
@@ -101,7 +105,8 @@ docker run --rm --pull=never --network=host "$(sed -n '1s/^FROM //p' services/ca
 
 ```sh
 registry_ipv4="$(getent ahostsv4 registry.npmjs.org | awk 'NR==1 {print $1}')"
-SNAPSHOT_VERIFIER_REGISTRY_IPV4="$registry_ipv4" SNAPSHOT_VERIFIER_TLS_VERIFY=1 SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
+SNAPSHOT_VERIFIER_REGISTRY_IPV4="$registry_ipv4" SNAPSHOT_VERIFIER_TLS_VERIFY=1 SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh build
+./scripts/dev.sh up --profile=fast
 ```
 
 CLI проверяет `SNAPSHOT_VERIFIER_REGISTRY_IPV4` до БД, ключей и Docker: нужен ровно один IPv4. Пустой ответ `getent` также отклоняется — сначала восстановите DNS самого хоста. Адрес не зашит в исходники; получайте его заново перед повтором, не переносите адрес из чужого скриншота. [Docker --add-host](https://docs.docker.com/reference/cli/docker/buildx/build/#add-host) задаёт запись hosts только для этой сборки; daemon.json, DNS хоста, настройки прокси и остальные образы не меняются. Переменная исключена из runtime; с готовым образом она игнорируется. Это не исправляет DNS самого прокси или другие имена при redirect. Наличие адреса ещё не гарантирует TCP/HTTPS-доступ к нему; после этого нужна полная сборка на целевом Linux. Удалять все образы и node_modules ради EAI_AGAIN не требуется.
