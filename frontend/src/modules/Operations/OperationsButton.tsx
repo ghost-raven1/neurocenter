@@ -22,7 +22,9 @@ const OperationsButton: FC<IOperationsButtonProps> = ({ open, onClick, triggerRe
     const description = progress.accessDenied
         ? 'Доступ к операциям отозван. Откройте панель и повторите проверку доступа.'
         : progress.stale
-        ? 'Не удалось обновить операции. Показаны последние полученные данные.'
+        ? `Не удалось обновить операции. ${updatedAt ? 'Показаны последние полученные данные.' : 'Повторяем проверку.'}`
+        : !updatedAt
+        ? 'Проверяем активные операции. Открыть историю и подробности.'
         : active
             ? `Активных операций: ${progress.count}. ${progress.running === null
                 ? 'Сервер пока не передал общий прогресс.'

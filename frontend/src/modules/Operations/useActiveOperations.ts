@@ -26,7 +26,7 @@ export function useActiveOperations() {
     }, [controller, scope]);
 
     const refreshVisible = useCallback((): void => {
-        if (document.visibilityState === 'visible') { void controller.refresh(); }
+        if (document.visibilityState === 'visible') { void controller.refresh({ skipIfPending: true }); }
     }, [controller]);
     useSectionUpdates(['operations', 'access'], refreshVisible, !!scope);
 

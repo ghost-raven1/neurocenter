@@ -32,29 +32,33 @@ export function activeOperationsFromPage(page: IOperationPage): IActiveOperation
     };
 }
 
-/** Смена владельца и новый запрос отсекают прежние ответы, включая ошибку старого запроса. */
+/** Фоновое чтение ждёт текущий запрос; явное обновление и смена владельца отсекают старые ответы. */
 export function createActiveOperationsController(
     read: () => Promise<IOperationPage>,
     onChange: (value: IActiveOperations) => void,
 ) {
     let active = false;
     let generation = 0;
+    let pendingGeneration: number | null = null;
     let value = initialActiveOperations();
 
     return {
         activate(): void {
             active = true;
             generation++;
+            pendingGeneration = null;
             value = initialActiveOperations();
             onChange(value);
         },
         dispose(): void {
             active = false;
             generation++;
+            pendingGeneration = null;
         },
-        async refresh(): Promise<void> {
-            if (!active) { return; }
+        async refresh({ skipIfPending = false }: { skipIfPending?: boolean } = {}): Promise<void> {
+            if (!active || (skipIfPending && pendingGeneration !== null)) { return; }
             const request = ++generation;
+            pendingGeneration = request;
             try {
                 const page = await read();
                 if (!active || request !== generation) { return; }
@@ -67,6 +71,8 @@ export function createActiveOperationsController(
                     ? { ...initialActiveOperations(), stale: true, accessDenied: true }
                     : { ...value, stale: true };
                 onChange(value);
+            } finally {
+                if (pendingGeneration === request) { pendingGeneration = null; }
             }
         },
     };

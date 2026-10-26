@@ -143,7 +143,7 @@ const bffApi: IBffApi = {
     updateRagQuota: async(projectKey,payload)=>base.patch<IRagQuota>('/api/rag/quota',{projectKey,limitBytes:payload.limitBytes,expectedRevision:payload.expectedRevision}).then(r=>r.data),
     restoreLocalRag: async (projectKey) => base.post<IRagRestoreResult>('/api/rag/restore-local', { projectKey }).then(r => requireRagSuccess(r.data)),
     bootstrapRag: async (projectKey) => base.post<IRagBootstrapResult>('/api/rag/bootstrap', { projectKey }).then(r => requireRagSuccess(r.data)),
-    listOperations: async (params) => base.get<IOperationPage>('/api/operations', { params }).then(r => r.data),
+    listOperations: async (params) => base.get<IOperationPage>('/api/operations', { params, timeout: 30000 }).then(r => r.data),
     getOperation: async (operationId) => base.get<IOperationDetail>(`/api/operations/${operationId}`).then(r => r.data),
     retryOperation: async (operationId,requestKey,expectedDigest) => base.post<IOperationActionResult>(`/api/operations/${encodeURIComponent(operationId)}/retry`,{requestKey,expectedDigest},{timeout:10000}).then(r => r.data),
     cancelOperation: async (operationId,requestKey,expectedDigest) => base.post<IOperationActionResult>(`/api/operations/${encodeURIComponent(operationId)}/cancel`,{requestKey,expectedDigest},{timeout:10000}).then(r => r.data),
