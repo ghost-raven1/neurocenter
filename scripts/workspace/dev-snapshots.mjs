@@ -67,6 +67,7 @@ export async function prepareDevSnapshots(root,environment=process.env){
  if(!environment.SNAPSHOT_VERIFIER_IMAGE){await withDockerBuildCa(root,environment,async({environment:buildEnvironment,args})=>{
   // Docker reads these values from its environment; credentials never become command arguments.
   const proxyArgs=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'].filter(name=>Object.hasOwn(buildEnvironment,name)&&buildEnvironment[name]!==undefined).flatMap(name=>['--build-arg',name]);
+  console.log(`Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter(name=>name!=='--build-arg').join(',')||'none (Docker client settings may apply)'}`);
   const build=await runDockerBuild(['build',...args,...proxyArgs,...(network==='host'?['--network=host']:[]),...(npmDiagnostics?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.'],{cwd:root,env:buildEnvironment,stdio:'inherit',timeout:buildSeconds*1000,killSignal:'SIGKILL'}),failure=dockerFailure(build,buildSeconds);
   if(failure)throw new Error(`Образ проверки снимков не собран: ${failure}. Прежний запуск сохранён.${build.error?.code==='ETIMEDOUT'?' Лимит сборки задаётся SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS (1–3600 с).':''}`,{cause:build.error});
  });}

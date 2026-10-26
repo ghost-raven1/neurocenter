@@ -17,8 +17,9 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
     NPM_CONFIG_STRICT_SSL=false
 WORKDIR /verifier
-COPY services/catalog-service/package.json services/catalog-service/package-lock.json ./
+COPY scripts/snapshots/verifier/package.json scripts/snapshots/verifier/package-lock.json ./
 ARG NEUROCENTER_NPM_DIAGNOSTICS=0
+RUN printf 'Snapshot verifier: effective npm-diagnostics=%s\n' "$NEUROCENTER_NPM_DIAGNOSTICS"
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_NO_WARNINGS=1 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund --loglevel=http --foreground-scripts --update-notifier=false \
     $(if [ "$NEUROCENTER_NPM_DIAGNOSTICS" = "1" ]; then printf '%s' '--fetch-timeout=30000 --fetch-retries=0 --logs-max=0'; fi)
 COPY scripts/snapshots/verify-image.cjs ./scripts/snapshots/verify-image.cjs

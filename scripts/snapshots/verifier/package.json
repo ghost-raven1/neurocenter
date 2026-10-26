@@ -1,0 +1,10 @@
+{
+  "name": "@neurocenter/snapshot-verifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runtime dependencies for the isolated full-image LanceDB verifier.",
+  "dependencies": {
+    "@lancedb/lancedb": "0.29.0",
+    "apache-arrow": "18.1.0"
+  }
+}
