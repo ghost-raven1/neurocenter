@@ -2,6 +2,7 @@ export type TWorkspaceBindingMode = 'new' | 'new-copy' | 'adopt-legacy' | 'trans
 export interface IBridgeBinding {
     projectId: string; folderName: string; valid?: boolean; bindingId?: string; instanceId?: string;
     identityStatus?: 'verified' | 'legacy' | 'copied' | 'changed' | 'unavailable'; previousBindingId?: string; error?: string;
+    dataSize?: {scope:'opencode';bytes:number|null;measuredAt:string;error?:'unavailable'|'limit-exceeded'};
 }
 export interface IWorkspacePreparation {
     projectId: string; folderName: string; mode: TWorkspaceBindingMode; preparation: string; requiresFileVerification: boolean;

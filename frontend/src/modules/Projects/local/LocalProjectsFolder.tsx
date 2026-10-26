@@ -1,11 +1,11 @@
 import { FeatureButton } from '../../../features/FeatureFlags/FeatureAvailability';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Typography } from 'antd';
-import { useEffect, type FC } from 'react';
+import type { FC } from 'react';
 import type { IProjectSummary } from '../../../core/api/interfaces';
 import { BridgeConnection } from '../../../features/McpBridge/BridgeConnection';
 import { WorkspaceBindingWizard } from '../../../features/McpBridge/WorkspaceBindingWizard';
-import { useBridge } from '../../../features/McpBridge/useBridge';
+import type { useBridge } from '../../../features/McpBridge/useBridge';
 import { useLocalJob } from '../../../features/McpBridge/useLocalJob';
 import { bridgeApi } from '../../../features/McpBridge/api';
 import { isPending } from '../../../features/McpBridge/installationHelpers';
@@ -14,22 +14,18 @@ import { formatDate } from '../../../common/utils/format';
 import './LocalProjectsFolder.less';
 
 interface IProps {
+    bridge:ReturnType<typeof useBridge>;
     project: IProjectSummary | null;
     canManage?: boolean;
     onClose: () => void;
-    onBindings: (bindings: Record<string, { folderName: string }>) => void;
 }
 /** Общая папка выбирается native-диалогом; экземпляры подтверждаются отдельным мастером. */
-export const LocalProjectsFolder: FC<IProps> = ({ project, canManage = false, onClose, onBindings }) => {
-    const bridge = useBridge();
+export const LocalProjectsFolder: FC<IProps> = ({ bridge,project, canManage = false, onClose }) => {
     const operation = useLocalJob(bridge);
     const {device,jobs} = bridge;
     const blocker = bridgeOperationBlocker(device) || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь подключения и загрузки очереди.' : '');
     const pending = jobs.find(job => job.deviceId === device?.id && ['choose-root','bind-project','prepare-bind-project'].includes(job.kind) && isPending(job));
     const latest = pending || operation.job || jobs.find(job => job.deviceId === device?.id && job.kind === 'choose-root');
-    useEffect(() => {
-        onBindings(Object.fromEntries((device?.report.bindings || []).filter(item => item.valid !== false).map(item => [item.projectId,{folderName:item.folderName}])));
-    }, [device?.id,JSON.stringify(device?.report.bindings)]);
     return <>
         <Card className="local-projects-folder" title="Компьютер и папка проектов" style={{marginBottom:20}} extra={<FeatureButton features={['computer_connections']} size="small" icon={<FolderOpenOutlined />} disabled={!!blocker || operation.busy || !!pending} title={blocker || undefined}
                 loading={operation.busy} onClick={() => {

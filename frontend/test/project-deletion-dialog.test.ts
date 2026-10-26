@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { message, Modal } from 'antd';
 import bffApi from '../src/core/api/bff';
 import ProjectDetail from '../src/modules/Projects/ProjectDetail';
+import type {IUserInfo} from '../src/core/interfaces';
+
+const user:IUserInfo={id:'admin',email:'admin@example.test',principalName:'admin',displayName:'Администратор',
+    activeRole:'Главный админ',userRoles:['Главный админ'],projectRoles:[],routePermissions:['/projects']};
 
 const ui = vi.hoisted(() => ({
     current: true, remove: undefined as (() => void) | undefined,
@@ -15,7 +19,7 @@ vi.mock('react', async original => ({ ...await original<typeof import('react')>(
     useEffect: (effect: () => void | (() => void)) => { ui.effects.push(effect); },
 }));
 vi.mock('react-redux', () => ({ useSelector: (select: (state: unknown) => unknown) => select({
-    userBlock: { user: { activeRole: 'Главный админ', userRoles: ['Главный админ'] } },
+    userBlock: { user,policies:{} },
     projects: { selectedId: 'prj-a', selected: { id: 'prj-a', name: 'Проект A', logicalBytes: 0, retainedBytes: 0, activeOperations: 0, state: 'ACTIVE' } },
 }) }));
 vi.mock('react-router-dom', () => ({

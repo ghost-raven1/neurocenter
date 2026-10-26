@@ -24,6 +24,8 @@ import {projectTabSearch} from './projectNavigation';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { ProjectSize } from './features/ProjectSize/ProjectSize';
+import { ProjectFolderDataSize } from './features/ProjectSize/ProjectFolderDataSize';
+import { useBridge } from '../../features/McpBridge/useBridge';
 import { ProjectSnapshots } from '../../features/ProjectSnapshots/ProjectSnapshots';
 import { ProjectLearning } from '../../features/ProjectLearning/ProjectLearning';
 import './ProjectDetail.less';
@@ -62,6 +64,7 @@ const ProjectDetail: FC = () => {
         };
     }, [view, captureOwner]);
     const user=useSelector((state:RootState)=>state.userBlock.user);
+    const bridge = useBridge();
     const canUseTab=(key:string):boolean=>(!['quotas','backups'].includes(key)||projectRoleLevel(user,projectId)>=3)&&(key!=='audit'||isMainAdminRole(user?.activeRole));
 
     /** Активная вкладка — берётся из URL (?tab=) при загрузке, иначе «Обзор». */
@@ -101,7 +104,7 @@ const ProjectDetail: FC = () => {
     }
 
     const retryLoad = (): void => {
-        if (captureOwner()() && view.active && viewRef.current === view) { void dispatch(fetchProject(projectId)); }
+        if (captureOwner()() && view.active && viewRef.current === view) { void dispatch(fetchProject(projectId)); void bridge.reload(); }
     };
     const loadError = selectedId === projectId ? selectedError : null;
 
@@ -124,7 +127,7 @@ const ProjectDetail: FC = () => {
         <div>
             <Row gutter={[24, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={8}>
-                    <ProjectSize title="Данные проекта" kind="logical" bytes={selected.logicalBytes} error={selected.logicalSizeError} loading={selectedLoading} onRetry={retryLoad} />
+                    <ProjectFolderDataSize title="Данные проекта" project={selected} bridge={bridge} canRead={projectRoleLevel(user,selected.id)>=1} canBind={projectRoleLevel(user,selected.id)>=2} loading={selectedLoading} onRetry={retryLoad} />
                 </Col>
                 <Col xs={24} sm={8}>
                     <ProjectSize title="Серверная копия знаний" kind="retained" bytes={selected.retainedBytes} error={selected.retainedSizeError} loading={selectedLoading} onRetry={retryLoad} />

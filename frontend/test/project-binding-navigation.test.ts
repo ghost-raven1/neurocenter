@@ -11,6 +11,7 @@ import { fetchProject, fetchProjects } from '../src/modules/Projects/redux/actio
 
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ captureOwner: () => () => true }) }));
 vi.mock('../src/core/socket/useSectionUpdates', () => ({ useSectionUpdates: () => {} }));
+vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>({device:undefined,devices:[],devicesReady:false,loading:false,reload:vi.fn()})}));
 vi.mock('../src/common/components/Permission', () => ({ default: () => null }));
 vi.mock('../src/modules/Projects/components/CreateProjectModal', () => ({ default: () => null }));
 vi.mock('../src/modules/Projects/local/LocalProjectsFolder', () => ({ LocalProjectsFolder: ({ project }: { project: IProjectSummary | null }) =>

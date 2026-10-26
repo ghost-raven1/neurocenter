@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Projects from '../src/modules/Projects/Projects';
 import ProjectDetail from '../src/modules/Projects/ProjectDetail';
+import type {IBridgeDevice} from '../src/features/McpBridge/api';
 
 const ui = vi.hoisted(() => ({
     state: {} as Record<string, unknown>, owner: true,
@@ -10,7 +11,9 @@ const ui = vi.hoisted(() => ({
     dispatch: vi.fn(), push: vi.fn(), replace: vi.fn(),
     listRead: vi.fn((params: unknown) => ({ type: 'readProjects', payload: params })),
     detailRead: vi.fn((id: string) => ({ type: 'readProject', payload: id })),
+    bridge: {device:undefined as IBridgeDevice|undefined,devices:[] as IBridgeDevice[],devicesReady:false,loading:false,reload:vi.fn(),jobs:[],installations:[],errors:{devices:'',jobs:'',installations:''}},
 }));
+vi.mock('../src/features/McpBridge/useBridge',()=>({useBridge:()=>ui.bridge}));
 vi.mock('react-redux', () => ({ useSelector: (select: (state: unknown) => unknown) => select(ui.state) }));
 vi.mock('../src/core/hooks', () => ({ useAppDispatch: () => ui.dispatch }));
 vi.mock('react-router-dom', () => ({
@@ -59,12 +62,28 @@ const reason = 'Сервис базы знаний временно недост
 function setup(bytes: unknown, retainedSizeError?: unknown) {
     const project = { id: 'prj-a', name: 'Проект A', logicalBytes: 24, retainedBytes: bytes, retainedSizeError, activeOperations: 0, state: 'ACTIVE' };
     ui.state = {
-        userBlock: { user: { activeRole: 'Разработчик', userRoles: ['Разработчик'] } },
+        userBlock: { user: { activeRole: 'Разработчик', userRoles: ['Разработчик'],projectRoles:[{projectId:'prj-a',projectName:'Проект A',role:'Разработчик'}] } },
         projects: { selectedId: 'prj-a', selected: project, list: [project], page: 3, size: 10, total: 40, query: 'нужный проект', authScope: 'owner', loading: false, selectedLoading: false },
     };
 }
 function render(kind: 'list' | 'detail') { return renderToStaticMarkup(createElement(kind === 'list' ? Projects : ProjectDetail)); }
-beforeEach(() => { vi.clearAllMocks(); ui.owner = true; ui.retry = undefined; ui.logicalRetry = undefined; setup(null, reason); });
+beforeEach(() => { vi.clearAllMocks(); ui.owner = true; ui.retry = undefined; ui.logicalRetry = undefined;ui.bridge.device=undefined;ui.bridge.devices=[];ui.bridge.devicesReady=true;setup(null, reason); });
+
+for (const kind of ['list','detail'] as const) {
+    it(`Размер выбранной локальной привязки заменяет недоступный серверный замер: ${kind}`,()=>{
+        setup(0);
+        const project=(ui.state.projects as {selected:Record<string,unknown>}).selected;
+        project.logicalBytes=null;project.logicalSizeError='Старый серверный путь недоступен.';
+        ui.bridge.device={id:'computer-a',name:'Мой компьютер',online:true,role:'Разработчик',fingerprint:'',lastSeen:new Date().toISOString(),report:{capabilities:['project-data-size-v1'],bindings:[{
+            projectId:'prj-a',folderName:'bank',valid:true,identityStatus:'verified',bindingId:'a'.repeat(64),instanceId:'12345678-1234-1234-1234-123456789abc',
+            dataSize:{scope:'opencode',bytes:2048,measuredAt:new Date().toISOString()},
+        }]}} as IBridgeDevice;
+        ui.bridge.devices=[ui.bridge.device];ui.bridge.devicesReady=true;
+        const markup=render(kind);
+        expect(markup).toContain('2 КБ');expect(markup).not.toContain('Старый серверный путь недоступен.');
+        expect(markup).toContain('Мой компьютер');expect(markup).not.toContain('Размер неизвестен');
+    });
+}
 
 for (const kind of ['list', 'detail'] as const) {
     describe(`Размер копии знаний: ${kind}`, () => {
@@ -105,8 +124,7 @@ for (const kind of ['list', 'detail'] as const) {
             const project = (ui.state.projects as { selected: Record<string, unknown> }).selected;
             project.logicalBytes = logicalBytes; project.logicalSizeError = 'Файлы проекта временно недоступны.';
             const markup = render(kind);
-            expect(markup).toContain('Размер неизвестен'); expect(markup).toContain('Файлы проекта временно недоступны.');
-            expect(markup).toContain('серверной папки .opencode');
+            expect(markup).toContain('Выберите компьютер'); expect(markup).not.toContain('Файлы проекта временно недоступны.');
             if (kind === 'detail') {expect(markup).toContain('Размер данных'); expect(markup).not.toContain('Данные проекта');}
             expect(ui.logicalRetry).toBeTypeOf('function'); ui.logicalRetry!();
             if (kind === 'list') expect(ui.listRead).toHaveBeenCalledExactlyOnceWith({ page: 3, size: 10, query: 'нужный проект' });

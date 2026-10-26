@@ -40,7 +40,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
         expect(html).toContain('href="/projects?bind=prj-dossier-ko"');
     });
     it('Выбор общей папки остаётся доступен',()=>{
-        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
+        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,onClose:vi.fn()}));
         expect(buttonAttributes(html,'Изменить папку')).not.toContain('disabled');
         expect(html).toContain('Обновите мост');
     });
@@ -76,7 +76,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
     });
     it('Роль наблюдателя по-прежнему блокирует общие действия',()=>{
         fixture.bridge.device.role='Наблюдатель';
-        const folders=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
+        const folders=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,onClose:vi.fn()}));
         const sync=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'project',canWrite:true}));
         expect(buttonAttributes(folders,'Изменить папку')).toContain('disabled');
         expect(buttonAttributes(sync,'Скачать в проект через мост')).toContain('disabled');
@@ -87,7 +87,7 @@ describe('Общие действия MCP 0.4 без поддержки комп
     });
     it('Прошлый отказ выбора папки обозначен датированным результатом, а не текущим статусом', () => {
         fixture.bridge.jobs=[{id:'job',deviceId:'fixture',projectId:null,kind:'choose-root',state:'failed',message:'Выбор отменён',createdAt:'2026-10-18T00:00:00Z',updatedAt:'2026-10-18T01:00:00Z'}];
-        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{project:null,onClose:vi.fn(),onBindings:vi.fn()}));
+        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,onClose:vi.fn()}));
         expect(html).toContain('Последний выбор папки');
         expect(html).toContain('dateTime="2026-10-18T01:00:00Z"');
         expect(html).toContain('Выбор отменён');

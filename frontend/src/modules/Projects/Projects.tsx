@@ -25,6 +25,8 @@ import { RootState } from '../../store';
 import { fetchProject, fetchProjects } from './redux/actions';
 import { clearSelected, setPage, setQuery } from './redux/reducers';
 import { ProjectSize } from './features/ProjectSize/ProjectSize';
+import { ProjectFolderDataSize } from './features/ProjectSize/ProjectFolderDataSize';
+import { useBridge } from '../../features/McpBridge/useBridge';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
 import { projectBindingSearch, projectBindingTarget } from './projectNavigation';
 
@@ -47,7 +49,8 @@ const Projects: FC = () => {
 
     const [ isCreateOpen, setIsCreateOpen ] = useState<boolean>(false);
     const user = useSelector((state:RootState)=>state.userBlock.user);
-    const [localBindings,setLocalBindings]=useState<Record<string,{folderName:string}>>({});
+    const bridge = useBridge();
+    const localBindings = Object.fromEntries((bridge.device?.report.bindings??[]).filter(binding=>binding.valid!==false).map(binding=>[binding.projectId,binding]));
     const bindingId = projectBindingTarget(location.search);
     const bindingRequested = new URLSearchParams(location.search).has('bind');
     const bindingProject = bindingId && !selectedLoading && !selectedError && selectedId === bindingId && selected?.id === bindingId ? selected : null;
@@ -77,7 +80,7 @@ const Projects: FC = () => {
     useSectionUpdates(['projects'],()=>{void dispatch(fetchProjects({page,size,query}));});
 
     const retrySizes = (): void => {
-        if (captureOwner()()) { void dispatch(fetchProjects({ page, size, query })); }
+        if (captureOwner()()) { void dispatch(fetchProjects({ page, size, query })); void bridge.reload(); }
     };
 
     /**
@@ -118,7 +121,7 @@ const Projects: FC = () => {
         },
         { title: 'Папка на выбранном компьютере', key: 'localFolder', width: 220, render: (_:unknown,record:IProjectSummary)=><div className={`project-folder${localBindings[record.id]?'':' project-folder_unbound'}`}><span>{localBindings[record.id]?.folderName ?? 'Не связана'}</span>{projectRoleLevel(user,record.id)>=2&&<Button type="link" size="small" aria-label={`${localBindings[record.id]?'Изменить привязку':'Связать папку'} проекта ${record.name}`} onClick={event=>{event.stopPropagation();openBinding(record.id);}}>{localBindings[record.id]?'Изменить':'Связать'}</Button>}</div> },
         { title: 'Состояние', dataIndex: 'state', key: 'state', width: 120, render: (value: TProjectState) => <StatusTag status={value} /> },
-        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', width: 150, render: (value: unknown, record) => <ProjectSize kind="logical" bytes={value} error={record.logicalSizeError} loading={loading} onRetry={retrySizes} /> },
+        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', width: 150, render: (_: unknown, record) => <ProjectFolderDataSize project={record} bridge={bridge} canRead={projectRoleLevel(user,record.id)>=1} canBind={projectRoleLevel(user,record.id)>=2} loading={loading} onRetry={retrySizes} /> },
         { title: 'Копия знаний', dataIndex: 'retainedBytes', key: 'retained', width: 150, render: (value: unknown, record) => <ProjectSize kind="retained" bytes={value} error={record.retainedSizeError} loading={loading} onRetry={retrySizes} /> },
         { title: 'В работе', dataIndex: 'activeOperations', key: 'ops', width: 85 },
         {
@@ -143,7 +146,7 @@ const Projects: FC = () => {
 
     return (
         <div><PageHeading title="Проекты" description="Подключайте проекты команды, добавляйте инструменты и управляйте базами знаний." />
-        <LocalProjectsFolder project={bindingProject} canManage={!!bindingProject&&projectRoleLevel(user,bindingProject.id)>=2} onClose={closeBinding} onBindings={setLocalBindings}/>
+        <LocalProjectsFolder bridge={bridge} project={bindingProject} canManage={!!bindingProject&&projectRoleLevel(user,bindingProject.id)>=2} onClose={closeBinding}/>
         {bindingRequested && !bindingProject && <Alert showIcon style={{marginBottom:16}} type={bindingError?'error':'info'}
             message={bindingError?'Не удалось открыть привязку проекта':'Загружаем проект для привязки…'} description={bindingError}
             action={<Space>{bindingId && <Button loading={selectedLoading} onClick={()=>void dispatch(fetchProject(bindingId))}>Повторить</Button>}<Button onClick={closeBinding}>Закрыть</Button></Space>} />}
