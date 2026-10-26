@@ -1,4 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { RoleRunContent } from '../src/features/SystemRoles/RoleRunContent';
 vi.mock('../src/core/api/base', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 import api from '../src/core/api/base';
 import { systemRoleChatsApi as chats } from '../src/features/SystemRoleChat/api';
@@ -27,8 +30,7 @@ it('cancellation checks the selected run revision at the chat owner endpoint', a
     const turn = { id: 'turn-one', run: { revision: 7 } } as ServiceTurn; await chats.cancel('dialog-one', turn, 'cancel-key');
     expect(api.post).toHaveBeenCalledExactlyOnceWith('/api/system-role-chats/dialog-one/turns/turn-one/cancel', { requestId: 'cancel-key', expectedRevision: 7 });
 });
-it.each([11, 8])('saved run history displays the authoritative model-call budget %i', async modelCallBudget => {
-    const { createElement } = await import('react'), { renderToStaticMarkup } = await import('react-dom/server'), { RoleRunContent } = await import('../src/features/SystemRoles/RoleRunContent');
+it.each([11, 8])('saved run history displays the authoritative model-call budget %i', modelCallBudget => {
     const run = { id: 'run-one', agentId: modelCallBudget === 11 ? 'agent-coordinator' : 'agent-ai-admin', state: 'running', phase: 'model_step', revision: 1, operationId: 'operation-one', message: 'Collecting',
         callsStarted: 6, modelCallBudget, modelId: 'model-one', modelPin: 'a'.repeat(64), facts: [], result: null, steps: [], applied: [], targets: [] } as unknown as RoleRun;
     const html = renderToStaticMarkup(createElement(RoleRunContent, { run })); expect(html).toContain('6 / ' + modelCallBudget);

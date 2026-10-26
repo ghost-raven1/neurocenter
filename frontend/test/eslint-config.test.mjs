@@ -1,11 +1,15 @@
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ESLint} from 'eslint';
-import {describe,expect,it} from 'vitest';
+import {beforeAll,describe,expect,it} from 'vitest';
 
 const frontend=fileURLToPath(new URL('..',import.meta.url));
 const eslint=new ESLint({cwd:frontend});
-const check=async source=>(await eslint.lintText(source,{filePath:path.join(frontend,'src/lint-contract.tsx')}))[0];
+const filePath=path.join(frontend,'src/lint-contract.tsx');
+const check=async source=>(await eslint.lintText(source,{filePath}))[0];
+
+// Cold config/plugin imports belong to setup, with room for the full suite's worker contention.
+beforeAll(async()=>{await eslint.calculateConfigForFile(filePath);},30000);
 
 describe('Local frontend lint contract',()=>{
     it('parses compact TypeScript and JSX without imposing formatting rules',async()=>{
