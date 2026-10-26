@@ -3,6 +3,7 @@ import { filePath } from '../publication/publication-validation';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
 import { packageEntrypoints } from '../../../shared/source-candidates.cjs';
+import {fetchNpmMetadata} from './npm-source-transport';
 
 const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const namePattern = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -30,7 +31,7 @@ export async function resolveNpmSource(specifier: unknown, suppliedEntrypoint?: 
     const requestedVersion = at > 0 ? normalized.slice(at + 1) : 'latest';
     if (!namePattern.test(name) || requestedVersion !== 'latest' && !semver.test(requestedVersion)) { throw new BadRequestException('Нужен npm-пакет и точная версия, без URL, Git, диапазонов и shell-команд.'); }
     let response: Response;
-    try { response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(requestedVersion)}`, {redirect: 'error', signal: AbortSignal.timeout(20_000)}); }
+    try { response = await fetchNpmMetadata(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(requestedVersion)}`, {redirect: 'error', signal: AbortSignal.timeout(20_000)}); }
     catch { throw new BadRequestException('npm-реестр недоступен. Повторите проверку пакета.'); }
     if (!response.ok) { throw new BadRequestException(`npm-пакет или версия не найдены (HTTP ${response.status}).`); }
     const chunks: Uint8Array[] = [];

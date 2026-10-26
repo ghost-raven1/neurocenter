@@ -22,7 +22,7 @@ import {runPackageBuilder} from '../src/package-build/build-process';
 
 const proxyKeys=['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'];
 const inspected=[...proxyKeys,'NODE_USE_ENV_PROXY','NODE_EXTRA_CA_CERTS','NPM_CLI_JS','HOME','USERPROFILE','TMPDIR','TMP','TEMP',
-    'CATALOG_PG_URL','NEUROCENTER_INTERNAL_TOKEN','NODE_OPTIONS','NODE_TLS_REJECT_UNAUTHORIZED','npm_config_userconfig'];
+    'CATALOG_PG_URL','NEUROCENTER_INTERNAL_TOKEN','NODE_OPTIONS','NODE_TLS_REJECT_UNAUTHORIZED','npm_config_userconfig','NPM_CONFIG_STRICT_SSL','npm_config_strict_ssl'];
 const config:BuildConfiguration={kind:'plugin',name:'Owned proxy boundary',description:'No extension execution',targets:['darwin-arm64'],tags:[],
     source:{type:'files',entrypoint:'index.mjs',files:[{path:'index.mjs',content:'export default()=>({})'}]}};
 const script=`import fs from 'node:fs/promises';
@@ -78,10 +78,12 @@ describe('Builder child keeps only configured proxy transport and private proces
         const ca=path.join(root,'corporate-ca.pem'),npm=path.join(root,'owned-npm.cjs');await fs.writeFile(ca,rootCertificates[0]);
         vi.stubEnv('NODE_EXTRA_CA_CERTS',ca);vi.stubEnv('NPM_CLI_JS',npm);vi.stubEnv('HOME',path.join(root,'caller-home'));vi.stubEnv('USERPROFILE',path.join(root,'caller-profile'));
         for(const key of ['CATALOG_PG_URL','NEUROCENTER_INTERNAL_TOKEN','npm_config_userconfig'])vi.stubEnv(key,'OWNED_SERVER_SECRET');
-        vi.stubEnv('NODE_OPTIONS','--require /owned-must-not-load.cjs');vi.stubEnv('NODE_TLS_REJECT_UNAUTHORIZED','0');
+        vi.stubEnv('NODE_OPTIONS','--require /owned-must-not-load.cjs');vi.stubEnv('NODE_TLS_REJECT_UNAUTHORIZED','1');
+        vi.stubEnv('NPM_CONFIG_STRICT_SSL','true');vi.stubEnv('npm_config_strict_ssl','true');
         const probe=await child();await expect(probe.run()).resolves.toBe(path.join(probe.stage,'output/asset.json'));const actual=await probe.env();
-        expect(actual).toEqual({...values,NODE_USE_ENV_PROXY:'1',NODE_EXTRA_CA_CERTS:ca,NPM_CLI_JS:npm,HOME:path.join(probe.stage,'home'),USERPROFILE:path.join(probe.stage,'home'),
+        expect(actual).toEqual({...values,NODE_USE_ENV_PROXY:'1',NODE_EXTRA_CA_CERTS:ca,NPM_CLI_JS:npm,NPM_CONFIG_STRICT_SSL:'false',npm_config_strict_ssl:'false',NODE_TLS_REJECT_UNAUTHORIZED:'0',HOME:path.join(probe.stage,'home'),USERPROFILE:path.join(probe.stage,'home'),
             TMPDIR:path.join(probe.stage,'tmp'),TMP:path.join(probe.stage,'tmp'),TEMP:path.join(probe.stage,'tmp')});
+        expect(process.env.NODE_TLS_REJECT_UNAUTHORIZED).toBe('1');expect(process.env.NPM_CONFIG_STRICT_SSL).toBe('true');expect(process.env.npm_config_strict_ssl).toBe('true');
     });
     it.each(['HTTP_PROXY','http_proxy'])('Native child fetch reaches its dependency through %s instead of the denied direct path',async key=>{
         const f=await server();vi.stubEnv(key,f.proxy);vi.stubEnv('NODE_USE_ENV_PROXY','1');const probe=await child(f.url);

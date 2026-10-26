@@ -109,9 +109,10 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     await fs.mkdir(home); await fs.mkdir(temporary);
     const env: NodeJS.ProcessEnv = {PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
         HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, NO_COLOR: '1', NODE_ENV: 'production',
+        NPM_CONFIG_STRICT_SSL: 'false', npm_config_strict_ssl: 'false', NODE_TLS_REJECT_UNAUTHORIZED: '0',
         ...(process.env.NPM_CLI_JS ? {NPM_CLI_JS: process.env.NPM_CLI_JS} : {}),
         ...(process.env.NODE_EXTRA_CA_CERTS ? {NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS} : {})};
-    // Keep the configured network route without inheriting service credentials or caller npm configuration.
+    // Relax TLS only in the dependency builder; keep its route without service credentials or caller npm configuration.
     for (const key of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy']) {
         if (process.env[key] !== undefined) { env[key] = process.env[key]; }
     }

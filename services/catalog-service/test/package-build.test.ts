@@ -1,4 +1,5 @@
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
+vi.mock('../src/package-build/npm-source-transport',()=>({fetchNpmMetadata:(url:string,options:RequestInit)=>fetch(url,options)}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requestHash, validateBuildInput } from '../src/package-build/package-build.model';
 import { resolveNpmSource } from '../src/package-build/npm-source';

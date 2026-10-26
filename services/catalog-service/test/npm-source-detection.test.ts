@@ -1,4 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
+vi.mock('../src/package-build/npm-source-transport',()=>({fetchNpmMetadata:(url:string,options:RequestInit)=>fetch(url,options)}));
 import {resolveNpmSource} from '../src/package-build/npm-source';
 describe('Executable npm evidence',()=>{
  afterEach(()=>vi.unstubAllGlobals());
