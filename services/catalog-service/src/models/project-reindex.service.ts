@@ -40,38 +40,51 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
         const found=await this.models.pool.query<IReindexRow>('SELECT * FROM project_reindex_plans WHERE id=$1 AND project_id=$2',[id,project.id]);
         if(!found.rows[0])throw new NotFoundException('План переиндексации не найден.');return found.rows[0];
     }
+    /** Accepted receipts need fresh read access; only a new plan revalidates write admission and its installation. */
     async create(request:Request,projectId:string,value:unknown):Promise<IProjectReindexPlan>{
         const input=value as Record<string,unknown>;
         if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['expectedSelectionRevision','modelId','expectedModelPin','requestKey','connection'].includes(key))
             ||!Number.isSafeInteger(input.expectedSelectionRevision)||Number(input.expectedSelectionRevision)<0||typeof input.modelId!=='string'||!sha(input.expectedModelPin)
             ||!(sha(input.requestKey)||uuid(input.requestKey)))throw new BadRequestException('Передайте актуальную модель, pin, ревизию выбора и ключ повтора.');
-        const actor=await this.models.actor(request),project=await this.models.resolveProject(request,projectId,3,actor),db=await this.models.pool.connect();
         let connection:import('./project-reindex.types').IReindexConnectionTarget|undefined;
         if(input.connection!==undefined){
             const value=input.connection as Record<string,unknown>;
             if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='assetId,assetKind,deviceId,expectedBindingId,expectedInstanceId,expectedManifest,version'
-                ||!uuid(value.deviceId)||typeof value.assetId!=='string'||!['mcp','plugin'].includes(String(value.assetKind))||!Number.isSafeInteger(value.version)||Number(value.version)<1||!sha(value.expectedManifest)||!sha(value.expectedBindingId)||!uuid(value.expectedInstanceId)){db.release();throw new BadRequestException('Выберите точную установку OpenCodeRAG и текущую папку.');}
-            connection=value as unknown as typeof connection;try{await this.jobs.validateReindexTarget(actor,project.id,connection!);}catch(error){db.release();throw error;}
+                ||!uuid(value.deviceId)||typeof value.assetId!=='string'||!['mcp','plugin'].includes(String(value.assetKind))||!Number.isSafeInteger(value.version)||Number(value.version)<1||!sha(value.expectedManifest)||!sha(value.expectedBindingId)||!uuid(value.expectedInstanceId))throw new BadRequestException('Выберите точную установку OpenCodeRAG и текущую папку.');
+            connection=value as unknown as typeof connection;
         }
-        let plan:IReindexRow;
+        const project=await this.models.resolveProject(request,projectId,1);
+        const assertReplay=(plan:IReindexRow)=>{
+            if(plan.data.modelId!==input.modelId||plan.data.modelPin!==input.expectedModelPin||plan.data.context.revision!==input.expectedSelectionRevision||ragRequestHash(plan.data.connection??null)!==ragRequestHash(connection??null))throw new ConflictException('Ключ повтора уже закреплён за другим планом.');
+        };
+        const previous=await this.models.pool.query<IReindexRow>('SELECT * FROM project_reindex_plans WHERE project_id=$1 AND request_key=$2',[project.id,input.requestKey]);
+        if(previous.rows[0]){
+            await this.models.resolveProject(request,project.id,1);assertReplay(previous.rows[0]);return this.format(previous.rows[0]);
+        }
+        const actor=await this.models.actor(request);await this.models.resolveProject(request,project.id,3,actor);
+        await requireFeaturesEnabled(['rag_sync']);
+        if(connection)await this.jobs.validateReindexTarget(actor,project.id,connection);
+        const db=await this.models.pool.connect();let plan:IReindexRow,created=false;
         try{
             await db.query('BEGIN');await db.query("SELECT pg_advisory_xact_lock(hashtextextended('asset-management:model:'||$1,0))",[input.modelId]);
-            await db.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE',[project.id]);await this.models.resolveProject(request,project.id,3);
+            await db.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE',[project.id]);
             const previous=await db.query<IReindexRow>('SELECT * FROM project_reindex_plans WHERE project_id=$1 AND request_key=$2',[project.id,input.requestKey]);
             if(previous.rows[0]){
-                plan=previous.rows[0];if(plan.data.modelId!==input.modelId||plan.data.modelPin!==input.expectedModelPin||plan.data.context.revision!==input.expectedSelectionRevision||ragRequestHash(plan.data.connection??null)!==ragRequestHash(connection??null))throw new ConflictException('Ключ повтора уже закреплён за другим планом.');
-                await db.query('COMMIT');return this.format(plan);
+                plan=previous.rows[0];await this.models.resolveProject(request,project.id,1);assertReplay(plan);
+            }else{
+                await this.models.resolveProject(request,project.id,3);await requireFeaturesEnabled(['rag_sync']);
+                await this.coordinator.requireIdle(db,project.id);const context=await this.coordinator.context(project.id,db);
+                if(context.revision!==input.expectedSelectionRevision)throw new ConflictException('Модель проекта уже изменена. Обновите сведения.');
+                const model=await this.target(db,project.id,input.modelId,input.expectedModelPin);
+                const profile={provider:'openai' as const,model:`neurocenter/${model.id}/sha256/${input.expectedModelPin}`,dimension:model.dimension!};
+                const data={context,...connection?{connection}:{},modelId:model.id,modelPin:input.expectedModelPin,profile,sourceSnapshot:null,rowCount:0,requiredBytes:0};
+                const result=await db.query<IReindexRow>(`INSERT INTO project_reindex_plans(id,project_id,request_key,actor,active_role,state,digest,data,message)
+                    VALUES($1,$2,$3,$4,$5,'preparing',$6,$7::jsonb,'Проверяем исходный индекс.') RETURNING *`,
+                [randomUUID(),project.id,input.requestKey,actor.email,actor.activeRole,ragRequestHash(data),JSON.stringify(data)]);plan=result.rows[0];created=true;
             }
-            await requireFeaturesEnabled(['rag_sync']);
-            await this.coordinator.requireIdle(db,project.id);const context=await this.coordinator.context(project.id,db);
-            if(context.revision!==input.expectedSelectionRevision)throw new ConflictException('Модель проекта уже изменена. Обновите сведения.');
-            const model=await this.target(db,project.id,input.modelId,input.expectedModelPin);
-            const profile={provider:'openai' as const,model:`neurocenter/${model.id}/sha256/${input.expectedModelPin}`,dimension:model.dimension!};
-            const data={context,...connection?{connection}:{},modelId:model.id,modelPin:input.expectedModelPin,profile,sourceSnapshot:null,rowCount:0,requiredBytes:0};
-            const result=await db.query<IReindexRow>(`INSERT INTO project_reindex_plans(id,project_id,request_key,actor,active_role,state,digest,data,message)
-                VALUES($1,$2,$3,$4,$5,'preparing',$6,$7::jsonb,'Проверяем исходный индекс.') RETURNING *`,
-            [randomUUID(),project.id,input.requestKey,actor.email,actor.activeRole,ragRequestHash(data),JSON.stringify(data)]);plan=result.rows[0];await db.query('COMMIT');
+            await db.query('COMMIT');
         }catch(error){await db.query('ROLLBACK').catch(()=>undefined);throw error;}finally{db.release();}
+        if(!created)return this.get(request,project.id,plan.id);
         await this.models.pool.query('UPDATE project_reindex_plans SET connection_request_key=id WHERE id=$1 AND connection_request_key IS NULL',[plan.id]);
         await this.prepare(plan);return this.get(request,project.id,plan.id);
     }

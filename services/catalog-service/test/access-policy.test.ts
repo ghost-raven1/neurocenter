@@ -5,6 +5,15 @@ import {AccessDb} from '../src/access/access-db';
 const claims:IAccessClaims={email:'member@example.test',userRoles:['Админ проекта','Разработчик','Наблюдатель'],projects:[{projectId:'prj-a',projectName:'Мой проект',role:'Админ проекта'},{projectId:'prj-b',projectName:'Другой рабочий',role:'Разработчик'},{projectId:'prj-read',projectName:'Чтение',role:'Наблюдатель'}],pluginIds:['approved'],skillPaths:['common/approved']};
 const request=(method:string,path:string,body?:Record<string,unknown>,query?:Record<string,unknown>)=>({method,path,body,query});
 describe('Единая ролевая модель каталога',()=>{
+    it('Read access reaches exact reindex replay; new admission stays with the service and action routes remain administrative',()=>{
+        const path='/api/projects/prj-read/embedding/reindex';
+        expect(allowRequest(claims,'Наблюдатель',request('POST',path))).toBe(true);
+        expect(allowRequest(claims,'Наблюдатель',request('POST','/api/projects/prj-stranger/embedding/reindex'))).toBe(false);
+        for(const suffix of ['/id/start','/id/retry','/id/local-retry','/id/cancel','/extra']){
+            expect(allowRequest(claims,'Наблюдатель',request('POST',path+suffix))).toBe(false);
+        }
+        expect(allowRequest(claims,'Наблюдатель',request('PUT',path))).toBe(false);
+    });
     it('Лимиты каждой модели изменяет главный админ; проектный админ только читает',()=>{
         const path='/api/models/model-test/rate-limit',main={...claims,userRoles:['Главный админ']};
         expect(allowRequest(main,'Главный админ',request('PUT',path))).toBe(true);

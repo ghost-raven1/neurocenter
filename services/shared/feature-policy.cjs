@@ -101,6 +101,8 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/api\/models\/[^/]+\/rate-limit$/.test(route))return [];
     if(/^\/api\/models(?:\/|$)/.test(route)||/^\/api\/projects\/[^/]+\/models(?:\/|$)/.test(route))return verb==='DELETE'?[]:['model_catalog'];
     if(/^\/api\/projects\/[^/]+\/embedding$/.test(route))return ['model_catalog','rag_sync'];
+    // Exact accepted replays survive OFF; the owner checks rag_sync before any new plan.
+    if(verb==='POST'&&/^\/api\/projects\/[^/]+\/embedding\/reindex$/.test(route))return [];
     if(/^\/api\/projects\/[^/]+\/embedding\/reindex(?:\/|$)/.test(route))return /\/cancel$/.test(route)?[]:['rag_sync'];
     if(route==='/api/rag/sync')return ['rag_sync'];
     if(route==='/api/rag/search')return ['project_search'];
