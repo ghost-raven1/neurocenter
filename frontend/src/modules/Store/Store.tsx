@@ -121,6 +121,14 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const [createOpen, setCreateOpen] = useState(false);
     const [packagingOpen, setPackagingOpen] = useState(false);
     const [packagingStart, setPackagingStart] = useState<ToolPackagingStart>();
+    const packagingRequested = !embedded && new URLSearchParams(location.search).get('packaging') === 'open';
+    const closePackaging = ():void => {
+        setPackagingOpen(false);
+        if (!packagingRequested) return;
+        const params = new URLSearchParams(location.search);
+        params.delete('packaging');
+        history.replace(location.pathname + (params.size ? `?${params}` : '') + location.hash);
+    };
     const newVersion=(app:IStoreApp):void=>{setViewApp(null);setPackagingStart({publication:{catalogId:app.id,kind:app.kind}});setPackagingOpen(true);};
     const projectsInitialized = useRef(false);
     useEffect(() => { setSearch(query); }, [query]);
@@ -422,7 +430,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             </Modal>
 
             <StoreCreateModal key={'create:' + accessKey} open={createOpen} onClose={() => setCreateOpen(false)} onPackage={source=>{setCreateOpen(false);setPackagingStart(source?{source}:undefined);setPackagingOpen(true);}} onCreated={()=>{changeSearch('');setFilter('all');setInstalledOnly(false);void loadCatalog();}} />
-            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen} start={packagingStart} scope={accessKey} projectId={targetProject?.id} onClose={() => setPackagingOpen(false)} onPublished={async (id, current, kind) => {
+            {isMain && <ToolPackagingModal key={accessKey} open={packagingOpen || packagingRequested} start={packagingRequested ? undefined : packagingStart} scope={accessKey} projectId={targetProject?.id} onClose={closePackaging} onPublished={async (id, current, kind) => {
                 const owns = captureOwner();
                 if (!owns() || !current()) return;
                 const app = kind === 'skill' ? fromSkill(await bffApi.getSkill(id)) : fromPlugin(await bffApi.getAiPlugin(id));

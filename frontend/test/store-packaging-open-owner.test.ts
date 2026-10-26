@@ -41,7 +41,7 @@ const ui = vi.hoisted(() => ({
     scope: 'admin-a', owners: new Map<string, () => () => boolean>(),
     activeRole: 'Главный админ',
     location: {pathname: '/store', search: '?p=prj-a', hash: ''},
-    buttons: new Map<string, ButtonProps>(), errors: [] as string[], form: false, open: false,
+    buttons: new Map<string, ButtonProps>(), errors: [] as string[], form: false, open: false, closePackaging:undefined as (()=>void)|undefined,
     job: undefined as ToolBuild | undefined, view: null as {id: string} | null, reset: vi.fn(),
     bridgeDevice: undefined as IBridgeDevice | undefined, assets: [] as Array<{assetKind: 'mcp'; assetId: string; version?:number; manifest?:string; card?:IAiPlugin}>,
     chooseFolder: undefined as (() => void) | undefined,newVersion:undefined as (()=>void)|undefined,publicationTarget:vi.fn(),
@@ -92,7 +92,7 @@ vi.mock('antd', () => {
     return {
         Alert: ({type, message}: {type: string; message: string}) => { if (type === 'error') ui.errors.push(message); return null; },
         Button: (props: ButtonProps) => { ui.buttons.set(String(props.children), props); return null; },
-        Modal: ({open, children, footer}: {open: boolean; children?: ReactNode; footer?: ReactNode}) => { if (open) ui.open = true; return open ? createElement('div', null, children, footer) : null; },
+        Modal: ({open, children, footer,onCancel}: {open: boolean; children?: ReactNode; footer?: ReactNode;onCancel?:()=>void}) => { if (open) {ui.open = true;ui.closePackaging=onCancel;} return open ? createElement('div', null, children, footer) : null; },
         Form: Object.assign(({children}: {children?: ReactNode}) => { ui.form = true; return children; }, {Item: content}),
         Input: Object.assign(input, {Search: input, TextArea: input}), Radio: {Group: () => null}, Select: input,
         Collapse: Object.assign(content, {Panel: content}), Checkbox: content, Col: content, Row: content, Empty: content,
@@ -109,7 +109,7 @@ function deferred<T>() {
 }
 const flush = async () => { for (let index = 0; index < 14; index++) await Promise.resolve(); };
 function render() {
-    hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.form = false; ui.open = false;
+    hooks.begin(); ui.buttons.clear(); ui.errors = []; ui.form = false; ui.open = false;ui.closePackaging=undefined;
     renderToStaticMarkup(createElement(Store)); hooks.commit();
 }
 function click(label: string) { const button = ui.buttons.get(label)!; expect(button).toBeDefined(); expect(button.disabled).not.toBe(true); button.onClick!(); }
@@ -127,6 +127,19 @@ beforeEach(() => {
 afterEach(() => hooks.dispose());
 
 describe('Переход к папке из карточки инструмента', () => {
+    it('Ссылка восстановления открывает упаковщик, закрытие сохраняет проект, поиск и якорь',()=>{
+        ui.location = {pathname:'/store',search:'?packaging=open&p=prj-a&q=saved',hash:'#catalog'};
+        ui.job=undefined;render();
+        expect(ui.open).toBe(true);
+        expect(ui.publicationTarget).not.toHaveBeenCalled();
+        ui.closePackaging!();
+        expect(ui.history.replace).toHaveBeenLastCalledWith('/store?p=prj-a&q=saved#catalog');
+        ui.location.search='?p=prj-a&q=saved';render();expect(ui.open).toBe(false);
+    });
+    it('Ссылка восстановления не открывает упаковщик при другой активной роли',()=>{
+        ui.activeRole='Наблюдатель';ui.location.search='?packaging=open&p=prj-a';
+        render();expect(ui.open).toBe(false);
+    });
     it('Одно управление карточкой открывает существующие детали, новая версия использует native id',async()=>{
         ui.job=undefined;vi.mocked(bffApi.listAiPlugins).mockResolvedValue({items:[{...plugin('listed-tool'),name:'Listed title',revision:'v-source-old',version:2}],page:1,size:100,total:1});
         render();await flush();render();
