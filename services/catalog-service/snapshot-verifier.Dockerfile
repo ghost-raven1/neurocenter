@@ -20,8 +20,9 @@ WORKDIR /verifier
 COPY scripts/snapshots/verifier/package.json scripts/snapshots/verifier/package-lock.json ./
 ARG NEUROCENTER_NPM_DIAGNOSTICS=0
 RUN printf 'Snapshot verifier: effective npm-diagnostics=%s\n' "$NEUROCENTER_NPM_DIAGNOSTICS"
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_NO_WARNINGS=1 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund --loglevel=http --foreground-scripts --update-notifier=false \
-    $(if [ "$NEUROCENTER_NPM_DIAGNOSTICS" = "1" ]; then printf '%s' '--fetch-timeout=30000 --fetch-retries=0 --logs-max=0'; fi)
+# Keep the small SDK install serial on constrained DNS/proxy paths; diagnostics only change logging.
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_NO_WARNINGS=1 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --omit=dev --no-audit --no-fund --loglevel=http --foreground-scripts --update-notifier=false --maxsockets=1 --fetch-timeout=120000 --fetch-retries=1 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=5000 \
+    $(if [ "$NEUROCENTER_NPM_DIAGNOSTICS" = "1" ]; then printf '%s' '--loglevel=verbose --logs-max=0'; fi)
 COPY scripts/snapshots/verify-image.cjs ./scripts/snapshots/verify-image.cjs
 COPY services/shared/project-snapshot.cjs ./services/shared/project-snapshot.cjs
 ENV RAYON_NUM_THREADS=2
