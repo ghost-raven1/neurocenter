@@ -22,7 +22,9 @@ export class AgentToolsLoop {
    catch(error){await this.repository.interrupted(step.id,'Вызов не подтверждён или остановлен. Результат автоматически не повторяется.').catch(()=>undefined);throw error;}
   };
   for(let n=0;n<limits.steps;n++){
-   const planned:ChatMessage[]=[prompt,...messages];
+   // Project facts may precede the profile; the current phase follows every system instruction, only for planning.
+   const afterSystem=messages.map(message=>message.role).lastIndexOf('system')+1;
+   const planned:ChatMessage[]=[...messages.slice(0,afterSystem),prompt,...messages.slice(afterSystem)];
    if(chatContext(planned,scope.settings).exceeded)throw new BadRequestException('История и инструменты не помещаются в окно модели.');
    const value=await execute(n*2+1,'planner',{messageDigest:agentToolHash(planned)},async()=>agentToolAction(await scope.infer(planned,current),scope.owner.grant));
    const command=agentToolAction(JSON.stringify(value),scope.owner.grant);

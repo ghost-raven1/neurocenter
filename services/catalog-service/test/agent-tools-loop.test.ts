@@ -22,6 +22,26 @@ function fixture(){
  return{loop,scope,steps,repository,feature,abort,revoke:()=>{current=false;}};
 }
 describe('Explicit agent tools loop',()=>{
+ it.each([false,true])('places the planner contract after profile instructions and leaves final answer instructions intact, project metadata first=%s',async metadataFirst=>{
+  const f=fixture();f.scope.messages.unshift({role:'system',content:'Ты ревьювер. Ответь пользователю текстом.'},{role:'system',content:'Ответь на текущее сообщение пользователя.'});
+  if(metadataFirst)f.scope.messages.unshift({role:'user',content:'Справочные данные проекта'});
+  const result=await f.loop.run(f.scope),planned=vi.mocked(f.scope.infer).mock.calls[0][0];
+  expect(planned.filter(message=>message.role==='system').at(-1)?.content).toContain('json-actions-v1');
+  expect(planned.filter(message=>message.role==='user').slice(0,-1)).toEqual(f.scope.messages.filter(message=>message.role==='user'));
+  expect(result.filter(message=>message.role==='system')).toEqual(f.scope.messages.filter(message=>message.role==='system'));
+  expect(f.scope.infer).toHaveBeenCalledOnce();expect(f.scope.execute).not.toHaveBeenCalled();
+ });
+ it('accepts a complete fenced finish without a repair request or a tool call',async()=>{
+  const f=fixture();vi.mocked(f.scope.infer).mockResolvedValue('```json\n{"action":"finish"}\n```');
+  const result=await f.loop.run(f.scope);expect(result.at(-1)?.content).toContain('Дай самостоятельный ответ');
+  expect(f.scope.infer).toHaveBeenCalledOnce();expect(f.scope.execute).not.toHaveBeenCalled();expect(f.steps.get(1)?.state).toBe('succeeded');
+ });
+ it('does not turn a plain reply into a tool or silently replay it',async()=>{
+  const f=fixture();vi.mocked(f.scope.infer).mockResolvedValue('Привет!');
+  await expect(f.loop.run(f.scope)).rejects.toThrow('Модель вернула ответ не в формате JSON');
+  await expect(f.loop.run(f.scope)).rejects.toThrow('Прежний вызов');
+  expect(f.scope.infer).toHaveBeenCalledOnce();expect(f.scope.execute).not.toHaveBeenCalled();
+ });
  it('dispatches a real allowed callback once and supplies its sources to the final answer context',async()=>{
   const f=fixture();vi.mocked(f.scope.infer).mockResolvedValueOnce(JSON.stringify({action:'rag_search',query:'ledger'})).mockResolvedValueOnce(JSON.stringify({action:'finish'}));
   vi.mocked(f.scope.execute).mockResolvedValue({sources:[{id:'source',path:'src/index.ts',excerpt:'confirmed source'}]});

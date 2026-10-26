@@ -21,7 +21,7 @@ afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 
 /** Actual runner → inference → bounded tools; only durable storage/provider and public-search domain are controlled fixtures. */
 describe.sequential('Project tools remain authorized at final owner publication',()=>{
- async function fixture(point:'none'|'before-owner'|'after-update',enabled=true){
+ async function fixture(point:'none'|'before-owner'|'after-update',enabled=true,planner:'json'|'fenced'|'length'|'plain'='json'){
   vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','publication-fixture');vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(evaluateFeatureFlags(defaultFeatureFlags())))));
   const project='prj-publication',roomId=randomUUID(),generation=randomUUID(),jobId=randomUUID(),sentinel='PUBLIC SOURCE MUST NOT SURVIVE REVOCATION';
   const actor={email:'developer@fixture.test',activeRole:'Разработчик'},req={headers:{}} as Request;
@@ -43,7 +43,10 @@ describe.sequential('Project tools remain authorized at final owner publication'
   const models={pool:modelPool,actor:async()=>({...actor,claims:{email:actor.email,userRoles:[actor.activeRole],projects:[{projectId:project,role:actor.activeRole}],pluginIds:[],skillPaths:[]}}),resolveProject:async()=>({id:project}),getUsable:async(id:string)=>id===embedding.id?embedding:model} as unknown as ModelsService;
   const hit={messageId:randomUUID(),content:sentinel},search={create:vi.fn(async()=>({id:jobId,state:'SUCCEEDED'})),get:vi.fn(async(_req:unknown,_project:unknown,_id:unknown,existingDb?:ProjectChatDb)=>{if(insideOwner)expect(existingDb).toBe(db);return {id:jobId,state:'SUCCEEDED',results:visible?[hit]:[]};}),cancel:vi.fn()};
   let planned=0;const runtime={infer:vi.fn(async(_model:unknown,_endpoint:unknown,body:{messages:unknown})=>{
-   await currentModelUsage().beforeInference?.();if(currentModelUsage().purpose==='research')return {message:{role:'assistant',content:JSON.stringify(planned++===0?{action:'public_chat_search',query:'context'}:{action:'finish'})},done_reason:'stop'};
+   await currentModelUsage().beforeInference?.();if(currentModelUsage().purpose==='research'){
+    const content=JSON.stringify(planned++===0?{action:'public_chat_search',query:'context'}:{action:'finish'});
+    return {message:{role:'assistant',content:planner==='plain'?'Привет! private-provider-text':planner==='json'?content:'```json\n'+content+'\n```'},done_reason:planner==='length'?'length':'stop'};
+   }
    expect(JSON.stringify(body.messages)).toContain(enabled?sentinel:'Find context');acked=true;return {message:{role:'assistant',content:enabled?sentinel:'No tools answer'},done_reason:'stop'};
   })} as unknown as ModelRuntime;
   const tools=new AgentToolsService(models,runtime,{get:(token:unknown)=>{if(token!==ChatSearchService)throw Error('Unexpected service');return search;}} as unknown as ModuleRef),steps=new Map<string,AgentToolStepRow>();
@@ -74,6 +77,19 @@ describe.sequential('Project tools remain authorized at final owner publication'
  it.each([true,false])('retains a valid answer and the own done-recipient transition, tools=%s',async enabled=>{
   const f=await fixture('none',enabled);try{await f.runner.waitIdle();expect(f.response().status).toBe('done');expect(f.response().content).toBe(enabled?f.sentinel:'No tools answer');expect(f.runtime.infer).toHaveBeenCalledTimes(enabled?3:1);}
   finally{await f.runner.stop();await f.tools.onModuleDestroy();}
+ });
+ it('publishes a normal answer after complete fenced planner actions without extra requests',async()=>{
+  const f=await fixture('none',true,'fenced');try{
+   await f.runner.waitIdle();expect(f.response().status).toBe('done');expect(f.response().content).toBe(f.sentinel);
+   expect(f.runtime.infer).toHaveBeenCalledTimes(3);expect(f.search.create).toHaveBeenCalledOnce();
+  }finally{await f.runner.stop();await f.tools.onModuleDestroy();}
+ });
+ it.each(['length','plain'] as const)('stops on a %s planner response without dispatching a tool or another model request',async planner=>{
+  const f=await fixture('none',true,planner);try{
+   await f.runner.waitIdle();expect(f.response().status).toBe('failed');expect(f.response().content).toBe('');
+   expect(f.response().error).toContain(planner==='length'?'Модель не завершила выбор инструмента':'Модель вернула ответ не в формате JSON');
+   expect(f.response().error).not.toContain('private-provider-text');expect(f.runtime.infer).toHaveBeenCalledOnce();expect(f.search.create).not.toHaveBeenCalled();
+  }finally{await f.runner.stop();await f.tools.onModuleDestroy();}
  });
 });
 
