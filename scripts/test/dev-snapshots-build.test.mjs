@@ -8,7 +8,9 @@ import path from 'node:path';
 import {test} from 'node:test';
 import {prepareDevSnapshots} from '../workspace/dev-snapshots.mjs';
 
-const setting='SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS',image='neurocenter-snapshot-verifier:local',digest='sha256:'+'a'.repeat(64);
+const setting='SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS',diagnostics='SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS',image='neurocenter-snapshot-verifier:local',digest='sha256:'+'a'.repeat(64);
+const proxyNames=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'];
+const diagnosticFlags=['--loglevel=http','--foreground-scripts','--fetch-timeout=30000','--fetch-retries=0','--logs-max=0'];
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const result=value=>({status:0,signal:null,error:undefined,stdout:'',stderr:'',...value});
 
@@ -60,6 +62,69 @@ for(const seconds of [undefined,'1800'])test('snapshot Docker build uses explici
     assert.equal(prepared.catalog.SNAPSHOT_MAX_BYTES,env.SNAPSHOT_MAX_BYTES);assert.equal(prepared.runner.SNAPSHOT_MAX_BYTES,env.SNAPSHOT_MAX_BYTES);
     assert.equal(prepared.catalog[setting],undefined);assert.equal(prepared.runner[setting],undefined);assert.deepEqual(env,{...f.environment,...(seconds===undefined?{}:{[setting]:seconds})});
     await f.unchanged();assert.ok((await f.dbEvents()).some(event=>event.kind==='end'));
+});
+
+test('snapshot Docker build forwards explicitly configured proxies by name without placing their values in argv',async t=>{
+    const f=await fixture(t),proxies=Object.fromEntries(proxyNames.map((key,index)=>[key,index===2?'localhost,private.invalid':index===5?'':`https://private-user:private-password-${index}@proxy.invalid:8443`]));
+    const env={...f.environment,...proxies},saved={...env};await prepareDevSnapshots(f.root,env);
+    const build=f.calls[0];assert.equal(build.args[0],'build');
+    for(const [key,value]of Object.entries(proxies)){
+        const index=build.args.indexOf(key);assert.ok(index>0,key+' was not forwarded');assert.equal(build.args[index-1],'--build-arg');
+        assert.equal(build.options.env[key],value);if(value)assert.ok(build.args.every(arg=>!arg.includes(value)),'proxy value leaked to argv');
+    }
+    assert.deepEqual(env,saved);await f.unchanged();
+});
+
+test('snapshot Docker build leaves unset proxy arguments to Docker client configuration',async t=>{
+    const f=await fixture(t);await prepareDevSnapshots(f.root,f.environment);
+    assert.ok(f.calls[0].args.every(arg=>!proxyNames.some(key=>arg===key||arg.startsWith(key+'='))));
+});
+
+for(const value of ['0','1'])test('snapshot npm diagnostics '+value+' is build-only and opt-in',async t=>{
+    const f=await fixture(t),env={...f.environment,[diagnostics]:value},prepared=await prepareDevSnapshots(f.root,env);
+    assert.deepEqual(f.calls[0].args,['build',...(value==='1'?['--build-arg','NEUROCENTER_NPM_DIAGNOSTICS=1']:[]),'-f','services/catalog-service/snapshot-verifier.Dockerfile','-t',image,'.']);
+    assert.equal(prepared.catalog[diagnostics],undefined);assert.equal(prepared.runner[diagnostics],undefined);assert.equal(env[diagnostics],value);await f.unchanged();
+});
+
+for(const value of ['', 'true','false','2','01','1; echo unsafe',1,null,false])test('invalid snapshot npm diagnostics '+JSON.stringify(value)+' fails before DB and secret creation',async t=>{
+    const f=await fixture(t,{seed:false});
+    await assert.rejects(prepareDevSnapshots(f.root,{...f.environment,[diagnostics]:value}),error=>{assert.ok(error.message.includes(diagnostics));return true;});
+    assert.deepEqual(await f.dbEvents(),[]);assert.deepEqual(f.calls,[]);await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('an explicit snapshot image does not validate build-only npm diagnostics',async t=>{
+    const f=await fixture(t),prepared=await prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_IMAGE:image,[diagnostics]:'not-used'});
+    assert.equal(f.calls.length,1);assert.equal(f.calls[0].args[0],'image');assert.equal(prepared.catalog[diagnostics],undefined);assert.equal(prepared.runner[diagnostics],undefined);
+});
+
+for(const value of ['0','1'])test('actual snapshot Docker RUN keeps HTTPS and TLS policy with bounded diagnostics '+value,async t=>{
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-npm-run-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+    const npm=path.join(directory,'npm'),argsFile=path.join(directory,'args'),tlsFile=path.join(directory,'tls'),warningsFile=path.join(directory,'warnings');
+    await fs.writeFile(npm,'#!/bin/sh\nprintf "%s\\n" "$@" > "$NPM_TEST_ARGS"\nprintf "%s" "$NODE_TLS_REJECT_UNAUTHORIZED" > "$NPM_TEST_TLS"\nprintf "%s" "$NODE_NO_WARNINGS" > "$NPM_TEST_WARNINGS"\n',{mode:0o700});
+    const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
+    const instructions=dockerfile.replace(/\\\r?\n/g,' '),command=instructions.match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:value,NPM_TEST_ARGS:argsFile,NPM_TEST_TLS:tlsFile,NPM_TEST_WARNINGS:warningsFile}});
+    assert.equal(run.error,undefined);assert.equal(run.status,0,run.stderr);
+    const args=(await fs.readFile(argsFile,'utf8')).trim().split('\n');assert.equal(args[0],'ci');
+    for(const flag of ['--registry=https://registry.npmjs.org/','--userconfig=/dev/null','--globalconfig=/tmp/neurocenter-empty-global.npmrc','--strict-ssl=false','--omit=dev','--no-audit','--no-fund'])assert.ok(args.includes(flag),flag+' missing');
+    assert.equal(await fs.readFile(tlsFile,'utf8'),'0');
+    assert.equal(await fs.readFile(warningsFile,'utf8'),'1');assert.doesNotMatch(instructions,/^ENV [^\n]*NODE_NO_WARNINGS=/m);
+    for(const flag of diagnosticFlags)assert.equal(args.includes(flag),value==='1',flag);
+    assert.ok(args.every(arg=>!arg.startsWith('--ignore-scripts')&&!arg.startsWith('--ignore-platform')));
+    assert.match(dockerfile,/^ARG NEUROCENTER_NPM_DIAGNOSTICS=0$/m);assert.doesNotMatch(dockerfile,/^ENV [^\n]*NEUROCENTER_NPM_DIAGNOSTICS=/m);
+});
+
+test('actual snapshot npm RUN suppresses Node warnings while preserving stderr errors and failure status',async t=>{
+    const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-snapshot-npm-warning-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+    const probe=path.join(directory,'warning.cjs');
+    await fs.writeFile(probe,"process.emitWarning('NC_NODE_WARNING_SENTINEL');console.error('npm error NC_FAILURE_VISIBLE');process.exitCode=37;\n");
+    const control=childProcess.spawnSync(process.execPath,[probe],{encoding:'utf8',env:{}});
+    assert.equal(control.status,37);assert.match(control.stderr,/NC_NODE_WARNING_SENTINEL/);assert.match(control.stderr,/npm error NC_FAILURE_VISIBLE/);
+    await fs.writeFile(path.join(directory,'npm'),'#!/bin/sh\nexec "$NPM_TEST_NODE" "$NPM_TEST_PROBE" "$@"\n',{mode:0o700});
+    const dockerfile=await fs.readFile(new URL('../../services/catalog-service/snapshot-verifier.Dockerfile',import.meta.url),'utf8');
+    const command=dockerfile.replace(/\\\r?\n/g,' ').match(/^RUN (NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm ci[^\n]*)/m)?.[1];assert.ok(command,'npm RUN instruction missing');
+    const run=childProcess.spawnSync('/bin/sh',['-c',command],{encoding:'utf8',env:{PATH:directory,NEUROCENTER_NPM_DIAGNOSTICS:'1',NPM_TEST_NODE:process.execPath,NPM_TEST_PROBE:probe}});
+    assert.equal(run.error,undefined);assert.equal(run.status,37);assert.match(run.stderr,/npm error NC_FAILURE_VISIBLE/);assert.doesNotMatch(run.stderr,/NC_NODE_WARNING_SENTINEL/);
 });
 
 for(const seconds of [undefined,'1800'])test('snapshot build timeout names its configured seconds and preserves the original cause: '+(seconds??'default'),async t=>{

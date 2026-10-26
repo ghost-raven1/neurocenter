@@ -23,9 +23,9 @@ export function validateRagQuotaUpdate(value:unknown):asserts value is IRagQuota
     if(!input||typeof input!=='object'||Array.isArray(input)||!Number.isSafeInteger(input.limitBytes)||Number(input.limitBytes)<=0||!Number.isSafeInteger(input.expectedRevision)||Number(input.expectedRevision)<0){throw new BadRequestException('Укажите положительный лимит в байтах и актуальную ревизию.');}
 }
 
-/** Защита остаётся в БД: старый сервер и прямой SQL также учитываются триггерами. */
+/** Защита остаётся в БД; неизвестный откат не возвращает незавершённую инициализацию в пул. */
 export async function setupRagQuota(pool:Pool,policy:IRagQuotaPolicy):Promise<void>{
-    const client=await pool.connect();
+    const client=await pool.connect();let discard=false;
     try{
         await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(72465386)');
         await client.query(`CREATE TABLE IF NOT EXISTS neurocenter_rag_migrations(version text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`);
@@ -47,7 +47,7 @@ export async function setupRagQuota(pool:Pool,policy:IRagQuotaPolicy):Promise<vo
             await client.query('INSERT INTO neurocenter_rag_migrations(version,checksum) VALUES($1,$2)',[RAG_QUOTA_MIGRATION,checksum]);
         }
         await client.query('COMMIT');
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }
 
 function safeNumber(value:unknown):number{const number=Number(value);if(!Number.isSafeInteger(number)||number<0){throw new ServiceUnavailableException('Счётчик базы знаний требует проверки.');}return number;}
@@ -59,10 +59,10 @@ async function readQuota(client:PoolClient,projectKey:string):Promise<IRagQuota>
     return {usedBytes,limitBytes,revision:safeNumber(row.revision),maximumBytes:safeNumber(row.maximum_bytes),availableBytes:Math.max(0,limitBytes-usedBytes)};
 }
 
-/** Перенос уже сохранённых знаний не удаляет их из-за нового лимита по умолчанию. */
+/** Перенос сохраняет знания; неизвестный откат не оставляет сессию с неподтверждённой бронью. */
 export async function reserveLegacyRagQuota(pool:Pool,projectKey:string,bytes:number):Promise<void>{
     if(!Number.isSafeInteger(bytes)||bytes<0){throw new Error('Некорректный объём переноса знаний');}
-    const client=await pool.connect();
+    const client=await pool.connect();let discard=false;
     try{
         await client.query('BEGIN');await client.query('LOCK TABLE rag_chunks IN ROW EXCLUSIVE MODE');await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
         await client.query("SELECT set_config('neurocenter.rag_actor','system:legacy-rag-migration',true)");
@@ -72,7 +72,7 @@ export async function reserveLegacyRagQuota(pool:Pool,projectKey:string,bytes:nu
             await client.query('UPDATE rag_storage_budget SET limit_bytes=$2 WHERE project_key=$1',[projectKey,bytes]);
         }
         await client.query('COMMIT');
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }
 
 /** Неизвестный откат не оставляет сессию, в которой следующее чтение могло бы зафиксировать прежнюю запись. */

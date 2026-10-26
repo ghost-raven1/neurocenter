@@ -1,8 +1,8 @@
 # Поставка OpenCodeRAG pack.11
 
-Приложение закреплено на `ghost-raven1/neurocenter-assets`, commit `ef4c28680e25eef0e8ce9942326676a99207a46d`. SHA-256 `index.json`: `7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa`. Закрепление находится в `services/shared/asset-source.lock.json`.
+На момент публикации 23 октября 2026 года приложение было закреплено на `ghost-raven1/neurocenter-assets`, commit `ef4c28680e25eef0e8ce9942326676a99207a46d`. SHA-256 `index.json` этого исторического снимка: `7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa`. Более позднее актуальное закрепление задаёт `services/shared/asset-source.lock.json`; этот отчёт не утверждает, что приложение до сих пор использует pack.11.
 
-В текущей описи опубликованы MCP `2.4.4-mcp.pack.11` и плагин `2.4.4-plugin.pack.11`. Исторические описания сохранены. Архивы доступны в [релизе rag-v2.4.4-pack.11](https://github.com/ghost-raven1/neurocenter-assets/releases/tag/rag-v2.4.4-pack.11). Этот релиз не заменяет latest-релиз моста.
+В описи этой публикации были опубликованы MCP `2.4.4-mcp.pack.11` и плагин `2.4.4-plugin.pack.11`. Исторические описания сохранены. Архивы доступны в [релизе rag-v2.4.4-pack.11](https://github.com/ghost-raven1/neurocenter-assets/releases/tag/rag-v2.4.4-pack.11). Этот релиз не заменяет latest-релиз моста.
 
 Проверка публикации 23 октября 2026 года:
 
