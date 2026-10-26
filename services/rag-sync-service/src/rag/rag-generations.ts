@@ -143,10 +143,11 @@ export class RagGenerations {
             await client.query('COMMIT');return await this.get(project,id,owner);
         }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}
     }
+    /** Неизвестный откат не оставляет удаление кандидата для COMMIT следующего запроса. */
     async cancel(project:string,id:string,tombstone:{profile:unknown;sourceGeneration:string;sourceSnapshot:string|null}):Promise<IRagGeneration>{
         if(!generationId(id)||!generationId(tombstone.sourceGeneration))throw new BadRequestException('Некорректное поколение отмены.');
         const profile=normalizeIndexProfile(tombstone.profile);if(!profile)throw new BadRequestException('Отмена требует профиль сохранённого плана.');
-        const client=await this.pool.connect();
+        const client=await this.pool.connect();let discard=false;
         try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);
             await client.query(`INSERT INTO rag_generations(id,project_key,index_profile,state,source_generation,source_snapshot)
                 VALUES($1,$2,$3::jsonb,'cancelled',$4,$5) ON CONFLICT(id) DO NOTHING`,[id,project,JSON.stringify(profile),tombstone.sourceGeneration,tombstone.sourceSnapshot]);
@@ -154,7 +155,7 @@ export class RagGenerations {
             if(result.rows.length){await client.query('DELETE FROM rag_chunks WHERE project_key=$1 AND generation_id=$2',[project,id]);}
             const index='rag_gen_'+createHash('sha256').update(id).digest('hex').slice(0,24);await client.query(`DROP INDEX IF EXISTS ${index}`);
             await client.query('COMMIT');return this.get(project,id);
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
     }
     async retry(project:string,id:string):Promise<IRagGeneration>{
         await this.pool.query("UPDATE rag_generations SET state='building',error=NULL,updated_at=now() WHERE id=$1 AND project_key=$2 AND state='failed'",[id,project]);return this.get(project,id);
