@@ -87,6 +87,13 @@ test('snapshot Docker build leaves unset proxy arguments to Docker client config
     assert.ok(f.calls[0].args.every(arg=>!proxyNames.some(key=>arg===key||arg.startsWith(key+'='))));
 });
 
+test('snapshot build logs effective settings and proxy names without secrets',async t=>{
+    const f=await fixture(t),lines=[],original=console.log;console.log=(...values)=>lines.push(values.join(' '));t.after(()=>{console.log=original;});
+    await prepareDevSnapshots(f.root,{...f.environment,SNAPSHOT_VERIFIER_BUILD_NETWORK:'host',[diagnostics]:'1',[setting]:'1800',HTTPS_PROXY:'https://user:PRIVATE_PROXY_PASSWORD@proxy.invalid:8443',no_proxy:''});
+    const output=lines.join('\n');assert.match(output,/network=host; npm-diagnostics=1; timeout=1800s; explicit-proxy=HTTPS_PROXY,no_proxy/);
+    assert.doesNotMatch(output,/PRIVATE_PROXY_PASSWORD|proxy\.invalid|https:\/\/user/);await f.unchanged();
+});
+
 for(const value of ['default','host'])test('snapshot network '+value+' is explicit and limited to the image build',async t=>{
     const f=await fixture(t),key='SNAPSHOT_VERIFIER_BUILD_NETWORK',env={...f.environment,[key]:value};
     const prepared=await prepareDevSnapshots(f.root,env);

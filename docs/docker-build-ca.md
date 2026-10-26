@@ -58,7 +58,7 @@ SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
 
 Этот механизм передаёт публичные CA **внутрь Node-образов**. Ошибка скачивания базового образа самим Docker требует настройки доверенного CA у Docker daemon администратором сервера. Недоступность GitHub и истечение сетевого таймаута — отдельные причины, добавление CA их не устраняет.
 
-При полностью закрытом GitHub первый build также не сможет получить закреплённую npm-зависимость `@neurocenter/asset-contract` с `codeload.github.com`. В таком окружении заранее собирайте образы для архитектуры рабочего сервера на машине с доступом к источникам и переносите их через `docker image save` / `docker image load`. Для native dev заранее загруженный исполнитель снимков можно выбрать через `SNAPSHOT_VERIFIER_IMAGE`; тогда `dev.sh up` проверяет существующий образ и не пересобирает его. Каталог ассетов после подготовки работает независимо от GitHub в [автономном режиме](assets.md#работа-без-доступа-к-github).
+При полностью закрытом GitHub сборка самого Catalog также не сможет получить закреплённую npm-зависимость `@neurocenter/asset-contract` с `codeload.github.com`. Исполнитель снимков использует отдельный `scripts/snapshots/verifier/package-lock.json`: LanceDB 0.29.0, Apache Arrow 18.1.0 и их зависимости с прежними версиями и integrity Catalog. Ему не нужны Nest, esbuild или asset-contract; все его архивы берутся из npm registry. В закрытом окружении заранее собирайте образы для архитектуры рабочего сервера на машине с доступом к источникам и переносите их через `docker image save` / `docker image load`. Для native dev заранее загруженный исполнитель снимков можно выбрать через `SNAPSHOT_VERIFIER_IMAGE`; тогда `dev.sh up` проверяет существующий образ и не пересобирает его. Каталог ассетов после подготовки работает независимо от GitHub в [автономном режиме](assets.md#работа-без-доступа-к-github).
 
 Если npm пишет `attempt ... failed with EAI_AGAIN`, это временный отказ разрешения имени ([getaddrinfo](https://man7.org/linux/man-pages/man3/getaddrinfo.3.html)). На шаге npm ci кэшированные пакеты могут проходить сразу, тогда как отсутствующие архивы требуют сетевых запросов и повторяются до ошибки либо общего лимита. Отключение проверки сертификатов не исправляет этот этап. По URL npm нельзя установить, отказало имя registry или настроенного прокси.
 
@@ -77,6 +77,16 @@ docker run --rm --pull=never \
 ```sh
 SNAPSHOT_VERIFIER_BUILD_NETWORK=host SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS=1 ./scripts/dev.sh up --profile=fast
 ```
+
+Перед сборкой CLI показывает фактически выбранные `network`, `npm-diagnostics`, `timeout` и имена явно заданных proxy-переменных. Значения proxy и пароли не печатаются; для отсутствующих переменных могут действовать настройки Docker client. Внутри Docker отдельный шаг печатает фактическое значение `npm-diagnostics`: строка инструкции `ARG ...=0` сама по себе показывает значение по умолчанию и не доказывает, что диагностика выключена.
+
+После успешного DNS можно отдельно проверить HTTPS/npm в уже скачанном образе:
+
+```sh
+docker run --rm --pull=never --network=host "$(sed -n '1s/^FROM //p' services/catalog-service/snapshot-verifier.Dockerfile)" npm ping --registry=https://registry.npmjs.org/ --strict-ssl=false --fetch-timeout=15000 --fetch-retries=0 --update-notifier=false --loglevel=http
+```
+
+`PONG` подтверждает ответ registry на этот запрос. Загрузка архивов, доступ к другим источникам и полный `npm ci` проверяются отдельно. Успешное скачивание ссылки в браузере тоже не подтверждает сеть npm: браузер может применять собственный proxy/PAC или DNS.
 
 `SNAPSHOT_VERIFIER_BUILD_NETWORK` принимает только `default` или `host`; без настройки дополнительный Docker-флаг не передаётся. `host` добавляет `--network=host` только к сборке исполнителя снимков. Этапы RUN используют сеть Docker-хоста; для удалённого daemon это другой компьютер, для Docker Desktop — его среда виртуализации. Настройка не передаётся сервисам/runner, не действует с готовым `SNAPSHOT_VERIFIER_IMAGE` и не меняет daemon.json, прокси, TLS или настройки остальных сборок. Неизвестное значение отклоняется до БД и подготовки ключей.
 

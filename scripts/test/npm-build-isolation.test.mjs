@@ -12,6 +12,23 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 const tracked=execFileSync('git',['ls-files'],{cwd:root,encoding:'utf8'}).trim().split('\n');
 const dockerfiles=tracked.filter(file=>/(?:^|\/)Dockerfile$|\.Dockerfile$/.test(file));
 
+test('Snapshot verifier installs only its SDK closure with the existing Catalog pins and integrity',async()=>{
+    const directory=path.join(root,'scripts/snapshots/verifier'),manifest=JSON.parse(await fs.readFile(path.join(directory,'package.json'),'utf8'));
+    const lock=JSON.parse(await fs.readFile(path.join(directory,'package-lock.json'),'utf8')),catalog=JSON.parse(await fs.readFile(path.join(root,'services/catalog-service/package-lock.json'),'utf8'));
+    assert.deepEqual(manifest.dependencies,{'@lancedb/lancedb':'0.29.0','apache-arrow':'18.1.0'});
+    assert.deepEqual(lock.packages[''].dependencies,manifest.dependencies);
+    assert.equal(Object.keys(lock.packages).length,37);
+    for(const [key,item]of Object.entries(lock.packages)){
+        if(!key)continue;
+        const original=catalog.packages[key];assert.ok(original,key);
+        for(const field of ['version','resolved','integrity','os','cpu','libc','optional'])assert.deepEqual(item[field],original[field],key+' '+field);
+        assert.equal(new URL(item.resolved).hostname,'registry.npmjs.org');assert.ok(item.integrity);assert.ok(!item.dev&&!item.peer,key);
+    }
+    const source=await fs.readFile(path.join(root,'services/catalog-service/snapshot-verifier.Dockerfile'),'utf8');
+    assert.match(source,/COPY scripts\/snapshots\/verifier\/package.json scripts\/snapshots\/verifier\/package-lock.json/);
+    assert.doesNotMatch(source,/COPY services\/catalog-service\/package/);
+});
+
 test('Real npm pins relaxed build TLS despite hostile config and preserves lifecycle isolation',async t=>{
     const folder=await fs.mkdtemp(path.join(os.tmpdir(),'nc-hostile-npm-'));
     t.after(()=>fs.rm(folder,{recursive:true,force:true}));
