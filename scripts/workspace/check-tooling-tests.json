@@ -42,6 +42,7 @@
   "scripts/test/qa-native.test.mjs",
   "scripts/test/qa-postgres.test.mjs",
   "scripts/test/run-manifest.test.mjs",
+  "scripts/test/verifier-tls.test.mjs",
   "scripts/test/workspace-check-options.test.mjs",
   "scripts/test/workspace-check-process.test.mjs",
   "scripts/test/workspace-check-report.test.mjs",

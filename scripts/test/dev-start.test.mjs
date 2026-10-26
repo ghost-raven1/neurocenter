@@ -365,10 +365,11 @@ for(const [mode,reason]of [['snapshot-build-timeout',/ETIMEDOUT.*600|600.*ETIMED
 
 test('up loads opt-in verifier host networking from dotenv and preserves old services on build failure',async t=>{
     const f=await fixture(t,'snapshot-build-exit');await fs.mkdir(path.join(f.checkout,'.run'));
-    await fs.writeFile(path.join(f.checkout,'.env'),'SNAPSHOT_VERIFIER_BUILD_NETWORK=host\n');
+    await fs.writeFile(path.join(f.checkout,'.env'),'SNAPSHOT_VERIFIER_BUILD_NETWORK=host\nSNAPSHOT_VERIFIER_REGISTRY_IPV4=192.0.2.20\nSNAPSHOT_VERIFIER_TLS_VERIFY=0\n');
     const state='[{"name":"catalog","pid":99999999}]\n',filename=path.join(f.checkout,'.run/processes.json');await fs.writeFile(filename,state);
     const result=await f.run('--profile=fast');assert.equal(result.code,1);assert.match(result.stderr,/код\S*\s+37/);
     const build=result.events.find(event=>event.kind==='docker'&&event.args[0]==='build');assert.ok(build);assert.ok(build.args.includes('--network=host'));
+    assert.ok(build.args.includes('registry.npmjs.org:192.0.2.20'));assert.ok(build.args.includes('NEUROCENTER_NPM_STRICT_SSL=false'));
     assert.equal(await fs.readFile(filename,'utf8'),state);assert.match(result.stderr,/прежний запуск сохранён/i);
     assert.equal(result.events.filter(event=>event.kind==='child-spawn'||event.kind==='port-probe').length,0);
     assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image'&&event.args[1]==='inspect').length,0);

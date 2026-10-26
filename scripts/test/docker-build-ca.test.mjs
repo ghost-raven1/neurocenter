@@ -161,7 +161,7 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
     for(const record of records){assert.deepEqual(record.args,['compose','build','frontend']);assert.match(record.sha,/^[a-f0-9]{64}$/);assert.match(record.name,/^ca-[a-f0-9-]{36}\.pem$/);}
 });
 
-test('All Node Dockerfiles verify optional CA before npm and scope relaxed TLS to build commands',async()=>{
+test('All Node Dockerfiles verify optional CA before npm and scope their selected TLS policy to build commands',async()=>{
     for(const file of sourceFiles){
         const source=await fs.readFile(path.join(root,file),'utf8');
         assert.match(source,/ARG NEUROCENTER_BUILD_CA_SHA256/,file);
@@ -171,11 +171,13 @@ test('All Node Dockerfiles verify optional CA before npm and scope relaxed TLS t
         assert.match(source,/: > \/usr\/local\/share\/neurocenter\/build-ca\/extra.pem/,file);
         const install=source.indexOf('npm ci ');assert(install>=0,file);
         assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=')<install,file);
-        assert.match(source,/NPM_CONFIG_STRICT_SSL=false/,file);assert.match(source,/--strict-ssl=false/,file);
-        assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
+        const verifier=file==='services/catalog-service/snapshot-verifier.Dockerfile';
+        assert.match(source,verifier?/NPM_CONFIG_STRICT_SSL=true/:/NPM_CONFIG_STRICT_SSL=false/,file);
+        assert.match(source,verifier?/--strict-ssl="\$NEUROCENTER_NPM_STRICT_SSL"/:/--strict-ssl=false/,file);
+        if(!verifier)assert.doesNotMatch(source,/STRICT_SSL=true|strict-ssl=true/,file);
         const commands=[...source.matchAll(/^RUN ([^\n]+)/gm)].flatMap(match=>match[1].split(/\s*&&\s*/)).filter(command=>/\bnpm\s/.test(command));
         assert(commands.length>0,file);
-        for(const command of commands)assert.match(command,/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
+        for(const command of commands)assert.match(command,verifier?/^NODE_TLS_REJECT_UNAUTHORIZED=.*NPM_CONFIG_STRICT_SSL="\$NEUROCENTER_NPM_STRICT_SSL" NODE_NO_WARNINGS=1 npm ci/:/^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,file+' missing build TLS: '+command);
         if(file==='services/api-gateway/Dockerfile'){
             assert.match(source,/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m,file);
         }else assert.doesNotMatch(source,/^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m,file);
