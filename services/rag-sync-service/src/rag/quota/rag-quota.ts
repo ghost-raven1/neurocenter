@@ -75,8 +75,9 @@ export async function reserveLegacyRagQuota(pool:Pool,projectKey:string,bytes:nu
     }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
 }
 
+/** Неизвестный откат не оставляет сессию, в которой следующее чтение могло бы зафиксировать прежнюю запись. */
 export async function ragQuota(pool:Pool,projectKey:string,update?:IRagQuotaUpdate,actor='system:rag'):Promise<IRagQuota>{
-    if(update){validateRagQuotaUpdate(update);}const client=await pool.connect();
+    if(update){validateRagQuotaUpdate(update);}const client=await pool.connect();let discard=false;
     try{
         await client.query('BEGIN');await client.query("SET LOCAL lock_timeout='10s'");await client.query('LOCK TABLE rag_chunks IN ROW EXCLUSIVE MODE');await client.query('SELECT pg_advisory_xact_lock($1)',[RAG_WRITE_LOCK]);let quota=await readQuota(client,projectKey);
         if(update&&update.limitBytes!==quota.limitBytes){
@@ -87,7 +88,7 @@ export async function ragQuota(pool:Pool,projectKey:string,update?:IRagQuotaUpda
             await client.query('UPDATE rag_storage_budget SET limit_bytes=$2,revision=revision+1 WHERE project_key=$1',[projectKey,update.limitBytes]);quota=await readQuota(client,projectKey);
         }
         await client.query('COMMIT');return quota;
-    }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw mapRagQuotaError(error);}finally{client.release();}
+    }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw mapRagQuotaError(error);}finally{client.release(discard);}
 }
 
 /** Ошибка ограничения не теряет содержимое дельты: PostgreSQL откатывает весь пакет. */
