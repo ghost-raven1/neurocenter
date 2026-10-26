@@ -27,6 +27,16 @@ export function workspaceReport(value: unknown): Record<string, unknown> {
             if (item.instanceId !== undefined && (typeof item.instanceId !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(item.instanceId))) { return fail(); }
             if (item.previousBindingId !== undefined && (typeof item.previousBindingId !== 'string' || !/^[a-f0-9]{64}$/.test(item.previousBindingId))) { return fail(); }
             if (item.identityStatus !== undefined && !['verified','legacy','copied','changed','unavailable'].includes(String(item.identityStatus))) { return fail(); }
+            if (item.dataSize !== undefined) {
+                const size = item.dataSize as Record<string, unknown> | null;
+                if (item.valid !== true || item.identityStatus !== 'verified' || !item.bindingId || !item.instanceId
+                    || !size || typeof size !== 'object' || Array.isArray(size) || size.scope !== 'opencode'
+                    || typeof size.measuredAt !== 'string' || size.measuredAt.length > 32
+                    || !Number.isFinite(Date.parse(size.measuredAt)) || new Date(size.measuredAt).toISOString() !== size.measuredAt) { return fail(); }
+                const known = Number.isSafeInteger(size.bytes) && Number(size.bytes) >= 0;
+                if (known ? size.error !== undefined
+                    : size.bytes !== null || !['unavailable','limit-exceeded'].includes(String(size.error))) { return fail(); }
+            }
         }
     }
     return report;
