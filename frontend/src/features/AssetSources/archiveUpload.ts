@@ -14,3 +14,6 @@ export function assetArchiveError(file:File):string {
 
 /** Missing exact dependencies also make the selected card unavailable for import. */
 export const sourceAssetReady=(asset:ISourceAsset):boolean=>asset.supply?.ready!==false;
+
+/** Сохраняет выбранные карточки, только пока их файлы и доступ остаются пригодны для импорта. */
+export const availableSourceAssetIds=(assets:ISourceAsset[],ids:string[]):string[]=>ids.filter(id=>assets.some(asset=>asset.id===id&&sourceAssetReady(asset)&&!asset.imported?.archived&&!asset.imported?.unavailable));
