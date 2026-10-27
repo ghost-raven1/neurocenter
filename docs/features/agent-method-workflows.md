@@ -30,6 +30,16 @@ OpenSpec core-профиль может не включать verify workflow: �
 
 Дополнительно проверяется окончание самой методики. Для OpenSpec нужен изменённый этим запуском change с завершёнными задачами и фактическим `instructions apply --json` в состоянии `all_done`, либо настоящий архив с завершёнными tasks, proposal и spec. Старый документ или новый proposal без выполненных задач не дают PASS. Для BMAD требуется изменённый артефакт `status: done` с `Auto Run Result` и `Review Triage Log`, без незавершённых задач. В комбинированном режиме вместо BMAD build/review-артефакта проверяются принятые planning-документы BMAD и завершение OpenSpec.
 
+## Закреплённый проектный исполнитель
+
+Дополнительный режим `project_agent_workflows` использует capability `agent-method-selected-agent-v1` моста0.9.23. Browser передаёт только `workflow.agentId` и `workflow.expectedAgentsRevision`. Сервер независимо получает актуальные assignment/model requirements и последнюю успешную configure-project-agents delivery для точного actor/device/project/binding/instance.
+
+Приватный snapshot включает identity выбранного агента, ревизию, desired/compiled manifests, SHA native-файла, configurationJobId, поддержанный mode и approved safe model mapping. Он проверяется повторно внутри final enqueue и успешной completion транзакции, перед claim и при authorize. Изменение revision, archive/enabled/mode, модели или новой delivery не подтверждает прежний профиль. Публичные job/result metadata содержат только identity/hash; prompt и provider endpoint в результат не копируются.
+
+Мост проверяет bridge-private committed proof, текущий файл, namespace и model metadata без чтения auth.json. Собственный OpenCode server до model POST должен действительно загрузить выбранные native имя, mode и модель. Запрос передаёт явные agent/model; финальный ответ обязан относиться к ним же. Несоответствие даёт `SELECTED_AGENT_NOT_READY` / `setup-agent` с сохранением доступных измеренных фактов. Авторизация и локальные проверки продолжаются во время исполнения.
+
+Прежний protocol v1 без optional agent сохраняет исходную нормализацию и обработку квитанций. Старые API-клиенты могут явно использовать прежний режим при включённой базовой функции; выбранный агент не превращается в прежний режим автоматически. Отдельный набор skills/plugins/MCP и изоляция каждого агента этим расширением не реализуются.
+
 ## Отмена и восстановление
 
 До разрешения исполняемому процессу стартовать сохраняется приватная квитанция с владельцем процесса. Группа и её известные потомки прекращаются при отмене, отзыве доступа, смене привязки, остановке worker или истечении срока. Авторизация и привязка проверяются перед шагами и повторно во время исполнения.

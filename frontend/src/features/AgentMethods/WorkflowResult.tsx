@@ -1,18 +1,21 @@
 import {Alert,Button,List,Space,Tag,Typography} from 'antd';
 import type {IBridgeJob} from '../McpBridge/api';
-import {methodLabels,workflowNextAction,workflowResult} from './model';
+import {methodLabels,workflowAgentIdentity,workflowNextAction,workflowResult} from './model';
+import {workflowAgentLabel,type WorkflowAgentCatalog} from './agentSelection';
 
 /** Show actual execution and check evidence separately from the queue's delivery state. */
-export function WorkflowResult({job,onSetupRuntime}:{job:IBridgeJob;onSetupRuntime?:()=>void}):JSX.Element{
-    const result=workflowResult(job.result);
-    if(!result)return <Alert type={job.state==='failed'?'warning':'info'} showIcon message={job.message||'Ожидаем результат локального исполнителя.'}/>;
+export function WorkflowResult({job,onSetupRuntime,agentCatalog}:{job:IBridgeJob;onSetupRuntime?:()=>void;agentCatalog?:WorkflowAgentCatalog|null}):JSX.Element{
+    const agent=workflowAgentIdentity(job.agent),result=workflowResult(job.result,agent);
+    const identity=<Typography.Text strong>{agent?`Исполнитель: ${workflowAgentLabel(agent,agentCatalog)}`:job.agent?'Идентичность выбранного агента не подтверждена':'Прежний запуск без выбранного агента'}</Typography.Text>;
+    if(!result)return <Space direction="vertical" className="agent-methods__result">{identity}<Alert type={job.state==='failed'||job.state==='succeeded'?'warning':'info'} showIcon message={job.state==='succeeded'?'Результат исполнения не подтверждён':job.message||'Ожидаем результат локального исполнителя.'}/></Space>;
     const success=job.state==='succeeded'&&result.state==='succeeded';
     const stages={prerequisites:'Подготовка',execution:'Выполнение',checks:'Проверки',completed:'Завершено'};
     return <Space direction="vertical" className="agent-methods__result">
+        {identity}
         <Alert showIcon type={success?'success':'warning'} message={success?'Задание выполнено':'Задание требует продолжения'} description={<>
             {methodLabels[result.method]} {result.methodVersion} · {stages[result.stage]}{result.failure&&<> · {result.failure.code}</>}
             <br/>{workflowNextAction(result)}</>}/>
-        {(result.failure?.action==='setup-method'||result.failure?.code==='QUIRK_STORAGE_INVALID')&&<Button href="/help/agent-method-workflows" target="_blank" rel="noopener noreferrer">Как подготовить методику</Button>}
+        {(result.failure?.action==='setup-method'||result.failure?.action==='setup-agent'||result.failure?.code==='QUIRK_STORAGE_INVALID')&&<Button href="/help/agent-method-workflows" target="_blank" rel="noopener noreferrer">Как подготовить методику</Button>}
         {result.failure?.action==='setup-runtime'&&onSetupRuntime&&<Button onClick={onSetupRuntime}>Настроить OpenCode</Button>}
         <Typography.Text>{result.changes.length?`Наблюдаемые изменения файлов: ${result.changes.length}`:'Изменения файлов не подтверждены'}</Typography.Text>
         {!!result.checks.length&&<List size="small" header="Фактические проверки" dataSource={result.checks} renderItem={check=><List.Item>

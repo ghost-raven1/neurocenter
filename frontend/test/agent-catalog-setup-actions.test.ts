@@ -12,6 +12,7 @@ import type {ProjectAgentEditor} from '../src/features/AgentCatalog/ProjectAgent
 import type {AgentTrialModal} from '../src/features/AgentCatalog/AgentTrialModal';
 import {readinessItem, trial} from './agent-readiness.fixture';
 import type {IAgentReadinessItem} from '../src/features/AgentCatalog/readinessTypes';
+import type {AgentMethodWorkflow} from '../src/features/AgentMethods/AgentMethodWorkflow';
 import type {IEvaluatedFeatureFlags} from '../src/features/FeatureFlags/types';
 type Card = Parameters<typeof AgentCard>[0];
 type Details = Parameters<typeof AgentDetails>[0];
@@ -23,6 +24,7 @@ const h = await vi.hoisted(async () => {
     return {hooks: adminSetupHooks(), ui: modalUi(), scope: 'alice', flagsEnabled: true,
         user: {activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: [] as Array<{projectId: string; projectName: string; role: string}>},
         catalog: null as IAgentCatalog | null, loading: false, error: '', refresh: vi.fn(), navigate: vi.fn(), chat: vi.fn(), cards: [] as Card[],
+        workflow: undefined as Parameters<typeof AgentMethodWorkflow>[0] | undefined,
         detail: undefined as Details | undefined, editor: undefined as Editor | undefined, projectEditor: undefined as ProjectEditor | undefined,
         trialModal: undefined as Parameters<typeof AgentTrialModal>[0] | undefined,
         readiness: {items: [] as IAgentReadinessItem[], loading: false, error: '', busy: false, uncertain: false, refresh: vi.fn(), replay: vi.fn(), start: vi.fn(), cancel: vi.fn()},
@@ -40,6 +42,8 @@ vi.mock('../src/features/ModelChat/chatNavigation', () => ({openModelChat: h.cha
 vi.mock('../src/features/McpBridge/BridgeConnection', () => ({BridgeConnection: () => null}));
 // The local editor owns its hooks and is exercised in project-configuration.test.ts.
 vi.mock('../src/features/ProjectConfiguration/ProjectConfiguration', () => ({ProjectConfiguration: () => null}));
+// The real workflow owns its hooks and is exercised by agent-method-workflow-ui.test.tsx.
+vi.mock('../src/features/AgentMethods/AgentMethodWorkflow', () => ({AgentMethodWorkflow: (props: Parameters<typeof AgentMethodWorkflow>[0]) => {h.workflow=props;return null;}}));
 vi.mock('../src/features/AgentCatalog/AgentCard', () => ({AgentCard: (props: Card) => { h.cards.push(props); return props.agent.name; }}));
 vi.mock('../src/features/AgentCatalog/AgentDetails', () => ({AgentDetails: (props: Details) => { h.detail = props; return 'Подробности агента'; }}));
 vi.mock('../src/features/AgentCatalog/AgentEditModal', () => ({AgentEditModal: (props: Editor) => { h.editor = props; return 'Редактор шаблона'; }}));
@@ -75,6 +79,12 @@ beforeEach(() => {
 afterEach(() => h.hooks.dispose());
 
 describe('Agent setup: actual toolbar, pinned configuration and recovery actions', () => {
+    it('passes the authoritative project assignments, revision and refresh state into the workflow', () => {
+        start();expect(h.workflow?.agentCatalog).toBe(h.catalog);expect(h.workflow?.agentsLoading).toBe(false);expect(h.workflow?.agentsError).toBe('');
+        expect(h.workflow?.onReloadAgents).toBe(h.refresh);expect(h.workflow?.projectId).toBe(props.projectId);
+        h.loading=true;h.error='Catalog refresh failed';h.catalog=catalog({revision:4});render();
+        expect(h.workflow?.agentCatalog).toBe(h.catalog);expect(h.workflow?.agentsLoading).toBe(true);expect(h.workflow?.agentsError).toBe(h.error);
+    });
     it('server-chat trial is separate from native delivery and available before enabling with project level two', () => {
         props.canManage = false; props.bridge = {...bridge(), devicesReady: false}; h.readiness.items = [readinessItem({agentId: agent().id})]; start();
         expect(card().trialDisabled).toBe(false); expect(card().assignment?.enabled).toBe(false); card().onTrial?.(); render();
