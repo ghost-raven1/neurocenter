@@ -146,6 +146,7 @@ try {
     assert.equal(spawnSync('npm', ['--version'], { env }).error?.code, 'ENOENT');
     server = http.createServer(async (request, response) => {
         try {
+            const acceptedProfile = profile, acceptedCredentialHash = candidateHash;
             const url = new URL(request.url, origin);
             if (request.method === 'GET' && url.pathname === '/api/bridge/runtime/' + file) {
                 archiveRequests++;
@@ -169,10 +170,13 @@ try {
                 if (digest(token) !== candidateHash) { rejectedRoutes.push(route); response.writeHead(401).end('{}'); return; }
                 if (route === 'identity') data = { id: deviceId, email: 'native-fixture@example.test', role: 'Разработчик' };
                 else if (route === 'heartbeat') {
-                    heartbeat = body;
-                    const pid = Number(await fs.readFile(path.join(profile, 'worker.lock'), 'utf8'));
-                    const version = JSON.parse(await fs.readFile(path.join(profile, 'worker-version.json'), 'utf8'));
-                    if (version.pid === pid) heartbeatWorkerPid = pid;
+                    const pid = Number(await fs.readFile(path.join(acceptedProfile, 'worker.lock'), 'utf8'));
+                    const version = JSON.parse(await fs.readFile(path.join(acceptedProfile, 'worker-version.json'), 'utf8'));
+                    if (!Number.isSafeInteger(pid) || pid < 2 || version.pid !== pid) throw new Error('Fixture worker identity changed.');
+                    if (profile !== acceptedProfile || digest(token) !== acceptedCredentialHash || candidateHash !== acceptedCredentialHash) {
+                        rejectedRoutes.push(route); response.writeHead(401).end('{}'); return;
+                    }
+                    heartbeatWorkerPid = pid; heartbeat = body;
                     data = { ok: true };
                 }
                 else if (route === 'worker/pause') {
