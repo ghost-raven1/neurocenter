@@ -9,6 +9,7 @@ import type {TFeatureFlagKey} from '../FeatureFlags/types';
 import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
 import {ChatLog} from '../ChatCommon/ChatLog';
 import {AgentToolHistory} from '../AgentTools/AgentToolHistory';
+import {ChatDocumentIcon} from '../ChatCommon/ChatDocumentIcon';
 
 interface Props {turns: IModelChatTurn[]; attachments: IModelChatAttachment[]; modelName: string; blocked: boolean; busy: boolean; onRetry: () => void; onEdit: () => void; onPreview: (id: string) => void; hasEarlier?: boolean; historyLoading?: boolean; historyError?: string; onLoadEarlier?: () => void; onComplete?: () => void; group?: boolean; conversationId?: string; privateTasks?: ReactNode; projectId?: string;}
 
@@ -37,7 +38,7 @@ export function ChatMessages({turns, attachments, modelName, blocked, busy, onRe
             <article className="model-chat__message model-chat__message_user" aria-label="Ваше сообщение"><Typography.Text strong>Вы</Typography.Text>
                 {turn.research && <Typography.Text type="secondary" className="model-chat__recipients">Исследование · {[turn.research.project ? 'база знаний проекта' : '', turn.research.external ? 'внешние источники' : ''].filter(Boolean).join(' · ')}</Typography.Text>}
                 {turn.prompt && <div className="model-chat__prompt">{turn.prompt}</div>}
-                {!!turn.attachmentIds.length && <div className="model-chat__message-files">{turn.attachmentIds.map(id => {const file = attachments.find(value => value.id === id); return <Button key={id} size="small" type="link" onClick={() => onPreview(id)}>{file?.name ?? 'Документ'}</Button>;})}</div>}
+                {!!turn.attachmentIds.length && <div className="model-chat__message-files">{turn.attachmentIds.map(id => {const file = attachments.find(value => value.id === id), name = file?.name ?? 'Документ'; return <Button key={id} className="model-chat__document-tile" aria-label={name} onClick={() => onPreview(id)}><ChatDocumentIcon name={name}/><span>{name}</span></Button>;})}</div>}
             </article>
             {turn.responses?.length ? turn.responses.map(response => <ChatAnswer key={response.id} name={response.name} modelName={response.modelName} group answer={response.answer} status={response.status} executionState={response.executionState} error={response.error} phase={response.processingStage} conversationId={conversationId} researchSteps={turn.researchSteps?.filter(step => step.responseId === response.id)}/>)
                 : turn.discussion ? null : group && turn.status === 'pending' ? <div className="model-chat__pending" role="status"><Spin size="small"/>{turn.processingStage === 'researching' ? 'Исследуем источники…' : turn.processingStage === 'compacting' ? 'Сжимаем раннюю переписку…' : 'Запрос принят · ожидаем начало ответов…'}</div>

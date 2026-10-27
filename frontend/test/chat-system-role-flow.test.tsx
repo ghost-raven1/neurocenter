@@ -64,6 +64,7 @@ it('uses a compact task and canonical binding, then requires consent before any 
     expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Сообщение"]')?.value).toBe(launch.instruction);
     expect(container.querySelectorAll('textarea')).toHaveLength(1);
     expect(container.querySelector('.service-chat__heading')).toBeNull();
+    expect(container.querySelector('[role="log"]')).toBeNull();
     expect(container.querySelector<HTMLDetailsElement>('.service-chat__context')?.open).toBe(false);
     expect(container.querySelector<HTMLDetailsElement>('.service-chat__task-settings')?.open).toBe(false);
     expect(api.start).not.toHaveBeenCalled(); await click(button('Проверить контекст'));

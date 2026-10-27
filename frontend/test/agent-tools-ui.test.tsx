@@ -95,6 +95,7 @@ it('team: a late ACK from another owner leaves the current room draft intact', a
 it('history: receipts including unknown outcomes stay readable without any model request or execution flag', async () => {
     vi.mocked(agentToolsApi.steps).mockResolvedValue([{id: 'step-one',turn_id: 'turn-one',recipient_id: 'response-one',agent_id: 'developer',model_id: 'chat-one',sequence: 1,action: 'request_system_role',state: 'unknown',error: null,reference: null,created_at: '',updated_at: ''}]);
     await render(<AgentToolHistory projectId="prj-one" turnId="turn-one" grant={safe}/>);
+    expect(agentToolsApi.steps).not.toHaveBeenCalled(); expect(container.querySelector('.chat-activity > summary')?.textContent).toBe('Контекст и шаги инструментов');
     const outer = container.querySelector('details')!; await act(async () => {outer.open = true;outer.dispatchEvent(new Event('toggle'));}); await settle();
     expect(agentToolsApi.steps).toHaveBeenCalledWith('prj-one','turn-one',expect.any(AbortSignal)); expect(container.textContent).toContain('автоматический повтор закрыт'); expect(modelChatApi.send).not.toHaveBeenCalled();
 });

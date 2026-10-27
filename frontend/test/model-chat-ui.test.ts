@@ -174,7 +174,8 @@ describe('История и файлы', () => {
     });
     it('Показывает вложение сохранённого сообщения и открывает его только явно', () => {
         const preview = vi.fn(), file = {id: 'file-1', name: 'report.txt', mediaType: 'text/plain', bytes: 12, textBytes: 12, createdAt: ''};
-        render(createElement(ChatMessages, {turns: [turn({attachmentIds: [file.id]})], attachments: [file], modelName: 'Модель', busy: false, blocked: false, onRetry: vi.fn(), onEdit: vi.fn(), onPreview: preview}));
+        const html = render(createElement(ChatMessages, {turns: [turn({attachmentIds: [file.id]})], attachments: [file], modelName: 'Модель', busy: false, blocked: false, onRetry: vi.fn(), onEdit: vi.fn(), onPreview: preview}));
+        expect(html).toContain('aria-label="report.txt"'); expect(html).not.toContain('<img');
         expect(preview).not.toHaveBeenCalled(); ui.buttons.get('report.txt')!.onClick!(); expect(preview).toHaveBeenCalledWith(file.id);
     });
     it('Копирует ответ по кнопке и предлагает исправить только неуспешный хвост', async () => {
