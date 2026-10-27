@@ -9,12 +9,13 @@ import { useAvailableProjects } from '../Projects/useAvailableProjects';
 import OpenCodeExtensions from './OpenCodeExtensions';
 import './Start.less';
 import {BridgeSetup} from './BridgeSetup';
-import { startQueryUrl, startStep } from './startQuery';
+import { startQueryUrl, startStep,legacyStartRequested } from './startQuery';
 import {StartProjectStep} from './StartProjectStep';
 import {useBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
 import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
 import {isMainAdminRole} from '../../features/UserBlock/roles';
 import type {RootState} from '../../store';
+import {lazySection} from '../../common/components/LazySection';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -25,7 +26,7 @@ async function copy(text: string): Promise<void> {
 }
 
 /** Короткий первый запуск: установка, подключение и переход к инструментам выбранного проекта. */
-const Start = () => {
+const LegacyStart = () => {
     const history = useHistory();
     const location = useLocation();
     const step = startStep(location.search);
@@ -83,6 +84,14 @@ const Start = () => {
             <OpenCodeExtensions project={project} />
         </div>
     );
+};
+
+const UnifiedProjectSetup=lazySection(()=>import('./UnifiedProjectSetup'),'Настройка окружения проекта');
+
+/** Existing deep links keep their recovery owner when the unified entry point is enabled. */
+const Start=()=>{
+    const location=useLocation();
+    return legacyStartRequested(location.search)?<LegacyStart/>:<UnifiedProjectSetup/>;
 };
 
 export default Start;

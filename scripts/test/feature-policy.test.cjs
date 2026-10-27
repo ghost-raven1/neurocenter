@@ -121,6 +121,16 @@ test('Chat-linked workflow checks new admission in its owner after exact replay 
  for(const [verb,path]of [['GET','/api/projects/p/team-chat'],['GET','/api/projects/p/team-chat/rooms/r/history'],['DELETE','/api/device-jobs/existing']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
 });
 
+test('Unified setup gates only its new bootstrap and retains existing installers and recovery',()=>{
+ for(const ext of ['sh','ps1']){
+  assert.deepEqual(requiredRouteFeatures('GET',`/api/bridge/install_workspace.${ext}`),['unified_project_setup']);
+  for(const name of ['install','install_opencode','connect'])assert.deepEqual(requiredRouteFeatures('GET',`/api/bridge/${name}.${ext}`),[]);
+ }
+ assert.equal(defaultFeatureFlags().unified_project_setup,true);
+ const flags=evaluateFeatureFlags({...defaultFeatureFlags(),unified_project_setup:true,computer_connections:false});
+ assert.equal(flags.flags.unified_project_setup,false);
+});
+
 test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{
  for(const [verb,path]of [['POST','/api/system-role-chats'],['POST','/api/system-role-chats/dialog/messages'],['POST','/api/system-role-chats/dialog/messages/turn/retry'],['POST','/api/system-role-chats/dialog/messages/turn/cancel'],['GET','/api/system-role-chats/dialog']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
  for(const flag of ['system_indexer','system_role_chat'])assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),agents:false}).flags[flag],false);

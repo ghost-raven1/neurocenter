@@ -1,10 +1,11 @@
-import { Controller, Get, Header, Req, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Header, Req, Res, NotFoundException, HttpException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Request, Response } from 'express';
 import {panelOrigin,publicApiOrigin} from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
 import type { IBridgeConfiguration } from './bridge-supply.types';
+import { FeatureFlagError, requireFeaturesEnabled } from '../../../shared/feature-client.cjs';
 
 /**
  * Установщики используют проверенную поставку и доверенный адрес Gateway.
@@ -85,6 +86,18 @@ export class BridgeController {
         await this.script('install_opencode.ps1', req, res);
     }
 
+    /** Единая точка установки использует ту же закреплённую поставку моста. */
+    @Get('install_workspace.sh')
+    public async installWorkspace(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await this.script('install_workspace.sh', req, res, true);
+    }
+
+    /** PowerShell запускает оба существующих установщика отдельными процессами. */
+    @Get('install_workspace.ps1')
+    public async installWorkspaceWindows(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await this.script('install_workspace.ps1', req, res, true);
+    }
+
     /** Раздаёт подготовленные архивы и контрольные суммы только из каталога установки. */
     @Get('opencode/:file')
     public async openCodeArtifact(@Req() req: Request, @Res() res: Response): Promise<void> {
@@ -114,6 +127,18 @@ export class BridgeController {
     /** Разделяет адрес скачивания и идентичность площадки, сохраняя существующее подключение моста. */
     private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
         await bridgeRequest(req, res, async signal => {
+            // Public controllers do not pass through ProxyService's feature admission.
+            if (file === 'install_workspace.sh' || file === 'install_workspace.ps1') {
+                try { await requireFeaturesEnabled(['unified_project_setup'], process.env, globalThis.fetch, signal); }
+                catch (error) {
+                    if (signal.aborted) { return; }
+                    if (error instanceof FeatureFlagError) {
+                        throw new HttpException({statusCode:error.status,code:error.code,message:error.message,
+                            ...(error.feature ? {feature:error.feature,blockedBy:error.blockedBy} : {})}, error.status);
+                    }
+                    throw error;
+                }
+            }
             const selected = bridge ? req.query.version : undefined;
             if (selected !== undefined && (typeof selected !== 'string' || !/^\d+\.\d+\.\d+$/.test(selected))) {
                 throw new NotFoundException('Версия установщика моста не найдена.');

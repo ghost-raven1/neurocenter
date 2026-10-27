@@ -68,7 +68,7 @@ beforeEach(() => {
 
 describe('Выбор папки из начала работы сохраняет серверный проект', () => {
     it('Короткий первый шаг ведёт к Markdown-помощи вместо встроенной подробной инструкции',()=>{
-        fixture.location.search='?step=0';const html=render();
+        fixture.location.search='?legacy=1&step=0';const html=render();
         expect(html).toContain('href="/help/opencode-install"');expect(html).not.toContain('Подробная инструкция по установке');expect(html).not.toContain('Копировать инструкцию');
         expect(fixture.buttons.has('Продолжить')).toBe(true);expect(html).toContain('gateway.example.test/api/bridge/install_opencode.sh');
     });

@@ -50,6 +50,7 @@ function requiredRouteFeatures(method,path,body){
     const route=canonicalAccessRoute(path),verb=String(method).toUpperCase(),input=record(body),read=['GET','HEAD','OPTIONS'].includes(verb);
     if(!route)return [];
     if(/^\/api\/feature-flags(?:\/|$)/.test(route))return [];
+    if(verb==='GET'&&/^\/api\/bridge\/install_workspace\.(sh|ps1)$/.test(route))return ['unified_project_setup'];
     if(read){
         if(/^\/api\/tool-builds\/(npm|repository)$/.test(route))return ['tool_builds'];
         if(route==='/api/model-usage')return ['model_usage'];
