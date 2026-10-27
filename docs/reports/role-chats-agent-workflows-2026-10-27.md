@@ -4,7 +4,7 @@
 
 Продуктовая цель — мощная и удобная площадка командной работы. Проект связывает участников и права, общие решения и задачи, агентов, навыки, плагины, OpenCode и проверяемые результаты. Текущий срез укрепляет эту основу; общая готовность всех командных сценариев им не объявляется. Дальнейшая совместная дискуссия, последовательный контекст и общий механизм инструментов имеют отдельные условия в [очереди командных агентов](../agent-discussions-tooling-backlog-2026-10-23.md).
 
-Ветка `feature/unified-agent-workflows`, исходная ревизия main `0249e2916b681d86655f3a8cf02e1e60f9ef7988`. Изменение OpenSpec: `role-chats-and-agent-methods`. Исходники и локальная проверка отделены от установки, CI и production. Предыдущий срез инструментов/Playwright находится в отдельном [draft PR33](https://github.com/ghost-raven1/neurocenter/pull/33).
+Ветка `feature/unified-agent-workflows`, исходная ревизия main `0249e2916b681d86655f3a8cf02e1e60f9ef7988`. Изменение OpenSpec: `role-chats-and-agent-methods`, локальные задачи14/14. Поставка: [draft PR34](https://github.com/ghost-raven1/neurocenter/pull/34). Исходники и локальная проверка отделены от установки, CI и production. Предыдущий срез инструментов/Playwright находится в отдельном [draft PR33](https://github.com/ghost-raven1/neurocenter/pull/33).
 
 ## Поведение
 
@@ -50,6 +50,12 @@
 ## OpenSpec verification
 
 Независимая сверка `.run/unified-agent-workflows-20261027/independent-spec-verification.md` сопоставляет все10 ADDED requirements и20 scenarios с конкретными guards, сохранением и переходами. Открытых подтверждённых CRITICAL дефектов не найдено. Strict validation прошла.
+
+| Измерение verify-change | Результат |
+| --- | --- |
+| Completeness |14/14 локальных задач,10 требований имеют реализацию,20 сценариев сопоставлены с кодом. |
+| Correctness | Локальные guards, запись/восстановление, браузер и OpenSpec native проверены в перечисленных границах. Полные BMAD/combined native не проверены; это открытый W2. |
+| Coherence | Сохранены владельцы состояния, Ant Design, прежние immutable receipts и раздельные флаги. Snapshot запроса и чтение файлов при dispatch описаны явно. |
 
 Первоначальное обещание снимка локальных документов при серверном admission было уточнено до фактического контракта request snapshot + dispatch-time files. Ограничение отражено в spec/design/UI/help, а не объявлено реализованным CAS. Полные native BMAD и combined cycles, настоящая модель и эксплуатационные проверки ниже остаются открытыми. Архивирование автоматически не выполнялось.
 

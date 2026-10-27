@@ -24,8 +24,9 @@
 
 - [x] 4.1 Собрать общие imports/migrations/flags без конфликтов владения, пройти typecheck затронутых пакетов и contract checks.
 - [x] 4.2 Независимо сверить diff с тремя спецификациями, исправить подтверждённые замечания и повторить затронутые проверки.
-- [ ] 4.3 Выполнить openspec validate --strict --no-interactive и verify-change; обновить отчёт/бэклог только по подтверждённым результатам, сохранить feature commits и draft PR.
+- [x] 4.3 Выполнить openspec validate --strict --no-interactive и verify-change; обновить отчёт/бэклог только по подтверждённым результатам, сохранить feature commits и draft PR.
 
 ## Workflow follow-up
 
 - Архивировать только после фактического завершения всех обязательных работ; не объявлять локальные fixtures приёмкой production.
+- Поставка: draft PR https://github.com/ghost-raven1/neurocenter/pull/34. Локальные задачи14/14 выполнены; native BMAD/combined, установленный мост/модель и эксплуатационная приёмка остаются явно открытыми в отчёте, изменение не архивировано.
