@@ -10,6 +10,7 @@ import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 import {clearRoleDraft} from './roleDraft';
 import {originSystemRoleApi} from '../ChatSystemRoles/api';
 import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin, type ChatRoleAction} from '../ChatSystemRoles/types';
+import {ChatLog} from '../ChatCommon/ChatLog';
 import '../SystemRoles/SystemRoles.less';
 import './SystemRoleChat.less';
 
@@ -54,6 +55,7 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
             ? message.top - top - 8 : message.bottom - bottom + 8;
     }, [value.owner, value.error, value.receipt?.requestId, value.busy]);
     const dialogs = value.detail ? [value.detail.dialog, ...value.dialogs.filter(item => item.id !== value.detail!.dialog.id)] : value.dialogs;
+    const MessageLog = embedded ? 'div' : ChatLog;
     const refresh = (): void => {automaticRead.current = undefined; setReadRetry(item => item + 1); void value.refresh();};
     return <div className={'service-chat' + (embedded ? ' service-chat_embedded' : '')} ref={viewport}>
         {!embedded && <div className="service-chat__heading"><div><Typography.Text strong>{agentId ? `Чат · ${roleName(agentId)}` : 'История системных задач'}</Typography.Text><Typography.Paragraph type="secondary">Личные задачи системным агентам и проверенные результаты.</Typography.Paragraph></div>
@@ -68,10 +70,10 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
             action={<div className="service-chat__recovery"><Button size="small" loading={value.busy} onClick={() => { void value.recover(); }}>Проверить отправку</Button>
                 {value.canReplay && <Button size="small" disabled={value.busy || !replayEnabled.current} onClick={() => { if (replayEnabled.current) void value.replay(); }}>Повторить тот же запрос</Button>}</div>} />}
         </div>}
-        <div className="service-chat__messages" aria-label={embedded ? 'Ваши системные задачи' : 'Сообщения сервисного диалога'}>
+        <MessageLog className="service-chat__messages" aria-label={embedded ? 'Ваши системные задачи' : 'Сообщения сервисного диалога'}>
             {value.loading && !value.detail ? <Spin tip="Читаем историю…" /> : !value.detail?.turns.length ? embedded ? null : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyOnly ? 'Сохранённых задач в этом диалоге нет.' : value.receipt ? 'Отправленная задача сохранена. Проверьте её принятие.' : agentId ? `Опишите задачу для роли «${roleName(agentId)}». Перед отправкой вы увидите точный контекст.` : 'Опишите задачу координатору или выберите системного агента. Перед отправкой вы увидите точный контекст.'} />
                 : value.detail.turns.map(turn => <ServiceTurnContent key={turn.id} turn={turn} busy={value.busy} onAction={value.action} />)}
-        </div>
+        </MessageLog>
         {embedded && !availability.enabled && <Alert type="info" showIcon message={availability.reason} description="История, проверка отправки и отмена принятых задач доступны."/>}
         {agentId && value.detail?.dialog.legacy && <Alert type="info" showIcon message="Прежняя история этой роли" description="Сообщения и действия сохранены. Для новой задачи начните новый диалог этой роли."/>}
         {!historyOnly && (!agentId || !value.detail?.dialog.legacy || !!value.pendingIntent) && (!embedded || availability.enabled || value.pendingIntent) && (!embedded || activeLaunch || value.pendingIntent || value.prepared) && <ServiceComposer key={value.receipt ? 'pending' : draft + ':' + (activeLaunch?.key ?? 'new')} value={value} projectId={projectId} canExecute={canExecute} fixedAgentId={agentId}
