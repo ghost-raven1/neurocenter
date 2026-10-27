@@ -79,10 +79,19 @@ export async function startRoleMcpProcess(command:string,args:string[],cwd:strin
  await authorize();signal.throwIfAborted();const nonce=journal?.nonce??randomUUID(),temporary=journal?undefined:await fs.mkdtemp(path.join(os.tmpdir(),'neurocenter-mcp-owner-'));
  const receipt=journal?.receipt??path.join(temporary!,'closed.json');
  const child=spawn(process.execPath,[runner,'--role-mcp-owner',nonce,receipt],{cwd,env:{PATH:process.env.PATH,LANG:'C.UTF-8'},detached:true,shell:false,stdio:['pipe','pipe','pipe','ipc']});
+ let cleanupFailure:string|undefined;
+ child.on('message',(value:unknown)=>{const message=value as {nonce?:string;cleanupFailure?:string};if(message.nonce===nonce&&message.cleanupFailure&&/^[A-Z_]+$/.test(message.cleanupFailure))cleanupFailure=message.cleanupFailure;});
+ // The wrapper's own exit confirms cleanup; command callers need the real executable's exit separately.
+ const execution=new Promise<{code:number|null;signal:string|null}>(resolve=>{
+  child.on('message',(value:unknown)=>{const item=value as {nonce?:string;executionExit?:{code:number|null;signal:string|null}};
+   if(item.nonce===nonce&&item.executionExit)resolve(item.executionExit);
+  });
+  child.once('exit',()=>resolve({code:null,signal:null}));child.once('error',()=>resolve({code:null,signal:null}));
+ });
  child.stdin!.on('error',()=>{});let owner:RoleMcpOwner|undefined;
  const closed=()=>child.exitCode!==null||child.signalCode!==null;
  const stop=async()=>{
-  if(owner)await closeRoleMcpProcess(owner,nonce,receipt);
+  if(owner)try{await closeRoleMcpProcess(owner,nonce,receipt);}catch(error){throw new Error(cleanupFailure?'MCP cleanup: '+cleanupFailure:'MCP cleanup not confirmed',{cause:error});}
   else if(child.pid&&!closed()){
    if(child.connected)child.disconnect();await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Обёртка MCP не подтвердила остановку.')),5000);child.once('exit',()=>{clearTimeout(timer);resolve();});if(closed()){clearTimeout(timer);resolve();}});
   }
@@ -99,6 +108,6 @@ export async function startRoleMcpProcess(command:string,args:string[],cwd:strin
   });
   owner=await roleMcpProcessOwner(child.pid!,runner);if(journal)await beforeAbort(journal.retain(owner),signal);await authorize();signal.throwIfAborted();
   await new Promise<void>((resolve,reject)=>child.send!({nonce,command,args,cwd,env},error=>error?reject(error):resolve()));
-  return {child:child as ChildProcess&{stdin:NonNullable<ChildProcess['stdin']>;stdout:NonNullable<ChildProcess['stdout']>;stderr:NonNullable<ChildProcess['stderr']>},close:stop};
+  return {child:child as ChildProcess&{stdin:NonNullable<ChildProcess['stdin']>;stdout:NonNullable<ChildProcess['stdout']>;stderr:NonNullable<ChildProcess['stderr']>},execution,close:stop};
  }catch(error){try{await stop();}catch(cleanup){throw new RoleMcpCleanupError(cleanup);}throw error;}
 }

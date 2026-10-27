@@ -1,4 +1,5 @@
 import api from '../../core/api/base';
+import type {AgentMethod} from '../../../../services/shared/agent-method-workflow.cjs';
 import type { IInstallPlan, IInstallPlanInput } from './installPlanTypes';
 import type { IBridgeBinding, IRuntimeProbe, TWorkspaceBindingMode } from './operationTypes';
 import type { IMcpConfigurationRevision, IMcpConfigurationStatus } from './mcpConfigurationTypes';
@@ -42,6 +43,8 @@ export interface IBridgeJob {
     deviceId: string;
     projectId: string | null;
     kind: string;
+    method?: AgentMethod;
+    workflowId?: string;
     state: string;
     percent?: number;
     message: string;
@@ -113,7 +116,8 @@ interface IBridgeJobInputBase {
     planRevision?: number;
 }
 export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind:'runtime-cache-policy';projectId?:never;runtimeCachePolicy:RuntimeCachePolicyPayload}
+    {kind:'run-agent-method-workflow';projectId:string;expectedBindingId:string;expectedInstanceId:string;workflow:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>}}
+    | {kind:'runtime-cache-policy';projectId?:never;runtimeCachePolicy:RuntimeCachePolicyPayload}
     | {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
     | {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}
     | {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;

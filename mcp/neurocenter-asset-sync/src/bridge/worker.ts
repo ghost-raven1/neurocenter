@@ -75,6 +75,9 @@ import {RUNTIME_CACHE_POLICY_JOB} from '../features/runtime-artifacts/policy-sto
 import {readBridgeCleanupPolicy} from '../features/runtime-artifacts/policy-store.js';
 import {cleanupInstalledBridge} from '../features/runtime-artifacts/update-cleanup.js';
 import {startRoleMcpPoller} from '../features/system-role-mcp/poller.js';
+import {AGENT_METHOD_WORKFLOW_JOB} from '../features/agent-method-workflow/contract.js';
+import {runAgentMethodWorkflow,stopMethodWorkflows} from '../features/agent-method-workflow/executor.js';
+import {recoverMethodCompletions} from '../features/agent-method-workflow/receipts.js';
 
 interface Job {
     id: string;
@@ -169,6 +172,7 @@ export async function runWorker(): Promise<void> {
             await recoverFileJobs();
             await recoverRuntimePreparations();
             await recoverCodexCompletions(saveCompletion);
+            await recoverMethodCompletions(saveCompletion);
             await recoverRuntimeCachePolicyCompletions(saveCompletion);
             await recoverRagRestores();
             await startHostedRagConnections();
@@ -210,6 +214,10 @@ export async function runWorker(): Promise<void> {
                     }).catch(() => undefined);
                 }, 30000);
                 try {
+                    if(current.kind===AGENT_METHOD_WORKFLOW_JOB){
+                        const completed=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runAgentMethodWorkflow(current,deviceId,authorize,update));
+                        clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();await heartbeat();continue;
+                    }
                     if(current.kind===RUNTIME_CACHE_POLICY_JOB){
                         const completed=await runRuntimeCachePolicyJob({id:current.id,lease:current.lease,payload:current.payload},deviceId,authorize);
                         clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();
@@ -381,6 +389,7 @@ export async function runWorker(): Promise<void> {
                         }
                     }
                     if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
+                    if(current.kind===AGENT_METHOD_WORKFLOW_JOB)throw new Error('Результат разработки сохранён локально или требует восстановления; повторный запуск автоматически не выполняется.');
                     if(current.kind===MEMORY_SYNC_JOB)throw new Error('План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
                     // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
@@ -440,7 +449,7 @@ export async function runWorker(): Promise<void> {
         stopped = true;
         clearInterval(timer);
         socket.disconnect();
-        void Promise.all([roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
+        void Promise.all([stopMethodWorkflows(),roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })
