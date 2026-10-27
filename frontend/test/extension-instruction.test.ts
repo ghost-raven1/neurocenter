@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {SafeMarkdown} from '../src/features/Discussions/SafeMarkdown';
+import {legacyStartRequested} from '../src/modules/Start/startQuery';
 
 const render = (content: string): string => renderToStaticMarkup(createElement(SafeMarkdown, { body: content }));
 const lspArticle = new URL('../../services/catalog-service/content/help/opencode-lsp.md', import.meta.url);
@@ -11,7 +12,10 @@ const lspArticle = new URL('../../services/catalog-service/content/help/opencode
 describe('Инструкции OpenCode в Markdown-помощи', () => {
     it('Статья установки ведёт к точной команде площадки и не содержит шаблонных команд',()=>{
         const content=readFileSync(new URL('../../services/catalog-service/content/help/opencode-install.md',import.meta.url),'utf8');
-        expect(content).toContain('](/start?step=0)');expect(content).toContain('](/help/opencode-lsp)');expect(content).toContain('bash install_opencode.sh --binary');expect(content).not.toContain('__INSTALL_');
+        expect(content).toContain('](/start)');expect(legacyStartRequested('')).toBe(false);
+        expect(content).toContain('](/start?legacy=1&step=0)');expect(legacyStartRequested('?legacy=1&step=0')).toBe(true);
+        expect(content).toContain('](/start?step=1)');expect(legacyStartRequested('?step=1')).toBe(true);
+        expect(content).toContain('](/help/opencode-lsp)');expect(content).toContain('bash install_opencode.sh --binary');expect(content).not.toContain('__INSTALL_');
     });
     it('Рисует Markdown-таблицу с заголовками, ячейками и форматированием', () => {
         const html = render('| Команда | Назначение |\n| --- | --- |\n| `rag search` | **Поиск** по коду |');

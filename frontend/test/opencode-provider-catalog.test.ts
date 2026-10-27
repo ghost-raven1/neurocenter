@@ -43,6 +43,8 @@ vi.mock('../src/features/AgentCatalog/AgentDetails', () => ({AgentDetails: () =>
 vi.mock('../src/features/AgentCatalog/AgentEditModal', () => ({AgentEditModal: () => null}));
 vi.mock('../src/features/AgentCatalog/ProjectAgentEditor', () => ({ProjectAgentEditor: () => null}));
 vi.mock('../src/features/AgentCatalog/AgentTrialModal', () => ({AgentTrialModal: () => null}));
+// This suite covers provider handoff and explicit apply; method execution has its own component/hook tests.
+vi.mock('../src/features/AgentMethods/AgentMethodWorkflow', () => ({AgentMethodWorkflow: () => null}));
 vi.mock('antd', () => {
     const content = ({children}: {children?: ReactNode}) => children, input = () => null;
     return {Space: content, Tooltip: content, Row: content, Col: content, Empty: content, Checkbox: content, Spin: input, Modal: {confirm: vi.fn()},
