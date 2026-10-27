@@ -6,24 +6,25 @@ import remarkGfm from 'remark-gfm';
 import {modelChatUrl} from '../ModelChat/model';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {projectChatAuthor, projectChatLocalAnchor} from './model';
-import type {ProjectChatMember, ProjectChatMessage} from './types';
+import {DEFAULT_PROJECT_CHAT_ROOM,type ProjectChatMember,type ProjectChatMessage} from './types';
 import type {ProjectChatActivity} from './activity.types';
 import {ProjectChatSeen} from './ProjectChatActivity';
 import {observeVisibleMessages} from './observeVisibleMessages';
 import {ChatLog} from '../ChatCommon/ChatLog';
 import {AgentToolHistory} from '../AgentTools/AgentToolHistory';
+import {ProjectChatMethodWorkflows} from './ProjectChatMethodWorkflows';
 
 interface Props {
     messages: ProjectChatMessage[]; canReply: boolean; action?: string; retryPending?: string[]; historyLoading: boolean; historyError: string; hasMore: boolean;
     onLoadEarlier: () => void; onReply: (message: ProjectChatMessage) => void; onRetry: (id: string) => void; onCancel: (id: string) => void;
     members?: ProjectChatMember[]; activity?: ProjectChatActivity; onVisible?: (ids: string[], currentVisible?: () => string[]) => void;
-    privateTasks?: ReactNode; projectId?: string;
+    privateTasks?: ReactNode; projectId?: string;onRunWorkflow?:(message:ProjectChatMessage)=>void;onRefreshWorkflows?:(messageId:string)=>Promise<unknown>;
 }
 const stateText: Record<ProjectChatMessage['status'], string> = {queued: 'В очереди', running: 'Готовится ответ', done: '', failed: 'Ответ не получен', cancelled: 'Остановлено'};
 
 /** Every saved human question and agent answer keeps its author and an explicit reply anchor. */
-export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible, privateTasks, projectId}: Props): JSX.Element {
-    const inference = useFeatureAvailability('project_chat', 'group_chat');
+export function ProjectChatMessages({messages, canReply, action, retryPending = [], historyLoading, historyError, hasMore, onLoadEarlier, onReply, onRetry, onCancel, members = [], activity, onVisible, privateTasks, projectId,onRunWorkflow,onRefreshWorkflows}: Props): JSX.Element {
+    const inference = useFeatureAvailability('project_chat', 'group_chat'),workflow=useFeatureAvailability('project_agent_chat_workflows');
     const viewport = useRef<HTMLDivElement>(null), nearBottom = useRef(true), previous = useRef<{first: string; last: string; count: number; height: number}>();
     const [newMessages, setNewMessages] = useState(false);
     useLayoutEffect(() => {
@@ -63,7 +64,9 @@ export function ProjectChatMessages({messages, canReply, action, retryPending = 
                 {['queued', 'running'].includes(message.status) && <div className="project-chat__pending" role="status"><Spin size="small"/>{stateText[message.status]}{message.kind === 'user' ? ' · остальные участники могут продолжать писать' : ''}</div>}
                 {['failed', 'cancelled'].includes(message.status) && <Alert showIcon type={message.status === 'failed' ? 'error' : 'info'} message={message.error || stateText[message.status]}/>}
                 {projectId && message.kind === 'user' && message.agentTools && <AgentToolHistory projectId={projectId} turnId={message.id} grant={message.agentTools}/>}
+                {projectId&&message.kind==='user'&&!!message.methodWorkflows?.length&&<ProjectChatMethodWorkflows key={JSON.stringify([projectId,message.roomId??DEFAULT_PROJECT_CHAT_ROOM,message.id])} projectId={projectId} roomId={message.roomId??DEFAULT_PROJECT_CHAT_ROOM} messageId={message.id} items={message.methodWorkflows} history={message.methodWorkflowsHistory} onRefresh={()=>onRefreshWorkflows?.(message.id)??Promise.resolve()}/>}
                 <Space wrap size={4} className="project-chat__message-actions"><Button type="text" size="small" disabled={!canReply || !canQuote} aria-label={`Ответить · ${projectChatAuthor(message)}`} onClick={() => onReply(message)}>Ответить</Button>
+                    {message.kind==='user'&&onRunWorkflow&&<Button type="text" size="small" title={workflow.enabled?'Открыть методику, выбор агента и историю задачи':`${workflow.reason}. История и проверка отправки доступны.`} aria-label={`Выполнить задачу · ${projectChatAuthor(message)}`} onClick={()=>onRunWorkflow(message)}>Выполнить задачу</Button>}
                     {(message.canRetry || retryPending.includes(message.id)) && <Button size="small" disabled={!!action || !inference.enabled && !retryPending.includes(message.id)} loading={action === message.id} onClick={() => onRetry(message.id)}>{retryPending.includes(message.id) ? 'Проверить повтор отправки' : 'Повторить неуспешные ответы'}</Button>}
                     {message.canCancel && <Button size="small" disabled={!!action} loading={action === message.id} onClick={() => onCancel(message.id)}>Остановить ответы</Button>}
                 </Space>

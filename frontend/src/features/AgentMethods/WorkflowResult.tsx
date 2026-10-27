@@ -4,7 +4,7 @@ import {methodLabels,workflowAgentIdentity,workflowNextAction,workflowResult} fr
 import {workflowAgentLabel,type WorkflowAgentCatalog} from './agentSelection';
 
 /** Show actual execution and check evidence separately from the queue's delivery state. */
-export function WorkflowResult({job,onSetupRuntime,agentCatalog}:{job:IBridgeJob;onSetupRuntime?:()=>void;agentCatalog?:WorkflowAgentCatalog|null}):JSX.Element{
+export function WorkflowResult({job,onSetupRuntime,agentCatalog}:{job:Pick<IBridgeJob,'agent'|'state'>&{result?:unknown;message?:string};onSetupRuntime?:()=>void;agentCatalog?:WorkflowAgentCatalog|null}):JSX.Element{
     const agent=workflowAgentIdentity(job.agent),result=workflowResult(job.result,agent);
     const identity=<Typography.Text strong>{agent?`Исполнитель: ${workflowAgentLabel(agent,agentCatalog)}`:job.agent?'Идентичность выбранного агента не подтверждена':'Прежний запуск без выбранного агента'}</Typography.Text>;
     if(!result)return <Space direction="vertical" className="agent-methods__result">{identity}<Alert type={job.state==='failed'||job.state==='succeeded'?'warning':'info'} showIcon message={job.state==='succeeded'?'Результат исполнения не подтверждён':job.message||'Ожидаем результат локального исполнителя.'}/></Space>;

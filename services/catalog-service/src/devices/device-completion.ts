@@ -8,6 +8,7 @@ import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
 import {AGENT_METHOD_WORKFLOW_JOB} from '../../../shared/agent-method-workflow.cjs';
 import {assertAgentMethodResult,assertAgentMethodCompletionAccess} from '../agent-method-workflows/jobs';
+import {publishMethodChatResult} from '../agent-method-workflows/chat-origin';
 import {assertSnapshotCompletion} from './project-snapshot-completion';
 import {SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import { PROJECT_LOCAL_KINDS, LOCAL_PREPARATIONS, LOCAL_APPLIES, localPurpose } from './project-local-actions';
@@ -71,6 +72,10 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
         const quirks=await completeLearningQuirks(client,job,input);
         if(quirks){await client.query('COMMIT');if(!quirks.repeated)await notifyDeviceOperations();return quirks;}
+        // A stopped runtime still needs a durable ACK; a late success cannot replace cancellation.
+        if(job.kind===AGENT_METHOD_WORKFLOW_JOB&&job.state==='cancelled'){
+            await client.query('COMMIT');return {ok:true,repeated:true,cancelled:true};
+        }
         // Потерянный ACK уже принятого legacy-результата не превращается в повторную запись индекса.
         if (RAG_JOB_KINDS.includes(job.kind) && job.state===input.state && isDeepStrictEqual(job.result ?? {},input.result)) {
             await client.query('COMMIT'); return {ok:true,repeated:true};
@@ -236,6 +241,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             'UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5,updated_at=now() WHERE id=$1',
             [id, input.state, percent, message, input.result],
         );
+        await publishMethodChatResult(client,job,input.result);
         if(job.kind===HOSTED_RAG_KIND&&input.state==='succeeded')await completeHostedRagGrant(client,job.id);
         await recordDeviceOperation(client, job, input.state.toUpperCase(), percent, message);
         await client.query('COMMIT');

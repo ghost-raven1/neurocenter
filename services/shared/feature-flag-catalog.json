@@ -516,5 +516,21 @@
     "group": "agents",
     "dependsOn": ["agent_method_workflows"],
     "defaultEnabled": false
+  },
+  {
+    "key": "project_agent_chat_workflows",
+    "name": "Задачи агентов из проектного чата",
+    "description": "Явный запуск задачи опубликованного сообщения через выбранного агента и локальный мост. Квитанции в исходном диалоге, история и отмена доступны после выключения.",
+    "group": "agents",
+    "dependsOn": ["project_agent_workflows", "project_chat"],
+    "defaultEnabled": false
+  },
+  {
+    "key": "unified_project_setup",
+    "name": "Единая установка окружения проекта",
+    "description": "Одна точка входа на странице «Начало работы»: OpenCode, мост, папка, агенты и назначенные инструменты. История и прежние способы восстановления сохраняются.",
+    "group": "platform",
+    "dependsOn": ["computer_connections"],
+    "defaultEnabled": true
   }
 ]

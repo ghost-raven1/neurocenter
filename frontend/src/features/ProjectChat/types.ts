@@ -1,16 +1,26 @@
 import type {IModelChatParticipant} from '../ModelChat/types';
 import type {AgentToolGrant} from '../AgentTools/types';
+import type {AgentMethod,AgentMethodWorkflowAgentIdentity,AgentMethodWorkflowResult} from '../../../../services/shared/agent-method-workflow.cjs';
 
 export const DEFAULT_PROJECT_CHAT_ROOM = '00000000-0000-0000-0000-000000000000';
 export type ProjectChatVisibility = 'PUBLIC' | 'PRIVATE';
 export interface ProjectChatMember {email: string; displayName: string; role: string;}
 export interface ProjectChatAgent {id: string; name: string; slug: string; modelId: string; modelPin: string;}
+/** Only server-published method facts are shared; private device payloads never enter the chat. */
+export interface ProjectChatMethodWorkflow {
+    jobId:string;workflowId:string;method:AgentMethod;agent:AgentMethodWorkflowAgentIdentity;
+    state:'queued'|'running'|'reconciling'|'succeeded'|'failed'|'cancelled';percent:number|null;
+    createdAt:string;startedAt:string|null;updatedAt:string;canCancel:boolean;publicationState:'pending'|'published'|'withheld';
+    result?:AgentMethodWorkflowResult;
+}
+export interface ProjectChatMethodWorkflowHistory {hasMore:boolean;nextCursor:string|null;}
+export interface ProjectChatMethodWorkflowPage extends ProjectChatMethodWorkflowHistory {items:ProjectChatMethodWorkflow[];}
 export interface ProjectChatMessage {
     id: string; roomId?: string; position: string; kind: 'user' | 'agent' | 'summary';
     author: {email: string; displayName: string} | null; agent: ProjectChatAgent | null;
     content: string; replyToId: string | null; sourceMessageId: string | null;
     status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'; error?: string | null;
-    createdAt: string; canRetry?: boolean; canCancel?: boolean; agentTools?: AgentToolGrant;
+    createdAt: string; canRetry?: boolean; canCancel?: boolean; agentTools?: AgentToolGrant;methodWorkflows?:ProjectChatMethodWorkflow[];methodWorkflowsHistory?:ProjectChatMethodWorkflowHistory;
 }
 export interface ProjectChatRoom {projectId: string; id?: string; title?: string; visibility?: ProjectChatVisibility; creatorEmail?: string | null; memberEmails?: string[]; canManage?: boolean; revision: number; agentIds: string[]; modelId: string | null; modelPin: string | null;}
 export interface ProjectChatHistory {hasMore: boolean; nextCursor: string | null;}

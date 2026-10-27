@@ -26,7 +26,8 @@ export interface ProjectChatMessage {
     agent: { id: string; name: string; slug: string; modelId: string; modelPin: string } | null;
     replyToId: string | null; sourceMessageId: string | null; status: ProjectChatStatus;
     error?: string; createdAt: string; canRetry: boolean; canCancel: boolean;
-    learning?: ChatLearningReceipt;agentTools?:AgentToolGrant;
+    learning?: ChatLearningReceipt;agentTools?:AgentToolGrant;methodWorkflows?:import('../agent-method-workflows/chat-workflows.types').ProjectChatMethodWorkflow[];
+    methodWorkflowsHistory?:{hasMore:boolean;nextCursor:string|null};
 }
 export interface ProjectChatMessageRow {
     id: string; project_id: string; room_id?: string; position: string; kind: ProjectChatKind; content: string;

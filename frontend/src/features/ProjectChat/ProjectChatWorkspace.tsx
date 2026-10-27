@@ -1,7 +1,10 @@
 import {EditOutlined, MenuOutlined, ReloadOutlined, SettingOutlined, TeamOutlined} from '@ant-design/icons';
 import {Alert, Button, Space, Spin, Tag, Tooltip, Typography} from 'antd';
 import {useEffect, useRef, useState, type RefObject} from 'react';
+import {useSelector} from 'react-redux';
+import type {RootState} from '../../store';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
+import {projectRoleLevel} from '../UserBlock/roles';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {ProjectChatComposer} from './ProjectChatComposer';
 import {ProjectChatMessages} from './ProjectChatMessages';
@@ -17,6 +20,7 @@ import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessage, type ProjectChatRoom
 import {chatRoleOriginKey, type ChatRoleOrigin} from '../ChatSystemRoles/types';
 import {openModelChat} from '../ModelChat/chatNavigation';
 import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
+import {ProjectChatWorkflowDialog} from './ProjectChatWorkflowDialog';
 import './ProjectChat.less';
 
 interface Props {projectId: string; projectName?: string;}
@@ -27,9 +31,11 @@ interface RoomProps extends Props {
 
 function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, onOpenList, onManage, onAccessLost}: RoomProps): JSX.Element {
     const {scope} = useAuthRequestOwner(), chat = useProjectChat(projectId, roomId), flags = useFeatureAvailability('project_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]));
-    const [reply, setReply] = useState<ProjectChatMessage>(), [panel, setPanel] = useState<'people' | 'agents'>(), [frozen, setFrozen] = useState(false);
+    const user=useSelector((state:RootState)=>state.userBlock.user),canManage=projectRoleLevel(user,projectId)>=3;
+    const [reply, setReply] = useState<ProjectChatMessage>(), [panel, setPanel] = useState<'people' | 'agents'>(), [frozen, setFrozen] = useState(false),[workflowId,setWorkflowId]=useState<string>();
     const origin: ChatRoleOrigin = {kind: 'project-chat', originId: roomId, projectId}, originKey = chatRoleOriginKey(origin);
     const detail = chat.detail;
+    const workflowSource=detail?.messages.find(message=>message.id===workflowId&&message.kind==='user');
     const activity = useProjectChatActivity(projectId, roomId, detail, chat.clearAccess);
     useEffect(() => {if (chat.accessDenied && roomId !== DEFAULT_PROJECT_CHAT_ROOM) onAccessLost(roomId);}, [chat.accessDenied, roomId, onAccessLost]);
     const openPanel = (name: 'people' | 'agents', open: boolean): void => setPanel(current => open ? name : current === name ? undefined : current);
@@ -54,10 +60,12 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
         {!detail ? chat.loading ? <div className="project-chat__loading" role="status"><Spin tip="Открываем чат команды…"/></div> : null : <>
             <ProjectChatMessages projectId={projectId} messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
                 privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={false} historyOnly/>}
+                onRunWorkflow={message=>setWorkflowId(message.id)} onRefreshWorkflows={chat.refreshWorkflows}
                 onLoadEarlier={() => {void chat.loadEarlier();}} onReply={setReply} onRetry={id => {void chat.retry(id);}} onCancel={id => {void chat.cancel(id);}}/>
             <ProjectChatTyping activity={activity.snapshot} members={detail.members} connected={activity.connected} enabled={activity.enabled}/>
             <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send} onSystemRole={launch => {if (launch) openModelChat({projectId, agentId: launch.agentId, instruction: launch.instruction});}}
 />
+            {workflowSource&&<ProjectChatWorkflowDialog key={JSON.stringify([scope,projectId,roomId,workflowSource.id])} projectId={projectId} roomId={roomId} message={workflowSource} canManage={canManage} onClose={()=>setWorkflowId(undefined)} onRefresh={()=>chat.refreshWorkflows(workflowSource.id)}/>}
         </>}
     </section>;
 }

@@ -6,6 +6,7 @@ import {PROJECT_LOCAL_READS} from './project-local-actions';
 import {recordDeviceOperation} from './device-operations';
 import {RUNTIME_CACHE_POLICY_JOB} from '../../../shared/runtime-cache-policy.cjs';
 import {runtimeCacheWorkRole} from './runtime-cache-jobs';
+import {publishMethodChatResult} from '../agent-method-workflows/chat-origin';
 
 export const REVOKED_QUEUE_MESSAGE='Доступ к проекту или роль отозваны. Ожидающее задание отменено до выдачи мосту.';
 
@@ -44,6 +45,6 @@ export async function reclaimUnauthorizedQueuedJobs(client:PoolClient,device:Dev
     const {rows:cancelled}=await client.query<QueuedJob>(`UPDATE bridge_jobs SET state='cancelled',message=$4,result=NULL,updated_at=now()
         WHERE device_id=$1 AND email=$2 AND id=ANY($3::text[]) AND state='queued' RETURNING id,email,role,project_id,kind`,
     [device.id,device.email,invalid,REVOKED_QUEUE_MESSAGE]);
-    for(const job of cancelled)await recordDeviceOperation(client,job,'CANCELLED',0,REVOKED_QUEUE_MESSAGE);
+    for(const job of cancelled){await publishMethodChatResult(client,job);await recordDeviceOperation(client,job,'CANCELLED',0,REVOKED_QUEUE_MESSAGE);}
     return cancelled.length>0;
 }

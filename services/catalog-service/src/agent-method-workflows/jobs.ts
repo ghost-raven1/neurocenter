@@ -24,7 +24,7 @@ export async function agentMethodJobPayload(device:Device,input:JobInput,db?:Met
     const allowed=['deviceId','projectId','kind','requestKey','expectedBindingId','expectedInstanceId','workflow'];
     if(Object.keys(input).some(key=>!allowed.includes(key))||!input.projectId)throw new BadRequestException('Передайте проект, выбранную папку и задачу методики.');
     const workflow=input.workflow;
-    if(!workflow||Object.keys(workflow).some(key=>!['method','instruction','checks','agentId','expectedAgentsRevision'].includes(key))||!Object.prototype.hasOwnProperty.call(AGENT_METHOD_VERSIONS,workflow.method))throw new BadRequestException('Выберите методику и команды проверки.');
+    if(!workflow||Object.keys(workflow).some(key=>!['method','instruction','checks','agentId','expectedAgentsRevision','origin'].includes(key))||!Object.prototype.hasOwnProperty.call(AGENT_METHOD_VERSIONS,workflow.method))throw new BadRequestException('Выберите методику и команды проверки.');
     const selected=Object.prototype.hasOwnProperty.call(workflow,'agentId')||Object.prototype.hasOwnProperty.call(workflow,'expectedAgentsRevision');
     const selectedInput=workflow as typeof workflow&{agentId?:unknown;expectedAgentsRevision?:unknown};
     const context=target(device,input.projectId,input.expectedBindingId,input.expectedInstanceId);

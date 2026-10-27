@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {act,createElement,type ReactNode} from 'react';
+import {createHash,webcrypto} from 'node:crypto';
 import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {AgentMethodWorkflow} from '../src/features/AgentMethods/AgentMethodWorkflow';
@@ -44,7 +45,7 @@ const button=(label:string):HTMLButtonElement=>{const value=[...container.queryS
 const select=():HTMLSelectElement=>container.querySelector('select[aria-label="Агент для задачи методики"]')!;
 const choose=async(value:string)=>{await act(async()=>{select().value=value;select().dispatchEvent(new Event('change',{bubbles:true}));});};
 beforeEach(()=>{
-    vi.clearAllMocks();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);h.flags.agent_method_workflows=true;h.flags.project_agent_workflows=true;localStorage.clear();
+    vi.clearAllMocks();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.stubGlobal('crypto',webcrypto);h.flags.agent_method_workflows=true;h.flags.project_agent_workflows=true;h.flags.project_agent_chat_workflows=true;localStorage.clear();
     container=document.createElement('div');document.body.appendChild(container);root=createRoot(container);
     const connection=bridge();connection.device!.report.capabilities=['agent-method-workflow-v1','agent-method-selected-agent-v1'];connection.reload=vi.fn(async()=>undefined);
     props={projectId:'project-one',canManage:true,bridge:connection,agentCatalog:catalog({assignments:[eligible()]}),agentsLoading:false,agentsError:'',onReloadAgents:vi.fn(async()=>null)};
@@ -128,4 +129,30 @@ it('explains SELECTED_AGENT_NOT_READY without losing the task or claiming that c
         checks:[{command:'npm',args:['test'],exitCode:null,signal:null,state:'not_run'}],failure:{code:'SELECTED_AGENT_NOT_READY',action:'setup-agent'}}})];
     await render();expect(container.textContent).toContain('Примените текущие настройки агентов');expect(container.textContent).toContain('явную модель');expect(container.textContent).toContain('Не запускалась');
     expect(container.textContent).not.toContain('Задание выполнено');expect(container.querySelector('textarea')?.value).toBe('Сохранённая задача');
+});
+
+const origin={roomId:'00000000-0000-0000-0000-000000000000',messageId:'33333333-3333-4333-8333-333333333333'};
+it('opens a source task without dispatch, keeps its own draft and never offers an agentless fallback',async()=>{
+    seed(identity.agentId);props.origin=origin;props.initialInstruction='Исходная задача сообщения';await render();
+    expect(container.querySelector('textarea')?.value).toBe('Исходная задача сообщения');expect(select().value).toBe('');expect(h.create).not.toHaveBeenCalled();
+    await choose(identity.agentId);expect(button('Выполнить задачу').disabled).toBe(false);
+    h.flags.project_agent_workflows=false;await render();await choose('');expect(button('Выполнить задачу').disabled).toBe(true);
+    expect(container.querySelector('textarea')?.value).toBe('Исходная задача сообщения');expect(JSON.parse(localStorage.getItem(storageKey)!).agentId).toBe(identity.agentId);
+});
+
+it('refreshes the source receipt only after its exact server fingerprint and hides unrelated personal history',async()=>{
+    props.origin=origin;props.initialInstruction='Запуск из сообщения';props.onAccepted=vi.fn(async()=>undefined);props.bridge.jobs=[job({id:'unrelated-private-job'})];await render();
+    expect(container.querySelector('[aria-label="История задач методик"]')).toBeNull();expect(container.textContent).not.toContain('Задание выполнено');
+    await choose(identity.agentId);h.create.mockResolvedValueOnce({id:'accepted'});
+    h.request.mockImplementationOnce(async requestKey=>{const body=h.create.mock.calls[0][0];return {requestKey,requestFingerprint:createHash('sha256').update(JSON.stringify({role:'qa-ui',request:Object.entries(body).sort(([a],[b])=>a.localeCompare(b))})).digest('hex'),
+        job:job({id:'accepted',workflowId:requestKey,deviceId:body.deviceId,bindingId:body.expectedBindingId,expectedInstanceId:body.expectedInstanceId})};});
+    await act(async()=>button('Выполнить задачу').click());expect(h.create.mock.calls[0][0].workflow.origin).toEqual(origin);expect(props.onAccepted).toHaveBeenCalledOnce();
+});
+
+it('keeps source acceptance lookup available when the chat flag is OFF and the current role is read-only',async()=>{
+    props.origin=origin;props.initialInstruction='Сохранённая задача';props.canManage=false;h.flags.project_agent_chat_workflows=false;
+    const original={...intent(),workflow:{...intent().workflow,origin}},pendingFingerprint=createHash('sha256').update(JSON.stringify({role:'qa-ui',request:Object.entries(original).sort(([a],[b])=>a.localeCompare(b))})).digest('hex');
+    localStorage.setItem(workflowStorageKey('qa-ui','project-one',origin),JSON.stringify({method:'openspec',instruction:'Сохранённая задача',checks:['test'],agentId:identity.agentId,pending:original,pendingRole:'qa-ui',pendingFingerprint}));
+    h.request.mockRejectedValueOnce({response:{status:404}});await render();await act(async()=>button('Проверить отправку').click());
+    expect(h.request).toHaveBeenCalledExactlyOnceWith(original.requestKey);expect(button('Повторить тот же запрос').disabled).toBe(true);expect(h.create).not.toHaveBeenCalled();
 });

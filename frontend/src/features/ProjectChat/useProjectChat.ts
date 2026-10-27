@@ -94,6 +94,18 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
         }}
         finally {if (historyRequest.current === controller) {historyRequest.current = undefined; if (owns() && active.current) setHistoryLoading(false);}}
     };
+    /** A source outside the tail page still receives its authoritative method receipt after admission. */
+    const refreshWorkflows=async(messageId:string):Promise<void>=>{
+        const owns=capture();if(!owns()||!active.current||!latest.current?.messages.some(message=>message.id===messageId&&message.kind==='user'))return;
+        const controller=new AbortController();mutations.current.add(controller);sequence.current++;reading.current?.abort();
+        try{
+            const page=await projectChatApi.workflows(projectId,messageId,undefined,controller.signal,roomId);
+            if(!owns()||!active.current||controller.signal.aborted||!latest.current)return;
+            const hasMore=page.items.length>1||page.hasMore,next={...latest.current,messages:latest.current.messages.map(message=>message.id===messageId?{...message,methodWorkflows:page.items.slice(0,1),methodWorkflowsHistory:{hasMore,nextCursor:hasMore?page.items[0]?.jobId??null:null}}:message)};
+            latest.current=next;setDetail(next);setError('');
+        }catch(cause){if(owns()&&active.current&&!controller.signal.aborted){if(denied(cause))clearDenied();setError(errorMessage(cause,'Связь задачи не обновилась. Повторите чтение результата у исходного сообщения.'));}}
+        finally{mutations.current.delete(controller);}
+    };
     const send = async (intent: ProjectChatIntent): Promise<ProjectChatReceipt> => {
         const controller = new AbortController(), owns = capture(); mutations.current.add(controller);
         try {
@@ -133,5 +145,5 @@ export function useProjectChat(projectId: string, roomId = DEFAULT_PROJECT_CHAT_
         return perform('participants', signal => projectChatApi.participants(projectId, expectedRevision ?? value.room.revision, agentIds, modelId, modelPin, signal, roomId));
     };
     const clearAccess = (): void => {clearDenied(); setError('Доступ к диалогу изменился. Обновите список диалогов или обратитесь к администратору проекта.');};
-    return {detail: detail?.room.projectId === projectId && (detail.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId ? detail : undefined, loading, error, accessDenied, clearAccess, refresh, historyLoading, historyError, loadEarlier, send, action, retryPending, retry, cancel, configure};
+    return {detail: detail?.room.projectId === projectId && (detail.room.id ?? DEFAULT_PROJECT_CHAT_ROOM) === roomId ? detail : undefined, loading, error, accessDenied, clearAccess, refresh, refreshWorkflows,historyLoading, historyError, loadEarlier, send, action, retryPending, retry, cancel, configure};
 }

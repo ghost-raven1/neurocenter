@@ -17,8 +17,8 @@ import {bridgeDeviceTarget} from '../../features/McpBridge/bridgeSource';
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,canManageSource=false}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean})=>{
-    const bridge=useBridge();const history=useHistory();
+export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,canManageSource=false,bridge:providedBridge,onChooseFolder}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean;bridge?:ReturnType<typeof useBridge>;onChooseFolder?:()=>void})=>{
+    const ownBridge=useBridge(!providedBridge),bridge=providedBridge??ownBridge;const history=useHistory();
     const connectionRequested=new URLSearchParams(history.location.search).get('addComputer')==='1';
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
     const [action,setAction]=useState<ConnectionAction>();
@@ -77,7 +77,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
             <div className="start__computer-next">
             {healthy&&<Typography.Text type="secondary">Компьютер готов. Свяжите папку с проектом.</Typography.Text>}
             <Space wrap className="start__computer-actions">
-                <FeatureButton features={['computer_connections']} type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects')}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</FeatureButton>
+                <FeatureButton features={['computer_connections']} type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>{if(onChooseFolder)onChooseFolder();else history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects');}}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</FeatureButton>
                 <Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button>
             </Space>
             </div></div>

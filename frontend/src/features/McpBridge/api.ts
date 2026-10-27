@@ -116,8 +116,9 @@ interface IBridgeJobInputBase {
     planId?: string;
     planRevision?: number;
 }
+export interface IBridgeWorkflowOrigin {roomId:string;messageId:string;}
 export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind:'run-agent-method-workflow';projectId:string;expectedBindingId:string;expectedInstanceId:string;workflow:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>;agentId?:string;expectedAgentsRevision?:number}}
+    {kind:'run-agent-method-workflow';projectId:string;expectedBindingId:string;expectedInstanceId:string;workflow:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>;agentId?:string;expectedAgentsRevision?:number;origin?:IBridgeWorkflowOrigin}}
     | {kind:'runtime-cache-policy';projectId?:never;runtimeCachePolicy:RuntimeCachePolicyPayload}
     | {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
     | {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}

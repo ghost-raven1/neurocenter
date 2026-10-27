@@ -8,7 +8,8 @@ const {Writable}=require('node:stream');
 const directory=process.env.GATEWAY_TEST_DIST||path.resolve('services/api-gateway/dist');
 require('node:module').createRequire(path.join(directory,'entry.cjs'))('reflect-metadata');
 const {BridgeController}=require(path.join(directory,'bridge/bridge.controller.js'));
-const methods=[['installScript','install.sh'],['installWindowsBridge','install.ps1']],removed=[];
+const {defaultFeatureFlags,evaluateFeatureFlags}=require('../../services/shared/feature-flags.cjs');
+const methods=[['installScript','install.sh'],['installWindowsBridge','install.ps1'],['installWorkspace','install_workspace.sh'],['installWorkspaceWindows','install_workspace.ps1']],removed=[];
 class Response extends Writable{
     constructor(){super();this.headers={};this.parts=[];this.headersSent=false;}
     _write(chunk,_encoding,done){this.headersSent=true;this.parts.push(Buffer.from(chunk));done();}
@@ -21,6 +22,7 @@ function env(t,key,value){const before=process.env[key];process.env[key]=value;t
 function detached(req,res){assert.equal(req.listenerCount('aborted'),0);assert.equal(res.listenerCount('close'),0);}
 /** The archived package and its installer select the same version without falling back to the head. */
 async function fixture(t){
+    t.mock.method(globalThis,'fetch',async()=>new globalThis.Response(JSON.stringify(evaluateFeatureFlags({...defaultFeatureFlags(),unified_project_setup:true}))));
     const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-installer-version-')));
     t.after(async()=>{await fs.rm(root,{recursive:true,force:true});removed.push(root);});
     env(t,'BRIDGE_TEMPLATES_DIR',root);env(t,'PANEL_URL','https://panel.example.test');env(t,'API_PUBLIC_URL','https://api.example.test');
@@ -28,6 +30,19 @@ async function fixture(t){
     const calls=[],service={supply:async(...args)=>{calls.push(args);return{version:args[1]||'9.9.9'};}};
     return{calls,service,controller:new BridgeController(service)};
 }
+test('Workspace installers are registered on both public bridge prefixes',()=>{
+    assert.deepEqual(Reflect.getMetadata('path',BridgeController),['bridge','api/bridge']);
+    for(const [method,file]of methods.filter(([,file])=>file.startsWith('install_workspace.'))){assert.equal(Reflect.getMetadata('path',BridgeController.prototype[method]),file);}
+});
+for(const [method,file]of methods.filter(([,file])=>file.startsWith('install_workspace.')))test(file+' renders the shipped wrapper with trusted origins instead of forwarded headers',async t=>{
+    const f=await fixture(t),req=request({}),res=new Response();req.headers={host:'attacker.example.test','x-forwarded-host':'attacker.example.test','x-forwarded-proto':'http'};
+    await fs.copyFile(path.resolve('bridge-dist',file),path.join(process.env.BRIDGE_TEMPLATES_DIR,file));
+    await f.controller[method](req,res);
+    assert.match(res.text,/https:\/\/api\.example\.test\/api\/bridge/);assert.match(res.text,/https:\/\/panel\.example\.test/);
+    assert.match(res.text,file.endsWith('.sh')?/VERSION='9\.9\.9'/:/\$Version = '9\.9\.9'/);
+    assert.doesNotMatch(res.text,/attacker\.example|__(?:BRIDGE_[A-Z_]+|BASE_URL|SITE_URL|RECONNECT)__/);
+    detached(req,res);
+});
 for(const [method,file]of methods){
     test(file+' selects the explicit historical version instead of the current supply',async t=>{
         const f=await fixture(t),req=request({version:'0.9.18'}),res=new Response();await f.controller[method](req,res);

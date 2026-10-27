@@ -29,3 +29,9 @@ export function openCodeInstallerCommand(origin:string,windows:boolean):string {
     const url=quote(`${siteOrigin(origin)}/api/bridge/install_opencode.${windows?'ps1':'sh'}`,windows);
     return bootstrapCommand(url, windows);
 }
+
+/** One bootstrap runs the pinned OpenCode installer and then the bridge from the same Gateway. */
+export function workspaceInstallerCommand(origin:string,windows:boolean):string {
+    const url=quote(`${siteOrigin(origin)}/api/bridge/install_workspace.${windows?'ps1':'sh'}`,windows);
+    return bootstrapCommand(url,windows);
+}
