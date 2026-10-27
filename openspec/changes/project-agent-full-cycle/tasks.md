@@ -18,9 +18,10 @@
 ## 4. Интеграция
 
 - [x] 4.1 Пройти затронутые typecheck/contract checks и изолированные сборки, независимо сверить реализацию со спецификацией; исправить подтверждённые замечания и повторить затронутые проверки.
-- [ ] 4.2 Выполнить strict OpenSpec validation/verification, обновить отчёт/бэклог по фактам, сохранить feature commits/push/draft PR и очистить собственные QA-ресурсы.
+- [x] 4.2 Выполнить strict OpenSpec validation/verification, обновить отчёт/бэклог по фактам, сохранить feature commits/push/draft PR и очистить собственные QA-ресурсы.
 
 ## Workflow follow-up
 
 - Installed bridge, настоящая модель, Linux, CI и production фиксируются отдельно от локальных fixtures.
 - AP02 и SR01/SR02 остаются следующими связанными этапами; выбор default agent прежнего цикла не считается закрытием AP01.
+- Поставка: draft PR https://github.com/ghost-raven1/neurocenter/pull/35 поверх PR34. Локальные задачи8/8 выполнены, broader AP01 с возвратом в исходный чат остаётся открытым; production/installed runtime не подтверждены.

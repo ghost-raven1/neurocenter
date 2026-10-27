@@ -1,6 +1,6 @@
 # Выбранный проектный агент: реальный локальный цикл
 
-Дата: 27 октября 2026. Ветка `feature/project-agent-full-cycle`, база `73c35ddee06446df127a60aa070ec4d99c573fb5` из [draft PR34](https://github.com/ghost-raven1/neurocenter/pull/34). Контракт: OpenSpec `project-agent-full-cycle`. Новый срез закрывает выбор исполнителя в AgentCatalog → BMAD/OpenSpec → native runtime → проверяемый результат. Автоматическое возвращение результата в исходный чат, персональные наборы ассетов и полный набор системных операций остаются отдельными работами.
+Дата: 27 октября 2026. Поставка: [draft PR35](https://github.com/ghost-raven1/neurocenter/pull/35), ветка `feature/project-agent-full-cycle`, база `73c35ddee06446df127a60aa070ec4d99c573fb5` из [draft PR34](https://github.com/ghost-raven1/neurocenter/pull/34). Контракт: OpenSpec `project-agent-full-cycle`, локальные задачи8/8. Новый срез закрывает выбор исполнителя в AgentCatalog → BMAD/OpenSpec → native runtime → проверяемый результат. Автоматическое возвращение результата в исходный чат, персональные наборы ассетов и полный набор системных операций остаются отдельными работами.
 
 ## Изменение поведения
 
@@ -48,6 +48,8 @@ Native JSON: `.run/project-agent-full-cycle-20261027/bridge-selected-opencode-na
 Первый catalog typecheck обнаружил несовместимый с lib-target Object.hasOwn и недостаточно суженный instanceId. Исправлены через существующий hasOwnProperty idiom и проверку typeof; unit20 повторены. Ранний isolated build `ca8e2450-6fc1-46f8-b136-a5d7371ad463` сохранил этот compile failure, затем финальный пятикомпонентный build прошёл. В существующих SSR fixtures изолирован вложенный workflow, которого не поддерживал прежний AntD mock; прежние setup/archive assertions сохранены, настоящий компонент проверен отдельно.
 
 Bridge независимо проверен frontend worker; shared/server wiring и backend selection — bridge worker; frontend — backend worker. Собственные авторские проверки не выдаются за независимый review. OpenSpec verification сопоставляет четыре требования и семь сценариев; незавершённые проверки и доставка учитываются отдельно.
+
+Финальный локальный verify: четыре требования и семь сценариев сопоставлены, все восемь задач завершены; новых существенных замечаний нет, archive-head finding закрыт. Browser/native/SQL/компиляция имеют указанные выше отдельные границы. Strict validation прошла. Изменение автоматически не архивировалось.
 
 ## Границы и продолжение
 
