@@ -1,5 +1,7 @@
 import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
 import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL} from '../system-role-chat/service-role-conversations.schema';
+import {METHOD_CHAT_WORKFLOWS_SCHEMA_SQL} from '../agent-method-workflows/chat-workflows.schema';
+import {METHOD_CHAT_WORKFLOWS_SCHEMA_ASSERT_SQL} from '../agent-method-workflows/chat-workflows.schema-verification';
 import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_ASSERT_SQL} from '../system-role-chat/service-role-conversations.schema-verification';
 import {CHAT_SUMMARY_POLICY_SCHEMA_SQL} from '../model-chat/chat-summary-policy.schema';
 import {CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL} from '../model-chat/chat-summary-policy.schema-verification';
@@ -119,4 +121,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:42,name:'bounded-project-agent-tools',sql:AGENT_TOOLS_SCHEMA_SQL+'\n'+AGENT_TOOLS_SCHEMA_ASSERT_SQL},
     {version:43,name:'role-specific-service-conversations',sql:SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL+'\n'+SERVICE_ROLE_CONVERSATIONS_SCHEMA_ASSERT_SQL},
     {version:44,name:'conditional-agent-response-summaries',sql:CHAT_SUMMARY_POLICY_SCHEMA_SQL+'\n'+CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL},
+    {version:45,name:'durable-project-chat-method-workflows',sql:METHOD_CHAT_WORKFLOWS_SCHEMA_SQL+'\n'+METHOD_CHAT_WORKFLOWS_SCHEMA_ASSERT_SQL},
 ];

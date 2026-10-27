@@ -15,6 +15,7 @@ import { projectChatBody, projectChatPage, projectChatParticipants, projectChatS
 import {ProjectChatActivityService} from '../chat-activity/project-chat-activity';
 import type {ChatAgentSnapshot} from '../model-chat/chat-group.types';
 import type {ProjectChatTransport} from './project-chat.types';
+import {projectChatMethodWorkflows,projectChatMethodWorkflowPage} from '../agent-method-workflows/chat-workflows';
 
 /** Project membership shares a room; private model chats keep their existing owner boundary. */
 @Injectable()
@@ -52,7 +53,22 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
     }
     private async receipt(db: ProjectChatDb, room: ProjectChatRoomRow, actor: ProjectChatActor, source: ProjectChatMessageRow): Promise<ProjectChatReceipt> {
         const slots = (await this.repository.children(db, room.project_id, source.id, projectChatRoomId(room))).slice(0, 9);
-        return { message: this.view(source, actor), messages: [source, ...slots].map(row => this.view(row, actor)), roomRevision: Number(room.revision) };
+        const messages=await this.views(db,room,actor,[source,...slots]);
+        return { message: messages[0], messages, roomRevision: Number(room.revision) };
+    }
+    private async views(db:ProjectChatDb,room:ProjectChatRoomRow,actor:ProjectChatActor,rows:ProjectChatMessageRow[]):Promise<ProjectChatMessage[]>{
+        const receipts=await projectChatMethodWorkflows(db,room.project_id,projectChatRoomId(room),rows.filter(row=>row.kind==='user').map(row=>row.id),actor);
+        return rows.map(row=>{const page=receipts.get(row.id);return {...this.view(row,actor),...(page?{methodWorkflows:page.items,methodWorkflowsHistory:{hasMore:page.hasMore,nextCursor:page.nextCursor}}:{})};});
+    }
+    async methodWorkflows(req:Request,id:string,messageId:string,before?:string,rawLimit?:string,roomId=DEFAULT_PROJECT_CHAT_ROOM){
+        projectChatUuid(roomId);projectChatUuid(messageId);if(before!==undefined)projectChatUuid(before);
+        const limit=rawLimit===undefined?8:Number(rawLimit);if(!Number.isSafeInteger(limit)||limit<1||limit>8)throw new BadRequestException('Размер страницы задач: от 1 до 8.');
+        const {actor,projectId}=await this.project(req,id);
+        return this.repository.scoped(projectId,actor,1,false,async(db,_room,current)=>{
+            const source=await this.repository.message(db,projectId,messageId,roomId);
+            if(source.kind!=='user')throw new NotFoundException('Сообщение пользователя не найдено.');
+            return projectChatMethodWorkflowPage(db,projectId,roomId,messageId,current,before,limit);
+        },false,roomId);
     }
     private async assertQueueCapacity(req: Request, db: ProjectChatDb, projectId: string, author: string, snapshots: ChatAgentSnapshot[]): Promise<void> {
         const transports = new Set<ProjectChatTransport>();
@@ -68,14 +84,14 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             const messages = [...new Map([...page.messages, ...watched].map(row => [row.id, row])).values()].sort((a, b) => BigInt(a.position) < BigInt(b.position) ? -1 : BigInt(a.position) > BigInt(b.position) ? 1 : 0);
             const memberEmails = await projectChatRoomEmails(db, room), members = room.visibility === 'PRIVATE' ? await projectChatPrivateMembers(db, projectId, memberEmails) : await projectChatMembers(db, projectId);
             return { room: {...projectChatRoomView(room), memberEmails, canManage: canManageProjectChatRoom(room, current)}, members, agents: await this.inference.roster(req, projectId, room, db),
-                messages: messages.map(row => this.view(row, current)), history: page.history, canPost: current.writable && current.level >= 2, canConfigure: current.writable && (current.level >= 3 || roomId !== DEFAULT_PROJECT_CHAT_ROOM && room.creator_email === current.email && current.level >= 2) };
+                messages: await this.views(db,room,current,messages), history: page.history, canPost: current.writable && current.level >= 2, canConfigure: current.writable && (current.level >= 3 || roomId !== DEFAULT_PROJECT_CHAT_ROOM && room.creator_email === current.email && current.level >= 2) };
         }, false, roomId);
     }
     async history(req: Request, id: string, before?: string, rawLimit?: string, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
         projectChatUuid(roomId); const page = projectChatPage(before, rawLimit), { actor, projectId } = await this.project(req, id);
         return this.repository.scoped(projectId, actor, 1, false, async (db, room, current) => {
             const result = await this.repository.page(db, projectId, page.before, page.limit, roomId);
-            return { messages: result.messages.map(row => this.view(row, current)), history: result.history, roomRevision: Number(room.revision) };
+            return { messages: await this.views(db,room,current,result.messages), history: result.history, roomRevision: Number(room.revision) };
         }, false, roomId);
     }
     async participants(req: Request, id: string, raw: unknown, roomId = DEFAULT_PROJECT_CHAT_ROOM): Promise<ProjectChatDetail> {

@@ -26,7 +26,7 @@ describe('Retry re-enters current bridge admission',()=>{
     const projectJob=()=>{saved={...saved,kind:'sync-rag',project_id:'project',payload:{bindingId:binding}};};
     it('a healthy retry creates a new request through ordinary admission',async()=>{
         expect(await retry()).toEqual({id:'new-job'});expect(owned).toHaveBeenCalledWith(actor,'computer');
-        expect(enqueue).toHaveBeenCalledWith(expect.anything(),expect.any(String),expect.objectContaining({requestKey,kind:'choose-root',deviceId:'computer',email:actor.email}),expect.any(Function));
+        expect(enqueue).toHaveBeenCalledWith(expect.anything(),expect.any(String),expect.objectContaining({requestKey,kind:'choose-root',deviceId:'computer',email:actor.email}),expect.any(Function),undefined);
     });
     it('account revocation after the original failure prevents retry',async()=>{
         claims.mockRejectedValue(new ForbiddenException('Отключено'));await expect(retry()).rejects.toMatchObject({status:403});expect(enqueue).not.toHaveBeenCalled();

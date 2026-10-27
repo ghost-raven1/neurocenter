@@ -80,6 +80,18 @@ function queue(){
 describe('Ключ запроса хранит связь с объединённым заданием',()=>{
     beforeEach(()=>vi.clearAllMocks());
     afterEach(()=>vi.restoreAllMocks());
+    it('commits an origin link once with its new job and never republishes it on exact receipt recovery',async()=>{
+        const q=queue(),postInsert=vi.fn(async()=>undefined);
+        const create=()=>enqueueDeviceJob(q.pool,'id',q.incoming({kind:'run-agent-method-workflow'}),async()=>claims,postInsert);
+        await create();await create();
+        expect(postInsert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({query:q.query}),'new-job');
+        expect(q.jobs).toHaveLength(1);expect(q.receipts).toHaveLength(1);
+    });
+    it('does not acknowledge a job when its required origin link cannot be saved',async()=>{
+        const q=queue(),postInsert=vi.fn(async()=>{throw Error('origin unavailable');});
+        await expect(enqueueDeviceJob(q.pool,'id',q.incoming({kind:'run-agent-method-workflow'}),async()=>claims,postInsert)).rejects.toThrow('origin unavailable');
+        expect(q.jobs).toHaveLength(0);expect(q.receipts).toHaveLength(0);
+    });
     it('Новое задание явно сохраняет «Ожидает моста» в старой БД и истории без дубля при повторе',async()=>{
         const q=queue();
         await q.enqueue();

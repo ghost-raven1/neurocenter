@@ -20,7 +20,7 @@ const clean = (row: Row): Row => {
 };
 
 /** Lock устройства объединяет две вкладки в одно ожидающее действие и ограничивает размер очереди. */
-export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue, readClaims:(db:PoolClient)=>Promise<IAccessClaims>): Promise<Row> {
+export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue, readClaims:(db:PoolClient)=>Promise<IAccessClaims>,postInsert?:(db:PoolClient,jobId:string)=>Promise<void>): Promise<Row> {
     const client = await pool.connect();
     let result: Row;
     try {
@@ -70,6 +70,8 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
         if (!saved.rows[0] || saved.rows[0].request_hash !== input.requestHash) { throw new ConflictException('Параллельный запрос использовал этот ключ с другими параметрами.'); }
         result = clean(await saveDeviceJobRequest(client,view,input,saved.rows[0].id));
         if (result.id === input.id) {
+            // Related server receipts share this transaction; accepted retries never invoke the hook again.
+            await postInsert?.(client,input.id);
             if(input.kind===PROJECT_AGENTS_JOB)await securityEvent(client,{actor:input.email,action:'project.agents.connect',resourceId:input.projectId!,before:null,after:{projectId:input.projectId,revision:input.payload.revision,deviceId:input.deviceId,bindingId:input.payload.bindingId,instanceId:input.payload.instanceId,manifestSha256:input.payload.manifestSha256,jobId:input.id}});
             await recordDeviceOperation(client, { id: input.id, kind: input.kind, email: input.email, project_id: input.projectId || null }, 'QUEUED', 0, 'Ожидает моста');
         }

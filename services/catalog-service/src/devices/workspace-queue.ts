@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { recordDeviceOperation } from './device-operations';
+import {publishMethodChatResult} from '../agent-method-workflows/chat-origin';
 
 interface WorkspaceChange { deviceId: string; projectId?: string; email: string; kind: string }
 const workspaceKinds = ['choose-root', 'bind-project', 'transfer-workspace', 'adopt-workspace'];
@@ -21,6 +22,7 @@ export async function guardWorkspaceQueue(client: PoolClient, input: WorkspaceCh
         [input.deviceId, projectId],
     );
     for (const job of rows) {
+        await publishMethodChatResult(client,job);
         await recordDeviceOperation(client, job, 'CANCELLED', 0, 'Папка меняется. Повторите действие для новой привязки.');
     }
 }

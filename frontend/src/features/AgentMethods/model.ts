@@ -1,44 +1,55 @@
 import type {AgentMethod,AgentMethodWorkflowAgentIdentity,AgentMethodWorkflowResult} from '../../../../services/shared/agent-method-workflow.cjs';
-import type {IBridgeJobInput} from '../McpBridge/api';
+import type {IBridgeJobInput,IBridgeWorkflowOrigin} from '../McpBridge/api';
 
 export const methodLabels:Record<AgentMethod,string>={bmad:'BMAD',openspec:'OpenSpec',combined:'BMAD → OpenSpec'};
 export const WORKFLOW_INPUT_MAX_BYTES=16384;
 export type WorkflowIntent=Extract<IBridgeJobInput,{kind:'run-agent-method-workflow'}>;
-export interface WorkflowDraft {method:AgentMethod;instruction:string;checks:string[];agentId?:string;pending?:WorkflowIntent;rejectedStatus?:400|409;}
-export const emptyWorkflowDraft=():WorkflowDraft=>({method:'openspec',instruction:'',checks:['typecheck','test']});
-export const workflowStorageKey=(scope:string,projectId:string):string=>'neurocenter.agent-method-workflow.'+JSON.stringify([scope,projectId]);
+export type WorkflowOrigin=IBridgeWorkflowOrigin;
+export interface WorkflowDraft {method:AgentMethod;instruction:string;checks:string[];agentId?:string;pending?:WorkflowIntent;pendingRole?:string;pendingFingerprint?:string;rejectedStatus?:400|409;}
+export const emptyWorkflowDraft=(instruction=''):WorkflowDraft=>({method:'openspec',instruction,checks:['typecheck','test']});
+/** Source recovery belongs to a person across role changes; catalog keys stay backward compatible. */
+export function workflowStorageKey(scope:string,projectId:string,origin?:WorkflowOrigin):string{
+    let principal:string|string[]=scope;
+    if(origin)try{const auth=JSON.parse(scope) as {id?:unknown;email?:unknown};if(typeof auth?.id==='string'&&auth.id&&typeof auth.email==='string'&&auth.email)principal=[auth.id,auth.email];}catch{/* Unknown scopes keep their isolation. */}
+    return 'neurocenter.agent-method-workflow.'+JSON.stringify(origin?[principal,projectId,origin.roomId,origin.messageId]:[scope,projectId]);
+}
 export const workflowChecks=(checks:string[])=>checks.map(check=>({command:'npm',args:check==='test'?['test']:['run',check]}));
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
 const agentId=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(value);
 const revision=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0;
 
-function validPending(value:WorkflowDraft,projectId?:string):boolean{
+function validPending(value:WorkflowDraft,projectId?:string,origin?:WorkflowOrigin):boolean{
     const pending=value.pending!;
     if(!pending||Object.keys(pending).some(key=>!['kind','projectId','deviceId','requestKey','expectedBindingId','expectedInstanceId','workflow'].includes(key))
         ||pending.kind!=='run-agent-method-workflow'||!uuid(pending.requestKey)||!uuid(pending.expectedInstanceId)
         ||typeof pending.expectedBindingId!=='string'||!/^[a-f0-9]{64}$/.test(pending.expectedBindingId)
         ||typeof pending.deviceId!=='string'||!pending.deviceId||pending.deviceId.length>200||/[\x00-\x1f]/.test(pending.deviceId)
         ||typeof pending.projectId!=='string'||!pending.projectId||projectId!==undefined&&pending.projectId!==projectId
-        ||!pending.workflow||Object.keys(pending.workflow).some(key=>!['method','instruction','checks','agentId','expectedAgentsRevision'].includes(key))
+        ||!pending.workflow||Object.keys(pending.workflow).some(key=>!['method','instruction','checks','agentId','expectedAgentsRevision','origin'].includes(key))
         ||pending.workflow.method!==value.method||pending.workflow.instruction!==value.instruction||new TextEncoder().encode(pending.workflow.instruction).length>WORKFLOW_INPUT_MAX_BYTES
         ||!value.checks.length||!Array.isArray(pending.workflow.checks))return false;
     if(pending.workflow.agentId===undefined?value.agentId!==undefined||pending.workflow.expectedAgentsRevision!==undefined
         :!agentId(pending.workflow.agentId)||pending.workflow.agentId!==value.agentId||!revision(pending.workflow.expectedAgentsRevision))return false;
+    const source=pending.workflow.origin;
+    if(origin?(!source||!uuid(source.roomId)||!uuid(source.messageId)||Object.keys(source).some(key=>!['roomId','messageId'].includes(key))
+        ||source.roomId!==origin.roomId||source.messageId!==origin.messageId||!pending.workflow.agentId
+        ||typeof value.pendingRole!=='string'||!value.pendingRole||typeof value.pendingFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(value.pendingFingerprint))
+        :source!==undefined||value.pendingRole!==undefined||value.pendingFingerprint!==undefined)return false;
     const expected=workflowChecks(value.checks);
     return pending.workflow.checks.length===expected.length&&pending.workflow.checks.every((check,index)=>check&&Object.keys(check).every(key=>['command','args'].includes(key))
         &&check.command===expected[index].command&&Array.isArray(check.args)&&check.args.length===expected[index].args.length&&check.args.every((arg,position)=>arg===expected[index].args[position]));
 }
 
 /** A malformed recovery record blocks a new dispatch instead of silently losing a possibly accepted intent. */
-export function readWorkflowDraft(storage:Pick<Storage,'getItem'>,key:string,projectId?:string):WorkflowDraft{
-    const raw=storage.getItem(key);if(!raw)return emptyWorkflowDraft();
-    if(raw.length>100000)throw Error('Сохранённая задача слишком велика. Проверьте историю заданий перед новой отправкой.');
+export function readWorkflowDraft(storage:Pick<Storage,'getItem'>,key:string,projectId?:string,origin?:WorkflowOrigin,initialInstruction=''):WorkflowDraft{
+    const raw=storage.getItem(key);if(!raw)return emptyWorkflowDraft(initialInstruction);
+    if(raw.length>(origin?300000:100000))throw Error('Сохранённая задача слишком велика. Проверьте историю заданий перед новой отправкой.');
     const value=JSON.parse(raw) as WorkflowDraft;
-    if(!value||!Object.prototype.hasOwnProperty.call(methodLabels,value.method)||typeof value.instruction!=='string'||new TextEncoder().encode(value.instruction).length>65536
+    if(!value||!Object.prototype.hasOwnProperty.call(methodLabels,value.method)||typeof value.instruction!=='string'||new TextEncoder().encode(value.instruction).length>(origin?131072:65536)
         ||!Array.isArray(value.checks)||value.checks.some(item=>!['typecheck','test','check'].includes(item))
         ||value.agentId!==undefined&&!agentId(value.agentId)
         ||value.rejectedStatus!==undefined&&(!value.pending||![400,409].includes(value.rejectedStatus)))throw Error('Сохранённая задача не прочитана. Проверьте историю заданий перед новой отправкой.');
-    if(Object.prototype.hasOwnProperty.call(value,'pending')&&!validPending(value,projectId))throw Error('Квитанция задачи повреждена. Проверьте историю заданий перед новой отправкой.');
+    if(Object.prototype.hasOwnProperty.call(value,'pending')&&!validPending(value,projectId,origin))throw Error('Квитанция задачи повреждена. Проверьте историю заданий перед новой отправкой.');
     return value;
 }
 

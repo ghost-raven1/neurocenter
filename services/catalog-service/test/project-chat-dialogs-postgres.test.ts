@@ -11,6 +11,7 @@ import {PROJECT_CHAT_SCHEMA_SQL} from '../src/project-chat/project-chat.schema';
 import {PROJECT_CHAT_DIALOGS_SCHEMA_SQL} from '../src/project-chat/project-chat-dialogs.schema';
 import {PROJECT_CHAT_LEARNING_SCHEMA_SQL} from '../src/project-chat/project-chat-learning.schema';
 import {PROJECT_CHAT_ISOLATION_SCHEMA_SQL} from '../src/project-chat/project-chat-isolation.schema';
+import {METHOD_CHAT_WORKFLOWS_SCHEMA_SQL} from '../src/agent-method-workflows/chat-workflows.schema';
 import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessageRow} from '../src/project-chat/project-chat.types';
 import {deviceCompletionFixture,ownedDeviceTestAdminUrl} from './device-completion-postgres.fixture';
 const flags=vi.hoisted(()=>({dialogs:true,project:true,group:true}));
@@ -45,6 +46,7 @@ describe.skipIf(!adminUrl).sequential('Public and private dialogues — owned Po
         await f.pool.query(PROJECT_CHAT_DIALOGS_SCHEMA_SQL);
         await f.pool.query(PROJECT_CHAT_LEARNING_SCHEMA_SQL);
         await f.pool.query(PROJECT_CHAT_ISOLATION_SCHEMA_SQL);
+        await f.pool.query(METHOD_CHAT_WORKFLOWS_SCHEMA_SQL);
         for(const email of [b,outsider,admin,main])await f.pool.query('INSERT INTO platform_users(email,is_main_admin) VALUES($1,$2)',[email,email===main]);
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN',token);
     });

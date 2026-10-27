@@ -1,12 +1,12 @@
 import {Alert,Button,Checkbox,Collapse,Empty,Input,Select,Space,Typography} from 'antd';
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {useBridge} from '../McpBridge/useBridge';
 import {bridgeApi} from '../McpBridge/api';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {roleLevel} from '../UserBlock/roles';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 import {errorMessage} from '../../common/utils/errorMessage';
-import {methodLabels,WORKFLOW_INPUT_MAX_BYTES} from './model';
+import {methodLabels,WORKFLOW_INPUT_MAX_BYTES,type WorkflowOrigin} from './model';
 import {useAgentMethodWorkflow} from './useAgentMethodWorkflow';
 import {WorkflowResult} from './WorkflowResult';
 import {WorkflowAgentSelect} from './WorkflowAgentSelect';
@@ -14,19 +14,22 @@ import {workflowAgentIssue,type WorkflowAgentCatalog} from './agentSelection';
 import './AgentMethods.less';
 
 interface Props {projectId:string;canManage:boolean;bridge:ReturnType<typeof useBridge>;onSetupRuntime?:()=>void;
-    agentCatalog:WorkflowAgentCatalog|null;agentsLoading:boolean;agentsError:string;onReloadAgents:()=>Promise<unknown>;}
+    agentCatalog:WorkflowAgentCatalog|null;agentsLoading:boolean;agentsError:string;onReloadAgents:()=>Promise<unknown>;
+    origin?:WorkflowOrigin;initialInstruction?:string;linkedJobIds?:string[];onAccepted?:()=>Promise<unknown>;}
 
 /** The project keeps task input and durable history even when a method or local executor is unavailable. */
-export function AgentMethodWorkflow({projectId,canManage,bridge,onSetupRuntime,agentCatalog,agentsLoading,agentsError,onReloadAgents}:Props):JSX.Element{
-    const availability=useFeatureAvailability('agent_method_workflows'),agentAvailability=useFeatureAvailability('project_agent_workflows'),value=useAgentMethodWorkflow(projectId),{captureOwner}=useAuthRequestOwner();
+export function AgentMethodWorkflow({projectId,canManage,bridge,onSetupRuntime,agentCatalog,agentsLoading,agentsError,onReloadAgents,origin,initialInstruction,linkedJobIds=[],onAccepted}:Props):JSX.Element{
+    const availability=useFeatureAvailability('agent_method_workflows'),agentAvailability=useFeatureAvailability('project_agent_workflows'),chatAvailability=useFeatureAvailability('project_agent_chat_workflows'),value=useAgentMethodWorkflow(projectId,{origin,initialInstruction}),{captureOwner}=useAuthRequestOwner();
     const [selection,setSelection]=useState<string>(),[actionError,setActionError]=useState(''),[cancelling,setCancelling]=useState(false);
-    const acting=useRef(false),device=bridge.device;
+    const acting=useRef(false),notified=useRef<string>(),device=bridge.device;
+    useEffect(()=>{if(value.accepted&&notified.current!==value.accepted.id){notified.current=value.accepted.id;void onAccepted?.();}},[value.accepted?.id,onAccepted]);
     const binding=device?.report.bindings?.find(item=>item.projectId===projectId&&item.valid!==false);
     const target=device&&binding?.bindingId&&binding.instanceId?{deviceId:device.id,expectedBindingId:binding.bindingId,expectedInstanceId:binding.instanceId}:undefined;
-    const jobs=bridge.jobs.filter(job=>job.projectId===projectId&&job.kind==='run-agent-method-workflow');
-    const active=jobs.some(job=>['queued','running','reconciling'].includes(job.state));
+    const projectJobs=bridge.jobs.filter(job=>job.projectId===projectId&&job.kind==='run-agent-method-workflow');
+    const jobs=projectJobs.filter(job=>!origin||linkedJobIds.includes(job.id)||job.id===value.accepted?.id);
+    const active=projectJobs.some(job=>['queued','running','reconciling'].includes(job.state));
     const selected=jobs.find(job=>job.id===selection)||jobs.find(job=>job.id===value.accepted?.id)||value.accepted||jobs[0];
-    const reason=!canManage?'Запуск доступен администратору проекта.':!bridge.devicesReady?bridge.errors.devices||'Перечитайте состояние компьютера.'
+    const reason=!canManage?'Запуск доступен администратору проекта.':origin&&!chatAvailability.enabled?chatAvailability.reason:!bridge.devicesReady?bridge.errors.devices||'Перечитайте состояние компьютера.'
         :!device?'Выберите подключённый компьютер.':!device.online?'Компьютер не в сети. Подключите мост и обновите состояние.'
             :roleLevel(device.role)<3?'Переподключите мост с ролью администратора проекта.':!target?'Свяжите папку проекта на выбранном компьютере.'
                 :device.report.platform==='win32'?'Выберите компьютер с macOS или Linux: выполнение методик на Windows пока недоступно.'
@@ -38,7 +41,7 @@ export function AgentMethodWorkflow({projectId,canManage,bridge,onSetupRuntime,a
         :agentsLoading?'Дождитесь проверки агентов проекта.':agentsError?'Обновите список агентов проекта перед запуском.'
             :!agentCatalog?.revision?'Ревизия агентов проекта не подтверждена. Обновите список.'
                 :workflowAgentIssue(chosenAgent,agentCatalog)||(!device?.report.capabilities?.includes('agent-method-selected-agent-v1')?'Обновите мост для запуска выбранного агента.':''))
-        :agentAvailability.enabled?'Выберите агента проекта для полного цикла.':'';
+        :origin||agentAvailability.enabled?'Выберите агента проекта для полного цикла.':'';
     const selectedReplay=!!value.draft.pending?.workflow.agentId;
     const replayAgentReason=selectedReplay?(!agentAvailability.enabled?agentAvailability.reason
         :!device?.report.capabilities?.includes('agent-method-selected-agent-v1')?'Обновите мост для выбранного агента.':''):'';
@@ -48,7 +51,7 @@ export function AgentMethodWorkflow({projectId,canManage,bridge,onSetupRuntime,a
         try{await bridgeApi.cancel(selected.id);if(owns())await bridge.reload();}catch(cause){if(owns())setActionError(errorMessage(cause,'Не удалось подтвердить отмену. Перечитайте состояние.'));}
         finally{acting.current=false;if(owns())setCancelling(false);}
     };
-    return <Collapse className="agent-methods"><Collapse.Panel key="workflow" header="BMAD / OpenSpec · задача через локальный мост"><Space direction="vertical" className="agent-methods__body">
+    return <Collapse className="agent-methods" defaultActiveKey={origin?['workflow']:undefined}><Collapse.Panel key="workflow" header="BMAD / OpenSpec · задача через локальный мост"><Space direction="vertical" className="agent-methods__body">
         <Typography.Paragraph>Требования, код и проверки выполняются в привязанной папке через OpenCode. Используются подготовленные BMAD или OpenSpec и настроенная модель компьютера.</Typography.Paragraph>
         {!availability.enabled&&<Alert type="info" showIcon message={availability.reason} description="История, проверка отправки и отмена принятых задач доступны."/>}
         {reason&&<Alert type="info" showIcon message={reason} action={<Button onClick={()=>{void bridge.reload();}}>Обновить подключение</Button>}/>}
@@ -71,6 +74,6 @@ export function AgentMethodWorkflow({projectId,canManage,bridge,onSetupRuntime,a
             onClick={()=>{if(target&&!selectedAgentReason)void value.start(target,value.draft.agentId?agentCatalog?.revision??undefined:undefined).then(()=>bridge.reload());}}>Выполнить задачу</Button>}
         {bridge.errors.jobs&&<Alert type="warning" showIcon message="История заданий не обновилась" description={bridge.errors.jobs} action={<Button onClick={()=>{void bridge.reload();}}>Повторить</Button>}/>}
         {jobs.length>0&&<Select aria-label="История задач методик" value={selected?.id} options={jobs.map(job=>({value:job.id,label:(job.agent?`${job.agent.slug} · v${job.agent.version}`:'Прежний запуск')+' · '+(job.method?methodLabels[job.method]:'Задача')+' · '+new Date(job.createdAt).toLocaleString('ru-RU')+' · '+job.state}))} onChange={setSelection}/>}
-        {selected?<><WorkflowResult job={selected} agentCatalog={agentsLoading||agentsError?null:agentCatalog} onSetupRuntime={onSetupRuntime}/>{['queued','running','reconciling'].includes(selected.state)&&<Button loading={cancelling} onClick={()=>{void cancel();}}>Отменить задание</Button>}</>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Заданий методик в проекте пока нет."/>}
+        {selected?<><WorkflowResult job={selected} agentCatalog={agentsLoading||agentsError?null:agentCatalog} onSetupRuntime={onSetupRuntime}/>{['queued','running','reconciling'].includes(selected.state)&&<Button loading={cancelling} onClick={()=>{void cancel();}}>Отменить задание</Button>}</>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={origin?'Для этого сообщения пока нет заданий методики.':'Заданий методик в проекте пока нет.'}/>}
     </Space></Collapse.Panel></Collapse>;
 }

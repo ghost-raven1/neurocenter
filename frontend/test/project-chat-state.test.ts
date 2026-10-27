@@ -4,9 +4,9 @@ import {useProjectChat} from '../src/features/ProjectChat/useProjectChat';
 import {projectChatApi} from '../src/features/ProjectChat/api';
 import {mergeProjectMessages} from '../src/features/ProjectChat/model';
 import {projectMessage, projectRoom} from './project-chat-fixtures';
-import type {ProjectChatDetail, ProjectChatReceipt} from '../src/features/ProjectChat/types';
+import type {ProjectChatDetail, ProjectChatReceipt,ProjectChatMethodWorkflow} from '../src/features/ProjectChat/types';
 
-vi.mock('../src/features/ProjectChat/api', () => ({projectChatApi: {read: vi.fn(), history: vi.fn(), send: vi.fn(), retry: vi.fn(), cancel: vi.fn(), participants: vi.fn()}}));
+vi.mock('../src/features/ProjectChat/api', () => ({projectChatApi: {read: vi.fn(), history: vi.fn(),workflows:vi.fn(),send: vi.fn(), retry: vi.fn(), cancel: vi.fn(), participants: vi.fn()}}));
 const render = (projectId = 'prj-one') => {harness.begin(); const value = useProjectChat(projectId); harness.commit(); return value;};
 const flush = async () => {for (let i = 0; i < 30; i++) await Promise.resolve();};
 const ready = async () => {render(); await flush(); return render();};
@@ -15,6 +15,20 @@ beforeEach(() => {vi.clearAllMocks(); ui.owner = 'alice'; ui.scope = 'alice'; vi
 afterEach(() => {harness.dispose(); vi.useRealTimers(); vi.unstubAllGlobals();});
 
 describe('Общий чат: независимые вопросы и авторитетное состояние', () => {
+    it('Обновляет safe квитанцию конкретного раннего source вне текущей tail страницы',async()=>{
+        const source=projectMessage({id:'old-source',position:'1'}),tail=projectMessage({id:'tail',position:'99'});
+        vi.mocked(projectChatApi.read).mockResolvedValue(projectRoom({messages:[tail],history:{hasMore:true,nextCursor:'tail'}}));
+        vi.mocked(projectChatApi.history).mockResolvedValueOnce({messages:[source],history:{hasMore:false,nextCursor:null}});let chat=await ready();await chat.loadEarlier();chat=render();
+        const item:ProjectChatMethodWorkflow={jobId:'accepted',workflowId:'accepted-key',method:'openspec',agent:{agentId:'agent',slug:'nc-agent',version:1,agentsRevision:3,agentsManifestSha256:'a'.repeat(64),compiledManifestSha256:'b'.repeat(64),fileSha256:'c'.repeat(64),configurationJobId:'configuration'},state:'running',percent:10,createdAt:'2026-10-27T00:00:00Z',startedAt:null,updatedAt:'2026-10-27T00:00:00Z',canCancel:true,publicationState:'pending'};
+        vi.mocked(projectChatApi.workflows).mockResolvedValueOnce({items:[item,{...item,jobId:'older'}],hasMore:false,nextCursor:null});await chat.refreshWorkflows(source.id);const current=render();
+        expect(vi.mocked(projectChatApi.workflows).mock.calls[0].slice(0,3)).toEqual(['prj-one','old-source',undefined]);expect(current.detail?.messages).toHaveLength(2);
+        expect(current.detail?.messages[0]).toMatchObject({content:source.content,methodWorkflows:[item],methodWorkflowsHistory:{hasMore:true,nextCursor:'accepted'}});expect(projectChatApi.send).not.toHaveBeenCalled();
+    });
+    it('Позднее чтение method receipt не пересекает владельца и проект',async()=>{
+        vi.mocked(projectChatApi.read).mockResolvedValue(projectRoom({messages:[projectMessage()]}));const chat=await ready(),pending=deferred<Awaited<ReturnType<typeof projectChatApi.workflows>>>();vi.mocked(projectChatApi.workflows).mockReturnValueOnce(pending.promise);
+        const read=chat.refreshWorkflows('human-one');ui.owner='bob';ui.scope='bob';render('prj-two');pending.resolve({items:[],hasMore:false,nextCursor:null});await read;await flush();
+        expect(render('prj-two').detail).toBeUndefined();
+    });
     it('Открытие читает комнату без создания чата или платного запроса', async () => {
         const chat = await ready(); expect(chat.detail?.members.map(member => member.displayName)).toEqual(['Алиса', 'Боб']); expect(projectChatApi.read).toHaveBeenCalledOnce(); expect(projectChatApi.send).not.toHaveBeenCalled();
     });

@@ -15,9 +15,10 @@ const h = vi.hoisted(() => ({
     owner: 'layout-viewer', rooms: [] as ProjectChatRoomSummary[], details: {} as Record<string, ProjectChatDetail>, canCreate: true,
     chatError: '', roomsError: '', selected: vi.fn(), create: vi.fn(), refresh: vi.fn(), visible: vi.fn(), typing: vi.fn(),
     send: vi.fn(), cancel: vi.fn(), configure: vi.fn(), close: vi.fn(), capture: () => () => true,
+    workflowProps:undefined as undefined|{message:{id:string;content:string};roomId:string;canManage:boolean;onClose:()=>void},role:'Главный админ',
 }));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner, captureOwner: h.capture})}));
-vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole: 'Главный админ', userRoles: ['Главный админ']}}})}));
+vi.mock('react-redux', () => ({useSelector: (selector: (state: unknown) => unknown) => selector({userBlock: {user: {activeRole:h.role,userRoles:[h.role],projectRoles:[{projectId:'prj-one',projectName:'Проект',role:h.role}]}}})}));
 vi.mock('../src/features/SystemRoleChat/SystemRoleChat', () => ({SystemRoleChat: () => null}));
 vi.mock('../src/features/AgentTools/useAgentTools', () => ({useAgentTools: () => ({draft: {enabled: false},blocked: false,loading: false,update: () => undefined,restore: () => undefined,disable: () => undefined,reload: () => undefined})}));
 vi.mock('../src/features/ProjectChat/useProjectChatRooms', () => ({useProjectChatRooms: () => {
@@ -26,12 +27,13 @@ vi.mock('../src/features/ProjectChat/useProjectChatRooms', () => ({useProjectCha
         select: (id: string) => {h.selected(id); setRoomId(id);}, refresh: h.refresh, create: h.create, update: vi.fn(), compare: vi.fn(), forget: vi.fn()};
 }}));
 vi.mock('../src/features/ProjectChat/useProjectChat', () => ({useProjectChat: (_projectId: string, roomId: string): Chat => ({detail: h.details[roomId], loading: false, error: h.chatError,
-    action: '', retryPending: [], historyLoading: false, historyError: '', accessDenied: false, refresh: h.refresh, clearAccess: vi.fn(), loadEarlier: vi.fn(),
+    action: '', retryPending: [], historyLoading: false, historyError: '', accessDenied: false, refresh: h.refresh,refreshWorkflows:h.refresh,clearAccess: vi.fn(), loadEarlier: vi.fn(),
     retry: vi.fn(), cancel: h.cancel, send: h.send, configure: h.configure})}));
 vi.mock('../src/features/ProjectChat/useProjectChatActivity', () => ({useProjectChatActivity: () => ({snapshot: undefined, enabled: false, connected: false, onVisible: h.visible, onTyping: h.typing})}));
 vi.mock('../src/features/ModelChat/api', () => ({modelChatApi: {agents: vi.fn()}}));
 vi.mock('../src/features/ModelCatalog/useModelCatalog', () => ({useModelCatalog: () => ({catalog: {items: [{...model, id: 'model-chat', modelPin: 'a'.repeat(64)}], assignedModelIds: ['model-chat']}, loading: false, error: '', refresh: vi.fn()})}));
 vi.mock('../src/features/ProjectChat/ProjectChatDialogForm', () => ({ProjectChatDialogForm: () => createElement('div', {role: 'dialog', 'aria-label': 'Новый диалог'}, 'Настройка нового диалога')}));
+vi.mock('../src/features/ProjectChat/ProjectChatWorkflowDialog',()=>({ProjectChatWorkflowDialog:(props:NonNullable<typeof h.workflowProps>)=>{h.workflowProps=props;return createElement('section',{'aria-label':'Задача из сообщения'},props.message.content,createElement('button',{onClick:props.onClose},'Закрыть задачу'));}}));
 
 let container: HTMLDivElement, root: Root, sequence = 0;
 const privateId = '115af965-9952-402f-8811-20ae55f47991';
@@ -48,7 +50,7 @@ async function type(body: string) {
 const render = async () => {await act(async () => {root.render(createElement(StrictMode, null, createElement(Modal, {open: true, footer: null, title: 'Проект', onCancel: h.close, getContainer: false}, createElement(ProjectChatWorkspace, {projectId: 'prj-one', projectName: 'Проект'}))));}); await settle();};
 beforeEach(() => {
     vi.clearAllMocks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); h.owner = `layout-viewer-${++sequence}`;
-    h.canCreate = true; h.chatError = ''; h.roomsError = '';
+    h.canCreate = true; h.chatError = ''; h.roomsError = '';h.workflowProps=undefined;h.role='Главный админ';
     h.rooms = [{id: DEFAULT_PROJECT_CHAT_ROOM, title: 'Общий чат', visibility: 'PUBLIC', revision: 1, updatedAt: '', canManage: false, memberEmails: []},
         {id: privateId, title: 'Закрытое ревью', visibility: 'PRIVATE', revision: 2, updatedAt: '', canManage: true, memberEmails: ['alice@example.test']}];
     h.details = {[DEFAULT_PROJECT_CHAT_ROOM]: projectRoom({room: {...projectRoom().room, id: DEFAULT_PROJECT_CHAT_ROOM, title: 'Общий чат', visibility: 'PUBLIC'}, messages: [projectMessage()]}),
@@ -60,6 +62,17 @@ beforeEach(() => {
 afterEach(async () => {await act(async () => {root.unmount();}); container.remove(); vi.unstubAllGlobals();});
 
 describe('Project workspace navigation and real AntD panels', () => {
+    it('opens a source workflow without sending or remounting the composer and closes it on room switch',async()=>{
+        await render();await type('Обычный черновик остаётся здесь');const log=document.querySelector('[role="log"]');expect(h.workflowProps).toBeUndefined();
+        await click(button('Выполнить задачу · Алиса'));expect(h.workflowProps?.message.id).toBe('human-one');expect(h.workflowProps?.roomId).toBe(DEFAULT_PROJECT_CHAT_ROOM);expect(h.workflowProps?.canManage).toBe(true);
+        expect(h.send).not.toHaveBeenCalled();expect(document.querySelector<HTMLTextAreaElement>('#project-chat-message')!.value).toBe('Обычный черновик остаётся здесь');expect(document.querySelector('[role="log"]')).toBe(log);
+        await click(button('Закрыть задачу'));expect(document.querySelector('[aria-label="Задача из сообщения"]')).toBeNull();expect(document.querySelector<HTMLTextAreaElement>('#project-chat-message')!.value).toBe('Обычный черновик остаётся здесь');
+        await click(button('Выполнить задачу · Алиса'));await click(document.querySelector('[title="Закрытое ревью"]')!.closest('button')!);expect(document.querySelector('[aria-label="Задача из сообщения"]')).toBeNull();expect(h.send).not.toHaveBeenCalled();
+    });
+    it('does not turn private-room creator configuration into method admission authority',async()=>{
+        h.role='Разработчик';h.details[DEFAULT_PROJECT_CHAT_ROOM]={...h.details[DEFAULT_PROJECT_CHAT_ROOM],canConfigure:true};await render();
+        await click(button('Выполнить задачу · Алиса'));expect(h.workflowProps?.canManage).toBe(false);expect(h.send).not.toHaveBeenCalled();
+    });
     it('opens and returns from the room list without remounting the history, losing a draft or sending read receipts', async () => {
         await render(); await type('Неотправленный вопрос'); const log = document.querySelector('[role="log"]');
         await click(button('Диалоги')); expect(button('Диалоги').getAttribute('aria-expanded')).toBe('true');

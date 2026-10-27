@@ -142,6 +142,7 @@ function allowProjectChat(level:number,verb:string,suffix:string):boolean {
     }
     if(suffix==='team-chat/activity')return ['GET','HEAD','PUT'].includes(verb);
     if(suffix==='team-chat'||suffix==='team-chat/history')return ['GET','HEAD'].includes(verb);
+    if(/^team-chat\/messages\/[a-f0-9-]{36}\/workflows$/.test(suffix))return ['GET','HEAD'].includes(verb);
     if(suffix==='team-chat/participants')return verb==='PUT'&&level>=(dialog?2:3);
     return verb==='POST'&&level>=2&&(suffix==='team-chat/messages'||/^team-chat\/messages\/[a-f0-9-]{36}\/(retry|cancel)$/.test(suffix));
 }

@@ -46,7 +46,7 @@ export interface JobInput {
     reindex?:true;
     snapshotId?:string;
     expectedAgentsRevision?:number;
-    workflow?:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>;agentId?:string;expectedAgentsRevision?:number};
+    workflow?:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>;agentId?:string;expectedAgentsRevision?:number;origin?:{roomId:string;messageId:string}};
     providerKind?:'openai-compatible'|'ollama'|'codex-bridge';
     catalogModelId?:string;
     expectedModelPin?:string;

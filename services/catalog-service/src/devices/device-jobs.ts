@@ -1,6 +1,7 @@
 import type {PoolClient} from 'pg';
 import {AGENT_METHOD_WORKFLOW_JOB} from '../../../shared/agent-method-workflow.cjs';
 import {agentMethodJobPayload,assertAgentMethodJob} from '../agent-method-workflows/jobs';
+import {methodChatOrigin,assertMethodChatOrigin,saveMethodChatOrigin,assertMethodChatJob} from '../agent-method-workflows/chat-origin';
 import {LEARNING_QUIRKS_KIND,quirksJobPayload,assertQuirksJob} from '../learning-quirks/learning-quirks-jobs';
 import {MEMORY_SYNC_JOB} from '../../../shared/project-learning-memory-sync.cjs';
 import {memorySyncJobPayload,assertMemorySyncJob} from '../learning-memory-sync/jobs';
@@ -184,6 +185,8 @@ export class DeviceJobs {
         const requestHash = deviceJobRequestHash(actor.activeRole,input);
         const previous=await findDeviceJobRequest(this.store.pool,view,{email:actor.email,deviceId:input.deviceId,requestKey:input.requestKey,requestHash});
         if(previous)return previous;
+        const origin=methodChatOrigin(input);
+        if(origin){await requireFeaturesEnabled(['project_agent_chat_workflows']);await assertMethodChatOrigin(this.store.pool,input.projectId!,actor,origin);}
         if(input.kind!==PROJECT_AGENTS_JOB)await requireFeaturesEnabled(requiredJobFeatures(input.kind,input));
         let payload: Record<string, unknown> = {};
         if (['restore-rag', 'sync-rag'].includes(input.kind) && device.report.ragSupported === false) {
@@ -275,7 +278,8 @@ export class DeviceJobs {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await admit?.(db);return this.store.access.claims(actor.email);});
+        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await admit?.(db);return this.store.access.claims(actor.email);},
+        origin?async(db,jobId)=>{await saveMethodChatOrigin(db,jobId,input.projectId!,actor,origin);}:undefined);
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
     private async readScope(actor: IAccessActor) {
@@ -357,6 +361,7 @@ export class DeviceJobs {
             assertRuntimeCacheJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
             await assertAgentMethodJob(device,job,this.store.pool);
+            await assertMethodChatJob(this.store.pool,job);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
             await assertProjectConfigurationJob(this.installations,device,job);
@@ -428,6 +433,7 @@ export class DeviceJobs {
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertAgentConfigurationJob(this.store,device,job);
         await assertAgentMethodJob(device,job,this.store.pool);
+        await assertMethodChatJob(this.store.pool,job);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertProjectConfigurationJob(this.installations,device,job);
@@ -580,7 +586,7 @@ export class DeviceJobs {
         }
         // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
-            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks') AND state IN ('running','reconciling')) RETURNING *`,
+            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow') AND state IN ('running','reconciling')) RETURNING *`,
             params,
             {state:'CANCELLED',percent:0,message:'Отменено пользователем'},
         );

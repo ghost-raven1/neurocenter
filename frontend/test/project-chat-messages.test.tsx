@@ -37,4 +37,10 @@ describe('Команда: авторы, replies и безопасная исто
         const view = renderProjectUi(element); expect(view.html).toContain(`href="#project-chat-message-${id}"`); expect(view.html).not.toContain('href="#arbitrary-anchor"'); expect(view.html).toContain('в ранней истории');
         ui.buttons.get('Показать связанное сообщение из ранней истории')!(); expect(props.onLoadEarlier).toHaveBeenCalledOnce();
     });
+    it('Открывает методику только явным действием у сохранённого вопроса и сохраняет вход восстановления при OFF',()=>{
+        const onRunWorkflow=vi.fn();props.onRunWorkflow=onRunWorkflow;props.messages=[projectMessage(),projectMessage({id:'agent',kind:'agent'})];
+        ui.flags.set('project_agent_chat_workflows',false);renderProjectUi(element);expect(onRunWorkflow).not.toHaveBeenCalled();
+        ui.buttons.get('Выполнить задачу · Алиса')!();expect(onRunWorkflow).toHaveBeenCalledExactlyOnceWith(props.messages[0]);
+        expect(ui.buttons.has('Выполнить задачу · Агент')).toBe(false);expect(props.onReply).not.toHaveBeenCalled();expect(props.onRetry).not.toHaveBeenCalled();
+    });
 });
