@@ -249,7 +249,7 @@ try {
         const deadOwner={schemaVersion:1,pid:exited.pid,token:randomUUID()},deadBytes=Buffer.from(JSON.stringify(deadOwner));
         await fs.writeFile(lock,deadBytes,{flag:'wx',mode:0o600,flush:true});const deadStat=await fs.stat(lock,{bigint:true});
         const installed=await installer(env,script);assert.equal(installed.code,0,installed.output);
-        await waitFor(async()=>heartbeatWorkerPid===Number(await fs.readFile(path.join(profile,'worker.lock'),'utf8')),'heartbeat перед очисткой старых версий');
+        await waitFor(async()=>{const pid=await fs.readFile(path.join(profile,'worker.lock'),'utf8').catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});return pid!==undefined&&heartbeatWorkerPid===Number(pid);},'heartbeat перед очисткой старых версий');
         assert.ok(heartbeat.capabilities.includes('bridge-update-current-only-v1'));
         const quarantines=path.join(control,'quarantine'),quarantined=(await fs.readdir(quarantines)).filter(name=>name.startsWith('lock-'+deadOwner.token+'-')&&name.endsWith('.json')&&!name.endsWith('.receipt.json'));
         assert.equal(quarantined.length,1);const preserved=path.join(quarantines,quarantined[0]),preservedStat=await fs.stat(preserved,{bigint:true});
@@ -274,6 +274,15 @@ try {
             const prepared=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js"');
             assert.equal(prepared.code,0,prepared.output);assert.equal(JSON.parse(prepared.output.trim()).paused,true);assert.equal(paused,true);
             await assert.rejects(fs.access(path.join(profile,'worker.lock')),{code:'ENOENT'});
+            // The worker is stopped: only the declared foreign consumer now protects the old runtime.
+            await fs.writeFile(path.join(temporary,'lease-proof.cjs'),`const path=require("node:path");
+const cleanup=require(path.join(process.env.INSTALL_DIR,"dist/shared/bridge-update-cleanup.cjs"));
+(async()=>{let beforeDeleteCalls=0;const result=await cleanup.cleanupSuccessfulBackups({installRoot:process.env.INSTALL_DIR,policy:cleanup.normalizeCleanupPolicy(),beforeDelete:async()=>{beforeDeleteCalls++;throw Error("Active consumer must be preserved.");}});console.log(JSON.stringify({result,beforeDeleteCalls}));})().catch(error=>{console.error(error.message);process.exitCode=1;});\n`);
+            const protectedBackup=await run('exec "$INSTALL_DIR/bin/node" "$HOME/lease-proof.cjs"');
+            assert.equal(protectedBackup.code,0,protectedBackup.output);const proof=JSON.parse(protectedBackup.output.trim());
+            assert.equal(proof.beforeDeleteCalls,0);assert.deepEqual(proof.result.removed,[]);assert.deepEqual(proof.result.warnings,[]);
+            const remaining=await backups();assert.equal(remaining.length,1);
+            assert.ok(proof.result.kept.some(item=>item.reason==='runtime-in-use'&&item.path===path.join(path.dirname(installDirectory),remaining[0])));
             await lease.release();lease=undefined;
             const purged=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --cleanup-updates');
             assert.equal(purged.code,0,purged.output);assert.deepEqual(JSON.parse(purged.output.trim()),{ok:true,removed:1,warnings:0});
