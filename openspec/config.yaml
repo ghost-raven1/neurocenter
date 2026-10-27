@@ -4,6 +4,11 @@ context: |
   Language: Russian
   All artifacts must be written in Russian.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Нейроцентр — единое рабочее место проекта, агентов, скиллов, плагинов и OpenCode.
+  Цель — командная площадка: участники и права, общие решения и задачи, видимые исполнители и проверяемые результаты проекта.
+  Основной путь: проект, привязанная папка, инструменты и агенты, задача, проверяемый результат.
+  Настройка ведётся через UI; отказ сохраняет ввод, показывает состояние и доступное продолжение.
+  Краткая локальная проверка не доказывает работу всей цепочки, CI или production.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

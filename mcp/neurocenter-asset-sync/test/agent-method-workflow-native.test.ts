@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 import {methodFixture} from './agent-method-workflow.fixture.js';
 import {runAgentMethodWorkflow,stopMethodWorkflows} from '../src/features/agent-method-workflow/executor.js';
 import {methodDeliveryResult,recoverMethodCompletions,readMethodReceipt,writeMethodReceipt} from '../src/features/agent-method-workflow/receipts.js';
-import {agentMethodWorkflowDigest} from '../src/features/agent-method-workflow/contract.js';
+import {agentMethodWorkflowDigest,normalizeAgentMethodWorkflowPayload} from '../src/features/agent-method-workflow/contract.js';
 import {saveCompletion,deliverCompletions,pendingCompletions} from '../src/bridge/completions.js';
 
 describe('Actual bounded local workflow subprocesses (harmless fixture runtime, no model)',()=>{
@@ -23,6 +24,24 @@ describe('Actual bounded local workflow subprocesses (harmless fixture runtime, 
   await deliverCompletions(async value=>{delivered.push(value);});expect(delivered[0]).toEqual(delivered[1]);expect(await pendingCompletions()).toEqual([]);
   const prepare=vi.fn(fixture.prepare);await runAgentMethodWorkflow(fixture.job,fixture.deviceId,async()=>{},async()=>{},{prepare});expect(prepare).not.toHaveBeenCalled();
   expect(await fs.readFile(path.join(fixture.root,'dispatch-count'),'utf8')).toBe('1');
+ },30000);
+ it('keeps accepted queue intent immutable while reading planning bytes and beforeSha at dispatch time (local boundary, no PG/API)',async()=>{
+  const planning='openspec/changes/queue-boundary/proposal.md',queued='Queue-time planning draft.\n',current='Planning updated after queue acceptance.\n';
+  await fs.mkdir(path.dirname(path.join(fixture.root,planning)),{recursive:true});await fs.writeFile(path.join(fixture.root,planning),queued);
+  const accepted=normalizeAgentMethodWorkflowPayload(fixture.payload);for(const check of accepted.checks){Object.freeze(check.args);Object.freeze(check);}Object.freeze(accepted.checks);Object.freeze(accepted);
+  const acceptedJson=JSON.stringify(accepted),acceptedDigest=agentMethodWorkflowDigest(accepted),job={...fixture.job,payload:accepted};
+  // Queue acceptance freezes the intent, not the project files; no server queue or real model is claimed here.
+  await fs.writeFile(path.join(fixture.root,planning),current);
+  const runtime=path.join(fixture.root,'runtime.cjs'),implementation=await fs.readFile(runtime,'utf8');
+  await fs.writeFile(runtime,`(()=>{const fs=require('node:fs'),file=${JSON.stringify(planning)},bytes=fs.readFileSync(file,'utf8');if(bytes!==${JSON.stringify(current)})process.exit(8);fs.writeFileSync('runtime-seen.txt',bytes);fs.appendFileSync(file,${JSON.stringify('Runtime observed current planning bytes.\n')});})();\n`+implementation);
+  const prepare=vi.fn(async(root:string,input:typeof accepted)=>{expect(root).toBe(fixture.root);expect(input).toEqual(JSON.parse(acceptedJson));return fixture.prepare();});
+  await runAgentMethodWorkflow(job,fixture.deviceId,async()=>{},async()=>{},{prepare});
+  const result=await methodDeliveryResult(job.id,fixture.deviceId,accepted.workflowId),sha=(bytes:string)=>createHash('sha256').update(bytes).digest('hex');
+  expect(result).toMatchObject({state:'succeeded',method:accepted.method,methodVersion:accepted.methodVersion,checks:[{command:accepted.checks[0]!.command,args:accepted.checks[0]!.args,exitCode:0,state:'passed'}]});
+  expect(result.changes.find(row=>row.path===planning)).toEqual({path:planning,beforeSha256:sha(current),afterSha256:sha(current+'Runtime observed current planning bytes.\n')});
+  expect(result.changes.find(row=>row.path===planning)?.beforeSha256).not.toBe(sha(queued));
+  expect(await fs.readFile(path.join(fixture.root,'runtime-seen.txt'),'utf8')).toBe(current);expect(await fs.readFile(path.join(fixture.root,'dispatch-count'),'utf8')).toBe('1');
+  expect(prepare).toHaveBeenCalledTimes(1);expect(JSON.stringify(accepted)).toBe(acceptedJson);expect(job.project_id).toBe(accepted.projectId);expect((await readMethodReceipt(accepted.workflowId))?.payloadHash).toBe(acceptedDigest);
  },30000);
  it('reports the check executable exit instead of the cleanup wrapper exit',async()=>{
   await fs.writeFile(path.join(fixture.root,'check.cjs'),`require('node:fs').writeFileSync('check-result.txt','partial check output');process.exit(7);`);await runAgentMethodWorkflow(fixture.job,fixture.deviceId,async()=>{},async()=>{},{prepare:fixture.prepare});
