@@ -15,6 +15,7 @@ function RuntimeCacheSettingsForm({device}: {device: IBridgeDevice}) {
     const [open, setOpen] = useState(false);
     const cache = useRuntimeCacheSettings(device);
     const minMiB = cache.supportsTarget ? 1 : 1024, maxMiB = cache.supportsTarget ? runtimeCacheTargetMaxMiB : 16384;
+    const cleanupMinimum = cache.supportsCurrentOnly ? 0 : 1;
     const locked = cache.busy || cache.pending;
     const duplicateTerminalMessage = !!cache.job && !!cache.error && cache.error === cache.job.message && ['failed', 'cancelled'].includes(cache.job.state);
     return <>
@@ -48,20 +49,23 @@ function RuntimeCacheSettingsForm({device}: {device: IBridgeDevice}) {
                 {cache.setReason && <Alert type="info" showIcon message={cache.setReason} />}
                 {cache.supportsCleanup ? <Space direction="vertical">
                     <Typography.Title level={5}>Копии после обновления моста</Typography.Title>
-                    <Typography.Paragraph>Удаляются только проверенные неиспользуемые копии обновления. Сохраняется хотя бы одна копия для отката; ручные изменения и копии восстановления остаются. Кэш комплектов эта настройка не очищает.</Typography.Paragraph>
+                    <Typography.Paragraph>После успешного обновления удаляются проверенные неиспользуемые копии моста. Ручные изменения и копии восстановления сохраняются. Кэш комплектов настраивается отдельно.</Typography.Paragraph>
+                    <Typography.Text type="secondary">{cache.supportsCurrentOnly
+                        ? 'Чтобы хранить только актуальный мост, укажите 0 предыдущих копий и 0 дней ожидания.'
+                        : 'Обновите мост, чтобы хранить только актуальную версию; прежний мост сохраняет минимум одну копию на один день.'}</Typography.Text>
                     <Space><Switch aria-label="Автоочистка копий обновления" checked={cache.cleanupDraft.enabled}
                         disabled={locked || !!cache.reason || !cache.cleanupDraft.enabled && !!cache.cleanupReason}
                         onChange={enabled => {if (!enabled || !cache.cleanupReason) cache.editCleanup({enabled});}} />Автоочистка копий обновления</Space>
                     <label htmlFor={`bridge-cleanup-count-${device.id}`}>Сколько предыдущих копий хранить</label>
-                    <InputNumber id={`bridge-cleanup-count-${device.id}`} min={1} max={10} step={1} precision={0}
+                    <InputNumber id={`bridge-cleanup-count-${device.id}`} min={cleanupMinimum} max={10} step={1} precision={0}
                         value={cache.cleanupDraft.keepPrevious} disabled={locked || !!cache.reason} onChange={keepPrevious => cache.editCleanup({keepPrevious})} />
                     <label htmlFor={`bridge-cleanup-age-${device.id}`}>Не удалять копии моложе, дней</label>
-                    <InputNumber id={`bridge-cleanup-age-${device.id}`} min={1} max={90} step={1} precision={0}
+                    <InputNumber id={`bridge-cleanup-age-${device.id}`} min={cleanupMinimum} max={90} step={1} precision={0}
                         value={cache.cleanupDraft.minAgeDays} disabled={locked || !!cache.reason} onChange={minAgeDays => cache.editCleanup({minAgeDays})} />
                     <Button loading={cache.busy && cache.intent?.request.runtimeCachePolicy.action === 'set-cleanup'}
                         disabled={locked || !!cache.reason || cache.cleanupDraft.enabled && !!cache.cleanupReason || !cache.cleanupPolicy
-                            || !Number.isInteger(cache.cleanupDraft.keepPrevious) || cache.cleanupDraft.keepPrevious! < 1 || cache.cleanupDraft.keepPrevious! > 10
-                            || !Number.isInteger(cache.cleanupDraft.minAgeDays) || cache.cleanupDraft.minAgeDays! < 1 || cache.cleanupDraft.minAgeDays! > 90}
+                            || !Number.isInteger(cache.cleanupDraft.keepPrevious) || cache.cleanupDraft.keepPrevious! < cleanupMinimum || cache.cleanupDraft.keepPrevious! > 10
+                            || !Number.isInteger(cache.cleanupDraft.minAgeDays) || cache.cleanupDraft.minAgeDays! < cleanupMinimum || cache.cleanupDraft.minAgeDays! > 90}
                         onClick={() => {void cache.setCleanup();}}>Сохранить хранение копий</Button>
                     {cache.cleanupReason && !cache.reason && <Alert type="info" showIcon message={cache.cleanupReason} description="Выключить автоочистку можно и при недоступности функции." />}
                 </Space> : <Typography.Text type="secondary">Обновите мост, чтобы настроить хранение копий обновления.</Typography.Text>}

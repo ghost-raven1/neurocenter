@@ -1,6 +1,7 @@
 export const RUNTIME_CACHE_POLICY_JOB:'runtime-cache-policy';
 export const RUNTIME_CACHE_POLICY_CAPABILITY:'runtime-cache-policy-v1';
 export const BRIDGE_UPDATE_CLEANUP_CAPABILITY:'bridge-update-cleanup-v1';
+export const BRIDGE_UPDATE_CURRENT_ONLY_CAPABILITY:'bridge-update-current-only-v1';
 export const RUNTIME_CACHE_TARGET_CAPABILITY:'runtime-cache-target-v2';
 export const RUNTIME_CACHE_POLICY_LIMITS:Readonly<{defaultBytes:number;minBytes:number;maxBytes:number;stepBytes:number}>;
 export const RUNTIME_CACHE_TARGET_LIMITS:Readonly<{defaultBytes:number;minBytes:number;maxBytes:number;stepBytes:number}>;

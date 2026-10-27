@@ -19,11 +19,11 @@ interface Ports {
     create: (request: Request) => Promise<IBridgeJob>; jobs: () => Promise<IBridgeJob[]>;
     storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
     inspectReason: () => string; setReason: () => string;
-    cleanupSupported?: () => boolean; cleanupReason?: (enabled: boolean) => string; targetSupported?: () => boolean;
+    cleanupSupported?: () => boolean; currentOnlySupported?: () => boolean; cleanupReason?: (enabled: boolean) => string; targetSupported?: () => boolean;
     onChange: (state: RuntimeCacheSettingsState) => void;
 }
 export const initialRuntimeCacheSettings = (): RuntimeCacheSettingsState => ({draftMiB: 2048, dirty: false,
-    cleanupDraft: {enabled: true, keepPrevious: 2, minAgeDays: 7}, cleanupDirty: false, busy: false, error: ''});
+    cleanupDraft: {enabled: true, keepPrevious: 0, minAgeDays: 0}, cleanupDirty: false, busy: false, error: ''});
 const terminal = (job: IBridgeJob) => ['succeeded', 'failed', 'cancelled'].includes(job.state);
 const validLimit = (value: unknown, version: 1 | 2): value is number => typeof value === 'number' && Number.isSafeInteger(value)
     && value >= (version === 2 ? 1 : 1024) && value <= (version === 2 ? runtimeCacheTargetMaxMiB : 16384);
@@ -33,8 +33,8 @@ const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(va
 const draftNumber = (value: unknown) => value === null || typeof value === 'number' && Number.isFinite(value);
 const cleanupDraft = (value: unknown): value is CleanupDraft => record(value) && exact(value, ['enabled', 'keepPrevious', 'minAgeDays'])
     && typeof value.enabled === 'boolean' && draftNumber(value.keepPrevious) && draftNumber(value.minAgeDays);
-const validCleanup = (value: unknown): value is CleanupPolicy => cleanupDraft(value) && natural(value.keepPrevious) && value.keepPrevious >= 1 && value.keepPrevious <= 10
-    && natural(value.minAgeDays) && value.minAgeDays >= 1 && value.minAgeDays <= 90;
+const validCleanup = (value: unknown): value is CleanupPolicy => cleanupDraft(value) && natural(value.keepPrevious) && value.keepPrevious <= 10
+    && natural(value.minAgeDays) && value.minAgeDays <= 90;
 const validPayload = (value: Record<string, unknown>) => value.action === 'inspect' && (value.schemaVersion === 1 || value.schemaVersion === 2) && exact(value, ['schemaVersion', 'action'])
     || (value.schemaVersion === 1 || value.schemaVersion === 2) && value.action === 'set' && exact(value, ['schemaVersion', 'action', 'expectedRevision', 'limitBytes'])
         && natural(value.expectedRevision) && value.expectedRevision < Number.MAX_SAFE_INTEGER && natural(value.limitBytes) && validLimit(value.limitBytes / runtimeCacheMiB, value.schemaVersion)
@@ -163,7 +163,10 @@ export function createRuntimeCacheSettings(ports: Ports) {
                 : 'Обновите данные и введите целое число от 1024 до 16384 МиБ.'}); return;
         }
         if (action === 'set-cleanup' && (!state.status || !state.cleanupPolicy || !validCleanup(state.cleanupDraft))) {
-            publish({error: 'Обновите данные: храните от 1 до 10 копий и задайте срок от 1 до 90 целых дней.'}); return;
+            publish({error: 'Обновите данные: храните от 0 до 10 копий и задайте срок от 0 до 90 целых дней.'}); return;
+        }
+        if (action === 'set-cleanup' && (state.cleanupDraft.keepPrevious === 0 || state.cleanupDraft.minAgeDays === 0) && !ports.currentOnlySupported?.()) {
+            publish({error: 'Обновите мост, чтобы хранить только актуальную версию без срока ожидания.'}); return;
         }
         try {
             const payload: RuntimeCachePolicyPayload = action === 'inspect' ? {schemaVersion: ports.cleanupSupported?.() || ports.targetSupported?.() ? 2 : 1, action}

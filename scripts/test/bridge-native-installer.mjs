@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import {readBridgeTemplate} from '../workspace/bridge-templates.mjs';
 
@@ -26,10 +26,11 @@ const entry = path.join(installDirectory, 'dist/index.js');
 const metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
 const digest = value => createHash('sha256').update(value).digest('hex');
 const deviceId = randomUUID();
-let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal;
+let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal, installerFailure;
 let expectedEntryInode, paused = false, pauseObservations = 0;
 let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
 let archiveRequests=0;
+let cleanupAuthority=false;
 const rejectedRoutes = [];
 const pairAuthorizations = [];
 const cases = [];
@@ -47,11 +48,31 @@ async function check(name, action) {
 }
 async function installer(env, script) {
     return new Promise((resolve, reject) => {
-        child = spawn('/bin/bash', [script], { env, cwd: temporary, stdio: ['ignore', 'pipe', 'pipe'] });
-        let output = ''; child.stdout.on('data', chunk => output += chunk); child.stderr.on('data', chunk => output += chunk);
-        const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Установщик не завершился за 30 секунд.')); }, 30000);
-        child.once('error', error => { clearTimeout(timeout); reject(error); });
-        child.once('close', code => { clearTimeout(timeout); child = undefined; resolve({ code, output }); });
+        child = spawn('/bin/bash', [script], { env, cwd: temporary, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const running = child, limit = 128 * 1024;
+        let output = '', stdout = '', stderr = '', timedOut = false, termination, closed = false, escalationDone = false, exitCode;
+        running.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
+        running.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
+        const stop = signal => { try { process.kill(-running.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
+        const groupEmpty = () => { try { process.kill(-running.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } };
+        const finish = () => {
+            if (!closed || timedOut && !escalationDone) { return; }
+            if (timedOut) {
+                installerFailure = { ...installerFailure, stdout, stderr };
+                reject(new Error('Установщик не завершился за 30 секунд. Вывод сохранён в installerFailure отчёта.'));
+            } else { resolve({ code: exitCode, output }); }
+        };
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            installerFailure = { argv: ['/bin/bash', script], cwd: temporary, timeoutMs: 30000, environmentKeys: Object.keys(env).sort(), stdout, stderr };
+            stop('SIGTERM'); termination = setTimeout(() => { stop('SIGKILL'); escalationDone = true; finish(); }, 1000);
+        }, 30000);
+        running.once('error', error => { clearTimeout(timeout); clearTimeout(termination); reject(error); });
+        running.once('close', code => {
+            clearTimeout(timeout); closed = true; exitCode = code; child = undefined;
+            if (timedOut && groupEmpty()) { clearTimeout(termination); escalationDone = true; }
+            finish();
+        });
     });
 }
 /** Linux отдаёт точные Unicode-аргументы через /proc независимо от locale терминала. */
@@ -136,6 +157,7 @@ try {
                     pauseObservations++; paused = true; data = { activeJobs };
                 }
                 else if (route === 'worker/resume') { paused = false; data = { ok: true }; }
+                else if (route === 'worker/update-cleanup/authorize' && cleanupAuthority) data = { ok: true };
                 else if (savedCompletion && route === `jobs/${savedCompletion.id}/complete`) {
                     assert.deepEqual(body, savedCompletion); completionDeliveries++; activeJobs = 0; data = { ok: true };
                 }
@@ -214,6 +236,56 @@ try {
         assert.ok(pauseObservations > 0); assert.equal(paused, false);
         await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
     });
+    await check('Реальный установщик сохраняет мёртвую cleanup-блокировку в карантин, а очистка ждёт lease и подтверждённую паузу', async () => {
+        const credentialsBefore=await fs.readFile(path.join(profile,'credentials.json')),pairsBefore=pairStarts;
+        const actionsBefore=repeatedActionRequests,deliveriesBefore=completionDeliveries;
+        const {default:cleanup}=await import(pathToFileURL(path.join(installDirectory,'dist/shared/bridge-update-cleanup.cjs')).href);
+        const exited=spawn(path.join(installDirectory,'bin/node'),['-e','process.exit(0)'],{env,stdio:'ignore'});
+        await new Promise((resolve,reject)=>{exited.once('error',reject);exited.once('close',code=>code===0?resolve():reject(Error('Owned stale-lock fixture did not exit.')));});
+        assert.ok(Number.isSafeInteger(exited.pid)&&exited.pid>1&&exited.pid!==process.pid);
+        await waitFor(()=>{try{process.kill(exited.pid,0);return false;}catch(error){if(error.code==='ESRCH')return true;throw error;}},'подтверждённый выход владельца тестовой блокировки');
+        const control=await cleanup.controlRootForInstallRoot(installDirectory),lock=path.join(control,'lock.json');
+        await waitFor(()=>fs.access(lock).then(()=>false,error=>{if(error.code==='ENOENT')return true;throw error;}),'освобождение cleanup перед тестовым dead owner');
+        const deadOwner={schemaVersion:1,pid:exited.pid,token:randomUUID()},deadBytes=Buffer.from(JSON.stringify(deadOwner));
+        await fs.writeFile(lock,deadBytes,{flag:'wx',mode:0o600,flush:true});const deadStat=await fs.stat(lock,{bigint:true});
+        const installed=await installer(env,script);assert.equal(installed.code,0,installed.output);
+        await waitFor(async()=>heartbeatWorkerPid===Number(await fs.readFile(path.join(profile,'worker.lock'),'utf8')),'heartbeat перед очисткой старых версий');
+        assert.ok(heartbeat.capabilities.includes('bridge-update-current-only-v1'));
+        const quarantines=path.join(control,'quarantine'),quarantined=(await fs.readdir(quarantines)).filter(name=>name.startsWith('lock-'+deadOwner.token+'-')&&name.endsWith('.json')&&!name.endsWith('.receipt.json'));
+        assert.equal(quarantined.length,1);const preserved=path.join(quarantines,quarantined[0]),preservedStat=await fs.stat(preserved,{bigint:true});
+        assert.equal(preservedStat.ino,deadStat.ino);assert.equal(preservedStat.dev,deadStat.dev);assert.deepEqual(await fs.readFile(preserved),deadBytes);
+        const receipt=JSON.parse(await fs.readFile(preserved+'.receipt.json','utf8'));
+        assert.equal(receipt.action,'quarantined-dead-cleanup-owner');assert.equal(receipt.ownerPid,exited.pid);assert.equal(receipt.sha256,digest(deadBytes));
+        assert.deepEqual(receipt.identity,{dev:String(deadStat.dev),ino:String(deadStat.ino)});assert.equal(receipt.installRoot,installDirectory);assert.equal(receipt.quarantine,preserved);
+        const backups=async()=>(await fs.readdir(path.dirname(installDirectory))).filter(name=>name.startsWith('.neurocenter-previous.'));
+        assert.equal((await backups()).length,1);
+        // A real installed lease represents another active consumer; neither maintenance nor CLI may bypass it.
+        let lease=await cleanup.acquireRuntimeUseLease(installDirectory,{required:true});
+        const commandEnvironment={...env,NEUROCENTER_URL:siteOrigin,NEUROCENTER_API_URL:origin};
+        const run=async command=>{
+            const filename=path.join(temporary,'current-only-command.sh');
+            await fs.writeFile(filename,'#!/bin/bash\nset -eu\n'+command+'\n');
+            return installer(commandEnvironment,filename);
+        };
+        cleanupAuthority=true;
+        try{
+            const active=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --cleanup-updates');
+            assert.equal(active.code,0,active.output);assert.equal(JSON.parse(active.output.trim()).removed,0);assert.equal((await backups()).length,1);
+            const prepared=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js"');
+            assert.equal(prepared.code,0,prepared.output);assert.equal(JSON.parse(prepared.output.trim()).paused,true);assert.equal(paused,true);
+            await assert.rejects(fs.access(path.join(profile,'worker.lock')),{code:'ENOENT'});
+            await lease.release();lease=undefined;
+            const purged=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --cleanup-updates');
+            assert.equal(purged.code,0,purged.output);assert.deepEqual(JSON.parse(purged.output.trim()),{ok:true,removed:1,warnings:0});
+            assert.equal((await backups()).length,0);
+            heartbeat=undefined;
+            const resumed=await run('"$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --finish-upgrade\nexec "$HOME/.local/bin/neurocenter-bridge" connect --open');
+            assert.equal(resumed.code,0,resumed.output);await waitFor(()=>!!heartbeat,'heartbeat после очистки и снятия паузы');
+            assert.equal(paused,false);assert.equal(pairStarts,pairsBefore);assert.equal(repeatedActionRequests,actionsBefore);assert.equal(completionDeliveries,deliveriesBefore);
+            assert.deepEqual(await fs.readFile(path.join(profile,'credentials.json')),credentialsBefore);assert.equal(await fs.readFile(config,'utf8'),installedConfig);
+            assert.equal((await backups()).length,0);installedMtime=(await fs.stat(entry)).mtimeMs;
+        }finally{cleanupAuthority=false;await lease?.release();}
+    });
     await check('Мёртвый worker с серверным заданием обновляется и доставляет сохранённый результат без повторной записи файлов', async () => {
         const stoppedPid = await stopFixtureWorker(profile);
         // Восстанавливаем именно stale PID после аварии, не создавая чужой процесс.
@@ -250,7 +322,7 @@ try {
         assert.notEqual(fresh.token, oldCredentials.token); assert.equal(fresh.deviceId, deviceId);
         assert.equal(digest(fresh.token), candidateHash);
         const denied = rejectedRoutes.slice(rejectedBefore);
-        assert.ok(denied.includes('worker/pause')); assert.ok(denied.includes('identity'));
+        assert.ok(!denied.includes('worker/pause'), 'Без живого worker установщик не запрашивает серверную паузу'); assert.ok(denied.includes('identity'));
         assert.ok(!denied.includes('worker/resume'), 'Без установленной паузы не нужен resume с отозванным ключом');
         assert.equal(pauseObservations, pausesBefore); assert.equal(paused, false);
         assert.equal(completionDeliveries, 1); assert.equal(repeatedActionRequests, 0);
@@ -341,6 +413,6 @@ finally {
     await fs.rm(temporary, { recursive: true, force: true });
     await fs.mkdir(path.dirname(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json')), {recursive:true});
     await fs.writeFile(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json'), JSON.stringify({ checkedAt: new Date().toISOString(), target, bridgeVersion, buildId: metadata.buildId, archiveSha256: metadata.sha256, cases,
-        fatal: fatal || null, noSystemNodeOrNpm: true, pairingServer: 'fixture', realBrowserOpened: false,
+        fatal: fatal || null, installerFailure: installerFailure || null, noSystemNodeOrNpm: true, pairingServer: 'fixture', realBrowserOpened: false,
         temporaryProfileRemoved: true, realProfileChanged: false }, null, 2) + '\n');
 }

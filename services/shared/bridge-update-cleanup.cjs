@@ -4,12 +4,13 @@ const {constants}=require('node:fs');
 const path=require('node:path');
 const {fileURLToPath}=require('node:url');
 const {createHash,randomUUID}=require('node:crypto');
+const {withInstallMutex,recoverCleanupLock}=require('./bridge-update-lock.cjs');
 
 const OWNER_FILE='.neurocenter-update-owner.json';
 const CAPABILITY_FILE='dist/runtime-use.json';
 const RUNTIME_USE_ENTRYPOINTS=Object.freeze(['dist/index.js','dist/bridge-cli.js','dist/features/local-configuration/launcher-cli.js',
  'dist/features/opencode-providers/ollama-sdk.js','dist/bridge/connect.js','dist/features/opencode-providers/authorization.js']);
-const DEFAULT_CLEANUP_POLICY=Object.freeze({enabled:true,keepPrevious:2,minAgeDays:7});
+const DEFAULT_CLEANUP_POLICY=Object.freeze({enabled:true,keepPrevious:0,minAgeDays:0});
 const MAX_ENTRIES=50000,MAX_BYTES=2*1024**3,MAX_RECEIPT_BYTES=16*1024**2,MAX_RECEIPTS=256;
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const exact=(value,keys)=>!!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -23,8 +24,8 @@ const exists=filename=>fs.lstat(filename).then(()=>true,error=>{if(missing(error
 /** Only the documented retention fields can change automatic cleanup. */
 function normalizeCleanupPolicy(value=DEFAULT_CLEANUP_POLICY){
  if(!exact(value,['enabled','keepPrevious','minAgeDays'])||typeof value.enabled!=='boolean'
-  ||!Number.isInteger(value.keepPrevious)||value.keepPrevious<1||value.keepPrevious>10
-  ||!Number.isInteger(value.minAgeDays)||value.minAgeDays<1||value.minAgeDays>90)throw Error('Invalid bridge cleanup policy.');
+  ||!Number.isInteger(value.keepPrevious)||value.keepPrevious<0||value.keepPrevious>10
+  ||!Number.isInteger(value.minAgeDays)||value.minAgeDays<0||value.minAgeDays>90)throw Error('Invalid bridge cleanup policy.');
  return {...value};
 }
 async function directoryIdentity(filename){
@@ -71,22 +72,25 @@ function pidState(pid){
  if(!Number.isSafeInteger(pid)||pid<1)return 'unknown';
  try{process.kill(pid,0);return 'live';}catch(error){return error.code==='ESRCH'?'dead':'unknown';}
 }
-/** Existing locks are never taken over: a stale PID does not prove an unlink is still ours. */
-async function locked(root,action,runtimeIdentity){
+/** Explicit installers may quarantine a pinned dead owner; automatic cleanup never takes a lock over. */
+async function locked(root,action,runtimeIdentity,installer){
  const filename=runtimeIdentity?gcGate(root,runtimeIdentity):path.join(root,'lock.json');
  const token=randomUUID(),bytes=Buffer.from(JSON.stringify({schemaVersion:1,pid:process.pid,token}));
- let claimed=false;
+ let claimed=false,recoveryAttempted=false;
  for(let attempt=0;attempt<40;attempt++){
   try{
    const handle=await fs.open(filename,'wx',0o600);try{await handle.writeFile(bytes);await handle.sync();claimed=true;}finally{await handle.close();}break;
   }catch(error){
    if(error.code!=='EEXIST')throw error;
+   if(installer&&!runtimeIdentity&&!recoveryAttempted){
+    recoveryAttempted=true;if(await recoverCleanupLock({root,filename,...installer}))continue;
+   }
    if(attempt===39)throw Error('Bridge runtime cleanup is busy.');
    await new Promise(resolve=>setTimeout(resolve,25));
   }
  }
  if(!claimed)throw Error('Could not lock bridge cleanup.');
- try{return await action();}finally{
+ try{await installer?.proof.assertCurrent();return await action();}finally{
   const current=await readRegular(filename,1024);if(!current.bytes.equals(bytes))throw Error('Bridge cleanup lock ownership changed.');await fs.unlink(filename);
  }
 }
@@ -207,23 +211,23 @@ async function installedBaseline(root,info,value){
 async function writeInstalledRuntimeReceipt({installRoot,runtimeRoot}){
  const info=await installInfo(installRoot),runtime=await managedRuntime(runtimeRoot,true);
  if(runtime.root===info.root||reservedBackupName(path.basename(runtime.root))||runtime.install.root!==info.root)throw Error('Only a verified unpublished bridge stage can receive a baseline.');
- const root=await control(info);
- return locked(root,async()=>{
+ return(await withInstallMutex(info,async proof=>{
+ const root=await control(info);return locked(root,async()=>{
   const tree=await snapshotTree(runtime.root);if(!sameIdentity(tree.identity,runtime.identity))throw Error('Bridge stage identity changed.');
   const record={schemaVersion:1,install:{root:info.root,parent:info.parentIdentity},runtime:{identity:tree.identity},tree:{entries:tree.entries,bytes:tree.bytes,digest:tree.digest}};
   const existing=await installedBaseline(root,info,tree.identity),filename=baselineFile(root,tree.identity);
   if(existing){if(existing.tree.digest!==tree.digest)throw Error('Installed bridge baseline cannot adopt changed bytes.');}
   else await saveReceipt(path.join(root,'baselines'),filename,record);
   return {baselinePath:filename};
- });
+ },undefined,{info,proof});})).value;
 }
 /** Called only after the installer has verified successful replacement; legacy runtimes stay ineligible. */
 async function writeSuccessfulBackupReceipt({installRoot,backupRoot,completedAt=Date.now()}){
  const info=await installInfo(installRoot);await backupPath(info,backupRoot);
  if(!Number.isSafeInteger(completedAt)||completedAt<0)throw Error('Invalid bridge backup completion time.');
  if(!await exists(path.join(backupRoot,OWNER_FILE))||!await exists(path.join(backupRoot,CAPABILITY_FILE)))return {eligible:false,reason:'legacy-runtime'};
- const root=await control(info);
- return locked(root,async()=>{
+ return(await withInstallMutex(info,async proof=>{
+ const root=await control(info);return locked(root,async()=>{
   const current=await managedRuntime(info.root,true),backup=await managedRuntime(backupRoot,true);
   if(current.install.root!==info.root||backup.install.root!==info.root||sameIdentity(current.identity,backup.identity))throw Error('Bridge backup owner does not match its installation.');
   const tree=await snapshotTree(backupRoot),baseline=await installedBaseline(root,info,tree.identity);
@@ -235,7 +239,7 @@ async function writeSuccessfulBackupReceipt({installRoot,backupRoot,completedAt=
    const existing=await readJson(filename,MAX_RECEIPT_BYTES);if(existing.state!=='complete'||existing.tree?.digest!==tree.digest||!sameIdentity(existing.backup?.identity??{},tree.identity))throw Error('Existing bridge backup receipt is ambiguous.');
   }else await saveReceipt(directory,filename,record);
   return {eligible:true,receiptPath:filename};
- });
+ },undefined,{info,proof});})).value;
 }
 function treeShape(tree){
  if(!exact(tree,['entries','bytes','digest'])||!Array.isArray(tree.entries)||tree.entries.length<1||tree.entries.length>MAX_ENTRIES
@@ -288,21 +292,6 @@ async function busyLineage(root,current){
   return false;
  }catch{return true;}
 }
-/** All installers respect this directory; never recover or remove another owner's publication lock. */
-async function installationLocked(info,action){
- const root=info.root+'.install-lock';
- try{await fs.mkdir(root,{mode:0o700});}catch(error){if(error.code==='EEXIST')return false;throw error;}
- const directory=await directoryIdentity(root),filename=path.join(root,'owner.pid'),bytes=Buffer.from(String(process.pid)+'\n');let owned,written=false;
- try{
-  const handle=await fs.open(filename,'wx',0o600);
-  try{owned=identity(await handle.stat({bigint:true}));await handle.writeFile(bytes);written=true;await handle.sync();}finally{await handle.close();}
-  await action();return true;
- }finally{
-  if(!sameIdentity(await directoryIdentity(root),directory))throw Error('Installer cleanup lock directory changed.');
-  if(owned){const current=await readRegular(filename,64);if(!sameIdentity(current.identity,owned)||written&&!current.bytes.equals(bytes))throw Error('Installer cleanup lock owner changed.');await fs.unlink(filename);}
-  await fs.rmdir(root);
- }
-}
 function unchangedRemainder(tree,original){
  const records=new Map(original.entries.map(entry=>[entry.path,JSON.stringify(entry)]));
  return tree.entries.every(entry=>records.get(entry.path)===JSON.stringify(entry));
@@ -312,8 +301,9 @@ async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLI
  const result={removed:[],kept:[],warnings:[]};
  try{
   policy=normalizeCleanupPolicy(policy);if(!policy.enabled)return result;if(!Number.isSafeInteger(now)||now<0)throw Error('Invalid bridge cleanup time.');
-  const info=await installInfo(installRoot),root=await control(info);
-  await locked(root,async()=>{
+  const info=await installInfo(installRoot);
+  const acquired=await withInstallMutex(info,async()=>{
+  const root=await control(info);await locked(root,async()=>{
    const current=await managedRuntime(info.root,true),directory=path.join(root,'receipts'),names=await fs.readdir(directory),valid=[];
    if(names.length>MAX_RECEIPTS)throw Error('Bridge cleanup receipt limit exceeded.');
    for(const name of names){
@@ -341,7 +331,6 @@ async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLI
     else if(now-record.completedAt<policy.minAgeDays*86400000)reason='too-recent';
     if(reason){result.kept.push({path:backup,reason});continue;}
     try{
-     const acquired=await installationLocked(info,async()=>{
      await locked(root,async()=>{
      if(await busyLease(root,record.backup.identity)||await busyLineage(root,current.identity)){result.kept.push({path:backup,reason:'runtime-in-use'});return;}
      if(!sameIdentity(await directoryIdentity(backup),record.backup.identity)||!sameIdentity(await directoryIdentity(info.root),current.identity))throw Error('Bridge runtime identity changed before cleanup.');
@@ -354,11 +343,11 @@ async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLI
       ||await busyLease(root,record.backup.identity)||await busyLineage(root,current.identity))throw Error('Bridge cleanup boundary changed.');
      await fs.rm(backup,{recursive:true,force:false});await syncDirectory(info.parent);await fs.unlink(filename);await syncDirectory(directory);result.removed.push(backup);
      },record.backup.identity);
-     });
-     if(!acquired)result.kept.push({path:backup,reason:'installation-in-progress'});
     }catch{result.kept.push({path:backup,reason:'cleanup-incomplete'});result.warnings.push('Bridge backup cleanup incomplete; its recovery tombstone was preserved.');}
    }
   });
+  },{reuse:false});
+  if(!acquired.acquired)result.kept.push({path:info.root,reason:'installation-in-progress'});
  }catch{result.warnings.push('Bridge backup cleanup was skipped safely.');}
  return result;
 }

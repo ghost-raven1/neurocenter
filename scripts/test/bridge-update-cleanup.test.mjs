@@ -4,6 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {test} from 'node:test';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {randomUUID} from 'node:crypto';
 import cleanup from '../../services/shared/bridge-update-cleanup.cjs';
 
 const {OWNER_FILE,CAPABILITY_FILE,RUNTIME_USE_ENTRYPOINTS,DEFAULT_CLEANUP_POLICY,normalizeCleanupPolicy,controlRootForInstallRoot,
@@ -31,16 +34,21 @@ async function fixture(t){
    assert.equal((await writeSuccessfulBackupReceipt({installRoot,backupRoot,completedAt:NOW-(20-index)*DAY})).eligible,true);
   }
  }
- return {root,installRoot,backupRoots,backups,run:options=>cleanupSuccessfulBackups({installRoot,now:NOW,...options})};
+ return {root,installRoot,backupRoots,backups,run:options=>cleanupSuccessfulBackups({installRoot,now:NOW,policy:{enabled:true,keepPrevious:2,minAgeDays:7},...options})};
 }
 async function leaseFile(installRoot,lease){
  const root=await controlRootForInstallRoot(installRoot),directory=path.join(root,'leases',lease.identity.dev+'-'+lease.identity.ino);
  return path.join(directory,(await fs.readdir(directory))[0]);
 }
-test('Cleanup policy uses enabled keep-two age-seven defaults and rejects ambiguous or destructive settings',()=>{
- assert.deepEqual(normalizeCleanupPolicy(),{enabled:true,keepPrevious:2,minAgeDays:7});assert.ok(Object.isFrozen(DEFAULT_CLEANUP_POLICY));
- for(const value of [{},null,{enabled:true,keepPrevious:0,minAgeDays:7},{enabled:true,keepPrevious:11,minAgeDays:7},
-  {enabled:true,keepPrevious:2,minAgeDays:0},{enabled:true,keepPrevious:2,minAgeDays:91},{...DEFAULT_CLEANUP_POLICY,extra:true}])assert.throws(()=>normalizeCleanupPolicy(value));
+test('Cleanup defaults keep only current, while positive historical policies remain valid',()=>{
+ assert.deepEqual(normalizeCleanupPolicy(),{enabled:true,keepPrevious:0,minAgeDays:0});assert.ok(Object.isFrozen(DEFAULT_CLEANUP_POLICY));
+ assert.deepEqual(normalizeCleanupPolicy({enabled:true,keepPrevious:2,minAgeDays:7}),{enabled:true,keepPrevious:2,minAgeDays:7});
+ for(const value of [{},null,{enabled:true,keepPrevious:-1,minAgeDays:7},{enabled:true,keepPrevious:11,minAgeDays:7},
+  {enabled:true,keepPrevious:2,minAgeDays:-1},{enabled:true,keepPrevious:2,minAgeDays:91},{...DEFAULT_CLEANUP_POLICY,extra:true}])assert.throws(()=>normalizeCleanupPolicy(value));
+});
+test('Current-only removes every eligible inactive successful backup after verification',async t=>{
+ const f=await fixture(t);await f.backups();const result=await cleanupSuccessfulBackups({installRoot:f.installRoot,now:NOW});
+ assert.deepEqual([...result.removed].sort(),[...f.backupRoots].sort());await fs.access(path.join(f.installRoot,'dist/index.js'));
 });
 test('A third old successful backup is actually removed; two verified rollbacks, current and unmarked folders survive',async t=>{
  const f=await fixture(t);await f.backups();const unmarked=path.join(f.root,'.neurocenter-previous.Xyz789');await runtime(unmarked,f.installRoot);
@@ -242,4 +250,97 @@ test('An existing dead-PID cleanup lock is never unlinked or taken over',async t
  const kill=process.kill.bind(process);t.mock.method(process,'kill',(pid,signal)=>{if(pid===2147483646)throw Object.assign(Error('fixture dead'),{code:'ESRCH'});return kill(pid,signal);});
  const result=await f.run();assert.deepEqual(result.removed,[]);assert.ok(result.warnings.length);assert.equal(await fs.readFile(filename,'utf8'),bytes);
  await fs.unlink(filename);assert.deepEqual((await f.run()).removed,[f.backupRoots[0]]);
+});
+
+async function nextStage(f){const stage=path.join(f.root,'verified-next-stage');await runtime(stage,f.installRoot,'new stage',{baseline:false});return stage;}
+async function staleLock(f,{pid,token=randomUUID()}={}){
+ if(pid===undefined){const child=spawn(process.execPath,['-e',''],{stdio:'ignore'});pid=child.pid;await once(child,'close');}
+ const root=await controlRootForInstallRoot(f.installRoot),filename=path.join(root,'lock.json'),bytes=Buffer.from(JSON.stringify({schemaVersion:1,pid,token}));
+ await fs.writeFile(filename,bytes,{mode:0o600});return{root,filename,bytes,pid};
+}
+test('An explicit installer quarantines a pinned dead-owner record and writes the new baseline',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),before=await fs.stat(record.filename);
+ const result=await writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage});assert.ok(result.baselinePath);
+ await assert.rejects(fs.access(record.filename),{code:'ENOENT'});
+ const files=(await fs.readdir(path.join(record.root,'quarantine'))).filter(name=>!name.endsWith('.receipt.json'));assert.equal(files.length,1);
+ const quarantined=path.join(record.root,'quarantine',files[0]);assert.deepEqual(await fs.readFile(quarantined),record.bytes);assert.equal((await fs.stat(quarantined)).ino,before.ino);
+ assert.equal(JSON.parse(await fs.readFile(quarantined+'.receipt.json','utf8')).action,'quarantined-dead-cleanup-owner');
+ await assert.rejects(fs.access(f.installRoot+'.install-lock'),{code:'ENOENT'});
+});
+test('A same-user child reuses its real parent installer mutex without releasing that owner',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),lock=f.installRoot+'.install-lock';await fs.mkdir(lock,{mode:0o700});await fs.writeFile(path.join(lock,'owner.pid'),String(process.pid)+'\n',{mode:0o600});
+ const module=pathToFileURL(path.resolve('services/shared/bridge-update-cleanup.cjs')).href,program=`const c=await import(${JSON.stringify(module)});console.log(JSON.stringify(await c.default.writeInstalledRuntimeReceipt(${JSON.stringify({installRoot:f.installRoot,runtimeRoot:stage})})));`;
+ const child=spawn(process.execPath,['--input-type=module','-e',program],{stdio:['ignore','pipe','pipe']});let output='',errors='';child.stdout.on('data',chunk=>output+=chunk);child.stderr.on('data',chunk=>errors+=chunk);const[code]=await once(child,'close');assert.equal(code,0,errors);assert.ok(JSON.parse(output).baselinePath);
+ assert.equal((await fs.readFile(path.join(lock,'owner.pid'),'utf8')).trim(),String(process.pid));await assert.rejects(fs.access(record.filename),{code:'ENOENT'});
+});
+for(const mode of ['live','unknown','hardlink','foreign-uid','unowned-installer'])test('Explicit recovery preserves '+mode+' ownership without quarantine',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f,{pid:mode==='live'?process.pid:undefined});
+ if(mode==='unknown'){const kill=process.kill.bind(process);t.mock.method(process,'kill',(pid,signal)=>{if(pid===record.pid)throw Object.assign(Error('unknown fixture owner'),{code:'EPERM'});return kill(pid,signal);});}
+ if(mode==='hardlink')await fs.link(record.filename,path.join(f.root,'retained-lock-alias'));
+ if(mode==='foreign-uid'){const lstat=fs.lstat.bind(fs);t.mock.method(fs,'lstat',async(filename,...args)=>{const stat=await lstat(filename,...args);return filename===record.filename?Object.assign(Object.create(Object.getPrototypeOf(stat)),stat,{uid:typeof stat.uid==='bigint'?stat.uid+1n:stat.uid+1}):stat;});}
+ if(mode==='unowned-installer'){const lock=f.installRoot+'.install-lock';await fs.mkdir(lock,{mode:0o700});await fs.writeFile(path.join(lock,'owner.pid'),String(record.pid),{mode:0o600});}
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}));assert.deepEqual(await fs.readFile(record.filename),record.bytes);
+ await assert.rejects(fs.access(path.join(record.root,'quarantine')),{code:'ENOENT'});
+});
+test('A symlinked cleanup control directory cannot authorize recovery',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),saved=record.root+'.retained';
+ await fs.rename(record.root,saved);await fs.symlink(saved,record.root);
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}));assert.deepEqual(await fs.readFile(path.join(saved,'lock.json')),record.bytes);
+});
+test('A concurrent lock replacement at rename is restored into a vacant original slot',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),replacement=Buffer.from(JSON.stringify({schemaVersion:1,pid:process.pid,token:randomUUID()})),rename=fs.rename.bind(fs);
+ let replaced=false;t.mock.method(fs,'rename',async(source,destination)=>{
+  if(source===record.filename&&!replaced){replaced=true;await rename(source,source+'.old-retained');await fs.writeFile(source,replacement,{mode:0o600});}
+  return rename(source,destination);
+ });
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),/replaced|changed/);assert.ok(replaced);
+ assert.deepEqual(await fs.readFile(record.filename),replacement);assert.deepEqual(await fs.readFile(record.filename+'.old-retained'),record.bytes);assert.equal((await fs.stat(record.filename)).nlink,1);
+});
+test('A pinned inode change before rename aborts without moving the replacement',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),replacement=Buffer.from(JSON.stringify({schemaVersion:1,pid:process.pid,token:randomUUID()})),lstat=fs.lstat.bind(fs);let reads=0;
+ t.mock.method(fs,'lstat',async(filename,...args)=>{
+  if(filename===record.filename&&++reads===2){await fs.rename(filename,filename+'.retained');await fs.writeFile(filename,replacement,{mode:0o600});}
+  return lstat(filename,...args);
+ });
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),/changed/);
+ assert.deepEqual(await fs.readFile(record.filename),replacement);assert.deepEqual(await fs.readFile(record.filename+'.retained'),record.bytes);
+ assert.deepEqual(await fs.readdir(path.join(record.root,'quarantine')),[]);
+});
+test('Unexpected hardlinked replacement bytes are restored without adding a persistent alias',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),alias=path.join(f.root,'foreign-alias'),replacement=Buffer.from('owned conflicting hardlink fixture'),rename=fs.rename.bind(fs);let replaced=false;
+ await fs.writeFile(alias,replacement,{mode:0o600});
+ t.mock.method(fs,'rename',async(source,destination)=>{if(source===record.filename&&!replaced){replaced=true;await rename(source,source+'.retained');await fs.link(alias,source);}return rename(source,destination);});
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),/replaced/);
+ assert.deepEqual(await fs.readFile(record.filename),replacement);assert.equal((await fs.stat(record.filename)).nlink,2);assert.deepEqual(await fs.readFile(record.filename+'.retained'),record.bytes);
+});
+test('A slot occupied during conflict restoration preserves both unexpected owners',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),replacement=Buffer.from('replacement owner'),occupied=Buffer.from('new original-slot owner'),rename=fs.rename.bind(fs),link=fs.link.bind(fs);let replaced=false;
+ t.mock.method(fs,'rename',async(source,destination)=>{if(source===record.filename&&!replaced){replaced=true;await rename(source,source+'.retained');await fs.writeFile(source,replacement,{mode:0o600});}return rename(source,destination);});
+ t.mock.method(fs,'link',async(source,destination)=>{if(destination===record.filename)await fs.writeFile(destination,occupied,{flag:'wx',mode:0o600});return link(source,destination);});
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),/replaced/);
+ assert.deepEqual(await fs.readFile(record.filename),occupied);assert.deepEqual(await fs.readFile(record.filename+'.retained'),record.bytes);
+ const files=await fs.readdir(path.join(record.root,'quarantine'));assert.equal(files.length,1);assert.deepEqual(await fs.readFile(path.join(record.root,'quarantine',files[0])),replacement);
+});
+test('A control-directory swap during recovery is rejected without moving foreign data',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),record=await staleLock(f),other=path.join(f.root,'other-control'),lstat=fs.lstat.bind(fs);let reads=0;
+ await fs.mkdir(other,{mode:0o700});await fs.writeFile(path.join(other,'foreign'),'unchanged');
+ t.mock.method(fs,'lstat',async(filename,...args)=>{if(filename===record.root&&++reads===3){await fs.rename(record.root,record.root+'.retained');await fs.symlink(other,record.root);}return lstat(filename,...args);});
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),/directory|changed/);
+ assert.equal(await fs.readFile(path.join(other,'foreign'),'utf8'),'unchanged');assert.deepEqual(await fs.readFile(path.join(record.root+'.retained','lock.json')),record.bytes);
+});
+test('Maintenance observes installer priority before it attempts the global cleanup mutex',async t=>{
+ const f=await fixture(t);await f.backups();const lock=f.installRoot+'.install-lock';await fs.mkdir(lock,{mode:0o700});await fs.writeFile(path.join(lock,'owner.pid'),String(process.pid),{mode:0o600});
+ const root=await controlRootForInstallRoot(f.installRoot),open=fs.open.bind(fs);let globalClaims=0;
+ t.mock.method(fs,'open',async(filename,...args)=>{if(filename===path.join(root,'lock.json')&&args[0]==='wx')globalClaims++;return open(filename,...args);});
+ const result=await f.run();assert.equal(globalClaims,0);assert.deepEqual(result.removed,[]);assert.ok(result.kept.some(item=>item.reason==='installation-in-progress'));
+});
+for(const partial of [false,true])test('Failed '+(partial?'partial':'empty')+' installer-owner write releases only its created mutex',async t=>{
+ const f=await fixture(t),stage=await nextStage(f),filename=path.join(f.installRoot+'.install-lock','owner.pid'),open=fs.open.bind(fs);
+ const mocked=t.mock.method(fs,'open',async(file,...args)=>{
+  const handle=await open(file,...args);if(file!==filename||args[0]!=='wx')return handle;
+  return new Proxy(handle,{get(target,key){if(key==='writeFile')return async bytes=>{if(partial)await target.writeFile(bytes.subarray(0,2));throw Object.assign(Error('owned fixture ENOSPC'),{code:'ENOSPC'});};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+ });
+ await assert.rejects(writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage}),{code:'ENOSPC'});
+ await assert.rejects(fs.access(f.installRoot+'.install-lock'),{code:'ENOENT'});assert.equal(await fs.readFile(path.join(f.installRoot,'dist/index.js'),'utf8'),'current');
+ mocked.mock.restore();assert.ok((await writeInstalledRuntimeReceipt({installRoot:f.installRoot,runtimeRoot:stage})).baselinePath);
 });

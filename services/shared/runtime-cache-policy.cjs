@@ -2,6 +2,7 @@
 const RUNTIME_CACHE_POLICY_JOB='runtime-cache-policy';
 const RUNTIME_CACHE_POLICY_CAPABILITY='runtime-cache-policy-v1';
 const BRIDGE_UPDATE_CLEANUP_CAPABILITY='bridge-update-cleanup-v1';
+const BRIDGE_UPDATE_CURRENT_ONLY_CAPABILITY='bridge-update-current-only-v1';
 const RUNTIME_CACHE_TARGET_CAPABILITY='runtime-cache-target-v2';
 const {normalizeCleanupPolicy}=require('./bridge-update-cleanup.cjs');
 const MiB=1024**2;
@@ -37,4 +38,4 @@ function normalizeRuntimeCachePolicyResult(value){
         throw new TypeError('Некорректная квитанция настройки кэша компьютера.');
     return {schemaVersion:version,revision:value.revision,limitBytes:value.limitBytes,usedBytes:value.usedBytes,defaultBytes:value.defaultBytes,minBytes:value.minBytes,maxBytes:value.maxBytes,observedAt:value.observedAt,...(version===2?{cleanup:normalizeCleanupPolicy(value.cleanup)}:{})};
 }
-module.exports={RUNTIME_CACHE_POLICY_JOB,RUNTIME_CACHE_POLICY_CAPABILITY,BRIDGE_UPDATE_CLEANUP_CAPABILITY,RUNTIME_CACHE_TARGET_CAPABILITY,RUNTIME_CACHE_POLICY_LIMITS,RUNTIME_CACHE_TARGET_LIMITS,normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult};
+module.exports={RUNTIME_CACHE_POLICY_JOB,RUNTIME_CACHE_POLICY_CAPABILITY,BRIDGE_UPDATE_CLEANUP_CAPABILITY,BRIDGE_UPDATE_CURRENT_ONLY_CAPABILITY,RUNTIME_CACHE_TARGET_CAPABILITY,RUNTIME_CACHE_POLICY_LIMITS,RUNTIME_CACHE_TARGET_LIMITS,normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult};
