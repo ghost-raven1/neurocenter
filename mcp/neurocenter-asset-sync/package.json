@@ -1,6 +1,6 @@
 {
   "name": "neurocenter-asset-sync",
-  "version": "0.9.22",
+  "version": "0.9.23",
   "description": "stdio MCP-сервер: scan/sync opencode скиллов и плагинов, определение проекта rag_db, инспекция и дельта-синхронизация индексa (LanceDB) с центральным сервером (postgres+pgvector).",
   "type": "module",
   "private": true,

@@ -12,6 +12,7 @@ let value:ReturnType<typeof useAgentMethodWorkflow>,root:Root,container:HTMLDivE
 function Probe(){value=useAgentMethodWorkflow('prj-qa');return createElement('span',null,value.error);}
 const render=async()=>{await act(async()=>{root.render(createElement(Probe));});};
 const target={deviceId:'device',expectedBindingId:'a'.repeat(64),expectedInstanceId:'11111111-1111-4111-8111-111111111111'};
+const selectedIdentity={agentId:'agent-review',slug:'nc-reviewer',version:2,agentsRevision:4,agentsManifestSha256:'b'.repeat(64),compiledManifestSha256:'c'.repeat(64),fileSha256:'d'.repeat(64),configurationJobId:'33333333-3333-4333-8333-333333333333'};
 beforeEach(()=>{vi.resetAllMocks();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);localStorage.clear();container=document.createElement('div');document.body.appendChild(container);root=createRoot(container);});
 afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.unstubAllGlobals();});
 
@@ -84,4 +85,49 @@ it('does not discard an unknown POST outcome after a missing receipt',async()=>{
 it('does not interpret an incomplete result as successful execution',()=>{
     expect(workflowResult({protocol:'agent-method-workflow-v1',state:'succeeded'})).toBeUndefined();
     expect(workflowResult({protocol:'agent-method-workflow-v1',method:'openspec',state:'succeeded',stage:'completed',changes:[],artifacts:[],checks:[{command:'npm',args:['test'],state:'failed',exitCode:1,signal:null}]})).toBeUndefined();
+});
+
+it('pins an explicit agent and revision before POST and replays the identical selected intent after reload',async()=>{
+    io.create.mockRejectedValueOnce(Error('ACK lost'));await render();await act(async()=>{value.update({agentId:selectedIdentity.agentId,instruction:'Selected agent task'});});
+    await act(async()=>{await value.start(target,4);});const original=io.create.mock.calls[0][0];
+    expect(original.workflow).toEqual({method:'openspec',instruction:'Selected agent task',checks:[{command:'npm',args:['run','typecheck']},{command:'npm',args:['test']}],agentId:selectedIdentity.agentId,expectedAgentsRevision:4});
+    await act(async()=>root.unmount());root=createRoot(container);await render();expect(value.draft.agentId).toBe(selectedIdentity.agentId);expect(value.draft.pending).toEqual(original);
+    io.request.mockRejectedValueOnce({response:{status:404}});await act(async()=>{await value.recover();});
+    io.create.mockImplementationOnce(async input=>({id:'selected',kind:input.kind,workflowId:input.requestKey,deviceId:input.deviceId,projectId:input.projectId,bindingId:input.expectedBindingId,expectedInstanceId:input.expectedInstanceId,agent:selectedIdentity}));
+    await act(async()=>{await value.replay();});expect(io.create.mock.calls[1][0]).toEqual(original);expect(value.draft.pending).toBeUndefined();expect(value.accepted?.agent).toEqual(selectedIdentity);
+});
+
+it('never silently downgrades a saved agent choice to a generic workflow when its revision is unavailable',async()=>{
+    await render();await act(async()=>{value.update({agentId:selectedIdentity.agentId,instruction:'Keep selected agent'});});
+    await act(async()=>{await value.start(target);});expect(io.create).not.toHaveBeenCalled();expect(value.draft.agentId).toBe(selectedIdentity.agentId);
+    await act(async()=>{value.update({agentId:undefined});});io.create.mockRejectedValueOnce(Error('ACK lost'));await act(async()=>{await value.start(target);});
+    expect(io.create.mock.calls[0][0].workflow).not.toHaveProperty('agentId');expect(io.create.mock.calls[0][0].workflow).not.toHaveProperty('expectedAgentsRevision');
+});
+
+it('keeps selected recovery blocked when a receipt confirms a different agent or revision',async()=>{
+    await render();await act(async()=>{value.update({agentId:selectedIdentity.agentId,instruction:'Keep original selection'});});
+    io.create.mockImplementationOnce(async input=>({id:'wrong-agent',kind:input.kind,workflowId:input.requestKey,deviceId:input.deviceId,projectId:input.projectId,bindingId:input.expectedBindingId,expectedInstanceId:input.expectedInstanceId,agent:{...selectedIdentity,agentId:'another-agent'}}));
+    await act(async()=>{await value.start(target,4);});expect(value.draft.pending).toBeDefined();expect(value.accepted).toBeUndefined();expect(value.error).toContain('агента');
+    io.request.mockImplementationOnce(async()=>({requestKey:value.draft.pending!.requestKey,job:{id:'wrong-revision',kind:'run-agent-method-workflow',workflowId:value.draft.pending!.requestKey,deviceId:target.deviceId,projectId:'prj-qa',bindingId:target.expectedBindingId,expectedInstanceId:target.expectedInstanceId,agent:{...selectedIdentity,agentsRevision:5}}}));
+    await act(async()=>{await value.recover();});expect(value.draft.pending).toBeDefined();expect(value.accepted).toBeUndefined();
+});
+
+it('retains a stale agent choice and task until receipt404 permits an explicit return to selection',async()=>{
+    await render();await act(async()=>{value.update({agentId:selectedIdentity.agentId,instruction:'Preserve after agents changed'});});
+    io.create.mockRejectedValueOnce({response:{status:409}});await act(async()=>{await value.start(target,4);});const first=io.create.mock.calls[0][0];
+    await act(async()=>{value.discardRejected();});expect(value.draft.pending).toBeDefined();
+    io.request.mockRejectedValueOnce({response:{status:404}});await act(async()=>{await value.recover();});await act(async()=>{value.discardRejected();});
+    expect(value.draft.pending).toBeUndefined();expect(value.draft.agentId).toBe(selectedIdentity.agentId);expect(value.draft.instruction).toBe('Preserve after agents changed');
+    io.create.mockRejectedValueOnce(Error('ACK lost'));await act(async()=>{await value.start(target,5);});
+    expect(io.create.mock.calls[1][0].workflow.expectedAgentsRevision).toBe(5);expect(io.create.mock.calls[1][0].requestKey).not.toBe(first.requestKey);
+});
+
+it('rejects partial selected-agent recovery metadata and retains legacy agentless requests',()=>{
+    const legacy={kind:'run-agent-method-workflow',projectId:'prj-qa',...target,requestKey:'22222222-2222-4222-8222-222222222222',workflow:{method:'openspec',instruction:'Legacy task',checks:[{command:'npm',args:['test']}]}};
+    const draft={method:'openspec',instruction:'Legacy task',checks:['test'],pending:legacy},read=(next:unknown)=>readWorkflowDraft({getItem:()=>JSON.stringify(next)},'qa','prj-qa');
+    expect(read(draft).pending).toEqual(legacy);
+    expect(()=>read({...draft,agentId:selectedIdentity.agentId,pending:{...legacy,workflow:{...legacy.workflow,agentId:selectedIdentity.agentId}}})).toThrow();
+    expect(()=>read({...draft,pending:{...legacy,workflow:{...legacy.workflow,expectedAgentsRevision:4}}})).toThrow();
+    expect(()=>read({...draft,agentId:'another-agent',pending:{...legacy,workflow:{...legacy.workflow,agentId:selectedIdentity.agentId,expectedAgentsRevision:4}}})).toThrow();
+    expect(read({...draft,agentId:selectedIdentity.agentId,pending:{...legacy,workflow:{...legacy.workflow,agentId:selectedIdentity.agentId,expectedAgentsRevision:4}}}).pending?.workflow.agentId).toBe(selectedIdentity.agentId);
 });

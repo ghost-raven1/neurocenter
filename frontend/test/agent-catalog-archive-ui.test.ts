@@ -19,6 +19,7 @@ vi.mock('../src/features/AgentCatalog/useAgentCatalog',()=>({useAgentCatalog:()=
 vi.mock('../src/features/AgentCatalog/useAgentActions',()=>({useAgentActions:()=>({busy:false,error:'',notice:'',unconfirmed:false})}));
 vi.mock('../src/features/AgentCatalog/useAgentReadiness',()=>({useAgentReadiness:()=>({items:[],loading:false,error:'',busy:false,uncertain:false})}));
 vi.mock('../src/features/McpBridge/BridgeConnection',()=>({BridgeConnection:()=>null}));
+vi.mock('../src/features/AgentMethods/AgentMethodWorkflow',()=>({AgentMethodWorkflow:()=>null}));
 vi.mock('../src/features/AgentCatalog/AgentEditModal',()=>({AgentEditModal:()=>null}));
 vi.mock('../src/features/AgentCatalog/ProjectAgentEditor',()=>({ProjectAgentEditor:()=>null}));
 vi.mock('../src/features/AgentCatalog/AgentDetails',()=>({AgentDetails:()=>null}));

@@ -99,6 +99,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
                 {canManage && <Button onClick={() => {if (captureOwner()()) setProviderSetup({scope: providerScope});}}>Настроить провайдера</Button>}
                 {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
             </div><ProjectConfiguration projectId={projectId} bridge={bridge}/><AgentMethodWorkflow key={JSON.stringify([scope,projectId])} projectId={projectId} canManage={canManage} bridge={bridge}
+                agentCatalog={catalog} agentsLoading={loading} agentsError={error} onReloadAgents={refresh}
                 onSetupRuntime={canManage?()=>{if(captureOwner()())setProviderSetup({scope:providerScope});}:undefined}/></div>}
         {!!cleanup.length && <Alert className="agent-catalog__notice" type="warning" showIcon message={`Ожидают удаления из OpenCode: ${cleanup.map(item => item.card.name).join(', ')}`}
             description="Удаление сохранено в проекте. Нажмите «Применить настройки» для выбранного компьютера. В других связанных папках также потребуется применение." />}

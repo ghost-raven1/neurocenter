@@ -16,6 +16,13 @@ import {methodDeliveryResult,recoverMethodCompletions,acknowledgeMethodReceipt} 
 // Explicit native acceptance: all method/agent processes use an owned HOME and an HTTP model fixture.
 const [engine,installedAdapter,openspec,ripgrep,verifySkill,output]=process.argv.slice(2).map(value=>path.resolve(value));
 assert.ok(engine&&installedAdapter&&openspec&&ripgrep&&verifySkill&&output,'Provide pinned engine, installed adapter, OpenSpec CLI, rg, verify SKILL.md and evidence output.');
+const selectedAcceptance=process.env.NEUROCENTER_METHOD_SELECTED_AGENT_ACCEPTANCE==='1',candidateRoot=process.env.NEUROCENTER_METHOD_CANDIDATE_ROOT;
+if(selectedAcceptance){
+ assert.ok(candidateRoot,'Selected acceptance requires an explicitly isolated current bridge candidate');
+ const ownedRun=path.resolve(process.cwd(),'../../.run'),candidate=await fs.realpath(candidateRoot),relative=path.relative(ownedRun,candidate);
+ assert.ok(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative),'The candidate must belong to the repository own .run directory');
+ assert.equal(path.resolve(installedAdapter),path.join(candidate,'dist/features/opencode-providers/index.js'));
+}
 const diagnosticMode=process.env.NEUROCENTER_METHOD_DIAGNOSTIC_ONLY;
 const diagnosticOnly=['1','run','http'].includes(diagnosticMode);
 const execute=promisify(execFile),temporary=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-method-native-')));
@@ -87,12 +94,12 @@ try{
  const {createProjectAgentsPayload,compileProjectAgents}=await load('../project-agents/contract.js');
  const agent={id:'agent-native-method',slug:'nc-native-method',version:1,enabled:true,description:'Owned native method acceptance',prompt:'Implement the accepted owned task.',mode:'primary',permission:{read:'allow',edit:'allow',bash:'allow'},model:'neurocenter/model-native-method'};
  const agents=createProjectAgentsPayload({schemaVersion:2,projectId,bindingId,instanceId,revision:1,agents:[agent],modelRequirements:[{kind:'catalog',agentId:agent.id,catalogModelId:'model-native-method',modelPin:'c'.repeat(64),runtime:'remote-ollama',runtimeModel:model,baseUrl:origin+'/prefix',options:{temperature:0,topP:1,maxOutputTokens:1024,contextWindow:65536},capability:'chat'}]});
- const mappings=await projectAgentMappings(agents,project,async()=>{});await configureProjectAgents(agents,async()=>{},async()=>{},async value=>compileProjectAgents(agents,value));
+ const mappings=await projectAgentMappings(agents,project,async()=>{}),configured=await configureProjectAgents(agents,async()=>{},async()=>{},async value=>compileProjectAgents(agents,value));
  let projectConfigPath;for(const relative of ['opencode.json','opencode.jsonc','.opencode/opencode.json','.opencode/opencode.jsonc']){const candidate=path.join(project,relative);try{await fs.access(candidate);projectConfigPath=candidate;break;}catch{}}
  assert.ok(projectConfigPath,'Prepared provider configuration must exist in the owned project');
  const projectConfig=parse(await fs.readFile(projectConfigPath,'utf8'));
  assert.ok(mappings[0]?.configKey,'Owned fixture must have an explicitly compiled model mapping');
- projectConfig.$schema='https://opencode.ai/config.json';projectConfig.model=provider+'/'+mappings[0].configKey;await fs.writeFile(projectConfigPath,JSON.stringify(projectConfig));
+ projectConfig.$schema='https://opencode.ai/config.json';projectConfig.model=provider+'/'+(selectedAcceptance?'MUST_NOT_USE_DEFAULT':mappings[0].configKey);await fs.writeFile(projectConfigPath,JSON.stringify(projectConfig));
  process.env.OPENCODE_CONFIG_CONTENT=JSON.stringify({...projectConfig,model:projectConfig.model});
  await fs.mkdir(path.join(project,'.opencode/neurocenter'),{recursive:true});
  for(const directory of [config,path.join(config,'node_modules'),path.join(project,'.opencode'),path.join(project,'.opencode/node_modules')]){await fs.chmod(directory,0o500);locked.push(directory);}
@@ -129,22 +136,28 @@ try{
    }finally{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),5000);await exited;clearTimeout(timer);}
   }
  }else{
- const payload={protocol:'agent-method-workflow-v1',workflowId:randomUUID(),requestId:randomUUID(),projectId,bindingId,instanceId,method:'openspec',methodVersion:'1.15.0',stage:'full-cycle',instruction:'Continue native-method-file: update only app.js and finish its accepted task. Preserve proposal/design/specs. Do not archive in this fixture; the bridge validates task completion.',runtime:'opencode',deadlineAt:new Date(Date.now()+120000).toISOString(),checks:[{command:'node',args:['check.cjs']}]};
+ const agentIdentity={agentId:agent.id,slug:agent.slug,version:agent.version,agentsRevision:configured.revision,agentsManifestSha256:configured.manifestSha256,
+  compiledManifestSha256:configured.compiledManifestSha256,fileSha256:configured.agents.find(item=>item.id===agent.id).sha256,configurationJobId:randomUUID()};
+ const payload={protocol:'agent-method-workflow-v1',workflowId:randomUUID(),requestId:randomUUID(),projectId,bindingId,instanceId,method:'openspec',methodVersion:'1.15.0',stage:'full-cycle',instruction:'Continue native-method-file: update only app.js and finish its accepted task. Preserve proposal/design/specs. Do not archive in this fixture; the bridge validates task completion.',runtime:'opencode',deadlineAt:new Date(Date.now()+120000).toISOString(),checks:[{command:'node',args:['check.cjs']}],
+  ...(selectedAcceptance?{agent:{...agentIdentity,mode:agent.mode,model:mappings[0]}}:{})};
+ const executor=selectedAcceptance?await load('../agent-method-workflow/executor.js'):{runAgentMethodWorkflow};
+ const receipts=selectedAcceptance?await load('../agent-method-workflow/receipts.js'):{methodDeliveryResult,recoverMethodCompletions,acknowledgeMethodReceipt};
  const acceptedFiles=['proposal.md','design.md','specs/native-file/spec.md'];
  const acceptedBefore=await Promise.all(acceptedFiles.map(file=>fs.readFile(path.join(changeDirectory,file),'utf8'))),job={id:randomUUID(),lease:randomUUID(),project_id:projectId,payload};
- await runAgentMethodWorkflow(job,deviceId,async()=>{},async()=>{});
- const result=await methodDeliveryResult(job.id,deviceId,payload.workflowId);if(fixtureError)throw fixtureError;
+ await executor.runAgentMethodWorkflow(job,deviceId,async()=>{},async()=>{});
+ const result=await receipts.methodDeliveryResult(job.id,deviceId,payload.workflowId);if(fixtureError)throw fixtureError;
  assert.equal(result.state,'succeeded',JSON.stringify(result));assert.equal(result.checks[0].state,'passed');assert.equal(result.checks[0].exitCode,0);
  assert.ok(result.changes.some(file=>file.path==='app.js'));assert.ok(result.changes.some(file=>file.path===taskFile));
  assert.deepEqual(await Promise.all(acceptedFiles.map(file=>fs.readFile(path.join(changeDirectory,file),'utf8'))),acceptedBefore);
  assert.equal(round,3);assert.equal(registryRequests,0);
+ if(selectedAcceptance)assert.deepEqual(result.agent,agentIdentity);
  // A lost server ACK may replay this accepted job, but it cannot start the native agent twice.
- await runAgentMethodWorkflow({...job,lease:randomUUID()},deviceId,async()=>{},async()=>{});
- assert.equal(round,3);assert.deepEqual(await methodDeliveryResult(job.id,deviceId,payload.workflowId),result);
- const recovered=[];await recoverMethodCompletions(async value=>{recovered.push(value);});
+ await executor.runAgentMethodWorkflow({...job,lease:randomUUID()},deviceId,async()=>{},async()=>{});
+ assert.equal(round,3);assert.deepEqual(await receipts.methodDeliveryResult(job.id,deviceId,payload.workflowId),result);
+ const recovered=[];await receipts.recoverMethodCompletions(async value=>{recovered.push(value);});
  assert.equal(recovered.length,1);assert.equal(recovered[0].id,job.id);assert.equal(recovered[0].state,'succeeded');
- await acknowledgeMethodReceipt(job.id,payload.workflowId);const afterAck=[];await recoverMethodCompletions(async value=>{afterAck.push(value);});assert.deepEqual(afterAck,[]);
- Object.assign(evidence,{ok:true,modelRequests:round,registryRequests,realToolRead:true,realToolWrite:true,realMethodValidation:true,realCheck:true,acceptedRequirementsPreserved:true,durableReplay:true,completionAck:true,result});
+ await receipts.acknowledgeMethodReceipt(job.id,payload.workflowId);const afterAck=[];await receipts.recoverMethodCompletions(async value=>{afterAck.push(value);});assert.deepEqual(afterAck,[]);
+ Object.assign(evidence,{ok:true,selectedAgentAcceptance:selectedAcceptance,modelRequests:round,registryRequests,realToolRead:true,realToolWrite:true,realMethodValidation:true,realCheck:true,acceptedRequirementsPreserved:true,durableReplay:true,completionAck:true,result});
  }
 }catch(error){evidence.error=String(error.stack??error).replaceAll(temporary,'[owned-temp]');process.exitCode=1;}
 finally{

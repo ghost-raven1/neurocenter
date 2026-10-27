@@ -508,5 +508,13 @@
     "group": "agents",
     "dependsOn": ["agents", "computer_connections"],
     "defaultEnabled": false
+  },
+  {
+    "key": "project_agent_workflows",
+    "name": "Полный цикл выбранного проектного агента",
+    "description": "Запуск выбранного агента с проверенной настройкой и моделью через локальный мост. История, отмена и восстановление доступны после выключения.",
+    "group": "agents",
+    "dependsOn": ["agent_method_workflows"],
+    "defaultEnabled": false
   }
 ]

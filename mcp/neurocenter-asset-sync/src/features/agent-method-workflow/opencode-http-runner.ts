@@ -6,12 +6,30 @@ const limit=1024*1024;
 type JsonObject=Record<string,unknown>;
 const object=(value:unknown):value is JsonObject=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const finite=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>0;
-class RuntimeFailure extends Error{code:'EXECUTION_FAILED'|'OUTPUT_LIMIT'|'TIMEOUT';constructor(code:'EXECUTION_FAILED'|'OUTPUT_LIMIT'|'TIMEOUT'='EXECUTION_FAILED'){super(code);this.code=code;}}
+type RuntimeFailureCode='EXECUTION_FAILED'|'OUTPUT_LIMIT'|'TIMEOUT'|'SELECTED_AGENT_NOT_READY';
+class RuntimeFailure extends Error{code:RuntimeFailureCode;constructor(code:RuntimeFailureCode='EXECUTION_FAILED'){super(code);this.code=code;}}
+interface SelectedRuntimeAgent {slug:string;mode:'primary'|'all';model:{providerID:string;modelID:string}}
+function selectedRuntimeAgent(raw:string|undefined):SelectedRuntimeAgent|undefined{
+ if(raw===undefined)return;
+ let value:unknown;try{value=JSON.parse(raw);}catch{throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');}
+ if(!object(value)||Object.keys(value).sort().join(',')!=='mode,model,slug'||typeof value.slug!=='string'||!/^nc-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.slug)
+  ||!['primary','all'].includes(String(value.mode))||!object(value.model)||Object.keys(value.model).sort().join(',')!=='modelID,providerID'
+  ||typeof value.model.providerID!=='string'||typeof value.model.modelID!=='string'||!value.model.providerID||!value.model.modelID)throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
+ return value as unknown as SelectedRuntimeAgent;
+}
+/** Runtime introspection must resolve the explicitly selected primary agent and its compiled model before any inference. */
+export function assertRuntimeAgent(value:unknown,selected:SelectedRuntimeAgent):void{
+ if(!Array.isArray(value))throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
+ const matches=value.filter(agent=>object(agent)&&agent.name===selected.slug),agent=matches[0];
+ if(matches.length!==1||!object(agent)||agent.mode!==selected.mode||!object(agent.model)
+  ||agent.model.providerID!==selected.model.providerID||agent.model.modelID!==selected.model.modelID)throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
+}
 
 /** A successful HTTP response must contain the final completed assistant turn, not a tool-call or partial response. */
-export function assertCompletedAssistant(value:unknown,session:string):void{
+export function assertCompletedAssistant(value:unknown,session:string,selected?:SelectedRuntimeAgent):void{
  if(!object(value)||!object(value.info)||!Array.isArray(value.parts))throw new RuntimeFailure();
  const info=value.info;
+ if(selected&&(info.agent!==selected.slug||info.providerID!==selected.model.providerID||info.modelID!==selected.model.modelID))throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
  if(info.role!=='assistant'||info.sessionID!==session||!object(info.time)||!finite(info.time.completed)||info.error!==undefined||info.finish!=='stop')throw new RuntimeFailure();
  if(!value.parts.some(part=>object(part)&&part.type==='text'&&typeof part.text==='string'&&part.text.trim()))throw new RuntimeFailure();
  for(const part of value.parts){
@@ -32,7 +50,7 @@ async function boundedJson(response:Response):Promise<unknown>{
 
 /** Standalone Node24 entry: its server and tools remain descendants of the bridge's durably owned process group. */
 async function main():Promise<void>{
- const [engine,root,prompt]=process.argv.slice(3);
+ const [engine,root,prompt,selection]=process.argv.slice(3),selected=selectedRuntimeAgent(selection);
  if(!engine||!root||!path.isAbsolute(root)||path.resolve(process.cwd())!==path.resolve(root)||!prompt||Buffer.byteLength(prompt)>96*1024)throw new RuntimeFailure();
  const controller=new AbortController(),password=randomBytes(32).toString('hex'),username='neurocenter-method';
  const timer=setTimeout(()=>controller.abort(new RuntimeFailure('TIMEOUT')),15*60*1000);
@@ -52,16 +70,17 @@ async function main():Promise<void>{
    const finish=(error?:unknown,value?:string)=>{clearTimeout(timeout);server.stdout.off('data',ready);server.stderr.off('data',ready);controller.signal.removeEventListener('abort',cancelled);error?reject(error):resolve(value!);};
    server.stdout.on('data',ready);server.stderr.on('data',ready);controller.signal.addEventListener('abort',cancelled,{once:true});if(controller.signal.aborted)cancelled();else ready();
   });
-  const post=async(route:string,value:unknown)=>{
+  const request=async(method:'GET'|'POST',route:string,value?:unknown)=>{
    const target=new URL(route,url);target.searchParams.set('directory',root);
-   return boundedJson(await fetch(target,{method:'POST',redirect:'error',signal:controller.signal,
-    headers:{'content-type':'application/json',authorization:'Basic '+Buffer.from(username+':'+password).toString('base64')},body:JSON.stringify(value)}));
+   return boundedJson(await fetch(target,{method,redirect:'error',signal:controller.signal,
+    headers:{'content-type':'application/json',authorization:'Basic '+Buffer.from(username+':'+password).toString('base64')},...(value===undefined?{}:{body:JSON.stringify(value)})}));
   };
+  if(selected)assertRuntimeAgent(await request('GET','/agent'),selected);
   const permission=['question','plan_enter','plan_exit'].map(permission=>({permission,action:'deny',pattern:'*'}));
-  const session=await post('/session',{title:'Neurocenter development workflow',permission});
+  const session=await request('POST','/session',{title:'Neurocenter development workflow',permission});
   if(!object(session)||typeof session.id!=='string'||!/^ses_[a-zA-Z0-9]+$/.test(session.id))throw new RuntimeFailure();
-  const response=await post('/session/'+session.id+'/message',{parts:[{type:'text',text:prompt}]});
-  assertCompletedAssistant(response,session.id);controller.signal.throwIfAborted();
+  const response=await request('POST','/session/'+session.id+'/message',{...(selected?{agent:selected.slug,model:selected.model}:{}),parts:[{type:'text',text:prompt}]});
+  assertCompletedAssistant(response,session.id,selected);controller.signal.throwIfAborted();
   // Only fixed metadata leaves this process. Model text, tools, server logs and credentials stay private.
   process.stdout.write(JSON.stringify({type:'agent_method_completed',protocol:'opencode-http-v1'})+'\n');
  }finally{

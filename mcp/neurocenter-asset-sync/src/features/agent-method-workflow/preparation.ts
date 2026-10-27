@@ -79,5 +79,6 @@ export async function prepareMethod(root:string,payload:AgentMethodWorkflowPaylo
   +skills.map(skill=>'FILE '+skill.path+'\n'+skill.content).join('\n\n')
   +'\nUSER TASK:\n'+payload.instruction+'\nThe bridge will independently run these final acceptance checks after this coding process exits: '+JSON.stringify(payload.checks)+'. Follow the method\'s own verification steps as required.';
  if(Buffer.byteLength(prompt)>96*1024)throw new MethodExecutionError('OBSERVATION_LIMIT');
- return {command:process.execPath,args:[runtimeRunner,'--agent-method-runtime',command,root,prompt],outputProtocol:'opencode-http-v1',...(payload.method!=='bmad'?{validate:{command:'openspec',args:['validate','--all','--strict','--no-interactive']}}:{})};
+ const selected=payload.agent?{slug:payload.agent.slug,mode:payload.agent.mode,model:{providerID:payload.agent.model.provider,modelID:payload.agent.model.configKey}}:undefined;
+ return {command:process.execPath,args:[runtimeRunner,'--agent-method-runtime',command,root,prompt,...(selected?[JSON.stringify(selected)]:[])],outputProtocol:'opencode-http-v1',...(payload.method!=='bmad'?{validate:{command:'openspec',args:['validate','--all','--strict','--no-interactive']}}:{})};
 }

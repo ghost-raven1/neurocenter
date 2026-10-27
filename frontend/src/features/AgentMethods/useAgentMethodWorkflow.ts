@@ -3,7 +3,7 @@ import {errorMessage} from '../../common/utils/errorMessage';
 import {bridgeApi,type IBridgeJob} from '../McpBridge/api';
 import {createBridgeRequestKey} from '../McpBridge/bridgeRequestKey';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
-import {emptyWorkflowDraft,readWorkflowDraft,workflowChecks,workflowStorageKey,WORKFLOW_INPUT_MAX_BYTES,type WorkflowDraft,type WorkflowIntent} from './model';
+import {emptyWorkflowDraft,readWorkflowDraft,workflowAgentIdentity,workflowChecks,workflowStorageKey,WORKFLOW_INPUT_MAX_BYTES,type WorkflowDraft,type WorkflowIntent} from './model';
 
 interface Target {deviceId:string;expectedBindingId:string;expectedInstanceId:string;}
 
@@ -20,7 +20,7 @@ export function useAgentMethodWorkflow(projectId:string){
         try{localStorage.setItem(key,JSON.stringify(next));setStorageError('');latest.current=next;setDraft(next);}
         catch{setStorageError('Не удалось сохранить задачу на этом устройстве. Отправка не выполняется; проверьте доступ к хранилищу браузера.');throw Error('Не удалось сохранить задачу.');}
     };
-    const update=(patch:Partial<Pick<WorkflowDraft,'method'|'instruction'|'checks'>>):void=>{
+    const update=(patch:Partial<Pick<WorkflowDraft,'method'|'instruction'|'checks'|'agentId'>>):void=>{
         if(storageError||latest.current.pending||working.current)return;
         const next={...latest.current,...patch};
         try{persist(next);}catch{latest.current=next;setDraft(next);}
@@ -28,6 +28,8 @@ export function useAgentMethodWorkflow(projectId:string){
     const confirm=(job:IBridgeJob,intent:WorkflowIntent):void=>{
         if(job.kind!==intent.kind||job.deviceId!==intent.deviceId||job.projectId!==intent.projectId||job.workflowId!==intent.requestKey
             ||job.bindingId!==intent.expectedBindingId||job.expectedInstanceId!==intent.expectedInstanceId)throw Error('Сервер не подтвердил исходную папку и задачу. Проверьте отправку заново.');
+        const agent=workflowAgentIdentity(job.agent);
+        if(intent.workflow.agentId?(!agent||agent.agentId!==intent.workflow.agentId||agent.agentsRevision!==intent.workflow.expectedAgentsRevision):job.agent!=null)throw Error('Сервер не подтвердил выбранного агента и ревизию. Проверьте отправку заново.');
         setAccepted(job);persist({...latest.current,pending:undefined,rejectedStatus:undefined});setCanReplay(false);
     };
     const send=async(intent:WorkflowIntent):Promise<void>=>{
@@ -43,13 +45,14 @@ export function useAgentMethodWorkflow(projectId:string){
         }}
         finally{working.current=false;if(alive.current&&owns())setBusy(false);}
     };
-    const start=async(target:Target):Promise<void>=>{
+    const start=async(target:Target,expectedAgentsRevision?:number):Promise<void>=>{
         if(storageError||latest.current.pending||working.current)return;
         try{
             const value=latest.current;
             if(!value.instruction.trim()||new TextEncoder().encode(value.instruction).length>WORKFLOW_INPUT_MAX_BYTES||!value.checks.length)throw Error('Опишите задачу в пределах 16 КиБ и выберите хотя бы одну проверку.');
+            if(value.agentId&&(!Number.isSafeInteger(expectedAgentsRevision)||Number(expectedAgentsRevision)<1))throw Error('Обновите агентов проекта и подтвердите выбранного исполнителя.');
             await send({kind:'run-agent-method-workflow',projectId,...target,requestKey:createBridgeRequestKey(),workflow:{method:value.method,instruction:value.instruction,
-                checks:workflowChecks(value.checks)}});
+                checks:workflowChecks(value.checks),...(value.agentId?{agentId:value.agentId,expectedAgentsRevision:expectedAgentsRevision!}:{})}});
         }catch(cause){setError(errorMessage(cause,'Не удалось подготовить задачу.'));}
     };
     const recover=async():Promise<void>=>{

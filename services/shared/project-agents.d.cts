@@ -30,3 +30,5 @@ export function validateProjectAgentsResult(value:unknown,payload:unknown):Proje
 
 export function compileProjectAgents(payload:ProjectAgentsPayload,mappings:unknown):ProjectAgentsCompilation;
 export function nativeProjectAgents(payload:ProjectAgentsPayload,mappings:ProjectAgentModelMapping[]):ProjectAgent[];
+/** Canonical safe model metadata shared by configuration and selected-agent execution. */
+export function normalizeProjectAgentModelMapping(value:unknown):ProjectAgentModelMapping;
