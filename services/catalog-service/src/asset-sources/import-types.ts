@@ -45,6 +45,7 @@ export function importView(job: IImportJob) {
         planDigest:importPlanDigest(job),selectedIds:job.selected_ids,cancelRequested:job.cancel_requested,updatedAt:new Date(job.updated_at).toISOString(),
         items:job.items.map(item=>({id:item.resolved.asset.id,kind:item.resolved.asset.kind,version:item.resolved.asset.version,
             current:item.resolved.current,name:item.name,action:item.action,state:item.state,reason:item.reason,message:item.message,native:item.native,
+            ...(item.publication&&item.publication.name!==item.name?{catalogName:item.publication.name}:{}),
             replacement:item.replaceable&&item.expected?{id:item.expected.id,version:item.expected.version,hash:item.expected.hash}:undefined,
             dependencies:(item.resolved.asset.dependencies??[]).map(({id,version})=>({id,version})),
             bytes:item.resolved.asset.kind==='mcp'||item.resolved.asset.kind==='plugin'

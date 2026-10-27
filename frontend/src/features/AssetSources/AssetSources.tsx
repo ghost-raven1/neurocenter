@@ -9,6 +9,7 @@ import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { useAssetImports } from './useAssetImports';
 import { AssetImportRecovery } from './AssetImportRecovery';
+import { AssetCatalogName } from './AssetCatalogName';
 import type { ISourceAsset, ISourceList } from './types';
 import { activeImport, ASSET_IMPORT_MAX_ITEMS } from './types';
 import StoreEditModal from '../Catalog/StoreEditModal';
@@ -74,9 +75,9 @@ export default function AssetSources():JSX.Element {
    {data?.source.error&&<Alert type="warning" showIcon message={data.source.error} description="Показана последняя проверенная опись. Она закреплена точным commit; обновление не меняет уже добавленные карточки."/>}
    <Typography.Text type="secondary">{fromArchive?'Архив · '+data?.source.archiveSha256?.slice(0,12):offline?(data?.source.verified?'Локальная поставка · '+data.source.commit?.slice(0,8):'Загрузите архив или перечитайте локальную поставку.'):data?.source.verified?'Проверено '+new Date(data.source.checkedAt!).toLocaleString('ru-RU')+' · '+data.source.commit?.slice(0,8):'Загрузите архив или обновите источник.'}</Typography.Text>
    <AssetImportRecovery imports={imports} onChangeSelection={ids=>{if(captureOwner()()){setSelected(data?availableSourceAssetIds(data.assets,ids):ids);setQuery('');}}}/>
-   {imports.job&&<Card size="small" title="Добавление в каталог" className="asset-sources__receipt"><Space direction="vertical" className="asset-sources__content">
+   {imports.job&&<Card size="small" title="Импорт в каталог" className="asset-sources__receipt"><Space direction="vertical" className="asset-sources__content">
     <Typography.Text role="status">{imports.job.message}</Typography.Text>
-    <details key={imports.job.id} open={activeImport(imports.job.state)||['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)}><summary>Результаты · {imports.job.items.length}</summary><div className="asset-sources__receipt-items"><List size="small" dataSource={imports.job.items} renderItem={item=><List.Item><div><Typography.Text>{item.name} · {item.version}</Typography.Text>{!item.current&&<Tag>Точная зависимость</Tag>}<div><Typography.Text type={item.state==='FAILED'||item.action==='conflict'?'danger':'secondary'}>{item.reason||item.message||item.state}</Typography.Text></div></div></List.Item>}/></div></details>
+    <details key={imports.job.id} open={activeImport(imports.job.state)||['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)}><summary>Результаты · {imports.job.items.length}</summary><div className="asset-sources__receipt-items"><List size="small" dataSource={imports.job.items} renderItem={item=><List.Item><div><Typography.Text>{item.name} · {item.version}</Typography.Text>{!item.current&&<Tag>Точная зависимость</Tag>}<AssetCatalogName sourceName={item.name} catalogName={item.catalogName}/><div><Typography.Text type={item.state==='FAILED'||item.action==='conflict'?'danger':'secondary'}>{item.reason||item.message||item.state}</Typography.Text></div></div></List.Item>}/></div></details>
     <Space wrap>{activeImport(imports.job.state)?<Button loading={imports.busy} onClick={()=>void imports.cancel()}>Остановить импорт</Button>:<>
      {imports.job.state==='NEEDS_INPUT'&&imports.job.items.some(item=>item.replacement)&&<Button onClick={()=>setResolving(true)}>Решить конфликт</Button>}
      {['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)&&<FeatureButton features={['asset_sources']} loading={imports.busy} onClick={()=>void imports.retry()}>{imports.job.state==='NEEDS_INPUT'&&imports.job.items.some(item=>item.action==='conflict')?'Проверить конфликт заново':'Повторить после исправления'}</FeatureButton>}
@@ -85,7 +86,7 @@ export default function AssetSources():JSX.Element {
    <section className="asset-sources__repository" aria-label="Из репозитория ассетов"><Typography.Title level={3}>Из репозитория ассетов</Typography.Title>
    <div className="asset-sources__section-toolbar"><Input.Search aria-label="Поиск ассетов в репозитории" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Найти в репозитории" allowClear/>
     {!!readyUpdates.length&&<FeatureButton features={['asset_sources']} disabled={imports.blocked||archive.busy||!data?.source.verified} onClick={()=>{if(!imports.blocked&&!archive.busy&&data?.source.verified){setSelected(readyUpdates.slice(0,ASSET_IMPORT_MAX_ITEMS).map(asset=>asset.id));setQuery('');}}}>Выбрать готовые обновления</FeatureButton>}
-    <FeatureButton features={['asset_sources',...new Set((data?.assets??[]).filter(asset=>selected.includes(asset.id)).map(asset=>assetCatalogFeature(asset.kind)))]} type="primary" disabled={!selected.length||!data?.source.verified||imports.blocked||archive.busy} loading={imports.busy} onClick={()=>add(selected)}>Добавить выбранные{selected.length?' ('+selected.length+')':''}</FeatureButton>
+    <FeatureButton features={['asset_sources',...new Set((data?.assets??[]).filter(asset=>selected.includes(asset.id)).map(asset=>assetCatalogFeature(asset.kind)))]} type="primary" disabled={!selected.length||!data?.source.verified||imports.blocked||archive.busy} loading={imports.busy} onClick={()=>add(selected)}>Импортировать выбранные{selected.length?' ('+selected.length+')':''}</FeatureButton>
    </div>
    {readyUpdates.length>ASSET_IMPORT_MAX_ITEMS&&<Typography.Paragraph type="secondary">За один импорт можно выбрать до {ASSET_IMPORT_MAX_ITEMS} карточек. Кнопка обновлений выбирает первые {ASSET_IMPORT_MAX_ITEMS}; остальные обновите после завершения этой порции.</Typography.Paragraph>}
    {loading&&!data?<Spin/>:cards.length?<div className="asset-sources__grid">{cards.map(asset=><Card key={asset.id} size="small" className="asset-sources__card"
@@ -95,6 +96,7 @@ export default function AssetSources():JSX.Element {
      {!!asset.dependencies.length&&<Typography.Text type="secondary">Включает точные зависимости: {asset.dependencies.map(dep=>dep.id+' '+dep.version).join(', ')}</Typography.Text>}
      {asset.supply&&<Typography.Text type={asset.supply.ready?'secondary':'warning'}>{asset.supply.ready?'Файлы и зависимости готовы':'Не хватает файлов: '+asset.supply.missingFiles+' · '+(asset.supply.missingBytes<1000?asset.supply.missingBytes+' Б':formatBytes(asset.supply.missingBytes))}</Typography.Text>}
      {asset.imported&&<Typography.Text type="secondary">В каталоге: версия источника {asset.imported.originVersion}{asset.imported.archived?' · в архиве':asset.imported.updateAvailable?' · доступно обновление':''}</Typography.Text>}
+     {(asset.kind==='mcp'||asset.kind==='plugin')&&<AssetCatalogName sourceName={asset.name} catalogName={asset.imported?.name}/>}
      <div className="asset-sources__card-actions"><FeatureButton features={['asset_sources',assetCatalogFeature(asset.kind)]} type="primary" disabled={imports.blocked||archive.busy||!data?.source.verified||!sourceAssetReady(asset)||asset.imported?.archived||asset.imported?.unavailable} onClick={()=>add([asset.id])}>{asset.imported?(asset.imported.updateAvailable?'Обновить':'Проверить и добавить'):'Добавить'}</FeatureButton>
       {editControls(asset)}
      </div>
@@ -107,7 +109,7 @@ export default function AssetSources():JSX.Element {
   <Modal open={resolving} title="Заменить локальные карточки источником?" onCancel={()=>{if(!imports.busy){setResolving(false);}}} confirmLoading={imports.busy} okText="Заменить содержимое" cancelText="Оставить локальные"
    okButtonProps={{danger:true,disabled:!imports.job?.items.filter(item=>item.action==='conflict').every(item=>!!item.replacement)}} onOk={()=>{void imports.resolve().then(()=>setResolving(false));}}>
    <Typography.Paragraph>Содержимое выбранных локальных карточек будет заменено точной версией источника. Прежние версии, файлы и закреплённые версии проектов сохранятся.</Typography.Paragraph>
-   <List dataSource={imports.job?.items.filter(item=>item.action==='conflict')} renderItem={item=><List.Item><div><Typography.Text strong>{item.name}</Typography.Text><div>Локальная версия: {item.replacement?.version??'замена недоступна'} → источник {item.version}</div><Typography.Text type="secondary">{item.reason}</Typography.Text></div></List.Item>}/>
+   <List dataSource={imports.job?.items.filter(item=>item.action==='conflict')} renderItem={item=><List.Item><div><Typography.Text strong>{item.name}</Typography.Text><AssetCatalogName sourceName={item.name} catalogName={item.catalogName}/><div>Локальная версия: {item.replacement?.version??'замена недоступна'} → источник {item.version}</div><Typography.Text type="secondary">{item.reason}</Typography.Text></div></List.Item>}/>
   </Modal>
   <StoreEditModal key={scope} editApp={edit} onClose={()=>setEdit(null)} onSaved={()=>void load()}/>
   {model&&<ModelEditModal key={model.id+':'+scope} model={model} onClose={()=>setModel(undefined)} onSaved={()=>load()}/>}

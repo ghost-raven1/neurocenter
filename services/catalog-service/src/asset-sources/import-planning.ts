@@ -13,7 +13,7 @@ export function validateImportPlan(items:IImportItem[]):void {
    if(previous){if(previous.native!.version!==native.version||previous.native!.manifest!==native.manifest){throw new ConflictException('В одном устанавливаемом графе требуются разные версии одного инструмента.');}return;}
    selected.set(key,item);const publication=item.publication!,dependencies=publication.dependencies??[];
    const config=dependencies.length?{...publication.config,extra:{...publication.config?.extra,requirements:{mcp:[],plugins:[],dependencies}}}:publication.config;
-   const pkg=buildPackage({id:native.id,name:item.name,kind:publication.kind,version:native.version},(publication.files??[]).map(file=>({path:file.path,content:file.content??''})),'',config);
+   const pkg=buildPackage({id:native.id,name:publication.name,kind:publication.kind,version:native.version},(publication.files??[]).map(file=>({path:file.path,content:file.content??''})),'',config);
    files+=pkg.files.length;bytes+=pkg.files.reduce((sum,file)=>sum+file.size,0);
    if(selected.size>20||files>200||bytes>16*1024*1024){throw new ConflictException('Комплект превышает 20 инструментов, 200 файлов или 16 МиБ. Разделите зависимости.');}
    visiting.add(key);
@@ -23,5 +23,5 @@ export function validateImportPlan(items:IImportItem[]):void {
   };visit(root);
  }
  const names=new Map<string,string>();
- for(const item of tools){const name=item.name.toLocaleLowerCase('en-US'),id=item.native!.id,previous=names.get(name);if(previous&&previous!==id){throw new ConflictException('Несколько выбранных ассетов занимают одно название в native-каталоге.');}names.set(name,id);}
+ for(const item of tools){const name=item.publication!.name.toLocaleLowerCase('en-US'),id=item.native!.id,previous=names.get(name);if(previous&&previous!==id){throw new ConflictException('Несколько выбранных ассетов занимают одно название в native-каталоге.');}names.set(name,id);}
 }

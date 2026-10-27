@@ -26,7 +26,7 @@ beforeEach(()=>{vi.clearAllMocks();flow={stage:'idle',percent:0,error:'',busy:fa
 afterEach(()=>hooks.dispose());
 
 it('Объясняет Download ZIP и подготовленную поставку, выбирает один File без multipart',()=>{
-    const html=render();expect(html).toContain('Download ZIP');expect(html).toContain('сетевой дозагрузки нет');expect(html).toContain('8 ГиБ');expect(ui.drop?.accept).toBe('.zip,.tar,.tar.gz,.tgz');expect(ui.modal?.okButtonProps.disabled).toBe(true);
+    const html=render();expect(html).toContain('Download ZIP');expect(html).toContain('сетевой дозагрузки нет');expect(ui.drop?.hint).toContain('8 ГиБ');expect(ui.drop?.accept).toBe('.zip,.tar,.tar.gz,.tgz');expect(ui.modal?.okButtonProps.disabled).toBe(true);
     const file=new File(['zip'],'source.zip');ui.drop!.onFiles([file]);const selected=render();expect(selected).toContain('source.zip');expect(ui.modal?.okButtonProps.disabled).toBe(false);ui.modal!.onOk();expect(ui.upload).toHaveBeenCalledExactlyOnceWith(file);expect(ui.close).not.toHaveBeenCalled();
 });
 it('Ошибка drop или неверный формат сохраняет прежний файл, но блокирует его отправку до нового выбора',()=>{
