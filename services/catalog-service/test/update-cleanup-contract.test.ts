@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from 'vitest';
-import {normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult,RUNTIME_CACHE_TARGET_LIMITS} from '../../shared/runtime-cache-policy.cjs';
+import {normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult,RUNTIME_CACHE_TARGET_LIMITS,BRIDGE_UPDATE_CURRENT_ONLY_CAPABILITY} from '../../shared/runtime-cache-policy.cjs';
 import {requiredJobFeatures} from '../../shared/feature-policy.cjs';
 import {assertRuntimeCacheJob,completeRuntimeCachePolicy} from '../src/devices/runtime-cache-jobs';
 
@@ -9,7 +9,12 @@ const result={schemaVersion:2,revision:2,limitBytes:3*1024**3,usedBytes:123,defa
 describe('Update cleanup command authority and completion contract',()=>{
     it('keeps a separate versioned retention command without paths or a cache-eviction instruction',()=>{
         expect(normalizeRuntimeCachePolicyPayload(payload)).toEqual(payload);expect(normalizeRuntimeCachePolicyResult(result)).toEqual(result);
-        for(const wrong of [{...payload,path:'/private'},{...payload,cleanup:{...cleanup,path:'/private'}},{...payload,cleanup:{...cleanup,keepPrevious:0}},{...payload,cleanup:{...cleanup,minAgeDays:0}},{...payload,cleanup:{...cleanup,enabled:'yes'}},{...payload,action:'evict'}])expect(()=>normalizeRuntimeCachePolicyPayload(wrong)).toThrow();
+        for(const wrong of [{...payload,path:'/private'},{...payload,cleanup:{...cleanup,path:'/private'}},{...payload,cleanup:{...cleanup,keepPrevious:-1}},{...payload,cleanup:{...cleanup,minAgeDays:-1}},{...payload,cleanup:{...cleanup,enabled:'yes'}},{...payload,action:'evict'}])expect(()=>normalizeRuntimeCachePolicyPayload(wrong)).toThrow();
+        for(const selection of [{...cleanup,keepPrevious:0},{...cleanup,minAgeDays:0}]){
+            expect(normalizeRuntimeCachePolicyPayload({...payload,cleanup:selection})).toEqual({...payload,cleanup:selection});
+            expect(normalizeRuntimeCachePolicyResult({...result,cleanup:selection})).toEqual({...result,cleanup:selection});
+            expect(()=>normalizeRuntimeCachePolicyPayload({...payload,schemaVersion:1,cleanup:selection})).toThrow();
+        }
     });
     it('gates enabling while disabling and inspection remain usable with the feature off',()=>{
         expect(requiredJobFeatures('runtime-cache-policy',payload,true)).toEqual(['bridge_storage_cleanup']);
@@ -18,7 +23,14 @@ describe('Update cleanup command authority and completion contract',()=>{
         const device={id:'d',email:'e',role:'Разработчик',report:{capabilities:['runtime-cache-policy-v1']}};
         const job={kind:'runtime-cache-policy',device_id:'d',email:'e',role:'Разработчик',project_id:null,payload};
         expect(()=>assertRuntimeCacheJob(device as never,job)).toThrow(/Обновите мост/);
-        expect(()=>assertRuntimeCacheJob({...device,report:{capabilities:['runtime-cache-policy-v1','bridge-update-cleanup-v1']}} as never,job)).not.toThrow();
+        const legacyCleanup={...device,report:{capabilities:['runtime-cache-policy-v1','bridge-update-cleanup-v1']}};
+        expect(()=>assertRuntimeCacheJob(legacyCleanup as never,job)).not.toThrow();
+        const currentOnly={...device,report:{capabilities:[...legacyCleanup.report.capabilities,BRIDGE_UPDATE_CURRENT_ONLY_CAPABILITY]}};
+        for(const selection of [{...cleanup,keepPrevious:0},{...cleanup,minAgeDays:0}]){
+            const zeroJob={...job,payload:{...payload,cleanup:selection}};
+            expect(()=>assertRuntimeCacheJob(legacyCleanup as never,zeroJob)).toThrow(/Обновите мост/);
+            expect(()=>assertRuntimeCacheJob(currentOnly as never,zeroJob)).not.toThrow();
+        }
     });
     it('rejects a succeeded receipt for another retention selection or protocol before database writes',async()=>{
         const db={query:vi.fn(async()=>({rows:[]}))};

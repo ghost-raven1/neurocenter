@@ -16,7 +16,8 @@ import {requireFeatureEnabled} from '../src/features/require-feature-enabled';
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeatureEnabled:vi.fn()}));
 const actor={email:'updates@example.test',activeRole:'Разработчик'},binding='a'.repeat(64),project='prj-auto',asset='plugin-fixture';
 const target={deviceId:'owned-device',projectId:project,bindingId:binding,assetId:asset};
-const pkg=(version:number,config?:Parameters<typeof buildPackage>[3])=>buildPackage({id:asset,name:'Fixture',kind:'plugin',version},[{path:'fixture.mjs',content:'export default '+version+';'}],'2026-10-25',config);
+/** Inline packages must be installable before the auto-update policy under test can decide. */
+const pkg=(version:number,config?:Parameters<typeof buildPackage>[3])=>buildPackage({id:asset,name:'Fixture',kind:'plugin',version},[{path:'fixture.mjs',content:'export default '+version+';'}],'2026-10-25',{entrypoint:'fixture.mjs',...config});
 const runtimePackage=(version:number,extra:Record<string,unknown>={})=>{
  const archive=artifactFixture([{path:'plugin.mjs',content:'export default '+version+';'},...(version===2?[{path:'README.md',content:'Updated runtime contents'}]:[])]);
  return buildPackage({id:asset,name:'Fixture',kind:'plugin',version},[],'2026-10-25',{extra:{runtimeArtifacts:[archive.descriptor],userOption:'saved',requirements:{mcp:[],plugins:[],dependencies:[]},...extra}});
@@ -101,6 +102,7 @@ describe('Opt-in approved plugin updates',()=>{
  });
  it('a disable between preparation and queue admission cannot enqueue an update',async()=>{
   const f=fixture();f.disableAtAdmission();await f.service.tick();expect(f.queue.size).toBe(0);
+  expect(f.create).toHaveBeenCalledTimes(1);
  });
  it('lost create ACK retains the request key and a restarted owner recovers the accepted job without another create',async()=>{
   const f=fixture();f.loseAck();await f.service.tick();const key=f.row.pending_input?.requestKey;

@@ -30,7 +30,7 @@ describe('Права и привязка заданий проверки фай�
     it('Наблюдатель проверяет свою установку по зафиксированному пакету',async()=>{
         await expect(service.create(actor,input)).resolves.toEqual({id:'created'});
         expect(inspectionPackage).toHaveBeenCalledWith(actor,expect.objectContaining({bindingId,expectedManifest:pkg.manifest.sha256}));
-        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.stringContaining('"bindingId"'),expect.objectContaining({kind:'inspect-installation',payload:expect.objectContaining({bindingId,package:pkg})}),expect.any(Function));
+        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.stringContaining('"bindingId"'),expect.objectContaining({kind:'inspect-installation',payload:expect.objectContaining({bindingId,package:pkg})}),expect.any(Function),undefined);
     });
     it.each(['install','uninstall'])('Наблюдатель не получает право %s вместе с проверкой',async kind=>{
         await expect(service.create(actor,{...input,kind})).rejects.toMatchObject({status:403});expect(enqueue).not.toHaveBeenCalled();
