@@ -286,6 +286,26 @@ test('Нативная сборка использует отдельный вы
     assert.match(await fs.readFile(path.join(f.root, 'bridge-dist/install.sh'), 'utf8'), /^VERSION='__BRIDGE_VERSION__'$/m);
 });
 
+test('Linux context contains the pinned Ollama vendor inputs without host native dependencies', async t => {
+    const f = await fixture(t), bridge = path.join(f.root, 'mcp/neurocenter-asset-sync');
+    const manifest = JSON.parse(await fs.readFile(path.join(bridge, 'package.json'), 'utf8'));
+    manifest.dependencies = {'@neurocenter/ollama-runtime': 'file:vendor/ollama-runtime'};
+    await fs.writeFile(path.join(bridge, 'package.json'), JSON.stringify(manifest));
+    await fs.mkdir(path.join(bridge, 'vendor/ollama-runtime/node_modules/host-only'), {recursive: true});
+    await fs.writeFile(path.join(bridge, 'vendor/ollama-runtime/package.json'), JSON.stringify({name: '@neurocenter/ollama-runtime', version: '1.0.0'}));
+    await fs.writeFile(path.join(bridge, 'vendor/ollama-runtime/index.js'), 'export const fixture = true;\n');
+    await fs.writeFile(path.join(bridge, 'vendor/ollama-runtime/node_modules/host-only/native.node'), 'HOST_NATIVE_MUST_NOT_ENTER_CONTAINER');
+    await fs.writeFile(path.join(bridge, '.npmrc'), 'install-links=true\n');
+    const result = await f.run(['--targets=linux-x64']);
+    assert.equal(result.status, 0, result.stderr);
+    const docker = result.events.find(event => event.kind === 'docker');
+    for (const file of ['.npmrc', 'vendor/ollama-runtime/package.json', 'vendor/ollama-runtime/index.js']) {
+        assert.ok(docker.files.includes('mcp/neurocenter-asset-sync/' + file), `Missing Linux packaging input: ${file}`);
+    }
+    assert.ok(docker.files.every(file => !file.split('/').includes('node_modules')));
+    assert.equal(await fs.readFile(path.join(bridge, 'vendor/ollama-runtime/node_modules/host-only/native.node'), 'utf8'), 'HOST_NATIVE_MUST_NOT_ENTER_CONTAINER');
+});
+
 test('Сбой нативного сборщика после записи кандидата сохраняет предыдущий пакет', async t => {
     const f = await fixture(t), file = await f.seed('darwin-arm64', {buildId: 'f'.repeat(64)});
     const before = await Promise.all(['', '.json', '.sha256'].map(suffix => fs.readFile(file + suffix)));

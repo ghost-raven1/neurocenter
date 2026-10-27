@@ -48,6 +48,13 @@ async function dockerBuild(target, archiveName, candidate) {
         for (const name of ['dist', 'package.json', 'package-lock.json']) {
             await fs.cp(path.join(bridge, name), path.join(workspace, 'mcp/neurocenter-asset-sync', name), {recursive: true});
         }
+        const manifest = JSON.parse(await fs.readFile(path.join(bridge, 'package.json'), 'utf8'));
+        if (manifest.dependencies?.['@neurocenter/ollama-runtime'] === 'file:vendor/ollama-runtime') {
+            const vendor = path.join(bridge, 'vendor');
+            await fs.cp(vendor, path.join(workspace, 'mcp/neurocenter-asset-sync/vendor'), {recursive: true,
+                filter: file => !path.relative(vendor, file).split(path.sep).includes('node_modules')});
+            await fs.copyFile(path.join(bridge, '.npmrc'), path.join(workspace, 'mcp/neurocenter-asset-sync/.npmrc'));
+        }
         for (const name of [archiveName, archiveName + '.sha256']) {
             await fs.copyFile(path.join(root, 'bridge-dist/opencode', name), path.join(workspace, 'bridge-dist/opencode', name));
         }
