@@ -147,4 +147,5 @@ function nativeProjectAgents(source,mappings){
 
 
 module.exports={PROJECT_AGENTS_CAPABILITY,PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE,AGENT_PERMISSION_KEYS,normalizeAgentDefinition,agentDefinitionDigest,
-    createProjectAgentsPayload,normalizeProjectAgentsPayload,renderProjectAgent,validateProjectAgentsResult,compileProjectAgents,nativeProjectAgents};
+    createProjectAgentsPayload,normalizeProjectAgentsPayload,renderProjectAgent,validateProjectAgentsResult,compileProjectAgents,nativeProjectAgents,
+    normalizeProjectAgentModelMapping:normalizeModelMapping};

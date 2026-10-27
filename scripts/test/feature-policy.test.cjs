@@ -55,6 +55,7 @@ const routes=[
  ['POST','/api/catalog-requests',{},['catalog_requests']],['GET','/api/model-usage',{},['model_usage']],
  ['POST','/api/device-jobs',{kind:'prepare-local-change'},['local_changes']],['POST','/api/device-channel/agents/compile',{},[]],
  ['POST','/api/device-jobs',{kind:'run-agent-method-workflow'},['agent_method_workflows']],
+ ['POST','/api/device-jobs',{kind:'run-agent-method-workflow',workflow:{agentId:'agent-qa',expectedAgentsRevision:1}},['agent_method_workflows','project_agent_workflows']],
  ['POST','/api/models/m/ollama/v1/chat/completions',{},['model_hosting']],['GET','/api/tool-builds/repository',{},['tool_builds']],['POST','/api/rag/sync',{},['rag_sync']],
 ];
 test('Discussion attachment dependency preserves published history and cleanup',()=>{
@@ -95,6 +96,15 @@ test('System roles have independent admission flags and retain history, cancella
 test('Only trusted normalized agent cleanup bypasses disabled capabilities',()=>{
  for(const agents of [[],[{id:'a',enabled:false}]]){assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents},true),[]);assert.deepEqual(requiredJobFeatures('configure-project-agents',{schemaVersion:2,agents}),['agents','computer_connections']);}
  for(const agents of [[{enabled:true}],[{}],null])assert.deepEqual(requiredJobFeatures('configure-project-agents',{agents},true),['agents','computer_connections']);
+});
+
+test('Selected-agent workflow gates dispatch while retaining the legacy protocol and recovery',()=>{
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{agent:{agentId:'qa'}},true),['agent_method_workflows','project_agent_workflows']);
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{},true),['agent_method_workflows']);
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{agent:{agentId:'untrusted'}}),['agent_method_workflows']);
+ const flags=evaluateFeatureFlags({...defaultFeatureFlags(),agent_method_workflows:true,project_agent_workflows:true,agents:false});
+ assert.equal(flags.flags.project_agent_workflows,false);
+ for(const [verb,path]of [['GET','/api/device-jobs/requests/existing'],['GET','/api/device-jobs'],['DELETE','/api/device-jobs/existing']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
 });
 
 test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{

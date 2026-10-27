@@ -3,12 +3,13 @@ import {projectFolder,projectBindingId,projectInstanceId} from '../../bridge/wor
 import {withProjectFiles} from '../../bridge/installation-files.js';
 import {roleMcpLifecycleSupported} from '../system-role-mcp/owned-process.js';
 import {assertMethodQuirkStorage} from '../project-learning-quirks/method-preflight.js';
-import {AGENT_METHOD_WORKFLOW_PROTOCOL,agentMethodWorkflowDigest,normalizeAgentMethodWorkflowPayload,normalizeAgentMethodWorkflowResult,
+import {AGENT_METHOD_WORKFLOW_PROTOCOL,agentMethodWorkflowDigest,agentMethodWorkflowAgentIdentity,normalizeAgentMethodWorkflowPayload,normalizeAgentMethodWorkflowResult,
  type AgentMethodWorkflowPayload,type AgentMethodWorkflowResult,type AgentMethodFailureCode} from './contract.js';
 import {MethodExecutionError,runMethodCommand,type MethodCommandRunner} from './process.js';
 import {prepareMethod,methodEnvironment,type PreparedMethod} from './preparation.js';
 import {snapshotWorkspace,methodChanges,type WorkspaceSnapshot} from './snapshot.js';
 import {assertMethodCompleted} from './completion.js';
+import {assertSelectedMethodAgent} from './selected-agent.js';
 import {readMethodReceipt,writeMethodReceipt,methodProcessJournal,stopReceiptProcess,methodCompletionSummary,type MethodReceipt} from './receipts.js';
 
 interface MethodJob {id:string;lease:string;project_id?:string;payload:unknown}
@@ -18,10 +19,14 @@ export interface MethodExecutorDependencies {
  pollMs?:number;
 }
 const active=new Map<string,{controller:AbortController;finished:Promise<void>}>();
-const setupCodes:AgentMethodFailureCode[]=['METHOD_MISSING','METHOD_VERSION','PROJECT_NOT_INITIALIZED','METHOD_WORKFLOW_MISSING','RUNTIME_MISSING','CHECKS_REQUIRED','UNSUPPORTED_PLATFORM','QUIRK_STORAGE_INVALID'];
+const setupCodes:AgentMethodFailureCode[]=['METHOD_MISSING','METHOD_VERSION','PROJECT_NOT_INITIALIZED','METHOD_WORKFLOW_MISSING','RUNTIME_MISSING','CHECKS_REQUIRED','UNSUPPORTED_PLATFORM','QUIRK_STORAGE_INVALID','SELECTED_AGENT_NOT_READY'];
+function failedResult(result:AgentMethodWorkflowResult,code:AgentMethodFailureCode):AgentMethodWorkflowResult{
+ return {...result,state:setupCodes.includes(code)?'needs_setup':code==='CANCELLED'?'cancelled':'failed',failure:{code,
+  action:code==='SELECTED_AGENT_NOT_READY'?'setup-agent':code==='QUIRK_STORAGE_INVALID'||code==='WORKSPACE_CHANGED'?'inspect-workspace':code==='RUNTIME_MISSING'?'setup-runtime':setupCodes.includes(code)?'setup-method':'review-result'}};
+}
 function initialResult(payload:AgentMethodWorkflowPayload):AgentMethodWorkflowResult{
  return {protocol:AGENT_METHOD_WORKFLOW_PROTOCOL,workflowId:payload.workflowId,method:payload.method,methodVersion:payload.methodVersion,runtime:'opencode',
-  state:'unknown',stage:'prerequisites',codeChanged:false,changes:[],artifacts:[],checks:payload.checks.map(check=>({...check,exitCode:null,signal:null,state:'not_run'})),
+  state:'unknown',stage:'prerequisites',codeChanged:false,changes:[],artifacts:[],checks:payload.checks.map(check=>({...check,exitCode:null,signal:null,state:'not_run'})),...(payload.agent?{agent:agentMethodWorkflowAgentIdentity(payload.agent)}:{}),
   failure:{code:'UNKNOWN_OUTCOME',action:'inspect-workspace'}};
 }
 const durableError=(cause?:unknown)=>Object.assign(new Error('Результат разработки требует восстановления; новый запуск автоматически не выполняется.',{cause}),{localChangesCommitted:true});
@@ -58,7 +63,7 @@ export async function runAgentMethodWorkflow(job:MethodJob,deviceId:string,autho
   try{await authorize();}catch{throw new MethodExecutionError('AUTHORIZATION_LOST');}
   controller.signal.throwIfAborted();await identity();
  };
- const admit=async()=>{await current();try{await quirk?.assertCurrent();}catch(error){if((error as {code?:unknown})?.code==='QUIRK_STORAGE_INVALID')throw new MethodExecutionError('QUIRK_STORAGE_INVALID');throw error;}};
+ const admit=async()=>{await current();try{await quirk?.assertCurrent();}catch(error){if((error as {code?:unknown})?.code==='QUIRK_STORAGE_INVALID')throw new MethodExecutionError('QUIRK_STORAGE_INVALID');throw error;}if(root)await assertSelectedMethodAgent(root,payload,current);};
  const observeFailure=async()=>{
   if(!before||!root||!receipt)return;
   await stopReceiptProcess(receipt);
@@ -81,6 +86,7 @@ export async function runAgentMethodWorkflow(job:MethodJob,deviceId:string,autho
   if(await projectBindingId(payload.projectId)!==payload.bindingId||await projectInstanceId(payload.projectId)!==payload.instanceId)throw new MethodExecutionError('WORKSPACE_CHANGED');
   await current();
   try{quirk=await assertMethodQuirkStorage(root,current);}catch(error){if((error as {code?:unknown})?.code==='QUIRK_STORAGE_INVALID')throw new MethodExecutionError('QUIRK_STORAGE_INVALID');throw error;}
+  await assertSelectedMethodAgent(root,payload,current);
   await save({schemaVersion:1,jobId:job.id,lease:job.lease,deviceId,workflowId:payload.workflowId,payloadHash,state:'started',result});
   poll=setInterval(()=>{if(pollPending)return;pollPending=true;void admit().catch(error=>controller.abort(error)).finally(()=>{pollPending=false;});},dependencies.pollMs??1000);
   const run:MethodCommandRunner=async(command,args,capture=false)=>{
@@ -99,7 +105,7 @@ export async function runAgentMethodWorkflow(job:MethodJob,deviceId:string,autho
    if(prepared.outputProtocol){
     const events=coding.stdout.split('\n').filter(Boolean).map(line=>{try{return JSON.parse(line) as {type?:string;protocol?:string;code?:string};}catch{return {type:'invalid'};}});
     const failure=events.find(event=>event.type==='agent_method_failed'&&event.protocol===prepared.outputProtocol);
-    if(failure)throw new MethodExecutionError(failure.code==='OUTPUT_LIMIT'||failure.code==='TIMEOUT'?failure.code:'EXECUTION_FAILED');
+    if(failure)throw new MethodExecutionError(failure.code==='OUTPUT_LIMIT'||failure.code==='TIMEOUT'||failure.code==='SELECTED_AGENT_NOT_READY'?failure.code:'EXECUTION_FAILED');
     if(events.length!==1||events[0]?.type!=='agent_method_completed'||events[0]?.protocol!==prepared.outputProtocol)throw new MethodExecutionError('EXECUTION_FAILED');
     if(!result.artifacts.length)throw new MethodExecutionError('EXECUTION_FAILED');
    }
@@ -114,19 +120,19 @@ export async function runAgentMethodWorkflow(job:MethodJob,deviceId:string,autho
    }
    result={...result,...methodChanges(before!,await snapshotWorkspace(root!,run),payload.method)};
    if(prepared.outputProtocol)await assertMethodCompleted(root!,payload,result,run);
-   await current();const {failure:_failure,...observed}=result;result={...observed,state:'succeeded',stage:'completed'};
+   await admit();const {failure:_failure,...observed}=result;result={...observed,state:'succeeded',stage:'completed'};
   });
  }catch(error){
   const cause=controller.signal.aborted?controller.signal.reason:error;
   const code=cause instanceof MethodExecutionError?cause.code:'EXECUTION_FAILED';
   if(runningCheck!==undefined)result={...result,checks:result.checks.map((entry,index)=>index===runningCheck?{...entry,state:'failed'}:entry)};
-  result={...result,state:setupCodes.includes(code)?'needs_setup':code==='CANCELLED'?'cancelled':'failed',failure:{code,
-   action:code==='QUIRK_STORAGE_INVALID'||code==='WORKSPACE_CHANGED'?'inspect-workspace':code==='RUNTIME_MISSING'?'setup-runtime':setupCodes.includes(code)?'setup-method':'review-result'}};
+  result=failedResult(result,code);
   try{await observeFailure();}catch{/* Keep earlier measured facts; unavailable outcome observation is never an empty-success claim. */}
  }finally{
   clearTimeout(timer);if(poll)clearInterval(poll);
   try{
    if(receipt)await stopReceiptProcess(receipt);
+   if(result.state==='succeeded'&&payload.agent)try{await admit();}catch(error){const cause=controller.signal.aborted?controller.signal.reason:error;result=failedResult(result,cause instanceof MethodExecutionError?cause.code:'EXECUTION_FAILED');}
    result=normalizeAgentMethodWorkflowResult(result,payload);
    const completed:MethodReceipt={schemaVersion:1,jobId:job.id,lease:job.lease,deviceId,workflowId:payload.workflowId,payloadHash,state:'completed',result};
    await save(completed);

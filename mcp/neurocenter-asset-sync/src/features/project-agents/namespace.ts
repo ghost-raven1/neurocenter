@@ -12,7 +12,7 @@ import type {InstallationPlan} from '../../bridge/installation-plan.js';
 export const agentConflict=(message:string):Error=>Object.assign(new Error(message),{code:'AGENTS_LOCAL_CONFLICT'});
 
 /** Alternate JSON, legacy directories and case aliases must not silently shadow a managed native agent. */
-export async function assertAgentNamespace(plan:InstallationPlan,slugs:string[],ownedSlugs:string[],source:ProjectAgentsPayload):Promise<void>{
+export async function assertAgentNamespace(plan:InstallationPlan,slugs:string[],ownedSlugs:string[],source:Pick<ProjectAgentsPayload,'projectId'|'bindingId'|'instanceId'>):Promise<void>{
     const names=new Set(slugs);
     const owned=new Set(ownedSlugs);
     for(const file of CONFIG_PATHS){

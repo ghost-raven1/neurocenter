@@ -64,7 +64,12 @@ import { ProjectEmbeddingService } from '../models/project-embedding.service';
 import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
 import {assertRagAutoInspection} from './rag-install-inspection';
-const view = `payload->>'method' AS method,payload->>'workflowId' AS "workflowId",id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
+const view = `CASE WHEN kind='run-agent-method-workflow' AND payload ? 'agent' THEN jsonb_build_object(
+    'agentId',payload->'agent'->'agentId','slug',payload->'agent'->'slug','version',payload->'agent'->'version',
+    'agentsRevision',payload->'agent'->'agentsRevision','agentsManifestSha256',payload->'agent'->'agentsManifestSha256',
+    'compiledManifestSha256',payload->'agent'->'compiledManifestSha256','fileSha256',payload->'agent'->'fileSha256',
+    'configurationJobId',payload->'agent'->'configurationJobId') END AS agent,
+    payload->>'method' AS method,payload->>'workflowId' AS "workflowId",id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
     payload->'descriptor'->>'providerKind' AS "providerKind",payload->'descriptor'->>'providerId' AS "providerId",payload->'descriptor'->>'schemaDigest' AS "providerSchemaDigest",
     payload->'descriptor'->'expectations'->>'catalogModelId' AS "catalogModelId",payload->'descriptor'->'expectations'->>'modelPin' AS "expectedModelPin"`;
 
@@ -197,7 +202,7 @@ export class DeviceJobs {
         const quirks=await quirksJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input);
         const memorySync=await memorySyncJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input,actor);
         const agentConfiguration=await agentConfigurationJobPayload(this.store,device,input);
-        const methodWorkflow=agentMethodJobPayload(device,input);
+        const methodWorkflow=await agentMethodJobPayload(device,input,this.store.pool);
         const snapshot=await projectSnapshotPayload(this.store,device,input);
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
@@ -270,7 +275,7 @@ export class DeviceJobs {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await admit?.(db);return this.store.access.claims(actor.email);});
+        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await admit?.(db);return this.store.access.claims(actor.email);});
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
     private async readScope(actor: IAccessActor) {
@@ -351,7 +356,7 @@ export class DeviceJobs {
             await this.codex?.authorizeJob(device,job);
             assertRuntimeCacheJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
-            assertAgentMethodJob(device,job);
+            await assertAgentMethodJob(device,job,this.store.pool);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
             await assertProjectConfigurationJob(this.installations,device,job);
@@ -422,7 +427,7 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertAgentConfigurationJob(this.store,device,job);
-        assertAgentMethodJob(device,job);
+        await assertAgentMethodJob(device,job,this.store.pool);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertProjectConfigurationJob(this.installations,device,job);
