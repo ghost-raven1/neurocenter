@@ -53,6 +53,64 @@ beforeEach(async () => {
 });
 afterEach(async () => {await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals();});
 
+it.each(['CANCELLED','SUCCEEDED'])('Поздний GET в одном batch с ответом отмены не возвращает %s в RUNNING', async state => {
+    vi.useFakeTimers();
+    try {
+        const running = {...job, state: 'RUNNING', cancelRequested: false};
+        io.post.mockResolvedValueOnce({data: running});
+        await run(() => current.start(['old'], commit));
+        const poll = deferred<{data: IAssetImport}>(), cancel = deferred<{data: IAssetImport}>();
+        io.get.mockReturnValueOnce(poll.promise);
+        await act(async () => {await vi.advanceTimersByTimeAsync(1000);});
+        io.post.mockReturnValueOnce(cancel.promise);
+        let cancelling!: Promise<void>;
+        await run(() => {cancelling = current.cancel();});
+        await run(async () => {
+            cancel.resolve({data: {...running, state, cancelRequested: true}});
+            await cancelling;
+            poll.resolve({data: running});
+            await poll.promise;
+        });
+        expect(current.job?.state).toBe(state);
+        expect(current.blocked).toBe(false);
+        await run(() => current.clear());
+        expect(saved()).toBeNull();
+    } finally {vi.useRealTimers();}
+});
+
+it.each([
+    ['FAILED','retry'],['PARTIAL','retry'],['NEEDS_INPUT','retry'],['NEEDS_INPUT','resolve'],
+] as const)('Явное действие %s → %s возвращает тот же импорт в работу', async (state, action) => {
+    io.post.mockResolvedValueOnce({data: {...job, state}});
+    await run(() => current.start(['old'], commit));
+    expect(current.blocked).toBe(false);
+    io.post.mockResolvedValueOnce({data: {...job, state:'RUNNING'}});
+    await run(() => current[action]());
+    expect(current.job?.id).toBe(job.id);
+    expect(current.job?.state).toBe('RUNNING');
+    expect(current.blocked).toBe(true);
+});
+
+it('Поздний GET не снимает уже подтверждённый запрос остановки', async () => {
+    vi.useFakeTimers();
+    try {
+        const running = {...job, state: 'RUNNING', cancelRequested: false};
+        io.post.mockResolvedValueOnce({data: running});
+        await run(() => current.start(['old'], commit));
+        const pendingPoll = deferred<{data: IAssetImport}>();
+        io.get.mockReturnValueOnce(pendingPoll.promise);
+        await act(async () => {await vi.advanceTimersByTimeAsync(1000);});
+        expect(io.get).toHaveBeenCalledWith('/api/asset-imports/' + job.id);
+        io.post.mockResolvedValueOnce({data: {...running, cancelRequested: true}});
+        await run(() => current.cancel());
+        expect(current.job?.cancelRequested).toBe(true);
+        await run(() => pendingPoll.resolve({data: running}));
+        expect(current.job?.cancelRequested).toBe(true);
+        expect(current.blocked).toBe(true);
+        expect(io.post.mock.calls.filter(([url]) => String(url).endsWith('/cancel'))).toHaveLength(1);
+    } finally {vi.useRealTimers();}
+});
+
 describe('Восстановление импорта ассетов без потери неизвестного результата', () => {
     it.each([400, 403, 409])('Явный отказ первой попытки HTTP %s позволяет изменить выбор', async status => {
         io.post.mockRejectedValueOnce(rejected(status)); await run(() => current.start(['old'], commit));

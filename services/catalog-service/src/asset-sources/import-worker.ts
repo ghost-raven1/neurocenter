@@ -96,6 +96,7 @@ export class AssetImportWorker {
                 job=await this.jobs.save(client,job,conflict?'NEEDS_INPUT':'RUNNING',conflict?'Импорт остановлен до скачивания: исправьте указанные конфликты.':'План проверен. Загружаем и проверяем выбранные файлы.',items);
                 if(conflict){return;}
             }else{job=await this.jobs.save(client,job,'RUNNING','Продолжаем сохранённые этапы импорта.');}
+            if(job.state==='CANCELLED'){return;}
             for(let index=0;index<job.items.length;index++){
                 let item=job.items[index];if(item.state==='SUCCEEDED'){continue;}
                 await this.check(job,client,signal); await requireFeaturesEnabled(['asset_sources',...requiredAssetFeatures(item.resolved.asset.kind)]);
@@ -110,6 +111,9 @@ export class AssetImportWorker {
                 try{
                     await authorizeImportActor(client,job.actor,true);await this.check(job,client,signal);
                     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-management:'+item.resolved.asset.kind+':'+(item.expected?.id??item.native!.id)]);
+                    // Cancellation ACK and publication serialize after the potentially long management lock wait.
+                    await client.query('SELECT id FROM asset_source_jobs WHERE id=$1 FOR UPDATE',[job.id]);
+                    await this.check(job,client,signal);
                     await requireFeaturesEnabled(['asset_sources',...requiredAssetFeatures(item.resolved.asset.kind)],undefined,undefined,signal);signal.throwIfAborted();
                     let skillPin;if(item.resolved.asset.kind==='skill'){skillPin=await this.skills.publish(item,job.actor);}
                     const finish=async(native:NonNullable<IImportItem['native']>)=>{
