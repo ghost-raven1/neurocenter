@@ -169,7 +169,7 @@ async function backupPath(info,input){
 }
 /** A portable full-tree digest includes every regular byte, executable mode and empty directory. */
 async function snapshotTree(root,signal){
- const entries=[],observed=[];let bytes=0;
+ const entries=[],observed=[],readBuffer=Buffer.allocUnsafe(64*1024);let bytes=0;
  async function visit(filename,relative){
   signal?.throwIfAborted();
   const before=await fs.lstat(filename,{bigint:true});
@@ -185,7 +185,13 @@ async function snapshotTree(root,signal){
    try{
     if(stamp(await handle.stat({bigint:true}))!==stamp(before))throw Error('Bridge backup changed during inspection.');
     const hash=createHash('sha256');let read=0;
-    for await(const chunk of handle.createReadStream({autoClose:false,signal})){signal?.throwIfAborted();read+=chunk.length;if(read>Number(before.size))throw Error('Bridge backup grew during inspection.');hash.update(chunk);}
+    for(;;){
+     signal?.throwIfAborted();
+     const {bytesRead}=await handle.read(readBuffer,0,readBuffer.length,null);
+     signal?.throwIfAborted();if(!bytesRead)break;
+     read+=bytesRead;if(read>Number(before.size))throw Error('Bridge backup grew during inspection.');
+     hash.update(readBuffer.subarray(0,bytesRead));
+    }
     if(read!==Number(before.size)||stamp(await handle.stat({bigint:true}))!==stamp(before))throw Error('Bridge backup changed during inspection.');
     entries.push({...record,bytes:read,sha256:hash.digest('hex')});
    }finally{await handle.close();}

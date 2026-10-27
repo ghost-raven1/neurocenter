@@ -72,7 +72,7 @@ it('SIGTERM retains the worker until actual cleanup releases its global lock',as
  await expect(fs.access(path.join(state.stateDir(),'worker.lock'))).rejects.toHaveProperty('code','ENOENT');
 });
 
-it('SIGTERM aborts an actual readonly snapshot stream and closes its FD and gates before worker exit',async()=>{
+it('SIGTERM aborts an actual readonly snapshot read and closes its FD and gates before worker exit',async()=>{
  const runtime=await cleanupRuntime(true),target=path.join(runtime.backup,'dist/index.js'),control=await cleanup.controlRootForInstallRoot(runtime.installRoot);
  const open=fs.open.bind(fs),beforeDelete=vi.fn(async()=>{throw Error('Readonly cancellation must precede deletion.');});
  let captured:Awaited<ReturnType<typeof fs.open>>|undefined,failure:unknown,entered=false;
@@ -80,8 +80,8 @@ it('SIGTERM aborts an actual readonly snapshot stream and closes its FD and gate
  vi.mocked(process.exit).mockImplementation((()=>{atExit={fd:captured?.fd,global:existsSync(runtime.lock),installer:existsSync(runtime.installRoot+'.install-lock'),gates:readdirSync(path.join(control,'locks'))};}) as never);
  vi.spyOn(fs,'open').mockImplementation(async(...args)=>{
   const handle=await open(...args);
-  if(args[0]===target&&!captured){captured=handle;const read=handle.createReadStream.bind(handle);
-   vi.spyOn(handle,'createReadStream').mockImplementation(options=>{const stream=read({...options,highWaterMark:1024});stream.once('data',()=>{entered=true;terminate();});return stream;});
+  if(args[0]===target&&!captured){captured=handle;const read=handle.read.bind(handle);
+   vi.spyOn(handle,'read').mockImplementation((async(...args:Parameters<typeof read>)=>{const result=await read(...args);if(result.bytesRead&&!entered){entered=true;terminate();}return result;}) as typeof handle.read);
   }
   return handle;
  });

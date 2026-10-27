@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {test} from 'node:test';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import cleanup from '../../services/shared/bridge-update-cleanup.cjs';
 
 const {OWNER_FILE,CAPABILITY_FILE,RUNTIME_USE_ENTRYPOINTS,DEFAULT_CLEANUP_POLICY,normalizeCleanupPolicy,controlRootForInstallRoot,
@@ -49,6 +49,16 @@ test('Cleanup defaults keep only current, while positive historical policies rem
 test('Current-only removes every eligible inactive successful backup after verification',async t=>{
  const f=await fixture(t);await f.backups();const result=await cleanupSuccessfulBackups({installRoot:f.installRoot,now:NOW});
  assert.deepEqual([...result.removed].sort(),[...f.backupRoots].sort());await fs.access(path.join(f.installRoot,'dist/index.js'));
+});
+for(const size of [0,128*1024+17])test('Snapshot receipt hashes every byte and EOF for a '+size+' byte file',async t=>{
+ const f=await fixture(t),value=Buffer.alloc(size);for(let index=0;index<size;index++)value[index]=index%251;
+ await runtime(f.backupRoots[0],f.installRoot,value);
+ const receipt=await writeSuccessfulBackupReceipt({installRoot:f.installRoot,backupRoot:f.backupRoots[0],completedAt:NOW-20*DAY});
+ assert.equal(receipt.eligible,true);const record=JSON.parse(await fs.readFile(receipt.receiptPath,'utf8'));
+ const entry=record.tree.entries.find(value=>value.path==='dist/index.js');
+ const mode=(await fs.stat(path.join(f.backupRoots[0],'dist/index.js'))).mode&0o7777;
+ assert.deepEqual(entry,{path:'dist/index.js',type:'file',mode,bytes:size,sha256:createHash('sha256').update(value).digest('hex')});
+ assert.deepEqual((await f.run({policy:{...DEFAULT_CLEANUP_POLICY}})).removed,[f.backupRoots[0]]);
 });
 test('A third old successful backup is actually removed; two verified rollbacks, current and unmarked folders survive',async t=>{
  const f=await fixture(t);await f.backups();const unmarked=path.join(f.root,'.neurocenter-previous.Xyz789');await runtime(unmarked,f.installRoot);
@@ -125,14 +135,14 @@ for(const denial of [1,2])test('Fresh authorization denial at destructive bounda
  assert.equal(await fs.readFile(path.join(f.installRoot,'dist/index.js'),'utf8'),'current');
  assert.deepEqual((await f.run()).removed,[f.backupRoots[0]]);
 });
-test('Abort during an actual snapshot stream closes its file and releases owned gates without deletion',async t=>{
+test('Abort during an actual snapshot read closes its file and releases owned gates without deletion',async t=>{
  const f=await fixture(t),controller=new AbortController(),value=Buffer.alloc(2*1024**2,7),target=path.join(f.backupRoots[0],'dist/index.js');
  await runtime(f.backupRoots[0],f.installRoot,value);await writeSuccessfulBackupReceipt({installRoot:f.installRoot,backupRoot:f.backupRoots[0],completedAt:NOW-20*DAY});
  const open=fs.open.bind(fs);let captured,started=false,calls=0;
  t.mock.method(fs,'open',async(...args)=>{
   const handle=await open(...args);
-  if(args[0]===target&&!started){started=true;captured=handle;const read=handle.createReadStream.bind(handle);
-   t.mock.method(handle,'createReadStream',options=>{const stream=read({...options,highWaterMark:1024});stream.once('data',()=>controller.abort());return stream;});
+  if(args[0]===target&&!started){started=true;captured=handle;const read=handle.read.bind(handle);
+   t.mock.method(handle,'read',async(...args)=>{const result=await read(...args);if(result.bytesRead)controller.abort();return result;});
   }
   return handle;
  });
