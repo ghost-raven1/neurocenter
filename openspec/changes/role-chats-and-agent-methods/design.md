@@ -1,0 +1,39 @@
+# Design
+
+## Context
+
+См. proposal.md. Сейчас service-role dialog допускает разные agent_id, связь с обычным чатом не различает роль. Project-chat создаёт summary даже одному адресату; personal discussion и coordinator синтезируют при одном успешном исполнителе. ModelRuntime выполняет inference; локальные BMAD/OpenSpec skills автоматически не загружаются. Мост уже имеет project binding/instance, задания с lease, ownership receipts и файловый CAS.
+
+## Goals / Non-Goals
+
+**Goals:** отдельные role-pinned приватные диалоги; одинаковое правило сводки; полный цикл существующих методик с фактической работой локального исполнителя и наблюдаемыми результатами.
+
+**Non-Goals:** менять аудиторию приватной истории, переносить/переписывать старые immutable intents, автоматически запускать платные запросы при восстановлении, управлять рабочей БД как QA-фикстурой, менять Ant Design.
+
+## Decisions
+
+1. Добавить immutable роль нового сервисного диалога. Использовать прежние system-role run/intent/preview/consent API; закрепление проверять сервером. Старые смешанные диалоги представлять как исторические срезы по роли с исходными IDs. Фильтр роли применять до pagination limit. Сохранить старые request/cancel/apply/rollback URL.
+2. Заменить общий service-chat/archive modal отдельными role conversations в существующем запускателе чатов. Разные роли имеют независимый draft/recovery owner. Ввод и действия остаются чатовым интерфейсом. Доступ к прежней истории сохраняется из списка роли.
+3. Считать уникальных успешных исполнителей после принятия ответов. Подавление summary происходит в сохранении/исполнении, включая project, personal discussion и coordinator. Поле RoleResult.summary остаётся заголовком результата. Существующие завершённые результаты не переписываются.
+4. У workflow отдельный владелец project/actor/method/version/stage/request/snapshot/job/result, вместо расширения immutable system_role_runs.result. Обычные роли не получают новые полномочия из prompt. Сервер принимает задание только для доступного project binding и подходящего локального исполнителя.
+5. Локальный executor использует реальные установленные BMAD/OpenSpec и поддержанный coding runtime, с проверкой версий и соответствующего проекта. Настройка/причина недоступности видны в UI. CLI передаёт аргументы массивом, без shell-интерполяции. Нельзя выдавать фикстурный вызов за настоящий runtime/model.
+6. Использовать существующий lease job lifecycle, свежую авторизацию, приватную квитанцию до dispatch и сохранённый результат до ACK. При неизвестном исходе recovery не повторяет исполнение. Работать только в подтверждённой папке; сохранять ручные изменения. Отмена убирает только группу процессов задания. Файлы методик и артефактов устанавливаются через ownership/CAS, без скрытого overwriting.
+7. Общие feature flags, migration registration и app wiring интегрирует root после независимых срезов. Root владеет OpenSpec артефактами. Рабочие роли: service-chats (UI+backend), summaries (backend), methods (bridge+workflow contract); общие файлы по явному согласованию.
+
+## Risks / Trade-offs
+
+- Прежние mixed dialogs содержат неизменяемые source hashes → историческая проекция без переноса строк.
+- Неполные ответы → считать успешных уникальных агентов, сохранять ошибки отдельно.
+- Методики включают файловые и command workflows → реальное исполнение через мост, явная готовность и отсутствие ложной приёмки при неподключённом runtime.
+- Отмена/смена binding после dispatch → текущий lease/actor/binding проверяется до принятия результата; receipt защищает от повторного исполнения.
+- Рабочая БД недоступна → использовать отдельные QA fixtures; browser и unit evidence сохранять отдельно от real-backend/native acceptance.
+
+## Migration Plan
+
+Аддитивная миграция для role pin и workflow/job metadata; прежние IDs и данные сохраняются. Новые возможности включаются независимыми флагами после проверки. Rollback выключает новые admissions и сохраняет history/cancel/recovery; схемы и принятые квитанции не удаляются.
+
+## Sources
+
+- BMAD stable: https://github.com/bmad-code-org/BMAD-METHOD/tree/v6.12.4
+- OpenSpec CLI/workflow contracts: https://openspec.dev/docs/cli
+- Project configuration: https://openspec.dev/docs/project-config
