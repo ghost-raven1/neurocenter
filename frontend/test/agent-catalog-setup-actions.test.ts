@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {createElement, type ReactNode} from 'react';
+import {Children,createElement,isValidElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {flushSetup} from './admin-setup-hooks.fixture';
 import {modalAntd, uiNode} from './modal-actions.fixture';
@@ -69,6 +69,16 @@ function render() {
 const start = () => { render(); return render(); };
 const button = (text: string) => uiNode(h.ui, 'Button', text);
 const card = () => h.cards[0];
+interface NativeDetails {className?:string;children?:ReactNode;open:boolean;onToggle(event:{target:unknown;currentTarget:{open:boolean}}):void}
+function advancedDetails():NativeDetails {
+    h.hooks.begin();const tree=AgentCatalog(props);h.hooks.commit();
+    const find=(node:ReactNode):NativeDetails|undefined=>{
+        if(!isValidElement<NativeDetails>(node))return;
+        if(node.type==='details'&&node.props.className==='agent-catalog__advanced')return node.props;
+        for(const child of Children.toArray(node.props.children)){const found=find(child);if(found)return found;}
+    };
+    const value=find(tree);if(!value)throw Error('Advanced details missing');return value;
+}
 beforeEach(() => {
     h.hooks.dispose(); vi.clearAllMocks(); h.scope = 'alice'; h.flagsEnabled = true; h.user = {activeRole: 'Главный админ', userRoles: ['Главный админ'], projectRoles: []};
     h.catalog = catalog(); h.loading = false; h.error = ''; h.confirmations = []; h.actions.busy = false; h.actions.error = ''; h.actions.notice = ''; h.actions.unconfirmed = false;
@@ -79,6 +89,22 @@ beforeEach(() => {
 afterEach(() => h.hooks.dispose());
 
 describe('Agent setup: actual toolbar, pinned configuration and recovery actions', () => {
+    it('keeps project templates and service tools mounted after the agent list instead of the main toolbar',()=>{
+        const html=start(),index=html.indexOf('class="agent-catalog__advanced"');expect(index).toBeGreaterThan(0);
+        expect(html.slice(0,index)).not.toContain('Добавить агента');expect(html.slice(index)).toContain('Добавить агента');
+        expect(html).not.toMatch(/agent-catalog__advanced" open/);expect(button('Добавить агента')).toBeDefined();expect(h.actions.mutate).not.toHaveBeenCalled();
+    });
+    it.each(['queued','failed'])('keeps local editor recovery visible for the latest %s operation',state=>{
+        props.bridge.jobs=[{id:'configuration-attention',deviceId:props.bridge.device!.id,projectId:props.projectId!,kind:'open-project-configuration',state,message:'Проверьте локальный редактор',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
+        const html=start();expect(html).toMatch(/agent-catalog__advanced" open/);expect(html).toContain('требуется внимание');
+    });
+    it('reopens a newly failed editor after the user collapsed a pending operation',()=>{
+        const queued={id:'configuration-transition',deviceId:props.bridge.device!.id,projectId:props.projectId!,kind:'open-project-configuration',state:'queued',message:'Ожидает открытия',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+        props.bridge.jobs=[queued];expect(advancedDetails().open).toBe(true);
+        const target={open:false};advancedDetails().onToggle({target,currentTarget:target});expect(advancedDetails().open).toBe(false);
+        props.bridge.jobs=[{...queued,state:'failed',message:'Открытие не подтверждено'}];advancedDetails();expect(advancedDetails().open).toBe(true);
+        expect(h.actions.apply).not.toHaveBeenCalled();expect(h.actions.mutate).not.toHaveBeenCalled();
+    });
     it('passes the authoritative project assignments, revision and refresh state into the workflow', () => {
         start();expect(h.workflow?.agentCatalog).toBe(h.catalog);expect(h.workflow?.agentsLoading).toBe(false);expect(h.workflow?.agentsError).toBe('');
         expect(h.workflow?.onReloadAgents).toBe(h.refresh);expect(h.workflow?.projectId).toBe(props.projectId);

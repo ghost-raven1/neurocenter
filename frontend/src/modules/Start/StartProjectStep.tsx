@@ -40,7 +40,7 @@ export function StartProjectStep({projects,ready,loading,error,requestedProject,
         {loading&&!ready?<Skeleton active paragraph={{rows:2}}/>:<Space direction="vertical" size={16} style={{width:'100%'}}>
             <Select aria-label="Проект для настройки" showSearch optionFilterProp="label" placeholder="Выберите проект" value={project?.id} onChange={onSelect} disabled={!ready||!!error} style={{width:'100%',maxWidth:420}} options={projects.map(item=>({value:item.id,label:item.name}))} notFoundContent={error?'Список проектов недоступен':'Сначала создайте или подключите проект'}/>
             {project&&<>
-                <BridgeConnection bridge={bridge} compact/>
+                <BridgeConnection bridge={bridge} projectId={project.id} compact/>
                 {bound?<Alert type={blocker?'warning':'success'} showIcon message={confirmed.length===1?'Папка связана с проектом':'Папки связаны с проектом'} description={<Space direction="vertical" size={8} style={{width:'100%',overflowWrap:'anywhere'}}>
                     <Typography.Text>{project.name} · {device!.name}</Typography.Text>
                     <ul style={{margin:0,paddingInlineStart:20}}>{bindings.map((item,index)=><li key={`${item.bindingId??'unverified'}:${index}`}><Typography.Text code>{item.folderName||'Имя папки недоступно'}</Typography.Text>{!confirmed.includes(item)&&' — привязка не подтверждена'}</li>)}</ul>

@@ -23,6 +23,12 @@ describe('Unified project setup never turns navigation or a stale assignment int
         expect(unifiedSetupStep('?step=3')).toBe(3);
         for(const query of ['?step=-1','?step=4','?step=NaN'])expect(unifiedSetupStep(query)).toBe(0);
     });
+    it('routes add-computer intent into the main connection stage without a legacy step URL',()=>{
+        const query='?setup=1&addComputer=1&p=prj-qa';expect(legacyStartRequested(query)).toBe(false);expect(unifiedSetupStep(query)).toBe(1);
+        expect(unifiedSetupStep(query+'&step=3')).toBe(3);
+        const closed=startQueryUrl(query,{setup:false,step:0,addComputer:false});expect(legacyStartRequested(new URL(closed,'https://qa.example.test').search)).toBe(false);
+        expect(new URL(closed,'https://qa.example.test').searchParams.get('p')).toBe('prj-qa');
+    });
     it('requires fresh exact identity, one folder and a current owned computer',()=>{
         expect(setupBinding(bridge(),'prj-qa')?.folderName).toBe('Проект 日本');
         for(const changed of [{devicesReady:false},{errors:{devices:'503'}},{devices:[]},{device:undefined},

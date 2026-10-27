@@ -103,15 +103,15 @@ describe('Подключение компьютера с уже установл
         expect(fixture.copy).toHaveBeenCalledTimes(2);
     });
 
-    it('Подключение из списка сразу раскрывает команды, даже если выбранный компьютер уже на связи', () => {
+    it.each([undefined,'prj-dossier-ko'])('Основной мастер сохраняет подключение другого компьютера и проект %s при уже выбранном online', projectId => {
         select([device()]);
-        expect(setup()).not.toContain('/api/bridge/connect.sh');
+        expect(setup(false,projectId)).not.toContain('/api/bridge/connect.sh');
         expect(fixture.connectAnother).toBeDefined();
         fixture.connectAnother?.();
-        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?step=1&addComputer=1');
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?setup=1'+(projectId?'&p='+projectId:'')+'&addComputer=1');
         fixture.search = new URL(fixture.push.mock.calls[0][0], origin).search;
         expect(new URLSearchParams(fixture.search).has('connect')).toBe(false);
-        const html = setup();
+        const html = setup(false,projectId);
         expect(html).toContain('/api/bridge/connect.sh');
         expect(html).toContain('Копировать команду подключения');
         expect(html).not.toMatch(/\/api\/bridge\/install\.(?:sh|ps1)/);
@@ -120,7 +120,7 @@ describe('Подключение компьютера с уже установл
     it('Выбранный проект после настройки общей папки открывает свой мастер привязки', () => {
         const current = device(); current.report.root = '/fixture/projects'; select([current]); setup(false, 'prj-dossier-ko');
         fixture.buttons.get('Связать папку проекта')?.onClick?.();
-        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-dossier-ko');
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?setup=1&p=prj-dossier-ko');
     });
 
     it('Без общей папки выбранный проект сначала ведёт к выбору корня', () => {

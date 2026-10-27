@@ -165,7 +165,7 @@ describe('Продолжение подготовки локального embed
         mode='target';current.bridge.installations=[];current.device.report.capabilities=current.device.report.capabilities!.filter(value=>value!=='hosted-rag-grants-v1');render();
         expect(button('Обновить мост').href).toBe('/start');expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();
         current.device.report.capabilities.push('hosted-rag-grants-v1');current.binding.instanceId='invalid';render();
-        expect(button('Связать папку проекта').href).toBe('/projects?bind=prj-one');expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();
+        expect(button('Связать папку проекта').href).toBe('/start?setup=1&p=prj-one');expect(ui.buttons.has('Установить OpenCodeRAG')).toBe(false);expect(target.value).toBeUndefined();
         expect(base.post).not.toHaveBeenCalled();expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('Ошибка загрузки списка даёт повтор чтения, а две готовые установки требуют выбора вместо переустановки',()=>{
@@ -402,7 +402,7 @@ describe('Явное подключение OpenCodeRAG к подтверждё�
     it('Отсутствующая общая папка и неподтверждённый instance не допускают запуск и не ломают форму',()=>{
         mode='connection';current.device.report.root=undefined;render();expect(button('Выбрать общую папку').href).toBe('/projects');
         expect(button('Индексировать проект').disabled).toBe(true);
-        current.device.report.root='/fixture/root';current.binding.instanceId='invalid';render();expect(button('Связать папку').href).toBe('/projects?bind=prj-one');
+        current.device.report.root='/fixture/root';current.binding.instanceId='invalid';render();expect(button('Связать папку').href).toBe('/start?setup=1&p=prj-one');
         expect(ui.buttons.has('Индексировать проект')).toBe(false);expect(bridgeApi.create).not.toHaveBeenCalled();
     });
 });

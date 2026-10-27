@@ -33,6 +33,13 @@ beforeEach(()=>{vi.clearAllMocks();ui.buttons.clear();ui.submit=undefined;ui.kin
 
 /** Flags control new writes; opening existing work must remain reachable through the normal product launcher. */
 describe('Packaging recovery entry with actual feature availability',()=>{
+    it('Moves manual creation into a labelled disclosure without hiding the retained packaging launcher',()=>{
+        const html=render(header(vi.fn()),false);
+        expect(html).toContain('<details class="catalog-requests__more">');expect(html).not.toContain('<details open');
+        expect(html).toContain('aria-label="Другие действия с каталогом инструментов"');
+        expect(ui.buttons.get('Упаковать инструмент')?.disabled).not.toBe(true);
+        expect(ui.buttons.get('Добавить вручную')?.disabled).toBe(true);
+    });
     it.each([false,null,true])('The main administrator can open existing builds with availability %s',enabled=>{
         const open=vi.fn();render(header(open),enabled);
         const button=ui.buttons.get('Упаковать инструмент');expect(button).toBeDefined();expect(button!.disabled).not.toBe(true);

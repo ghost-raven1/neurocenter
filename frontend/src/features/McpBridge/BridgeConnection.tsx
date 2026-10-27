@@ -16,6 +16,7 @@ import { connectionBlocker } from './readiness';
 import { BridgeDevicesManager } from './BridgeDevicesManager';
 import { BridgeDeviceDetails } from './BridgeDeviceDetails';
 import { bridgeDeviceStatus } from './bridgeDevicePresentation';
+import {projectBindingUrl} from '../../modules/Projects/projectNavigation';
 import './BridgeConnection.less';
 
 /** Однократное подтверждение подключения и явный выбор компьютера для дальнейших установок. */
@@ -23,7 +24,8 @@ export const BridgeConnection: FC<{
     bridge: ReturnType<typeof useBridge>;
     compact?: boolean;
     showReadinessNotice?: boolean;
-}> = ({ bridge, compact, showReadinessNotice = true }) => {
+    projectId?: string;
+}> = ({ bridge, compact, showReadinessNotice = true, projectId }) => {
     const { choose, errors, devicesReady, loading } = bridge;
     const [managementOpen, setManagementOpen] = useState(false);
     const [revokedIds, setRevokedIds] = useState<string[]>([]);
@@ -34,6 +36,7 @@ export const BridgeConnection: FC<{
     const connection = bridgeConnectionState(devices.length, devicesReady, errors.devices);
     const readErrors = Object.values(errors).filter(Boolean);
     const history=useHistory();
+    const setupUrl=projectId?projectBindingUrl(projectId):'/start?setup=1';
     const blocker = connectionBlocker(device);
     const statusUnverified = !devicesReady || !!errors.devices;
     return (
@@ -79,7 +82,7 @@ export const BridgeConnection: FC<{
             </Collapse.Panel></Collapse>}
             <BridgeDevicesManager open={managementOpen} devices={devices} selectedId={device?.id} verified={!statusUnverified} loading={loading}
                 onClose={() => setManagementOpen(false)} onChoose={choose} onReload={bridge.reload}
-                onConnect={() => { setManagementOpen(false); history.push('/start?step=1&addComputer=1'); }}
+                onConnect={() => { setManagementOpen(false); history.push(setupUrl+'&addComputer=1'); }}
                 onRevoked={async id => {
                     const current = latestBridge.current;
                     setRevokedIds(previous => [...previous, id]);
@@ -90,7 +93,7 @@ export const BridgeConnection: FC<{
                 <>
                     <Alert type="info" showIcon message="Подключите этот компьютер"
                         description="Подключите уже установленный мост или установите его на новом компьютере. После подтверждения вы сможете выбрать папку проектов."
-                        action={<Button type="primary" onClick={()=>history.push('/start?step=1')}>Подключить компьютер</Button>}/>
+                        action={<Button type="primary" onClick={()=>history.push(setupUrl)}>Подключить компьютер</Button>}/>
                     <Collapse ghost><Collapse.Panel key="manual" header="Страница не открылась? Ввести код вручную"><PairingCode/></Collapse.Panel></Collapse>
                 </>
             )}
@@ -99,7 +102,7 @@ export const BridgeConnection: FC<{
             {device?.report.bindings?.some(binding => binding.valid === false && binding.identityStatus !== 'legacy') && <Alert type="warning" showIcon message="Некоторые папки проектов перемещены или не подтверждены. Откройте мастер на странице «Проекты» для проверки копии или переноса." />}
             {!!device?.report.previousDeviceCompletions && <Alert type="warning" showIcon message="Есть неподтверждённые операции прежнего подключения. Локальные файлы сохранены; проверьте их перед повторной установкой." />}
             {showReadinessNotice && !statusUnverified && blocker && <Alert type="warning" showIcon message={blocker}
-                action={history.location.pathname === '/start' ? undefined : <Button onClick={() => history.push('/start?step=1')}>Начало работы</Button>} />}
+                action={history.location.pathname === '/start' ? undefined : <Button onClick={() => history.push(setupUrl)}>Начало работы</Button>} />}
             {readErrors.length > 0 && <Alert type="warning" showIcon
                 message={readErrors.length === 1 ? readErrors[0] : 'Не все данные удалось загрузить'}
                 description={readErrors.length > 1 ? <ul style={{margin:0,paddingLeft:20}}>{readErrors.map(text => <li key={text}>{text}</li>)}</ul> : undefined}

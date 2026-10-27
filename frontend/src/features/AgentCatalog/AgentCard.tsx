@@ -24,7 +24,7 @@ export function AgentCard({ agent, assignment, status, projectSelected, isMain, 
     const effective = active ? assignment.effective : agent.definition;
     return <article className={`agent-card${active ? ' agent-card_assigned' : ''}`} aria-label={agent.name}>
         <div className="agent-card__heading"><span className="agent-card__icon" aria-hidden="true"><RobotOutlined /></span>
-            <div className="agent-card__title"><Button type="link" onClick={onView} aria-label={`Промпт агента ${agent.name}`}>{active ? assignment.card.name : agent.name}</Button>
+            <div className="agent-card__title"><Button type="link" onClick={onView} aria-label={`Промпт агента ${active ? assignment.card.name : agent.name}`}>{active ? assignment.card.name : agent.name}</Button>
                 <span>{agentModeLabels[effective.mode]} · <code>@{active ? assignment.card.slug : agent.slug}</code></span></div>
             {isMain && <div className="agent-card__management"><Tooltip title="Изменить общий шаблон"><FeatureButton features={['agents']} type="text" icon={<EditOutlined />} disabled={busy || unavailable || !!agent.archivedAt} aria-label={`Изменить агента ${agent.name}`} onClick={onEdit} /></Tooltip>
                 <ArchiveAssetButton kind="agent" id={agent.id} restore={!!agent.archivedAt} disabled={busy || unavailable} onArchived={onArchived} children={null}
@@ -35,7 +35,7 @@ export function AgentCard({ agent, assignment, status, projectSelected, isMain, 
         {status && assignment && <div className="agent-card__status" role="status" aria-live="polite"><Tag color={colors[status.key]}>{status.label}</Tag><Typography.Text type={status.key === 'error' ? 'danger' : 'secondary'}>{status.detail}</Typography.Text></div>}
         {active && readiness && <AgentTrialStatus item={readiness} checking={trialChecking} />}
         {feedback}
-        <div className="agent-card__actions"><Button type="text" onClick={onView}>Промпт</Button>
+        <div className="agent-card__actions">
             {active && onTrial && <Button disabled={trialDisabled} onClick={onTrial}>{readiness?.latestTrial ? 'Испытание в чате' : 'Испытать в чате'}</Button>}
             {projectSelected && canManage ? active ? <>
                 <FeatureButton features={['agents']} disabled={busy || unavailable} onClick={onConfigure}>Настроить</FeatureButton>

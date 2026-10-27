@@ -92,6 +92,14 @@ describe('Переход из каталога проекта в общий ка
         expect(ui.cards).toEqual(['MCP 1']);
         expect(html).toContain('Добавить из общего каталога');
     });
+    it.each(['agents','models'])('Переход в общий каталог сохраняет раздел %s без повторного названия проекта',async section=>{
+        ui.search='?tab=store&catalogTab='+section;render(props);const html=await settle(props);
+        expect(html).toContain('<a href="/store?p=project-one&amp;tab='+section+'">Добавить из общего каталога</a>');
+        expect(html).not.toContain('Выбран проект «Первый»');
+    });
+    it('В заявках не предлагает добавление инструмента вместо работы с заявкой',async()=>{
+        ui.search='?tab=store&catalogTab=requests';render(props);expect(await settle(props)).not.toContain('Добавить из общего каталога');
+    });
     it.each(['Разработчик', 'Наблюдатель'])('Не предлагает изменение каталога для роли %s', async activeRole => {
         ui.user.activeRole = activeRole; ui.user.userRoles = [activeRole];
         ui.user.projectRoles = [{projectId: 'project-one', projectName: 'Первый', role: activeRole}];

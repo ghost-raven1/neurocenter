@@ -56,9 +56,11 @@ export function RequestActions({request,disabled,onSaved,onRefresh,onBusyChange,
             {request.permissions.canResubmit&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>{void execute({action:'resubmit'});}}>Отправить на рассмотрение</FeatureButton>}
             {request.permissions.canReview&&request.status==='submitted'&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>{void execute({action:'start'});}}>Взять в работу</FeatureButton>}
             {request.permissions.canReview&&request.status==='in_progress'&&<FeatureButton features={['catalog_requests']} type="primary" disabled={frozen} onClick={()=>open('complete')}>Завершить</FeatureButton>}
-            {request.permissions.canReview&&request.status!=='needs_info'&&<FeatureButton features={['catalog_requests']} disabled={frozen} onClick={()=>open('needs_info')}>Запросить уточнение</FeatureButton>}
-            {request.permissions.canReview&&<FeatureButton features={['catalog_requests']} danger disabled={frozen} onClick={()=>open('reject')}>Отклонить</FeatureButton>}
-            {request.permissions.canCancel&&<Popconfirm title="Отменить эту заявку? История сохранится." onConfirm={()=>execute({action:'cancel'})} disabled={frozen} okText="Отменить заявку" cancelText="Оставить"><Button disabled={frozen}>Отменить заявку</Button></Popconfirm>}
+            {(request.permissions.canReview||request.permissions.canCancel)&&<details className="catalog-requests__more"><summary aria-label={'Другие действия с заявкой: '+request.title}>Другие действия</summary><Space wrap className="catalog-requests__more-content">
+                {request.permissions.canReview&&request.status!=='needs_info'&&<FeatureButton features={['catalog_requests']} disabled={frozen} onClick={()=>open('needs_info')}>Запросить уточнение</FeatureButton>}
+                {request.permissions.canReview&&<FeatureButton features={['catalog_requests']} danger disabled={frozen} onClick={()=>open('reject')}>Отклонить</FeatureButton>}
+                {request.permissions.canCancel&&<Popconfirm title="Отменить эту заявку? История сохранится." onConfirm={()=>execute({action:'cancel'})} disabled={frozen} okText="Отменить заявку" cancelText="Оставить"><Button disabled={frozen}>Отменить заявку</Button></Popconfirm>}
+            </Space></details>}
         </Space>
         {!dialog&&failure}
         {unconfirmed&&<Alert type="warning" showIcon message="Результат действия пока не подтверждён" description="Поля запроса сохранены. Повтор использует прежний ключ и не повторяет принятое действие." action={<Button disabled={busy} loading={busy} onClick={()=>{if(pending.current)void execute(pending.current.input,pending.current.revision);}}>Повторить действие</Button>}/>}

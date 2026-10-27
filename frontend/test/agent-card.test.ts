@@ -8,6 +8,9 @@ vi.mock('../src/features/AssetManagement/ArchiveAssetButton',()=>({ArchiveAssetB
 const callbacks={onView:()=>undefined,onEdit:()=>undefined,onArchived:()=>undefined,onAssign:()=>undefined,onConfigure:()=>undefined,onToggle:()=>undefined,onRemove:()=>undefined,onUpdate:()=>undefined};
 const render=(changes:Partial<Parameters<typeof AgentCard>[0]>={})=>renderToStaticMarkup(createElement(AgentCard,{agent:agent(),projectSelected:true,isMain:false,canManage:false,busy:false,unavailable:false,...callbacks,...changes}));
 describe('Карточка агента показывает права и сохраняет проектный pin',()=>{
+    it('Промпт открывается единственным доступным заголовком, без повторной кнопки',()=>{
+        const html=render();expect(html.match(/aria-label="Промпт агента /g)).toHaveLength(1);expect(html).not.toContain('>Промпт<');
+    });
     it('Наблюдатель читает промпт, но не получает действий изменения',()=>{
         const html=render({assignment:assignment()});expect(html).toContain('Промпт');expect(html).toContain('Настройками управляет администратор проекта');expect(html).not.toContain('>Включить<');expect(html).not.toContain('Удалить из проекта агента');expect(html).not.toContain('Изменить агента');
     });
@@ -22,6 +25,7 @@ describe('Карточка агента показывает права и со�
     it('Новая версия каталога не скрывает закреплённое имя, prompt и override',()=>{
         const desired=assignment({card:agent({name:'Прежний ревьюер'}),overrides:{prompt:'Мой промпт'}});const html=render({canManage:true,agent:agent({version:2,name:'Новый ревьюер'}),assignment:desired});
         expect(html).toContain('Прежний ревьюер');expect(html).toContain('Настроен для проекта');expect(html).toContain('Проект сохраняет v1');expect(html).toContain('Обновить шаблон');
+        expect(html).toContain('aria-label="Промпт агента Прежний ревьюер"');
     });
     it('Archived карточка сохраняет проектные действия, но не предлагает новое назначение',()=>{
         const archived=agent({archivedAt:'2026-10-21'});expect(render({canManage:true,agent:archived,assignment:assignment()})).toContain('>Настроить<');

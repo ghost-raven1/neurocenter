@@ -43,7 +43,7 @@ export function projectDataSize({projectId,serverBytes,serverError,device,device
     }
     const local = (label:string,description:string,extra:Partial<IProjectDataSizeView>={}):IProjectDataSizeView =>
         ({bytes:null,source:'local',label,description,sourceLabel:`На «${device.name}»`,...extra});
-    if (!device.online || device.requiresReconnect) return local('Компьютер недоступен','Подключите выбранный компьютер и обновите данные.',{action:{label:'Проверить компьютер',href:'/start?step=1'}});
+    if (!device.online || device.requiresReconnect) return local('Компьютер недоступен','Подключите выбранный компьютер и обновите данные.',{action:{label:'Проверить компьютер',href:projectBindingUrl(projectId)}});
     if (!bindings.length && knownBytes(serverBytes)) return {...server,sourceLabel:'На сервере'};
     if (!bindings.length) return local('Папка не связана',canBind ? 'Свяжите папку этого проекта с выбранным компьютером для измерения её данных.' : 'Папка проекта на выбранном компьютере ещё не связана. Её может связать разработчик или администратор проекта.',{action});
     const binding = bindings[0];
@@ -52,7 +52,7 @@ export function projectDataSize({projectId,serverBytes,serverError,device,device
         || typeof binding.instanceId!=='string' || !instanceId.test(binding.instanceId)) {
         return local('Проверьте привязку','Папка проекта не подтверждена. Проверьте её привязку перед измерением.',{action:canBind?{label:'Проверить привязку',href:projectBindingUrl(projectId)}:undefined});
     }
-    if (!Array.isArray(device.report.capabilities) || !device.report.capabilities.includes('project-data-size-v1')) return local('Обновите мост','Обновите мост на выбранном компьютере: установленная версия не передаёт размер данных проекта.',{action:{label:'Подключение компьютера',href:'/start?step=1'}});
+    if (!Array.isArray(device.report.capabilities) || !device.report.capabilities.includes('project-data-size-v1')) return local('Обновите мост','Обновите мост на выбранном компьютере: установленная версия не передаёт размер данных проекта.',{action:{label:'Подключение компьютера',href:projectBindingUrl(projectId)}});
     const size = binding.dataSize;
     if (size===undefined) return local('Измеряем…','Компьютер ещё не передал первый замер. Данные обновятся автоматически.');
     if (!size || size.scope!=='opencode' || typeof size.measuredAt!=='string') return local('Замер недоступен','Компьютер передал неполные сведения о размере. Обновите данные.');

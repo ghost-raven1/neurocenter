@@ -1,5 +1,5 @@
 import {ArrowRightOutlined,RocketOutlined} from '@ant-design/icons';
-import {Alert,Button,Card,Collapse,Radio,Select,Space,Steps,Tabs,Typography,message} from 'antd';
+import {Alert,Button,Card,Modal,Radio,Select,Space,Steps,Tabs,Typography,message} from 'antd';
 import {useEffect,useRef,useState} from 'react';
 import {useSelector} from 'react-redux';
 import {useHistory,useLocation} from 'react-router-dom';
@@ -35,6 +35,7 @@ export default function UnifiedProjectSetup(){
     const history=useHistory(),location=useLocation(),availability=useFeatureAvailability('unified_project_setup');
     const {scope}=useAuthRequestOwner(),user=useSelector((state:RootState)=>state.userBlock.user),projects=useAvailableProjects();
     const bridge=useBridge(),installer=useBridgeInstaller(),[bindingOpen,setBindingOpen]=useState<string>(),[platform,setPlatform]=useState<'posix'|'windows'>();
+    const [helpOpen,setHelpOpen]=useState(false);
     const params=new URLSearchParams(location.search),opened=params.get('setup')==='1',step=unifiedSetupStep(location.search);
     const requested=params.get('p'),project=projects.ready&&!projects.error?(projects.projects.find(item=>item.id===requested)??projects.projects.find(item=>item.name===requested)):undefined;
     const level=project?projectRoleLevel(user,project.id):0,isMain=!!user&&isMainAdminRole(user.activeRole);
@@ -54,11 +55,11 @@ export default function UnifiedProjectSetup(){
         {requested&&projects.ready&&!projects.error&&!project&&<Alert type="warning" showIcon message="Выбранный проект недоступен. Выберите действующий проект."/>}
         {projects.ready&&!projects.error&&!projects.projects.length&&<Alert type="info" showIcon message="Сначала создайте проект или получите к нему доступ" action={<Button onClick={()=>history.push('/projects')}>Мои проекты</Button>}/>}
     </Space>;
-    return <div className="start"><PageHeading title="Начало работы" description="OpenCode, мост и окружение проекта — в одном мастере." actions={<Button onClick={()=>history.push('/projects')}>Мои проекты</Button>}/>
+    return <div className="start"><PageHeading title="Начало работы" description="OpenCode, мост и окружение проекта — в одном мастере." actions={<Space><Button onClick={()=>setHelpOpen(true)}>Помощь</Button><Button onClick={()=>history.push('/projects')}>Мои проекты</Button></Space>}/>
         <Card className="start__setup"><Space direction="vertical" size={20} style={{width:'100%'}}>
             <div><Typography.Title level={2}>Установите OpenCode и подготовьте проект</Typography.Title><Typography.Paragraph>Установщик подготовит OpenCode и мост. Затем подключите компьютер, выберите папку, агентов и инструменты проекта. Ручные настройки сохраняются.</Typography.Paragraph></div>
             {!enabled&&<Alert type="info" showIcon message={availability.reason} description="Новые действия единого мастера выключены. Состояние, история и прежние способы восстановления сохраняются."/>}
-            <SetupProgress bridge={bridge} projectId={project?.id} assets={assets} catalogReady={projectCatalog.ready&&!projectCatalog.error&&!projectCatalog.loading}/>
+            <SetupProgress bridge={bridge}/>
             {!opened?<Button type="primary" size="large" icon={<RocketOutlined/>} onClick={()=>go(step)}>{enabled?'Установить OpenCode':'Посмотреть состояние и настройку'}</Button>:<>
                 <Typography.Text strong>Открыт шаг {step+1} из 4. Состояние окружения проверяется отдельно.</Typography.Text>
                 <div role="group" aria-label="Этапы основной настройки" onKeyDown={event=>{
@@ -80,9 +81,9 @@ export default function UnifiedProjectSetup(){
                         <Button type="primary" onClick={()=>go(1)}>Установлено или уже есть · подключить компьютер <ArrowRightOutlined/></Button>
                     </Space>}
                     {step===1&&<Space direction="vertical" size={20} style={{width:'100%'}}>
-                        {enabled?<BridgeSetup bridge={bridge} origin={window.location.origin} installer={installer} windows={windows} projectId={project?.id} canManageSource={isMain} onCopy={value=>{void copyCommand(value);}} onChooseFolder={()=>document.getElementById('setup-project-folder')?.scrollIntoView({block:'nearest'})}/>:<Button onClick={()=>{void bridge.reload();}}>Обновить состояние компьютера</Button>}
+                        {enabled?<BridgeSetup bridge={bridge} origin={window.location.origin} installer={installer} windows={windows} projectId={project?.id} canManageSource={isMain} onCopy={value=>{void copyCommand(value);}} onChooseFolder={()=>document.getElementById('setup-project-folder')?.scrollIntoView({block:'nearest'})} folderReady={!!binding} onCheckReadiness={()=>go(3)}/>:<Button onClick={()=>{void bridge.reload();}}>Обновить состояние компьютера</Button>}
                         <section id="setup-project-folder"><Typography.Title level={3}>Проект и папка</Typography.Title>{projectChoice}
-                            {enabled&&<LocalProjectsFolder bridge={bridge} project={null} canManage={level>=2} onClose={()=>undefined}/>}
+                            {enabled&&<LocalProjectsFolder bridge={bridge} project={null} setupProjectId={project?.id} canManage={level>=2} onClose={()=>undefined}/>}
                             {project&&<>
                                 <Alert type={binding?'success':'info'} showIcon message={binding?`Папка подтверждена: ${binding.folderName}`:'Подтвердите папку выбранного проекта'} description={bridge.errors.devices||'Папка и компьютер определяются по актуальному отчёту моста.'}/>
                                 <Button disabled={!enabled||level<2||!bridge.devicesReady||!bridge.jobsReady||!bridge.device?.online||!bridge.device.report.root} onClick={()=>setBindingOpen(sourceScope)}>{binding?'Проверить или изменить папку проекта':'Связать папку проекта'}</Button>
@@ -106,14 +107,14 @@ export default function UnifiedProjectSetup(){
                         <Button onClick={()=>go(2)}>Вернуться к агентам, модели и инструментам</Button>
                     </Space>}
                 </div>
-                <Space wrap>{step>0&&<Button onClick={()=>go(step-1)}>Назад</Button>}<Button onClick={()=>history.replace(startQueryUrl(location.search,{setup:false,step:0},location.hash))}>Свернуть мастер</Button></Space>
+                <Space wrap>{step>0&&<Button onClick={()=>go(step-1)}>Назад</Button>}<Button onClick={()=>history.replace(startQueryUrl(location.search,{setup:false,step:0,addComputer:false},location.hash))}>Свернуть мастер</Button></Space>
             </>}
-            <Collapse ghost><Collapse.Panel key="recovery" header="OpenCode уже установлен или нужен прежний способ подключения">
-                <Typography.Paragraph>Если установка моста прервалась, повторите только подключение. Установленный OpenCode и данные проекта сохраняются.</Typography.Paragraph>
-                <Button onClick={()=>history.push(startQueryUrl(location.search,{setup:false,step:1},location.hash))}>Открыть прежнее подключение моста</Button>
-                <Button type="link" href="/help/opencode-install">Установка и проверка в Помощи</Button>
-            </Collapse.Panel></Collapse>
         </Space></Card>
+        <Modal open={helpOpen} title="Помощь с подключением" footer={null} onCancel={()=>setHelpOpen(false)} destroyOnClose>
+            <Typography.Paragraph>Если установка моста прервалась, повторите только подключение. Установленный OpenCode и данные проекта сохраняются.</Typography.Paragraph>
+            <Space direction="vertical"><Button onClick={()=>{setHelpOpen(false);history.push(startQueryUrl(location.search,{setup:false,step:1},location.hash));}}>Открыть прежнее подключение моста</Button>
+                <Button type="link" href="/help/opencode-install">Установка и проверка в Помощи</Button></Space>
+        </Modal>
         {enabled&&bindingOpen===sourceScope&&project&&<WorkspaceBindingWizard key={sourceScope} bridge={bridge} project={project} canManage={level>=2} onClose={()=>{setBindingOpen(undefined);void bridge.reload();}}/>}
     </div>;
 }

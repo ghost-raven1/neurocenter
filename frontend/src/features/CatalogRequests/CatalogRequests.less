@@ -3,7 +3,7 @@
     &__heading h3 { margin-top: 0; }
     &__heading > div { max-width: 680px; }
     &__toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin: 12px 0 8px; }
-    &__filters { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; flex: 1 1 360px; min-width: 0; }
+    &__filters { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); align-items: start; gap: 8px; flex: 1 1 360px; min-width: 0; }
     &__filters .ant-select { min-width: 0; width: 100%; }
     &__toolbar-actions { margin-left: auto; flex-shrink: 0; }
     &__scope-hint { font-size: 12px; }
@@ -16,6 +16,12 @@
     &__detail-tools { margin-bottom: 16px; }
     &__actions { margin: 16px 0 24px; }
     &__actions .ant-alert { margin-top: 12px; }
+    &__more {
+        > summary { cursor: pointer; min-height: 32px; padding: 5px 10px; border: 1px solid #dce5ed; border-radius: 6px; color: #24344a; font-size: 14px; line-height: 20px; }
+        > summary:focus-visible { outline: 2px solid @brand-primary; outline-offset: 2px; }
+    }
+    &__more-content { display: flex; margin-top: 8px; padding: 12px; border: 1px solid #dce5ed; border-radius: 8px; background: #fff; }
+    &__advanced-filters { display: grid; gap: 8px; }
     .ant-alert { margin-bottom: 12px; }
 }
 @media (max-width: 640px) {

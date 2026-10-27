@@ -1,7 +1,7 @@
 import { FeatureButton } from '../../../features/FeatureFlags/FeatureAvailability';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Typography } from 'antd';
-import type { FC } from 'react';
+import {useEffect,useState,type FC} from 'react';
 import type { IProjectSummary } from '../../../core/api/interfaces';
 import { BridgeConnection } from '../../../features/McpBridge/BridgeConnection';
 import { WorkspaceBindingWizard } from '../../../features/McpBridge/WorkspaceBindingWizard';
@@ -17,21 +17,25 @@ interface IProps {
     bridge:ReturnType<typeof useBridge>;
     project: IProjectSummary | null;
     canManage?: boolean;
+    setupProjectId?: string;
+    collapsed?: boolean;
     onClose: () => void;
 }
 /** Общая папка выбирается native-диалогом; экземпляры подтверждаются отдельным мастером. */
-export const LocalProjectsFolder: FC<IProps> = ({ bridge,project, canManage = false, onClose }) => {
+export const LocalProjectsFolder: FC<IProps> = ({ bridge,project, canManage = false, setupProjectId, collapsed=false, onClose }) => {
     const operation = useLocalJob(bridge);
     const {device,jobs} = bridge;
     const blocker = bridgeOperationBlocker(device) || (!bridge.devicesReady || !bridge.jobsReady ? 'Дождитесь подключения и загрузки очереди.' : '');
     const pending = jobs.find(job => job.deviceId === device?.id && ['choose-root','bind-project','prepare-bind-project'].includes(job.kind) && isPending(job));
     const latest = pending || operation.job || jobs.find(job => job.deviceId === device?.id && job.kind === 'choose-root');
-    return <>
-        <Card className="local-projects-folder" title="Компьютер и папка проектов" style={{marginBottom:20}} extra={<FeatureButton features={['computer_connections']} size="small" icon={<FolderOpenOutlined />} disabled={!!blocker || operation.busy || !!pending} title={blocker || undefined}
+    const attention=operation.busy||!!operation.error||!!pending||latest?.state==='failed';
+    const [detailsOpen,setDetailsOpen]=useState(!collapsed||attention);
+    useEffect(()=>{if(attention)setDetailsOpen(true);},[attention,latest?.id,latest?.state,operation.error]);
+    const content=<Card className="local-projects-folder" title="Компьютер и папка проектов" style={{marginBottom:collapsed?0:20}} extra={<FeatureButton features={['computer_connections']} size="small" icon={<FolderOpenOutlined />} disabled={!!blocker || operation.busy || !!pending} title={blocker || undefined}
                 loading={operation.busy} onClick={() => {
                     if (bridge.device && !blocker && !pending) { void operation.submit({kind:'choose-root',deviceId:bridge.device.id}); }
                 }}>{device?.report.root ? 'Изменить папку' : 'Выбрать папку'}</FeatureButton>}>
-            <BridgeConnection bridge={bridge} compact />
+            <BridgeConnection bridge={bridge} projectId={setupProjectId??project?.id} compact />
             {device?.report.root&&<Typography.Paragraph className="local-projects-folder__path" title={device.report.root}><FolderOpenOutlined/> {device.report.root}</Typography.Paragraph>}
             <details className="local-projects-folder__help"><summary>Как связать проекты с папками</summary><Typography.Paragraph type="secondary">У каждого участника своя папка проектов. Нажмите «Связать» в строке проекта и выберите её подкаталог. Названия папки и серверного проекта могут отличаться.</Typography.Paragraph></details>
             {latest && latest.state!=='succeeded' && <Alert style={{marginTop:12}} role="status" showIcon type={latest.state === 'failed' ? 'error' : 'info'}
@@ -40,7 +44,11 @@ export const LocalProjectsFolder: FC<IProps> = ({ bridge,project, canManage = fa
                     : latest.state === 'running' && latest.kind === 'choose-root' ? 'Завершите выбор папки в системном окне на выбранном компьютере.' : undefined}
                 action={latest.state === 'queued' ? <Button size="small" onClick={() => { void bridgeApi.cancel(latest.id).then(() => bridge.reload()).catch(() => operation.setError('Не удалось отменить задание.')); }}>Отменить</Button> : undefined} />}
             {operation.error && <Alert style={{marginTop:12}} type="error" role="alert" showIcon message={operation.error} />}
-        </Card>
+        </Card>;
+    return <>
+        {collapsed?<details className="local-projects-folder__details" open={detailsOpen} onToggle={event=>{if(event.target===event.currentTarget)setDetailsOpen(event.currentTarget.open);}}>
+            <summary>Компьютер и операции папки{attention?' · требуется внимание':''}</summary>{content}
+        </details>:content}
         {project && <WorkspaceBindingWizard key={project.id+':'+device?.id} bridge={bridge} project={project} canManage={canManage} onClose={onClose} />}
     </>;
 };

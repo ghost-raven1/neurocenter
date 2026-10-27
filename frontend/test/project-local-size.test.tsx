@@ -25,7 +25,7 @@ describe('Размер данных выбранного компьютера',(
     });
     it('Остаётся на выбранном компьютере, а не заимствует чужую подходящую папку',()=>{
         const other={...device,id:'computer-b',report:{...device.report,bindings:[{...binding,projectId:'prj-b'}]}};
-        expect(projectDataSize({...input,device:other})).toMatchObject({bytes:null,label:'Папка не связана',action:{href:'/projects?bind=prj-a'}});
+        expect(projectDataSize({...input,device:other})).toMatchObject({bytes:null,label:'Папка не связана',action:{href:'/start?setup=1&p=prj-a'}});
         expect(projectDataSize({...input,device:undefined})).toMatchObject({bytes:null,label:'Выберите компьютер'});
     });
     it('Измеренный серверный каталог остаётся доступен для серверного проекта без локальной привязки',()=>{
@@ -88,11 +88,11 @@ describe('Размер данных выбранного компьютера',(
 });
 
 describe('Действия и объяснение локального размера',()=>{
-    function render(current:IBridgeDevice,canBind=true){
+    function render(current:IBridgeDevice,canBind=true,showSetupAction=true){
         const measuredAt=new Date().toISOString();
         const actual={...current,report:{...current.report,bindings:current.report.bindings?.map(item=>({...item,dataSize:item.dataSize?{...item.dataSize,measuredAt}:undefined}))}};
         return renderToStaticMarkup(createElement(ProjectFolderDataSize,{project:{id:'prj-a',logicalBytes:null,logicalSizeError:'Старый путь'},
-            bridge:{device:actual,devices:[actual],devicesReady:true,loading:false},canRead:true,canBind,title:'Данные проекта',loading:false,onRetry:vi.fn()}));
+            bridge:{device:actual,devices:[actual],devicesReady:true,loading:false},canRead:true,canBind,showSetupAction,title:'Данные проекта',loading:false,onRetry:vi.fn()}));
     }
     it('Показывает фактический размер с понятным источником и без старой серверной ошибки',()=>{
         const html=render(device);expect(html).toContain('2 КБ');expect(html).toContain('Рабочий компьютер');expect(html).toContain('папке «bank»');
@@ -100,12 +100,17 @@ describe('Действия и объяснение локального разм
     });
     it('Несвязанная папка имеет точный переход и read-only повтор, который не запускает установку',()=>{
         const html=render(withBinding({projectId:'prj-other'}));
-        expect(html).toContain('Папка не связана');expect(html).toContain('href="/projects?bind=prj-a"');
+        expect(html).toContain('Папка не связана');expect(html).toContain('href="/start?setup=1&amp;p=prj-a"');
         expect(html).toContain('Повторить измерение данных проекта');
     });
     it('Старая версия моста имеет переход на подключение компьютера',()=>{
         const html=render({...device,report:{...device.report,capabilities:[]}});
-        expect(html).toContain('Обновите мост');expect(html).toContain('href="/start?step=1"');
+        expect(html).toContain('Обновите мост');expect(html).toContain('href="/start?setup=1&amp;p=prj-a"');
+    });
+    it('В списке скрывает только повторный setup action, сохраняя причину и read-only retry',()=>{
+        const html=render(withBinding({projectId:'prj-other'}),true,false);
+        expect(html).toContain('Папка не связана');expect(html).toContain('Почему неизвестен размер данных проекта');expect(html).toContain('Повторить измерение данных проекта');
+        expect(html).not.toContain('href="/start?setup=1');
     });
     it('До чтения текущих компьютеров не показывает серверный ноль как размер проекта',()=>{
         const html=renderToStaticMarkup(createElement(ProjectFolderDataSize,{project:{id:'prj-a',logicalBytes:0},

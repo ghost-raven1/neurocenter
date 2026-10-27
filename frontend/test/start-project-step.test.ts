@@ -44,7 +44,7 @@ describe('Текущая привязка на последнем этапе п�
         const html=render();expect(success()).toBe(true);expect(html).toContain('Папка и проект связаны');expect(html).toContain('work/current');expect(html).toContain('Выбранный компьютер');
         expect(fixture.connection).toBe(fixture.bridge);expect(fixture.buttons.get('Подобрать инструменты')?.type).toBe('primary');expect(fixture.buttons.get('Связать другую папку')?.type).toBe('default');
         fixture.buttons.get('Подобрать инструменты')!.onClick!();expect(fixture.push).toHaveBeenLastCalledWith('/store?p='+encodeURIComponent(project.name));
-        fixture.buttons.get('Связать другую папку')!.onClick!();expect(fixture.push).toHaveBeenLastCalledWith('/projects?bind='+project.id);
+        fixture.buttons.get('Связать другую папку')!.onClick!();expect(fixture.push).toHaveBeenLastCalledWith('/start?setup=1&p='+project.id);
         fixture.buttons.get('Проверить привязку')!.onClick!();expect(fixture.bridge!.reload).toHaveBeenCalledOnce();fixture.buttons.get('Назад')!.onClick!();expect(fixture.back).toHaveBeenCalledOnce();
     });
     it.each(['invalid','unknown-validity','legacy','copied','changed','missing-hash','invalid-hash','missing-instance','invalid-instance','error','empty-folder'] as const)('Не принимает неподтверждённую идентичность: %s',state=>{

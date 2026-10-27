@@ -1,6 +1,7 @@
 import {SystemRoles} from '../SystemRoles/SystemRoles';
 import {AgentMethodWorkflow} from '../AgentMethods/AgentMethodWorkflow';
 import {ProjectConfiguration} from '../ProjectConfiguration/ProjectConfiguration';
+import {PROJECT_CONFIGURATION_JOB} from '../ProjectConfiguration/model';
 import {ProjectProviderSetup} from '../OpenCodeProviders/ProjectProviderSetup';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Col, Empty, Input, Modal, Row, Space, Spin, Tooltip, Typography } from 'antd';
@@ -39,6 +40,10 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const [editing, setEditing] = useState<ICatalogAgent | 'new'>(), [viewId, setViewId] = useState<string>();
     const [projectEditing, setProjectEditing] = useState<{assignment: IProjectAgent; revision: number}>();
     const [trialAgentId, setTrialAgentId] = useState<string>();
+    const latestConfiguration=bridge.jobs.filter(job=>job.projectId===projectId&&job.deviceId===bridge.device?.id&&job.kind===PROJECT_CONFIGURATION_JOB).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+    const advancedAttention=!!latestConfiguration&&['queued','running','reconciling','failed'].includes(latestConfiguration.state);
+    const [advancedOpen,setAdvancedOpen]=useState(advancedAttention);
+    useEffect(()=>{if(advancedAttention)setAdvancedOpen(true);},[advancedAttention,latestConfiguration?.id,latestConfiguration?.state]);
     const providerScope = JSON.stringify([scope, projectId]);
     const [providerSetup, setProviderSetup] = useState<{scope: string}>();
     const confirmation = useRef<{destroy(): void}>();
@@ -75,18 +80,18 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         });
     };
     const saved = async (): Promise<void> => { if (!await refresh()) throw new Error('Агент сохранён, но каталог не обновился. Ваш текст остался в форме; повтор безопасен.'); setProjectOnly(false); setQuery(''); };
+    const templateActions=isMain&&<><Button onClick={() => history.push('/assets')}>Из ассетов</Button><FeatureButton features={['agents']} type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</FeatureButton></>;
     return <section className="agent-catalog">
         <div className="agent-catalog__heading"><div><Typography.Title level={4}>{projectName ? `Агенты для «${projectName}»` : 'Агенты команды'}</Typography.Title>
             <Typography.Text type="secondary">{projectId ? 'Настройте промпты проекта и примените их к выбранной папке OpenCode.' : 'Готовые роли и собственные промпты для OpenCode.'}</Typography.Text></div>
         </div>
-        {(isMain || projectId && canManage) && <SystemRoles key={JSON.stringify([scope, projectId])} projectId={projectId} />}
         <div className="agent-catalog__toolbar"><Input.Search aria-label="Поиск агентов" placeholder="Название, роль или имя OpenCode…" allowClear value={query} onChange={event => setQuery(event.target.value)} />
             <div className="agent-catalog__filters">
             {projectId && <Checkbox checked={projectOnly} onChange={event => setProjectOnly(event.target.checked)}>Только в проекте</Checkbox>}
             {isMain && <Checkbox checked={showArchive} onChange={event => setShowArchive(event.target.checked)}>Показывать архив</Checkbox>}</div>
             <Space wrap className="agent-catalog__toolbar-actions"><Button loading={loading} disabled={actions.busy} onClick={() => { void refresh(); }}>Обновить</Button>
                 {projectId&&projectRoleLevel(user,projectId)>=2&&<Button onClick={()=>openModelChat({projectId,group:true})}>Чат с агентами</Button>}
-                {isMain&&<><Button onClick={() => history.push('/assets')}>Из ассетов</Button><FeatureButton features={['agents']} type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</FeatureButton></>}
+                {!projectId&&templateActions}
             </Space>
         </div>
         {error && <Alert showIcon type={catalog ? 'warning' : 'error'} className="agent-catalog__notice" message={catalog ? 'Не удалось обновить агентов — показаны предыдущие данные' : 'Агенты не загружены'} description={error} action={<Button onClick={() => { void refresh(); }}>Повторить</Button>} />}
@@ -94,11 +99,11 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         {actions.notice && <Alert showIcon type="info" className="agent-catalog__notice" message={actions.notice} />}
         {canReadTrials && readiness.error && !trialAgentId && <Alert type="warning" showIcon className="agent-catalog__notice" message="Состояние испытаний не обновилось" description={readiness.error}
             action={<Button loading={readiness.loading} onClick={() => { void readiness.refresh(); }}>Перечитать испытания</Button>} />}
-        {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} compact showReadinessNotice={false} />
+        {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} projectId={projectId} compact showReadinessNotice={false} />
             <div className="agent-catalog__apply"><div><Typography.Text strong>Настройки OpenCode</Typography.Text><Typography.Paragraph type="secondary">{connection.reason || 'Применяем только управляемые файлы агентов. Изменения появятся при следующем запуске OpenCode.'}</Typography.Paragraph></div>
                 {canManage && <Button onClick={() => {if (captureOwner()()) setProviderSetup({scope: providerScope});}}>Настроить провайдера</Button>}
                 {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
-            </div><ProjectConfiguration projectId={projectId} bridge={bridge}/><AgentMethodWorkflow key={JSON.stringify([scope,projectId])} projectId={projectId} canManage={canManage} bridge={bridge}
+            </div><AgentMethodWorkflow key={JSON.stringify([scope,projectId])} projectId={projectId} canManage={canManage} bridge={bridge}
                 agentCatalog={catalog} agentsLoading={loading} agentsError={error} onReloadAgents={refresh}
                 onSetupRuntime={canManage?()=>{if(captureOwner()())setProviderSetup({scope:providerScope});}:undefined}/></div>}
         {!!cleanup.length && <Alert className="agent-catalog__notice" type="warning" showIcon message={`Ожидают удаления из OpenCode: ${cleanup.map(item => item.card.name).join(', ')}`}
@@ -116,6 +121,14 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         })}</Row> : <Empty description={query ? 'По этому запросу агенты не найдены' : projectOnly && projectId ? 'В проект пока не добавлены агенты' : 'В каталоге пока нет агентов'}>
             {(query || projectOnly) && <Button onClick={() => { setQuery(''); setProjectOnly(false); }}>Показать все агенты</Button>}
         </Empty>)}
+        {(projectId||isMain)&&<details className="agent-catalog__advanced" open={advancedOpen} onToggle={event=>{if(event.target===event.currentTarget)setAdvancedOpen(event.currentTarget.open);}}>
+            <summary>{projectId?'Файлы проекта и сервисные инструменты':'Сервисные инструменты'}{advancedAttention?' · требуется внимание':''}</summary>
+            <div className="agent-catalog__advanced-body">
+                {projectId&&isMain&&<div><Typography.Text strong>Шаблоны общего каталога</Typography.Text><Space wrap>{templateActions}</Space></div>}
+                {(isMain||projectId&&canManage)&&<SystemRoles key={JSON.stringify([scope,projectId])} projectId={projectId}/>}
+                {projectId&&<ProjectConfiguration projectId={projectId} bridge={bridge}/>}
+            </div>
+        </details>}
         {viewing && <AgentDetails agent={viewing} assignment={assignments.get(viewing.id)} onClose={() => setViewId(undefined)}
             readiness={readiness.items.find(item => item.agentId === viewing.id)} trialChecking={checkingTrial(viewing.id)} onTrial={canReadTrials && readiness.items.some(item => item.agentId === viewing.id)
                 ? () => { setViewId(undefined); setTrialAgentId(viewing.id); } : undefined} />}

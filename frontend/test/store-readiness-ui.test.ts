@@ -52,7 +52,7 @@ describe('Общее предупреждение готовности ката�
         const html=renderToStaticMarkup(createElement(Router,{history},
             createElement(ProjectInstallationReadiness,{bridge:bridge(target),projectId:'prj-dossier-ko',canInstall:true})));
         expect(html).toContain('Выбрать папку проекта'); expect(navigation.chooseFolder).toBeDefined();
-        navigation.chooseFolder?.(); expect(history.location.pathname+history.location.search).toBe('/projects?bind=prj-dossier-ko');
+        navigation.chooseFolder?.(); expect(history.location.pathname+history.location.search).toBe('/start?setup=1&p=prj-dossier-ko');
         navigation.chooseFolder=undefined;
         renderToStaticMarkup(createElement(Router,{history},
             createElement(ProjectInstallationReadiness,{bridge:bridge(target),projectId:'prj-dossier-ko',canInstall:false})));

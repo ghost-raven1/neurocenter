@@ -28,7 +28,7 @@ import { ProjectSize } from './features/ProjectSize/ProjectSize';
 import { ProjectFolderDataSize } from './features/ProjectSize/ProjectFolderDataSize';
 import { useBridge } from '../../features/McpBridge/useBridge';
 import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
-import { projectBindingSearch, projectBindingTarget } from './projectNavigation';
+import { projectBindingSearch, projectBindingTarget, projectBindingUrl } from './projectNavigation';
 
 
 
@@ -67,7 +67,7 @@ const Projects: FC = () => {
     }, [dispatch, bindingId, authScope]);
 
     const openBinding = (id: string): void => {
-        history.replace(`${location.pathname}${projectBindingSearch(location.search, id)}${location.hash}`);
+        history.push(projectBindingUrl(id));
     };
     const closeBinding = (): void => {
         dispatch(clearSelected());
@@ -121,7 +121,7 @@ const Projects: FC = () => {
         },
         { title: 'Папка на выбранном компьютере', key: 'localFolder', width: 220, render: (_:unknown,record:IProjectSummary)=><div className={`project-folder${localBindings[record.id]?'':' project-folder_unbound'}`}><span>{localBindings[record.id]?.folderName ?? 'Не связана'}</span>{projectRoleLevel(user,record.id)>=2&&<Button type="link" size="small" aria-label={`${localBindings[record.id]?'Изменить привязку':'Связать папку'} проекта ${record.name}`} onClick={event=>{event.stopPropagation();openBinding(record.id);}}>{localBindings[record.id]?'Изменить':'Связать'}</Button>}</div> },
         { title: 'Состояние', dataIndex: 'state', key: 'state', width: 120, render: (value: TProjectState) => <StatusTag status={value} /> },
-        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', width: 150, render: (_: unknown, record) => <ProjectFolderDataSize project={record} bridge={bridge} canRead={projectRoleLevel(user,record.id)>=1} canBind={projectRoleLevel(user,record.id)>=2} loading={loading} onRetry={retrySizes} /> },
+        { title: 'Текущие данные', dataIndex: 'logicalBytes', key: 'bytes', width: 150, render: (_: unknown, record) => <ProjectFolderDataSize project={record} bridge={bridge} canRead={projectRoleLevel(user,record.id)>=1} canBind={projectRoleLevel(user,record.id)>=2} showSetupAction={false} loading={loading} onRetry={retrySizes} /> },
         { title: 'Копия знаний', dataIndex: 'retainedBytes', key: 'retained', width: 150, render: (value: unknown, record) => <ProjectSize kind="retained" bytes={value} error={record.retainedSizeError} loading={loading} onRetry={retrySizes} /> },
         { title: 'В работе', dataIndex: 'activeOperations', key: 'ops', width: 85 },
         {
@@ -145,8 +145,8 @@ const Projects: FC = () => {
     ];
 
     return (
-        <div><PageHeading title="Проекты" description="Подключайте проекты команды, добавляйте инструменты и управляйте базами знаний." />
-        <LocalProjectsFolder bridge={bridge} project={bindingProject} canManage={!!bindingProject&&projectRoleLevel(user,bindingProject.id)>=2} onClose={closeBinding}/>
+        <div><PageHeading title="Проекты" description="Подключайте проекты команды, добавляйте инструменты и управляйте базами знаний." actions={<Button onClick={()=>history.push('/start?setup=1')}>Настроить окружение</Button>}/>
+        <LocalProjectsFolder bridge={bridge} project={bindingProject} collapsed canManage={!!bindingProject&&projectRoleLevel(user,bindingProject.id)>=2} onClose={closeBinding}/>
         {bindingRequested && !bindingProject && <Alert showIcon style={{marginBottom:16}} type={bindingError?'error':'info'}
             message={bindingError?'Не удалось открыть привязку проекта':'Загружаем проект для привязки…'} description={bindingError}
             action={<Space>{bindingId && <Button loading={selectedLoading} onClick={()=>void dispatch(fetchProject(bindingId))}>Повторить</Button>}<Button onClick={closeBinding}>Закрыть</Button></Space>} />}

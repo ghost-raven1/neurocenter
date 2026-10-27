@@ -17,6 +17,17 @@ const render = (canHost = false, canAssign = false, assigned = true, projectSele
 beforeEach(() => { ui.hosting = { state: 'ready', message: 'Проверка пройдена', checkedAt: '2026-10-19T01:00:00Z' }; });
 
 describe('Модели в общем и проектном каталоге', () => {
+    it('Keeps one next action and retains guarded secondary actions in an initially closed disclosure',()=>{
+        const onAssign=vi.fn(),onConfigure=vi.fn(),onChat=vi.fn();
+        const html=renderToStaticMarkup(createElement(ModelCard,{model:{...model,capability:'chat',runtime:'remote-openai'},canHost:true,canAssign:true,assigned:false,projectSelected:true,busy:false,
+            onAssign,onConfigure,onChat,onView:vi.fn(),onEdit:vi.fn(),onRemove:vi.fn(),chatUnavailableReason:'Добавьте модель в проект.'}));
+        expect(html.match(/ant-btn-primary/g)).toHaveLength(1);
+        expect(html).toContain('<details class="model-card__more">');expect(html).not.toContain('<details open');
+        expect(html).toContain('aria-label="Другие действия с моделью Поиск по проекту"');
+        expect(html).toContain('Настроить API модели Поиск по проекту');expect(html).toContain('Убрать из каталога модель Поиск по проекту');
+        expect(html).not.toContain('>Подробнее<');
+        expect(onAssign).not.toHaveBeenCalled();expect(onConfigure).not.toHaveBeenCalled();expect(onChat).not.toHaveBeenCalled();
+    });
     it('Chat и vision предлагают текстовый чат с объяснением недоступности, embedding — только поиск', () => {
         const props = { model, canHost: false, canAssign: false, assigned: true, projectSelected: true, busy: false, onAssign: vi.fn(), onView: vi.fn(), onChat: vi.fn() };
         expect(renderToStaticMarkup(createElement(ModelCard, props))).not.toContain('Чат с моделью');
