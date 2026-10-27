@@ -49,11 +49,11 @@ async function check(name, action) {
 async function installer(env, script) {
     return new Promise((resolve, reject) => {
         child = spawn('/bin/bash', [script], { env, cwd: temporary, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        const running = child, limit = 128 * 1024;
+        const running = child, limit = 128 * 1024, timeoutMs = 60000;
         let output = '', stdout = '', stderr = '', timedOut = false, termination, closed = false, escalationDone = false, exitCode, settled = false, ownershipUnknown = false;
         running.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
         running.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
-        const capture = extra => { installerFailure = { ...installerFailure, argv: ['/bin/bash', script], cwd: temporary, timeoutMs: 30000, environmentKeys: Object.keys(env).sort(), stdout, stderr, ...extra }; };
+        const capture = extra => { installerFailure = { ...installerFailure, argv: ['/bin/bash', script], cwd: temporary, timeoutMs, environmentKeys: Object.keys(env).sort(), stdout, stderr, ...extra }; };
         const unknown = (operation, error) => {
             ownershipUnknown = true; clearTimeout(termination);
             capture({ ownershipUnknown: true, processGroup: { state: 'unknown', pgid: running.pid, operation, code: error.code } });
@@ -74,7 +74,7 @@ async function installer(env, script) {
             settled = true;
             if (timedOut) {
                 capture();
-                reject(new Error('Установщик не завершился за 30 секунд. Вывод сохранён в installerFailure отчёта.'));
+                reject(new Error(`Установщик не завершился за ${timeoutMs / 1000} секунд. Вывод сохранён в installerFailure отчёта.`));
             } else { resolve({ code: exitCode, output }); }
         };
         const timeout = setTimeout(() => {
@@ -82,7 +82,7 @@ async function installer(env, script) {
             capture();
             if (!stop('SIGTERM')) { finish(); return; }
             termination = setTimeout(() => { if (!groupEmpty() && !ownershipUnknown) { stop('SIGKILL'); } escalationDone = true; finish(); }, 1000);
-        }, 30000);
+        }, timeoutMs);
         running.once('error', error => { if (settled) { return; } settled = true; clearTimeout(timeout); clearTimeout(termination); capture({ spawnErrorCode: error.code }); reject(error); });
         running.once('close', code => {
             clearTimeout(timeout); closed = true; exitCode = code; if (child === running) { child = undefined; }
