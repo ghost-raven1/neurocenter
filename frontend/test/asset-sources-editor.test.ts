@@ -128,7 +128,7 @@ it('Проверенный архив показывает готовые кар
     expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(true);const html=render();expect(html).toContain('Из архива / без сетевой дозагрузки');expect(html).toContain('Не хватает файлов: 2');expect(html).toContain('Проверить источник в GitHub');
     expect(archiveUi.checkboxes.map(box=>!!box.disabled)).toEqual([false,true]);expect(archiveUi.buttons.filter(button=>button.label==='Добавить').map(button=>!!button.disabled)).toEqual([false,true]);
     archiveUi.buttons.find(button=>button.label==='Добавить'&&button.disabled)!.onClick();expect(archiveUi.start).not.toHaveBeenCalled();
-    archiveUi.checkboxes[0].onChange({target:{checked:true}});archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Добавить выбранные (1)');
+    archiveUi.checkboxes[0].onChange({target:{checked:true}});archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Импортировать выбранные (1)');
     // The bulk button has React children, so the ready card also exercises the guarded canonical action.
     archiveUi.buttons.find(button=>button.label==='Добавить'&&!button.disabled)!.onClick();expect(archiveUi.start).toHaveBeenCalledExactlyOnceWith(['source-a'],'a'.repeat(40));expect(baseApi.post).not.toHaveBeenCalled();
 });
@@ -156,8 +156,8 @@ it('Старый обработчик проверки источника пос
     render();await settle();const previous=ui.refreshButtons.get('Обновить источник')!;ui.owner='admin-b';render();await settle();previous.onClick();await settle();expect(baseApi.post).not.toHaveBeenCalled();
 });
 it('Перечитывание снимает прежний выбор карточки, если её файлы теперь недоступны',async()=>{
-    vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();await settle();archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Добавить выбранные (1)');
-    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets:uploaded.assets.map(asset=>({...asset,supply:{ready:false,missingFiles:1,missingBytes:64}}))}});ui.refreshButtons.get('Обновить список')!.onClick();const html=await settle();expect(html).not.toContain('Добавить выбранные (1)');expect(archiveUi.checkboxes.every(box=>!box.checked&&box.disabled)).toBe(true);expect(html).toContain('64 Б');
+    vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();await settle();archiveUi.checkboxes[0].onChange({target:{checked:true}});expect(render()).toContain('Импортировать выбранные (1)');
+    vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets:uploaded.assets.map(asset=>({...asset,supply:{ready:false,missingFiles:1,missingBytes:64}}))}});ui.refreshButtons.get('Обновить список')!.onClick();const html=await settle();expect(html).not.toContain('Импортировать выбранные (1)');expect(archiveUi.checkboxes.every(box=>!box.checked&&box.disabled)).toBe(true);expect(html).toContain('64 Б');
 });
 it('Запрос редактора блокирует upload синхронно, до следующего render',async()=>{
     render();await settle();const pending=deferred<ICatalogAgent>();vi.mocked(agentCatalogApi.get).mockReturnValue(pending.promise);ui.buttons[0].onClick();expect(await archiveUi.modal!.upload.upload(new File(['zip'],'source.zip'))).toBe(false);expect(baseApi.put).not.toHaveBeenCalled();pending.resolve(agent({id:'agent-a'}));await settle();
@@ -199,5 +199,5 @@ it('Массовый выбор обновлений ограничен серв
     const assets=Array.from({length:51},(_,index)=>({...source.assets[0],id:'update-'+index,name:'Update '+index,imported:{...source.assets[0].imported,updateAvailable:true}}));
     vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets}});render();await settle();
     archiveUi.buttons.find(button=>button.label==='Выбрать готовые обновления')!.onClick();const html=render();
-    expect(archiveUi.checkboxes.filter(box=>box.checked)).toHaveLength(50);expect(html).toContain('первые 50');expect(html).toContain('Добавить выбранные (50)');expect(archiveUi.start).not.toHaveBeenCalled();
+    expect(archiveUi.checkboxes.filter(box=>box.checked)).toHaveLength(50);expect(html).toContain('первые 50');expect(html).toContain('Импортировать выбранные (50)');expect(archiveUi.start).not.toHaveBeenCalled();
 });

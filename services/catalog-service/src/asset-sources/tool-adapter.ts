@@ -42,6 +42,8 @@ export class ToolAssetAdapter {
         const base:IImportItem={resolved,requestKey,name:publication.name,action:'create',state:'PENDING',publication};
         const previous=[...planned].reverse().find(item=>item.resolved.asset.id===asset.id&&!item.preserveHead&&item.native&&item.action!=='conflict');
         let current=previous?.publication&&previous.native?plannedToolCard(previous.native.id,previous.native.version,previous.publication):await this.repository.get(receipt?.native_id??publication.name);
+        // Native name is an installation key and part of historical package hashes; the source title remains in base.name.
+        if(current){publication.name=current.name;}
         const approved=!!current&&overrideHash===nativeCardHash(current);
         if(overrideHash&&!approved){return {...base,action:'conflict',reason:'Локальная карточка изменилась после подтверждения замены. Проверьте конфликт заново.'};}
         if(receipt&&resolved.current&&!previous&&!approved&&(!current||receipt.asset_kind!==asset.kind||current.id!==receipt.native_id||nativeCardHash(current)!==receipt.native_hash)){

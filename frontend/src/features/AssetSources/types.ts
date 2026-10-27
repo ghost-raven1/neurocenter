@@ -4,7 +4,7 @@ export interface ISourceAsset {id:string;kind:TSourceAssetKind;name:string;descr
 export interface ISourceList {source:{repository:string;mode?:'online'|'offline';archiveSha256?:string;commit?:string;checkedAt?:string;verified:boolean;error?:string;lastAttemptAt?:string};assets:ISourceAsset[];localAssets?:ISourceAsset[]}
 /** rejected подтверждает отказ свежего POST до создания job; отсутствие признака сохраняет неизвестный исход. */
 export interface IImportIntent {requestKey:string;commit:string;ids:string[];jobId?:string;rejected?:true}
-export interface IAssetImport {id:string;planDigest:string;state:string;message:string;items:Array<{id:string;kind:TSourceAssetKind;name:string;version:string;current:boolean;action:string;state:string;reason?:string;message?:string;replacement?:{id:string;version:number;hash:string}}> }
+export interface IAssetImport {id:string;planDigest:string;state:string;message:string;items:Array<{id:string;kind:TSourceAssetKind;name:string;catalogName?:string;version:string;current:boolean;action:string;state:string;reason?:string;message?:string;replacement?:{id:string;version:number;hash:string}}> }
 export const activeImport=(state:string):boolean=>['QUEUED','RUNNING'].includes(state);
 export function readImportIntent(value:string|null):IImportIntent|undefined {
  try{const parsed=JSON.parse(value??'null') as IImportIntent;
