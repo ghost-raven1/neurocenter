@@ -54,48 +54,55 @@ describe.skipIf(!connection).sequential('Immutable chat origin bindings on expli
         }};
         service = new ChatSystemRolesService(models as never, {policy: new SystemRolePolicy(models as never), repository: new SystemRoleRepository(pool)} as never);
     });
+    // Released mixed bindings remain fixtures of history; production no longer creates new ones.
+    const historical = async (source: {kind: string; originId: string; projectId: string | null}) => {
+        const id = randomUUID();
+        await pool.query("INSERT INTO system_role_dialogs(id,owner_email,project_id,title) VALUES($1,$2,$3,'Legacy fixture')", [id, owner, source.projectId]);
+        await pool.query('INSERT INTO chat_system_role_origins(dialog_id,owner_email,origin_kind,origin_id,project_id) VALUES($1,$2,$3,$4,$5)', [id, owner, source.kind, source.originId, source.projectId]);
+        return {id,projectId:source.projectId};
+    };
     beforeEach(async () => {flags.enabled = true; project = await newProject();});
     afterEach(async () => {if (pool) {await pool.query('DELETE FROM projects WHERE id=ANY($1::text[])', [projects.splice(0)]); await pool.query('DELETE FROM system_role_dialogs'); await pool.query('DELETE FROM model_chat_conversations');}});
     afterAll(async () => {await pool?.end(); if (admin) {try {if (database) await admin.query('DROP DATABASE ' + database);} finally {await admin.end();}}});
 
     it('serializes concurrent binds into one private dialog and one immutable origin row', async () => {
-        const source = await conversation(); const [left, right] = await Promise.all([service.bind(req(), source), service.bind(req(), source)]);
+        const source = await conversation(); await historical(source); const [left, right] = await Promise.all([service.bind(req(), source), service.bind(req(), source)]);
         expect(left.id).toBe(right.id); expect((await pool.query('SELECT count(*) FROM chat_system_role_origins')).rows[0].count).toBe('1');
         expect((await pool.query('SELECT count(*) FROM system_role_dialogs')).rows[0].count).toBe('1');
         expect((await pool.query('SELECT count(*) FROM model_chat_turns')).rows[0].count).toBe('0');
         expect((await pool.query('SELECT count(*) FROM project_chat_messages')).rows[0].count).toBe('0');
     });
     it('enforces NULLS NOT DISTINCT uniqueness for a global private conversation', async () => {
-        const source = await conversation(owner, null); const accepted = await service.bind(req(owner, 'Главный админ'), source);
+        const source = await conversation(owner, null); await historical(source); const accepted = await service.bind(req(owner, 'Главный админ'), source);
         const id = randomUUID(); await pool.query("INSERT INTO system_role_dialogs(id,owner_email,title) VALUES($1,$2,'Duplicate fixture')", [id, owner]);
         await expect(pool.query("INSERT INTO chat_system_role_origins(dialog_id,owner_email,origin_kind,origin_id) VALUES($1,$2,'model-chat',$3)", [id, owner, source.originId])).rejects.toMatchObject({code: '23505'});
         expect((await service.bind(req(owner, 'Главный админ'), source)).id).toBe(accepted.id);
     });
     it('rejects origin identity UPDATE even when both original chats belong to the same caller', async () => {
-        const source = await conversation(), next = await conversation(), accepted = await service.bind(req(), source);
+        const source = await conversation(), next = await conversation(), accepted = await historical(source);
         await expect(pool.query('UPDATE chat_system_role_origins SET origin_id=$2 WHERE dialog_id=$1', [accepted.id, next.originId])).rejects.toThrow('immutable');
         expect((await pool.query('SELECT origin_id FROM chat_system_role_origins WHERE dialog_id=$1', [accepted.id])).rows[0].origin_id).toBe(source.originId);
     });
     it('does not bind another user’s conversation or accept a mismatched canonical project', async () => {
         const foreign = await conversation(other), privateSource = await conversation(), nextProject = await newProject();
-        await expect(service.bind(req(), foreign)).rejects.toThrow('недоступен');
-        await expect(service.bind(req(), {...privateSource, projectId: nextProject})).rejects.toThrow('другому проекту');
+        await expect(service.bind(req(), foreign)).rejects.toThrow('отдельный чат');
+        await expect(service.bind(req(), {...privateSource, projectId: nextProject})).rejects.toThrow('отдельный чат');
         expect((await pool.query('SELECT count(*) FROM system_role_dialogs')).rows[0].count).toBe('0');
     });
     it('uses project identity in the shared default-room origin key', async () => {
         const second = await newProject();
-        const a = await service.bind(req(), {kind: 'project-chat', originId: DEFAULT_PROJECT_CHAT_ROOM, projectId: project});
-        const b = await service.bind(req(), {kind: 'project-chat', originId: DEFAULT_PROJECT_CHAT_ROOM, projectId: second}); expect(a.id).not.toBe(b.id);
+        const a = await historical({kind: 'project-chat', originId: DEFAULT_PROJECT_CHAT_ROOM, projectId: project});
+        const b = await historical({kind: 'project-chat', originId: DEFAULT_PROJECT_CHAT_ROOM, projectId: second}); expect(a.id).not.toBe(b.id);
         expect((await pool.query('SELECT count(*) FROM project_chat_rooms')).rows[0].count).toBe('0');
     });
     it('requires explicit PRIVATE membership even for a main administrator', async () => {
         const room = randomUUID(); await pool.query("INSERT INTO project_chat_rooms(project_id,id,title,visibility,creator_email,create_request_key,create_request_hash) VALUES($1,$2,'Private','PRIVATE',$3,$4,$5)", [project, room, other, randomUUID(), 'a'.repeat(64)]);
-        const source = {kind: 'project-chat', originId: room, projectId: project}; await expect(service.bind(req(owner, 'Главный админ'), source)).rejects.toThrow('не найден');
+        const source = {kind: 'project-chat', originId: room, projectId: project}; const accepted = await historical(source); await expect(assertChatSystemRoleOrigin(pool, accepted.id, owner, project)).rejects.toThrow('не найден');
         await pool.query('INSERT INTO project_chat_room_members(project_id,room_id,email) VALUES($1,$2,$3)', [project, room, owner]);
-        expect(await service.bind(req(owner, 'Главный админ'), source)).toMatchObject({projectId: project});
+        await expect(assertChatSystemRoleOrigin(pool, accepted.id, owner, project)).resolves.toBeUndefined();
     });
     it('keeps private history and binding replay after feature OFF, demotion and original deletion; checkpoints fail', async () => {
-        const source = await conversation(), accepted = await service.bind(req(), source); flags.enabled = false;
+        const source = await conversation(), accepted = await historical(source); flags.enabled = false;
         await pool.query("UPDATE project_members SET role='Наблюдатель' WHERE project_id=$1 AND principal_name=$2", [project, owner]);
         await pool.query('DELETE FROM model_chat_conversations WHERE id=$1', [source.originId]);
         expect((await service.read(req(owner, 'Наблюдатель'), source))?.id).toBe(accepted.id);
@@ -103,8 +110,8 @@ describe.skipIf(!connection).sequential('Immutable chat origin bindings on expli
         await expect(assertChatSystemRoleOrigin(pool, accepted.id, owner, project)).rejects.toThrow('недоступен');
     });
     it('does not leave an orphan dialog after source failure or a newly disabled flag', async () => {
-        const missing = {kind: 'model-chat', originId: randomUUID(), projectId: project}; await expect(service.bind(req(), missing)).rejects.toThrow('недоступен');
-        const source = await conversation(); flags.enabled = false; await expect(service.bind(req(), source)).rejects.toThrow('Feature OFF');
+        const missing = {kind: 'model-chat', originId: randomUUID(), projectId: project}; await expect(service.bind(req(), missing)).rejects.toThrow('отдельный чат');
+        const source = await conversation(); flags.enabled = false; await expect(service.bind(req(), source)).rejects.toThrow('отдельный чат');
         expect((await pool.query('SELECT count(*) FROM system_role_dialogs')).rows[0].count).toBe('0');
     });
 });

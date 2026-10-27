@@ -60,3 +60,17 @@ export function clearServiceIntent(scope: string): void {
     inputs.delete(scope);
     try { sessionStorage.removeItem(storageKey(scope)); } catch { /* Storage is optional. */ }
 }
+
+/** Find a prior origin-scoped receipt for this same person/project/role without rewriting its key. */
+export function legacyRoleIntentScope(authScope: string, projectId: string | undefined, agentId: string): string | undefined {
+    const expected = JSON.parse(serviceIntentScope(authScope, projectId)) as unknown[];
+    try {
+        for (let index = 0; index < Math.min(sessionStorage.length, 500); index++) {
+            const key = sessionStorage.key(index), prefix = 'neurocenter:service-chat-request:';
+            if (!key?.startsWith(prefix)) continue;
+            const scope = key.slice(prefix.length), parts: unknown = JSON.parse(scope);
+            if (Array.isArray(parts) && parts[0] === expected[0] && parts[1] === expected[1] && serviceIntent(scope)?.agentId === agentId) return scope;
+        }
+    } catch { /* Existing mounted recovery remains available when storage inspection is denied. */ }
+    return undefined;
+}

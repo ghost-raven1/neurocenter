@@ -1,8 +1,6 @@
 import {DeleteOutlined, EditOutlined, MenuOutlined, MoreOutlined, PlusOutlined, TeamOutlined} from '@ant-design/icons';
 import {Alert, Button, Dropdown, Input, Modal, Space, Spin, Tooltip, Typography} from 'antd';
 import {useEffect, useRef, useState} from 'react';
-import {useSelector} from 'react-redux';
-import type {RootState} from '../../store';
 import {AttachmentPreview} from './AttachmentPreview';
 import {ChatAttachments} from './ChatAttachments';
 import {ChatResearchControls} from './ChatResearchControls';
@@ -19,10 +17,9 @@ import {useChatContext} from './useChatContext';
 import {useModelChat} from './useModelChat';
 import {FeatureAvailabilityNotice, FeatureButton, useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
-import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin} from '../ChatSystemRoles/types';
+import {chatRoleOriginKey, type ChatRoleOrigin} from '../ChatSystemRoles/types';
 import type {SystemRoleId} from '../SystemRoles/types';
-import {projectRoleLevel} from '../UserBlock/roles';
-import {useChatRoleAction} from '../ChatSystemRoles/useChatRoleAction';
+import {openModelChat} from './chatNavigation';
 import {chatSystemRoleMention} from '../ChatSystemRoles/mentions';
 import {useAgentTools} from '../AgentTools/useAgentTools';
 import {AgentToolsControls, AgentToolsGrantSummary} from '../AgentTools/AgentToolsControls';
@@ -40,24 +37,10 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
     const [toolsDraftIdentity,setToolsDraftIdentity] = useState(() => navigation?.initialDetail?.conversation.id ?? crypto.randomUUID());
     const agentTools = useAgentTools(JSON.stringify([model.id,toolsDraftIdentity]),projectId);
     const [draft, setDraft] = useState(''), [fileError, setFileError] = useState(''), [preview, setPreview] = useState<string>();
-    const [roleLaunch, setRoleLaunch] = useState<ChatRoleLaunch>(), roleSequence = useRef(0), currentDraft = useRef(draft); currentDraft.current = draft;
-    const user = useSelector((state: RootState) => state.userBlock.user);
-    const canRunRole = !!user && (projectId ? projectRoleLevel(user, projectId) >= 3 : user.activeRole === 'Главный админ');
     const origin: ChatRoleOrigin | undefined = chat.detail ? {kind: 'model-chat', originId: chat.detail.conversation.id, projectId: projectId ?? null} : undefined;
     const originKey = origin && chatRoleOriginKey(origin);
-    const activeRole = roleLaunch?.origin === originKey ? roleLaunch : undefined, liveRole = useRef(activeRole); liveRole.current = activeRole;
-    const roleTask = activeRole && {...activeRole,instruction: chatSystemRoleMention(draft).instruction};
-    const roleControls = useChatRoleAction(activeRole && originKey + ':' + activeRole.key);
     const openSystemRole = async (agentId: SystemRoleId, instruction: string): Promise<void> => {
-        const owns = chat.captureOwner();
-        const selected = chat.detail ?? await chat.ensureConversation();
-        if (!owns() || !selected || selected.conversation.projectId !== (projectId ?? null)) return;
-        const source = chatRoleOriginKey({kind: 'model-chat', originId: selected.conversation.id, projectId: projectId ?? null});
-        const key = ++roleSequence.current;
-        setRoleLaunch({key, origin: source, agentId, instruction, modelId: model.id,
-            onAccepted: accepted => {if (!owns() || liveRole.current?.key !== key) return;
-                if (chatSystemRoleMention(currentDraft.current).instruction.trim() === accepted.trim()) setDraft('');
-                setRoleLaunch(current => current?.key === key ? undefined : current);}});
+        if (chat.captureOwner()()) openModelChat({projectId, agentId, instruction});
     };
     const [listOpen, setListOpen] = useState(false), [renaming, setRenaming] = useState(false), [title, setTitle] = useState('');
     const [actionsOpen, setActionsOpen] = useState(false);
@@ -188,19 +171,18 @@ export function ChatWorkspace({model, projectId, projectName, unavailableReason,
                 <FeatureAvailabilityNotice features={[group ? 'group_chat' : 'model_chat']}/>
                 {chat.activity === 'loading' && !chat.detail ? <div className="model-chat__loading" role="status"><Spin tip="Загружаем личные диалоги…"/></div>
                     : <ChatMessages key={chat.detail?.conversation.id || 'new'} turns={chat.turns} attachments={chat.detail?.attachments ?? []} modelName={model.name} conversationId={chat.detail?.conversation.id} projectId={projectId} blocked={!!chat.blocked} busy={!!chat.activity} group={group}
-                        privateTasks={origin && <SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={canRunRole} launch={roleTask} onActionChange={roleControls.register}/>}
+                        privateTasks={origin && <SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={false} historyOnly/>}
                         onRetry={chat.retry} onEdit={() => {void edit();}} onPreview={setPreview} hasEarlier={chat.detail?.history?.hasMore ?? false} historyLoading={chat.historyLoading} historyError={chat.historyError} onLoadEarlier={() => {void chat.loadEarlier();}} onComplete={() => {void chat.complete();}}/>}
                 <ChatAttachments files={chat.attachments} uploads={chat.uploads} disabled={!!chat.activity || unresolved} onPreview={setPreview} onRemove={id => {void chat.removeAttachment(id);}}
                     onRetryUpload={chat.retryUpload} onRemoveUpload={chat.removeUpload}/>
                 <div className="model-chat__tools">
                     <ChatContextMeter context={context.context} loading={context.loading} error={context.error} rejected={context.rejected} usage={lastAnswer?.usage} compaction={chat.detail?.compaction} phase={lastTurn?.status === 'pending' || lastTurn?.status === 'failed' ? lastTurn.processingStage : undefined} failed={lastTurn?.status === 'failed'} open={activeTool === 'context'} onOpenChange={open => openTool('context', open)}/>
                     <ChatResearchControls value={research} disabled={disabled} projectId={projectId} open={activeTool === 'research'} onOpenChange={open => openTool('research', open)}>
-                        <AgentToolsControls value={agentTools} disabled={disabled || !!activeRole} projectId={projectId} conflict={toolsConflict} onUseTools={() => research.setEnabled(false)} onUseResearch={agentTools.disable}/>
+                        <AgentToolsControls value={agentTools} disabled={disabled} projectId={projectId} conflict={toolsConflict} onUseTools={() => research.setEnabled(false)} onUseResearch={agentTools.disable}/>
                     </ChatResearchControls>
                 </div>
                 {projectId && <div role="status">{toolsConflict ? <Typography.Text type="warning">Выберите инструменты агентов или исследование в «Контекст/инструменты». Оба выбора сохранены.</Typography.Text> : agentTools.request ? <AgentToolsGrantSummary grant={agentTools.request}/> : <Typography.Text type={toolsBlocked ? 'warning' : 'secondary'}>{agentTools.loading ? 'Проверяем контекст и инструменты…' : agentTools.reason || 'Инструменты агентов выключены для следующего сообщения.'}</Typography.Text>}</div>}
                 <ChatComposer draft={draft} disabled={disabled} canSend={!disabled && !chat.uploads.length && !contextBlocked && !researchBlocked && (!toolsBlocked || systemMention) && (!!draft.trim() || !!chat.attachments.length)} onSystemRole={(agentId, instruction) => {void openSystemRole(agentId, instruction);}}
-                    systemTask={!!activeRole} systemAction={roleControls.action} onCancelSystemTask={() => {setRoleLaunch(undefined); setDraft(chatSystemRoleMention(currentDraft.current).instruction);}}
                     sending={chat.busy} uploading={chat.activity === 'uploading'} onDraft={setDraft} onSend={send} onStop={() => {void chat.stop();}} onCancelUpload={chat.cancelUploads}
                     onFiles={files => {if(availability.enabled){setFileError(''); chat.addFiles(files);}}} onReject={setFileError} participants={group ? chat.detail?.participants ?? [] : undefined} filesOpen={activeTool === 'files'} onFilesOpenChange={open => openTool('files', open)}/>
                 </>}

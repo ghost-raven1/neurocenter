@@ -51,10 +51,10 @@ describe('Private system tasks bind saved chat metadata', () => {
         await expect(assertChatSystemRoleSource(f.db, owner, {...origin, kind: 'project-chat', originId: '00000000-0000-0000-0000-000000000000'})).resolves.toBeUndefined();
         expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO'))).toBe(false);
     });
-    it('routes read/replay for a demoted reader while the executor gates new binding at admin level', async () => {
+    it('retains the read/replay route but rejects new mixed origin dialogs', async () => {
         const claims = {email: owner, userRoles: ['Наблюдатель'], projects: [], pluginIds: [], skillPaths: []};
         expect(allowRequest(claims, 'Наблюдатель', {method: 'POST', path: '/api/chat-system-roles/origin'})).toBe(true);
-        const f = fixture(); await expect(f.service.bind(request(1), origin)).rejects.toThrow('Current role');
+        const f = fixture(); await expect(f.service.bind(request(1), origin)).rejects.toThrow('отдельный чат');
         expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO'))).toBe(false);
     });
     it('reads and replays only the caller’s binding after origin loss and feature OFF', async () => {
@@ -65,11 +65,11 @@ describe('Private system tasks bind saved chat metadata', () => {
         expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO'))).toBe(false);
     });
     it('rejects a mismatched original project before creating any private dialog', async () => {
-        const f = fixture(); f.state.canonical = 'prj-other'; await expect(f.service.bind(request(), origin)).rejects.toThrow('другому проекту');
+        const f = fixture(); f.state.canonical = 'prj-other'; await expect(f.service.bind(request(), origin)).rejects.toThrow('отдельный чат');
         expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO'))).toBe(false);
     });
     it('feature OFF rejects a new binding before any INSERT without touching ordinary chats', async () => {
-        const f = fixture(); features.mockRejectedValue(new ForbiddenException('OFF')); await expect(f.service.bind(request(), origin)).rejects.toThrow('OFF');
+        const f = fixture(); features.mockRejectedValue(new ForbiddenException('OFF')); await expect(f.service.bind(request(), origin)).rejects.toThrow('отдельный чат');
         expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO'))).toBe(false);
     });
     it('checks the original private owner and the existing single/group chat feature separately', async () => {
@@ -90,7 +90,7 @@ describe('Private system tasks bind saved chat metadata', () => {
     it('checks a lost source before collecting any new preview or private dialog context', async () => {
         const f = fixture(); f.state.bound = true; f.state.source = false;
         const chats = new SystemRoleChatService(f.models as never, f.roles as never);
-        await expect(chats.prepare(request(), dialogId, {agentId: 'agent-ai-admin', selection: {projectId: project, instruction: 'Проверь проект', diagnostics: [], targets: []}, includeContext: true})).rejects.toThrow('недоступен');
+        await expect(chats.prepare(request(), dialogId, {agentId: 'agent-ai-admin', selection: {projectId: project, instruction: 'Проверь проект', diagnostics: [], targets: []}, includeContext: true})).rejects.toThrow('новый чат');
         expect(f.roles.prepare).not.toHaveBeenCalled(); expect(f.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO system_role_dialog_contexts'))).toBe(false);
     });
 });

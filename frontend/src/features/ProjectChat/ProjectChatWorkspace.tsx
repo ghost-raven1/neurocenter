@@ -1,8 +1,6 @@
 import {EditOutlined, MenuOutlined, ReloadOutlined, SettingOutlined, TeamOutlined} from '@ant-design/icons';
 import {Alert, Button, Space, Spin, Tag, Tooltip, Typography} from 'antd';
-import {useCallback, useEffect, useRef, useState, type RefObject} from 'react';
-import {useSelector} from 'react-redux';
-import type {RootState} from '../../store';
+import {useEffect, useRef, useState, type RefObject} from 'react';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {ProjectChatComposer} from './ProjectChatComposer';
@@ -16,10 +14,9 @@ import {useProjectChat} from './useProjectChat';
 import {useProjectChatActivity} from './useProjectChatActivity';
 import {ProjectChatPresence, ProjectChatTyping} from './ProjectChatActivity';
 import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatMessage, type ProjectChatRoomSummary} from './types';
-import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin} from '../ChatSystemRoles/types';
+import {chatRoleOriginKey, type ChatRoleOrigin} from '../ChatSystemRoles/types';
+import {openModelChat} from '../ModelChat/chatNavigation';
 import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
-import {projectRoleLevel} from '../UserBlock/roles';
-import {useChatRoleAction} from '../ChatSystemRoles/useChatRoleAction';
 import './ProjectChat.less';
 
 interface Props {projectId: string; projectName?: string;}
@@ -31,14 +28,7 @@ interface RoomProps extends Props {
 function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, onOpenList, onManage, onAccessLost}: RoomProps): JSX.Element {
     const {scope} = useAuthRequestOwner(), chat = useProjectChat(projectId, roomId), flags = useFeatureAvailability('project_chat', ...(roomId === DEFAULT_PROJECT_CHAT_ROOM ? [] : ['project_chat_dialogs' as const]));
     const [reply, setReply] = useState<ProjectChatMessage>(), [panel, setPanel] = useState<'people' | 'agents'>(), [frozen, setFrozen] = useState(false);
-    const [roleLaunch, setRoleLaunch] = useState<ChatRoleLaunch>();
-    const user = useSelector((state: RootState) => state.userBlock.user);
     const origin: ChatRoleOrigin = {kind: 'project-chat', originId: roomId, projectId}, originKey = chatRoleOriginKey(origin);
-    const activeRole = roleLaunch?.origin === originKey ? roleLaunch : undefined;
-    const roleControls = useChatRoleAction(activeRole && JSON.stringify([scope,originKey,activeRole.key]));
-    const updateRoleInstruction = useCallback((key: number, instruction: string): void => {
-        setRoleLaunch(current => current?.key === key && current.instruction !== instruction ? {...current,instruction} : current);
-    }, []);
     const detail = chat.detail;
     const activity = useProjectChatActivity(projectId, roomId, detail, chat.clearAccess);
     useEffect(() => {if (chat.accessDenied && roomId !== DEFAULT_PROJECT_CHAT_ROOM) onAccessLost(roomId);}, [chat.accessDenied, roomId, onAccessLost]);
@@ -63,11 +53,11 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
         {chat.error && <Alert className="project-chat__notice" type="error" showIcon message={chat.error} action={<Button onClick={() => {void chat.refresh();}}>Повторить</Button>}/>}
         {!detail ? chat.loading ? <div className="project-chat__loading" role="status"><Spin tip="Открываем чат команды…"/></div> : null : <>
             <ProjectChatMessages projectId={projectId} messages={detail.messages} members={detail.members} activity={activity.snapshot} onVisible={activity.onVisible} canReply={detail.canPost && flags.enabled && !frozen} action={chat.action} retryPending={chat.retryPending} historyLoading={chat.historyLoading} historyError={chat.historyError} hasMore={detail.history.hasMore}
-                privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={projectRoleLevel(user, projectId) >= 3} launch={activeRole} onActionChange={roleControls.register}/>}
+                privateTasks={<SystemRoleChat key={originKey} embedded origin={origin} projectId={projectId} canExecute={false} historyOnly/>}
                 onLoadEarlier={() => {void chat.loadEarlier();}} onReply={setReply} onRetry={id => {void chat.retry(id);}} onCancel={id => {void chat.cancel(id);}}/>
             <ProjectChatTyping activity={activity.snapshot} members={detail.members} connected={activity.connected} enabled={activity.enabled}/>
-            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send} onSystemRole={setRoleLaunch}
-                systemTaskKey={activeRole?.key} systemAction={roleControls.action} onSystemInstructionChange={updateRoleInstruction}/>
+            <ProjectChatComposer draftKey={JSON.stringify([scope, projectId, roomId])} detail={detail} reply={reply} onCancelReply={() => setReply(undefined)} onFrozenChange={setFrozen} onTyping={activity.onTyping} onSend={chat.send} onSystemRole={launch => {if (launch) openModelChat({projectId, agentId: launch.agentId, instruction: launch.instruction});}}
+/>
         </>}
     </section>;
 }

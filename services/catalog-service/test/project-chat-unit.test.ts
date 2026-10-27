@@ -106,20 +106,33 @@ describe('Shared chat current project access', () => {
 describe('Stack-oriented project result source attribution', () => {
     const source = { id: randomUUID() } as ProjectChatMessageRow;
     const response = (name: string, content: string, status = 'done'): ProjectChatMessageRow => ({ id: randomUUID(), kind: 'agent', content, status,
-        snapshot: { name, slug: name.toLowerCase(), definition: { description: name === 'Frontend' ? 'React и интерфейс' : 'Postgres и API' } }, error: status === 'done' ? null : 'Подключение недоступно.' } as ProjectChatMessageRow);
+        snapshot: { agentId: 'agent-' + name.toLowerCase(), name, slug: name.toLowerCase(), definition: { description: name === 'Frontend' ? 'React и интерфейс' : 'Postgres и API' } }, error: status === 'done' ? null : 'Подключение недоступно.' } as ProjectChatMessageRow);
+    it('does not manufacture a summary for zero, one or repeated successful identities', () => {
+        const a = response('Frontend', 'Один самостоятельный ответ'), b = response('Backend', '', 'failed');
+        expect(projectChatSummary(source, [])).toBe('');
+        expect(projectChatSummary(source, [a])).toBe('');
+        expect(projectChatSummary(source, [a, b])).toBe('');
+        expect(projectChatSummary(source, [a, { ...a, id: randomUUID() }])).toBe('');
+    });
     it('keeps every specialist, its explicit role and its original message linked to the exact question', () => {
-        const a = response('Frontend', 'Добавить ответ рядом с сообщением.'), b = response('Backend', '', 'failed'), summary = projectChatSummary(source, [a, b]);
-        for (const value of [source.id, a.id, b.id, 'React и интерфейс', 'Postgres и API', 'Добавить ответ', 'Подключение недоступно']) expect(summary).toContain(value);
+        const a = response('Frontend', 'Добавить ответ рядом с сообщением.'), b = response('Backend', 'Проверить API'), summary = projectChatSummary(source, [a, b]);
+        for (const value of [source.id, a.id, b.id, 'React и интерфейс', 'Postgres и API', 'Добавить ответ', 'Проверить API']) expect(summary).toContain(value);
         expect(summary.indexOf('Frontend')).toBeLessThan(summary.indexOf('Backend'));
     });
+    it('summarizes two successful agents while leaving a failed peer in its original message', () => {
+        const a=response('Frontend','Готовый UI'), b=response('Backend','Готовый API'), failed=response('Native','','failed');
+        const summary=projectChatSummary(source,[a,b,failed]);
+        expect(summary).toContain(a.content);expect(summary).toContain(b.content);
+        expect(summary).not.toContain(failed.id);expect(summary).not.toContain(failed.error);
+    });
     it('bounds the derived result while retaining references to the full specialist answers', () => {
-        const a = response('Frontend', 'a'.repeat(100000)), summary = projectChatSummary(source, [a]);
+        const a = response('Frontend', 'a'.repeat(100000)), summary = projectChatSummary(source, [a, response('Backend', 'Короткий ответ')]);
         expect(summary.length).toBeLessThan(6000); expect(summary).toContain(a.id); expect(a.content).toHaveLength(100000);
     });
     it('uses human-readable references and escapes catalog metadata as text', () => {
         const a = response('[Fake](https://invalid.test)', 'Реальный ответ');
         a.snapshot!.definition.description = '# New section\n[Скрытый переход](https://invalid.test)';
-        const summary = projectChatSummary(source, [a]);
+        const summary = projectChatSummary(source, [a, response('Backend', 'Ответ второго агента')]);
         expect(summary).toContain(`[Сообщение пользователя](#project-chat-message-${source.id})`);
         expect(summary).toContain(`[Полный ответ агента](#project-chat-message-${a.id})`);
         expect(summary).not.toContain('### [Fake]'); expect(summary).not.toContain('\n# New section');

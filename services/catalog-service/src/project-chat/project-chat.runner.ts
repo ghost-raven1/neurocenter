@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatRepository } from './project-chat.repository';
 import { ProjectChatDispatch } from './project-chat-dispatch';
@@ -10,9 +11,12 @@ const safeFailure = (error: unknown): string => error instanceof BadRequestExcep
 const markdownMetadata = (value: string): string => value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}\[\]()#+\-.!>|~]/g, '\\$&');
 /** A result links each specialist contribution to its question without another hidden model call. */
 export function projectChatSummary(source: ProjectChatMessageRow, responses: ProjectChatMessageRow[]): string {
-    return `## Итог по вопросу\n\n[Сообщение пользователя](#project-chat-message-${source.id})\n\n` + responses.filter(row => row.kind === 'agent').map(row => {
+    const answered = [...new Map(responses.filter(row => row.kind === 'agent' && row.status === 'done' && row.snapshot?.agentId)
+        .map(row => [row.snapshot!.agentId, row])).values()];
+    if (answered.length < 2) return '';
+    return `## Итог по вопросу\n\n[Сообщение пользователя](#project-chat-message-${source.id})\n\n` + answered.map(row => {
         const role = row.snapshot?.definition.description || 'Специалист проекта', content = row.content.length > 4000 ? row.content.slice(0, 4000) + '\n\nПолный ответ — в сообщении выше.' : row.content;
-        return `### ${markdownMetadata(row.snapshot?.name || 'Агент')} (@${markdownMetadata(row.snapshot?.slug || 'agent')})\n\nОбласть: ${markdownMetadata(role.slice(0, 1000))}\n\n${row.status === 'done' ? content : row.error || 'Ответ не получен.'}\n\n[Полный ответ агента](#project-chat-message-${row.id})`;
+        return `### ${markdownMetadata(row.snapshot?.name || 'Агент')} (@${markdownMetadata(row.snapshot?.slug || 'agent')})\n\nОбласть: ${markdownMetadata(role.slice(0, 1000))}\n\n${content}\n\n[Полный ответ агента](#project-chat-message-${row.id})`;
     }).join('\n\n');
 }
 /** Durable FIFO admits separate user questions; failed attempts never start a paid retry automatically. */
@@ -87,7 +91,17 @@ export class ProjectChatRunner {
         await this.repository.scoped(job.projectId, job.actor, 2, true, async (db, room) => {
             signal.throwIfAborted(); await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
             const children = await this.repository.children(db, job.projectId, job.source.id, roomId), complete = children.filter(row => row.kind === 'agent').every(row => row.status === 'done');
-            await db.query("UPDATE project_chat_messages SET status=$4,content=$5,error=NULL,lease_until=NULL WHERE project_id=$1 AND source_message_id=$2 AND kind='summary' AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', projectChatSummary(job.source, children)]);
+            const summary = projectChatSummary(job.source, children);
+            if (summary) await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,content,generation)
+                VALUES($1,$2,$3,'summary',$4,$4,$5,$6,$7)
+                ON CONFLICT(source_message_id) WHERE kind='summary' DO UPDATE SET status=EXCLUDED.status,content=EXCLUDED.content,error=NULL,lease_until=NULL
+                WHERE project_chat_messages.generation=EXCLUDED.generation AND project_chat_messages.status='running'`,
+            [randomUUID(), job.projectId, roomId, job.source.id, complete ? 'done' : 'failed', summary, job.generation]);
+            // Only an unfilled legacy placeholder can disappear; received historical content remains intact.
+            else {
+                await db.query("DELETE FROM project_chat_messages WHERE project_id=$1 AND source_message_id=$2 AND kind='summary' AND generation=$3 AND status='running' AND content=''", [job.projectId, job.source.id, job.generation]);
+                await db.query("UPDATE project_chat_messages SET status=$4,error=NULL,lease_until=NULL WHERE project_id=$1 AND source_message_id=$2 AND kind='summary' AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed']);
+            }
             await db.query("UPDATE project_chat_messages SET status=$4,error=$5,lease_until=NULL WHERE project_id=$1 AND id=$2 AND generation=$3 AND status='running'", [job.projectId, job.source.id, job.generation, complete ? 'done' : 'failed', complete ? null : 'Не все агенты ответили. Готовые ответы сохранены; можно повторить недостающие.']);
             await this.repository.bump(db, room);
         }, false, roomId);

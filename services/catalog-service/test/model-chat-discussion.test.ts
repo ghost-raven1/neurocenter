@@ -35,15 +35,34 @@ describe('An ordinary group question coordinates within the accepted roster',()=
         expect(result.content).toContain('Решения:');expect(result.content).toContain('Разногласия');expect(result.outcomes).toHaveLength(3);
         expect(JSON.stringify(calls[0].messages)).not.toContain('Persona a');
     });
-    it('keeps a failed specialist local and sends the available answer and missing outcome to synthesis',async()=>{
+    it('keeps a failed specialist separate and returns the sole successful answer without synthesis',async()=>{
         const calls:DiscussionCall[]=[];
         const result=await textDiscussion('Вопрос',roster,3,async call=>{calls.push(call);if(call.phase==='planning')return planned([task(),task('agent-b')]);if(call.task?.agentId==='agent-a')throw Error('private-provider-token');return call.phase==='synthesis'?final():'INDEPENDENT';},noop);
         expect(result.outcomes.map(item=>item.state)).toEqual(['failed','done']);
-        expect(JSON.stringify(calls.at(-1)?.messages)).toContain('INDEPENDENT');expect(JSON.stringify(calls)).not.toContain('private-provider-token');
+        expect(result.content).toBe('INDEPENDENT');expect(calls.map(call=>call.phase)).toEqual(['planning','response','response']);
+        expect(JSON.stringify(calls)).not.toContain('private-provider-token');
+    });
+    it('returns one successful participant directly without a separate result or synthesis call',async()=>{
+        const phases:string[]=[];
+        const result=await textDiscussion('Вопрос',roster,3,async call=>{phases.push(call.phase);return call.phase==='planning'?planned():'ONLY ANSWER';},noop);
+        expect(result.content).toBe('ONLY ANSWER');expect(phases).toEqual(['planning','response']);
+    });
+    it('does not count a second contribution from the same successful agent as another responder',async()=>{
+        const phases:string[]=[];
+        const result=await textDiscussion('Вопрос',roster,3,async call=>{phases.push(call.phase);return call.phase==='planning'?planned([task()],task()):'ANSWER '+call.phase;},noop);
+        expect(result.outcomes).toHaveLength(2);expect(result.content).toBe('ANSWER response');
+        expect(phases).toEqual(['planning','response','critique']);
+    });
+    it('retains the accepted legacy execution policy instead of changing an already admitted discussion',async()=>{
+        const phases:string[]=[];
+        const result=await discussGroup('Вопрос',roster,3,async call=>{phases.push(call.phase);return completion(call.phase==='planning'?planned():call.phase==='synthesis'?final():'LEGACY ANSWER');},noop,'legacy');
+        expect(phases).toEqual(['planning','response','synthesis']);expect(result.content).toContain('Проверенный итог');
     });
     it('retains the useful contributions when final synthesis is unavailable',async()=>{
-        const result=await textDiscussion('Вопрос',roster,3,async call=>{if(call.phase==='planning')return planned();if(call.phase==='synthesis')throw Error('https://private.invalid/key');return 'SAVED ANSWER';},noop);
+        const phases:string[]=[];
+        const result=await textDiscussion('Вопрос',roster,3,async call=>{phases.push(call.phase);if(call.phase==='planning')return planned([task(),task('agent-b')]);if(call.phase==='synthesis')throw Error('https://private.invalid/key');return 'SAVED ANSWER';},noop);
         expect(result.content).toContain('SAVED ANSWER');expect(result.content).not.toContain('private.invalid');
+        expect(phases.at(-1)).toBe('synthesis');
     });
     it('does not spend a critique or synthesis call when no specialist produced an answer',async()=>{
         const phases:string[]=[];
@@ -52,7 +71,7 @@ describe('An ordinary group question coordinates within the accepted roster',()=
     });
     it('preserves truncated content and tells synthesis about its incomplete finish state',async()=>{
         const calls:DiscussionCall[]=[];
-        const result=await discussGroup('Вопрос',roster,3,async call=>{calls.push(call);return call.phase==='planning'?completion(planned()):completion(call.phase==='synthesis'?final():'PARTIAL','length');},noop);
+        const result=await discussGroup('Вопрос',roster,3,async call=>{calls.push(call);return call.phase==='planning'?completion(planned([task(),task('agent-b')])):completion(call.phase==='synthesis'?final():'PARTIAL','length');},noop);
         expect(result.finishReason).toBe('length');expect(result.content).toContain('Итог обрезан');
         expect(JSON.parse(calls.at(-1)!.messages.at(-1)!.content).contributions).toContainEqual(expect.objectContaining({content:'PARTIAL',finishReason:'length'}));
     });
@@ -95,7 +114,7 @@ function runtimeFixture(withEmbedding=false){
     const controller=new AbortController(),state={authorized:true,pending:true,enabled:true,searchEnabled:true,answer:'',evidence:undefined as ChatProjectEvidence|undefined,changed:new Set<string>()};
     const conversation={id:'conversation',owner_email:'owner@example.test',project_id:'project',model_id:model.id,model_pin:projectEmbeddingPin(model),agent_ids:roster.map(item=>item.snapshot.agentId),mode:'group'};
     const turn={id:'turn',conversation_id:conversation.id,request_id:'request',input_text:'QUESTION',status:'pending',removed_at:null,lease_until:new Date(Date.now()+900000)};
-    const run:DiscussionRun={turn_id:turn.id,request_id:turn.request_id,actor_role:'Разработчик',model,roster,calls_started:0,deadline_at:new Date(Date.now()+120000)};
+    const run:DiscussionRun={turn_id:turn.id,request_id:turn.request_id,actor_role:'Разработчик',model,roster,calls_started:0,deadline_at:new Date(Date.now()+120000),summary_policy:'unique-v1'};
     const receipts:DiscussionStep[]=[],calls:Array<{phase:string;agentId:unknown;body:unknown;signal:AbortSignal}>=[];
     const query=async(sql:string)=>sql.includes('model_chat_conversations')?{rows:[conversation],rowCount:1}:{rows:state.pending?[{}]:[],rowCount:state.pending?1:0};
     const db={query};
@@ -135,8 +154,8 @@ describe('Discussion uses the real project context failure boundary',()=>{
     };
     it('continues a real HTTP503 outage once and saves explicit unavailable evidence',async()=>{
         const f=fixture(()=>new Response('<html>proxy unavailable</html>',{status:503}));await f.start();
-        expect(f.calls.map(call=>call.phase)).toEqual(['context','planning','response','synthesis']);
-        expect(f.project.context.client.call).toHaveBeenCalledOnce();expect(f.state.answer).toContain('Проверенный итог');
+        expect(f.calls.map(call=>call.phase)).toEqual(['context','planning','response']);
+        expect(f.project.context.client.call).toHaveBeenCalledOnce();expect(f.state.answer).toBe('SAVED RESPONSE');
         expect(f.state.evidence).toMatchObject({status:'unavailable',sources:[]});
     });
     it('does not retry a late index change as a new metadata-only identity',async()=>{
@@ -202,13 +221,13 @@ describe('Discussion deadlines, call accounting and fresh authority',()=>{
         f.setProvider(async phase=>{if(phase==='planning')return reply(planned([task(),task('agent-b')]));if(phase==='response'&&first){first=false;return new Promise(()=>{});}return phase==='synthesis'?reply(final()):reply('INDEPENDENT');});
         const work=f.start();await vi.advanceTimersByTimeAsync(0);await vi.advanceTimersByTimeAsync(40000);await work;
         expect(f.receipts.filter(step=>step.phase==='response').map(step=>step.status)).toEqual(['failed','done']);
-        expect(f.state.answer).toContain('Проверенный итог');expect(f.calls[1].signal.aborted).toBe(true);expect(f.run.calls_started).toBe(4);
+        expect(f.state.answer).toBe('INDEPENDENT');expect(f.calls[1].signal.aborted).toBe(true);expect(f.run.calls_started).toBe(3);
     });
     it('accepts a native delegate taking more than twenty seconds within its fair deadline',async()=>{
         vi.useFakeTimers();const f=runtimeFixture();
         f.setProvider(async phase=>{if(phase==='planning')return reply(planned());if(phase==='response')await new Promise(resolve=>setTimeout(resolve,22100));return phase==='synthesis'?reply(final()):reply('DELAYED');});
         const work=f.start();await vi.advanceTimersByTimeAsync(22100);await work;
-        expect(f.receipts.find(step=>step.phase==='response')?.output).toBe('DELAYED');expect(f.calls).toHaveLength(3);
+        expect(f.receipts.find(step=>step.phase==='response')?.output).toBe('DELAYED');expect(f.calls).toHaveLength(2);
     });
     it('stops all subsequent dispatch when original actor access is revoked between steps',async()=>{
         const f=runtimeFixture();f.setProvider(async phase=>{if(phase==='planning')return reply(planned([task(),task('agent-b')]));f.state.authorized=false;return reply('PRIVATE LATE RESULT');});

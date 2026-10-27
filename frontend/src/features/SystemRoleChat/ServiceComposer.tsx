@@ -6,21 +6,24 @@ import { diagnosticNames, roleCallBudget, roleFlag, roleName, targetNames, type 
 import { McpTaskPicker } from './McpTaskPicker';
 import { RoleProjectContextPreview } from '../SystemRoles/RoleProjectContext';
 import type { useSystemRoleChat } from './useSystemRoleChat';
+import {readRoleDraft, saveRoleDraft} from './roleDraft';
 import type {ChatRoleAction} from '../ChatSystemRoles/types';
 
 type ChatValue = ReturnType<typeof useSystemRoleChat>;
 interface InitialTask {agentId: SystemRoleId; instruction: string; modelId?: string;}
 /** Context is opt-in, visible before payment, and invalidated on every task/model/role edit. */
-export function ServiceComposer({ value, projectId, canExecute = true, initial, compact = false, onActionChange }: { value: ChatValue; projectId?: string; canExecute?: boolean; initial?: InitialTask; compact?: boolean; onActionChange?: (action?: ChatRoleAction) => void }): JSX.Element {
+export function ServiceComposer({ value, projectId, canExecute = true, fixedAgentId, initial, compact = false, onActionChange }: { value: ChatValue; projectId?: string; canExecute?: boolean; fixedAgentId?: SystemRoleId; initial?: InitialTask; compact?: boolean; onActionChange?: (action?: ChatRoleAction) => void }): JSX.Element {
     const restored = value.pendingIntent;
-    const [agentId, setAgentId] = useState<SystemRoleId>(restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
-    const [instruction, setInstruction] = useState(restored?.input.instruction ?? initial?.instruction ?? ''), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
+    const {scope, captureOwner} = useAuthRequestOwner();
+    const [agentId, setAgentId] = useState<SystemRoleId>(fixedAgentId ?? restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
+    const [instruction, setInstruction] = useState(restored?.input.instruction ?? (initial?.instruction || (fixedAgentId ? readRoleDraft(scope, projectId, fixedAgentId) : ''))), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
     const restoredRequest = useRef(restored?.input.requestId);
     const modelChosen = useRef(!!restored);
     const [mcp, setMcp] = useState<RoleMcpSelection[]>(restored?.input.mcp ?? []);
     const [includeContext, setIncludeContext] = useState(false), [prompt, setPrompt] = useState(''), [usePrompt, setUsePrompt] = useState(false), [consent, setConsent] = useState(false);
-    const availability = useFeatureAvailability('system_role_chat', roleFlag(agentId)), mcpAvailability = useFeatureAvailability('system_role_mcp'), { captureOwner } = useAuthRequestOwner();
-    const canStart = availability.enabled && canExecute && (!mcp.length || mcpAvailability.enabled), enabled = useRef(canStart); enabled.current = canStart;
+    const availability = useFeatureAvailability('system_role_chat', roleFlag(agentId), ...(fixedAgentId ? ['service_role_conversations' as const] : [])), mcpAvailability = useFeatureAvailability('system_role_mcp');
+    const canStart = !(fixedAgentId && value.detail?.dialog?.legacy) && availability.enabled && canExecute && (!mcp.length || mcpAvailability.enabled), enabled = useRef(canStart); enabled.current = canStart;
+    useEffect(() => {if (fixedAgentId && !restored) saveRoleDraft(scope, projectId, fixedAgentId, instruction);}, [scope, projectId, fixedAgentId, instruction, restored?.input.requestId]);
     const revision = useRef(0), definition = value.overview?.definitions.find(item => item.id === agentId);
     const targets = value.overview?.targets.filter(item => definition?.targets.includes(item.kind) && item.kind !== 'dialog-context') ?? [];
     const model = value.overview?.models.find(item => item.id === modelId), locked = value.busy || !!value.receipt;
@@ -66,7 +69,7 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
         onActionChange({...action,onClick: invokeAction.current});
         return () => onActionChange(undefined);
     }, [onActionChange,action.label,action.busy,action.disabled]);
-    const taskField = <Form.Item label="Задача" required><Input.TextArea aria-label={compact ? 'Задача системному агенту' : 'Задача сервисного чата'} value={instruction} maxLength={2048} autoSize={{ minRows: 2, maxRows: compact ? 3 : 5 }} placeholder="Что проверить или улучшить?"
+    const taskField = <Form.Item label="Задача" required><Input.TextArea aria-label={fixedAgentId ? `Сообщение · ${roleName(fixedAgentId)}` : compact ? 'Задача системному агенту' : 'Задача сервисного чата'} value={instruction} maxLength={2048} autoSize={{ minRows: 2, maxRows: compact ? 3 : 5 }} placeholder="Что проверить или улучшить?"
         onChange={event => { invalidate(); setInstruction(event.target.value); }} /></Form.Item>;
     const tools = <McpTaskPicker projectId={projectId} value={mcp} disabled={locked} canExecute={canExecute && availability.enabled} onChange={items => { invalidate(); setMcp(items); }} />;
     return <section className="service-chat__composer" aria-label="Новая задача системному агенту">
@@ -75,9 +78,9 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
         <Form layout="vertical" disabled={locked}>
             <details open={!compact || !model} className="service-chat__task-settings"><summary hidden={!compact}>{roleName(agentId)} · {model?.name ?? 'Выберите модель'}</summary>
             <div className="service-chat__choices">
-                <Form.Item label="Системный агент"><Select aria-label="Системный агент" value={agentId} options={(value.overview?.definitions ?? []).map(item => ({ value: item.id, label: roleName(item.id) }))}
-                    onChange={id => { invalidate(); setAgentId(id); setDiagnostics([]); setSelected([]); setUsePrompt(false); setIncludeContext(false); setMcp([]); }} /></Form.Item>
-                <Form.Item label="Модель для этой задачи" required><Select aria-label={compact ? 'Модель системной задачи' : 'Модель сервисного чата'} value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear
+                {!fixedAgentId && <Form.Item label="Системный агент"><Select aria-label="Системный агент" value={agentId} options={(value.overview?.definitions ?? []).map(item => ({ value: item.id, label: roleName(item.id) }))}
+                    onChange={id => { invalidate(); setAgentId(id); setDiagnostics([]); setSelected([]); setUsePrompt(false); setIncludeContext(false); setMcp([]); }} /></Form.Item>}
+                <Form.Item label="Модель для этой задачи" required><Select aria-label={compact ? 'Модель системной задачи' : fixedAgentId ? 'Модель чата роли' : 'Модель сервисного чата'} value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear
                     options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { modelChosen.current = true; invalidate(); setModelId(id); }} /></Form.Item>
             </div>
             </details>
@@ -93,7 +96,7 @@ export function ServiceComposer({ value, projectId, canExecute = true, initial, 
                 {hasAnswers && <Checkbox checked={includeContext} onChange={event => { invalidate(); setIncludeContext(event.target.checked); }}>Добавить завершённые ответы этого диалога</Checkbox>}
                 {definition?.targets.includes('prompt') && <><Checkbox checked={usePrompt} onChange={event => { invalidate(); setUsePrompt(event.target.checked); }}>Добавить выбранный текст</Checkbox>
                     {usePrompt && <Form.Item label="Текст, который разрешено передать модели"><Input.TextArea value={prompt} autoSize={{ minRows: 3, maxRows: 8 }} onChange={event => { invalidate(); setPrompt(event.target.value); }} /></Form.Item>}</>}
-                <Typography.Paragraph type="secondary">{compact ? 'История переписки и документы не добавляются автоматически. Выберите нужные данные; перед отправкой мы покажем их вам.' : 'Тексты целей и завершённые ответы передаются по вашему выбору; ответы берутся из открытого личного сервисного диалога. Разрешение на поиск по всему индексу проекта показано при подготовке контекста.'}</Typography.Paragraph>
+                <Typography.Paragraph type="secondary">{compact ? 'История переписки и документы не добавляются автоматически. Выберите нужные данные; перед отправкой мы покажем их вам.' : 'Тексты целей и завершённые ответы передаются по вашему выбору; ответы берутся из открытого личного диалога роли. Разрешение на поиск по всему индексу проекта показано при подготовке контекста.'}</Typography.Paragraph>
                 {compact && tools}
             </details>
             {!compact && tools}

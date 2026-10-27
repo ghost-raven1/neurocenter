@@ -67,25 +67,45 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
         await expect(f.service.read(request('other@localhost'), detail.conversation.id)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('constrains a model plan to explicit @ recipients before specialist dispatch', async () => {
+    it('sends an explicit singleton recipient directly without a planner or summary', async () => {
         const a = await f.agent('A'), b = await f.agent('B'); provide(async phase => reply(phase === 'planning' ? plan([b]) : 'UNEXPECTED'));
         const detail = await send(await f.create([a, b]), randomUUID(), [a]);
         expect(f.calls).toHaveLength(1); expect(detail.turns[0].status).toBe('done');
-        expect(detail.turns[0].targetAgentIds).toEqual([a]); expect(detail.turns[0].responses?.map(item => item.agentId)).toEqual(['discussion-summary']);
+        expect(detail.turns[0].targetAgentIds).toEqual([a]); expect(detail.turns[0].responses?.map(item => item.agentId)).toEqual([a]);
+        expect(detail.turns[0].discussion).toBeUndefined(); expect(await steps()).toEqual([]);
     });
 
-    it('automatically finalizes available contributions when one child and synthesis fail, without leaking the provider cause', async () => {
+    it('returns the sole successful contribution with a separate failed child and no synthesis', async () => {
         const a = await f.agent('A'), b = await f.agent('B');
         provide(async (phase, agentId) => { if (phase === 'planning') return reply(plan([a, b])); if (agentId === a || phase === 'synthesis') throw Error('secret-provider-url'); return reply('INDEPENDENT'); });
         const detail = await send(await f.create([a, b]));
-        expect(detail.turns[0].status).toBe('done'); expect(detail.turns[0].responses?.map(item => item.status)).toEqual(['failed', 'done', 'done']);
+        expect(detail.turns[0].status).toBe('done'); expect(detail.turns[0].responses?.map(item => item.status)).toEqual(['failed', 'done']);
         expect(detail.turns[0].responses?.at(-1)?.answer?.content).toContain('INDEPENDENT'); expect(JSON.stringify(detail)).not.toContain('secret-provider-url');
-        expect((await steps()).map(item => item.status)).toEqual(['done', 'failed', 'done', 'failed']);
+        expect((await steps()).map(item => item.status)).toEqual(['done', 'failed', 'done']);
+    });
+
+    it('finishes with separate errors and no summary when no accepted agent answers', async () => {
+        const a=await f.agent('A'),b=await f.agent('B');
+        provide(async phase=>{if(phase==='planning')return reply(plan([a,b]));throw Error('private transport failure');});
+        const detail=await send(await f.create([a,b]));
+        expect(detail.turns[0]).toMatchObject({status:'failed',error:expect.stringContaining('Проверенного ответа пока нет')});
+        expect(detail.turns[0].responses?.map(item=>item.status)).toEqual(['failed','failed']);
+        expect(detail.turns[0].responses?.some(item=>item.agentId==='discussion-summary')).toBe(false);
+        expect(f.calls).toHaveLength(3);expect(JSON.stringify(detail)).not.toContain('private transport failure');
+    });
+
+    it('does not count a response and critique by the same successful agent as two responders', async () => {
+        const a=await f.agent('A'),b=await f.agent('B');
+        provide(async phase=>reply(phase==='planning'?plan([a],a):'SAVED '+phase));
+        const detail=await send(await f.create([a,b]));
+        expect(detail.turns[0].responses?.map(item=>item.agentId)).toEqual([a,a]);
+        expect((await steps()).map(item=>item.phase)).toEqual(['planning','response','critique']);
+        expect(detail.turns[0].responses?.some(item=>item.agentId==='discussion-summary')).toBe(false);
     });
 
     it('reconciles a lost delivery ACK by the original request without repeating accepted work or changing completed receipts', async () => {
-        const a = await f.agent('A'); provide(async phase => reply(phase === 'planning' ? plan([a]) : phase === 'synthesis' ? synthesis() : 'IMMUTABLE'));
-        const initial = await f.create([a]), requestId = randomUUID();
+        const a = await f.agent('A'), b = await f.agent('B'); provide(async phase => reply(phase === 'planning' ? plan([a]) : phase === 'synthesis' ? synthesis() : 'IMMUTABLE'));
+        const initial = await f.create([a,b]), requestId = randomUUID();
         await expect(send(initial, requestId).then(() => { throw Error('lost delivery ACK'); })).rejects.toThrow('lost delivery ACK');
         const before = await steps(), count = f.calls.length, reconciled = await send(initial, requestId);
         expect(reconciled.turns[0].status).toBe('done'); expect(f.calls).toHaveLength(count); expect(await steps()).toEqual(before);
@@ -126,23 +146,23 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
     });
 
     it('observes a concurrent same-request send while work is held without dispatching a second planner', async () => {
-        const a = await f.agent('A'), entered = deferred(), held = deferred(), requestId = randomUUID();
+        const a = await f.agent('A'), b = await f.agent('B'), entered = deferred(), held = deferred(), requestId = randomUUID();
         provide(async phase => { if (phase === 'planning') { entered.resolve(); await held.promise; return reply(plan([a])); } return reply(phase === 'synthesis' ? synthesis() : 'ANSWER'); });
-        const initial = await f.create([a]), first = send(initial, requestId);
+        const initial = await f.create([a,b]), first = send(initial, requestId);
         try { await bounded(entered.promise); const concurrent = await bounded(send(initial, requestId));
             expect(concurrent.turns[0].status).toBe('pending'); expect(f.calls).toHaveLength(1); expect(await steps()).toHaveLength(1);
         } finally { held.resolve(); await bounded(first); }
-        expect(f.calls).toHaveLength(3); expect((await f.db.query('SELECT id FROM model_chat_turns')).rows).toHaveLength(1);
+        expect(f.calls).toHaveLength(2); expect((await f.db.query('SELECT id FROM model_chat_turns')).rows).toHaveLength(1);
     });
 
     it('retains a dispatched unknown usage marker and accepted step without replay after a lost provider outcome or a fresh reader', async () => {
-        const a = await f.agent('A'), usage = new ModelUsageRepository(f.db), usageId = randomUUID(), worker = randomUUID();
+        const a = await f.agent('A'), b = await f.agent('B'), usage = new ModelUsageRepository(f.db), usageId = randomUUID(), worker = randomUUID();
         provide(async () => { const context = currentModelUsage();
             await usage.begin({ ...context, id: usageId, workerId: worker, model: f.server, endpoint: 'chat' });
             await usage.dispatchProgress(usageId, worker, 1, new Date().toISOString(), null);
             throw Error('controlled process lost an already dispatched outcome');
         });
-        const initial = await f.create([a]), requestId = randomUUID(); await send(initial, requestId);
+        const initial = await f.create([a,b]), requestId = randomUUID(); await send(initial, requestId);
         const before = await steps(), marker = (await f.db.query('SELECT * FROM model_usage_calls WHERE id=$1', [usageId])).rows[0];
         expect(marker).toMatchObject({ status: 'pending', dispatch_count: 1, operation_id: before[0].id });
         const reader = new ModelChatService(f.models, f.runtime as unknown as ModelRuntime);
@@ -163,7 +183,9 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
         const a = await f.agent('A'), b = await f.agent('B');
         provide(async phase => { if (phase === 'planning') return reply(plan([a, b])); enabled = false; return reply('RETAINED'); });
         let detail = await send(await f.create([a, b])); expect(f.calls).toHaveLength(2);
-        expect(detail.turns[0].responses?.at(-1)?.answer?.content).toContain('RETAINED'); expect((await f.read(detail.conversation.id)).turns).toHaveLength(1);
+        expect(detail.turns[0].responses?.find(item => item.status === 'done')?.answer?.content).toBe('RETAINED');
+        expect(detail.turns[0].responses?.some(item => item.agentId === 'discussion-summary')).toBe(false);
+        expect((await f.read(detail.conversation.id)).turns).toHaveLength(1);
         provide(async () => reply('LEGACY')); detail = await send(detail);
         expect(detail.turns[1].discussion).toBeUndefined(); expect(detail.turns[1].responses?.map(item => item.agentId)).toEqual([a, b]); expect(f.calls).toHaveLength(4);
     });
@@ -212,23 +234,23 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
     });
 
     it('retains actual truncated finish metadata in saved answers and synthesis without replaying paid work', async () => {
-        const a = await f.agent('A'), synthesisBodies: Record<string, unknown>[] = [];
-        provide(async (phase, _agent, body) => { if (phase === 'planning') return reply(plan([a]));
+        const a = await f.agent('A'), b = await f.agent('B'), synthesisBodies: Record<string, unknown>[] = [];
+        provide(async (phase, _agent, body) => { if (phase === 'planning') return reply(plan([a,b]));
             if (phase === 'synthesis') synthesisBodies.push(body);
             return { ...reply(phase === 'synthesis' ? synthesis() : 'TRUNCATED CONTRIBUTION'), done_reason: 'length' };
         });
-        const initial = await f.create([a]), requestId = randomUUID(), detail = await send(initial, requestId), child = detail.turns[0].responses![0];
+        const initial = await f.create([a,b]), requestId = randomUUID(), detail = await send(initial, requestId), child = detail.turns[0].responses![0];
         expect(child.answer?.finishReason).toBe('length'); expect(child.answer?.content).toBe('TRUNCATED CONTRIBUTION');
         expect(detail.turns[0].responses?.at(-1)?.answer?.finishReason).toBe('length');
         expect(JSON.parse((synthesisBodies[0].messages as Array<{content:string}>).at(-1)!.content).contributions).toContainEqual(expect.objectContaining({agentId:a,finishReason:'length'}));
-        const saved = await steps(); expect(saved.filter(item => ['response','synthesis'].includes(item.phase)).map(item => item.finish_reason)).toEqual(['length','length']);
+        const saved = await steps(); expect(saved.filter(item => ['response','synthesis'].includes(item.phase)).map(item => item.finish_reason)).toEqual(['length','length','length']);
         await expect(f.db.query("UPDATE model_chat_discussion_steps SET finish_reason='stop' WHERE id=$1", [child.id])).rejects.toThrow('immutable');
         const count = f.calls.length; await send(initial, requestId); expect(f.calls).toHaveLength(count); expect(await steps()).toEqual(saved);
         expect((await f.read(initial.conversation.id)).turns[0].responses?.[0].answer?.finishReason).toBe('length');
     });
 
     it('rejects an overflowing retained history before planning or any specialist request without losing its middle', async () => {
-        const a = await f.agent('A'), initial = await f.create([a]);
+        const a = await f.agent('A'), b = await f.agent('B'), initial = await f.create([a,b]);
         const answer = (content: string) => ({ content, finishReason: 'stop', usage: { inputTokens: null, outputTokens: null, totalTokens: null, reported: false } });
         for (const [prompt, content] of [['Prefix', 'PREFIX'], ['Middle', 'MISSING_MIDDLE_FACT_9625' + 'x'.repeat(8 * 1024 ** 2 - 64)], ['Tail', 'TAIL']]) {
             const requestId = randomUUID(); await f.db.query(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,answer)
@@ -285,7 +307,7 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
         try {
             await migrateCatalog(pool, CATALOG_MIGRATIONS.filter(item => item.version <= 33));
             const old = await catalogMigrationHistory(pool, CATALOG_MIGRATIONS), conversation = randomUUID(), turn = randomUUID(), requestId = randomUUID();
-            expect(old.pending).toEqual([34]);
+            expect(old.pending).toEqual(CATALOG_MIGRATIONS.filter(item => item.version > 33).map(item => item.version));
             await pool.query("INSERT INTO model_catalog(id,name,descriptor) VALUES('model-old','Old','{}')");
             await pool.query("INSERT INTO projects(id,name) VALUES('project-old','Old')");
             await pool.query("INSERT INTO model_chat_conversations(id,owner_email,model_id,project_id,title,model_pin,mode,agent_ids) VALUES($1,'owner@localhost','model-old','project-old','Old',$2,'group',ARRAY['agent-old'])", [conversation, 'a'.repeat(64)]);
@@ -293,8 +315,17 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
             await pool.query("INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,answer,target_agent_ids) VALUES($1,$2,$3,ARRAY[$3::uuid],$4,'Old','{}','Old','done',$5::jsonb,ARRAY['agent-old'])", [turn, conversation, requestId, 'b'.repeat(64), JSON.stringify(answer)]);
             await pool.query("INSERT INTO model_chat_agent_responses(id,conversation_id,turn_id,agent_id,snapshot,request_id,status,answer) VALUES($1,$2,$3,'agent-old','{}',$4,'done',$5::jsonb)", [randomUUID(), conversation, turn, requestId, JSON.stringify(answer)]);
             const before = (await pool.query('SELECT * FROM model_chat_turns')).rows;
+            const originalColumns = Object.keys(before[0]);
+            const preservedTurns = async () => (await pool.query('SELECT * FROM model_chat_turns')).rows
+                .map(row => Object.fromEntries(originalColumns.map(column => [column,row[column]])));
+            await migrateCatalog(pool, CATALOG_MIGRATIONS.filter(item => item.version <= 34));
+            await pool.query(`INSERT INTO model_chat_discussions(turn_id,request_id,actor_role,model,roster,deadline_at)
+                VALUES($1,$2,'Разработчик','{}','[{}]',now()+interval '2 minutes')`, [turn,requestId]);
+            const legacy = (await pool.query('SELECT * FROM model_chat_discussions')).rows[0];
             await migrateCatalog(pool, CATALOG_MIGRATIONS); expect((await checkCatalogSchema(pool, true)).applied).toContain(34);
-            expect((await pool.query('SELECT * FROM model_chat_turns')).rows).toEqual(before);
+            const {summary_policy:policy,...upgraded}=(await pool.query('SELECT * FROM model_chat_discussions')).rows[0];
+            expect(policy).toBe('legacy');expect(upgraded).toEqual(legacy);
+            expect(await preservedTurns()).toEqual(before);
             expect((await pool.query('SELECT answer FROM model_chat_agent_responses')).rows[0].answer).toEqual(answer);
             const client = await pool.connect();
             try { await client.query('BEGIN'); await client.query('ALTER TABLE model_chat_discussions DROP CONSTRAINT model_chat_discussions_calls_started_check');
@@ -302,7 +333,7 @@ describe.skipIf(!connection)('Automatic private group discussion — disposable 
             } finally { await client.query('ROLLBACK'); client.release(); }
             await expect(checkCatalogSchema(pool, true)).resolves.toMatchObject({ ready: true });
             await expect(migrateCatalog(pool, CATALOG_MIGRATIONS.filter(item => item.version <= 33))).rejects.toThrow('автоматический откат');
-            expect((await pool.query('SELECT * FROM model_chat_turns')).rows).toEqual(before);
+            expect(await preservedTurns()).toEqual(before);
         } finally { await pool.end(); await f.db.query('DROP SCHEMA ' + schema + ' CASCADE'); }
     });
 });

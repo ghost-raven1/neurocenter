@@ -1,4 +1,8 @@
 import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
+import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL} from '../system-role-chat/service-role-conversations.schema';
+import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_ASSERT_SQL} from '../system-role-chat/service-role-conversations.schema-verification';
+import {CHAT_SUMMARY_POLICY_SCHEMA_SQL} from '../model-chat/chat-summary-policy.schema';
+import {CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL} from '../model-chat/chat-summary-policy.schema-verification';
 import {AGENT_TOOLS_SCHEMA_ASSERT_SQL} from '../agent-tools/agent-tools.schema-verification';
 import {PLUGIN_AUTO_UPDATE_SCHEMA_SQL} from '../plugin-auto-updates/auto-update.schema';
 import {PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL} from '../plugin-auto-updates/auto-update.schema-verification';
@@ -113,4 +117,6 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:40,name:'private-system-role-chat-origins',sql:CHAT_SYSTEM_ROLE_SCHEMA_SQL+'\n'+CHAT_SYSTEM_ROLE_SCHEMA_ASSERT_SQL},
     {version:41,name:'approved-plugin-auto-updates',sql:PLUGIN_AUTO_UPDATE_SCHEMA_SQL+'\n'+PLUGIN_AUTO_UPDATE_SCHEMA_ASSERT_SQL},
     {version:42,name:'bounded-project-agent-tools',sql:AGENT_TOOLS_SCHEMA_SQL+'\n'+AGENT_TOOLS_SCHEMA_ASSERT_SQL},
+    {version:43,name:'role-specific-service-conversations',sql:SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL+'\n'+SERVICE_ROLE_CONVERSATIONS_SCHEMA_ASSERT_SQL},
+    {version:44,name:'conditional-agent-response-summaries',sql:CHAT_SUMMARY_POLICY_SCHEMA_SQL+'\n'+CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL},
 ];

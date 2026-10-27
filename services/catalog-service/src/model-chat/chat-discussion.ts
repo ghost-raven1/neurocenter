@@ -42,7 +42,7 @@ export function discussionFallback(outcomes: readonly DiscussionOutcome[]): stri
 
 /** One send plans, asks specialists, optionally critiques their answers, then synthesizes without round buttons. */
 export async function discussGroup(question: string, roster: readonly ChatResolvedAgent[], maximum: number, invoke: DiscussionInvoke,
-    checkpoint: () => Promise<unknown>): Promise<DiscussionResult> {
+    checkpoint: () => Promise<unknown>, summaryPolicy: 'legacy' | 'unique-v1' = 'unique-v1'): Promise<DiscussionResult> {
     const outcomes: DiscussionOutcome[] = [];
     const fallback = (): DiscussionResult => ({ content: discussionFallback(outcomes), finishReason: 'stop', outcomes });
     let plan: DiscussionPlan;
@@ -69,6 +69,11 @@ export async function discussGroup(question: string, roster: readonly ChatResolv
     }
     await checkpoint();
     if (!outcomes.some(item => item.state === 'done')) return fallback();
+    const answered = outcomes.filter(item => item.state === 'done');
+    if (summaryPolicy === 'unique-v1' && new Set(answered.map(item => item.agentId)).size === 1) {
+        const answer = answered.find(item => item.phase === 'response') ?? answered[0];
+        return { content: answer.content!, finishReason: answer.finishReason!, outcomes };
+    }
     try {
         const completed = await invoke({ key: 'synthesis', phase: 'synthesis', remainingSteps: 1, messages: [
             { role: 'system', content: 'Собери итог обсуждения. Ответь только JSON {"summary":"итог","decisions":["решение"],"disagreements":["разногласие или ограничение"],"nextSteps":["следующее действие"]}. '

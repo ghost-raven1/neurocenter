@@ -96,6 +96,14 @@ export async function coordinateRole(prepared: RolePrepared, facts: DiagnosticFa
         nextSteps: succeeded.length ? ['Проверьте ответы системных агентов ниже. Изменения выполняются отдельным подтверждённым действием.'] : ['Проверьте доступность ролей и модели перед новым явным запуском.'] };
     if (fullAnswer) result.answer = `Получены проверенные ответы: ${succeeded.length} из ${delegations.length}. Итоговый ответ координатора недоступен.\n\n` + delegations.map(item => `**${systemRole(item.roleId).name}**: ${item.result?.summary ?? item.message}`).join('\n\n')
         + '\n\nИзменения не применялись. Подробные ответы и источники сохранены в карточках исполнителей. Проверьте предложения перед отдельным подтверждённым действием; для недоступных шагов проверьте модель и подключение перед новым явным запуском.';
+    if (!succeeded.length) {
+        if (fullAnswer) result.answer = 'Ни одна системная роль не дала проверенный ответ. Ошибки исполнителей сохранены отдельно. Проверьте доступность ролей и модели перед новым явным запуском.';
+        return { ...result, delegations };
+    }
+    if (new Set(succeeded.map(item => item.roleId)).size === 1) {
+        // A coordinator keeps diagnosis authority; a child's proposal remains in its own delegation card.
+        return { ...succeeded[0].result!, kind: 'diagnosis', changes: [], delegations };
+    }
     try {
         const synthesisLimit = fullAnswer ? 12288 : 8192;
         const answer = await invoke(definition.id, [{ role: 'system', content: definition.prompt + (fullAnswer ? ` Сохрани различие ответов и ошибок делегатов. Дай самостоятельное законченное объяснение, инструкцию и источники в пределах ${synthesisLimit} байт JSON.` : ' Сохрани различие ответов и ошибок делегатов. Верни короткую сводку максимум 8192 байта JSON.') },
