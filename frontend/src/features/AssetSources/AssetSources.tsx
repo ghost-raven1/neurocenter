@@ -8,6 +8,7 @@ import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { useAssetImports } from './useAssetImports';
+import { AssetImportRecovery } from './AssetImportRecovery';
 import type { ISourceAsset, ISourceList } from './types';
 import { activeImport, ASSET_IMPORT_MAX_ITEMS } from './types';
 import StoreEditModal from '../Catalog/StoreEditModal';
@@ -24,7 +25,7 @@ import {formatBytes} from '../../common/utils/format';
 import {AssetArchiveModal} from './AssetArchiveModal';
 import {AssetArchiveStatus} from './AssetArchiveStatus';
 import {useAssetArchiveUpload} from './useAssetArchiveUpload';
-import {sourceAssetReady} from './archiveUpload';
+import {availableSourceAssetIds,sourceAssetReady} from './archiveUpload';
 import './AssetSources.less';
 
 const labels={mcp:'MCP',plugin:'Плагин',skill:'Скилл',model:'Модель',bridge:'Мост компьютера',agent:'Агент OpenCode'};
@@ -39,7 +40,7 @@ export default function AssetSources():JSX.Element {
  const load=useCallback(async(refresh=false):Promise<void>=>{
   const owns=captureOwner();if(!owns()||archiveLock.current||refreshLock.current)return;const refreshing=refresh?{}:undefined;if(refreshing)refreshLock.current=refreshing;
   const request=++loadRequest.current,current=()=>owns()&&loadRequest.current===request;setLoading(true);setError('');
-  try{const response=refresh?await baseApi.post<ISourceList>('/api/asset-sources/refresh'):await baseApi.get<ISourceList>('/api/asset-sources');if(current()){setData(response.data);setSelected(previous=>previous.filter(id=>response.data.assets.some(asset=>asset.id===id&&sourceAssetReady(asset)&&!asset.imported?.archived&&!asset.imported?.unavailable)));}}
+  try{const response=refresh?await baseApi.post<ISourceList>('/api/asset-sources/refresh'):await baseApi.get<ISourceList>('/api/asset-sources');if(current()){setData(response.data);setSelected(previous=>availableSourceAssetIds(response.data.assets,previous));}}
   catch(cause){if(current()){setError(errorMessage(cause,'Не удалось обновить список ассетов. Последний сохранённый список доступен.'));}}
   finally{if(refreshing&&refreshLock.current===refreshing)refreshLock.current=undefined;if(current()){setLoading(false);}}
  },[captureOwner]);
@@ -72,7 +73,7 @@ export default function AssetSources():JSX.Element {
    {offline&&<Alert type="info" showIcon message="Автономная поставка" description={fromArchive?'Сервер работает автономно. «Перечитать поставку» перепроверяет выбранную локальную опись без обращения к GitHub.':'Описи и файлы читаются из локальной поставки, закреплённой точным commit. Новые ассеты появятся после загрузки обновлённой поставки на сервер. GitHub не запрашивается.'}/>}
    {data?.source.error&&<Alert type="warning" showIcon message={data.source.error} description="Показана последняя проверенная опись. Она закреплена точным commit; обновление не меняет уже добавленные карточки."/>}
    <Typography.Text type="secondary">{fromArchive?'Архив · '+data?.source.archiveSha256?.slice(0,12):offline?(data?.source.verified?'Локальная поставка · '+data.source.commit?.slice(0,8):'Загрузите архив или перечитайте локальную поставку.'):data?.source.verified?'Проверено '+new Date(data.source.checkedAt!).toLocaleString('ru-RU')+' · '+data.source.commit?.slice(0,8):'Загрузите архив или обновите источник.'}</Typography.Text>
-   {imports.error&&<Alert type="error" showIcon message={imports.error} action={imports.intent&&!imports.job?<Button loading={imports.busy} onClick={()=>void imports.repeat()}>Повторить запрос</Button>:undefined}/>}
+   <AssetImportRecovery imports={imports} onChangeSelection={ids=>{if(captureOwner()()){setSelected(data?availableSourceAssetIds(data.assets,ids):ids);setQuery('');}}}/>
    {imports.job&&<Card size="small" title="Добавление в каталог" className="asset-sources__receipt"><Space direction="vertical" className="asset-sources__content">
     <Typography.Text role="status">{imports.job.message}</Typography.Text>
     <details key={imports.job.id} open={activeImport(imports.job.state)||['FAILED','PARTIAL','NEEDS_INPUT'].includes(imports.job.state)}><summary>Результаты · {imports.job.items.length}</summary><div className="asset-sources__receipt-items"><List size="small" dataSource={imports.job.items} renderItem={item=><List.Item><div><Typography.Text>{item.name} · {item.version}</Typography.Text>{!item.current&&<Tag>Точная зависимость</Tag>}<div><Typography.Text type={item.state==='FAILED'||item.action==='conflict'?'danger':'secondary'}>{item.reason||item.message||item.state}</Typography.Text></div></div></List.Item>}/></div></details>
