@@ -39,6 +39,13 @@ async function waitFor(predicate, label, timeout = 10000) {
     while (Date.now() < deadline) { if (await predicate()) return; await delay(50); }
     throw new Error('Не дождались: ' + label);
 }
+/** Новый worker вправе временно занять install-mutex для своей фоновой очистки. */
+async function waitForInstallMutexRelease() {
+    await waitFor(() => fs.lstat(installDirectory + '.install-lock').then(() => false, error => {
+        if (error.code === 'ENOENT') return true;
+        throw error;
+    }), 'освобождение install-mutex');
+}
 async function check(name, action) {
     await action(); cases.push(name); console.log('OK ' + name);
     // Each case has already checked its own backup; do not accumulate many unpacked runtimes on a small QA disk.
@@ -250,7 +257,7 @@ try {
     });
     await check('Пауза выполняется до замены файлов, завершение обновления снимает её и освобождает mutex', async () => {
         assert.ok(pauseObservations > 0); assert.equal(paused, false);
-        await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        await waitForInstallMutexRelease();
     });
     await check('Реальный установщик сохраняет мёртвую cleanup-блокировку в карантин, а очистка ждёт lease и подтверждённую паузу', async () => {
         const credentialsBefore=await fs.readFile(path.join(profile,'credentials.json')),pairsBefore=pairStarts;
@@ -333,7 +340,7 @@ const cleanup=require(path.join(process.env.INSTALL_DIR,"dist/shared/bridge-upda
         assert.equal(await fs.readFile(completedFile, 'utf8'), content);
         assert.equal(after.ino, before.ino); assert.equal(after.mtimeMs, before.mtimeMs);
         assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 1);
-        assert.equal(paused, false); await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        assert.equal(paused, false); await waitForInstallMutexRelease();
     });
     await check('Просроченный ключ без worker не блокирует обновление и доходит до повторного подключения', async () => {
         await stopFixtureWorker(profile);
@@ -353,7 +360,7 @@ const cleanup=require(path.join(process.env.INSTALL_DIR,"dist/shared/bridge-upda
         assert.equal(completionDeliveries, 1); assert.equal(repeatedActionRequests, 0);
         assert.equal(await fs.readFile(config, 'utf8'), installedConfig);
         await assert.rejects(fs.access(path.join(profile, 'pair.json')), { code: 'ENOENT' });
-        await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        await waitForInstallMutexRelease();
         installedMtime = (await fs.stat(entry)).mtimeMs;
     });
     await check('Установщик другой площадки сохраняет прежние ключи и запускает новый heartbeat после подтверждения', async () => {
