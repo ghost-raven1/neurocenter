@@ -11,7 +11,7 @@ export const REVOKED_QUEUE_MESSAGE='Доступ к проекту или рол
 
 /** Чтение установки не получает права записи; уровень совпадает при создании, выдаче и очистке очереди. */
 export function jobMinimumLevel(kind:string):number {
-    if(['sync-learning-memory','publish-project-snapshot','configure-project-agents','open-project-configuration'].includes(kind))return 3;
+    if(['sync-learning-memory','publish-project-snapshot','configure-project-agents','open-project-configuration','run-agent-method-workflow'].includes(kind))return 3;
     return kind==='inspect-installation'||PROJECT_LOCAL_READS.includes(kind)||configurationRead(kind)?1:2;
 }
 

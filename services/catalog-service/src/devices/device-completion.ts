@@ -6,6 +6,8 @@ import {completeRuntimeCachePolicy} from './runtime-cache-jobs';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
+import {AGENT_METHOD_WORKFLOW_JOB} from '../../../shared/agent-method-workflow.cjs';
+import {assertAgentMethodResult,assertAgentMethodCompletionAccess} from '../agent-method-workflows/jobs';
 import {assertSnapshotCompletion} from './project-snapshot-completion';
 import {SNAPSHOT_JOB_KIND} from './project-snapshot-jobs';
 import { PROJECT_LOCAL_KINDS, LOCAL_PREPARATIONS, LOCAL_APPLIES, localPurpose } from './project-local-actions';
@@ -81,6 +83,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         await assertSnapshotCompletion(client,job,input.result,input.state==='failed');
         assertRagJobResult(job,input.result,input.state==='failed');
         assertAgentConfigurationResult(job,input.result,input.state==='failed');
+        assertAgentMethodResult(job,input.result,input.state==='failed');
         if(job.kind===PROJECT_CONFIGURATION_JOB){try{normalizeProjectConfigurationReport(input.result,job.payload.descriptor,input.state==='failed');}catch{throw new ConflictException('Мастер не передаёт локальные файлы, адреса и значения на сервер.');}}
         if(CONFIGURATION_KINDS.includes(job.kind))assertConfigurationReport(job.kind,input.result,
             {...job.payload,package:job.payload.package as IPackage,projectId:job.project_id},input.state==='failed');
@@ -89,7 +92,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             catch{throw new ConflictException('Отчёт провайдера содержит неподдерживаемые данные или другой контекст.');}
         }
         if(job.kind==='scan-opencode-models'&&(input.state==='failed'?Object.keys(input.result).length>0:!validModelScan(input.result,job.payload.scope==='global'?{scope:'global',deviceId:job.device_id}:{scope:'project',projectId:job.project_id,bindingId:job.payload.bindingId,instanceId:job.payload.instanceId})))throw new ConflictException('Отчёт моделей содержит неподдерживаемые данные или относится к другому источнику.');
-        if (![PROJECT_CONFIGURATION_JOB,...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
+        if (![AGENT_METHOD_WORKFLOW_JOB,PROJECT_CONFIGURATION_JOB,...LOCAL_PREPARATIONS,'scan-opencode-models','scan-project-inventory','list-local-variants'].includes(job.kind) && Buffer.byteLength(JSON.stringify(input.result)) > 10000) {
             throw new BadRequestException('Результат задания превышает допустимый размер.');
         }
         if (['scan-project-inventory','list-local-variants'].includes(job.kind)) {
@@ -152,8 +155,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                 }
             }
         }
-        const known = [PROJECT_AGENTS_JOB,SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...OPENCODE_PROVIDER_JOBS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
-        const matching = job.kind === 'scan-opencode-models' ? job.payload.scope==='global'?job.project_id===null&&input.result.scope==='global'&&input.result.deviceId===job.device_id:input.result.scope==='project'&&input.result.projectId===job.project_id : job.kind === PROJECT_AGENTS_JOB ? input.result.readiness==='configured' : job.kind === SNAPSHOT_JOB_KIND ? input.result.status==='UPLOADED' : job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
+        const known = [AGENT_METHOD_WORKFLOW_JOB,PROJECT_AGENTS_JOB,SNAPSHOT_JOB_KIND,...CONFIGURATION_KINDS,...OPENCODE_PROVIDER_JOBS,...PROJECT_LOCAL_KINDS,HOSTED_RAG_KIND,'choose-root', 'bind-project', 'prepare-bind-project', 'prepare-local-change','open-local-change-report','open-local-recovery-folder', 'probe-runtime','open-rag-ui','sync-rag', 'restore-rag','inspect-installation'].includes(job.kind);
+        const matching = job.kind === AGENT_METHOD_WORKFLOW_JOB ? input.result.state==='succeeded' : job.kind === 'scan-opencode-models' ? job.payload.scope==='global'?job.project_id===null&&input.result.scope==='global'&&input.result.deviceId===job.device_id:input.result.scope==='project'&&input.result.projectId===job.project_id : job.kind === PROJECT_AGENTS_JOB ? input.result.readiness==='configured' : job.kind === SNAPSHOT_JOB_KIND ? input.result.status==='UPLOADED' : job.kind === HOSTED_RAG_KIND ? input.result.status === 'connected' : job.kind === 'open-rag-ui' ? input.result.opened === true : job.kind === 'choose-root'
             ? typeof input.result.root === 'string' && input.result.root.length > 0 && input.result.root.length <= 4096
             : input.result.projectId === job.project_id && ([...CONFIGURATION_KINDS,...OPENCODE_PROVIDER_JOBS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','inspect-installation'].includes(job.kind) || input.result.ok === true);
         // Действующая аренда подтверждает исполнителя, но не принадлежность результата исходному проекту.
@@ -168,6 +171,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
             return { ok: true, repeated: true };
         }
         if(job.kind===PROJECT_AGENTS_JOB&&input.state==='succeeded')await assertAgentCompletionAccess(client,job);
+        if(job.kind===AGENT_METHOD_WORKFLOW_JOB&&input.state==='succeeded')await assertAgentMethodCompletionAccess(client,job);
         if (job.kind === 'prepare-bind-project' && input.state === 'succeeded') {
             assertWorkspacePreparation(input.result,{projectId:job.project_id ?? undefined,folderName:job.payload.folderName as string,mode:job.payload.mode});
         }

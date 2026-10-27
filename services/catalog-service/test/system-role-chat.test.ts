@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SystemRoleChatService } from '../src/system-role-chat/system-role-chat.service';
 import { allowSystemRoleChatRoute } from '../src/system-role-chat/system-role-chat.access';
 import { roleHash } from '../src/system-roles/system-role.definitions';
-import { sendSystemTurn } from '../src/system-role-chat/system-role-chat.validation';
+import { sendSystemTurn, createSystemDialog } from '../src/system-role-chat/system-role-chat.validation';
 import type { SystemDialogRow, SystemTurnRow } from '../src/system-role-chat/system-role-chat.types';
 import type { RoleRunView } from '../src/system-roles/system-role.types';
 
@@ -16,7 +16,7 @@ const selection = { projectId: 'prj-chat', instruction: 'Проверь прое
 const input = () => ({ ...selection, requestId: randomUUID(), modelId: 'model-chat', expectedModelPin: 'a'.repeat(64), expectedDefinitionPin: 'b'.repeat(64), consentDigest: 'c'.repeat(64) });
 
 /** Boundary fixture supplies stored receipts and the existing role owner; it never simulates model execution. */
-function fixture() {
+function fixture(agentId: SystemDialogRow['agent_id'] = 'agent-coordinator') {
     const dialogs = new Map<string, SystemDialogRow>(), turns = new Map<string, SystemTurnRow>(), runs = new Map<string, RoleRunView>();
     const query = vi.fn(async () => ({ rows: [], rowCount: 1 }));
     const actor = vi.fn(async (req: { email: string }) => ({ email: req.email, activeRole: 'Админ проекта' }));
@@ -43,7 +43,7 @@ function fixture() {
         }),
     };
     const service = new SystemRoleChatService({ pool: { query }, ready: async () => undefined, actor } as never, roles as never);
-    const dialog: SystemDialogRow = { id: dialogId, owner_email: 'owner@test', project_id: selection.projectId, title: 'Сервисный диалог', created_at: new Date(), updated_at: new Date() };
+    const dialog: SystemDialogRow = { id: dialogId, owner_email: 'owner@test', project_id: selection.projectId, title: 'Сервисный диалог', agent_id: agentId, created_at: new Date(), updated_at: new Date() };
     dialogs.set(dialog.id, dialog);
     vi.spyOn(service.repository, 'dialog').mockImplementation(async (id, owner) => { const item = dialogs.get(id); if (!item || item.owner_email !== owner) throw new NotFoundException(); return item; });
     vi.spyOn(service.repository, 'dialogs').mockImplementation(async (owner, project) => [...dialogs.values()].filter(item => item.owner_email === owner && item.project_id === project));
@@ -59,6 +59,37 @@ function fixture() {
 
 describe('System role chat: private receipts over the existing role owner', () => {
     beforeEach(() => { features.mockResolvedValue(undefined); });
+    it('legacy dialogs keep original accepted receipts but reject a new mixed task', async () => {
+        const f = fixture(), body = {agentId: 'agent-coordinator', input: input()};
+        const accepted = await f.service.send(request(), dialogId, body);
+        f.dialog.agent_id = null; // Released mixed history fixture, not a production UPDATE.
+        features.mockRejectedValue(new ForbiddenException('disabled'));
+        expect(await f.service.request(request(), dialogId, body.input.requestId)).toEqual(accepted);
+        expect(await f.service.send(request(), dialogId, body)).toEqual(accepted);
+        await expect(f.service.send(request(), dialogId, {...body, input: input()})).rejects.toThrow('новый чат');
+        expect(f.roles.start).toHaveBeenCalledOnce();
+    });
+    it('requires a role for a new conversation and validates the role identifier', () => {
+        const body = {id: dialogId, title: 'New chat', projectId: 'prj-chat'};
+        expect(() => createSystemDialog(body)).toThrow('роль');
+        expect(() => createSystemDialog({...body, agentId: 'forged-role'})).toThrow();
+        expect(createSystemDialog({...body, agentId: 'agent-indexer'}).agentId).toBe('agent-indexer');
+    });
+    it('rejects a different role before preview or execution in a pinned conversation', async () => {
+        const f = fixture('agent-indexer');
+        await expect(f.service.prepare(request(), dialogId, {agentId: 'agent-coordinator', selection})).rejects.toThrow('роль');
+        await expect(f.service.send(request(), dialogId, {agentId: 'agent-coordinator', input: input()})).rejects.toThrow('роль');
+        expect(f.roles.prepare).not.toHaveBeenCalled(); expect(f.roles.start).not.toHaveBeenCalled();
+    });
+    it('keeps accepted pinned requests recoverable with the new admission flag off', async () => {
+        const f = fixture('agent-coordinator'), body = {agentId: 'agent-coordinator', input: input()};
+        const receipt = await f.service.send(request(), dialogId, body);
+        features.mockRejectedValue(new ForbiddenException('disabled'));
+        expect(await f.service.request(request(), dialogId, body.input.requestId)).toEqual(receipt);
+        expect(await f.service.send(request(), dialogId, body)).toEqual(receipt);
+        await expect(f.service.send(request(), dialogId, {...body, input: input()})).rejects.toThrow('disabled');
+        expect(f.roles.start).toHaveBeenCalledOnce();
+    });
     it('previews without execution, accepts one turn and reopens its queued then completed result', async () => {
         const f = fixture(), body = { agentId: 'agent-coordinator', input: input() };
         const preview = await f.service.prepare(request(), dialogId, { agentId: body.agentId, selection, includeContext: false });

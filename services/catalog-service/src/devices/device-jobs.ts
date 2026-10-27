@@ -1,4 +1,6 @@
 import type {PoolClient} from 'pg';
+import {AGENT_METHOD_WORKFLOW_JOB} from '../../../shared/agent-method-workflow.cjs';
+import {agentMethodJobPayload,assertAgentMethodJob} from '../agent-method-workflows/jobs';
 import {LEARNING_QUIRKS_KIND,quirksJobPayload,assertQuirksJob} from '../learning-quirks/learning-quirks-jobs';
 import {MEMORY_SYNC_JOB} from '../../../shared/project-learning-memory-sync.cjs';
 import {memorySyncJobPayload,assertMemorySyncJob} from '../learning-memory-sync/jobs';
@@ -62,7 +64,7 @@ import { ProjectEmbeddingService } from '../models/project-embedding.service';
 import {registerHostedRagGrant} from './hosted-rag-grants';
 import { HOSTED_RAG_KIND, hostedRagJobPayload, assertHostedRagJob } from './hosted-rag-jobs';
 import {assertRagAutoInspection} from './rag-install-inspection';
-const view = `id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
+const view = `payload->>'method' AS method,payload->>'workflowId' AS "workflowId",id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
     payload->'descriptor'->>'providerKind' AS "providerKind",payload->'descriptor'->>'providerId' AS "providerId",payload->'descriptor'->>'schemaDigest' AS "providerSchemaDigest",
     payload->'descriptor'->'expectations'->>'catalogModelId' AS "catalogModelId",payload->'descriptor'->'expectations'->>'modelPin' AS "expectedModelPin"`;
 
@@ -135,6 +137,7 @@ export class DeviceJobs {
                 LEARNING_QUIRKS_KIND,
                 SNAPSHOT_JOB_KIND,
                 PROJECT_AGENTS_JOB,
+                AGENT_METHOD_WORKFLOW_JOB,
                 PROJECT_CONFIGURATION_JOB,
                 ...PROJECT_LOCAL_KINDS,
                 ...CONFIGURATION_KINDS,
@@ -194,6 +197,7 @@ export class DeviceJobs {
         const quirks=await quirksJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input);
         const memorySync=await memorySyncJobPayload({store:this.store,installations:this.installations,plans:this.plans},device,input,actor);
         const agentConfiguration=await agentConfigurationJobPayload(this.store,device,input);
+        const methodWorkflow=agentMethodJobPayload(device,input);
         const snapshot=await projectSnapshotPayload(this.store,device,input);
         const ragUi=await ragUiJobPayload(this.installations,this.plans,device,input);
         const hostedRag=await hostedRagJobPayload(this.embedding,this.installations,this.plans,device,input);
@@ -206,6 +210,7 @@ export class DeviceJobs {
         else if(projectConfiguration){payload=projectConfiguration;}
         else if(provider){payload=provider;}
         else if(agentConfiguration){payload={...agentConfiguration};}
+        else if(methodWorkflow){payload={...methodWorkflow};}
         else if(snapshot){payload=snapshot;}
         else if(hostedRag){payload=hostedRag;}
         else if(ragUi){payload=ragUi;}
@@ -346,6 +351,7 @@ export class DeviceJobs {
             await this.codex?.authorizeJob(device,job);
             assertRuntimeCacheJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
+            assertAgentMethodJob(device,job);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
             await assertProjectConfigurationJob(this.installations,device,job);
@@ -416,6 +422,7 @@ export class DeviceJobs {
         await assertProjectLocalJob(this.store,this.installations,this.plans,device,job);
         await assertMcpConfigurationJob(this.store,this.installations,this.plans,device,job);
         await assertAgentConfigurationJob(this.store,device,job);
+        assertAgentMethodJob(device,job);
         await assertMemorySyncJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertQuirksJob({store:this.store,installations:this.installations,plans:this.plans},device,job);
         await assertProjectConfigurationJob(this.installations,device,job);

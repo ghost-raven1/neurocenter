@@ -6,6 +6,7 @@ import {useLocation} from 'react-router-dom';
 import type {RootState} from '../../store';
 import {roleLevel} from '../UserBlock/roles';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
+import {serviceRoleIds} from '../SystemRoleChat/RoleChatNavigation';
 import {OPEN_CHAT_EVENT,routeChatProject,type IChatLaunch} from './chatNavigation';
 
 const ChatOverlay=lazy(()=>import('./ChatOverlay'));
@@ -18,13 +19,13 @@ export function ChatLauncher():JSX.Element {
     const trigger=useRef<HTMLElement|null>(null);
     const launch=(value:IChatLaunch):void=>{if(!canUse)return;trigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;setOpened({scope,launch:value});};
     useEffect(()=>{
-        const requested=(event:Event):void=>{const value=(event as CustomEvent<IChatLaunch>).detail;if(value&&typeof value==='object')launch({...(typeof value.projectId==='string'?{projectId:value.projectId}:{}),group:value.group===true,team:value.team===true});};
+        const requested=(event:Event):void=>{const value=(event as CustomEvent<IChatLaunch>).detail;if(value&&typeof value==='object')launch({...(typeof value.projectId==='string'?{projectId:value.projectId}:{}),group:value.group===true,team:value.team===true,...(serviceRoleIds.includes(value.agentId!)?{agentId:value.agentId,instruction:typeof value.instruction==='string'?value.instruction:undefined}:{})});};
         window.addEventListener(OPEN_CHAT_EVENT,requested);return()=>window.removeEventListener(OPEN_CHAT_EVENT,requested);
     },[canUse,scope]);
     const close=():void=>{setOpened(undefined);queueMicrotask(()=>{if(trigger.current?.isConnected)trigger.current.focus({preventScroll:true});});};
     const visible=canUse&&opened?.scope===scope;
     return <>
         <Tooltip title={canUse?'Команда проекта и личные диалоги':'Для чата нужен доступ к проекту'}><span><Button icon={<CommentOutlined/>} aria-label="Открыть чат" aria-haspopup="dialog" aria-expanded={!!visible} disabled={!canUse} onClick={()=>{const projectId=routeChatProject(location.pathname,location.search);launch({projectId,team:!!projectId||roleLevel(user?.activeRole??'')===1});}}>Чат</Button></span></Tooltip>
-        {visible&&<Suspense fallback={<Modal open centered width={1280} title="Чат" footer={null} onCancel={close}><Spin tip="Открываем чат…"/></Modal>}><ChatOverlay {...opened.launch} onClose={close}/></Suspense>}
+        {visible&&<Suspense fallback={<Modal open centered width={1280} title="Чат" footer={null} onCancel={close}><Spin tip="Открываем чат…"/></Modal>}><ChatOverlay key={JSON.stringify([opened.launch.projectId,opened.launch.agentId,opened.launch.instruction])} {...opened.launch} onClose={close}/></Suspense>}
     </>;
 }

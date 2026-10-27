@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  Language: Russian
+  All artifacts must be written in Russian.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Нейроцентр — единое рабочее место проекта, агентов, скиллов, плагинов и OpenCode.
+  Цель — командная площадка: участники и права, общие решения и задачи, видимые исполнители и проверяемые результаты проекта.
+  Многопрофильные проектные агенты должны закрывать полный цикл анализа, проектирования, кода, тестов, ревью и подготовки выпуска с несколькими назначенными навыками.
+  Сервисные роли отвечают за вопросы самой системы, диагностику, настройку и восстановление в пределах реальных инструментов и прав; отсутствие возможности объясняется с доступным продолжением.
+  Основной путь: проект, привязанная папка, инструменты и агенты, задача, проверяемый результат.
+  Настройка ведётся через UI; отказ сохраняет ввод, показывает состояние и доступное продолжение.
+  Краткая локальная проверка не доказывает работу всей цепочки, CI или production.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

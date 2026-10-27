@@ -25,7 +25,7 @@ describe.skipIf(!connection).sequential('System-role chat atomic receipts on cal
     const selection = { projectId: project, instruction: 'Проверь готовность проекта', diagnostics: [], targets: [] };
     let modelPin: string;
     const sendBody = (requestId = randomUUID()) => ({ agentId: 'agent-coordinator', input: { ...selection, requestId, modelId: 'model-service-chat', expectedModelPin: modelPin, expectedDefinitionPin: roleDefinitionPin('agent-coordinator'), consentDigest: 'c'.repeat(64) } });
-    const create = (request = req()) => chat.create(request, { id: randomUUID(), title: 'Проверка проекта', projectId: project });
+    const create = (request = req()) => chat.create(request, { id: randomUUID(), title: 'Проверка проекта', projectId: project, agentId: 'agent-coordinator' });
     const counts = async () => ({ turns: Number((await pool.query('SELECT count(*) FROM system_role_dialog_intents')).rows[0].count), runs: Number((await pool.query('SELECT count(*) FROM system_role_runs')).rows[0].count), calls: infer.mock.calls.length });
     beforeAll(async () => {
         const url = ownedTestPostgresAdmin(connection); admin = new Pool({ connectionString: url.href, max: 1 });

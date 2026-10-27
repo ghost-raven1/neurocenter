@@ -82,8 +82,6 @@ export class ProjectChatRepository {
             snapshots.length ? 'queued' : 'done', input.requestKey, input.hash, snapshots.map(row => row.agentId), generation, projectChatRoomId(room),input.agentTools?JSON.stringify(input.agentTools):null])).rows[0];
         for (const snapshot of snapshots) await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,snapshot,generation)
             VALUES($1,$2,$6,'agent',$3,$3,'queued',$4::jsonb,$5)`, [randomUUID(), room.project_id, id, JSON.stringify(snapshot), generation, projectChatRoomId(room)]);
-        if (snapshots.length) await db.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,generation)
-            VALUES($1,$2,$5,'summary',$3,$3,'queued',$4)`, [randomUUID(), room.project_id, id, generation, projectChatRoomId(room)]);
         await this.bump(db, room); return source;
     }
     async children(db: ProjectChatDb, projectId: string, id: string, roomId = DEFAULT_PROJECT_CHAT_ROOM): Promise<ProjectChatMessageRow[]> {

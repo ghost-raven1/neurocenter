@@ -1,5 +1,6 @@
+import type {SystemRoleId} from '../SystemRoles/types';
 export const OPEN_CHAT_EVENT='neurocenter:open-chat';
-export interface IChatLaunch {projectId?:string;group?:boolean;team?:boolean;}
+export interface IChatLaunch {projectId?:string;group?:boolean;team?:boolean;agentId?:SystemRoleId;instruction?:string;}
 
 /** A direct entry from project agents opens the one header overlay without changing routes. */
 export function openModelChat(value:IChatLaunch={}):void {window.dispatchEvent(new CustomEvent(OPEN_CHAT_EVENT,{detail:value}));}

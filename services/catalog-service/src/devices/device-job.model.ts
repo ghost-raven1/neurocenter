@@ -1,3 +1,5 @@
+import type {AgentMethod} from '../../../shared/agent-method-workflow.cjs';
+
 export interface Job {
     id: string;
     device_id: string;
@@ -44,6 +46,7 @@ export interface JobInput {
     reindex?:true;
     snapshotId?:string;
     expectedAgentsRevision?:number;
+    workflow?:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>};
     providerKind?:'openai-compatible'|'ollama'|'codex-bridge';
     catalogModelId?:string;
     expectedModelPin?:string;

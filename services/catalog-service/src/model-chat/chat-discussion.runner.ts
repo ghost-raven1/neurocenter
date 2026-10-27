@@ -118,8 +118,12 @@ export async function runChatDiscussion(req: Request, scope: ChatRoundScope, tur
         }
         const completed = await call(input.phase, input.key, model, messages, input.remainingSteps, agent?.snapshot, before, required);
         return { content: completed.content!, finishReason: completed.finishReason! };
-    }, checkpoint);
+    }, checkpoint, run.summary_policy ?? 'legacy');
     await checkpoint();
+    if (run.summary_policy === 'unique-v1' && !result.outcomes.some(outcome => outcome.state === 'done')) {
+        await deps.chats.fail(scope.row.id, turn.id, turn.request_id, 'failed', 'Проверенного ответа пока нет. Проверьте доступность моделей и отправьте новый вопрос.');
+        return;
+    }
     await deps.chats.owned(scope.owner, scope.row.id, db => authority(db), async (db, row) => {
         await checkpoint(db);
         await deps.chats.finish(db, row, turn, { content: result.content, finishReason: result.finishReason, usage: unknownGroupUsage(), evidence: project?.evidence });

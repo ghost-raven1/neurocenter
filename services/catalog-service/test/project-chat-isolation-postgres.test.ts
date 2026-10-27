@@ -17,7 +17,7 @@ describe.skipIf(!adminUrl).sequential('Team chat bridge fault isolation — actu
         try {
             const accepted = await f.send(f.defaultRoom, [device.id, server.id]); await bounded(gate.entered);
             const partial = await waitFor(() => f.rows(accepted.message.id), rows => rows.some(row => row.snapshot?.agentId === server.id && row.status === 'done'));
-            expect(partial.find(row => row.kind === 'summary')).toMatchObject({ status: 'running', content: '' });
+            expect(partial.find(row => row.kind === 'summary')).toBeUndefined();
             expect(partial.find(row => row.snapshot?.agentId === device.id)?.status).toBe('running');
             expect(f.active).toEqual({ server: 0, 'device-codex': 1 });
             expect(JSON.stringify(f.calls.find(call => call.agentId === server.id)?.messages)).not.toContain('HELD OUTPUT');
@@ -26,6 +26,42 @@ describe.skipIf(!adminUrl).sequential('Team chat bridge fault isolation — actu
             expect(complete.find(row => row.kind === 'summary')?.content).toContain('HELD OUTPUT ' + device.id);
             expect(f.calls).toHaveLength(2);
         } finally { gate.release(); }
+    });
+
+    it('stores human-only and singleton agent messages without a summary or another inference', async () => {
+        const human = await f.send(f.defaultRoom, []);
+        expect((await f.rows(human.message.id)).map(row => row.kind)).toEqual(['user']);
+        const server = await f.agent('Solo'); await f.configure(f.defaultRoom, [server.id]);
+        const accepted = await f.send(f.defaultRoom, [server.id]); await f.service.runner.waitIdle();
+        expect((await f.rows(accepted.message.id)).map(row => [row.kind,row.status])).toEqual([['user','done'],['agent','done']]);
+        expect(f.calls).toHaveLength(1);
+    });
+
+    it('keeps two failed answers separate without creating a summary', async () => {
+        const server = await f.agent('Server'), device = await f.agent('Device', 'device-codex');
+        await f.configure(f.defaultRoom, [server.id, device.id]);
+        for (const agent of [server,device]) f.handlers.set(agent.id, async () => { throw new ServiceUnavailableException('Owned unavailable model'); });
+        const accepted = await f.send(f.defaultRoom, [server.id, device.id]); await f.service.runner.waitIdle();
+        const rows = await f.rows(accepted.message.id);
+        expect(rows.map(row => [row.kind,row.status])).toEqual([['user','failed'],['agent','failed'],['agent','failed']]);
+        expect(rows.filter(row => row.kind === 'agent').every(row => row.error.includes('Owned unavailable model'))).toBe(true);
+        expect(f.calls).toHaveLength(2);
+    });
+
+    it.each(['', 'Прежний сохранённый итог'])('finishes an accepted legacy singleton without rewriting historical content %j', async content => {
+        const server=await f.agent('Legacy');await f.configure(f.defaultRoom,[server.id]);
+        const schedule=vi.spyOn(f.service.runner,'schedule').mockImplementation(()=>undefined);
+        let sourceId:string;
+        try {
+            const accepted=await f.send(f.defaultRoom,[server.id]);sourceId=accepted.message.id;
+            await f.pool.query(`INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,content,generation)
+                SELECT $1,project_id,room_id,'summary',id,id,'queued',$3,generation FROM project_chat_messages WHERE id=$2`,[randomUUID(),sourceId,content]);
+        } finally {schedule.mockRestore();}
+        f.service.runner.schedule(projectId,f.defaultRoom);await f.service.runner.waitIdle();
+        const rows=await f.rows(sourceId!),summary=rows.find(row=>row.kind==='summary');
+        expect(rows[0].status).toBe('done');expect(f.calls).toHaveLength(1);
+        if(content)expect(summary).toMatchObject({status:'done',content,lease_until:null});
+        else expect(summary).toBeUndefined();
     });
 
     it('keeps FIFO inside a room while a different room completes independently of held Codex', async () => {
@@ -67,11 +103,16 @@ describe.skipIf(!adminUrl).sequential('Team chat bridge fault isolation — actu
         const accepted = await f.send(f.defaultRoom, [device.id, server.id]); await f.service.runner.waitIdle();
         const before = await f.rows(accepted.message.id), successful = before.find(row => row.snapshot?.agentId === server.id)!;
         expect(successful).toMatchObject({ status: 'done', learning: { status: 'applied' } }); expect(before[0].status).toBe('failed');
+        expect(before.some(row => row.kind === 'summary')).toBe(false);
         f.handlers.delete(device.id);
         await f.service.retry(req(), projectId, accepted.message.id, { requestKey: randomUUID() }); await f.service.runner.waitIdle();
         expect(f.calls.filter(call => call.agentId === server.id)).toHaveLength(1); expect(f.calls.filter(call => call.agentId === device.id)).toHaveLength(2);
         expect((await f.rows(accepted.message.id)).find(row => row.id === successful.id)).toEqual(successful);
-        expect((await f.rows(accepted.message.id))[0].status).toBe('done');
+        const completed = await f.rows(accepted.message.id);
+        expect(completed[0].status).toBe('done');
+        expect(completed.find(row => row.kind === 'summary')).toMatchObject({status:'done'});
+        expect(completed.find(row => row.kind === 'summary')?.content).toContain('Answer ' + server.id);
+        expect(completed.find(row => row.kind === 'summary')?.content).toContain('Answer ' + device.id);
     });
 
     it('cancels only a waiting question without waiting for or aborting a different room provider', async () => {

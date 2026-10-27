@@ -55,7 +55,7 @@ const stop=()=>closing??=(async()=>{
   await delay(20);
  }
  throw new Error('MCP descendants did not close');
-})().catch(()=>{process.exit(1);});
+})().catch(error=>{const code=(error as NodeJS.ErrnoException).code;process.send?.({nonce,cleanupFailure:typeof code==='string'&&/^[A-Z_]+$/.test(code)?code:'CLEANUP_FAILED'});process.exit(1);});
 process.once('disconnect',()=>{void stop();});process.once('SIGTERM',()=>{void stop();});process.once('SIGINT',()=>{void stop();});
 let observingBusy=false;
 const observing=setInterval(()=>{if(observingBusy||closing)return;observingBusy=true;void census().then(discover).catch(()=>{void stop();}).finally(()=>{observingBusy=false;});},250);observing.unref();
@@ -66,6 +66,7 @@ process.on('message',(value:unknown)=>{
  permitted=true;
  const child=spawn(permit.command,permit.args,{cwd:permit.cwd,env:permit.env,shell:false,detached:false,stdio:['pipe','pipe','pipe']});
  child.stdin.on('error',()=>{});process.stdin.pipe(child.stdin);child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);
- child.once('error',()=>{void stop();});child.once('exit',()=>{void stop();});
+ child.once('error',()=>{process.send?.({nonce,executionExit:{code:null,signal:null}});void stop();});
+ child.once('exit',(code,signal)=>{process.send?.({nonce,executionExit:{code,signal}});void stop();});
 });
 process.send({ready:true,nonce});

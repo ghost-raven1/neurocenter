@@ -27,15 +27,17 @@ const render = () => { h.hooks.begin(); h.ui.nodes = []; const html = renderToSt
 const mode = (value: string) => uiNode(h.ui, 'RadioGroup').onChange({ target: { value } });
 beforeEach(() => { h.hooks.dispose(); vi.clearAllMocks(); h.owner = 'alice'; h.role = 'Главный админ'; });
 afterEach(() => { h.hooks.dispose(); });
-it('the common Chat has only personal/team modes and keeps legacy private history beside the current chat', async () => {
-    render(); expect(uiNode(h.ui, 'RadioGroup').options.map((item: { value: string }) => item.value)).toEqual(['team', 'personal']); expect(h.personal).toHaveBeenCalled();
-    uiNode(h.ui, 'Button', 'Прежние сервисные диалоги').onClick(); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи');
-    expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: false, historyOnly: true });
-    expect(uiNode(h.ui, 'RadioGroup').value).toBe('personal');
-    mode('team'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Общая команда'); expect(h.team).toHaveBeenCalledWith({ projectId: 'prj-one', projectName: 'Проект' });
-    mode('personal'); render(); expect(uiNode(h.ui, 'RadioGroup').value).toBe('personal');
+const chooseRole = (id: string) => h.ui.nodes.find(node => node.kind === 'Select' && node.props['aria-label'] === 'Чат сервисной роли')!.props.onChange(id);
+it('opens separate pinned role conversations in the common Chat without a mixed service modal', async () => {
+    render(); expect(uiNode(h.ui, 'RadioGroup').options.map((item: {value: string}) => item.value)).toEqual(['team', 'personal']);
+    expect(h.ui.nodes.some(node => node.kind === 'Button' && node.text.includes('Прежние сервисные диалоги'))).toBe(false);
+    chooseRole('agent-coordinator'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Чат · Координатор');
+    expect(h.service).toHaveBeenLastCalledWith(expect.objectContaining({projectId: 'prj-one', agentId: 'agent-coordinator', canExecute: true}));
+    chooseRole('agent-packager'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Чат · Упаковщик');
+    expect(h.service).toHaveBeenLastCalledWith(expect.objectContaining({agentId: 'agent-packager'}));
+    mode('team'); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Общая команда');
 });
-it('a demoted observer can still open service history with new execution disabled', async () => {
-    h.role = 'Наблюдатель'; render(); uiNode(h.ui, 'Button', 'Прежние сервисные диалоги').onClick(); render(); await vi.dynamicImportSettled(); expect(render()).toContain('Сервисные задачи');
-    expect(h.service).toHaveBeenLastCalledWith({ projectId: 'prj-one', canExecute: false, historyOnly: true });
+it('a demoted observer can still open each role history with new execution disabled', async () => {
+    h.role = 'Наблюдатель'; render(); chooseRole('agent-indexer'); render(); await vi.dynamicImportSettled(); render();
+    expect(h.service).toHaveBeenLastCalledWith(expect.objectContaining({projectId: 'prj-one', agentId: 'agent-indexer', canExecute: false}));
 });

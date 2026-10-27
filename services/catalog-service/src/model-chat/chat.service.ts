@@ -261,11 +261,12 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             signal.throwIfAborted(); this.repository.revision(row, revision);
             const tail = await this.repository.tail(db, id);
             if (!tail || tail.status === 'pending' || !await this.discussions.get(db, tail.id)) this.requireResolved(tail ? [tail] : []);
-            const automatic = row.mode === 'group' && !research && !agentTools && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
-            const model = await scope.authorize(true), text = await this.inputText(db, id, prompt, ids), context = automatic ? undefined : await this.contextFor(req, db, row, model, text, targets);
+            const model = await scope.authorize(true), text = await this.inputText(db, id, prompt, ids);
+            const plan = row.mode === 'group' ? await this.groups.plan(req, row, model, targets, db) : [];
+            const automatic = plan.length > 1 && !research && !agentTools && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
+            const context = automatic ? undefined : await this.contextFor(req, db, row, model, text, targets);
             if (context?.exceeded) throw new BadRequestException(context.reason || 'Сообщение не помещается в доступный контекст.');
             if (automatic) await this.discussionHistory(db, row, model, text);
-            const plan = row.mode === 'group' ? await this.groups.plan(req, row, model, targets, db) : [];
             const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text, research, agentTools, targetAgentIds: plan.map(agent => agent.snapshot.agentId) });
             if (automatic) await this.discussions.create(db, turn, scope.actorRole, model, plan);
             else if (plan.length) await this.groups.add(db, row, turn, plan);

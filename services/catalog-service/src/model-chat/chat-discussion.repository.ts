@@ -13,8 +13,8 @@ export class ChatDiscussionRepository {
     constructor(private readonly chats: ChatRepository) {}
     async create(db: ChatDb, turn: TurnRow, actorRole: string, model: IModel, roster: ChatResolvedAgent[]): Promise<void> {
         const deadline = new Date(Date.now() + DISCUSSION_LIMITS.deadlineMs);
-        await db.query(`INSERT INTO model_chat_discussions(turn_id,request_id,actor_role,model,roster,deadline_at)
-            VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6)`, [turn.id, turn.request_id, actorRole, JSON.stringify(model), JSON.stringify(roster), deadline]);
+        await db.query(`INSERT INTO model_chat_discussions(turn_id,request_id,actor_role,model,roster,deadline_at,summary_policy)
+            VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,'unique-v1')`, [turn.id, turn.request_id, actorRole, JSON.stringify(model), JSON.stringify(roster), deadline]);
         await db.query("UPDATE model_chat_turns SET lease_until=$2 WHERE id=$1 AND status='pending'", [turn.id, deadline]);
     }
     async get(db: ChatDb, turnId: string): Promise<DiscussionRun | undefined> {
@@ -83,7 +83,8 @@ export function discussionResponses(turn: TurnRow, run: DiscussionRun, steps: Di
         processingStage: 'responding', ...(step.output ? { answer: { content: step.output, finishReason: step.finish_reason!, usage: unknownGroupUsage() } } : {}),
         ...(step.error ? { error: step.error } : {}),
     }));
-    if (turn.answer) responses.push({ id: turn.id, agentId: 'discussion-summary', name: 'Итог обсуждения', slug: 'discussion-summary', version: 1,
+    const answered = new Set(responses.filter(response => response.status === 'done').map(response => response.agentId));
+    if (turn.answer && (run.summary_policy !== 'unique-v1' || answered.size > 1)) responses.push({ id: turn.id, agentId: 'discussion-summary', name: 'Итог обсуждения', slug: 'discussion-summary', version: 1,
         modelId: run.model.id, modelName: run.model.name, modelPin: projectEmbeddingPin(run.model), status: 'done', processingStage: 'responding', answer: turn.answer });
     return responses;
 }

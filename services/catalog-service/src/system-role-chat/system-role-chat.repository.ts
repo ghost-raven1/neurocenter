@@ -6,15 +6,17 @@ import type { SystemDialogRow, SystemTurnRow } from './system-role-chat.types';
 /** The dialog journal is a receipt over the role queue; it never owns another executor. */
 export class SystemRoleChatRepository {
     constructor(readonly db: RoleDb) {}
-    async dialogs(owner: string, project: string | null): Promise<SystemDialogRow[]> {
-        return (await this.db.query<SystemDialogRow>('SELECT * FROM system_role_dialogs WHERE owner_email=$1 AND project_id IS NOT DISTINCT FROM $2 ORDER BY updated_at DESC,id DESC LIMIT 100', [owner, project])).rows;
+    async dialogs(owner: string, project: string | null, agent?: SystemRoleId | null): Promise<SystemDialogRow[]> {
+        return (await this.db.query<SystemDialogRow>(`SELECT d.* FROM system_role_dialogs d WHERE d.owner_email=$1 AND d.project_id IS NOT DISTINCT FROM $2
+            AND ($3::text IS NULL OR d.agent_id=$3 OR (d.agent_id IS NULL AND EXISTS(SELECT 1 FROM system_role_dialog_intents i WHERE i.dialog_id=d.id AND i.owner_email=d.owner_email AND i.agent_id=$3)))
+            ORDER BY d.updated_at DESC,d.id DESC LIMIT 100`, [owner, project, agent ?? null])).rows;
     }
     async dialog(id: string, owner: string, db = this.db, lock = false): Promise<SystemDialogRow> {
         const row = (await db.query<SystemDialogRow>('SELECT * FROM system_role_dialogs WHERE id=$1 AND owner_email=$2' + (lock ? ' FOR NO KEY UPDATE' : ''), [id, owner])).rows[0];
         if (!row) throw new NotFoundException('Сервисный диалог недоступен.'); return row;
     }
-    async turns(dialog: string, owner: string): Promise<SystemTurnRow[]> {
-        return (await this.db.query<SystemTurnRow>('SELECT * FROM (SELECT * FROM system_role_dialog_intents WHERE dialog_id=$1 AND owner_email=$2 ORDER BY created_at DESC,id DESC LIMIT 100) recent ORDER BY created_at,id', [dialog, owner])).rows;
+    async turns(dialog: string, owner: string, agent?: SystemRoleId | null): Promise<SystemTurnRow[]> {
+        return (await this.db.query<SystemTurnRow>('SELECT * FROM (SELECT * FROM system_role_dialog_intents WHERE dialog_id=$1 AND owner_email=$2 AND ($3::text IS NULL OR agent_id=$3) ORDER BY created_at DESC,id DESC LIMIT 100) recent ORDER BY created_at,id', [dialog, owner, agent ?? null])).rows;
     }
     async turn(dialog: string, owner: string, request: string, db = this.db): Promise<SystemTurnRow | undefined> {
         return (await db.query<SystemTurnRow>('SELECT * FROM system_role_dialog_intents WHERE dialog_id=$1 AND owner_email=$2 AND request_id=$3', [dialog, owner, request])).rows[0];

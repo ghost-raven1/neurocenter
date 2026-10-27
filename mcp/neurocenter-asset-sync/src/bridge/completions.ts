@@ -8,6 +8,8 @@ import { readBoundedUtf8 } from './read-bounded.js';
 import {DEVICE_CODEX_PROTOCOL} from '../features/device-codex-inference/contract.js';
 import {acknowledgeCodexReceipt,codexDeliveryResult} from '../features/device-codex-inference/receipts.js';
 import {acknowledgeRuntimeCachePolicyReceipt} from '../features/runtime-artifacts/cache-policy.js';
+import {AGENT_METHOD_WORKFLOW_PROTOCOL} from '../features/agent-method-workflow/contract.js';
+import {acknowledgeMethodReceipt,methodDeliveryResult} from '../features/agent-method-workflow/receipts.js';
 
 export interface Completion {
     id: string;
@@ -82,15 +84,19 @@ export async function deliverCompletions(
             await fs.rename(path.join(directory(), item.id + '.json'), path.join(archive, item.id + '.json'));
             if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
             if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
+            if(item.result.protocol===AGENT_METHOD_WORKFLOW_PROTOCOL)await acknowledgeMethodReceipt(item.id,String(item.result.workflowId));
             await acknowledgeRuntimeCachePolicyReceipt(item.id);
             continue;
         }
         const delivered=item.result.protocol===DEVICE_CODEX_PROTOCOL
             ? {...item,result:await codexDeliveryResult(item.id,item.deviceId,String(item.result.callId))}
+            : item.result.protocol===AGENT_METHOD_WORKFLOW_PROTOCOL
+            ? {...item,result:{...await methodDeliveryResult(item.id,item.deviceId,String(item.result.workflowId))}}
             : item;
         await send(delivered);
         if(item.result.protocol===DEVICE_CODEX_PROTOCOL)await acknowledgeCodexReceipt(item.id,String(item.result.callId));
         if(item.result.protocol===MEMORY_SYNC_CAPABILITY)await acknowledgeMemoryCheckpoint(item.id);
+        if(item.result.protocol===AGENT_METHOD_WORKFLOW_PROTOCOL)await acknowledgeMethodReceipt(item.id,String(item.result.workflowId));
         // В pending index входят и отказы до записи, результат которых пуст.
         await acknowledgeRuntimeCachePolicyReceipt(item.id);
         await fs.rm(path.join(directory(), item.id + '.json'), { force: true });

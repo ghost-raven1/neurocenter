@@ -64,6 +64,34 @@ describe('Coordinator plan is an untrusted bounded selection', () => {
 });
 
 describe('Coordinator delegates through the durable runtime', () => {
+    it('returns the one successful role answer and short title without synthesis', async () => {
+        const f = fixture([task('agent-ai-admin')]); await f.run();
+        expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator','agent-ai-admin']);
+        expect(f.row.result).toMatchObject({ ...diagnosis('Ответ agent-ai-admin'), delegations: [{ roleId:'agent-ai-admin',state:'succeeded' }] });
+    });
+    it('keeps a failed sibling separate from the sole successful answer and skips synthesis', async () => {
+        const f = fixture(), normal=f.infer.getMockImplementation()!;
+        f.infer.mockImplementation(async (...args)=>{if(currentModelUsage().agentId==='agent-indexer')throw Error('private child failure');return normal(...args);});
+        await f.run();
+        expect(f.calls.map(call=>call.id)).toEqual(['agent-coordinator','agent-ai-admin']);
+        expect(f.row.result).toMatchObject({summary:'Ответ agent-ai-admin',answer:diagnosis('Ответ agent-ai-admin').answer,
+            delegations:[{state:'succeeded'},{state:'failed'}]});
+        expect(JSON.stringify(f.row.result)).not.toContain('private child failure');
+    });
+    it('does not synthesize when every permitted role is unavailable', async () => {
+        const f = fixture(); f.control.disabled.add('system_ai_admin'); f.control.disabled.add('system_indexer');
+        await f.run(); expect(f.calls.map(call=>call.id)).toEqual(['agent-coordinator']);
+        expect(f.row).toMatchObject({state:'failed',result:{delegations:[{state:'failed'},{state:'failed'}]}});
+    });
+    it('retains a singleton proposal on its child without granting apply authority to the coordinator', async () => {
+        const f = fixture([task('agent-autoconfigurator',['prompt:prompt-one'])]), normal=f.infer.getMockImplementation()!;
+        f.infer.mockImplementation(async (...args)=> currentModelUsage().agentId==='agent-autoconfigurator'
+            ? {done_reason:'stop',message:{role:'assistant',content:JSON.stringify({...diagnosis('Изменить выбранный prompt'),kind:'proposal',changes:[{targetKey:'prompt:prompt-one',replacement:'Updated selected prompt',explanation:'Пояснение'}]})}}
+            : normal(...args));
+        await f.run();
+        expect(f.row.result).toMatchObject({kind:'diagnosis',changes:[],summary:'Изменить выбранный prompt',delegations:[{state:'succeeded',result:{kind:'proposal',changes:[{targetKey:'prompt:prompt-one'}]}}]});
+        expect(f.row.state).toBe('succeeded');expect(f.row.calls_started).toBe(2);
+    });
     it('retains measured facts and reserves no call when the configured window is filled by the default output reserve', async () => {
         const f=fixture();f.model.runtime='remote-openai';
         f.policy.models.pool.query.mockResolvedValue({rows:[{options:{contextWindow:4096}}]} as never);
@@ -136,8 +164,8 @@ describe('Delegation failures and fresh authority', () => {
             });
             const outcome = f.run().then(() => undefined, cause => cause); await waiting; await vi.advanceTimersByTimeAsync(20100);
             expect(ready).toBe(true); expect(await outcome).toBeUndefined();
-            expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 3, result: { delegations: [{ roleId: 'agent-ai-admin', state: 'succeeded' }] } });
-            expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-ai-admin', 'agent-coordinator']);
+            expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 2, result: { delegations: [{ roleId: 'agent-ai-admin', state: 'succeeded' }] } });
+            expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-ai-admin']);
         } finally { vi.useRealTimers(); }
     });
     it('shares a short remaining lease fairly and saves independent answers before durable finalization reserve', async () => {
@@ -178,7 +206,7 @@ describe('Delegation failures and fresh authority', () => {
             const outcome = f.run().then(() => undefined, cause => cause); await waiting; await vi.advanceTimersByTimeAsync(22100);
             expect(await outcome).toBeUndefined();
             expect(f.row.result?.delegations).toMatchObject([{ roleId: 'agent-ai-admin', state: 'succeeded' }]);
-            expect(f.row.calls_started).toBe(3);
+            expect(f.row.calls_started).toBe(2);
         } finally { vi.useRealTimers(); }
     });
     it('does not start new work when the coordinator flag was disabled after preparation', async () => {
@@ -190,17 +218,17 @@ describe('Delegation failures and fresh authority', () => {
         f.infer.mockImplementation(async (...args) => { const value = await normal(...args);
             if (currentModelUsage().agentId === 'agent-ai-admin') f.control.disabled.add('system_coordinator'); return value; });
         await f.run(); expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-ai-admin']);
-        expect(f.row.result).toMatchObject({ summary: 'Получены ответы: 1 из 2.', delegations: [{ state: 'succeeded' }, { state: 'failed' }] });
+        expect(f.row.result).toMatchObject({ summary: 'Ответ agent-ai-admin', delegations: [{ state: 'succeeded' }, { state: 'failed' }] });
     });
     it('keeps an independent answer when another provider call fails without replay', async () => {
         const f = fixture(), normal = f.infer.getMockImplementation()!;
         f.infer.mockImplementation(async (...args) => { if (currentModelUsage().agentId === 'agent-ai-admin') throw new ConflictException('unknown provider outcome'); return normal(...args); });
-        await f.run(); expect(f.infer).toHaveBeenCalledTimes(4);
+        await f.run(); expect(f.infer).toHaveBeenCalledTimes(3);
         expect(f.row.result?.delegations).toMatchObject([{ state: 'failed' }, { roleId: 'agent-indexer', state: 'succeeded' }]);
     });
     it('skips a disabled child without blocking an enabled role', async () => {
         const f = fixture(); f.control.disabled.add('system_ai_admin'); await f.run();
-        expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-indexer', 'agent-coordinator']);
+        expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-indexer']);
         expect(f.row.result?.delegations).toMatchObject([{ state: 'failed' }, { state: 'succeeded' }]);
     });
     it.each(['authority', 'context', 'cancel'] as const)('fences %s revoked during child admission and stops every later call', async condition => {
@@ -242,7 +270,7 @@ describe('Delegation failures and fresh authority', () => {
             });
             const work = f.run(); await waiting; await vi.advanceTimersByTimeAsync(40000); await work;
             expect(f.row.result?.delegations).toMatchObject([{ state: 'failed' }, { roleId: 'agent-indexer', state: 'succeeded' }]);
-            expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-indexer', 'agent-coordinator']);
+            expect(f.calls.map(call => call.id)).toEqual(['agent-coordinator', 'agent-indexer']);
         } finally { vi.useRealTimers(); }
     });
     it('rechecks actor authority between completed child steps', async () => {

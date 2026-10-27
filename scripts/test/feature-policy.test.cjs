@@ -54,6 +54,7 @@ const routes=[
  ['POST','/api/projects/p/versions',{},['project_snapshots']],['POST','/api/projects/p/backups',{},['project_backups']],
  ['POST','/api/catalog-requests',{},['catalog_requests']],['GET','/api/model-usage',{},['model_usage']],
  ['POST','/api/device-jobs',{kind:'prepare-local-change'},['local_changes']],['POST','/api/device-channel/agents/compile',{},[]],
+ ['POST','/api/device-jobs',{kind:'run-agent-method-workflow'},['agent_method_workflows']],
  ['POST','/api/models/m/ollama/v1/chat/completions',{},['model_hosting']],['GET','/api/tool-builds/repository',{},['tool_builds']],['POST','/api/rag/sync',{},['rag_sync']],
 ];
 test('Discussion attachment dependency preserves published history and cleanup',()=>{
@@ -64,6 +65,7 @@ test('Discussion attachment dependency preserves published history and cleanup',
 });
 for(const [method,path,body,keys]of routes)test('Native and Gateway admission agree for '+method+' '+path,()=>assert.deepEqual(requiredRouteFeatures(method,path,body),keys));
 test('Reads, cancellation, revocation, role controls and recovery never depend on business flags',()=>{
+ for(const [method,path]of [['GET','/api/device-jobs'],['GET','/api/device-jobs/requests/accepted-key'],['DELETE','/api/device-jobs/id']])assert.deepEqual(requiredRouteFeatures(method,path),[]);
  for(const [method,path,body]of [['GET','/api/agents'],['GET','/api/model-chats/id'],['GET','/api/model-chats/id/history'],['POST','/api/model-chats/id/turns/t/cancel'],['POST','/api/model-chats/id/turns/t/complete'],['DELETE','/api/models/m/connection'],['POST','/api/models/m/hosting',{action:'stop'}],['PATCH','/api/feature-flags/model_hosting',{enabled:true}],['POST','/api/projects/p/versions/v/activate'],['POST','/api/device-jobs',{kind:'uninstall'}],['POST','/api/device-jobs',{kind:'bind-project',bindingMode:'resume'}]])assert.deepEqual(requiredRouteFeatures(method,path,body),[],path);
  for(const input of [{mode:'resume'},{bindingMode:'resume'}])assert.deepEqual(requiredJobFeatures('bind-project',input),[]);
  assert.deepEqual(requiredRouteFeatures('POST','/api/projects/p/learning/%61nalyses/',{}),['project_learning','model_hosting']);

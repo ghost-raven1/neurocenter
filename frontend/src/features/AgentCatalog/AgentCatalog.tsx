@@ -1,4 +1,5 @@
 import {SystemRoles} from '../SystemRoles/SystemRoles';
+import {AgentMethodWorkflow} from '../AgentMethods/AgentMethodWorkflow';
 import {ProjectConfiguration} from '../ProjectConfiguration/ProjectConfiguration';
 import {ProjectProviderSetup} from '../OpenCodeProviders/ProjectProviderSetup';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
@@ -97,7 +98,8 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
             <div className="agent-catalog__apply"><div><Typography.Text strong>Настройки OpenCode</Typography.Text><Typography.Paragraph type="secondary">{connection.reason || 'Применяем только управляемые файлы агентов. Изменения появятся при следующем запуске OpenCode.'}</Typography.Paragraph></div>
                 {canManage && <Button onClick={() => {if (captureOwner()()) setProviderSetup({scope: providerScope});}}>Настроить провайдера</Button>}
                 {canManage && <Tooltip title={catalog?.revision === 0 ? 'Сначала добавьте агента в проект.' : connection.reason}><span><FeatureButton features={catalog?.assignments.some(item=>!item.removed&&item.enabled) ? ['agents'] : []} type="primary" disabled={unavailable || !catalog?.revision || !connection.target || pending} loading={actions.busy || pending} onClick={() => { void actions.apply(); }}>Применить настройки</FeatureButton></span></Tooltip>}
-            </div><ProjectConfiguration projectId={projectId} bridge={bridge}/></div>}
+            </div><ProjectConfiguration projectId={projectId} bridge={bridge}/><AgentMethodWorkflow key={JSON.stringify([scope,projectId])} projectId={projectId} canManage={canManage} bridge={bridge}
+                onSetupRuntime={canManage?()=>{if(captureOwner()())setProviderSetup({scope:providerScope});}:undefined}/></div>}
         {!!cleanup.length && <Alert className="agent-catalog__notice" type="warning" showIcon message={`Ожидают удаления из OpenCode: ${cleanup.map(item => item.card.name).join(', ')}`}
             description="Удаление сохранено в проекте. Нажмите «Применить настройки» для выбранного компьютера. В других связанных папках также потребуется применение." />}
         {!catalog && loading ? <div className="agent-catalog__loading" role="status"><Spin tip="Загружаем агентов…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">{shown.map(agent => {

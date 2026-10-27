@@ -20,6 +20,7 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
     if(kind==='scan-opencode-models')return ['opencode_model_sync'];
     if(kind==='infer-device-codex')return ['device_codex_inference'];
     if(kind==='configure-project-agents')return trustedPayload&&Array.isArray(input.agents)&&input.agents.every(agent=>record(agent).enabled===false)?[]:['agents','computer_connections'];
+    if(kind==='run-agent-method-workflow')return ['agent_method_workflows'];
     if(kind==='publish-project-snapshot')return ['project_snapshots','computer_connections'];
     if(['sync-rag','connect-rag-model'].includes(kind))return ['rag_sync'];
     if(['scan-project-inventory','prepare-adopt-installation','apply-adopt-installation','prepare-local-change','apply-local-change'].includes(kind))return ['local_changes'];

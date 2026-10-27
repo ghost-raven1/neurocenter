@@ -12,6 +12,7 @@ export interface DiscussionOutcome { agentId: string; phase: 'response' | 'criti
 export interface DiscussionRun {
     turn_id: string; request_id: string; actor_role: string; model: IModel; roster: ChatResolvedAgent[];
     calls_started: number; deadline_at: string | Date;
+    summary_policy?: 'legacy' | 'unique-v1';
 }
 export interface DiscussionStep {
     id: string; turn_id: string; request_id: string; sequence: number; step_key: string; phase: DiscussionPhase;

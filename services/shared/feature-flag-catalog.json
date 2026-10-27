@@ -492,5 +492,21 @@
       "system_role_chat"
     ],
     "defaultEnabled": true
+  },
+  {
+    "key": "service_role_conversations",
+    "name": "Отдельные чаты сервисных ролей",
+    "description": "Приватный диалог с выбранной сервисной ролью. Прежняя история, отмена и восстановление доступны после выключения.",
+    "group": "agents",
+    "dependsOn": ["system_role_chat"],
+    "defaultEnabled": true
+  },
+  {
+    "key": "agent_method_workflows",
+    "name": "BMAD и OpenSpec через локальный мост",
+    "description": "Проектные задачи по выбранной методике с изменением кода и проверками на подключённом компьютере. История и отмена сохраняются после выключения.",
+    "group": "agents",
+    "dependsOn": ["agents", "computer_connections"],
+    "defaultEnabled": false
   }
 ]

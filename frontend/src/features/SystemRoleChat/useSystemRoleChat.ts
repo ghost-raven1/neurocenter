@@ -4,7 +4,7 @@ import { systemRolesApi } from '../SystemRoles/api';
 import { pendingRole, type RoleOverview, type RoleSelection, type SystemRoleId } from '../SystemRoles/types';
 import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
 import { systemRoleChatsApi as api } from './api';
-import { clearServiceIntent, saveServiceIntent, serviceIntent, serviceIntentScope, serviceReceipt } from './intent';
+import { clearServiceIntent, saveServiceIntent, serviceIntent, serviceIntentScope, serviceReceipt, legacyRoleIntentScope } from './intent';
 import type { ServiceDetail, ServiceDialog, ServiceIntent, ServicePreview, ServiceReceipt, ServiceTurn } from './types';
 import {useTabWatch} from '../TabNotifications/useTabWatch';
 import {serviceTabSnapshot, serviceTabSource} from '../TabNotifications/snapshots';
@@ -12,14 +12,17 @@ import {tabNotifications} from '../TabNotifications/tracker';
 
 interface Prepared extends ServicePreview { agentId: SystemRoleId; dialogId: string; model: { id: string; pin: string }; }
 interface ChatState { owner: object; overview?: RoleOverview; dialogs: ServiceDialog[]; detail?: ServiceDetail; prepared?: Prepared; error: string; busy: boolean; loading: boolean; receipt?: ServiceReceipt; }
-interface Options {transport?: typeof api; origin?: string; suspended?: boolean; onAccepted?: (turn: ServiceTurn) => void;}
+interface Options {agentId?: SystemRoleId; transport?: typeof api; origin?: string; suspended?: boolean; onAccepted?: (turn: ServiceTurn) => void;}
 const statusOf = (cause: unknown): number | undefined => (cause as { response?: { status?: number } })?.response?.status;
 const rejected = (cause: unknown): boolean => { const status = statusOf(cause); return !!status && status >= 400 && status < 500 && ![408, 429].includes(status); };
 
 /** Every callback owns one mount/scope generation; lost ACKs retain the original immutable request. */
 export function useSystemRoleChat(projectId: string | undefined, enabled: boolean, options: Options = {}) {
-    const { scope, captureOwner } = useAuthRequestOwner(), identity = JSON.stringify([scope, projectId ?? null, options.origin, !!options.suspended]);
-    const intentScope = serviceIntentScope(scope, projectId, options.origin), transport = options.transport ?? api;
+    const { scope, captureOwner } = useAuthRequestOwner();
+    const oldScope = serviceIntentScope(scope, projectId, options.origin);
+    const roleScope = options.agentId ? serviceIntentScope(scope, projectId, JSON.stringify(['role-chat', options.agentId])) : oldScope;
+    const intentScope = !serviceReceipt(roleScope) && options.agentId ? legacyRoleIntentScope(scope, projectId, options.agentId) ?? roleScope : roleScope, transport = options.transport ?? api;
+    const identity = JSON.stringify([scope, projectId ?? null, options.origin, options.agentId, intentScope, !!options.suspended]);
     const onAccepted = useRef(options.onAccepted); onAccepted.current = options.onAccepted;
     const owner = useMemo(() => ({ active: false, generation: 0 }), [identity]), currentOwner = useRef(owner); currentOwner.current = owner;
     const allowed = useRef(enabled); allowed.current = enabled;
@@ -102,7 +105,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         }, 'Диалог не открылся. Сохранённая история доступна после повторного чтения.');
     };
     const prepare = async (agentId: SystemRoleId, selection: RoleSelection, includeContext: boolean, modelId: string): Promise<void> => {
-        if (!allowed.current || !capture()() || busy.current || serviceReceipt(intentScope)) return;
+        if (!allowed.current || !capture()() || busy.current || serviceReceipt(intentScope) || options.agentId && (agentId !== options.agentId || current.current.detail?.dialog.legacy)) return;
         const model = current.current.overview?.models.find(item => item.id === modelId); if (!model) return;
         const selectedModel = { id: model.id, pin: model.pin };
         const owns = capture(), sequence = ++previews.current;
@@ -110,7 +113,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
         update({ prepared: undefined });
         await perform(async () => {
             if (!current.current.detail) {
-                const dialog = await transport.create({ id: dialogId, title: selection.instruction.trim().slice(0, 60), projectId: projectId ?? null });
+                const dialog = await transport.create({ id: dialogId, title: selection.instruction.trim().slice(0, 60), projectId: projectId ?? null, agentId });
                 if (!owns() || !allowed.current || sequence !== previews.current) return undefined;
                 dialogId = dialog.id; draftDialog.current = dialog.id; update({ detail: { dialog, turns: [] } });
             }
