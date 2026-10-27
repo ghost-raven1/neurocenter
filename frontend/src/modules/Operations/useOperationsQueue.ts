@@ -31,8 +31,8 @@ export function useOperationsQueue(projectId?: string) {
 
     const refreshVisible = useCallback((): void => {
         if (document.visibilityState !== 'visible') { return; }
-        void controller.reload();
-        void controller.refreshDetail();
+        void controller.reload({ skipIfPending: true });
+        void controller.refreshDetail({ skipIfPending: true });
     }, [controller]);
 
     useSectionUpdates(['operations', 'access'], refreshVisible, !!authScope);

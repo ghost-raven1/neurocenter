@@ -37,6 +37,15 @@ async function git(root,args){
     return stdout;
 }
 
+/** Explain fixed failure categories without exposing Git stderr, paths or environment values. */
+function gitFailureReason(error){
+    if(error?.code==='ENOENT')return 'Git executable is unavailable in the MCP process environment; check its PATH.';
+    if(['EACCES','EPERM'].includes(error?.code))return 'Git inspection was denied by process or filesystem permissions.';
+    if(error?.code==='ERR_CHILD_PROCESS_STDIO_MAXBUFFER')return 'Git output exceeded the bounded observation limit.';
+    if(error?.code==='ETIMEDOUT'||error?.killed===true)return 'Git inspection exceeded the bounded observation time limit; retry.';
+    return 'Git metadata could not be read; check that the configured checkout has accessible Git metadata.';
+}
+
 async function gitObservation(root){
     try{
         const head=(await git(root,['rev-parse','HEAD'])).trim(),branch=(await git(root,['branch','--show-current'])).trim();
@@ -52,7 +61,7 @@ async function gitObservation(root){
         if(!sha.test(head)||after!==head)return {available:false,reason:'Git HEAD changed during observation; retry.'};
         return {available:true,head,branch:branch?redactLog(branch).slice(0,200):null,detached:!branch,
             dirty:{changed,untracked,conflicts,clean:changed+untracked===0,scope:'Untracked directories are summarized; filenames are not returned.'}};
-    }catch{return {available:false,reason:'Git metadata is unavailable or exceeded the bounded observation budget.'};}
+    }catch(error){return {available:false,reason:gitFailureReason(error)};}
 }
 
 function metric(value,comparable){

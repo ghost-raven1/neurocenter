@@ -61,6 +61,30 @@ test('workspace status reads eight versions and summarizes dirty Git without ret
     assert.ok(value.checkCommands.includes('npm run check'));assert.equal(value.node,process.version);
 });
 
+test('workspace status explains unavailable Git in the MCP environment without disclosing raw errors',async t=>{
+    const f=await fixture(t);
+    const entry=`import {createDiagnostics} from ${JSON.stringify(new URL('../dev-mcp/diagnostics.mjs',import.meta.url).href)};
+        console.log(JSON.stringify((await (await createDiagnostics(process.cwd())).workspaceStatus()).git));`;
+    const missing=JSON.parse(execFileSync(process.execPath,['--input-type=module','--eval',entry],{
+        cwd:f.root,encoding:'utf8',env:{PATH:f.parent},timeout:10000,
+    }));
+    assert.equal(missing.available,false);assert.match(missing.reason,/executable.*unavailable/i);
+    for(const [properties,expected]of [
+        [{code:'EACCES'},/permission/i],
+        [{code:'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'},/output.*limit/i],
+        [{code:'ETIMEDOUT'},/time.*limit/i],
+        [{code:null,killed:true,signal:'SIGTERM'},/time.*limit/i],
+    ]){
+        const script=`import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';
+            cp.execFile=(...args)=>args.at(-1)(Object.assign(Error('PRIVATE_GIT_ERROR '+process.cwd()),${JSON.stringify(properties)}));
+            syncBuiltinESMExports();const {createDiagnostics}=await import(${JSON.stringify(new URL('../dev-mcp/diagnostics.mjs',import.meta.url).href)});
+            console.log(JSON.stringify((await (await createDiagnostics(process.cwd())).workspaceStatus()).git));`;
+        const result=execFileSync(process.execPath,['--input-type=module','--eval',script],{cwd:f.root,encoding:'utf8',timeout:10000});
+        const value=JSON.parse(result);assert.equal(value.available,false);assert.match(value.reason,expected);
+        assert.doesNotMatch(result,/PRIVATE_GIT_ERROR/);assert.equal(result.includes(f.root),false);
+    }
+});
+
 test('causal common log credentials are redacted while ordinary UUIDs remain useful',()=>{
     const secrets=['plain-secret','upper-secret','json-secret','sk-live-1234567890abcdefghij','ghp_1234567890abcdefghijklmnopqrstuvwxyz','github_pat_1234567890_abcdefghijklmnop'];
     const uuid='8c517be2-90f7-4a9a-b34c-ef425835942b';

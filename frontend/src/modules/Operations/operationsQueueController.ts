@@ -58,8 +58,8 @@ export function createOperationsQueueController(options: IOperationsQueueControl
             detailLoading: false, detailError: keepDetailOpen ? message : '', error: message });
     };
 
-    const refreshDetail = async (): Promise<void> => {
-        if (!active || !snapshot.selectedId) { return; }
+    const refreshDetail = async ({ skipIfPending = false }: { skipIfPending?: boolean } = {}): Promise<void> => {
+        if (!active || !snapshot.selectedId || (skipIfPending && snapshot.detailLoading)) { return; }
         const id = snapshot.selectedId;
         const currentOwner = owner;
         const request = ++detailRequest;
@@ -80,8 +80,9 @@ export function createOperationsQueueController(options: IOperationsQueueControl
         }
     };
 
-    const reload = async (): Promise<void> => {
-        if (!active) { return; }
+    // Фоновый тик ждёт текущего чтения; явный повтор или новый фильтр вытесняют старое.
+    const reload = async ({ skipIfPending = false }: { skipIfPending?: boolean } = {}): Promise<void> => {
+        if (!active || (skipIfPending && snapshot.loading)) { return; }
         const { page, size, state } = snapshot;
         const currentOwner = owner;
         const request = ++listRequest;
