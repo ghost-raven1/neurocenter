@@ -20,7 +20,8 @@ function requiredJobFeatures(kind,payload={},trustedPayload=false){
     if(kind==='scan-opencode-models')return ['opencode_model_sync'];
     if(kind==='infer-device-codex')return ['device_codex_inference'];
     if(kind==='configure-project-agents')return trustedPayload&&Array.isArray(input.agents)&&input.agents.every(agent=>record(agent).enabled===false)?[]:['agents','computer_connections'];
-    if(kind==='run-agent-method-workflow')return ['agent_method_workflows',...((trustedPayload?input.agent:record(input.workflow).agentId)?['project_agent_workflows']:[])];
+    if(kind==='run-agent-method-workflow')return ['agent_method_workflows',...((trustedPayload?input.agent:record(input.workflow).agentId)?['project_agent_workflows']:[]),
+        ...(!trustedPayload&&Object.hasOwn(record(input.workflow),'origin')?['project_agent_chat_workflows']:[])];
     if(kind==='publish-project-snapshot')return ['project_snapshots','computer_connections'];
     if(['sync-rag','connect-rag-model'].includes(kind))return ['rag_sync'];
     if(['scan-project-inventory','prepare-adopt-installation','apply-adopt-installation','prepare-local-change','apply-local-change'].includes(kind))return ['local_changes'];
@@ -82,6 +83,8 @@ function requiredRouteFeatures(method,path,body){
     }
     if(/^\/internal\/research-mcp\/(list|call)$/.test(route))return ['research_tools','tool_catalog'];
     if(route==='/internal/asset-sources/skills/publish')return ['tool_catalog'];
+    // Linked chat jobs check new admissions after exact replay lookup; history and accepted intent survive OFF.
+    if(route==='/api/device-jobs'&&verb==='POST'&&input.kind==='run-agent-method-workflow'&&Object.hasOwn(record(input.workflow),'origin'))return [];
     if(route==='/api/device-jobs'&&verb==='POST')return requiredJobFeatures(input.kind,input);
     if(/^\/api\/devices\/[^/]+\/opencode-model-sync$/.test(route))return input.enabled===false||input.transferCredentials===false?[]:['opencode_model_sync'];
     if(/^\/api\/model-chats(?:\/|$)/.test(route)){

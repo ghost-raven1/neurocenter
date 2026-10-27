@@ -107,6 +107,20 @@ test('Selected-agent workflow gates dispatch while retaining the legacy protocol
  for(const [verb,path]of [['GET','/api/device-jobs/requests/existing'],['GET','/api/device-jobs'],['DELETE','/api/device-jobs/existing']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
 });
 
+test('Chat-linked workflow checks new admission in its owner after exact replay lookup',()=>{
+ const workflow={agentId:'qa',expectedAgentsRevision:1,origin:{roomId:'room',messageId:'message'}};
+ assert.deepEqual(requiredRouteFeatures('POST','/api/device-jobs',{kind:'run-agent-method-workflow',workflow}),[]);
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{workflow}),['agent_method_workflows','project_agent_workflows','project_agent_chat_workflows']);
+ // The origin is kept in a server-only relation, never added to the native bridge protocol.
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{agent:{agentId:'qa'}},true),['agent_method_workflows','project_agent_workflows']);
+ assert.deepEqual(requiredJobFeatures('run-agent-method-workflow',{workflow:{origin:null}}),['agent_method_workflows','project_agent_chat_workflows']);
+ const configured={...defaultFeatureFlags(),agent_method_workflows:true,project_agent_workflows:true,project_agent_chat_workflows:true};
+ assert.equal(defaultFeatureFlags().project_agent_chat_workflows,false);
+ assert.equal(evaluateFeatureFlags(configured).flags.project_agent_chat_workflows,true);
+ for(const dependency of ['project_agent_workflows','project_chat'])assert.equal(evaluateFeatureFlags({...configured,[dependency]:false}).flags.project_agent_chat_workflows,false);
+ for(const [verb,path]of [['GET','/api/projects/p/team-chat'],['GET','/api/projects/p/team-chat/rooms/r/history'],['DELETE','/api/device-jobs/existing']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
+});
+
 test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{
  for(const [verb,path]of [['POST','/api/system-role-chats'],['POST','/api/system-role-chats/dialog/messages'],['POST','/api/system-role-chats/dialog/messages/turn/retry'],['POST','/api/system-role-chats/dialog/messages/turn/cancel'],['GET','/api/system-role-chats/dialog']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
  for(const flag of ['system_indexer','system_role_chat'])assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),agents:false}).flags[flag],false);

@@ -516,5 +516,13 @@
     "group": "agents",
     "dependsOn": ["agent_method_workflows"],
     "defaultEnabled": false
+  },
+  {
+    "key": "project_agent_chat_workflows",
+    "name": "Задачи агентов из проектного чата",
+    "description": "Явный запуск задачи опубликованного сообщения через выбранного агента и локальный мост. Квитанции в исходном диалоге, история и отмена доступны после выключения.",
+    "group": "agents",
+    "dependsOn": ["project_agent_workflows", "project_chat"],
+    "defaultEnabled": false
   }
 ]
