@@ -14,6 +14,7 @@ interface InitialTask {agentId: SystemRoleId; instruction: string; modelId?: str
 /** Context is opt-in, visible before payment, and invalidated on every task/model/role edit. */
 export function ServiceComposer({ value, projectId, canExecute = true, fixedAgentId, initial, compact = false, onActionChange }: { value: ChatValue; projectId?: string; canExecute?: boolean; fixedAgentId?: SystemRoleId; initial?: InitialTask; compact?: boolean; onActionChange?: (action?: ChatRoleAction) => void }): JSX.Element {
     const restored = value.pendingIntent;
+    const chatFooter = !!fixedAgentId && !compact;
     const {scope, captureOwner} = useAuthRequestOwner();
     const [agentId, setAgentId] = useState<SystemRoleId>(fixedAgentId ?? restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
     const [instruction, setInstruction] = useState(restored?.input.instruction ?? (initial?.instruction || (fixedAgentId ? readRoleDraft(scope, projectId, fixedAgentId) : ''))), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
@@ -69,25 +70,30 @@ export function ServiceComposer({ value, projectId, canExecute = true, fixedAgen
         onActionChange({...action,onClick: invokeAction.current});
         return () => onActionChange(undefined);
     }, [onActionChange,action.label,action.busy,action.disabled]);
-    const taskField = <Form.Item label="Задача" required><Input.TextArea aria-label={fixedAgentId ? `Сообщение · ${roleName(fixedAgentId)}` : compact ? 'Задача системному агенту' : 'Задача сервисного чата'} value={instruction} maxLength={2048} autoSize={{ minRows: 2, maxRows: compact ? 3 : 5 }} placeholder="Что проверить или улучшить?"
+    const showPrepareContext = !onActionChange && !(chatFooter && value.receipt) && (!compact && !chatFooter || !value.prepared);
+    const modelField = <Form.Item label={chatFooter ? undefined : 'Модель для этой задачи'} required={!chatFooter} className="service-chat__model-field"><Select aria-label={compact ? 'Модель системной задачи' : fixedAgentId ? 'Модель чата роли' : 'Модель сервисного чата'} aria-required value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear size={chatFooter ? 'small' : undefined}
+        options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { modelChosen.current = true; invalidate(); setModelId(id); }} /></Form.Item>;
+    const taskField = <Form.Item label={chatFooter ? undefined : 'Задача'} required={!chatFooter}><Input.TextArea aria-label={fixedAgentId ? `Сообщение · ${roleName(fixedAgentId)}` : compact ? 'Задача системному агенту' : 'Задача сервисного чата'} aria-required value={instruction} maxLength={2048} autoSize={{ minRows: chatFooter ? 1 : 2, maxRows: compact || chatFooter ? 3 : 5 }} placeholder="Что проверить или улучшить?"
         onChange={event => { invalidate(); setInstruction(event.target.value); }} /></Form.Item>;
     const tools = <McpTaskPicker projectId={projectId} value={mcp} disabled={locked} canExecute={canExecute && availability.enabled} onChange={items => { invalidate(); setMcp(items); }} />;
-    return <section className="service-chat__composer" aria-label="Новая задача системному агенту">
+    const coordinatorNote = agentId === 'agent-coordinator' && <Typography.Paragraph type="secondary">Координатор соберёт ответы до трёх системных агентов. Применение изменений подтверждается отдельно.</Typography.Paragraph>;
+    return <section className={'service-chat__composer' + (chatFooter ? ' service-chat__composer_compact' : '') + (chatFooter && value.receipt ? ' service-chat__composer_pending' : '')} aria-label="Новая задача системному агенту">
         {!availability.enabled && <Alert type="info" showIcon message={availability.reason} description="История, проверка отправки, отмена и откат остаются доступны." />}
         {!canExecute && <Alert type="info" showIcon message="Новые задачи доступны администратору проекта" description="Вы можете читать свою историю, проверять отправку и отменять принятые задачи." />}
         <Form layout="vertical" disabled={locked}>
-            <details open={!compact || !model} className="service-chat__task-settings"><summary hidden={!compact}>{roleName(agentId)} · {model?.name ?? 'Выберите модель'}</summary>
+            {chatFooter ? <div className="service-chat__choices service-chat__model-row"><Typography.Text type="secondary">Модель</Typography.Text>{modelField}</div> : <details open={!compact || !model} className="service-chat__task-settings"><summary hidden={!compact}>{roleName(agentId)} · {model?.name ?? 'Выберите модель'}</summary>
             <div className="service-chat__choices">
                 {!fixedAgentId && <Form.Item label="Системный агент"><Select aria-label="Системный агент" value={agentId} options={(value.overview?.definitions ?? []).map(item => ({ value: item.id, label: roleName(item.id) }))}
                     onChange={id => { invalidate(); setAgentId(id); setDiagnostics([]); setSelected([]); setUsePrompt(false); setIncludeContext(false); setMcp([]); }} /></Form.Item>}
-                <Form.Item label="Модель для этой задачи" required><Select aria-label={compact ? 'Модель системной задачи' : fixedAgentId ? 'Модель чата роли' : 'Модель сервисного чата'} value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear
-                    options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { modelChosen.current = true; invalidate(); setModelId(id); }} /></Form.Item>
+                {modelField}
             </div>
-            </details>
-            {agentId === 'agent-coordinator' && <Typography.Paragraph type="secondary">Координатор соберёт ответы до трёх системных агентов. Применение изменений подтверждается отдельно.</Typography.Paragraph>}
+            </details>}
+            {!chatFooter && coordinatorNote}
             {value.overview && !value.overview.models.length && <Alert type="warning" showIcon message="Нет проверенной модели" description="Подключите модель и проверьте её API в каталоге моделей. История диалогов доступна." />}
             {!compact && taskField}
+            <div className={chatFooter ? 'service-chat__options' : undefined}>
             <details className="service-chat__context"><summary>{compact ? 'Данные и инструменты' : 'Контекст задачи'}</summary>
+                {chatFooter && coordinatorNote}
                 {!!definition?.diagnostics.length && <Form.Item label="Разрешённые измерения"><Checkbox.Group value={diagnostics} options={definition.diagnostics.filter(kind => kind !== 'containers' || !projectId).map(kind => ({ value: kind, label: diagnosticNames[kind] }))}
                     onChange={items => { invalidate(); setDiagnostics(items as DiagnosticKind[]); }} /></Form.Item>}
                 {diagnosticsOverLimit && <Typography.Paragraph type="danger">Выберите не более {diagnosticsLimit} измерений.</Typography.Paragraph>}
@@ -100,15 +106,16 @@ export function ServiceComposer({ value, projectId, canExecute = true, fixedAgen
                 {compact && tools}
             </details>
             {!compact && tools}
-            {!onActionChange && (!compact || !value.prepared) && <Button type={compact ? 'primary' : 'default'} disabled={!canStart || !ready || locked} loading={value.busy} onClick={prepare}>Проверить контекст</Button>}
+            </div>
+            {showPrepareContext && <Button type={compact || chatFooter ? 'primary' : 'default'} disabled={!canStart || !ready || locked} loading={value.busy} onClick={prepare}>Проверить контекст</Button>}
         </Form>
         {value.prepared && <div className="service-chat__confirmation">
             {compact && <><Typography.Paragraph>Получатель: {roleName(agentId)} · {model?.name}. Передаётся задача из поля сообщения{value.prepared.selection.targets.length ? ` и выбранные данные: ${value.prepared.selection.targets.length}` : ''}.</Typography.Paragraph>
                 {value.prepared.prepared.guidance && <Typography.Paragraph>Роль прочитает справку и проверит доступное состояние проекта: индекс, модель, ваши мосты, очередь и обучение. Настройки изменяются только отдельным подтверждённым действием.</Typography.Paragraph>}
                 {!!diagnostics.length && <Typography.Paragraph>Дополнительные проверки: {diagnostics.map(kind => diagnosticNames[kind]).join(', ')}.</Typography.Paragraph>}
                 {!!mcp.length && <Typography.Paragraph>Разрешены только выбранные инструменты: {mcp.flatMap(target => target.tools.map(tool => tool.name)).join(', ')}.</Typography.Paragraph>}</>}
-            <details open={!compact}><summary>{compact ? 'Точный состав передаваемых данных' : 'Контекст для выбранной модели'}</summary><pre>{value.prepared.prepared.preview}</pre></details>
-            <RoleProjectContextPreview context={value.prepared.prepared.projectContext} />
+            <details open={!compact && !chatFooter}><summary>{compact ? 'Точный состав передаваемых данных' : 'Контекст для выбранной модели'}</summary><div className={chatFooter ? 'service-chat__review-data' : undefined} tabIndex={chatFooter ? 0 : undefined} aria-label={chatFooter ? 'Состав подготовленного контекста' : undefined}><pre>{value.prepared.prepared.preview}</pre>{chatFooter && <RoleProjectContextPreview context={value.prepared.prepared.projectContext} />}</div></details>
+            {!chatFooter && <RoleProjectContextPreview context={value.prepared.prepared.projectContext} />}
             <Checkbox checked={consent} disabled={locked || !canStart} onChange={event => setConsent(event.target.checked)}>{value.prepared.prepared.projectContext ? 'Разрешаю передать показанный контекст и результаты описанного поиска выбранной модели' : 'Разрешаю передать показанный контекст выбранной модели'}</Checkbox>
             {compact && <Typography.Paragraph type="secondary">{roleName(agentId)} · {model?.name}. До {roleCallBudget(agentId, !!mcp.length)} обращений к модели.</Typography.Paragraph>}
             {!onActionChange && <Button type="primary" disabled={!canStart || locked || !ready || !consent} onClick={() => { if (revision.current === preparedRevision) submit(); }}>{compact ? 'Отправить задачу' : `Отправить · до ${roleCallBudget(agentId, !!mcp.length)} вызовов модели`}</Button>}

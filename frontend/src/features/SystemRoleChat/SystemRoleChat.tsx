@@ -11,6 +11,7 @@ import {clearRoleDraft} from './roleDraft';
 import {originSystemRoleApi} from '../ChatSystemRoles/api';
 import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleOrigin, type ChatRoleAction} from '../ChatSystemRoles/types';
 import {ChatLog} from '../ChatCommon/ChatLog';
+import {serviceFeedbackText} from './composerPresentation';
 import '../SystemRoles/SystemRoles.less';
 import './SystemRoleChat.less';
 
@@ -56,8 +57,13 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
     }, [value.owner, value.error, value.receipt?.requestId, value.busy]);
     const dialogs = value.detail ? [value.detail.dialog, ...value.dialogs.filter(item => item.id !== value.detail!.dialog.id)] : value.dialogs;
     const MessageLog = embedded ? 'div' : ChatLog;
+    const roleChat = !!agentId && !embedded;
     const refresh = (): void => {automaticRead.current = undefined; setReadRetry(item => item + 1); void value.refresh();};
-    return <div className={'service-chat' + (embedded ? ' service-chat_embedded' : '')} ref={viewport}>
+    const failure = serviceFeedbackText(value.error);
+    const errorDetails = failure.detail && <details className="service-chat__error-details"><summary>Подробности ошибки</summary><div className="service-chat__error-body" tabIndex={0} aria-label="Полный текст ошибки">{failure.detail}</div></details>;
+    const receiptActions = <div className="service-chat__recovery"><Button size="small" loading={value.busy} onClick={() => { void value.recover(); }}>Проверить отправку</Button>
+        {value.canReplay && <Button size="small" disabled={value.busy || !replayEnabled.current} onClick={() => { if (replayEnabled.current) void value.replay(); }}>Повторить тот же запрос</Button>}</div>;
+    return <div className={'service-chat' + (embedded ? ' service-chat_embedded' : '') + (roleChat ? ' service-chat_role' : '')} ref={viewport}>
         {!embedded && <div className="service-chat__heading"><div><Typography.Text strong>{agentId ? `Чат · ${roleName(agentId)}` : 'История системных задач'}</Typography.Text><Typography.Paragraph type="secondary">Личные задачи системным агентам и проверенные результаты.</Typography.Paragraph></div>
             {!embedded && !historyOnly && <Button disabled={value.busy || !!value.receipt} onClick={() => { value.newDialog(); setDraft(item => item + 1); }}>Новый диалог</Button>}
             <Button loading={value.loading} disabled={value.busy} onClick={refresh}>Обновить</Button></div>}
@@ -65,10 +71,13 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
         {!embedded && <label className="service-chat__history-label">История диалогов<Select aria-label={agentId ? `История · ${roleName(agentId)}` : 'История системных задач'} value={value.detail?.dialog.id} placeholder="Выберите сохранённый диалог" loading={value.loading} disabled={value.busy} showSearch optionFilterProp="label"
             options={dialogs.map(item => ({ value: item.id, label: (item.legacy ? 'Прежняя история · ' : '') + item.title + ' · ' + new Date(item.updatedAt).toLocaleDateString('ru-RU') }))} onChange={id => { void value.select(id); setDraft(item => item + 1); }} /></label>}
         {(value.error || value.receipt) && <div className="service-chat__feedback" ref={feedback}>
-            {value.error && <Alert type="warning" showIcon message={value.error} action={<Button size="small" disabled={value.busy} onClick={() => { if (value.receipt) void value.recover(); else refresh(); }}>Повторить проверку</Button>} />}
-            {value.receipt && <Alert type="warning" showIcon message="Проверяем принятие отправленной задачи" description="Запрос сохранён в этой сессии браузера. Новая отправка заблокирована, пока сервер не подтвердит исход. Проверка не вызывает модель; повтор использует прежний ключ и показанный контекст."
-            action={<div className="service-chat__recovery"><Button size="small" loading={value.busy} onClick={() => { void value.recover(); }}>Проверить отправку</Button>
-                {value.canReplay && <Button size="small" disabled={value.busy || !replayEnabled.current} onClick={() => { if (replayEnabled.current) void value.replay(); }}>Повторить тот же запрос</Button>}</div>} />}
+            {roleChat ? <Alert type="warning" showIcon message={value.receipt ? 'Проверяем принятие отправленной задачи' : failure.summary} description={value.receipt ? <>
+                {value.error && <div>{failure.summary}{errorDetails}</div>}
+                <div>Проверка не вызывает модель. Повтор сохраняет ключ и контекст; новая задача ждёт подтверждения.</div>
+            </> : errorDetails} action={value.receipt ? receiptActions : <Button size="small" disabled={value.busy} onClick={refresh}>Повторить проверку</Button>} />
+                : <>{value.error && <Alert type="warning" showIcon message={value.error} action={<Button size="small" disabled={value.busy} onClick={() => { if (value.receipt) void value.recover(); else refresh(); }}>Повторить проверку</Button>} />}
+                    {value.receipt && <Alert type="warning" showIcon message="Проверяем принятие отправленной задачи" description="Запрос сохранён в этой сессии браузера. Новая отправка заблокирована, пока сервер не подтвердит исход. Проверка не вызывает модель; повтор использует прежний ключ и показанный контекст."
+                        action={receiptActions} />}</>}
         </div>}
         <MessageLog className="service-chat__messages" aria-label={embedded ? 'Ваши системные задачи' : 'Сообщения сервисного диалога'}>
             {value.loading && !value.detail ? <Spin tip="Читаем историю…" /> : !value.detail?.turns.length ? embedded ? null : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={historyOnly ? 'Сохранённых задач в этом диалоге нет.' : value.receipt ? 'Отправленная задача сохранена. Проверьте её принятие.' : agentId ? `Опишите задачу для роли «${roleName(agentId)}». Перед отправкой вы увидите точный контекст.` : 'Опишите задачу координатору или выберите системного агента. Перед отправкой вы увидите точный контекст.'} />
