@@ -28,9 +28,10 @@ describe('Навигация вкладок проекта', () => {
         expect(url.pathname).toBe('/store');expect(url.searchParams.get('q')).toBe('OpenCodeRAG (плагин)');
         expect(url.searchParams.get('p')).toBe('мой проект&other=wrong');expect(url.searchParams.has('other')).toBe(false);
     });
-    it('Ссылка привязки сохраняет целевой ID, закрытие убирает только bind',()=>{
+    it('Основной мастер сохраняет целевой ID без legacy этапа, закрытие старой ссылки убирает только bind',()=>{
         const url=new URL(projectBindingUrl('prj-project&source=wrong'),'http://localhost');
-        expect(url.pathname).toBe('/projects');expect(url.searchParams.get('bind')).toBe('prj-project&source=wrong');
+        expect(url.pathname).toBe('/start');expect(url.searchParams.get('p')).toBe('prj-project&source=wrong');expect(url.searchParams.get('setup')).toBe('1');
+        expect(url.searchParams.has('step')).toBe(false);expect(url.searchParams.has('bind')).toBe(false);
         expect(url.searchParams.has('source')).toBe(false);
         const search=projectBindingSearch('?source=knowledge&bind=prj-a&bind=prj-b&other=1',null);
         expect(new URLSearchParams(search).getAll('bind')).toEqual([]);

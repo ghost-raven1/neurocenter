@@ -78,7 +78,7 @@ describe('Выбор папки из начала работы сохраняе�
         const binding = fixture.buttons.get('Выбрать папку и связать проект');
         expect(binding).toBeDefined(); expect(binding?.disabled).not.toBe(true);
         binding?.onClick?.();
-        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-dossier-ko');
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?setup=1&p=prj-dossier-ko');
         expect(html.indexOf('aria-label="Проект для настройки"')).toBeLessThan(html.indexOf('Выбрать папку и связать проект'));
     });
 
@@ -88,7 +88,7 @@ describe('Выбор папки из начала работы сохраняе�
         expect(fixture.projectSelect?.value).toBe('prj-dossier-ko');
         expect(fixture.projectSelect?.options).toContainEqual({value:'prj-collision',label:'prj-dossier-ko'});
         fixture.buttons.get('Выбрать папку и связать проект')?.onClick?.();
-        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-dossier-ko');
+        expect(fixture.push).toHaveBeenCalledExactlyOnceWith('/start?setup=1&p=prj-dossier-ko');
         fixture.projectSelect?.onChange('prj-collision');
         expect(fixture.replace).toHaveBeenCalledExactlyOnceWith('/start?step=2&p=prj-collision#setup');
     });
@@ -107,7 +107,7 @@ describe('Выбор папки из начала работы сохраняе�
         expect(fixture.replace).toHaveBeenCalledExactlyOnceWith('/start?step=2&p=prj-example#setup');
         fixture.location.search = '?step=2&p=prj-example'; render();
         fixture.buttons.get('Выбрать папку и связать проект')?.onClick?.();
-        expect(fixture.push).toHaveBeenLastCalledWith('/projects?bind=prj-example');
+        expect(fixture.push).toHaveBeenLastCalledWith('/start?setup=1&p=prj-example');
         fixture.buttons.get('Подобрать инструменты')?.onClick?.();
         expect(fixture.push).toHaveBeenLastCalledWith('/store?p=example');
     });

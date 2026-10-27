@@ -52,7 +52,7 @@ import { useToolCatalog } from './useToolCatalog';
 import { ToolCatalogStatus } from './ToolCatalogStatus';
 import { toolCatalogSource } from './toolCatalogController';
 import { CatalogTabs } from './CatalogTabs';
-import { catalogSection } from './catalogSection';
+import { catalogSection, catalogSectionUrl } from './catalogSection';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
 
 const { Text, Paragraph } = Typography;
@@ -316,16 +316,18 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         return localActionFor(app) ? 'Дождитесь завершения текущего локального действия с этим инструментом.' : isPending(job) && job?.kind === 'uninstall' ? 'Дождитесь завершения удаления или сверки его результата.' : '';
     };
 
+    const activeSection=catalogSection(location.search,!!embedded);
+    const canAddFromCommon=!!embedded&&!!targetProject&&canManage&&canBrowseCommon&&activeSection!=='requests';
     return (
         <div className="store">
             {!embedded && <PageHeading title="Каталог" description="Соберите инструменты, модели и агентов команды в общем и проектных каталогах." actions={<CatalogHeaderActions key={accessKey} section={catalogSection(location.search)} projects={projects} projectId={targetProject?.id} assetType={filter === 'all' ? undefined : filter} isMain={isMain} onCreate={() => setCreateOpen(true)} onPackage={() => setPackagingOpen(true)} />} />}
-            <div className="store__destination">
-                <div><Text strong>Каталог проекта</Text><Paragraph type="secondary">{!projectsReady
+            {(!embedded||!projectsReady||canAddFromCommon)&&<div className="store__destination">
+                {(!embedded||!projectsReady)&&<div><Text strong>Каталог проекта</Text><Paragraph type="secondary">{!projectsReady
                     ? projectsLoading ? 'Загружаем доступные проекты…' : 'Загрузите список проектов, чтобы продолжить.'
-                    : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог инструменты, модели и агентов.'}</Paragraph></div>
+                    : target ? `Выбран проект «${target}».` : 'Выберите проект, чтобы добавить в его каталог инструменты, модели и агентов.'}</Paragraph></div>}
                 {!embedded && <Select aria-label="Каталог проекта" placeholder="Выберите проект" value={projectsReady ? targetProject?.id : undefined} loading={projectsLoading} disabled={!projectsReady} allowClear showSearch optionFilterProp="label" onChange={(projectId?: string) => switchTarget(projectId ?? null)} options={projects.map(project => ({value:project.id,label:project.name}))} style={{width:260,maxWidth:'100%'}} />}
-                {embedded && targetProject && canManage && canBrowseCommon && <Button type="primary" href={storeQueryUrl('', {project: targetProject.id})}>Добавить из общего каталога</Button>}
-            </div>
+                {canAddFromCommon && targetProject && <Button type="primary" href={catalogSectionUrl(baseRoutes.store,'?'+new URLSearchParams({p:targetProject.id}).toString(),activeSection)}>Добавить из общего каталога</Button>}
+            </div>}
             {projectLoadError && <Alert className="store__projects-error" type={projectsReady?'warning':'error'} showIcon
                 message={projectsReady?'Не удалось обновить проекты':'Не удалось загрузить проекты'}
                 description={projectsReady?`Показан последний загруженный список проектов. ${projectLoadError}`:projectLoadError}
@@ -335,7 +337,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 description={projectCatalogError}
                 action={<Button size="small" loading={projectLoading} onClick={() => { void loadProject(); }}>Повторить загрузку каталога</Button>} />}
             <CatalogTabs projects={projects} bridge={bridge} scope={accessKey} projectId={targetProject?.id} projectName={targetProject?.name} embedded={embedded} canManage={canManage} canChat={isMain || canInstall} isMain={isMain} tools={<>
-            <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
+            <div style={{marginBottom:16,padding:16,background:'#fff',borderRadius:12}}><BridgeConnection bridge={bridge} projectId={targetProject?.id} compact/>{targetProject && <ProjectInstallationReadiness bridge={bridge} projectId={targetProject.id} canInstall={canInstall} />}</div>
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
             <ToolCatalogStatus sources={catalogSources} refresh={loadCatalog} />

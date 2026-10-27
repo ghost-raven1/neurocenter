@@ -27,6 +27,13 @@ const reviewer=(changes:Partial<IRequestDetail>={})=>requestDetail({permissions:
 const flush=async()=>{for(let n=0;n<20;n++)await Promise.resolve();};
 beforeEach(()=>{vi.clearAllMocks();ui.slots=[];ui.cursor=0;ui.owner='reviewer';ui.epoch=0;ui.values={};ui.fields=[];ui.buttons.clear();vi.mocked(catalogRequestsApi.action).mockResolvedValue(requestDetail({status:'in_progress',revision:2}));});
 describe('Review lifecycle and immutable action acknowledgement',()=>{
+    it('Keeps review primary visible while destructive and clarification controls remain in closed details',()=>{
+        const html=render(reviewer());
+        expect(html).toContain('Взять в работу');
+        expect(html).toContain('<details class="catalog-requests__more">');expect(html).not.toContain('<details open');
+        expect(html).toContain('Другие действия с заявкой:');expect(html).toContain('Запросить уточнение');expect(html).toContain('Отклонить');
+        expect(catalogRequestsApi.action).not.toHaveBeenCalled();expect(onSaved).not.toHaveBeenCalled();
+    });
     it('Request permissions govern owner/reviewer actions; completion is available only in_progress',()=>{
         const owner=render();expect(owner).not.toContain('Взять в работу');expect(owner).not.toContain('Отклонить');expect(owner).not.toContain('Завершить');
         const submitted=render(reviewer());expect(submitted).toContain('Взять в работу');expect(submitted).not.toContain('Завершить');

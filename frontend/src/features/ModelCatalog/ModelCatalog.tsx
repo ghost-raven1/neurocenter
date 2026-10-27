@@ -152,11 +152,14 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         <div className="model-catalog__heading">
             <div><Typography.Title level={4}>{projectName ? `Модели для «${projectName}»` : 'Модели команды'}</Typography.Title>
                 <Typography.Text type="secondary">{projectId ? 'Выберите модели для работы в проекте.' : 'Модели на сервере, на компьютере и подключённые API.'}</Typography.Text></div>
-            {(isMain || projectId && canManage) && <Space wrap>
-                {projectId && canManage && <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>}
-                {isMain && <><Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
-                <FeatureButton features={['model_catalog']} onClick={() => setEditing('api')}>Подключить API</FeatureButton>
-                <FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton></>}</Space>}
+            {(isMain || projectId && canManage) && <Space wrap className="model-catalog__heading-actions">
+                {isMain ? <><FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton>
+                    <details className="model-catalog__more"><summary aria-label="Другие действия с каталогом моделей">Другие действия</summary><Space direction="vertical" className="model-catalog__more-content">
+                        <FeatureButton features={['model_catalog']} onClick={() => setEditing('api')}>Подключить API</FeatureButton>
+                        <Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
+                        {projectId && canManage && <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>}
+                    </Space></details></> : <Button type="primary" onClick={() => openProvider()}>Настроить в OpenCode</Button>}
+            </Space>}
         </div>
         <Space wrap className="model-catalog__filters">
             <Input.Search aria-label="Поиск моделей" placeholder="Название, модель или назначение…" allowClear value={query} onChange={event => setQuery(event.target.value)} />

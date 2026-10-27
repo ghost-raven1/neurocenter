@@ -2,7 +2,7 @@ import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Descriptions, Modal, Space, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { modelCatalogApi } from './api';
-import { modelCapabilityLabels, modelUsesApiConnection } from './modelCatalogState';
+import { modelCapabilityLabels } from './modelCatalogState';
 import type { ICatalogModel } from './types';
 import { ModelHosting } from './ModelHosting';
 import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
@@ -11,17 +11,16 @@ interface IProps { model: ICatalogModel; projectId?: string; canManage: boolean;
 
 export function ModelDetails({ model, projectId, canManage, busy, error, onClose, onEdit, onRemove, onConfigure }: IProps): JSX.Element {
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
-    return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Space wrap>
-        {canManage && !model.archivedAt && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>}
-        {canManage && !model.archivedAt && modelUsesApiConnection(model) && <FeatureButton features={['model_catalog']} disabled={busy} onClick={onConfigure}>Подключение API</FeatureButton>}
-        {canManage && !model.archivedAt && model.runtime === 'device-codex' && <Button disabled={busy} onClick={onConfigure}>Компьютер и вход</Button>}
-        {canManage && !model.archivedAt && <ArchiveAssetButton kind="model" id={model.id} disabled={busy} onArchived={onRemove}>Удалить модель</ArchiveAssetButton>}
-        <Button disabled={busy} onClick={onClose}>Закрыть</Button>
-    </Space>}>
+    return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Button disabled={busy} onClick={onClose}>Закрыть</Button>}>
         {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
         <Typography.Paragraph>{model.description || 'Описание пока не добавлено.'}</Typography.Paragraph>
         <ModelHosting model={model} canManage={canManage && !model.archivedAt} onManage={onConfigure} />
         <ModelRateLimits modelId={model.id} projectId={projectId}/>
+        {canManage&&!model.archivedAt&&<details className="model-catalog__more model-details__management"><summary aria-label={`Управление моделью ${model.name}`}>Управление моделью</summary><Space wrap className="model-catalog__more-content">
+            <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>
+            {model.runtime==='device-codex'&&onConfigure&&<Button disabled={busy} onClick={onConfigure}>Компьютер и вход</Button>}
+            <ArchiveAssetButton kind="model" id={model.id} disabled={busy} onArchived={onRemove}>Убрать из каталога</ArchiveAssetButton>
+        </Space></details>}
         <Collapse ghost><Collapse.Panel key="technical" header="Технические сведения"><Descriptions layout="vertical" column={1} size="small" bordered>
             <Descriptions.Item label="Назначение">{modelCapabilityLabels[model.capability]}</Descriptions.Item>
             <Descriptions.Item label="Идентификатор"><Typography.Text code className="model-catalog__code">{model.model}</Typography.Text></Descriptions.Item>

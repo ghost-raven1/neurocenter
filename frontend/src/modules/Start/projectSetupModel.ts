@@ -6,7 +6,9 @@ import {mergeProjectCatalog} from '../Store/projectCatalogSnapshots';
 
 /** Navigation is recoverable state, never evidence that an installation succeeded. */
 export function unifiedSetupStep(search:string):number {
-    const value=Number(new URLSearchParams(search).get('step')??0);
+    const params=new URLSearchParams(search);
+    if(params.get('addComputer')==='1'&&!params.has('step'))return 1;
+    const value=Number(params.get('step')??0);
     return Number.isInteger(value)&&value>=0&&value<=3?value:0;
 }
 

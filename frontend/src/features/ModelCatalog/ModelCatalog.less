@@ -5,6 +5,8 @@
         > .ant-btn, > .ant-space { flex-shrink: 0; }
     }
     &__notice { margin-bottom: 18px; }
+    &__heading-actions.ant-space { flex: 0 0 auto; align-items: flex-start; }
+    &__more-content { margin-top: 10px; padding: 12px; border: 1px solid #dce5ed; border-radius: 8px; background: #fff; }
     &__embedding-target { display: flex; flex-direction: column; gap: 12px; margin: 4px 0 24px; min-width: 0; }
     &__filters { display: flex; gap: 8px; margin-bottom: 18px;
         > .ant-space-item:first-child { flex: 1; min-width: 0; }
@@ -40,12 +42,17 @@
     &__identity { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 12px; font-size: 12px; color: #617387;
         > span:first-child { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
     }
-    &__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 14px;
-        > .ant-btn:first-child { margin-right: auto; padding-left: 0; color: @brand-primary; }
+    &__actions { display: flex; align-items: flex-start; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 14px;
         > .ant-typography { flex: 1; font-size: 12px; line-height: 1.5; text-align: right; }
         > .ant-tag { margin: 0; }
     }
+    &__more-content { display: flex; margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf1f5; }
 }
+.model-catalog__more, .model-card__more {
+    > summary { cursor: pointer; min-height: 32px; padding: 5px 10px; border: 1px solid #dce5ed; border-radius: 6px; color: #24344a; font-size: 14px; line-height: 20px; }
+    > summary:focus-visible { outline: 2px solid @brand-primary; outline-offset: 2px; }
+}
+.model-card__more { flex-basis: auto; &[open] { flex-basis: 100%; } }
 
 .model-runtime {
     margin-top: auto; padding-top: 12px; border-top: 1px solid #edf1f5;
@@ -71,6 +78,7 @@
     .ant-modal-body { max-height: 65vh; max-height: min(65dvh, calc(100dvh - 200px)); overflow-y: auto; }
     .ant-modal-title { padding-right: 24px; overflow-wrap: anywhere; }
     .ant-modal-footer > .ant-space { display: flex; justify-content: flex-end; }
+    &__management { margin-bottom: 12px; }
 }
 
 

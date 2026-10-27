@@ -15,9 +15,9 @@ export function projectRagCatalogUrl(projectKey: string): string {
     return `/store?${new URLSearchParams({q:'OpenCodeRAG (плагин)',p:projectKey}).toString()}`;
 }
 
-/** Привязка открывает точный серверный проект независимо от сохранённого поиска в списке. */
+/** Основной мастер получает точный проект; номер прежнего этапа не переносится. */
 export function projectBindingUrl(projectId: string): string {
-    return `/projects${projectBindingSearch('', projectId)}`;
+    return `/start?${new URLSearchParams({setup:'1',p:projectId}).toString()}`;
 }
 
 /** Закрытие мастера удаляет только его параметр, сохраняя остальные условия страницы. */

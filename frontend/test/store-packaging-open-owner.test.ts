@@ -171,7 +171,7 @@ describe('Переход к папке из карточки инструмен�
         vi.mocked(bffApi.getAiPlugin).mockResolvedValue(plugin('old-package'));
         open(); await flush(); render();
         expect(ui.chooseFolder).toBeDefined(); ui.chooseFolder?.();
-        expect(ui.history.push).toHaveBeenCalledExactlyOnceWith('/projects?bind=prj-a');
+        expect(ui.history.push).toHaveBeenCalledExactlyOnceWith('/start?setup=1&p=prj-a');
         render(); expect(ui.view).toBeNull();
     });
 

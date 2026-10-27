@@ -17,7 +17,7 @@ import {bridgeDeviceTarget} from '../../features/McpBridge/bridgeSource';
 type ConnectionAction = 'connect'|'install';
 
 /** Существующий мост подключается отдельно; установка нужна при отсутствии или обновлении программы. */
-export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,canManageSource=false,bridge:providedBridge,onChooseFolder}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean;bridge?:ReturnType<typeof useBridge>;onChooseFolder?:()=>void})=>{
+export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,canManageSource=false,bridge:providedBridge,onChooseFolder,folderReady=false,onCheckReadiness}:{origin:string;installer:IBridgeInstaller;windows:boolean;onCopy:(text:string)=>void;projectId?:string;canManageSource?:boolean;bridge?:ReturnType<typeof useBridge>;onChooseFolder?:()=>void;folderReady?:boolean;onCheckReadiness?:()=>void})=>{
     const ownBridge=useBridge(!providedBridge),bridge=providedBridge??ownBridge;const history=useHistory();
     const connectionRequested=new URLSearchParams(history.location.search).get('addComputer')==='1';
     const [installerPanels,setInstallerPanels]=useState<string[]|undefined>();
@@ -67,7 +67,7 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
         <Typography.Title level={3} style={{margin:0}}>Подключение компьютера</Typography.Title>
         {bridge.devices.length>0?<>
             <div className="start__computer-summary">
-            <BridgeConnection bridge={bridge} compact showReadinessNotice={false}/>
+            <BridgeConnection bridge={bridge} projectId={projectId} compact showReadinessNotice={false}/>
             {!healthy&&<Alert type="warning" showIcon
                 message={!bridge.devicesReady?'Не удалось обновить статус':!device?'Выберите компьютер':needsReconnect?'Подтвердите подключение заново':awaitingFirstReport?'Ожидаем первого выхода на связь':needsUpdate?'Обновите мост':device.online?`${device.name} — на связи`:'Компьютер подключён, но сейчас не отвечает'}
                 description={!bridge.devicesReady?'Текущий статус моста не подтверждён. Обновите данные, чтобы проверить соединение. Сохранённое подключение не требует повторной установки.':!device?'У вас несколько подключений. Выберите компьютер, на котором будете работать.':needsReconnect
@@ -75,9 +75,9 @@ export const BridgeSetup=({installer,windows:browserWindows,onCopy,projectId,can
                     :awaitingFirstReport?'Доступ подтверждён. Запустите установленный мост командой подключения и нажмите «Проверить подключение». Его версия появится после первого ответа.'
                     :needsUpdate?'Для новых возможностей обновите программу командой ниже. Установщик сохранит файлы и историю.':'Запустите установленный мост командой подключения. Повторная установка обычно не нужна.'}/>}
             <div className="start__computer-next">
-            {healthy&&<Typography.Text type="secondary">Компьютер готов. Свяжите папку с проектом.</Typography.Text>}
+            {healthy&&<Typography.Text type="secondary">{folderReady?'Папка проекта подтверждена.':onChooseFolder?'Выберите папку проекта.':'Компьютер готов. Свяжите папку с проектом.'}</Typography.Text>}
             <Space wrap className="start__computer-actions">
-                <FeatureButton features={['computer_connections']} type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>{if(onChooseFolder)onChooseFolder();else history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects');}}>{device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</FeatureButton>
+                {folderReady&&onCheckReadiness?<Button type="primary" onClick={onCheckReadiness}>Проверить готовность</Button>:<FeatureButton features={['computer_connections']} type="primary" disabled={folderBlocked||!bridge.devicesReady||!device?.online} onClick={()=>{if(onChooseFolder)onChooseFolder();else history.push(device?.report.root&&projectId?projectBindingUrl(projectId):'/projects');}}>{onChooseFolder?'Выбрать папку':device?.report.root?'Связать папку проекта':'Выбрать папку проектов'}</FeatureButton>}
                 <Button loading={bridge.loading} onClick={()=>{void bridge.reload();}}>Проверить подключение</Button>
             </Space>
             </div></div>

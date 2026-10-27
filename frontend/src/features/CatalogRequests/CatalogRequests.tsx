@@ -1,4 +1,5 @@
-import {Alert,Button,Card,Empty,List,Pagination,Select,Space,Tag,Typography} from 'antd';
+import {ReloadOutlined} from '@ant-design/icons';
+import {Alert,Button,Card,Empty,List,Pagination,Select,Space,Tag,Tooltip,Typography} from 'antd';
 import {useEffect,useState} from 'react';
 import {CatalogRequestButton} from './CatalogRequestButton';
 import {RequestDetails} from './RequestDetails';
@@ -24,11 +25,13 @@ export function CatalogRequests({projects,projectId,scope}:IProps):JSX.Element {
         <div className="catalog-requests__filters">
             <Select aria-label="Чьи заявки" value={filters.scope} onChange={value=>change({scope:value as IRequestFilters['scope']})} options={[{value:'mine',label:'Мои заявки'},{value:'all',label:'Все доступные'}]}/>
             <Select aria-label="Статус заявки" placeholder="Любой статус" allowClear value={filters.status} onChange={value=>change({status:value as IRequestStatus|undefined})} options={Object.entries(requestStates).map(([value,item])=>({value,label:item.label}))}/>
-            <Select aria-label="Тип обращения в списке" placeholder="Любое обращение" allowClear value={filters.kind} onChange={value=>change({kind:value as IRequestKind|undefined})} options={requestKinds}/>
-            <Select aria-label="Тип инструмента в списке" placeholder="Все типы" allowClear value={filters.assetType} onChange={value=>change({assetType:value as IRequestAssetType|undefined})} options={requestAssets}/>
+            <details className="catalog-requests__more"><summary aria-label="Дополнительные фильтры заявок">Ещё фильтры{filters.kind||filters.assetType?' · применены':''}</summary><div className="catalog-requests__more-content catalog-requests__advanced-filters">
+                <Select aria-label="Тип обращения в списке" placeholder="Любое обращение" allowClear value={filters.kind} onChange={value=>change({kind:value as IRequestKind|undefined})} options={requestKinds}/>
+                <Select aria-label="Тип инструмента в списке" placeholder="Все типы" allowClear value={filters.assetType} onChange={value=>change({assetType:value as IRequestAssetType|undefined})} options={requestAssets}/>
+            </div></details>
             {filterActive&&<Button onClick={()=>change({status:undefined,kind:undefined,assetType:undefined})}>Сбросить фильтры</Button>}
         </div>
-        <Space wrap className="catalog-requests__toolbar-actions"><Button loading={loading} onClick={()=>{void refresh();}}>Обновить заявки</Button><CatalogRequestButton projects={projects} projectId={projectId} onSaved={value=>{setSelected(value.id);void refresh();}}/></Space></div>
+        <Space wrap className="catalog-requests__toolbar-actions"><Tooltip title="Обновить заявки"><Button aria-label="Обновить заявки" icon={<ReloadOutlined/>} loading={loading} onClick={()=>{void refresh();}}/></Tooltip><CatalogRequestButton buttonType="primary" projects={projects} projectId={projectId} onSaved={value=>{setSelected(value.id);void refresh();}}/></Space></div>
         <Typography.Paragraph type="secondary" className="catalog-requests__scope-hint">«Все доступные» включает ваши заявки и те, которые вы можете рассматривать.{projectId?' Показаны заявки выбранного проекта.':' Проект выбирается в каждой заявке.'}</Typography.Paragraph>
         {error&&<Alert role="alert" type="error" showIcon message={page?'Не удалось обновить заявки — показан предыдущий список':'Не удалось загрузить заявки'} description={error} action={<Button size="small" loading={loading} onClick={()=>{void refresh();}}>Повторить загрузку заявок</Button>}/>}
         <List loading={loading} dataSource={page?.items??[]} locale={{emptyText:<Empty description={error?'Список заявок недоступен':filterActive?'По этим фильтрам заявок нет':'Заявок пока нет'}/>}}

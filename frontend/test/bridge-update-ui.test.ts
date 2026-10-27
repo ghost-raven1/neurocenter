@@ -68,4 +68,12 @@ describe('Обновление уже подключённого моста', ()
         expect(html).not.toContain('Следующий шаг — подтвердить компьютер');
         expect(html).not.toContain('Установщик сам откроет страницу подтверждения');
     });
+    it('В мастере после подтверждения папки оставляет один переход к готовности вместо повторного выбора',()=>{
+        const next=vi.fn(),choose=vi.fn();
+        const html=renderToStaticMarkup(createElement(BridgeSetup,{origin:'https://panel.example.test',installer:{origin:'https://gateway.example.test',loading:false,error:'',reload:vi.fn()},
+            windows:false,onCopy:vi.fn(),bridge:fixture.bridge,onChooseFolder:choose,folderReady:true,onCheckReadiness:next}));
+        expect(html).toContain('Папка проекта подтверждена.');expect(html).not.toContain('Свяжите папку с проектом');
+        expect([...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].filter(match=>match[1].includes('Проверить готовность'))).toHaveLength(1);
+        expect(html).not.toContain('>Выбрать папку<');expect(next).not.toHaveBeenCalled();expect(choose).not.toHaveBeenCalled();
+    });
 });

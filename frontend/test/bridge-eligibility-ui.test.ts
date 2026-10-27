@@ -37,12 +37,23 @@ describe('Общие действия MCP 0.4 без поддержки комп
     beforeEach(()=>{fixture.bridge.device.role='Разработчик';fixture.bridge.jobs=[];fixture.bridge.device.report.capabilities=['durable-completions','managed-installations','package-v4'];});
     it('Переход из несвязанной базы знаний передаёт точный проект в существующий мастер',()=>{
         const html=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'prj-dossier-ko',canWrite:true}));
-        expect(html).toContain('href="/projects?bind=prj-dossier-ko"');
+        expect(html).toContain('href="/start?setup=1&amp;p=prj-dossier-ko"');
     });
     it('Выбор общей папки остаётся доступен',()=>{
         const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,onClose:vi.fn()}));
         expect(buttonAttributes(html,'Изменить папку')).not.toContain('disabled');
         expect(html).toContain('Обновите мост');
+    });
+    it('В списке проектов подробности свернуты без размонтирования управления компьютером',()=>{
+        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,collapsed:true,onClose:vi.fn()}));
+        expect(html).toContain('local-projects-folder__details');expect(html).not.toMatch(/local-projects-folder__details" open/);
+        expect(html).toContain('Мои компьютеры');expect(html).toContain('Изменить папку');
+    });
+    it.each(['queued','running','failed'])('Операция папки %s раскрывает восстановление и сохраняет прежние действия',state=>{
+        fixture.bridge.jobs=[{id:'folder-job',deviceId:fixture.bridge.device.id,projectId:null,kind:'choose-root',state,message:'Проверьте выбранную папку',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
+        const html=renderToStaticMarkup(createElement(LocalProjectsFolder,{bridge:fixture.bridge,project:null,collapsed:true,onClose:vi.fn()}));
+        expect(html).toMatch(/local-projects-folder__details" open/);expect(html).toContain('требуется внимание');expect(html).toContain('Проверьте выбранную папку');
+        if(state==='queued')expect(html).toContain('>Отменить<');
     });
     it('Синхронизации базы знаний требуют отдельного контракта проверки индекса',()=>{
         const html=renderToStaticMarkup(createElement(KnowledgeSync,{projectId:'project',canWrite:true}));
