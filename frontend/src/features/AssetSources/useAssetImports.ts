@@ -15,7 +15,14 @@ export function useAssetImports(onComplete:()=>void) {
   let persisted=true;try{if(value){localStorage.setItem(key,JSON.stringify(value));}else{localStorage.removeItem(key);}}catch{persisted=false;}
   if(persisted||!requireStorage){currentIntent.current=value;setIntent(value);}return persisted;
  },[key]);
- const showJob=useCallback((value:IAssetImport|undefined):void=>{currentJob.current=value;setJob(value);},[]);
+ const showJob=useCallback((value:IAssetImport|undefined):void=>{
+  // A poll started before the cancellation ACK cannot undo the accepted stop request.
+  const previous=currentJob.current;
+  // These durable terminal states have no retry/resolve transition for the same job.
+  if(value&&previous?.id===value.id&&['SUCCEEDED','CANCELLED'].includes(previous.state)&&value.state!==previous.state){return;}
+  const next=value&&previous?.id===value.id&&previous.cancelRequested&&activeImport(value.state)?{...value,cancelRequested:true}:value;
+  currentJob.current=next;setJob(next);
+ },[]);
  const beginRequest=useCallback(()=>{
   const owns=captureOwner();if(!owns()||loadedScope.current!==scope||pending.current){return;}
   const token=Symbol();pending.current=token;setBusy(true);setError('');

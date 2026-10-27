@@ -86,6 +86,27 @@ it.each(['SUCCEEDED','RUNNING','FAILED'])('Результат импорта %s 
     ui.job={id:'job',planDigest:'a'.repeat(64),state,message:'Фактический результат',items:[{id:'one',kind:'agent',name:'Первый',version:'1',current:true,action:'create',state:'DONE'}]};
     render();const html=await settle();expect(html).toContain('Фактический результат');expect(html).toContain('Результаты · 1');expect(html.includes('<details open')).toBe(state!=='SUCCEEDED');
 });
+it('Подтверждённая остановка видна, повторная остановка недоступна',async()=>{
+    ui.job={id:'job',planDigest:'a'.repeat(64),state:'RUNNING',message:'Обрабатываем второй инструмент',cancelRequested:true,items:[]};
+    render();const html=await settle();
+    expect(html).toContain('Остановка запрошена');
+    expect(archiveUi.buttons.find(button=>button.label==='Остановка запрошена')?.disabled).toBe(true);
+    expect(archiveUi.buttons.some(button=>button.label==='Остановить импорт')).toBe(false);
+    expect(archiveUi.buttons.some(button=>button.label==='Новый выбор')).toBe(false);
+});
+it('После частичной отмены виден сохранённый результат и новый выбор без раскрытого отчёта',async()=>{
+    ui.job={id:'job',planDigest:'a'.repeat(64),state:'CANCELLED',message:'Обрабатываем второй инструмент',items:[
+        {id:'one',kind:'agent',name:'Первый',version:'1',current:true,action:'create',state:'SUCCEEDED'},
+        {id:'two',kind:'agent',name:'Второй',version:'1',current:true,action:'create',state:'PENDING'},
+    ]};
+    render();const html=await settle();expect(html).toContain('Импорт остановлен.');expect(html).toContain('Готово: 1 из 2.');
+    expect(html).not.toContain('Обрабатываем второй инструмент');expect(html).not.toContain('<details open');
+    expect(archiveUi.buttons.some(button=>button.label==='Новый выбор'&&!button.disabled)).toBe(true);
+});
+it('Подготовка плана показывает состояние без пустого списка результатов',async()=>{
+    ui.job={id:'job',planDigest:'a'.repeat(64),state:'QUEUED',message:'Проверяем выбранные ассеты и точные зависимости',items:[]};
+    render();const html=await settle();expect(html).toContain('Проверяем выбранные ассеты');expect(html).not.toContain('Результаты · 0');
+});
 it('Архивная локальная упаковка предлагает восстановление; недоступная блокирует изменение',async()=>{
     const local=source.assets.map((asset,index)=>({...asset,id:'local-'+index,imported:{...asset.imported,...(index?{unavailable:true}:{archived:true})}}));
     vi.mocked(baseApi.get).mockResolvedValue({data:{...source,assets:[],localAssets:local}});render();await settle();
