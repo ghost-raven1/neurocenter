@@ -4,6 +4,7 @@ const {constants}=require('node:fs');
 const path=require('node:path');
 const {fileURLToPath}=require('node:url');
 const {createHash,randomUUID}=require('node:crypto');
+const {setTimeout:delay}=require('node:timers/promises');
 const {withInstallMutex,recoverCleanupLock}=require('./bridge-update-lock.cjs');
 
 const OWNER_FILE='.neurocenter-update-owner.json';
@@ -20,6 +21,7 @@ const validIdentity=value=>exact(value,['dev','ino'])&&/^\d+$/.test(value.dev)&&
 const stamp=stat=>[stat.dev,stat.ino,stat.size,stat.mtimeNs,stat.ctimeNs,stat.nlink,stat.mode].map(String).join(':');
 const missing=error=>error?.code==='ENOENT';
 const exists=filename=>fs.lstat(filename).then(()=>true,error=>{if(missing(error))return false;throw error;});
+const cancelled=(error,signal)=>signal?.aborted&&(error===signal.reason||error?.name==='AbortError'&&error.cause===signal.reason);
 
 /** Only the documented retention fields can change automatic cleanup. */
 function normalizeCleanupPolicy(value=DEFAULT_CLEANUP_POLICY){
@@ -56,28 +58,31 @@ async function syncDirectory(filename){
  const handle=await fs.open(filename,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
  try{await handle.sync();}finally{await handle.close();}
 }
-async function readRegular(filename,maximum){
+async function readRegular(filename,maximum,signal){
+ signal?.throwIfAborted();
  const handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
  try{
+  signal?.throwIfAborted();
   const before=await handle.stat({bigint:true});if(!before.isFile()||before.nlink!==1n||before.size>BigInt(maximum))throw Error('Unsafe bridge cleanup metadata.');
   const chunks=[];let size=0;
-  for await(const chunk of handle.createReadStream({autoClose:false})){size+=chunk.length;if(size>maximum)throw Error('Bridge cleanup metadata exceeds its limit.');chunks.push(chunk);}
+  for await(const chunk of handle.createReadStream({autoClose:false,signal})){signal?.throwIfAborted();size+=chunk.length;if(size>maximum)throw Error('Bridge cleanup metadata exceeds its limit.');chunks.push(chunk);}
   const bytes=Buffer.concat(chunks),after=await handle.stat({bigint:true}),named=await fs.lstat(filename,{bigint:true});
   if(stamp(before)!==stamp(after)||stamp(after)!==stamp(named)||named.isSymbolicLink())throw Error('Bridge cleanup metadata changed.');
   return {bytes,identity:identity(before)};
  }finally{await handle.close();}
 }
-async function readJson(filename,maximum=16384){return JSON.parse((await readRegular(filename,maximum)).bytes.toString('utf8'));}
+async function readJson(filename,maximum=16384,signal){return JSON.parse((await readRegular(filename,maximum,signal)).bytes.toString('utf8'));}
 function pidState(pid){
  if(!Number.isSafeInteger(pid)||pid<1)return 'unknown';
  try{process.kill(pid,0);return 'live';}catch(error){return error.code==='ESRCH'?'dead':'unknown';}
 }
 /** Explicit installers may quarantine a pinned dead owner; automatic cleanup never takes a lock over. */
-async function locked(root,action,runtimeIdentity,installer){
+async function locked(root,action,runtimeIdentity,installer,signal){
  const filename=runtimeIdentity?gcGate(root,runtimeIdentity):path.join(root,'lock.json');
  const token=randomUUID(),bytes=Buffer.from(JSON.stringify({schemaVersion:1,pid:process.pid,token}));
  let claimed=false,recoveryAttempted=false;
  for(let attempt=0;attempt<40;attempt++){
+  signal?.throwIfAborted();
   try{
    const handle=await fs.open(filename,'wx',0o600);try{await handle.writeFile(bytes);await handle.sync();claimed=true;}finally{await handle.close();}break;
   }catch(error){
@@ -86,19 +91,20 @@ async function locked(root,action,runtimeIdentity,installer){
     recoveryAttempted=true;if(await recoverCleanupLock({root,filename,...installer}))continue;
    }
    if(attempt===39)throw Error('Bridge runtime cleanup is busy.');
-   await new Promise(resolve=>setTimeout(resolve,25));
+   await delay(25,undefined,{signal});
   }
  }
  if(!claimed)throw Error('Could not lock bridge cleanup.');
- try{await installer?.proof.assertCurrent();return await action();}finally{
+ try{signal?.throwIfAborted();await installer?.proof.assertCurrent();return await action();}finally{
   const current=await readRegular(filename,1024);if(!current.bytes.equals(bytes))throw Error('Bridge cleanup lock ownership changed.');await fs.unlink(filename);
  }
 }
-async function managedRuntime(runtimeRoot,required=false){
+async function managedRuntime(runtimeRoot,required=false,signal){
+ signal?.throwIfAborted();
  const stat=await fs.lstat(runtimeRoot,{bigint:true});if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Unsafe bridge runtime root.');
  const root=await fs.realpath(runtimeRoot),ownerFile=path.join(root,OWNER_FILE);
  if(!await exists(ownerFile)){if(required||reservedBackupName(path.basename(root)))throw Error('Managed bridge owner is missing.');return undefined;}
- const owner=await readJson(ownerFile),capability=await readJson(path.join(root,CAPABILITY_FILE));
+ const owner=await readJson(ownerFile,16384,signal),capability=await readJson(path.join(root,CAPABILITY_FILE),16384,signal);
  if(!exact(owner,['schemaVersion','installRoot'])||owner.schemaVersion!==1||typeof owner.installRoot!=='string')throw Error('Invalid managed bridge owner.');
  if(!exact(capability,['schemaVersion','entrypoints'])||capability.schemaVersion!==1||!Array.isArray(capability.entrypoints)
   ||JSON.stringify([...capability.entrypoints].sort())!==JSON.stringify([...RUNTIME_USE_ENTRYPOINTS].sort()))throw Error('Bridge runtime is not lease-aware.');
@@ -162,9 +168,10 @@ async function backupPath(info,input){
  return input;
 }
 /** A portable full-tree digest includes every regular byte, executable mode and empty directory. */
-async function snapshotTree(root){
+async function snapshotTree(root,signal){
  const entries=[],observed=[];let bytes=0;
  async function visit(filename,relative){
+  signal?.throwIfAborted();
   const before=await fs.lstat(filename,{bigint:true});
   if(before.isSymbolicLink()||!before.isDirectory()&&(!before.isFile()||before.nlink!==1n))throw Error('Bridge backup contains a link or special file.');
   if(relative.length>1024||relative&&relative.split('/').some(part=>!part||part==='.'||part==='..'||/[\\\x00-\x1f\x7f]/.test(part)))throw Error('Bridge backup path is not portable.');
@@ -178,14 +185,14 @@ async function snapshotTree(root){
    try{
     if(stamp(await handle.stat({bigint:true}))!==stamp(before))throw Error('Bridge backup changed during inspection.');
     const hash=createHash('sha256');let read=0;
-    for await(const chunk of handle.createReadStream({autoClose:false})){read+=chunk.length;if(read>Number(before.size))throw Error('Bridge backup grew during inspection.');hash.update(chunk);}
+    for await(const chunk of handle.createReadStream({autoClose:false,signal})){signal?.throwIfAborted();read+=chunk.length;if(read>Number(before.size))throw Error('Bridge backup grew during inspection.');hash.update(chunk);}
     if(read!==Number(before.size)||stamp(await handle.stat({bigint:true}))!==stamp(before))throw Error('Bridge backup changed during inspection.');
     entries.push({...record,bytes:read,sha256:hash.digest('hex')});
    }finally{await handle.close();}
   }
   if(stamp(await fs.lstat(filename,{bigint:true}))!==stamp(before))throw Error('Bridge backup changed during inspection.');observed.push([filename,stamp(before)]);
  }
- const assertUnchanged=async()=>{for(const [filename,before] of observed)if(stamp(await fs.lstat(filename,{bigint:true}))!==before)throw Error('Bridge backup changed during inspection.');};
+ const assertUnchanged=async()=>{for(const [filename,before] of observed){signal?.throwIfAborted();if(stamp(await fs.lstat(filename,{bigint:true}))!==before)throw Error('Bridge backup changed during inspection.');}};
  await visit(root,'');await assertUnchanged();
  return {entries,bytes,digest:digest(JSON.stringify(entries)),identity:await directoryIdentity(root),assertUnchanged};
 }
@@ -200,9 +207,9 @@ async function saveReceipt(directory,filename,record,replace=false){
 }
 const baselineFile=(root,value)=>path.join(root,'baselines','installed-'+digest(leaseKey(value))+'.json');
 const sameInstall=(value,info)=>exact(value,['root','parent'])&&value.root===info.root&&validIdentity(value.parent)&&sameIdentity(value.parent,info.parentIdentity);
-async function installedBaseline(root,info,value){
+async function installedBaseline(root,info,value,signal){
  const filename=baselineFile(root,value);if(!await exists(filename))return undefined;
- const record=await readJson(filename,MAX_RECEIPT_BYTES);
+ const record=await readJson(filename,MAX_RECEIPT_BYTES,signal);
  if(!exact(record,['schemaVersion','install','runtime','tree'])||record.schemaVersion!==1||!sameInstall(record.install,info)
   ||!exact(record.runtime,['identity'])||!validIdentity(record.runtime.identity)||!sameIdentity(record.runtime.identity,value))throw Error('Invalid installed bridge baseline.');
  treeShape(record.tree);return record;
@@ -260,29 +267,34 @@ function receiptShape(record,info){
   ||!['complete','deleting'].includes(record.state))throw Error('Invalid bridge backup receipt.');
  treeShape(record.tree);
 }
-async function busyLease(root,value){
+async function busyLease(root,value,signal){
+ signal?.throwIfAborted();
  const directory=path.join(root,'leases',leaseKey(value));if(!await exists(directory))return false;
  await directoryIdentity(directory);const names=await fs.readdir(directory);if(names.length>MAX_ENTRIES)return true;
  for(const name of names){
+  signal?.throwIfAborted();
   if(!/^[a-f0-9-]{36}\.json$/.test(name))return true;
   try{
-   const record=await readJson(path.join(directory,name),1024);
+   const record=await readJson(path.join(directory,name),1024,signal);
    if(!exact(record,['schemaVersion','runtime','pid','token'])||record.schemaVersion!==1||!validIdentity(record.runtime)||!sameIdentity(record.runtime,value)
     ||record.token+'.json'!==name||pidState(record.pid)!=='dead')return true;
-  }catch{return true;}
+  }catch(error){if(cancelled(error,signal))throw signal.reason;return true;}
  }
  return false;
 }
 /** A live foreign consumer may have crossed a publish boundary; keep the entire installation lineage. */
-async function busyLineage(root,current){
+async function busyLineage(root,current,signal){
  try{
+  signal?.throwIfAborted();
   const directory=path.join(root,'leases'),names=await fs.readdir(directory);if(names.length>MAX_ENTRIES)return true;
   for(const name of names){
+   signal?.throwIfAborted();
    if(!/^\d+-\d+$/.test(name))return true;
    const leases=path.join(directory,name);await directoryIdentity(leases);const files=await fs.readdir(leases);if(files.length>MAX_ENTRIES)return true;
    for(const file of files){
+    signal?.throwIfAborted();
     if(!/^[a-f0-9-]{36}\.json$/.test(file))return true;
-    const record=await readJson(path.join(leases,file),1024);
+    const record=await readJson(path.join(leases,file),1024,signal);
     if(!exact(record,['schemaVersion','runtime','pid','token'])||record.schemaVersion!==1||!validIdentity(record.runtime)
      ||leaseKey(record.runtime)!==name||record.token+'.json'!==file)return true;
     if(record.pid===process.pid&&sameIdentity(record.runtime,current))continue;
@@ -290,41 +302,47 @@ async function busyLineage(root,current){
    }
   }
   return false;
- }catch{return true;}
+ }catch(error){if(cancelled(error,signal))throw signal.reason;return true;}
 }
 function unchangedRemainder(tree,original){
  const records=new Map(original.entries.map(entry=>[entry.path,JSON.stringify(entry)]));
  return tree.entries.every(entry=>records.get(entry.path)===JSON.stringify(entry));
 }
-/** Only receipted lease-aware backups are scanned. Errors are warnings after update commit, never rollback. */
-async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLICY,now=Date.now(),beforeDelete}){
+/** Read-only maintenance may cancel; admitted deletion and ownership finalizers always finish. */
+async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLICY,now=Date.now(),beforeDelete,signal}){
  const result={removed:[],kept:[],warnings:[]};
  try{
+  signal?.throwIfAborted();
   policy=normalizeCleanupPolicy(policy);if(!policy.enabled)return result;if(!Number.isSafeInteger(now)||now<0)throw Error('Invalid bridge cleanup time.');
   const info=await installInfo(installRoot);
   const acquired=await withInstallMutex(info,async()=>{
   const root=await control(info);await locked(root,async()=>{
-   const current=await managedRuntime(info.root,true),directory=path.join(root,'receipts'),names=await fs.readdir(directory),valid=[];
+   const current=await managedRuntime(info.root,true,signal),directory=path.join(root,'receipts'),names=await fs.readdir(directory),valid=[];
    if(names.length>MAX_RECEIPTS)throw Error('Bridge cleanup receipt limit exceeded.');
    for(const name of names){
+    signal?.throwIfAborted();
     if(!/^backup-[a-f0-9]{64}\.json$/.test(name)){result.warnings.push('Unrecognized bridge cleanup metadata preserved.');continue;}
     const filename=path.join(directory,name);let record;
     try{
-     record=await readJson(filename,MAX_RECEIPT_BYTES);receiptShape(record,info);await backupPath(info,record.backup.root);
-     const baseline=await installedBaseline(root,info,record.backup.identity);
+     record=await readJson(filename,MAX_RECEIPT_BYTES,signal);receiptShape(record,info);await backupPath(info,record.backup.root);
+     const baseline=await installedBaseline(root,info,record.backup.identity,signal);
      if(!baseline||baseline.tree.digest!==record.tree.digest)throw Error('Bridge backup has no matching installed baseline.');
      if(!await exists(record.backup.root)){result.kept.push({path:record.backup.root,reason:'missing-backup'});continue;}
-     const observed=record.state==='complete'?await managedRuntime(record.backup.root,true):{identity:await directoryIdentity(record.backup.root),install:info};
+     const observed=record.state==='complete'?await managedRuntime(record.backup.root,true,signal):{identity:await directoryIdentity(record.backup.root),install:info};
      if(!sameIdentity(observed.identity,record.backup.identity)||sameIdentity(observed.identity,current.identity)||observed.install.root!==info.root)throw Error('Bridge backup identity changed.');
-     const tree=await snapshotTree(record.backup.root);
+     const tree=await snapshotTree(record.backup.root,signal);
      if(record.state==='complete'?tree.digest!==record.tree.digest:!unchangedRemainder(tree,record.tree))throw Error('Bridge backup was manually changed.');
      valid.push({record,filename});
-    }catch{result.kept.push({path:record?.backup?.root??filename,reason:'unverified-backup'});result.warnings.push('Unverified bridge backup preserved.');}
+    }catch(error){
+     if(cancelled(error,signal)){if(!result.warnings.length)throw signal.reason;return;}
+     result.kept.push({path:record?.backup?.root??filename,reason:'unverified-backup'});result.warnings.push('Unverified bridge backup preserved.');
+    }
    }
    const identities=new Set(),ambiguous=new Set();for(const item of valid){const key=leaseKey(item.record.backup.identity);if(identities.has(key))ambiguous.add(key);identities.add(key);}
    const complete=valid.filter(item=>item.record.state==='complete'&&!ambiguous.has(leaseKey(item.record.backup.identity))).sort((a,b)=>b.record.completedAt-a.record.completedAt||a.record.backup.root.localeCompare(b.record.backup.root));
    const retained=new Set(complete.slice(0,policy.keepPrevious).map(item=>item.filename));
    for(const {record,filename} of valid){
+    signal?.throwIfAborted();
     const backup=record.backup.root;let reason;
     if(ambiguous.has(leaseKey(record.backup.identity)))reason='ambiguous-receipts';
     else if(retained.has(filename))reason='retained-rollback';
@@ -332,23 +350,35 @@ async function cleanupSuccessfulBackups({installRoot,policy=DEFAULT_CLEANUP_POLI
     if(reason){result.kept.push({path:backup,reason});continue;}
     try{
      await locked(root,async()=>{
-     if(await busyLease(root,record.backup.identity)||await busyLineage(root,current.identity)){result.kept.push({path:backup,reason:'runtime-in-use'});return;}
+     if(await busyLease(root,record.backup.identity,signal)||await busyLineage(root,current.identity,signal)){result.kept.push({path:backup,reason:'runtime-in-use'});return;}
      if(!sameIdentity(await directoryIdentity(backup),record.backup.identity)||!sameIdentity(await directoryIdentity(info.root),current.identity))throw Error('Bridge runtime identity changed before cleanup.');
-     const tree=await snapshotTree(backup);if(record.state==='complete'?tree.digest!==record.tree.digest:!unchangedRemainder(tree,record.tree))throw Error('Bridge backup changed before cleanup.');
+     const tree=await snapshotTree(backup,signal);if(record.state==='complete'?tree.digest!==record.tree.digest:!unchangedRemainder(tree,record.tree))throw Error('Bridge backup changed before cleanup.');
+     signal?.throwIfAborted();
      await beforeDelete?.();
+     signal?.throwIfAborted();
      if(record.state==='complete'){record.state='deleting';await saveReceipt(directory,filename,record,true);}
+     signal?.throwIfAborted();
      await beforeDelete?.();
-     await tree.assertUnchanged();const fresh=await managedRuntime(info.root,true);
+     signal?.throwIfAborted();
+     await tree.assertUnchanged();const fresh=await managedRuntime(info.root,true,signal);
      if(!sameIdentity(fresh.identity,current.identity)||!sameIdentity(await directoryIdentity(info.parent),info.parentIdentity)
-      ||await busyLease(root,record.backup.identity)||await busyLineage(root,current.identity))throw Error('Bridge cleanup boundary changed.');
+      ||await busyLease(root,record.backup.identity,signal)||await busyLineage(root,current.identity,signal))throw Error('Bridge cleanup boundary changed.');
+     signal?.throwIfAborted();
+     // Once removal starts, finish its receipt and directory durability boundary without cancellation.
      await fs.rm(backup,{recursive:true,force:false});await syncDirectory(info.parent);await fs.unlink(filename);await syncDirectory(directory);result.removed.push(backup);
-     },record.backup.identity);
-    }catch{result.kept.push({path:backup,reason:'cleanup-incomplete'});result.warnings.push('Bridge backup cleanup incomplete; its recovery tombstone was preserved.');}
+     },record.backup.identity,undefined,signal);
+    }catch(error){
+     if(cancelled(error,signal)){if(!result.warnings.length)throw signal.reason;return;}
+     result.kept.push({path:backup,reason:'cleanup-incomplete'});result.warnings.push('Bridge backup cleanup incomplete; its recovery tombstone was preserved.');
+    }
    }
-  });
+  },undefined,undefined,signal);
   },{reuse:false});
   if(!acquired.acquired)result.kept.push({path:info.root,reason:'installation-in-progress'});
- }catch{result.warnings.push('Bridge backup cleanup was skipped safely.');}
+ }catch(error){
+  if(cancelled(error,signal)){if(!result.warnings.length)throw signal.reason;}
+  else result.warnings.push('Bridge backup cleanup was skipped safely.');
+ }
  return result;
 }
 module.exports={OWNER_FILE,CAPABILITY_FILE,RUNTIME_USE_ENTRYPOINTS,DEFAULT_CLEANUP_POLICY,normalizeCleanupPolicy,controlRootForInstallRoot,

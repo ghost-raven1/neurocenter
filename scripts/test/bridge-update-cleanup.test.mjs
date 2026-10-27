@@ -125,6 +125,53 @@ for(const denial of [1,2])test('Fresh authorization denial at destructive bounda
  assert.equal(await fs.readFile(path.join(f.installRoot,'dist/index.js'),'utf8'),'current');
  assert.deepEqual((await f.run()).removed,[f.backupRoots[0]]);
 });
+test('Abort during an actual snapshot stream closes its file and releases owned gates without deletion',async t=>{
+ const f=await fixture(t),controller=new AbortController(),value=Buffer.alloc(2*1024**2,7),target=path.join(f.backupRoots[0],'dist/index.js');
+ await runtime(f.backupRoots[0],f.installRoot,value);await writeSuccessfulBackupReceipt({installRoot:f.installRoot,backupRoot:f.backupRoots[0],completedAt:NOW-20*DAY});
+ const open=fs.open.bind(fs);let captured,started=false,calls=0;
+ t.mock.method(fs,'open',async(...args)=>{
+  const handle=await open(...args);
+  if(args[0]===target&&!started){started=true;captured=handle;const read=handle.createReadStream.bind(handle);
+   t.mock.method(handle,'createReadStream',options=>{const stream=read({...options,highWaterMark:1024});stream.once('data',()=>controller.abort());return stream;});
+  }
+  return handle;
+ });
+ await assert.rejects(f.run({signal:controller.signal,beforeDelete:async()=>{calls++;}}),error=>error.name==='AbortError');
+ assert.equal(started,true);assert.equal(calls,0);await assert.rejects(captured.stat(),{code:'EBADF'});assert.deepEqual(await fs.readFile(target),value);
+ const control=await controlRootForInstallRoot(f.installRoot);await assert.rejects(fs.access(path.join(control,'lock.json')),{code:'ENOENT'});
+ await assert.rejects(fs.access(f.installRoot+'.install-lock'),{code:'ENOENT'});assert.deepEqual(await fs.readdir(path.join(control,'locks')),[]);
+});
+test('Abort after the deleting receipt preserves bytes and a resumable tombstone',async t=>{
+ const f=await fixture(t);await f.backups();const controller=new AbortController();let calls=0;
+ await assert.rejects(f.run({signal:controller.signal,beforeDelete:async()=>{if(++calls===2)controller.abort();}}),error=>error.name==='AbortError');
+ assert.equal(calls,2);assert.equal(await fs.readFile(path.join(f.backupRoots[0],'dist/index.js'),'utf8'),'backup-0');
+ const control=await controlRootForInstallRoot(f.installRoot),records=await Promise.all((await fs.readdir(path.join(control,'receipts'))).map(name=>fs.readFile(path.join(control,'receipts',name),'utf8').then(JSON.parse)));
+ assert.equal(records.find(record=>record.backup.root===f.backupRoots[0]).state,'deleting');
+ await assert.rejects(fs.access(path.join(control,'lock.json')),{code:'ENOENT'});assert.deepEqual(await fs.readdir(path.join(control,'locks')),[]);
+ assert.deepEqual((await f.run()).removed,[f.backupRoots[0]]);
+});
+test('Abort after fs.rm admission waits for removal, receipt cleanup and owned gate release',async t=>{
+ const f=await fixture(t);await runtime(f.backupRoots[0],f.installRoot,'one-backup');await writeSuccessfulBackupReceipt({installRoot:f.installRoot,backupRoot:f.backupRoots[0],completedAt:NOW-20*DAY});
+ const controller=new AbortController(),rm=fs.rm.bind(fs);let entered,release,finished=false,settled=false;
+ const started=new Promise(resolve=>{entered=resolve;}),allowed=new Promise(resolve=>{release=resolve;});
+ t.mock.method(fs,'rm',async(filename,options)=>{if(filename===f.backupRoots[0]){entered();await allowed;await rm(filename,options);finished=true;return;}return rm(filename,options);});
+ const pending=f.run({signal:controller.signal,policy:{...DEFAULT_CLEANUP_POLICY}});void pending.finally(()=>{settled=true;}).catch(()=>{});
+ try{
+  await started;controller.abort();await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+  const control=await controlRootForInstallRoot(f.installRoot);await fs.access(path.join(control,'lock.json'));await fs.access(f.installRoot+'.install-lock');assert.equal((await fs.readdir(path.join(control,'locks'))).length,1);
+  release();assert.deepEqual((await pending).removed,[f.backupRoots[0]]);assert.equal(finished,true);
+  await assert.rejects(fs.access(f.backupRoots[0]),{code:'ENOENT'});assert.deepEqual(await fs.readdir(path.join(control,'receipts')),[]);
+  await assert.rejects(fs.access(path.join(control,'lock.json')),{code:'ENOENT'});await assert.rejects(fs.access(f.installRoot+'.install-lock'),{code:'ENOENT'});assert.deepEqual(await fs.readdir(path.join(control,'locks')),[]);
+ }finally{release();await pending.catch(()=>{});}
+});
+test('A real removal error concurrent with abort remains a warning and a recoverable tombstone',async t=>{
+ const f=await fixture(t);await runtime(f.backupRoots[0],f.installRoot,'one-backup');await writeSuccessfulBackupReceipt({installRoot:f.installRoot,backupRoot:f.backupRoots[0],completedAt:NOW-20*DAY});
+ const controller=new AbortController(),rm=fs.rm.bind(fs);
+ t.mock.method(fs,'rm',async(filename,options)=>{if(filename===f.backupRoots[0]){controller.abort();throw Object.assign(Error('fixture I/O failure'),{code:'EIO'});}return rm(filename,options);});
+ const result=await f.run({signal:controller.signal,policy:{...DEFAULT_CLEANUP_POLICY}});
+ assert.deepEqual(result.removed,[]);assert.ok(result.warnings.length);assert.ok(result.kept.some(item=>item.reason==='cleanup-incomplete'));
+ assert.equal(await fs.readFile(path.join(f.backupRoots[0],'dist/index.js'),'utf8'),'one-backup');
+});
 test('A partial deletion records a tombstone, never rolls back current and retries only unchanged remaining bytes',async t=>{
  const f=await fixture(t);await f.backups();const rm=fs.rm.bind(fs);let intercepted=false;
  const mocked=t.mock.method(fs,'rm',async(filename,options)=>{

@@ -68,9 +68,15 @@ function apiTransportError(origin: string, cause: unknown): Error {
         : [error?.code,error?.cause?.code].find(value => typeof value === 'string' && transportCodes.has(value));
     return new Error(`Не удалось связаться с API ${origin}${code ? ' (' + code + ')' : ''}. Проверьте доступность сервера и настройки сети.`, {cause});
 }
-export async function api<T>(route: string, input?: unknown, tokenOverride?: string): Promise<T> {
+/** Caller cancellation supplements the existing transport deadline without changing other requests. */
+export async function api<T>(route: string, input?: unknown, tokenOverride?: string, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted();
     const credentials = await readState<Credentials>('credentials');
+    signal?.throwIfAborted();
     const origin = apiHub();
+    const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
+    const cancelled = (cause: unknown) => signal?.aborted && (cause === signal.reason
+        || (cause as {name?: unknown} | null)?.name === 'AbortError' && requestSignal.reason === signal.reason);
     const options = {
         method: 'POST',
         headers: {
@@ -80,12 +86,14 @@ export async function api<T>(route: string, input?: unknown, tokenOverride?: str
                 : {}),
         },
         body: JSON.stringify(input ?? {}),
-        signal: AbortSignal.timeout(20000),
+        signal: requestSignal,
     };
     let response: Response;
     try { response = await fetch(origin + '/api/device-channel/' + route, options); }
-    catch (cause) { throw apiTransportError(origin, cause); }
-    const data = (await response.json()) as { message?: unknown };
+    catch (cause) { if (cancelled(cause)) { throw signal!.reason; } throw apiTransportError(origin, cause); }
+    let data: { message?: unknown };
+    try { data = (await response.json()) as { message?: unknown }; }
+    catch (cause) { if (cancelled(cause)) { throw signal!.reason; } throw cause; }
     if (!response.ok) {
         throw Object.assign(new Error(
             typeof data.message === 'string'

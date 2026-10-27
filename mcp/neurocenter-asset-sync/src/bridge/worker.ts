@@ -136,6 +136,7 @@ export async function runWorker(): Promise<void> {
     let heartbeatPending: Promise<void> | undefined;
     let heartbeatPublication:Promise<void>|undefined;
     let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
+    let cleanupController:AbortController|undefined;
     let observationsPending:Promise<void>|undefined;
     const heartbeat = (): Promise<void> => {
         if (stopped) { return Promise.resolve(); }
@@ -159,10 +160,11 @@ export async function runWorker(): Promise<void> {
                 void synchronizeOpenCodeModels(() => stopped).catch(() => undefined);
                 if(!cleanupPending&&Date.now()-lastCleanup>60*60_000){
                     lastCleanup=Date.now();
-                    cleanupPending=readBridgeCleanupPolicy().then(cleanupInstalledBridge)
+                    const controller=new AbortController();cleanupController=controller;
+                    cleanupPending=readBridgeCleanupPolicy().then(policy=>cleanupInstalledBridge(policy,{signal:controller.signal}))
                         .then(result=>{if(result?.warnings.length)process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n');})
-                        .catch(()=>process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n'))
-                        .finally(()=>{cleanupPending=undefined;});
+                        .catch(error=>{if(!(controller.signal.aborted&&error===controller.signal.reason))process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n');})
+                        .finally(()=>{cleanupPending=undefined;cleanupController=undefined;});
                 }
                 }finally{finishPublication();heartbeatPublication=undefined;}
             }
@@ -456,10 +458,11 @@ export async function runWorker(): Promise<void> {
     const stop = (): void => {
         if (stopped) { return; }
         stopped = true;
+        cleanupController?.abort();
         clearInterval(timer);
         socket.disconnect();
         const sessions = Promise.allSettled([stopMethodWorkflows(),roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]);
-        // A heartbeat may have admitted maintenance before SIGTERM. Let its real lock owner finish.
+        // Read-only maintenance may cancel; admitted mutation and owned lock cleanup must finish.
         void Promise.allSettled([heartbeatPublication,sessions]).then(()=>Promise.allSettled([cleanupPending])).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)

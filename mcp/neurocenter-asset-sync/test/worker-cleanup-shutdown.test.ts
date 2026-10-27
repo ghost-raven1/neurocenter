@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {existsSync,readdirSync} from 'node:fs';
 import path from 'node:path';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import cleanup from '../../../services/shared/bridge-update-cleanup.cjs';
@@ -38,13 +39,13 @@ const gate=()=>{const value=deferred();releases.push(value.resolve);return value
 function terminate(){const listener=process.listeners('SIGTERM').find(value=>!previous.get('SIGTERM')?.has(value));expect(listener).toBeTypeOf('function');listener!();}
 
 /** Actual shared cleanup owns its real global lock while the worker receives its production signal handler. */
-async function cleanupRuntime(){
+async function cleanupRuntime(largeRead=false){
  const installRoot=path.join(local.temporary,'managed-bridge');
  async function runtime(destination:string){
   const stage=await fs.mkdtemp(path.join(local.temporary,'.stage-'));await fs.mkdir(path.join(stage,'dist'));
   await fs.writeFile(path.join(stage,cleanup.OWNER_FILE),JSON.stringify({schemaVersion:1,installRoot}));
   await fs.writeFile(path.join(stage,cleanup.CAPABILITY_FILE),JSON.stringify({schemaVersion:1,entrypoints:cleanup.RUNTIME_USE_ENTRYPOINTS}));
-  await fs.writeFile(path.join(stage,'dist/index.js'),'owned runtime');
+  await fs.writeFile(path.join(stage,'dist/index.js'),largeRead?Buffer.alloc(2*1024**2,7):'owned runtime');
   await cleanup.writeInstalledRuntimeReceipt({installRoot,runtimeRoot:stage});await fs.rename(stage,destination);
  }
  await runtime(installRoot);
@@ -52,7 +53,7 @@ async function cleanupRuntime(){
   const backupRoot=path.join(local.temporary,'.neurocenter-previous.'+name);await runtime(backupRoot);
   await cleanup.writeSuccessfulBackupReceipt({installRoot,backupRoot,completedAt:Date.now()-(20-index)*86400000});
  }
- return{installRoot,lock:path.join(await cleanup.controlRootForInstallRoot(installRoot),'lock.json')};
+ return{installRoot,lock:path.join(await cleanup.controlRootForInstallRoot(installRoot),'lock.json'),backup:path.join(local.temporary,'.neurocenter-previous.Abc123')};
 }
 
 it('SIGTERM retains the worker until actual cleanup releases its global lock',async()=>{
@@ -69,6 +70,31 @@ it('SIGTERM retains the worker until actual cleanup releases its global lock',as
  release.resolve();await worker;await vi.waitFor(()=>expect(process.exit).toHaveBeenCalledWith(0));
  await expect(fs.access(runtime.lock)).rejects.toHaveProperty('code','ENOENT');
  await expect(fs.access(path.join(state.stateDir(),'worker.lock'))).rejects.toHaveProperty('code','ENOENT');
+});
+
+it('SIGTERM aborts an actual readonly snapshot stream and closes its FD and gates before worker exit',async()=>{
+ const runtime=await cleanupRuntime(true),target=path.join(runtime.backup,'dist/index.js'),control=await cleanup.controlRootForInstallRoot(runtime.installRoot);
+ const open=fs.open.bind(fs),beforeDelete=vi.fn(async()=>{throw Error('Readonly cancellation must precede deletion.');});
+ let captured:Awaited<ReturnType<typeof fs.open>>|undefined,failure:unknown,entered=false;
+ let atExit:{fd:number|undefined;global:boolean;installer:boolean;gates:string[]}|undefined;
+ vi.mocked(process.exit).mockImplementation((()=>{atExit={fd:captured?.fd,global:existsSync(runtime.lock),installer:existsSync(runtime.installRoot+'.install-lock'),gates:readdirSync(path.join(control,'locks'))};}) as never);
+ vi.spyOn(fs,'open').mockImplementation(async(...args)=>{
+  const handle=await open(...args);
+  if(args[0]===target&&!captured){captured=handle;const read=handle.createReadStream.bind(handle);
+   vi.spyOn(handle,'createReadStream').mockImplementation(options=>{const stream=read({...options,highWaterMark:1024});stream.once('data',()=>{entered=true;terminate();});return stream;});
+  }
+  return handle;
+ });
+ vi.mocked(cleanupInstalledBridge).mockImplementation(async(_policy,options)=>{
+  try{return await cleanup.cleanupSuccessfulBackups({installRoot:runtime.installRoot,signal:options?.signal,beforeDelete});}
+  catch(error){failure=error;throw error;}
+ });
+ worker=runWorker();await vi.waitFor(()=>expect(entered).toBe(true),{timeout:1000});await worker;await vi.waitFor(()=>expect(process.exit).toHaveBeenCalledWith(0));
+ expect(failure).toMatchObject({name:'AbortError'});expect(beforeDelete).not.toHaveBeenCalled();expect(atExit).toEqual({fd:-1,global:false,installer:false,gates:[]});
+ await expect(captured!.stat()).rejects.toHaveProperty('code','EBADF');expect((await fs.readFile(target)).equals(Buffer.alloc(2*1024**2,7))).toBe(true);
+ await expect(fs.access(runtime.lock)).rejects.toHaveProperty('code','ENOENT');await expect(fs.access(runtime.installRoot+'.install-lock')).rejects.toHaveProperty('code','ENOENT');
+ expect(await fs.readdir(path.join(await cleanup.controlRootForInstallRoot(runtime.installRoot),'locks'))).toEqual([]);
+ expect(process.stderr.write).not.toHaveBeenCalled();
 });
 
 it('SIGTERM waits for an admitted heartbeat and prevents cleanup from starting after its response',async()=>{
