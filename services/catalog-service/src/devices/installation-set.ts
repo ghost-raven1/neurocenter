@@ -45,6 +45,11 @@ export function assertInstallablePackage(pkg: IPackage): void {
         (pkg.config?.command !== 'node' || !pkg.config.entrypoint || !pkg.files.some(file => file.path === pkg.config?.entrypoint))) {
         throw new ConflictException('Внешняя команда MCP не входит в закреплённый пакет. Загрузите готовый Node-пакет с точкой входа или используйте удалённый MCP.');
     }
+    // Mirror the bridge planner before an immutable plan or job can be admitted.
+    if (pkg.plugin.kind === 'plugin' && !normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts).length &&
+        (!pkg.config?.entrypoint || !pkg.files.some(file => file.path === pkg.config?.entrypoint))) {
+        throw new ConflictException('Точка входа плагина отсутствует в закреплённом пакете. Выберите исправленную одобренную версию с файлом запуска или готовым комплектом.');
+    }
     packageDependencies(pkg);
 }
 

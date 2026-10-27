@@ -50,6 +50,19 @@ describe('Одобрение точной версии установочног�
         await expect(service.prepare(actor, { projectId: 'prj-own', assetKind: 'skill', assetId: 'common/helper', version: 1 })).rejects.toMatchObject({ status: 409 });
         expect(query.mock.calls.some(([sql]) => String(sql).startsWith('INSERT INTO device_install_plans'))).toBe(false);
     });
+    it('Отсутствующий plugin entrypoint даёт 409 до записи плана или получения разрешения enqueue', async () => {
+        connect.mockClear();
+        assigned=buildPackage({id:'ai-plug-own-missing-entry',name:'Плагин QA',kind:'plugin',version:7},
+            [{path:'README.md',content:'Документация без исполняемой поставки'}],'now',null);
+        const before=JSON.stringify(assigned);
+        await expect(service.prepare(actor,{projectId:'prj-own',assetKind:'plugin',assetId:assigned.plugin.id,version:7})).rejects.toMatchObject({status:409});
+        expect(connect).not.toHaveBeenCalled();expect(build).not.toHaveBeenCalled();
+        expect(query.mock.calls.some(([sql])=>/INSERT|UPDATE|DELETE/.test(String(sql)))).toBe(false);
+        query.mockClear();
+        query.mockImplementation(async(sql:string)=>({rows:sql.includes('FROM project_assets')?[{project_id:'prj-own',asset_id:assigned.plugin.id,asset_kind:'plugin',asset_version:7,asset_manifest:assigned.manifest.sha256,pin_snapshot:{package:assigned}}]:[{...row,asset_kind:'plugin',asset_id:assigned.plugin.id,version:7,manifest:assigned.manifest.sha256,package:assigned}],rowCount:1}));
+        await expect(service.delivery(id,'prj-own','plugin',assigned.plugin.id,7,1,assigned.manifest.sha256)).rejects.toMatchObject({status:409});
+        expect(JSON.stringify(assigned)).toBe(before);
+    });
     it('Разработчик не одобряет собственный проектный скилл', async () => {
         claims.mockResolvedValue({ userRoles: ['Разработчик'], projects: [{ projectId: 'prj-own', role: 'Разработчик' }] });
         await expect(service.decide({ ...actor, activeRole: 'Разработчик' }, id, { expectedManifest: row.manifest, expectedRevision: 1 }, 'approved')).rejects.toMatchObject({ status: 403 });
