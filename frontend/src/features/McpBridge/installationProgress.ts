@@ -2,6 +2,7 @@ import type { IBridgeInstallation, IBridgeJob } from './api';
 import { matchingInspection } from './InstallationInspectionStatus';
 import { matchingRuntime, pendingLocalJob } from './operationHelpers';
 import { matchingConfigurationStatus } from './mcpConfiguration';
+import {localJobStatus} from './localJobStatus';
 
 export interface IInstallationProgress {
     state: 'installed' | 'configuration' | 'inspection' | 'runtime' | 'passed' | 'modified' | 'help' | 'pending';
@@ -10,7 +11,7 @@ export interface IInstallationProgress {
 /** Одно следующее действие вместо предположения, что наличие файлов означает работающий инструмент. */
 export function installationProgress(item: IBridgeInstallation, jobs: IBridgeJob[]): IInstallationProgress {
     const pending = pendingLocalJob(jobs,item);
-    if (pending) { return {state:'pending',title:pending.state === 'reconciling' ? 'Сверяем результат действия' : 'Действие выполняется',description:pending.message,action:'none'}; }
+    if (pending) { const status = localJobStatus(pending); return {state:'pending',title:status.title,description:[pending.message,status.description].filter(Boolean).join(' '),action:'none'}; }
     const inspection = matchingInspection(item);
     if (inspection?.state === 'checked' && ['modified','missing'].includes(inspection.status)) {
         return {state:'modified',title:'Есть изменения в установке',description:'Сравните файлы с одобренной версией. Перед восстановлением ручные правки будут сохранены.',action:'repair'};

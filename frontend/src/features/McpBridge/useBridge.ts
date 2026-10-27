@@ -28,9 +28,11 @@ export function useBridge(enabled=true) {
     const [devicesCheckedAt, setDevicesCheckedAt] = useState<number>();
     const [, expireStatus] = useState(0);
     const generation = useRef(0);
-    const reload = useCallback(async () => {
-        if (!enabled || !email || scopeRef.current !== scope) { return; }
+    const pendingGeneration = useRef<number>();
+    const reload = useCallback(async ({skipIfPending = false} = {}) => {
+        if (!enabled || !email || scopeRef.current !== scope || skipIfPending && pendingGeneration.current !== undefined) { return; }
         const seq = ++generation.current;
+        pendingGeneration.current = seq;
         setLoading(true);
         const receive = <T,>(resource: TBridgeResource, result: TBridgeReadResult<T>, save: (items: T[]) => void): void => {
             if (seq !== generation.current || scopeRef.current !== scope) { return; }
@@ -54,6 +56,7 @@ export function useBridge(enabled=true) {
                 installations: result => receive('installations', result, setInstallations),
             });
         } finally {
+            if (pendingGeneration.current === seq) { pendingGeneration.current = undefined; }
             if (seq === generation.current && scopeRef.current === scope) {
                 setLoading(false);
             }
@@ -67,6 +70,7 @@ export function useBridge(enabled=true) {
     }, [devicesCheckedAt]);
     useEffect(() => {
         generation.current++;
+        pendingGeneration.current = undefined;
         setOwner(scope);
         setDevices([]);
         setJobs([]);
@@ -92,19 +96,19 @@ export function useBridge(enabled=true) {
                 clearTimeout(timer);
             }
             timer = setTimeout(() => {
-                void reload();
+                void reload({skipIfPending: true});
             }, 150);
         };
         void reload();
         socket.connect();
         socket.on('bridge:changed', refresh);
         socket.on('connect', refresh);
-        const paired=(event:Event):void=>{const id=(event as CustomEvent<string>).detail;if(typeof id==='string'){setSelected(id);refresh();}};
+        const paired=(event:Event):void=>{const id=(event as CustomEvent<string>).detail;if(typeof id==='string'){setSelected(id);void reload();}};
         window.addEventListener(CONNECTED_DEVICE_EVENT,paired);
         const resume = (): void => {
             if (document.visibilityState !== 'visible') { return; }
             if (timer) { clearTimeout(timer); }
-            void reload();
+            void reload({skipIfPending: true});
         };
         window.addEventListener('focus', resume);
         document.addEventListener('visibilitychange', resume);

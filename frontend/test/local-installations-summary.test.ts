@@ -24,7 +24,7 @@ vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => children;
     const List = Object.assign(({ dataSource, renderItem }: { dataSource: IBridgeInstallation[]; renderItem(item: IBridgeInstallation): ReactNode }) =>
         createElement('div', null, dataSource.map(item => createElement('div', { key: item.assetId }, renderItem(item)))), { Item: content });
-    return { List, Space: content, Tag: content, Collapse: Object.assign(content, { Panel: content }),
+    return { List, Space: content, Tag: content, Collapse: Object.assign(content, { Panel: ({header, children}: {header?: ReactNode; children?: ReactNode}) => createElement('div', null, header, children) }),
         Typography: { Text: ({ children, role }: { children?: ReactNode; role?: string }) => createElement('span', { role }, children), Paragraph: content },
         Card: ({ title, extra, children }: { title: ReactNode; extra?: ReactNode; children: ReactNode }) => createElement('article', null, createElement('header', null, title, extra), children),
         Button: (props: Button) => {
@@ -80,13 +80,31 @@ describe('Compact local installation summary', () => {
         click('Отменить действие: Инструмент 1'); await flushSetup();
         expect(bridgeApi.cancel).toHaveBeenCalledExactlyOnceWith('queued'); expect(props.bridge.reload).toHaveBeenCalledOnce(); expect(bridgeApi.create).not.toHaveBeenCalled();
     });
-    it('keeps a submission error and the latest removal recovery receipt outside the collapsed panel', async () => {
+    it('keeps a submission error visible and puts terminal removal recovery in expandable history', async () => {
         vi.mocked(bridgeApi.create).mockRejectedValueOnce(new Error('Проверка не отправлена: нет сети'));
         render(); click('Показать установки'); render(); click('Проверить файлы'); await flushSetup(); render();
         click('Скрыть установки');
         props.bridge.jobs = [job('removed', { kind: 'uninstall', state: 'succeeded', message: 'Удаление завершено', result: { recoveryPath: '/private/recovery/fixture' } })];
-        const visible = outsidePanel(render()); expect(visible).toContain('Проверка не отправлена: нет сети'); expect(visible).toContain('Удаление завершено');
-        expect(visible).toContain('/private/recovery/fixture'); expect(visible).toContain('Резервная копия сохранена локально');
+        const html = render(), visible = outsidePanel(html); expect(visible).toContain('Проверка не отправлена: нет сети'); expect(visible).not.toContain('Удаление завершено');
+        expect(visible).not.toContain('/private/recovery/fixture'); expect(panel(html)).toContain('История удалений (1)');
+        expect(panel(html)).toContain('Удаление завершено'); expect(panel(html)).toContain('/private/recovery/fixture'); expect(panel(html)).toContain('Резервная копия сохранена локально');
+    });
+    it('keeps current failed and previous-folder active removal recovery visible, with old terminal receipts in history', async () => {
+        props.bridge.jobs = [job('failed-removal', {kind:'uninstall', state:'failed', message:'Текущие файлы изменены'}),
+            job('active-old-folder', {assetId:'tool-2', bindingId:'c'.repeat(64), kind:'uninstall', state:'queued', message:'Удаление ожидает подключения'}),
+            job('old-failed-removal', {assetId:'tool-3', bindingId:'d'.repeat(64), kind:'uninstall', state:'failed', message:'Ошибка прежней папки'}),
+            job('old-success-removal', {assetId:'tool-4', bindingId:'d'.repeat(64), kind:'uninstall', state:'succeeded', message:'Удалено 23 октября'})];
+        const html = render(), visible = outsidePanel(html); expect(visible).toContain('Текущие файлы изменены'); expect(visible).toContain('Удаление ожидает подключения');
+        expect(visible).toContain('Прежняя папка'); expect(visible).not.toContain('Ошибка прежней папки'); expect(visible).not.toContain('Удалено 23 октября');
+        expect(panel(html)).toContain('История удалений (2)'); expect(panel(html)).toContain('Ошибка прежней папки');
+        expect(ui.buttons.has('Отменить удаление: Инструмент 2')).toBe(true);
+    });
+    it('distinguishes an accepted installation from completion and keeps stale-read recovery next to its last-known status', () => {
+        props.bridge.jobs = [job('accepted', {kind:'install', state:'queued', message:'Мост принял задание'})];
+        props.bridge.jobsReady = false; props.bridge.errors.jobs = 'Не удалось загрузить статусы установок. Попробуйте обновить данные.';
+        const visible = outsidePanel(render()); expect(visible).toContain('Задание принято'); expect(visible).toContain('Выполнение ещё не подтверждено');
+        expect(visible).toContain('Не удалось загрузить статусы установок'); expect(visible).toContain('Последние полученные статусы');
+        expect(ui.buttons.has('Обновить статусы')).toBe(true); expect(bridgeApi.create).not.toHaveBeenCalled();
     });
     it('rebind keeps an earlier inspection error in its historical row, outside the current folder summary', async () => {
         const oldItem=item(1),message='Проверка папки A не отправлена';
