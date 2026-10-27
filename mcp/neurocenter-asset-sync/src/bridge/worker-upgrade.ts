@@ -97,7 +97,7 @@ async function stopWorker(index: string, force: boolean): Promise<boolean> {
             await assertWorker(pid, index);
             if (await readLock(lock) !== raw) { throw new Error('Владелец блокировки MCP изменился. Повторите обновление.'); }
             process.kill(pid, 'SIGTERM');
-            const stoppedBy = Date.now() + 5000;
+            const stoppedBy = Date.now() + 10000;
             while (alive(pid)) {
                 if (Date.now() >= stoppedBy) { throw new Error('Предыдущий MCP ещё завершается. Повторите подключение через несколько секунд.'); }
                 await wait(100);

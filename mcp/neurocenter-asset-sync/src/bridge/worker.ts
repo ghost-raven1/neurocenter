@@ -134,7 +134,9 @@ export async function runWorker(): Promise<void> {
     });
     const roleMcpPoller=startRoleMcpPoller();
     let heartbeatPending: Promise<void> | undefined;
+    let heartbeatPublication:Promise<void>|undefined;
     let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
+    let cleanupController:AbortController|undefined;
     let observationsPending:Promise<void>|undefined;
     const heartbeat = (): Promise<void> => {
         if (stopped) { return Promise.resolve(); }
@@ -149,14 +151,22 @@ export async function runWorker(): Promise<void> {
             }
             const report = await workspaceReport();
             if (!stopped) {
-                await api('heartbeat', report); void synchronizeOpenCodeModels(() => stopped).catch(() => undefined);
+                let finishPublication!:()=>void;
+                const publication=new Promise<void>(resolve=>{finishPublication=resolve;});
+                heartbeatPublication=publication;
+                try{
+                await api('heartbeat', report);
+                if (stopped) { return; }
+                void synchronizeOpenCodeModels(() => stopped).catch(() => undefined);
                 if(!cleanupPending&&Date.now()-lastCleanup>60*60_000){
                     lastCleanup=Date.now();
-                    cleanupPending=readBridgeCleanupPolicy().then(cleanupInstalledBridge)
+                    const controller=new AbortController();cleanupController=controller;
+                    cleanupPending=readBridgeCleanupPolicy().then(policy=>cleanupInstalledBridge(policy,{signal:controller.signal}))
                         .then(result=>{if(result?.warnings.length)process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n');})
-                        .catch(()=>process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n'))
-                        .finally(()=>{cleanupPending=undefined;});
+                        .catch(error=>{if(!(controller.signal.aborted&&error===controller.signal.reason))process.stderr.write('neurocenter bridge: очистка обновлений отложена; сохранённые копии доступны.\n');})
+                        .finally(()=>{cleanupPending=undefined;cleanupController=undefined;});
                 }
+                }finally{finishPublication();heartbeatPublication=undefined;}
             }
         })().finally(() => { heartbeatPending = undefined; });
         return heartbeatPending;
@@ -446,10 +456,14 @@ export async function runWorker(): Promise<void> {
         void drain();
     });
     const stop = (): void => {
+        if (stopped) { return; }
         stopped = true;
+        cleanupController?.abort();
         clearInterval(timer);
         socket.disconnect();
-        void Promise.all([stopMethodWorkflows(),roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]).then(()=>readBoundedUtf8(lock, 4096))
+        const sessions = Promise.allSettled([stopMethodWorkflows(),roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]);
+        // Read-only maintenance may cancel; admitted mutation and owned lock cleanup must finish.
+        void Promise.allSettled([heartbeatPublication,sessions]).then(()=>Promise.allSettled([cleanupPending])).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })

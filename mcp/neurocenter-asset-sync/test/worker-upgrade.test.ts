@@ -53,6 +53,36 @@ describe('Безопасная подготовка замены установ�
         await finishWorkerUpgrade();
         expect(api).toHaveBeenLastCalledWith('worker/resume');
     });
+    it('Ожидает реальное завершение cleanup дольше пяти секунд без повторного SIGTERM', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        let signalled!: () => void; const received = new Promise<void>(resolve => { signalled = resolve; });
+        let exitAt = Infinity;
+        vi.mocked(process.kill).mockImplementation((_pid, signal) => {
+            signals.push(signal);
+            if (signal === 'SIGTERM') { exitAt = Date.now() + 6000; signalled(); return true; }
+            if (Date.now() >= exitAt) { throw Object.assign(new Error('Отсутствует'), { code: 'ESRCH' }); }
+            return true;
+        });
+        const preparing = prepareWorkerUpgrade(installed); void preparing.catch(() => undefined);
+        await received; await vi.advanceTimersByTimeAsync(6000);
+        await expect(preparing).resolves.toEqual({ paused: true });
+        expect(signals.filter(signal => signal === 'SIGTERM')).toHaveLength(1); expect(signals).not.toContain('SIGKILL');
+        expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(['worker/pause']);
+        await expect(fs.stat(lock)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+    it('После десяти секунд сохраняет живой процесс и блокировку и возвращает очередь', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        let signalled!: () => void; const received = new Promise<void>(resolve => { signalled = resolve; });
+        vi.mocked(process.kill).mockImplementation((_pid, signal) => { signals.push(signal); if (signal === 'SIGTERM') { signalled(); } return true; });
+        let finished = false;
+        const preparing = prepareWorkerUpgrade(installed); void preparing.finally(() => { finished = true; }).catch(() => undefined);
+        await received; await vi.advanceTimersByTimeAsync(9900);
+        expect(finished).toBe(false); expect(api).not.toHaveBeenCalledWith('worker/resume');
+        await vi.advanceTimersByTimeAsync(200);
+        await expect(preparing).rejects.toThrow('Предыдущий MCP ещё завершается');
+        expect(signals.filter(signal => signal === 'SIGTERM')).toHaveLength(1); expect(signals).not.toContain('SIGKILL');
+        expect(await fs.readFile(lock, 'utf8')).toBe(String(pid)); expect(api).toHaveBeenLastCalledWith('worker/resume');
+    });
     it('Обычное подключение сохраняет worker той же версии и сборки', async () => {
         await ensureCurrentWorker();
         expect(api).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();

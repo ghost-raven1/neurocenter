@@ -17,7 +17,7 @@ async function fixture(){const local=await providerFixture();cleanups.push(local
 describe('Update retention settings keep the runtime budget and one durable intent',()=>{
     it('inspects defaults, changes retention, and fences an older limit draft with the same revision',async()=>{
         const {run}=await fixture();
-        expect((await run(command({schemaVersion:2,action:'inspect'}))).result).toMatchObject({schemaVersion:2,revision:0,limitBytes:2*1024**3,cleanup:{enabled:true,keepPrevious:2,minAgeDays:7}});
+        expect((await run(command({schemaVersion:2,action:'inspect'}))).result).toMatchObject({schemaVersion:2,revision:0,limitBytes:2*1024**3,cleanup:{enabled:true,keepPrevious:0,minAgeDays:0}});
         expect((await run(command({schemaVersion:2,action:'set-cleanup',expectedRevision:0,cleanup}))).result).toMatchObject({revision:1,cleanup});
         await expect(run(command({schemaVersion:1,action:'set',expectedRevision:0,limitBytes:3*1024**3}))).rejects.toThrow(/другом окне/);
         await run(command({schemaVersion:1,action:'set',expectedRevision:1,limitBytes:3*1024**3}));
@@ -38,7 +38,7 @@ describe('Update retention settings keep the runtime budget and one durable inte
     it('does not apply retention after the final authority check fails',async()=>{
         const {run}=await fixture();let calls=0;
         await expect(run(command({schemaVersion:2,action:'set-cleanup',expectedRevision:0,cleanup}),async()=>{if(++calls===2)throw Error('revoked');})).rejects.toThrow('revoked');
-        expect(await readBridgeCleanupPolicy()).toEqual({enabled:true,keepPrevious:2,minAgeDays:7});expect(await runtimeCacheLimit()).toBe(2*1024**3);
+        expect(await readBridgeCleanupPolicy()).toEqual({enabled:true,keepPrevious:0,minAgeDays:0});expect(await runtimeCacheLimit()).toBe(2*1024**3);
     });
     it('persists a target below usage without deleting files and keeps the default cleanup receipt readable',async()=>{
         const {run}=await fixture(),root=path.join(stateDir(),'runtime-artifacts');
@@ -47,13 +47,13 @@ describe('Update retention settings keep the runtime budget and one durable inte
         const digest=(value:Buffer)=>createHash('sha256').update(value).digest('hex'),original=digest(bytes);
         const job=command({schemaVersion:2,action:'set',expectedRevision:0,limitBytes:1024**2});
         const saved=await run(job);
-        expect(saved.result).toMatchObject({schemaVersion:2,revision:1,limitBytes:1024**2,cleanup:{enabled:true,keepPrevious:2,minAgeDays:7}});
+        expect(saved.result).toMatchObject({schemaVersion:2,revision:1,limitBytes:1024**2,cleanup:{enabled:true,keepPrevious:0,minAgeDays:0}});
         expect(saved.result.usedBytes).toBeGreaterThanOrEqual(bytes.length);
         expect(await runtimeCacheLimit()).toBe(1024**2);expect(digest(await fs.readFile(file))).toBe(original);
         expect((await run(command({schemaVersion:2,action:'inspect'}))).result).toMatchObject({revision:1,limitBytes:1024**2,usedBytes:saved.result.usedBytes});
         const authorize=vi.fn(async()=>{throw Error('must not reapply');});
         expect((await run(job,authorize)).result).toMatchObject({revision:1,limitBytes:1024**2});expect(authorize).not.toHaveBeenCalled();
-        expect(await readBridgeCleanupPolicy()).toEqual({enabled:true,keepPrevious:2,minAgeDays:7});expect(digest(await fs.readFile(file))).toBe(original);
+        expect(await readBridgeCleanupPolicy()).toEqual({enabled:true,keepPrevious:0,minAgeDays:0});expect(digest(await fs.readFile(file))).toBe(original);
     });
     it('accepts a target above 16GiB and retains it across a retention change',async()=>{
         const {run}=await fixture();

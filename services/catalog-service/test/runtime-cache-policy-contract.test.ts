@@ -3,12 +3,26 @@ import {normalizeRuntimeCachePolicyPayload,normalizeRuntimeCachePolicyResult,RUN
 import {requiredJobFeatures} from '../../shared/feature-policy.cjs';
 import {deviceJobRetryPolicy} from '../src/devices/device-job-retry';
 import {canCancelBridgeJob} from '../src/operations/operation-action-policy';
+import {assertRuntimeCacheJob} from '../src/devices/runtime-cache-jobs';
+import type {Device} from '../src/devices/device-store';
 const MiB=1024**2;
 const set={schemaVersion:1,action:'set',expectedRevision:0,limitBytes:3072*MiB};
 const report={schemaVersion:1,revision:1,limitBytes:3072*MiB,usedBytes:1891560621,defaultBytes:RUNTIME_CACHE_POLICY_LIMITS.defaultBytes,
     minBytes:RUNTIME_CACHE_POLICY_LIMITS.minBytes,maxBytes:RUNTIME_CACHE_POLICY_LIMITS.maxBytes,observedAt:'2026-10-24T00:00:00.000Z'};
 
 describe('Machine runtime cache command and receipt contract',()=>{
+    it('accepts zero retention only with the separate current-only capability',()=>{
+        const payload={schemaVersion:2,action:'set-cleanup',expectedRevision:3,cleanup:{enabled:true,keepPrevious:0,minAgeDays:0}};
+        const capabilities=['runtime-cache-policy-v1','bridge-update-cleanup-v1'];
+        const device={id:'owned-device',email:'owner@example.test',role:'Разработчик',report:{capabilities}} as Device;
+        const job:Parameters<typeof assertRuntimeCacheJob>[1]={kind:'runtime-cache-policy',payload,project_id:null,device_id:device.id,email:device.email,role:device.role};
+        expect(()=>assertRuntimeCacheJob(device,job)).toThrow(/Обновите мост/);
+        capabilities.push('bridge-update-current-only-v1');
+        expect(()=>assertRuntimeCacheJob(device,job)).not.toThrow();
+        expect(normalizeRuntimeCachePolicyPayload(payload)).toEqual(payload);
+        capabilities.pop();
+        expect(()=>assertRuntimeCacheJob(device,{...job,payload:{...payload,cleanup:{enabled:true,keepPrevious:1,minAgeDays:1}}})).not.toThrow();
+    });
     it('keeps the existing 2GiB default and accepts bounded integer MiB budgets',()=>{
         expect(RUNTIME_CACHE_POLICY_LIMITS.defaultBytes).toBe(2048*MiB);
         expect(normalizeRuntimeCachePolicyPayload({schemaVersion:1,action:'inspect'})).toEqual({schemaVersion:1,action:'inspect'});

@@ -16,7 +16,7 @@ describe('API transport diagnostics without private upstream details',()=>{
         vi.stubEnv('NEUROCENTER_URL','http://site.invalid');
     });
     afterEach(async()=>{
-        vi.unstubAllGlobals();vi.unstubAllEnvs();
+        vi.restoreAllMocks();vi.unstubAllGlobals();vi.unstubAllEnvs();
         for(const server of servers.splice(0)){if('closeAllConnections'in server)server.closeAllConnections();if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
         await fs.rm(directory,{recursive:true,force:true});
     });
@@ -97,5 +97,28 @@ describe('API transport diagnostics without private upstream details',()=>{
     it('a non-Error rejection is preserved privately without stringifying it into the diagnostic',async()=>{
         vi.stubEnv('NEUROCENTER_API_URL','https://example.test');vi.stubGlobal('fetch',vi.fn().mockRejectedValue('private-token-rejection'));
         const error=await rejected();expect(error.message).toContain('https://example.test');expect(error.message).not.toContain('private-token');expect(error.cause).toBe('private-token-rejection');
+    });
+
+    it('a pre-aborted caller never dispatches its read-only request',async()=>{
+        vi.stubEnv('NEUROCENTER_API_URL','https://example.test');
+        const request=vi.fn(async()=>new Response('{}')),controller=new AbortController();vi.stubGlobal('fetch',request);controller.abort();
+        await expect(api('worker/update-cleanup/authorize',{},'owned-override',controller.signal)).rejects.toBe(controller.signal.reason);
+        expect(request).not.toHaveBeenCalled();
+    });
+
+    it.each([false,true])('caller cancellation interrupts a real pending HTTP response (body=%s)',async body=>{
+        let arrived!:()=>void;const ready=new Promise<void>(resolve=>{arrived=resolve;});
+        let authorization='';
+        await listen(http.createServer((request,response)=>{
+            request.resume();authorization=String(request.headers.authorization);
+            if(body){response.writeHead(200,{'content-type':'application/json'});response.flushHeaders();response.write('{"ok":');}
+            else arrived();
+        }));
+        if(body){const original=globalThis.fetch;vi.stubGlobal('fetch',async(...args:Parameters<typeof fetch>)=>{const response=await original(...args);arrived();return response;});}
+        const timeout=vi.spyOn(AbortSignal,'timeout'),controller=new AbortController();
+        let error:unknown;void api('worker/update-cleanup/authorize',{},'owned-override',controller.signal).catch(value=>{error=value;});
+        await ready;expect(timeout).toHaveBeenCalledWith(20000);controller.abort();
+        await vi.waitFor(()=>expect(error).toBe(controller.signal.reason),{timeout:1000});
+        expect(authorization).toBe('Bearer owned-override');
     });
 });

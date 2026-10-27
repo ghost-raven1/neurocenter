@@ -10,7 +10,7 @@ const job = (deviceId: string, state = 'queued', result?: RuntimeCachePolicyResu
     deviceId, projectId: null, kind: 'runtime-cache-policy', state, message: state === 'queued' ? 'Ожидает мост' : 'Лимит проверен',
     createdAt: '2026-10-24T10:00:00.000Z', updatedAt: '2026-10-24T10:00:00.000Z', result: result ? {...result} : undefined});
 function deferred<T>() {let resolve!: (value: T) => void; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
-function fixture(cleanupSupported = false, targetSupported = false) {
+function fixture(cleanupSupported = false, targetSupported = false, currentOnlySupported = false) {
     let owner = 'alice:developer', setReason = '', cleanupReason = '', storageBlocked = false;
     const storage = new Map<string, string>(), create = vi.fn<(request: Request) => Promise<IBridgeJob>>(), jobs = vi.fn<() => Promise<IBridgeJob[]>>();
     const mount = (deviceId = 'device-a') => {
@@ -18,6 +18,7 @@ function fixture(cleanupSupported = false, targetSupported = false) {
         const controller = createRuntimeCacheSettings({scope: captured, deviceId, captureOwner: () => () => owner === captured,
             storage: {getItem: key => storage.get(key) ?? null, setItem: (key, value) => {if (storageBlocked) throw new Error('Quota exceeded'); storage.set(key, value);}, removeItem: key => {storage.delete(key);}},
             create, jobs, inspectReason: () => '', setReason: () => setReason, cleanupSupported: () => cleanupSupported, targetSupported: () => targetSupported,
+            currentOnlySupported: () => currentOnlySupported,
             cleanupReason: enabled => enabled ? cleanupReason : '', onChange: next => {state = next;}});
         controller.activate(); return {controller, state: () => state};
     };
@@ -101,6 +102,32 @@ const cleanupReport = (revision = 0, policy = cleanup, limitMiB = 2048): Runtime
     minBytes: runtimeCacheMiB, maxBytes: maxTargetMiB * runtimeCacheMiB, cleanup: {...policy}});
 
 describe('Soft runtime cache targets on capable bridges', () => {
+    it('keeps only the current bridge after its exact zero-retention receipt, recovering a lost ACK with the same request', async () => {
+        const f = fixture(true, true, true); let view = f.mount();
+        f.create.mockResolvedValueOnce(job('device-a', 'succeeded', cleanupReport(3))); await view.controller.inspect();
+        view.controller.editCleanup({keepPrevious: 0, minAgeDays: 0});
+        f.create.mockRejectedValueOnce(new Error('Lost retention ACK')); await view.controller.setCleanup();
+        const accepted = f.create.mock.calls[1]?.[0];
+        expect(accepted?.runtimeCachePolicy).toEqual({schemaVersion: 2, action: 'set-cleanup', expectedRevision: 3,
+            cleanup: {enabled: true, keepPrevious: 0, minAgeDays: 0}});
+        view.controller.dispose(); view = f.mount();
+        expect(view.state().intent?.request).toEqual(accepted);
+        f.create.mockResolvedValueOnce(job('device-a', 'succeeded', cleanupReport(4, {enabled: true, keepPrevious: 0, minAgeDays: 0})));
+        await view.controller.recover();
+        expect(f.create.mock.lastCall?.[0]).toEqual(accepted);
+        expect(view.state()).toMatchObject({cleanupPolicy: {keepPrevious: 0, minAgeDays: 0}, cleanupDirty: false, error: ''});
+        expect(view.state().intent).toBeUndefined(); view.controller.dispose();
+    });
+
+    it('offers an update before sending a current-only policy to an older cleanup-capable bridge', async () => {
+        const f = fixture(true, true), view = f.mount();
+        f.create.mockResolvedValueOnce(job('device-a', 'succeeded', cleanupReport(3))); await view.controller.inspect();
+        view.controller.editCleanup({keepPrevious: 0, minAgeDays: 0}); await view.controller.setCleanup();
+        expect(f.create).toHaveBeenCalledOnce(); expect(view.state().intent).toBeUndefined();
+        expect(view.state().error).toContain('Обновите мост');
+        expect(view.state().cleanupDraft).toMatchObject({keepPrevious: 0, minAgeDays: 0}); view.controller.dispose();
+    });
+
     it('uses v2 inspection for the target capability even without retention controls', async () => {
         const f = fixture(false, true), view = f.mount();
         f.create.mockResolvedValueOnce(job('device-a', 'succeeded', cleanupReport(3))); await view.controller.inspect();
@@ -251,7 +278,7 @@ describe('Update backup retention in the existing cache settings', () => {
             const saved = JSON.parse(bytes); delete saved.dirty; delete saved.cleanupDraft; delete saved.cleanupDirty; f.storage.set(key, JSON.stringify(saved));
         }
         view.controller.dispose(); const next = f.mount();
-        expect(next.state()).toMatchObject({draftMiB: 3072, dirty: true, cleanupDraft: cleanup, intent: {request: original}});
+        expect(next.state()).toMatchObject({draftMiB: 3072, dirty: true, cleanupDraft: {enabled: true, keepPrevious: 0, minAgeDays: 0}, intent: {request: original}});
         f.create.mockResolvedValueOnce(job('device-a', 'succeeded', report(1, 3072))); await next.controller.recover();
         expect(f.create.mock.calls[2][0]).toEqual(original); expect(next.state().intent).toBeUndefined(); next.controller.dispose();
     });

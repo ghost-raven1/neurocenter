@@ -25,7 +25,7 @@ vi.mock('antd', async original => ({...await original<typeof import('antd')>(),
 const device: IBridgeDevice = {id: 'owned-device', name: 'Рабочий компьютер', role: 'Разработчик', fingerprint: 'fixture',
     online: true, lastSeen: null, report: {capabilities: ['runtime-cache-policy-v1']}};
 const diagnostic = 'Лимит кэша не изменён: обновите ревизию и повторите действие.';
-function render(state: string, message: string, error: string, retention?: {enabled: boolean; reason?: string}, target?: {usedMiB: number; targetMiB: number}) {
+function render(state: string, message: string, error: string, retention?: {enabled: boolean; reason?: string; currentOnly?: boolean; keepPrevious?: number; minAgeDays?: number}, target?: {usedMiB: number; targetMiB: number}) {
     const job: IBridgeJob = {id: 'job', deviceId: device.id, projectId: null, kind: 'runtime-cache-policy', state, message,
         createdAt: '2026-10-24T10:00:00.000Z', updatedAt: '2026-10-24T10:00:00.000Z'};
     view.cache = {...initialRuntimeCacheSettings(), draftMiB: 4096, dirty: true, busy: false, pending: state === 'running', job, error,
@@ -33,7 +33,7 @@ function render(state: string, message: string, error: string, retention?: {enab
         ...(target ? {draftMiB: target.targetMiB, status: {schemaVersion: 2 as const, revision: 1, limitBytes: target.targetMiB * 1024 ** 2, usedBytes: target.usedMiB * 1024 ** 2,
             defaultBytes: 2048 * 1024 ** 2, minBytes: 1024 ** 2, maxBytes: Math.floor(Number.MAX_SAFE_INTEGER / 1024 ** 2) * 1024 ** 2,
             observedAt: '2026-10-24T10:00:00.000Z', cleanup: {enabled: true, keepPrevious: 2, minAgeDays: 7}}} : {}),
-        cleanupDraft: {enabled: retention?.enabled ?? true, keepPrevious: 2, minAgeDays: 7}, cleanupReason: retention?.reason ?? '', supportsCleanup: !!retention,
+        cleanupDraft: {enabled: retention?.enabled ?? true, keepPrevious: retention?.keepPrevious ?? 2, minAgeDays: retention?.minAgeDays ?? 7}, cleanupReason: retention?.reason ?? '', supportsCleanup: !!retention, supportsCurrentOnly: !!retention?.currentOnly,
         ...(retention ? {cleanupPolicy: {enabled: retention.enabled, keepPrevious: 2, minAgeDays: 7}} : {}),
         editCleanup: vi.fn(), setCleanup: vi.fn(), inspect: vi.fn(), set: vi.fn(), refresh: vi.fn(), recover: vi.fn()};
     view.openNext = true;
@@ -80,12 +80,23 @@ describe('Runtime cache settings feedback', () => {
         const disabled = render('succeeded', '', '', {enabled: false, reason: off});
         expect(save(disabled)).not.toContain('disabled');
         expect(disabled).toContain('aria-label="Автоочистка копий обновления"');
-        expect(disabled).toContain('хотя бы одна копия для отката');
-        expect(disabled).toContain('ручные изменения и копии восстановления остаются');
-        expect(disabled).toContain('Кэш комплектов эта настройка не очищает');
+        expect(disabled).toContain('прежний мост сохраняет минимум одну копию');
+        expect(disabled).toContain('Ручные изменения и копии восстановления сохраняются');
+        expect(disabled).toContain('Кэш комплектов настраивается отдельно');
         expect(disabled).toContain('value="4096"');
         expect(disabled).toContain('id="bridge-cleanup-count-owned-device"');
         expect(disabled).toContain('id="bridge-cleanup-age-owned-device"');
+    });
+
+    it('lets a capable bridge save zero previous copies and zero waiting days', () => {
+        const html = render('succeeded', '', '', {enabled: true, currentOnly: true, keepPrevious: 0, minAgeDays: 0});
+        expect(html).toContain('0 предыдущих копий и 0 дней ожидания');
+        for (const id of ['bridge-cleanup-count-owned-device', 'bridge-cleanup-age-owned-device']) {
+            const input = [...html.matchAll(/<input\b[^>]*>/g)].map(match => match[0]).find(value => value.includes(`id="${id}"`))!;
+            expect(input).toContain('min="0"'); expect(input).toContain('value="0"');
+        }
+        const save = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)].map(match => match[0]).find(button => button.includes('Сохранить хранение копий'))!;
+        expect(save).not.toContain('disabled');
     });
 
     it('keeps a legacy bridge on its cache-limit form and offers an update without retention controls', () => {

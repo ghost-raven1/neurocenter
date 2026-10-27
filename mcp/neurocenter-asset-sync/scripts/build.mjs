@@ -18,6 +18,7 @@ try {
     await fs.copyFile(path.join(root, '../../services/shared/device-codex-inference.cjs'), path.join(stage, 'dist/shared/device-codex-inference.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-cache-policy.cjs'), path.join(stage, 'dist/shared/runtime-cache-policy.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/bridge-update-cleanup.cjs'), path.join(stage, 'dist/shared/bridge-update-cleanup.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/bridge-update-lock.cjs'), path.join(stage, 'dist/shared/bridge-update-lock.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-pin.json'), path.join(stage, 'dist/shared/codex-connector-pin.json'));
     await fs.copyFile(path.join(root, '../../services/shared/codex-connector-source.cjs'), path.join(stage, 'dist/shared/codex-connector-source.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-artifacts.cjs'), path.join(stage, 'dist/shared/runtime-artifacts.cjs'));

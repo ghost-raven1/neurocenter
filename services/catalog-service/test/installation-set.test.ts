@@ -232,6 +232,34 @@ describe('Контракт файлов серверного одобрения 
     });
 });
 
+describe('Точка входа плагина совпадает с контрактом локального моста', () => {
+    const identity = {kind: 'plugin', id: 'ai-plug-own-entrypoint', name: 'Плагин QA', version: 7};
+    const inline = [{path: 'index.mjs', content: 'export default () => ({})'}];
+    it.each([null, {}, {entrypoint: 'missing.mjs'}])('Целостный inline пакет без доступной точки входа получает 409: %j', config => {
+        const pkg = buildPackage(identity, inline, 'now', config);
+        expect(() => assertInstallablePackage(pkg)).toThrow(/точк.*вход/i);
+        try { assertInstallablePackage(pkg); }
+        catch (error) { expect(error).toMatchObject({status: 409}); }
+    });
+    it('Причина отказа графа указывает исходную версию без чтения head или подстановки файла', async () => {
+        const pkg = buildPackage(identity, inline, 'now', null), before = JSON.stringify(pkg), build = builderFor([]);
+        await expect(resolveInstallationSet(poolFor([pkg]), project, pkg, build)).rejects.toMatchObject({
+            status: 409, response: {code: 'PACKAGE_NOT_INSTALLABLE', package: identity, dependency: false},
+        });
+        expect(build).not.toHaveBeenCalled(); expect(JSON.stringify(pkg)).toBe(before);
+    });
+    it('Разрешает точный inline файл и descriptor-only готовую поставку без inline entrypoint', () => {
+        const direct = buildPackage(identity, inline, 'now', {entrypoint: 'index.mjs'});
+        const artifact = {target: 'linux-x64-glibc', sha256: 'a'.repeat(64), compressedBytes: 100, unpackedBytes: 200,
+            filesCount: 1, entrypoint: 'rag-plugin.mjs'};
+        const prepared = buildPackage(identity, [], 'now', {extra: {runtimeArtifacts: [artifact]}});
+        const before = JSON.stringify(prepared);
+        expect(() => assertInstallablePackage(direct)).not.toThrow();
+        expect(() => assertInstallablePackage(prepared)).not.toThrow();
+        expect(JSON.stringify(prepared)).toBe(before);
+    });
+});
+
 describe('Бюджет единой установки', () => {
     it('Принимает 20 инструментов и отклоняет 21 до выдачи комплекта', async () => {
         const nineteen = Array.from({ length: 19 }, (_, i) => remote(`dep-${i}`));

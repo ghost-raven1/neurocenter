@@ -2,7 +2,7 @@ import {PluginAutoUpdateControl} from '../PluginAutoUpdates/PluginAutoUpdateCont
 import { Alert, Button, Card, Collapse, List, Modal, Space, Tabs, Tag, Typography } from 'antd';
 import { ApiOutlined, AppstoreOutlined, DownOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useEffect, useId, useRef, useState, type FC } from 'react';
-import { bridgeApi, type IBridgeInstallation } from './api';
+import { bridgeApi, type IBridgeInstallation, type IBridgeJob } from './api';
 import { useBridge } from './useBridge';
 import { hasCurrentBinding, installationIdentity, installationRequest, isPending, latestAssetJob, latestInspectionJob, removalSelection } from './installationHelpers';
 import { inspectionBlocker, inspectionNotice, installationBlocker } from './readiness';
@@ -15,6 +15,7 @@ import { runtimeConfigurationChanged } from './runtimeConfiguration';
 import { installationProgress } from './installationProgress';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { createBridgeRequestKey } from './bridgeRequestKey';
+import {localJobStatus} from './localJobStatus';
 import './LocalInstallations.less';
 
 interface IProps {
@@ -65,9 +66,6 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
     const removalBlocker = installationBlocker(device);
     const inspectBlocker = bridge.devicesReady ? inspectionBlocker(device) : '';
     const inspectNotice = bridge.devicesReady ? inspectionNotice(device, connectionNoticeVisible) : '';
-    const latestRemoval = jobs.find(job => job.deviceId === device.id && job.projectId === projectId && job.kind === 'uninstall');
-    const recoveryPath = typeof latestRemoval?.result?.recoveryPath === 'string' ? latestRemoval.result.recoveryPath : undefined;
-    const removedName = catalog.find(app => app.id === latestRemoval?.assetId && app.kind === latestRemoval?.assetKind)?.name || latestRemoval?.assetId || 'Инструмент';
 
     const removal = async (): Promise<void> => {
         const current = latest.current;
@@ -190,10 +188,31 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
     const attentionCount = failedJobs.length + attentionItems.length + Number(!!currentInspectionError) + Number(!!removalError);
     const jobName = (job: typeof jobs[number]): string => catalog.find(app => app.id === job.assetId && app.kind === job.assetKind)?.name
         || items.find(item => item.assetId === job.assetId && item.assetKind === job.assetKind)?.name || job.assetId || 'Проект';
+    const removals = jobs.filter(job => job.deviceId === device.id && job.projectId === projectId && job.kind === 'uninstall');
+    const activeRemovals = removals.filter(job => isPending(job) || failedJobs.some(failed => failed.id === job.id));
+    const removalHistory = removals.filter(job => !activeRemovals.includes(job));
+    const pendingCount = new Set([...pendingJobs, ...activeRemovals.filter(isPending)].map(job => job.id)).size;
+    const renderRemoval = (job: IBridgeJob, historical = false) => {
+        const recoveryPath = typeof job.result?.recoveryPath === 'string' ? job.result.recoveryPath : undefined;
+        const status = isPending(job) ? localJobStatus(job) : undefined;
+        return <Alert key={job.id} role={job.state === 'failed' ? 'alert' : 'status'} showIcon
+            type={job.state === 'failed' ? 'error' : job.state === 'succeeded' ? 'success' : 'info'}
+            message={`Удаление «${jobName(job)}»${status ? ` · ${status.title}` : ''} · ${new Date(job.updatedAt).toLocaleString('ru-RU')}`}
+            description={<>
+                <div>{job.message}</div>
+                {status?.description && <div>{status.description}</div>}
+                {!historical && job.state === 'failed' && <div>Откройте установки и проверьте файлы перед повторным удалением.</div>}
+                <div>{job.bindingId === currentBinding?.bindingId && !!job.bindingId ? 'Текущая папка' : 'Прежняя папка или неизвестная привязка'} · {job.bindingId?.slice(0,8) || 'неизвестна'}</div>
+                {job.state === 'succeeded' && recoveryPath && <><div>Резервная копия сохранена локально:</div><Typography.Text copyable code className="local-installations__path">{recoveryPath}</Typography.Text></>}
+            </>}
+            action={!historical && job.state === 'queued' ? <Button size="small" aria-label={`Отменить удаление: ${jobName(job)}`} onClick={() => {
+                void bridgeApi.cancel(job.id).then(() => bridge.reload()).catch(cause => setRemovalError(errorMessage(cause, 'Не удалось отменить удаление.')));
+            }}>Отменить</Button> : undefined} />;
+    };
 
     return <Card className="local-installations" size="small" title={<Space wrap size={8}>
         <span>На этом компьютере</span><Tag>Установок: {currentItems.length}</Tag>
-        {pendingJobs.length > 0 && <Tag color="processing">В работе: {pendingJobs.length}</Tag>}
+        {pendingCount > 0 && <Tag color="processing">В работе: {pendingCount}</Tag>}
         {attentionCount > 0 && <Tag color="warning">Требуют внимания: {attentionCount}</Tag>}
     </Space>} extra={<Button size="small" type="text" className="local-installations__toggle" aria-expanded={expanded} aria-controls={contentId}
         icon={<DownOutlined aria-hidden="true"/>} onClick={() => setExpanded(value => !value)}>{expanded ? 'Скрыть установки' : 'Показать установки'}</Button>}>
@@ -201,25 +220,20 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
             <Typography.Text strong ellipsis={{tooltip:currentFolder || 'Папка не связана'}} className="local-installations__folder">{currentFolder ? `Текущая папка: ${currentFolder}` : 'Текущая папка проекта не связана'}</Typography.Text>
             {!expanded && items.length === 0 && <Typography.Text type="secondary">В этом проекте нет установленных через мост инструментов</Typography.Text>}
         </div>
+        {bridge.errors.jobs && <Alert role="alert" type="warning" showIcon message="Статусы не обновлены"
+            description={<>{bridge.errors.jobs}<div>Последние полученные статусы показаны ниже. Обновите данные перед новым действием.</div></>}
+            action={<Button size="small" loading={bridge.loading} onClick={() => { void bridge.reload(); }}>Обновить статусы</Button>} />}
         {!expanded && <div className="local-installations__attention">
-            {pendingJobs.filter(job => job.id !== latestRemoval?.id).map(job => <Alert key={job.id} role="status" type="info" showIcon
-                message={`${jobName(job)}: ${job.message}`} action={job.state === 'queued' ? <Button size="small" aria-label={`Отменить действие: ${jobName(job)}`} onClick={() => {
+            {pendingJobs.filter(job => job.kind !== 'uninstall').map(job => <Alert key={job.id} role="status" type="info" showIcon
+                message={`${jobName(job)}: ${localJobStatus(job).title}`} description={<>{job.message}<div>{localJobStatus(job).description}</div></>} action={job.state === 'queued' ? <Button size="small" aria-label={`Отменить действие: ${jobName(job)}`} onClick={() => {
                     void bridgeApi.cancel(job.id).then(() => bridge.reload()).catch(cause => setRemovalError(errorMessage(cause, 'Не удалось отменить действие.')));
                 }}>Отменить</Button> : undefined} />)}
-            {failedJobs.filter(job => job.id !== latestRemoval?.id).map(job => <Alert key={job.id} role="alert" type="error" showIcon message={`${jobName(job)}: ${job.message}`} />)}
+            {failedJobs.filter(job => job.kind !== 'uninstall').map(job => <Alert key={job.id} role="alert" type="error" showIcon message={`${jobName(job)}: ${job.message}`}
+                description="Откройте установки для проверки результата. После исправления причины повторите действие из карточки инструмента." />)}
             {attentionItems.map(({item, next}) => <Alert key={installationIdentity(item)} type="warning" showIcon message={`${nameFor(item)}: ${next.title}`} />)}
         </div>}
         {currentInspectionError && <Alert role="alert" type="error" showIcon message={currentInspectionError.message} />}
-        {latestRemoval && <Alert role="status" showIcon type={latestRemoval.state === 'failed' ? 'error' : latestRemoval.state === 'succeeded' ? 'success' : 'info'}
-            message={`Удаление «${removedName}» · ${new Date(latestRemoval.updatedAt).toLocaleString('ru-RU')}`}
-            description={<>
-                <div>{latestRemoval.message}</div>
-                <div>Привязка: {latestRemoval.bindingId?.slice(0,8) || 'неизвестна'}</div>
-                {latestRemoval.state === 'succeeded' && recoveryPath && <><div>Резервная копия сохранена локально:</div><Typography.Text copyable code className="local-installations__path">{recoveryPath}</Typography.Text></>}
-            </>}
-            action={latestRemoval.state === 'queued' ? <Button size="small" onClick={() => {
-                void bridgeApi.cancel(latestRemoval.id).then(() => bridge.reload()).catch(cause => setRemovalError(errorMessage(cause, 'Не удалось отменить удаление.')));
-            }}>Отменить</Button> : undefined} />}
+        {activeRemovals.map(job => renderRemoval(job))}
         {removalError && !selected && <Alert role="alert" type="error" showIcon message={removalError} />}
         <section id={contentId} className="local-installations__content" hidden={!expanded} aria-label="Установки и история">
             {items.length > 0 && <Typography.Text type="secondary">Сверка файлов и диагностика запуска выполняются отдельно.</Typography.Text>}
@@ -234,6 +248,10 @@ export const LocalInstallations: FC<IProps> = ({bridge, projectId, canManage, ca
                     <List size="small" rowKey={installationIdentity} dataSource={historyItems} renderItem={item => renderInstallation(item,true)} />
                 </Collapse.Panel>
             </Collapse>}
+            {removalHistory.length > 0 && <Collapse ghost className="local-installations__history"><Collapse.Panel key="removals" header={`История удалений (${removalHistory.length})`} forceRender>
+                <Typography.Paragraph type="secondary">Завершённые действия и записи прежних папок. Результат удаления не подтверждает готовность текущей установки.</Typography.Paragraph>
+                {removalHistory.map(job => renderRemoval(job,true))}
+            </Collapse.Panel></Collapse>}
             </>},{key:'discovered',label:'Найдено в проекте',children:<ProjectInventory bridge={bridge} projectId={projectId} canInspect={canInspect} canManage={canManage} catalog={catalog} />}]} />
         </section>
         <Modal open={!!selected} title={selected ? `Удалить «${nameFor(selected)}» с компьютера?` : ''}

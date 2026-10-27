@@ -12,4 +12,4 @@ export function acquireRuntimeUseLease(runtimeRoot:string,options?:{required?:bo
 export function acquireForEntrypoint(entrypoint:URL|string,options?:{ascend?:number;required?:boolean}):Promise<RuntimeUseLease|undefined>;
 export function writeInstalledRuntimeReceipt(input:{installRoot:string;runtimeRoot:string}):Promise<{baselinePath:string}>;
 export function writeSuccessfulBackupReceipt(input:{installRoot:string;backupRoot:string;completedAt?:number}):Promise<{eligible:boolean;receiptPath?:string;reason?:string}>;
-export function cleanupSuccessfulBackups(input:{installRoot:string;policy?:CleanupPolicy;now?:number;beforeDelete?:()=>Promise<unknown>}):Promise<CleanupResult>;
+export function cleanupSuccessfulBackups(input:{installRoot:string;policy?:CleanupPolicy;now?:number;beforeDelete?:()=>Promise<unknown>;signal?:AbortSignal}):Promise<CleanupResult>;

@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import {readBridgeTemplate} from '../workspace/bridge-templates.mjs';
 
@@ -26,10 +26,11 @@ const entry = path.join(installDirectory, 'dist/index.js');
 const metadata = JSON.parse(await fs.readFile(archive + '.json', 'utf8'));
 const digest = value => createHash('sha256').update(value).digest('hex');
 const deviceId = randomUUID();
-let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal;
+let candidateHash, pairStarts = 0, heartbeat, heartbeatWorkerPid, corruptChecksum = false, server, child, origin, fatal, installerFailure;
 let expectedEntryInode, paused = false, pauseObservations = 0;
 let activeJobs = 0, savedCompletion, completionDeliveries = 0, repeatedActionRequests = 0;
 let archiveRequests=0;
+let cleanupAuthority=false;
 const rejectedRoutes = [];
 const pairAuthorizations = [];
 const cases = [];
@@ -37,6 +38,13 @@ async function waitFor(predicate, label, timeout = 10000) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) { if (await predicate()) return; await delay(50); }
     throw new Error('Не дождались: ' + label);
+}
+/** Новый worker вправе временно занять install-mutex для своей фоновой очистки. */
+async function waitForInstallMutexRelease() {
+    await waitFor(() => fs.lstat(installDirectory + '.install-lock').then(() => false, error => {
+        if (error.code === 'ENOENT') return true;
+        throw error;
+    }), 'освобождение install-mutex');
 }
 async function check(name, action) {
     await action(); cases.push(name); console.log('OK ' + name);
@@ -47,11 +55,47 @@ async function check(name, action) {
 }
 async function installer(env, script) {
     return new Promise((resolve, reject) => {
-        child = spawn('/bin/bash', [script], { env, cwd: temporary, stdio: ['ignore', 'pipe', 'pipe'] });
-        let output = ''; child.stdout.on('data', chunk => output += chunk); child.stderr.on('data', chunk => output += chunk);
-        const timeout = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Установщик не завершился за 30 секунд.')); }, 30000);
-        child.once('error', error => { clearTimeout(timeout); reject(error); });
-        child.once('close', code => { clearTimeout(timeout); child = undefined; resolve({ code, output }); });
+        child = spawn('/bin/bash', [script], { env, cwd: temporary, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const running = child, limit = 128 * 1024, timeoutMs = 60000;
+        let output = '', stdout = '', stderr = '', timedOut = false, termination, closed = false, escalationDone = false, exitCode, settled = false, ownershipUnknown = false;
+        running.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
+        running.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
+        const capture = extra => { installerFailure = { ...installerFailure, argv: ['/bin/bash', script], cwd: temporary, timeoutMs, environmentKeys: Object.keys(env).sort(), stdout, stderr, ...extra }; };
+        const unknown = (operation, error) => {
+            ownershipUnknown = true; clearTimeout(termination);
+            capture({ ownershipUnknown: true, processGroup: { state: 'unknown', pgid: running.pid, operation, code: error.code } });
+        };
+        const stop = signal => { try { process.kill(-running.pid, signal); return true; } catch (error) { if (error.code === 'ESRCH') return true; unknown(signal, error); return false; } };
+        const groupEmpty = () => { try { process.kill(-running.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; unknown('probe', error); return false; } };
+        const finish = () => {
+            if (settled) { return; }
+            if (ownershipUnknown) {
+                settled = true; clearTimeout(timeout); clearTimeout(termination); capture();
+                // No signal may target an unproven group. Leave its private fixture for inspection.
+                if (!closed) { running.unref(); running.stdout.destroy(); running.stderr.destroy(); }
+                if (child === running) { child = undefined; }
+                reject(new Error('Состояние группы процессов установщика неизвестно. Вывод и принадлежность сохранены в installerFailure отчёта.'));
+                return;
+            }
+            if (!closed || timedOut && !escalationDone) { return; }
+            settled = true;
+            if (timedOut) {
+                capture();
+                reject(new Error(`Установщик не завершился за ${timeoutMs / 1000} секунд. Вывод сохранён в installerFailure отчёта.`));
+            } else { resolve({ code: exitCode, output }); }
+        };
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            capture();
+            if (!stop('SIGTERM')) { finish(); return; }
+            termination = setTimeout(() => { if (!groupEmpty() && !ownershipUnknown) { stop('SIGKILL'); } escalationDone = true; finish(); }, 1000);
+        }, timeoutMs);
+        running.once('error', error => { if (settled) { return; } settled = true; clearTimeout(timeout); clearTimeout(termination); capture({ spawnErrorCode: error.code }); reject(error); });
+        running.once('close', code => {
+            clearTimeout(timeout); closed = true; exitCode = code; if (child === running) { child = undefined; }
+            if (timedOut) { const empty = groupEmpty(); if (empty || ownershipUnknown) { clearTimeout(termination); escalationDone = true; } }
+            finish();
+        });
     });
 }
 /** Linux отдаёт точные Unicode-аргументы через /proc независимо от locale терминала. */
@@ -102,6 +146,7 @@ try {
     assert.equal(spawnSync('npm', ['--version'], { env }).error?.code, 'ENOENT');
     server = http.createServer(async (request, response) => {
         try {
+            const acceptedProfile = profile, acceptedCredentialHash = candidateHash;
             const url = new URL(request.url, origin);
             if (request.method === 'GET' && url.pathname === '/api/bridge/runtime/' + file) {
                 archiveRequests++;
@@ -125,10 +170,13 @@ try {
                 if (digest(token) !== candidateHash) { rejectedRoutes.push(route); response.writeHead(401).end('{}'); return; }
                 if (route === 'identity') data = { id: deviceId, email: 'native-fixture@example.test', role: 'Разработчик' };
                 else if (route === 'heartbeat') {
-                    heartbeat = body;
-                    const pid = Number(await fs.readFile(path.join(profile, 'worker.lock'), 'utf8'));
-                    const version = JSON.parse(await fs.readFile(path.join(profile, 'worker-version.json'), 'utf8'));
-                    if (version.pid === pid) heartbeatWorkerPid = pid;
+                    const pid = Number(await fs.readFile(path.join(acceptedProfile, 'worker.lock'), 'utf8'));
+                    const version = JSON.parse(await fs.readFile(path.join(acceptedProfile, 'worker-version.json'), 'utf8'));
+                    if (!Number.isSafeInteger(pid) || pid < 2 || version.pid !== pid) throw new Error('Fixture worker identity changed.');
+                    if (profile !== acceptedProfile || digest(token) !== acceptedCredentialHash || candidateHash !== acceptedCredentialHash) {
+                        rejectedRoutes.push(route); response.writeHead(401).end('{}'); return;
+                    }
+                    heartbeatWorkerPid = pid; heartbeat = body;
                     data = { ok: true };
                 }
                 else if (route === 'worker/pause') {
@@ -136,6 +184,7 @@ try {
                     pauseObservations++; paused = true; data = { activeJobs };
                 }
                 else if (route === 'worker/resume') { paused = false; data = { ok: true }; }
+                else if (route === 'worker/update-cleanup/authorize' && cleanupAuthority) data = { ok: true };
                 else if (savedCompletion && route === `jobs/${savedCompletion.id}/complete`) {
                     assert.deepEqual(body, savedCompletion); completionDeliveries++; activeJobs = 0; data = { ok: true };
                 }
@@ -212,7 +261,66 @@ try {
     });
     await check('Пауза выполняется до замены файлов, завершение обновления снимает её и освобождает mutex', async () => {
         assert.ok(pauseObservations > 0); assert.equal(paused, false);
-        await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        await waitForInstallMutexRelease();
+    });
+    await check('Реальный установщик сохраняет мёртвую cleanup-блокировку в карантин, а очистка ждёт lease и подтверждённую паузу', async () => {
+        const credentialsBefore=await fs.readFile(path.join(profile,'credentials.json')),pairsBefore=pairStarts;
+        const actionsBefore=repeatedActionRequests,deliveriesBefore=completionDeliveries;
+        const {default:cleanup}=await import(pathToFileURL(path.join(installDirectory,'dist/shared/bridge-update-cleanup.cjs')).href);
+        const exited=spawn(path.join(installDirectory,'bin/node'),['-e','process.exit(0)'],{env,stdio:'ignore'});
+        await new Promise((resolve,reject)=>{exited.once('error',reject);exited.once('close',code=>code===0?resolve():reject(Error('Owned stale-lock fixture did not exit.')));});
+        assert.ok(Number.isSafeInteger(exited.pid)&&exited.pid>1&&exited.pid!==process.pid);
+        await waitFor(()=>{try{process.kill(exited.pid,0);return false;}catch(error){if(error.code==='ESRCH')return true;throw error;}},'подтверждённый выход владельца тестовой блокировки');
+        const control=await cleanup.controlRootForInstallRoot(installDirectory),lock=path.join(control,'lock.json');
+        await waitFor(()=>fs.access(lock).then(()=>false,error=>{if(error.code==='ENOENT')return true;throw error;}),'освобождение cleanup перед тестовым dead owner');
+        const deadOwner={schemaVersion:1,pid:exited.pid,token:randomUUID()},deadBytes=Buffer.from(JSON.stringify(deadOwner));
+        await fs.writeFile(lock,deadBytes,{flag:'wx',mode:0o600,flush:true});const deadStat=await fs.stat(lock,{bigint:true});
+        const installed=await installer(env,script);assert.equal(installed.code,0,installed.output);
+        await waitFor(async()=>{const pid=await fs.readFile(path.join(profile,'worker.lock'),'utf8').catch(error=>{if(error.code==='ENOENT')return undefined;throw error;});return pid!==undefined&&heartbeatWorkerPid===Number(pid);},'heartbeat перед очисткой старых версий');
+        assert.ok(heartbeat.capabilities.includes('bridge-update-current-only-v1'));
+        const quarantines=path.join(control,'quarantine'),quarantined=(await fs.readdir(quarantines)).filter(name=>name.startsWith('lock-'+deadOwner.token+'-')&&name.endsWith('.json')&&!name.endsWith('.receipt.json'));
+        assert.equal(quarantined.length,1);const preserved=path.join(quarantines,quarantined[0]),preservedStat=await fs.stat(preserved,{bigint:true});
+        assert.equal(preservedStat.ino,deadStat.ino);assert.equal(preservedStat.dev,deadStat.dev);assert.deepEqual(await fs.readFile(preserved),deadBytes);
+        const receipt=JSON.parse(await fs.readFile(preserved+'.receipt.json','utf8'));
+        assert.equal(receipt.action,'quarantined-dead-cleanup-owner');assert.equal(receipt.ownerPid,exited.pid);assert.equal(receipt.sha256,digest(deadBytes));
+        assert.deepEqual(receipt.identity,{dev:String(deadStat.dev),ino:String(deadStat.ino)});assert.equal(receipt.installRoot,installDirectory);assert.equal(receipt.quarantine,preserved);
+        const backups=async()=>(await fs.readdir(path.dirname(installDirectory))).filter(name=>name.startsWith('.neurocenter-previous.'));
+        assert.equal((await backups()).length,1);
+        // A real installed lease represents another active consumer; neither maintenance nor CLI may bypass it.
+        let lease=await cleanup.acquireRuntimeUseLease(installDirectory,{required:true});
+        const commandEnvironment={...env,NEUROCENTER_URL:siteOrigin,NEUROCENTER_API_URL:origin};
+        const run=async command=>{
+            const filename=path.join(temporary,'current-only-command.sh');
+            await fs.writeFile(filename,'#!/bin/bash\nset -eu\n'+command+'\n');
+            return installer(commandEnvironment,filename);
+        };
+        cleanupAuthority=true;
+        try{
+            const active=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --cleanup-updates');
+            assert.equal(active.code,0,active.output);assert.equal(JSON.parse(active.output.trim()).removed,0);assert.equal((await backups()).length,1);
+            const prepared=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --prepare-upgrade "$INSTALL_DIR/dist/index.js"');
+            assert.equal(prepared.code,0,prepared.output);assert.equal(JSON.parse(prepared.output.trim()).paused,true);assert.equal(paused,true);
+            await assert.rejects(fs.access(path.join(profile,'worker.lock')),{code:'ENOENT'});
+            // The worker is stopped: only the declared foreign consumer now protects the old runtime.
+            await fs.writeFile(path.join(temporary,'lease-proof.cjs'),`const path=require("node:path");
+const cleanup=require(path.join(process.env.INSTALL_DIR,"dist/shared/bridge-update-cleanup.cjs"));
+(async()=>{let beforeDeleteCalls=0;const result=await cleanup.cleanupSuccessfulBackups({installRoot:process.env.INSTALL_DIR,policy:cleanup.normalizeCleanupPolicy(),beforeDelete:async()=>{beforeDeleteCalls++;throw Error("Active consumer must be preserved.");}});console.log(JSON.stringify({result,beforeDeleteCalls}));})().catch(error=>{console.error(error.message);process.exitCode=1;});\n`);
+            const protectedBackup=await run('exec "$INSTALL_DIR/bin/node" "$HOME/lease-proof.cjs"');
+            assert.equal(protectedBackup.code,0,protectedBackup.output);const proof=JSON.parse(protectedBackup.output.trim());
+            assert.equal(proof.beforeDeleteCalls,0);assert.deepEqual(proof.result.removed,[]);assert.deepEqual(proof.result.warnings,[]);
+            const remaining=await backups();assert.equal(remaining.length,1);
+            assert.ok(proof.result.kept.some(item=>item.reason==='runtime-in-use'&&item.path===path.join(path.dirname(installDirectory),remaining[0])));
+            await lease.release();lease=undefined;
+            const purged=await run('exec "$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --cleanup-updates');
+            assert.equal(purged.code,0,purged.output);assert.deepEqual(JSON.parse(purged.output.trim()),{ok:true,removed:1,warnings:0});
+            assert.equal((await backups()).length,0);
+            heartbeat=undefined;
+            const resumed=await run('"$INSTALL_DIR/bin/node" "$INSTALL_DIR/dist/index.js" --finish-upgrade\nexec "$HOME/.local/bin/neurocenter-bridge" connect --open');
+            assert.equal(resumed.code,0,resumed.output);await waitFor(()=>!!heartbeat,'heartbeat после очистки и снятия паузы');
+            assert.equal(paused,false);assert.equal(pairStarts,pairsBefore);assert.equal(repeatedActionRequests,actionsBefore);assert.equal(completionDeliveries,deliveriesBefore);
+            assert.deepEqual(await fs.readFile(path.join(profile,'credentials.json')),credentialsBefore);assert.equal(await fs.readFile(config,'utf8'),installedConfig);
+            assert.equal((await backups()).length,0);installedMtime=(await fs.stat(entry)).mtimeMs;
+        }finally{cleanupAuthority=false;await lease?.release();}
     });
     await check('Мёртвый worker с серверным заданием обновляется и доставляет сохранённый результат без повторной записи файлов', async () => {
         const stoppedPid = await stopFixtureWorker(profile);
@@ -236,7 +344,7 @@ try {
         assert.equal(await fs.readFile(completedFile, 'utf8'), content);
         assert.equal(after.ino, before.ino); assert.equal(after.mtimeMs, before.mtimeMs);
         assert.equal(await fs.readFile(config, 'utf8'), installedConfig); assert.equal(pairStarts, 1);
-        assert.equal(paused, false); await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        assert.equal(paused, false); await waitForInstallMutexRelease();
     });
     await check('Просроченный ключ без worker не блокирует обновление и доходит до повторного подключения', async () => {
         await stopFixtureWorker(profile);
@@ -250,13 +358,13 @@ try {
         assert.notEqual(fresh.token, oldCredentials.token); assert.equal(fresh.deviceId, deviceId);
         assert.equal(digest(fresh.token), candidateHash);
         const denied = rejectedRoutes.slice(rejectedBefore);
-        assert.ok(denied.includes('worker/pause')); assert.ok(denied.includes('identity'));
+        assert.ok(!denied.includes('worker/pause'), 'Без живого worker установщик не запрашивает серверную паузу'); assert.ok(denied.includes('identity'));
         assert.ok(!denied.includes('worker/resume'), 'Без установленной паузы не нужен resume с отозванным ключом');
         assert.equal(pauseObservations, pausesBefore); assert.equal(paused, false);
         assert.equal(completionDeliveries, 1); assert.equal(repeatedActionRequests, 0);
         assert.equal(await fs.readFile(config, 'utf8'), installedConfig);
         await assert.rejects(fs.access(path.join(profile, 'pair.json')), { code: 'ENOENT' });
-        await assert.rejects(fs.access(installDirectory + '.install-lock'), { code: 'ENOENT' });
+        await waitForInstallMutexRelease();
         installedMtime = (await fs.stat(entry)).mtimeMs;
     });
     await check('Установщик другой площадки сохраняет прежние ключи и запускает новый heartbeat после подтверждения', async () => {
@@ -317,6 +425,12 @@ try {
     });
 } catch (error) { fatal = error.stack || String(error); console.error(fatal); process.exitCode = 1; }
 finally {
+    let temporaryProfileRemoved = false;
+    const cleanupFailure = error => {
+        installerFailure = { ...installerFailure, ownershipUnknown: true, cleanupErrorCode: error.code || error.name };
+        fatal ||= error.stack || String(error); process.exitCode = 1;
+    };
+    try {
     if (child) child.kill('SIGTERM');
     if (process.platform === 'linux') {
         const pids = (await fs.readdir('/proc')).filter(name => /^\d+$/.test(name)).map(Number);
@@ -328,19 +442,23 @@ finally {
         await waitFor(async () => !(await Promise.all(pids.map(pid => ownsLinuxFixtureProcess(pid, ['--worker', '--pair-watch'])))).some(Boolean),
             'завершение worker и pair-watch одноразового профиля');
     } else {
-        const processes = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n');
+        const processes = execFileSync('ps', ['-axo', 'pid=,uid=,command='], { encoding: 'utf8' }).split('\n');
         for (const line of processes) {
-            const match = /^\s*(\d+)\s+(.+)$/.exec(line);
-            if (match && match[2].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[2])) {
+            const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+            if (match && match[3].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[3])) {
+                if (Number(match[2]) !== process.getuid()) throw Object.assign(Error('Владелец процесса тестовой установки не подтверждён.'), {code:'FOREIGN_FIXTURE_OWNER'});
                 try { process.kill(Number(match[1]), 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
             }
         }
     }
     await delay(200);
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-    await fs.rm(temporary, { recursive: true, force: true });
+    } catch (error) { cleanupFailure(error); }
+    try { if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } }
+    catch (error) { cleanupFailure(error); server?.unref(); }
+    try { if (!installerFailure?.ownershipUnknown) { await fs.rm(temporary, { recursive: true, force: true }); temporaryProfileRemoved = true; } }
+    catch (error) { cleanupFailure(error); }
     await fs.mkdir(path.dirname(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json')), {recursive:true});
     await fs.writeFile(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json'), JSON.stringify({ checkedAt: new Date().toISOString(), target, bridgeVersion, buildId: metadata.buildId, archiveSha256: metadata.sha256, cases,
-        fatal: fatal || null, noSystemNodeOrNpm: true, pairingServer: 'fixture', realBrowserOpened: false,
-        temporaryProfileRemoved: true, realProfileChanged: false }, null, 2) + '\n');
+        fatal: fatal || null, installerFailure: installerFailure || null, noSystemNodeOrNpm: true, pairingServer: 'fixture', realBrowserOpened: false,
+        temporaryProfileRemoved, retainedOwnProfile: temporaryProfileRemoved ? null : temporary, realProfileChanged: false }, null, 2) + '\n');
 }
