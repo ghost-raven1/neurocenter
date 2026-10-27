@@ -50,27 +50,43 @@ async function installer(env, script) {
     return new Promise((resolve, reject) => {
         child = spawn('/bin/bash', [script], { env, cwd: temporary, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         const running = child, limit = 128 * 1024;
-        let output = '', stdout = '', stderr = '', timedOut = false, termination, closed = false, escalationDone = false, exitCode;
+        let output = '', stdout = '', stderr = '', timedOut = false, termination, closed = false, escalationDone = false, exitCode, settled = false, ownershipUnknown = false;
         running.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
         running.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-limit); output = (output + chunk).slice(-limit); });
-        const stop = signal => { try { process.kill(-running.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
-        const groupEmpty = () => { try { process.kill(-running.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } };
+        const capture = extra => { installerFailure = { ...installerFailure, argv: ['/bin/bash', script], cwd: temporary, timeoutMs: 30000, environmentKeys: Object.keys(env).sort(), stdout, stderr, ...extra }; };
+        const unknown = (operation, error) => {
+            ownershipUnknown = true; clearTimeout(termination);
+            capture({ ownershipUnknown: true, processGroup: { state: 'unknown', pgid: running.pid, operation, code: error.code } });
+        };
+        const stop = signal => { try { process.kill(-running.pid, signal); return true; } catch (error) { if (error.code === 'ESRCH') return true; unknown(signal, error); return false; } };
+        const groupEmpty = () => { try { process.kill(-running.pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; unknown('probe', error); return false; } };
         const finish = () => {
+            if (settled) { return; }
+            if (ownershipUnknown) {
+                settled = true; clearTimeout(timeout); clearTimeout(termination); capture();
+                // No signal may target an unproven group. Leave its private fixture for inspection.
+                if (!closed) { running.unref(); running.stdout.destroy(); running.stderr.destroy(); }
+                if (child === running) { child = undefined; }
+                reject(new Error('Состояние группы процессов установщика неизвестно. Вывод и принадлежность сохранены в installerFailure отчёта.'));
+                return;
+            }
             if (!closed || timedOut && !escalationDone) { return; }
+            settled = true;
             if (timedOut) {
-                installerFailure = { ...installerFailure, stdout, stderr };
+                capture();
                 reject(new Error('Установщик не завершился за 30 секунд. Вывод сохранён в installerFailure отчёта.'));
             } else { resolve({ code: exitCode, output }); }
         };
         const timeout = setTimeout(() => {
             timedOut = true;
-            installerFailure = { argv: ['/bin/bash', script], cwd: temporary, timeoutMs: 30000, environmentKeys: Object.keys(env).sort(), stdout, stderr };
-            stop('SIGTERM'); termination = setTimeout(() => { stop('SIGKILL'); escalationDone = true; finish(); }, 1000);
+            capture();
+            if (!stop('SIGTERM')) { finish(); return; }
+            termination = setTimeout(() => { if (!groupEmpty() && !ownershipUnknown) { stop('SIGKILL'); } escalationDone = true; finish(); }, 1000);
         }, 30000);
-        running.once('error', error => { clearTimeout(timeout); clearTimeout(termination); reject(error); });
+        running.once('error', error => { if (settled) { return; } settled = true; clearTimeout(timeout); clearTimeout(termination); capture({ spawnErrorCode: error.code }); reject(error); });
         running.once('close', code => {
-            clearTimeout(timeout); closed = true; exitCode = code; child = undefined;
-            if (timedOut && groupEmpty()) { clearTimeout(termination); escalationDone = true; }
+            clearTimeout(timeout); closed = true; exitCode = code; if (child === running) { child = undefined; }
+            if (timedOut) { const empty = groupEmpty(); if (empty || ownershipUnknown) { clearTimeout(termination); escalationDone = true; } }
             finish();
         });
     });
@@ -398,6 +414,12 @@ const cleanup=require(path.join(process.env.INSTALL_DIR,"dist/shared/bridge-upda
     });
 } catch (error) { fatal = error.stack || String(error); console.error(fatal); process.exitCode = 1; }
 finally {
+    let temporaryProfileRemoved = false;
+    const cleanupFailure = error => {
+        installerFailure = { ...installerFailure, ownershipUnknown: true, cleanupErrorCode: error.code || error.name };
+        fatal ||= error.stack || String(error); process.exitCode = 1;
+    };
+    try {
     if (child) child.kill('SIGTERM');
     if (process.platform === 'linux') {
         const pids = (await fs.readdir('/proc')).filter(name => /^\d+$/.test(name)).map(Number);
@@ -409,19 +431,23 @@ finally {
         await waitFor(async () => !(await Promise.all(pids.map(pid => ownsLinuxFixtureProcess(pid, ['--worker', '--pair-watch'])))).some(Boolean),
             'завершение worker и pair-watch одноразового профиля');
     } else {
-        const processes = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n');
+        const processes = execFileSync('ps', ['-axo', 'pid=,uid=,command='], { encoding: 'utf8' }).split('\n');
         for (const line of processes) {
-            const match = /^\s*(\d+)\s+(.+)$/.exec(line);
-            if (match && match[2].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[2])) {
+            const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+            if (match && match[3].includes(entry) && /--(worker|pair-watch)(?:\s|$)/.test(match[3])) {
+                if (Number(match[2]) !== process.getuid()) throw Object.assign(Error('Владелец процесса тестовой установки не подтверждён.'), {code:'FOREIGN_FIXTURE_OWNER'});
                 try { process.kill(Number(match[1]), 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
             }
         }
     }
     await delay(200);
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-    await fs.rm(temporary, { recursive: true, force: true });
+    } catch (error) { cleanupFailure(error); }
+    try { if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } }
+    catch (error) { cleanupFailure(error); server?.unref(); }
+    try { if (!installerFailure?.ownershipUnknown) { await fs.rm(temporary, { recursive: true, force: true }); temporaryProfileRemoved = true; } }
+    catch (error) { cleanupFailure(error); }
     await fs.mkdir(path.dirname(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json')), {recursive:true});
     await fs.writeFile(process.env.BRIDGE_NATIVE_REPORT || path.join(root, '.run/bridge-validation', bridgeVersion, 'native-installer.json'), JSON.stringify({ checkedAt: new Date().toISOString(), target, bridgeVersion, buildId: metadata.buildId, archiveSha256: metadata.sha256, cases,
         fatal: fatal || null, installerFailure: installerFailure || null, noSystemNodeOrNpm: true, pairingServer: 'fixture', realBrowserOpened: false,
-        temporaryProfileRemoved: true, realProfileChanged: false }, null, 2) + '\n');
+        temporaryProfileRemoved, retainedOwnProfile: temporaryProfileRemoved ? null : temporary, realProfileChanged: false }, null, 2) + '\n');
 }
