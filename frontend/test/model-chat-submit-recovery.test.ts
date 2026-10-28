@@ -122,4 +122,3 @@ describe('Восстановление неподтверждённой отпр
         expect(render().attachments.map(file => file.id)).toEqual(['pdf-1']); expect(modelChatApi.send).not.toHaveBeenCalled();
     });
 });
-
