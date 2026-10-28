@@ -70,7 +70,8 @@ async function fixture(t,{realVitest=false,pgTypes=false,helper=false,realIdenti
   assert.equal(committed.status,0,committed.stderr);
  }
  function run(args=[],{scenario='selected',destination=output}={}){
-  const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),...args,'--max-workers','1','--output',destination],{cwd:root,
+  const invocation=args.length===1&&args[0]==='--help'?args:[...args,'--max-workers','1','--output',destination];
+  const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),...invocation],{cwd:root,
    env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,FOCUSED_CALLS:calls,FOCUSED_CASE:scenario,TEST_PG_URL:'postgres://forbidden-caller',TEST_S3_SECRET:'forbidden-caller'},encoding:'utf8',timeout:30000,maxBuffer:2*1024**2});
   assert.equal(result.error,undefined);assert.equal(result.signal,null);return result;
  }
@@ -139,6 +140,14 @@ test('Repeated test-file options run only those files once',async t=>{
 test('A mixed focused batch names the rejected infrastructure file before creating output or starting a worker',async t=>{
  const f=await fixture(t),result=f.run(['--package','feature-flags-service','--test-file',selected,'--test-file',second,'--test-file',external]);
  assert.equal(result.status,1);assert.match(result.stderr,/cannot select infrastructure suites in unit-safe coverage/);assert.ok(result.stderr.includes(external),'The diagnostic must identify the offending canonical relative test file');
+ await assert.rejects(fs.stat(f.output),{code:'ENOENT'});await assert.rejects(fs.stat(f.calls),{code:'ENOENT'});
+});
+test('Help stays Node-only without the parser, while actual classification explicitly refuses the missing dependency',async t=>{
+ const f=await fixture(t);await fs.unlink(path.join(f.root,'services/catalog-service/node_modules/typescript'));
+ const help=f.run(['--help']);assert.equal(help.status,0,help.stdout+help.stderr);
+ await assert.rejects(fs.stat(f.output),{code:'ENOENT'});await assert.rejects(fs.stat(f.calls),{code:'ENOENT'});
+ const result=f.run(['--package','feature-flags-service','--test-file',second]);
+ assert.equal(result.status,1);assert.match(result.stderr,/Unit-safe classification requires installed Catalog TypeScript 5\.9\.3/);
  await assert.rejects(fs.stat(f.output),{code:'ENOENT'});await assert.rejects(fs.stat(f.calls),{code:'ENOENT'});
 });
 test('The 32-file boundary admits distinct ordinary tests instead of silently truncating the request',async t=>{

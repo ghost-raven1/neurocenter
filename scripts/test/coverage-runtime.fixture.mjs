@@ -23,5 +23,11 @@ export async function copyCoverageRuntime(root,entry,{sharedFiles=[]}={}){
     }
     const tools=path.join(root,'scripts/coverage');
     if(entry!=='owned-pg')await fs.symlink(await fs.realpath(path.join(repository,'scripts/coverage/node_modules')),path.join(tools,'node_modules'),'dir');
+    if(entry==='run'){
+        // The real classifier resolves its declared parser from Catalog, including in an isolated runtime copy.
+        const catalog=path.join(root,'services/catalog-service');await fs.mkdir(path.join(catalog,'node_modules'),{recursive:true});
+        await fs.copyFile(path.join(repository,'services/catalog-service/package.json'),path.join(catalog,'package.json'));
+        await fs.symlink(await fs.realpath(path.join(repository,'services/catalog-service/node_modules/typescript')),path.join(catalog,'node_modules/typescript'),'dir');
+    }
     return tools;
 }
