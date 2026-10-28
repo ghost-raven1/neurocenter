@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {afterEach,describe,expect,it,vi} from 'vitest';
+import {HttpException} from '@nestjs/common';
 import type {Request} from 'express';
 import type {ConversationRow,TurnRow} from '../src/model-chat/chat.types';
 import {captureDevTrace,deferred} from './dev-trace.fixture';
@@ -30,16 +31,16 @@ function fixture(){
             current={id:turnId,conversation_id:conversation.id,request_id:input.requestId,request_ids:[input.requestId],request_hash:input.hash,prompt:input.prompt,
                 input_text:input.text,status:'pending',removed_at:null,target_agent_ids:[],lease_until:new Date(Date.now()+60000)} as unknown as TurnRow;return {...current};
         }),
-        finish:vi.fn(async()=>{current!.status='done';return true;}),fail:vi.fn(async(_id:string,_turn:string,requestId:string,status:TurnRow['status'])=>{
+        finish:vi.fn(async()=>{current!.status='done';return true;}),fail:vi.fn(async(_id:string,_turn:string,requestId:string,status:TurnRow['status'],message?:string)=>{
             if(current?.request_id!==requestId||current.status!=='pending'||current.removed_at)return false;
-            current.status=status;return true;
+            current.status=status;current.error=message??null;return true;
         })};
     const project={requiredFeatures:[],assertCurrent:async()=>{},beforeInference:async()=>{},fit:(messages:unknown)=>({messages,evidence:{status:'none',sources:[]}})};
     const scope={owner:'private-owner@example.test',row:conversation,authorize:async()=>({id:'model-fixture',runtime:'ollama'})};
     Object.assign(service,{repository,scope:async()=>scope,discussions:{get:async()=>undefined,cancel:async()=>{}},settings:async()=>({}),
         researchAllowed:async()=>{},inputText:async(_db:unknown,_id:string,prompt:string)=>prompt,contextFor:async()=>({exceeded:false,compactionNeeded:false}),
         compact:async()=>[{role:'user',content:'private-prompt'}],projectContext:{prepare:async()=>project},
-        read:async()=>({turns:current?[{id:current.id,requestId:current.request_id,status:current.status}]:[]})});
+        read:async()=>({turns:current?[{id:current.id,requestId:current.request_id,status:current.status,...(current.error?{error:current.error}:{})}]:[]})});
     const req={headers:{authorization:'private-token'}} as Request;
     const send=(requestId=randomUUID(),signal=new AbortController().signal)=>service.send(req,conversation.id,
         {expectedRevision:1,expectedModelPin:conversation.model_pin,requestId,prompt:'private-prompt',attachmentIds:[]},signal);
@@ -86,6 +87,18 @@ describe('Production saved-chat methods trace the durable turn and each request 
         const f=fixture();f.runtime.infer.mockRejectedValueOnce(Error('private-provider-error'));
         await f.send();expect(f.current()!.status).toBe('failed');expect(f.repository.fail).toHaveResolvedWith(true);
         expect(f.capture.records().map(record=>record.event)).toEqual(['accepted','started','failed']);
+    });
+    it('a denied quota request returns an actionable saved failure instead of a connection error',async()=>{
+        const f=fixture(),message='Персональный бюджет модели исчерпан с учётом расхода и резерва. Дождитесь доступного бюджета или обратитесь к главному администратору.';
+        f.runtime.infer.mockRejectedValueOnce(new HttpException({statusCode:429,code:'MODEL_TOKEN_QUOTA_EXCEEDED',message},429));
+        await expect(f.send()).resolves.toMatchObject({turns:[{status:'failed',error:message}]});
+        expect(f.repository.finish).not.toHaveBeenCalled();expect(f.runtime.infer).toHaveBeenCalledOnce();
+        expect(f.repository.fail).toHaveBeenCalledWith(f.conversation.id,f.turnId,expect.any(String),'failed',message);
+    });
+    it.each([{status:429,code:'PROVIDER_RATE_LIMIT'},{status:500,code:'MODEL_TOKEN_QUOTA_EXCEEDED'}])('an unrelated provider error stays private ($status/$code)',async({status,code})=>{
+        const f=fixture();f.runtime.infer.mockRejectedValueOnce(new HttpException({statusCode:status,code,message:'private-provider-secret'},status));
+        await expect(f.send()).resolves.toMatchObject({turns:[{status:'failed',error:'Модель не выполнила запрос. Проверьте подключение и повторите.'}]});
+        expect(JSON.stringify(f.repository.fail.mock.calls)).not.toContain('private-provider-secret');
     });
     it('a late abort during failure acknowledgment cannot relabel the committed status',async()=>{
         const f=fixture(),entered=deferred(),released=deferred();f.runtime.infer.mockRejectedValueOnce(Error('private-provider-error'));
