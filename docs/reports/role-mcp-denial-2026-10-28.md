@@ -10,4 +10,6 @@
 
 Первый черновой тест ошибочно ожидал проверки значений JSON Schema на этой границе и исправлен на существующий контракт формы аргументов; исходный результат сохранён. Первый TSC остановился из-за отсутствующего cached root dependency link в новом checkout; после настройки ссылок на существующие зависимости проверка прошла без соседних правок исходников.
 
-Артефакты находятся в ignored `.run/role-mcp-denial-20261028/`; исходный UI-повтор — в `ready-chat-rag-recovery/output/playwright/mcp-denial-f-20261028/`, независимая БД-проверка — в Original `.run/release-main-acceptance-20261028/fullstack-ui/phase-f-db-proofs/`. Перед удалением checkout их нужно сохранить отдельно. Production build, повторный browser GREEN, CI и production для этой правки ещё не подтверждены; Main и работающий F не изменены.
+Production build на `64a2390c` прошёл за 8,45 с с ограничением heap 1536 МиБ; процесс и его группа завершились. Архив содержит 1260 скомпилированных файлов и manifest, каждый байт проверен. Временная ссылка на cached root dependencies удалена, tracked source чистый.
+
+Артефакты находятся в ignored `.run/role-mcp-denial-20261028/`; исходный UI-повтор — в `ready-chat-rag-recovery/output/playwright/mcp-denial-f-20261028/`, независимая БД-проверка — в Original `.run/release-main-acceptance-20261028/fullstack-ui/phase-f-db-proofs/`. Перед удалением checkout их нужно сохранить отдельно. Повторный browser GREEN, CI и production для этой правки ещё не подтверждены; Main и работающий F не изменены.
