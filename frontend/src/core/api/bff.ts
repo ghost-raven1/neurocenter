@@ -70,7 +70,7 @@ export interface IBffApi {
     /* SKILLS (файловая модель: каталог CephFS, CRUD) */
     getSkillTree: () => Promise<ISkillTreeNode[]>;
     listSkills: (params: ISkillsListQuery) => Promise<ISkillListSummary[]>;
-    getSkill: (path: string) => Promise<ISkillFile>;
+    getSkill: (path: string, version?: number) => Promise<ISkillFile>;
     createSkill: (payload: ISkillCreateRequest) => Promise<ISkillMutationResult>;
     updateSkill: (path: string, payload: ISkillUpdateRequest) => Promise<ISkillMutationResult>;
     deleteSkill: (path: string) => Promise<ISkillDeleteResult>;
@@ -132,7 +132,7 @@ const bffApi: IBffApi = {
     deleteProject: async (id) => base.delete<{ ok: true; id: string }>(`/api/projects/${id}`).then(r => r.data),
     getSkillTree: async () => base.get<ISkillTreeNode[]>('/api/skills/tree').then(r => r.data),
     listSkills: async (params) => base.get<ISkillListSummary[]>('/api/skills', { params }).then(r => r.data),
-    getSkill: async (path) => base.get<ISkillFile>(`/api/skills/${path}`).then(r => r.data),
+    getSkill: async (path, version) => (version === undefined ? base.get<ISkillFile>(`/api/skills/${path}`) : base.get<ISkillFile>(`/api/skills/${path}`, {params: {version}})).then(r => r.data),
     createSkill: async (payload) => base.post<ISkillMutationResult>('/api/skills', payload).then(r => r.data),
     updateSkill: async (path, payload) => base.put<ISkillMutationResult>(`/api/skills/${path}`, payload).then(r => r.data),
     deleteSkill: async (path) => base.delete<ISkillDeleteResult>(`/api/skills/${path}`).then(r => r.data),

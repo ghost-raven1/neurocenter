@@ -84,7 +84,7 @@ export default function ChatOverlay({projectId:initialProject,group,team:initial
     useEffect(()=>{if(projects.ready&&canonical!==projectId)setProjectId(canonical);},[projects.ready,canonical,projectId]);
     if(projectId&&(!projects.ready||canonical!==projectId))return <Modal open centered width={1280} title="Чат" footer={null} onCancel={onClose}>{projects.error?<Alert type="error" message={projects.error} action={<Button onClick={()=>{void projects.refresh();}}>Повторить</Button>}/>:<Spin tip="Проверяем доступные проекты…"/>}</Modal>;
     const role = serviceRoleIds.includes(mode as SystemRoleId) ? mode as SystemRoleId : undefined;
-    if(role)return <Modal open centered width={1100} className="model-chat model-chat_global" title={`Чат · ${roleName(role)}`} footer={null} onCancel={onClose} destroyOnClose>
+    if(role)return <Modal open centered width={1100} className="model-chat model-chat_global model-chat_workspace" title={`Чат · ${roleName(role)}`} footer={null} onCancel={onClose} destroyOnClose>
         <div className="model-chat__workspace-controls">{modeControls(mode,setMode)}<RoleChatNavigation selected={role} onSelect={setMode}/>
             <label>Проект<Select aria-label="Проект чата роли" value={projectId??''} loading={projects.loading} showSearch optionFilterProp="label"
                 options={[...(user?.activeRole==='Главный админ'?[{value:'',label:'Без проекта'}]:[]),...projects.projects.filter(project=>projectRoleLevel(user,project.id)>=1).map(project=>({value:project.id,label:project.name}))]}
