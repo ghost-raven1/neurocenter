@@ -8,6 +8,8 @@ const h = vi.hoisted(() => ({refresh: vi.fn(), write: vi.fn(), items: ['a', 'b']
     id: 'model-' + id, name: 'QA model ' + id, description: '', capability: 'chat', runtime: 'remote-openai', model: id,
     manifestSha256: null, dimension: null, source: 'custom', revision: 1, createdAt: '', updatedAt: '',
 }))}));
+// Match the read-only Catalog props when the optional quota section reads the authenticated role.
+vi.mock('react-redux', () => ({useSelector: (select: (state: unknown) => unknown) => select({userBlock: {user: {email: 'viewer@example.test', activeRole: 'Наблюдатель', userRoles: ['Наблюдатель']}}})}));
 vi.mock('../src/features/ModelCatalog/useModelCatalog', () => ({useModelCatalog: () => ({catalog: {items: h.items, assignedModelIds: []}, loading: false, error: '', refresh: h.refresh})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: 'qa-user', captureOwner: () => () => true})}));
 vi.mock('../src/features/ProjectEmbedding/EmbeddingTarget', () => ({useEmbeddingTarget: () => ({mode: 'server', ready: true, blocked: false, bridge: {devices: [], jobs: []}}), EmbeddingTargetFields: () => null}));
