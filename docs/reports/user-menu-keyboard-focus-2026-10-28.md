@@ -16,4 +16,12 @@ Evidence in `.run/user-menu-keyboard-20261028/`:
 
 Each run used cached Node 24.22, one worker, a clean environment and private HOME/TMP. Receipts record unchanged source hashes, positive process-group absence, and private profile removal. No API, database, model or browser operations ran for this feature.
 
-Production TypeScript (`tsc --noEmit --incremental false`) passed in 7.603 seconds with unchanged source hashes, an absent owned process group and the private profile removed. A fresh desktop browser retest is pending. This report does not claim screen reader or OS acceptance.
+Production TypeScript (`tsc --noEmit --incremental false`) passed in 7.603 seconds with unchanged source hashes, an absent owned process group and the private profile removed. The targeted desktop browser retest passed as described below. This report does not claim screen reader or OS acceptance.
+
+## Targeted desktop retest on G
+
+On combined source `24634caafc02f30dbcd489bfb3d1e9cccb2b3ae0`, Playwright used actual Tab/Enter to open the user menu and Tab to focus its real role=menu. Escape closed it and returned focus to the original user trigger after animation frames and a1.5s settled check. The trigger exposed aria-haspopup=menu and aria-expanded=true→false. No account action or business write occurred: write count13→13.
+
+Raw UI evidence: `bridge-first-local-setup` worktree `output/playwright/full-functional-acceptance-20261028/phase-g-ui/f62-g-model-modal-menu.json`, SHA `049cb3c9067fbbaf9efd65d6a5ac471ed09e73fc38e68ef02410a691e5c0807c`. Root independently reviewed the keyboard/ARIA/focus records and confirmed this targeted fix. The same eight component tests, frontend TypeScript and production Vite build also passed on G.
+
+The complete F62-02 remains FAIL at this checkpoint because a separate ModelDetails modal loses focus on close; that defect has its own fix and acceptance. This menu retest does not turn the whole case into PASS. CI and production are not claimed.
