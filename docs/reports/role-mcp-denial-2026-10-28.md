@@ -12,4 +12,12 @@
 
 Production build на `64a2390c` прошёл за 8,45 с с ограничением heap 1536 МиБ; процесс и его группа завершились. Архив содержит 1260 скомпилированных файлов и manifest, каждый байт проверен. Временная ссылка на cached root dependencies удалена, tracked source чистый.
 
-Артефакты находятся в ignored `.run/role-mcp-denial-20261028/`; исходный UI-повтор — в `ready-chat-rag-recovery/output/playwright/mcp-denial-f-20261028/`, независимая БД-проверка — в Original `.run/release-main-acceptance-20261028/fullstack-ui/phase-f-db-proofs/`. Перед удалением checkout их нужно сохранить отдельно. Повторный browser GREEN, CI и production для этой правки ещё не подтверждены; Main и работающий F не изменены.
+Артефакты находятся в ignored `.run/role-mcp-denial-20261028/`; исходный UI-повтор — в `ready-chat-rag-recovery/output/playwright/mcp-denial-f-20261028/`, независимая БД-проверка — в Original `.run/release-main-acceptance-20261028/fullstack-ui/phase-f-db-proofs/`. Перед удалением checkout их нужно сохранить отдельно. Повторный browser GREEN подтверждён ниже; CI и production не подтверждены. Фаза F и её исходный PARTIAL сохранены как история проверки.
+
+## Проверка исправленного backend через UI, фаза G
+
+На изолированной сборке `24634caafc02f30dbcd489bfb3d1e9cccb2b3ae0` выполнен F42-03: два фактически обнаруженных MCP-инструмента, разрешён только `qa_ui_echo`, а локальный QA-провайдер один раз предложил точный ключ второго. Проверяемая правка совпадает с исходным коммитом `64a2390c`; квоты в момент запроса выключены. PostgreSQL применил схему0..46; это отдельный стенд, Main не обновлялся.
+
+Сохранённая история и раскрытый trace объясняют блокировку неразрешённого MCP. После reload причина и исходный turn сохранились, новых POST turns не было:1→1. Owner GET calls вернул200 и пустой список. Реальный run `c7a5e251-c055-4e6d-b50f-ca031e78d327` завершился failed без повторов; один provider dispatch учтён как success с10input/12output, MCP calls/sessions0/0. Независимый read-only PostgreSQL proof подтвердил consent/discovery/model pin, очищенную lease и наличие причины в message и trace.
+
+UI receipt SHA `7bf7216e0bc097b726788f4f38ba311079a06a4c905c767df143ef3836d4b018`, DB facts SHA `e7bcc62b8f807855418e8078206482f471058883c233980faf1b4388862c339e`, независимая mapping SHA `df68494f0b898c1d73c229ffc0ecd47b96fc20141dca308e8c3364556ed8b3e8`. Raw UI: `release-acceptance-g` worktree `output/playwright/mcp-denial-g-20261028/`; DB proof: Original `.run/phase-g-db-proofs/f42-03-9a895108/`. Браузерный инструмент подтвердил отсутствие открытых вкладок; отсутствие отдельной OS process group не утверждается. Локальная фикстура проверяет протокол и границу разрешений, качество реальной модели этим сценарием не проверялось.
