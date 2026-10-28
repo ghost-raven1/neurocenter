@@ -1,0 +1,13 @@
+.model-token-quotas {
+    margin-block: 12px;
+    > summary { cursor: pointer; padding-block: 8px; font-weight: 600; }
+    &__body { display: flex; flex-direction: column; gap: 8px; padding-block: 8px; }
+    &__editor { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; }
+    &__user { display: flex; flex-direction: column; gap: 6px; width: 100%; .ant-select { width: 100%; } }
+    &__fields { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(200px, 1fr); gap: 12px; width: 100%; label { display: flex; flex-direction: column; gap: 6px; } .ant-input-number { width: 100%; } }
+    &__period { display: flex; gap: 6px; .ant-input-number { flex: 1; min-width: 70px; } .ant-select { width: 110px; flex-shrink: 0; } }
+    &__switch { display: flex; align-items: center; gap: 8px; }
+    &__counters { width: 100%; }
+    &__more { width: 100%; summary { cursor: pointer; padding-block: 4px; } }
+    .ant-alert { width: 100%; overflow-wrap: anywhere; }
+}

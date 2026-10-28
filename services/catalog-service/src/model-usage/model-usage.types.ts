@@ -38,6 +38,6 @@ export interface UsageScope { all: boolean; actor: string | null; projectIds: st
 export interface UsagePrivateRoom { projectId: string; roomId: string }
 export interface UsageFilter { days: number; projectId?: string; modelId?: string; purpose?: ModelUsagePurpose; status?: ModelUsageStatus; cursor?: { startedAt: string; id: string }; limit: number;
     actorEmail?: string | null; agentId?: string; endpoint?: 'chat' | 'embed'; provider?: string }
-export interface UsageTerminal { status: 'success' | 'error' | 'cancelled'; inputTokens: number | null; outputTokens: number | null; latencyMs: number;
+export interface UsageTerminal { quotaTracked?: boolean; status: 'success' | 'error' | 'cancelled'; inputTokens: number | null; outputTokens: number | null; latencyMs: number;
     dispatchCount?: number | null; dispatchedAt?: string | null; rateWaitMs?: number | null; providerLatencyMs?: number | null; failureCode?: string | null }
 export interface UsageInsert extends ModelUsageContext { id: string; workerId: string; model: IModel; endpoint: 'chat' | 'embed' }

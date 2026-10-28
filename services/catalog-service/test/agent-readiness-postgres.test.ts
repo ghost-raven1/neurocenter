@@ -44,7 +44,7 @@ describe.skipIf(!connection)('Owner-scoped diagnostic trials — actual isolated
 
     it('adopts only migration20 and preserves all earlier migration checksums, detects physical drift', async () => {
         const journal = (await f.db.query('SELECT version,name,checksum FROM catalog_schema_migrations ORDER BY version')).rows;
-        expect(journal.map(row => row.version)).toEqual(CATALOG_MIGRATIONS.map(row => row.version)); expect(journal.find(row=>row.name==='project-agent-diagnostic-trials')).toBeDefined();expect(journal.at(-1).name).toBe('durable-project-chat-method-workflows');
+        expect(journal.map(row => row.version)).toEqual(CATALOG_MIGRATIONS.map(row => row.version)); expect(journal.find(row=>row.name==='project-agent-diagnostic-trials')).toBeDefined();expect(journal.find(row=>row.version===45)?.name).toBe('durable-project-chat-method-workflows');expect(journal.at(-1)).toMatchObject({version:46,name:'per-user-model-token-quotas'});
         await assertAgentReadinessSchema(f.db);
         await f.db.query('BEGIN'); await f.db.query('DROP INDEX agent_readiness_single_pending');
         await expect(assertAgentReadinessSchema(f.db)).rejects.toThrow('agent_readiness_single_pending'); await f.db.query('ROLLBACK');

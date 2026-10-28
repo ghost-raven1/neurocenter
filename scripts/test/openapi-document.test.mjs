@@ -142,9 +142,10 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 251);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 311);
+    assert.equal(Object.keys(actual.paths).length, 309);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 379);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
+    for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
@@ -160,6 +161,35 @@ test('Each model rate policy has a browser-only independent CAS contract', () =>
     const result=jsonResponse(route.get);
     for(const name of ['modelId','revision','requests','windowMs','enabled','canManage','featureEnabled'])assert.ok(result.properties[name],name);
     assert.equal(result.properties.requests.type,'number');assert.equal(result.properties.enabled.type,'boolean');
+});
+
+test('Personal token quotas describe exact receipts and decimal counters behind MainAdmin browser authority',()=>{
+    const route=actual.paths['/api/models/{id}/token-quotas/{email}'];
+    const receipt=actual.paths['/api/models/{id}/token-quotas/{email}/requests/{requestKey}'].get;
+    assert.deepEqual(Object.keys(route).sort(),['get','put']);
+    for(const operation of [route.get,route.put,receipt]){
+        assert.deepEqual(operation.security,[{sessionCookie:[]}]);
+        assert.equal(operation['x-neurocenter-service'],'catalog-service');
+        assert.match(operation.description,/MainAdmin/);
+        assert.match(operation.description,/OFF/);
+        for(const name of ['id','email'])assert.equal(operation.parameters.find(value=>value.name===name)?.required,true,name);
+    }
+    const body=route.put.requestBody.content['application/json'].schema;
+    assert.deepEqual(body.required,['requestKey','expectedRevision','enabled','tokenLimit','periodMs']);
+    assert.equal(body.properties.requestKey.type,'string');
+    assert.match(body.properties.tokenLimit.description,/Positive safe integer/);
+    assert.match(body.properties.periodMs.description,/31536000000/);
+    assert.match(route.put.description,/503.*unconfirmed/);
+    assert.match(route.put.description,/unsupported model surfaces return 409/);
+    const view=jsonResponse(route.get),counters=view.properties.counters.properties;
+    for(const name of ['chargedTokens','activeReservedTokens','unknownHeldTokens','remainingTokens','overrunTokens'])assert.equal(counters[name].type,'string',name);
+    assert.equal(counters.actualInputTokens.nullable,true);assert.equal(counters.actualOutputTokens.nullable,true);
+    assert.equal(view.properties.coverage.properties.managedText.type,'boolean');
+    for(const operation of [route.put,receipt]){
+        const result=jsonResponse(operation);
+        for(const name of ['modelId','userEmail','writerEmail','requestKey','requestFingerprint','input','policy'])assert.ok(result.properties[name],name);
+    }
+    assert.match(receipt.description,/404.*absence does not prove/);
 });
 
 test('Usage documents actor and API filters with scoped detail rather than exposing a user directory', () => {
@@ -208,7 +238,7 @@ test('Personal chat contracts expose bounded document inputs and CAS only to bro
     for(const operation of Object.values(actual.paths[chat]))assert.equal(operation.parameters.some(parameter=>/^x-(?:bridge|neurocenter-internal)/i.test(parameter.name)),false);
 });
 
-test('Learning has the audited browser surface and only four device-bound channels', () => {
+test('Learning core and quirks import expose their exact browser and device channels', () => {
     const prefix='/api/projects/{id}/learning';
     const browser={
         '':['get'], '/context':['get'], '/history':['get'], '/requests/{key}':['get'],
@@ -222,7 +252,8 @@ test('Learning has the audited browser surface and only four device-bound channe
     };
     const device=['context','record','observe','propose'].map(suffix=>'/api/device-channel/learning/'+suffix);
     const expected=[...Object.keys(browser).map(suffix=>prefix+suffix),...device].sort();
-    assert.deepEqual(Object.keys(actual.paths).filter(pathname=>pathname.includes('/learning')).sort(),expected);
+    const core=Object.keys(actual.paths).filter(pathname=>pathname===prefix||pathname.startsWith(prefix+'/')||pathname.startsWith('/api/device-channel/learning/'));
+    assert.deepEqual(core.sort(),expected);
     for(const [suffix,methods] of Object.entries(browser)){
         const pathname=prefix+suffix,operations=actual.paths[pathname];
         assert.deepEqual(Object.keys(operations).sort(),[...methods].sort(),pathname);
@@ -232,6 +263,9 @@ test('Learning has the audited browser surface and only four device-bound channe
         assert.deepEqual(Object.keys(actual.paths[pathname]),['post']);
         assert.deepEqual(actual.paths[pathname].post.security,[{deviceBearer:[]}]);
     }
+    const quirks=actual.paths['/api/device-channel/learning-quirks/import'];
+    assert.deepEqual(Object.keys(quirks),['post']);
+    assert.deepEqual(quirks.post.security,[{deviceBearer:[]}]);
     for(const suffix of ['approve','reject','revoke','activate','analyses'])assert.equal(actual.paths['/api/device-channel/learning/'+suffix],undefined);
 });
 
@@ -393,7 +427,12 @@ test('Retained disabled endpoints advertise their error instead of a fabricated 
 test('Remote connection docs expose bounded generation defaults and a write-only key with the model CAS receipt', () => {
     const item = actual.paths['/api/models/{id}/connection'];
     const body = item.put.requestBody.content['application/json'].schema;
-    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['contextWindow','maxOutputTokens','responseModel','temperature','tokenLimitParameter','topP']);
+    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['apiFormat','contextWindow','maxOutputTokens','providerParameters','reasoningEffort','responseModel','store','temperature','tokenLimitParameter','topP']);
+    assert.deepEqual(body.properties.options.properties.apiFormat.enum,['chat-completions','responses']);
+    assert.deepEqual(body.properties.options.properties.reasoningEffort.enum,['none','minimal','low','medium','high','xhigh','max']);
+    assert.equal(body.properties.options.properties.store.type,'boolean');
+    assert.equal(body.properties.options.properties.providerParameters.type,'object');
+    assert.ok(Object.hasOwn(body.properties.options.properties.providerParameters,'additionalProperties'));
     assert.deepEqual(body.properties.options.properties.tokenLimitParameter.enum,['max_tokens','max_completion_tokens']);
     assert.match(body.properties.options.properties.responseModel.description,/exact response identity/);
     assert.match(body.properties.options.properties.contextWindow.description, /Remote Ollama/);
