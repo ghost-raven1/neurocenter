@@ -1,5 +1,6 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Collapse, Descriptions, Modal, Space, Typography } from 'antd';
+import {useState} from 'react';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { modelCatalogApi } from './api';
 import { modelCapabilityLabels } from './modelCatalogState';
@@ -10,8 +11,11 @@ import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
 interface IProps { model: ICatalogModel; projectId?: string; canManage: boolean; busy: boolean; error: string; onClose: () => void; onEdit: () => void; onRemove: () => void; onConfigure?: () => void; }
 
 export function ModelDetails({ model, projectId, canManage, busy, error, onClose, onEdit, onRemove, onConfigure }: IProps): JSX.Element {
+    const [open, setOpen] = useState(true);
+    // Keep the Modal mounted until AntD restores focus; the parent removes Details in afterClose.
+    const close = (): void => { if (!busy) setOpen(false); };
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
-    return <Modal open centered className="model-details" title={model.name} onCancel={onClose} width={720} footer={<Button disabled={busy} onClick={onClose}>Закрыть</Button>}>
+    return <Modal open={open} afterClose={onClose} centered className="model-details" title={model.name} onCancel={close} width={720} footer={<Button disabled={busy} onClick={close}>Закрыть</Button>}>
         {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
         <Typography.Paragraph>{model.description || 'Описание пока не добавлено.'}</Typography.Paragraph>
         <ModelHosting model={model} canManage={canManage && !model.archivedAt} onManage={onConfigure} />
