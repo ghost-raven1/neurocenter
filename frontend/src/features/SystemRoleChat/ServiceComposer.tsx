@@ -7,6 +7,7 @@ import { McpTaskPicker } from './McpTaskPicker';
 import { RoleProjectContextPreview } from '../SystemRoles/RoleProjectContext';
 import type { useSystemRoleChat } from './useSystemRoleChat';
 import {readRoleDraft, saveRoleDraft} from './roleDraft';
+import {readRoleModelPreference, saveRoleModelPreference} from './roleModelPreference';
 import type {ChatRoleAction} from '../ChatSystemRoles/types';
 
 type ChatValue = ReturnType<typeof useSystemRoleChat>;
@@ -16,10 +17,11 @@ export function ServiceComposer({ value, projectId, canExecute = true, fixedAgen
     const restored = value.pendingIntent;
     const chatFooter = !!fixedAgentId && !compact;
     const {scope, captureOwner} = useAuthRequestOwner();
-    const [agentId, setAgentId] = useState<SystemRoleId>(fixedAgentId ?? restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId);
+    const [savedModel] = useState(() => fixedAgentId ? readRoleModelPreference(scope, projectId, fixedAgentId) : undefined);
+    const [agentId, setAgentId] = useState<SystemRoleId>(fixedAgentId ?? restored?.agentId ?? initial?.agentId ?? 'agent-coordinator'), [modelId, setModelId] = useState<string | undefined>(restored?.input.modelId ?? initial?.modelId ?? savedModel ?? undefined);
     const [instruction, setInstruction] = useState(restored?.input.instruction ?? (initial?.instruction || (fixedAgentId ? readRoleDraft(scope, projectId, fixedAgentId) : ''))), [diagnostics, setDiagnostics] = useState<DiagnosticKind[]>([]), [selected, setSelected] = useState<string[]>([]);
     const restoredRequest = useRef(restored?.input.requestId);
-    const modelChosen = useRef(!!restored);
+    const modelChosen = useRef(!!restored || savedModel !== undefined && !initial?.modelId);
     const [mcp, setMcp] = useState<RoleMcpSelection[]>(restored?.input.mcp ?? []);
     const [includeContext, setIncludeContext] = useState(false), [prompt, setPrompt] = useState(''), [usePrompt, setUsePrompt] = useState(false), [consent, setConsent] = useState(false);
     const availability = useFeatureAvailability('system_role_chat', roleFlag(agentId), ...(fixedAgentId ? ['service_role_conversations' as const] : [])), mcpAvailability = useFeatureAvailability('system_role_mcp');
@@ -71,8 +73,12 @@ export function ServiceComposer({ value, projectId, canExecute = true, fixedAgen
         return () => onActionChange(undefined);
     }, [onActionChange,action.label,action.busy,action.disabled]);
     const showPrepareContext = !onActionChange && !(chatFooter && value.receipt) && (!compact && !chatFooter || !value.prepared);
+    const unavailableModel = !!modelId && !!value.overview && !model;
     const modelField = <Form.Item label={chatFooter ? undefined : 'Модель для этой задачи'} required={!chatFooter} className="service-chat__model-field"><Select aria-label={compact ? 'Модель системной задачи' : fixedAgentId ? 'Модель чата роли' : 'Модель сервисного чата'} aria-required value={modelId} placeholder="Выберите проверенную модель" showSearch optionFilterProp="label" allowClear size={chatFooter ? 'small' : undefined}
-        options={value.overview?.models.map(item => ({ value: item.id, label: item.name }))} onChange={id => { modelChosen.current = true; invalidate(); setModelId(id); }} /></Form.Item>;
+        options={[...(value.overview?.models.map(item => ({ value: item.id, label: item.name })) ?? []), ...(unavailableModel ? [{value: modelId!, label: 'Ранее выбранная модель недоступна', disabled: true}] : [])]} onChange={id => {
+            if (!captureOwner()() || id !== undefined && !value.overview?.models.some(item => item.id === id)) return;
+            modelChosen.current = true; invalidate(); setModelId(id); if (fixedAgentId) saveRoleModelPreference(scope, projectId, fixedAgentId, id);
+        }} /></Form.Item>;
     const taskField = <Form.Item label={chatFooter ? undefined : 'Задача'} required={!chatFooter}><Input.TextArea aria-label={fixedAgentId ? `Сообщение · ${roleName(fixedAgentId)}` : compact ? 'Задача системному агенту' : 'Задача сервисного чата'} aria-required value={instruction} maxLength={2048} autoSize={{ minRows: chatFooter ? 1 : 2, maxRows: compact || chatFooter ? 3 : 5 }} placeholder="Что проверить или улучшить?"
         onChange={event => { invalidate(); setInstruction(event.target.value); }} /></Form.Item>;
     const tools = <McpTaskPicker projectId={projectId} value={mcp} disabled={locked} canExecute={canExecute && availability.enabled} onChange={items => { invalidate(); setMcp(items); }} />;
@@ -89,6 +95,7 @@ export function ServiceComposer({ value, projectId, canExecute = true, fixedAgen
             </div>
             </details>}
             {!chatFooter && coordinatorNote}
+            {unavailableModel && !!value.overview?.models.length && <Alert type="warning" showIcon message={restored ? 'Модель сохранённого запроса сейчас недоступна' : 'Ранее выбранная модель сейчас недоступна'} description={restored ? 'Исходный запрос сохранён. Проверьте его отправку в истории.' : 'Выберите доступную модель перед подготовкой контекста. Текст задачи сохранён.'} />}
             {value.overview && !value.overview.models.length && <Alert type="warning" showIcon message="Нет проверенной модели" description="Подключите модель и проверьте её API в каталоге моделей. История диалогов доступна." />}
             {!compact && taskField}
             <div className={chatFooter ? 'service-chat__options' : undefined}>
