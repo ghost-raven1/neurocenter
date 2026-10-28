@@ -45,6 +45,27 @@ describe('Exact durable policy writes and owner recovery', () => {
         f.controller.resolveConflict(true); expect(f.state().pending).toBeUndefined(); expect(f.state().draft.tokenLimit).toBe(10000); expect(f.state().baseRevision).toBe(2);
         f.api.write.mockImplementationOnce(body => receipt(body)); f.api.read.mockResolvedValueOnce(view({policy: (await receipt(input({requestKey: nextKey, expectedRevision: 2}))).policy})); await f.controller.save(); expect(f.api.write.mock.calls[1][0]).toEqual(input({requestKey: nextKey, expectedRevision: 2}));
     });
+    it.each([false, true])('clears the resolved missing-receipt warning without replay when keeping draft=%s', async keepDraft => {
+        const f = setup(); await f.controller.initialize(); f.controller.edit('tokenLimit', 10000);
+        const current = (await receipt(input({tokenLimit: 20000, expectedRevision: 1}))).policy;
+        f.api.write.mockRejectedValueOnce(failure(409, 'Обновите ревизию', 'MODEL_TOKEN_QUOTA_REVISION_CONFLICT')); f.api.read.mockResolvedValueOnce(view({policy: current})); await f.controller.save();
+        expect(f.state().error).toContain('Подтверждение пока не найдено'); expect(f.state().pending?.input).toEqual(input());
+        expect(f.state().rejected).toBe(true); expect(f.state().missing).toBe(true);
+        f.controller.resolveConflict(keepDraft);
+        expect(f.state().error).toBe(''); expect(f.state().notice).toBeTruthy(); expect(f.state().pending).toBeUndefined();
+        expect(f.state().draft.tokenLimit).toBe(keepDraft ? 10000 : 20000); expect(f.state().baseRevision).toBe(2);
+        expect(f.state().conflict).toBeUndefined(); expect(f.state().rejected).toBe(false); expect(f.state().missing).toBe(false); expect(f.state().canReplay).toBe(false);
+        expect(f.storage.getItem(quotaStorageKey(identity))).toBeNull(); await f.controller.replay();
+        expect(f.api.write).toHaveBeenCalledOnce(); expect(f.api.receipt).toHaveBeenCalledOnce(); expect(f.api.read).toHaveBeenCalledTimes(2);
+    });
+    it('keeps the unresolved warning and checkpoint if another tab blocks conflict resolution', async () => {
+        const store = memoryStorage(), f = setup({storage: store}); await f.controller.initialize(); f.controller.edit('tokenLimit', 10000);
+        f.api.write.mockRejectedValueOnce(failure(409, 'Обновите ревизию', 'MODEL_TOKEN_QUOTA_REVISION_CONFLICT'));
+        f.api.read.mockResolvedValueOnce(view({policy: (await receipt(input({tokenLimit: 20000, expectedRevision: 1}))).policy})); await f.controller.save();
+        store.setItem(quotaStorageKey(identity), 'OTHER_TAB_BYTES'); f.controller.resolveConflict(false);
+        expect(f.state().error).toContain('Подтверждение пока не найдено'); expect(f.state().notice).toBe(''); expect(f.state().pending?.input).toEqual(input());
+        expect(f.state().storageError).toBeTruthy(); expect(store.getItem(quotaStorageKey(identity))).toBe('OTHER_TAB_BYTES'); expect(f.api.write).toHaveBeenCalledOnce();
+    });
     it('can explicitly adopt the current policy without silently replacing the draft', async () => {
         const f = setup(); await f.controller.initialize(); f.controller.edit('tokenLimit', 123);
         f.api.read.mockResolvedValueOnce(view({policy: (await receipt(input({tokenLimit: 500}))).policy})); await f.controller.refresh(); expect(f.state().draft.tokenLimit).toBe(123);

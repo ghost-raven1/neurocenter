@@ -113,7 +113,7 @@ export function createQuotaController(options: Options) {
             if (state.pending && !journal(undefined)) return;
             const view = state.conflict ?? state.view, draft = state.draft; adopt(view, false);
             if (keepDraft) {dirty = true; publish({draft});}
-            publish({rejected: false, missing: false, canReplay: false, notice: keepDraft ? 'Проверьте свой ввод и сохраните отдельным новым запросом.' : 'Загружены текущие настройки.'});
+            publish({rejected: false, missing: false, canReplay: false, error: '', notice: keepDraft ? 'Проверьте свой ввод и сохраните отдельным новым запросом.' : 'Загружены текущие настройки.'});
         },
         storageChanged(): void {if (active) publish({storageError: 'Сохранённый запрос изменён в другой вкладке. Проверьте его перед продолжением.', canReplay: false});},
     };
