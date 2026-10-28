@@ -7,7 +7,7 @@ import {useProviderSetup} from '../src/features/OpenCodeProviders/useProviderSet
 import {adminSetupHooks} from './admin-setup-hooks.fixture';
 import {bridgeFixture, configured, model, preparation, selection} from './opencode-provider.fixture';
 
-const ui = vi.hoisted(() => ({general: true, codex: true, buttons: new Map<string, {disabled?: boolean; onClick?: () => void}>(),
+const ui = vi.hoisted(() => ({general: true, codex: true, buttons: new Map<string, {disabled?: boolean; href?: string; onClick?: () => void}>(),
     selects: new Map<string, {onChange: (value: string) => void; disabled?: boolean}>(), close: undefined as (() => void) | undefined}));
 let hooks = adminSetupHooks();
 vi.mock('react', async original => ({...await original<typeof import('react')>(), useState: (initial: unknown) => hooks.state(initial)}));
@@ -152,7 +152,28 @@ describe('One local provider setup dialog', () => {
         expect(html).toContain('Открыть модели проекта'); expect(operation.open).not.toHaveBeenCalled();
     });
     it('Unsupported old bridge has a direct repair route', () => {
-        props.bridge.device!.report.capabilities = []; const html = render(); expect(html).toContain('href="/start?step=1"'); expect(html).toContain('Настроить мост');
+        props.bridge.device!.report.capabilities = []; props.projectId = 'prj 日本 / provider';
+        const html = render(); expect(html).toContain('Настроить мост');
+        const href = ui.buttons.get('Настроить мост')?.href; expect(href).toBeDefined();
+        const target = new URL(href!, 'https://panel.example.test');
+        expect(target.pathname).toBe('/start'); expect(target.searchParams.get('step')).toBe('1'); expect(target.searchParams.get('setup')).toBe('1');
+        expect(target.searchParams.get('p')).toBe(props.projectId);
+        expect(operation.open).not.toHaveBeenCalled(); expect(supply.build).not.toHaveBeenCalled();
+    });
+    it('An empty confirmed computer list offers the primary setup for the current project', () => {
+        props.bridge.device=undefined; props.bridge.devices=[]; props.bridge.devicesReady=true;
+        const html=render(); expect(html).toContain('Выберите подключённый компьютер.');
+        const href=ui.buttons.get('Подключить компьютер')?.href; expect(href).toBeDefined();
+        const target=new URL(href!, 'https://panel.example.test');
+        expect(target.pathname).toBe('/start'); expect(target.searchParams.get('setup')).toBe('1');
+        expect(target.searchParams.get('p')).toBe(props.projectId);
+        expect(ui.buttons.get('Открыть настройку на компьютере')!.disabled).toBe(true);
+        expect(operation.open).not.toHaveBeenCalled(); expect(operation.check).not.toHaveBeenCalled(); expect(supply.build).not.toHaveBeenCalled();
+    });
+    it.each(['pending','no-permission'])('Does not suggest connecting from an unavailable %s context', state => {
+        props.bridge.device=undefined; props.bridge.devices=[]; props.bridge.devicesReady=state!=='pending'; props.canManage=state!=='no-permission';
+        render(); expect(ui.buttons.has('Подключить компьютер')).toBe(false);
+        expect(operation.open).not.toHaveBeenCalled(); expect(supply.build).not.toHaveBeenCalled();
     });
     it('Queue and technical server/local details are secondary to the primary action', () => {
         const html = render(), details = html.indexOf('<details>'); expect(details).toBeGreaterThan(0);

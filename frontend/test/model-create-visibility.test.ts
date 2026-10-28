@@ -31,7 +31,7 @@ vi.mock('../src/features/ModelCatalog/useModelCatalog', () => ({ useModelCatalog
 vi.mock('../src/features/ModelCatalog/api', () => ({ modelCatalogApi: { create: vi.fn(), update: vi.fn(), assign: vi.fn(),unassign:vi.fn() } }));
 vi.mock('../src/features/ProjectEmbedding/useProjectReindex', () => ({useProjectReindex: () => ({request:ui.reindex,pending:ui.reindexPending,busy:ui.reindexBusy,plan:ui.planState?{state:ui.planState}:undefined})}));
 vi.mock('../src/features/ProjectEmbedding/ProjectReindexStatus', () => ({ProjectReindexStatus: () => null}));
-vi.mock('../src/features/ProjectEmbedding/EmbeddingTarget', () => ({useEmbeddingTarget: () => ({value:ui.target,blocked:ui.targetBlocked,reason:'Выберите компьютер для локального OpenCodeRAG.'}),EmbeddingTargetFields:()=>null}));
+vi.mock('../src/features/ProjectEmbedding/EmbeddingTarget', () => ({useEmbeddingTarget: () => ({value:ui.target,blocked:ui.targetBlocked,reason:'Выберите компьютер для локального OpenCodeRAG.'}),EmbeddingTargetFields:()=>createElement('section',{'aria-label':'Подключение эмбеддингов'},'Выберите компьютер для локального OpenCodeRAG.')}));
 vi.mock('../src/features/ModelCatalog/ModelCard', () => ({ ModelCard: (props: typeof ui.cards[number] & { onView: () => void }) => {
     ui.cards=ui.cards.filter(card=>card.model.id!==props.model.id);ui.cards.push(props);ui.view=props.onView;
     return createElement('article', {'aria-label':props.model.name},props.model.name);
@@ -100,6 +100,25 @@ beforeEach(() => {
 afterEach(async()=>{await act(async()=>{root.unmount();});container.remove();});
 
 describe('Новая модель видна после сохранения в проектном каталоге', () => {
+    it('Каталог только чат-моделей не просит компьютер для базы знаний', async () => {
+        ui.targetBlocked=true;
+        const html=await render();
+        expect(html).toContain(existing.name);
+        expect(container.querySelector('[aria-label="Подключение эмбеддингов"]')).toBeNull();
+        expect(html).not.toContain('Выберите компьютер для локального OpenCodeRAG.');
+    });
+    it('Пустой каталог не просит компьютер до появления embedding-модели', async () => {
+        ui.catalog={items:[],assignedModelIds:[]};
+        await render();
+        expect(container.querySelector('[aria-label="Подключение эмбеддингов"]')).toBeNull();
+    });
+    it('Неназначенная embedding-модель оставляет выбор компьютера доступным при фильтре проекта', async () => {
+        ui.catalog={items:[{...created,capability:'embedding'}],assignedModelIds:[]};
+        const html=await render();
+        expect(ui.assignedOnly).toBe(true);
+        expect(html).toContain('Выберите компьютер для локального OpenCodeRAG.');
+        expect(container.querySelector('[aria-label="Подключение эмбеддингов"]')).not.toBeNull();
+    });
     it('Создание удалённой модели явно ведёт от карточки к адресу и API-ключу', async () => {
         ui.runtime='remote-openai';await render();await act(async()=>{ui.buttons.get('Добавить модель')!();});const html=await render();
         expect(html).toContain('Шаг 1 из 2 — карточка модели');expect(html).toContain('Далее: подключение API');

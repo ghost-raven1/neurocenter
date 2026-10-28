@@ -4,11 +4,13 @@ import type {useBridge} from '../../features/McpBridge/useBridge';
 import {sha,uuid} from '../../features/McpBridge/operationHelpers';
 import {mergeProjectCatalog} from '../Store/projectCatalogSnapshots';
 
-/** Navigation is recoverable state, never evidence that an installation succeeded. */
+/** Historical computer/folder and pairing links share the primary connection stage. */
 export function unifiedSetupStep(search:string):number {
     const params=new URLSearchParams(search);
-    if(params.get('addComputer')==='1'&&!params.has('step'))return 1;
+    if(params.get('setup')!=='1'&&(params.has('connect')||params.get('addComputer')==='1'))return 1;
+    if(!params.has('step')&&(params.has('connect')||params.get('addComputer')==='1'))return 1;
     const value=Number(params.get('step')??0);
+    if(params.get('setup')!=='1'&&value===2)return 1;
     return Number.isInteger(value)&&value>=0&&value<=3?value:0;
 }
 

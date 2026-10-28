@@ -10,8 +10,7 @@ import { lazySection } from '../../common/components/LazySection';
 const Start = lazySection(() => import('./Start'), 'Начало работы');
 
 /**
- * Функциональный модуль «Старт»: стартовая страница панели (приветствие,
- * установка opencode, готовые промпты, активы пользователя).
+ * Функциональный модуль «Старт»: единый мастер окружения проекта.
  */
 export default class StartModule extends ModuleBase {
     public constructor() {

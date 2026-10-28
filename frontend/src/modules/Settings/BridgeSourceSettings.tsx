@@ -2,6 +2,7 @@ import {Alert, Button, Card, Input, Space, Tag, Typography} from 'antd';
 import {Link} from 'react-router-dom';
 import {FeatureAvailabilityNotice, FeatureButton} from '../../features/FeatureFlags/FeatureAvailability';
 import {useBridgeSourceDraft} from './useBridgeSourceDraft';
+import {startQueryUrl} from '../Start/startQuery';
 
 /** Configure the existing source without importing files or changing already prepared installers. */
 export function BridgeSourceSettings(): JSX.Element {
@@ -31,7 +32,7 @@ export function BridgeSourceSettings(): JSX.Element {
             {source.data?.importedError && <Alert type="warning" showIcon message={source.data.importedError}/>}
             <div className="settings-page__versions"><Typography.Text>Найдена в источнике: <Tag>{source.data?.available?.version ?? 'ещё не проверено'}</Tag></Typography.Text>
                 <Typography.Text>Подготовлена на сервере: <Tag>{source.data?.imported?.version ?? 'пока нет'}</Tag></Typography.Text></div>
-            <Typography.Paragraph type="secondary">Выбор ассетов, импорт архива и результаты подготовки доступны на странице <Link to="/assets">«Ассеты»</Link>. Установить мост на компьютер можно в разделе <Link to="/start?step=1">«Начало работы»</Link>.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">Выбор ассетов, импорт архива и результаты подготовки доступны на странице <Link to="/assets">«Ассеты»</Link>. Установить мост на компьютер можно в разделе <Link to={startQueryUrl('', {setup: true, step: 1})}>«Начало работы»</Link>.</Typography.Paragraph>
         </Space>
     </Card>;
 }
