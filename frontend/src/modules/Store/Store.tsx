@@ -447,6 +447,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     disabled={!catalogSources[toolCatalogSource(viewApp.kind)].ready || catalogSources[toolCatalogSource(viewApp.kind)].loading
                         || !!catalogSources[toolCatalogSource(viewApp.kind)].error || !!installing || !!localBusy || projectLoading} onArchived={archived} /> : undefined}
                 projectName={target ?? undefined}
+                projectId={targetProject?.id}
                 onAddToProject={viewApp && targetProject && canManage && projectCatalogUsable && !isInProject(viewApp) && !projectSkillReferenceBlocker(viewApp, targetProject.id) && (!!bridgeInstallError || !binding || !bridge.jobsReady || !bridge.installationsReady) ? () => { void doInstall(viewApp, 'install'); } : undefined}
                 addingToProject={!!installing || projectLoading}
                 onChooseProjectFolder={viewApp && targetProject && canInstall && isInProject(viewApp) && bridge.device && !bridgeInstallError && !binding ? () => { setViewApp(null); history.push(projectBindingUrl(targetProject.id)); } : undefined}

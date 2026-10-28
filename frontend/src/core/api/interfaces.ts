@@ -161,6 +161,7 @@ export interface IDependencyPin {
 
 /** Метаданные скилла (YAML-frontmatter `.md`). */
 export interface ISkillMeta {
+    generation?: string;
     name: string;
     slug: string;
     scope: TSkillScope;

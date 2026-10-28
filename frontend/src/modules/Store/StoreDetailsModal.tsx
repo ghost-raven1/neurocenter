@@ -12,6 +12,8 @@ import StoreDetailsInstallStatus, { StoreDetailsInstallButton } from './StoreDet
 import { formatDetailDate, keepDetailAfterRefreshError, loadStoreDetail, sortSkillHistory, type IStoreInstallStatus, type TStoreDetail } from './storeDetails';
 import { StoreBundleContent } from './StoreBundleContent';
 import {storeCardRevision,storeCardSource} from './storeCardPresentation';
+import { SkillVersionViewer } from './SkillVersionViewer';
+import { skillGenerationKey } from './skillHistory';
 import './StoreDetailsModal.less';
 
 const { Text, Paragraph } = Typography;
@@ -38,6 +40,7 @@ interface IProps {
     /** Common catalog action is passed only when the current main admin can manage its head. */
     archiveAction?: React.ReactNode;
     projectName?: string;
+    projectId?: string;
     /** Store передаёт действие только для доступного пользователю проекта и компьютера. */
     onInstall?: (version:number) => void;
     installStatus?: IStoreInstallStatus;
@@ -53,7 +56,7 @@ interface IDetailState { key: string; value: TStoreDetail | null; error: string 
 interface IHistoryState { key: string; value: IAiPluginVersion[] | null; error: string | null; }
 
 /** Полная инструкция, метаданные и действительная история выбранного инструмента. */
-const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion, archiveAction, projectName, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
+const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion, archiveAction, projectName, projectId, onInstall, installStatus, installBusy, installUnavailableReason, onAddToProject, addingToProject, onChooseProjectFolder }) => {
     const columns = Grid.useBreakpoint().sm ? 2 : 1;
     const identity = viewApp ? `${viewApp.kind}:${viewApp.id}:${viewApp.version}:${viewApp.projectManifest??''}` : '';
     const [state, setState] = useState<IDetailState>({ key: '', value: null, error: null });
@@ -63,8 +66,11 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion,
     const [copying, setCopying] = useState(false);
     const [history, setHistory] = useState<IHistoryState>({ key: '', value: null, error: null });
     const [historyReload, setHistoryReload] = useState(0);
+    const [historical, setHistorical] = useState<{ key: string; version: number } | null>(null);
     const detail = state.key === identity ? state.value : null;
     const loadError = state.key === identity ? state.error : null;
+    const generation = detail?.kind === 'skill' ? skillGenerationKey(detail.skill.meta) : null;
+    useEffect(() => { setHistorical(null); }, [identity, projectId, generation]);
     useSectionUpdates(['catalog'], () => setReload(value => value + 1), !!viewApp);
 
     useEffect(() => {
@@ -171,15 +177,18 @@ const StoreDetailsModal: FC<IProps> = ({ viewApp, onClose, onEdit, onNewVersion,
         if (!detail) { return null; }
         if (detail.kind === 'skill') {
             const entries = sortSkillHistory(detail.skill.meta.history ?? []);
+            const historyKey = JSON.stringify([identity, projectId ?? null, detail.skill.path, skillGenerationKey(detail.skill.meta)]);
             return <>
-                <Paragraph type="secondary">Журнал изменений скилла. Содержимое прошлых версий недоступно в этом окне.</Paragraph>
+                <Paragraph type="secondary">Журнал изменений скилла. Выбранная версия открывается только для чтения.</Paragraph>
                 {entries.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="История изменений пока пуста" /> : <Timeline className="store-details__history">
                     {entries.map((entry, index) => <Timeline.Item key={`${entry.version}:${index}`} color={entry.version === detail.skill.meta.version ? 'var(--brand-primary)' : 'gray'}>
                         <Space wrap><Text strong>Версия {entry.version}</Text>{entry.version === detail.skill.meta.version && <Tag color="cyan">Текущая</Tag>}</Space>
                         <div><Text type="secondary">{formatDetailDate(entry.at)} · {entry.author || 'Автор не указан'}</Text></div>
                         <Paragraph>{entry.note || 'Комментарий к версии не добавлен'}</Paragraph>
+                        <Button size="small" onClick={() => setHistorical({ key: historyKey, version: entry.version })}>Открыть версию {entry.version}</Button>
                     </Timeline.Item>)}
                 </Timeline>}
+                {historical?.key === historyKey && <SkillVersionViewer head={detail.skill} version={historical.version} projectId={projectId} onClose={() => setHistorical(null)} />}
             </>;
         }
         if (history.key !== identity || (!history.value && !history.error)) { return <div className="store-details__loading" role="status"><Spin tip="Загружаем историю версий…" /></div>; }
