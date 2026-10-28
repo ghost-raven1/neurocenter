@@ -19,8 +19,7 @@ function binding(device:Device,projectId:string|undefined,expected:unknown,insta
     return {bindingId,instanceId:current.instanceId};
 }
 function supported(device:Device,pkg:IPackage,mode:Mode){
-    const explicitCore=mode==='core'&&pkg.config?.extra?.ragCore!==undefined;
-    assertLocalFeature(device.report,explicitCore?'hosted-rag-core-v1':'opencode-rag-ui-v1');
+    assertLocalFeature(device.report,mode==='core'?'hosted-rag-core-v1':'opencode-rag-ui-v1');
     try{if((mode==='core'?localRagCore:localRagUi)(pkg))return;}catch{/* An invalid declaration cannot widen the fixed command. */}
     throw new ConflictException(mode==='core'?'Обновите OpenCodeRAG: установленная версия не содержит управляемого ядра.':'Обновите OpenCodeRAG: установленная версия не содержит управляемого интерфейса.');
 }
