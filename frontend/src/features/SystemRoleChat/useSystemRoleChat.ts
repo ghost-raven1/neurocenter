@@ -158,7 +158,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     };
     const value = state.owner === owner ? state : empty();
     return { ...value, refresh, select, prepare, start, action, recover, invalidate,
-        newDialog: (): void => { if (!capture()() || busy.current || serviceReceipt(intentScope)) return; reads.current++; draftDialog.current = undefined; invalidate(); update({ detail: undefined, error: '' }); },
+        newDialog: (): void => { if (!capture()() || busy.current || serviceReceipt(intentScope)) return; draftDialog.current = undefined; invalidate(); update({ detail: undefined, error: '' }); },
         replay: async (): Promise<void> => { const intent = serviceIntent(intentScope); if (intent && capture()() && allowed.current) await send(intent, true); },
         canReplay: !!value.receipt && !!serviceIntent(intentScope),
         receiptAgentId: serviceIntent(intentScope)?.agentId,
