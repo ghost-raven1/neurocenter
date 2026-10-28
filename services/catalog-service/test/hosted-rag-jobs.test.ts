@@ -16,7 +16,7 @@ describe('Подключение модели использует точный 
     const pkg={schemaVersion:5,plugin:{id:'rag',kind:'plugin',version:2},manifest:{sha256:manifest},
         config:{extra:{runtimeArtifacts:[{sha256:'c'.repeat(64)}],hostedEmbedding:{schemaVersion:1,reindexSchemaVersion:1},
             localUi:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs',args:['ui','--port','0','--no-open']}}}};
-    const device={id:'device',email:'owner@example.test',role:'Разработчик',report:{capabilities:['workspace-instance-v1','opencode-rag-ui-v1','hosted-rag-model-v1','hosted-rag-grants-v1','hosted-rag-reindex-v1','hosted-rag-profile-values-v1','package-v5'],
+    const device={id:'device',email:'owner@example.test',role:'Разработчик',report:{capabilities:['workspace-instance-v1','opencode-rag-ui-v1','hosted-rag-core-v1','hosted-rag-model-v1','hosted-rag-grants-v1','hosted-rag-reindex-v1','hosted-rag-profile-values-v1','package-v5'],
         bindings:[{projectId:'project',bindingId,instanceId}]}} as unknown as Device;
     const input:JobInput={deviceId:'device',projectId:'project',kind:'connect-rag-model',requestKey:instanceId,assetId:'rag',assetKind:'plugin',version:2,
         expectedManifest:manifest,expectedBindingId:bindingId,expectedInstanceId:instanceId,expectedEmbeddingRevision:3,expectedEmbeddingPin:pin,reindex:true};
@@ -32,7 +32,23 @@ describe('Подключение модели использует точный 
     const corePackage=()=>{const {localUi,...extra}=pkg.config.extra;return {...pkg,config:{extra:{...extra,
         ragCore:{schemaVersion:1,application:'opencode-rag',entrypoint:'opencode-rag.mjs'},
         hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}};};
-    const coreDevice={...device,report:{...device.report,capabilities:[...(device.report.capabilities as string[]).filter(value=>value!=='opencode-rag-ui-v1'),'hosted-rag-core-v1']}};
+    const coreDevice={...device,report:{...device.report,capabilities:(device.report.capabilities as string[]).filter(value=>value!=='opencode-rag-ui-v1')}};
+    it('Legacy fixed core ABI admits and reauthorizes hosted reindex without a UI capability',async()=>{
+        const legacy={...pkg,config:{extra:{...pkg.config.extra,hostedEmbedding:{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1}}}};
+        inspectionPackage.mockResolvedValue(legacy);delivery.mockResolvedValue({package:legacy});
+        const payload=await hostedRagJobPayload(embedding,installations,plans,coreDevice,input);
+        expect(payload).toMatchObject({package:legacy,bindingId,instanceId,embedding:selection,ragReindexProtocol:'hosted-rag-reindex-v1'});
+        await expect(assertHostedRagJob(embedding,installations,plans,coreDevice,{kind:input.kind,project_id:'project',payload:payload!})).resolves.toBeUndefined();
+        expect(requireCurrent).toHaveBeenCalledTimes(2);expect(delivery).toHaveBeenCalledWith('plan','project','plugin','rag',2,1,manifest);
+    });
+    it('Legacy fixed core ABI passes reindex target preflight on a core-only bridge',async()=>{
+        const current={...coreDevice,report:{...coreDevice.report,protocolVersion:2,capabilities:[...(coreDevice.report.capabilities as string[]),'durable-completions','managed-installations']}};
+        const permission=vi.fn(),owned=vi.fn().mockResolvedValue(current),service={store:{owned},permission,installations,plans} as unknown as DeviceJobs;
+        const {deviceId,assetId,assetKind,version,expectedManifest,expectedBindingId,expectedInstanceId}=input;
+        await expect(DeviceJobs.prototype.validateReindexTarget.call(service,{email:device.email,activeRole:device.role},'project',
+            {deviceId,assetId:assetId!,assetKind:assetKind as 'plugin',version:version!,expectedManifest:expectedManifest!,expectedBindingId:expectedBindingId!,expectedInstanceId:expectedInstanceId!})).resolves.toBeUndefined();
+        expect(permission).toHaveBeenCalledOnce();expect(approvedConfiguration).toHaveBeenCalledOnce();expect(requireCurrent).not.toHaveBeenCalled();
+    });
     it('Core-only descriptor uses the exact installed/approved model context without a UI capability',async()=>{
         const core=corePackage();inspectionPackage.mockResolvedValue(core);delivery.mockResolvedValue({package:core});
         const payload=await hostedRagJobPayload(embedding,installations,plans,coreDevice,input);
@@ -55,8 +71,10 @@ describe('Подключение модели использует точный 
         const core=corePackage();inspectionPackage.mockResolvedValue({...core,config:{extra:{...core.config.extra,hostedEmbedding}}});
         await expect(hostedRagJobPayload(embedding,installations,plans,coreDevice,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
     });
-    it('A core-only package is not admitted to a legacy bridge',async()=>{
-        inspectionPackage.mockResolvedValue(corePackage());await expect(hostedRagJobPayload(embedding,installations,plans,device,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
+    it.each(['explicit','legacy'])('A %s core package is not admitted to a bridge without core capability',async mode=>{
+        inspectionPackage.mockResolvedValue(mode==='explicit'?corePackage():pkg);
+        const old={...device,report:{...device.report,capabilities:(device.report.capabilities as string[]).filter(value=>value!=='hosted-rag-core-v1')}};
+        await expect(hostedRagJobPayload(embedding,installations,plans,old,input)).rejects.toHaveProperty('status',409);expect(requireCurrent).not.toHaveBeenCalled();
     });
     it('Reindex preflight captures a core-only installation without opening a UI job',async()=>{
         inspectionPackage.mockResolvedValue(corePackage());
