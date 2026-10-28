@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RoleRunContent } from '../src/features/SystemRoles/RoleRunContent';
 vi.mock('../src/core/api/base', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => ({ scope: '', captureOwner: () => () => false }) }));
 import api from '../src/core/api/base';
 import { systemRoleChatsApi as chats } from '../src/features/SystemRoleChat/api';
 import type { RoleRun, RoleStart } from '../src/features/SystemRoles/types';
