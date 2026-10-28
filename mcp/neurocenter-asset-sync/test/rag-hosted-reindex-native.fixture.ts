@@ -43,7 +43,11 @@ export async function nativeReindexFixture(preparedRuntime:string){
                 if(current.split(original).length!==2)throw new Error('Native profile adapter import changed.');
                 current=current.replace(original,'./rag-index-contract.cjs');
             }
-            await fs.chmod(path.join(runtime,name),0o600);await fs.writeFile(path.join(runtime,name),current);
+            const target=path.join(runtime,name);
+            try{await fs.chmod(target,0o600);}catch(error){
+                if(name!=='rag-index-corpus.mjs'||(error as NodeJS.ErrnoException).code!=='ENOENT')throw error;
+            }
+            await fs.writeFile(target,current,{mode:0o600});
         }
         const pkg:Package={schemaVersion:5,plugin:{id:'native-rag-file-generation-fixture',name:'Native metadata fixture',kind:'mcp',version:1},
             config:{transport:'local',args:['mcp'],extra:{runtimeArtifacts:[artifact],
