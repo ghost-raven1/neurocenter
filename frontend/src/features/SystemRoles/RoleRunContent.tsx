@@ -4,6 +4,7 @@ import { IndexerOwnerActions } from './IndexerOwnerActions';
 import { RoleDelegations } from './RoleDelegations';
 import { RoleFindingEvidence, RoleProjectContextReceiptView } from './RoleProjectContext';
 import {RoleAnswer} from './RoleGuidance';
+import { RoleMcpResults } from './RoleMcpResults';
 const phases: Record<string, string> = { queued: 'В очереди', collecting: 'Собирает измерения', validating_context: 'Проверяет контекст', model_step: 'Обращается к модели', delegating: 'Собирает ответы системных агентов', awaiting_review: 'Ожидает проверки', applying: 'Применяет', rolling_back: 'Откатывает', completed: 'Завершено', applied: 'Сохранено владельцами', rolled_back: 'Откат подтверждён', cancelled: 'Отменено', failed: 'Не завершено', interrupted: 'Прервано', unconfirmed: 'Применение не подтверждено' };
 export const rolePhaseLabel = (phase: string): string => phases[phase] ?? 'Обновляет состояние';
 
@@ -29,5 +30,6 @@ export function RoleRunContent({ run, showAnswer = true }: { run: RoleRun; showA
         {!!run.result?.delegations?.length && <RoleDelegations delegations={run.result.delegations} diagnosticIds={run.facts.map(fact => fact.id)} />}
         {!!run.applied.length && <Alert type="success" showIcon message="Подтверждённые версии владельцев" description={run.applied.map(item => `${item.targetKey}: v${item.version}`).join('; ')} />}
         <details><summary>Этапы операции</summary><ul>{run.steps.map((step, index) => <li key={index}>{new Date(step.at).toLocaleTimeString('ru-RU')} · {step.message}</li>)}</ul></details>
+        <RoleMcpResults run={run} />
     </div>;
 }
