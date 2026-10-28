@@ -37,9 +37,15 @@ describe('One usage reservation at the physical server send boundary',()=>{
     });
     it('fences revoked authority after SQL and releases only the proven no-action reservation',async()=>{
         const f=fixture(),provider=vi.fn();let current=true;
-        f.usage.claimQuota.mockImplementation(async()=>{current=false;});
+        f.usage.reserveQuota.mockImplementation(async()=>{current=false;return true;});
         await expect(f.run(provider,{beforeInference:async()=>{if(!current)throw new Error('revoked');}})).rejects.toThrow('revoked');
         expect(provider).not.toHaveBeenCalled();expect(f.usage.releaseQuota).toHaveBeenCalledOnce();expect(f.metrics.dispatchCount).toBe(0);
+    });
+    it('claims the final finite policy after the last asynchronous dispatch callback',async()=>{
+        const f=fixture(),provider=vi.fn(),changed=new Error('policy tightened');let allowed=true,count=0;
+        f.usage.claimQuota.mockImplementation(async()=>{if(!allowed)throw changed;});
+        await expect(f.run(provider,{beforeDispatch:async()=>{if(++count===2)allowed=false;}})).rejects.toBe(changed);
+        expect(provider).not.toHaveBeenCalled();expect(f.metrics.dispatchCount).toBe(0);expect(f.usage.releaseQuota).toHaveBeenCalledOnce();
     });
     it('OFF permits existing server calls without a new quota lookup',async()=>{
         const f=fixture(),provider=vi.fn(async()=> 'answer');flags.user_model_token_quotas=false;

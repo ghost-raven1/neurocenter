@@ -35,3 +35,15 @@
 - Политика двум вкладкам, потеря ACK после реального принятия, current MainAdmin/role privacy и устойчивое восстановление через UI.
 - Текущий кандидат не запускает миграции рабочей БД, не меняет установленный мост и не включает контроль автоматически. Глобальный флаг, unsupported409 и полная работа всех managed каналов — разные свидетельства.
 - Сборка, независимое review, новый PG/HTTP, браузер, CI и production не считаются подтверждёнными строками этого unit-отчёта. Их результаты добавляются после фактической проверки.
+
+## Продолжение независимого ревью: physical dispatch fence
+
+Два P1 подтверждены на production-байтах `2ae0a38a`: policy, включённая после второго async callback, пропускала physical send; уже физический OFF-вызов с незафиксированным optional progress не блокировал новый ON send. Корректный causal HTTP RED:8PASS/2FAIL, в обоих случаях фактический201 вместо503/409, без timeout. Сырой первый запуск с ошибкой helper сохранён отдельно и причинным RED2 не считается; его собственный контейнер также удалён.
+
+Исправление сохраняет один ledger: новый managed server-text receipt начинает с durable dispatch_count0; последний owned SQL claim после всех async callbacks проверяет политику и фиксирует possible-send intent1 до action, включая OFF. В OFF без reservation policy не читается. Legacy NULL означает неизвестность; optional progress не может быть доказательством no-send. SQL-lock не переносится в сеть. Доказанно не вошедший в action процесс может завершить учёт нулём; неопределённая отправка не получает автоматический refund.
+
+Связанный обход через длительность периода воспроизведён в том же десятислучайном HTTP-наборе: во время held physical provider policy меняется через actual API на1мс, ON-вызов всё равно обязан блокироваться. Causal9PASS/1FAIL сохранён; unpriced receipts теперь не исчезают только по времени. После settlement и возврата периода реальный actual7000/overrun2000 сохраняется.
+
+На финальных source-байтах **40/40 PASS,0skip**: HTTP10 + PostgreSQL21 + admission9. Включены здоровая конкуренция за последний остаток, late settlement/COMMIT uncertainty, OFF под эксклюзивной блокировкой policy-таблицы и recovery. Оба собственных корректных RED/GREEN lifecycle завершились с отсутствующей группой, удалёнными fixture DB/контейнером/private profile; перед остановкой0 соединений. Source4355hashes не менялись во время каждой фазы. Сырые результаты: `.run/quota-p1-20261028/{owned-pg-retry1,owned-pg-period}/`.
+
+Прежние dist/receipt `2ae0a38a` сохранены в `.run/quota-p1-20261028/retained-2ae-*`. Новый backend unit batch:91/91; TypeScript и новая Catalog build получают собственные квитанции после этого исправления. Эта PG/HTTP-приёмка не заменяет ожидаемый реальный desktop/Gateway проход и77 остальных отфильтрованных catalog migration cases.

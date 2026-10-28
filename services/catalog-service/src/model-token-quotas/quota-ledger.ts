@@ -8,14 +8,14 @@ import {quotaTransaction,quotaPairLock,quotaUnavailable} from './quota-database'
 import type {ModelTokenQuotaAdmission,ModelTokenQuotaEstimate,ModelTokenQuotaState} from './model-token-quotas.types';
 
 interface QuotaUsageRow {
-    id:string;worker_id:string;actor_email:string|null;model_id:string;status:string;
+    id:string;worker_id:string;actor_email:string|null;model_id:string;status:string;dispatch_count:number|null;
     quota_state:ModelTokenQuotaState|null;quota_reserved_tokens:string|null;quota_debit_tokens:string|null;
     quota_metadata:Record<string,unknown>|null;quota_settlement_digest:string|null;active_lease:boolean|null;
 }
 const positiveEstimate=(estimate:ModelTokenQuotaEstimate):boolean=>[estimate.inputTokens,estimate.outputTokens,estimate.totalTokens].every(n=>Number.isSafeInteger(n)&&n>=0)
     &&/^[a-f0-9]{64}$/.test(estimate.requestDigest)&&estimate.totalTokens>0&&estimate.totalTokens===estimate.inputTokens+estimate.outputTokens;
 const clock=async(db:Pick<PoolClient,'query'>):Promise<string>=>(await db.query<{at:string}>('SELECT clock_timestamp()::text AS at')).rows[0].at;
-const row=async(db:Pick<PoolClient,'query'>,id:string,lock=false):Promise<QuotaUsageRow|undefined>=>(await db.query<QuotaUsageRow>('SELECT id,worker_id,actor_email,model_id,status,quota_state,quota_reserved_tokens,quota_debit_tokens,quota_metadata,quota_settlement_digest,lease_until>clock_timestamp() AS active_lease FROM model_usage_calls WHERE id=$1'+(lock?' FOR UPDATE':''),[id])).rows[0];
+const row=async(db:Pick<PoolClient,'query'>,id:string,lock=false):Promise<QuotaUsageRow|undefined>=>(await db.query<QuotaUsageRow>('SELECT id,worker_id,actor_email,model_id,status,dispatch_count,quota_state,quota_reserved_tokens,quota_debit_tokens,quota_metadata,quota_settlement_digest,lease_until>clock_timestamp() AS active_lease FROM model_usage_calls WHERE id=$1'+(lock?' FOR UPDATE':''),[id])).rows[0];
 const assertOwned=(receipt:QuotaUsageRow|undefined,worker:string,email?:string,modelId?:string):QuotaUsageRow=>{
     if(!receipt||receipt.worker_id!==worker||email&&receipt.actor_email!==email||modelId&&receipt.model_id!==modelId)throw quotaUnavailable();
     return receipt;
@@ -58,17 +58,28 @@ export async function reserveUsageQuota(pool:Pool,worker:string,input:ModelToken
         return true;
     },signal);
 }
-/** A final CAS rechecks a tightened policy; no SQL client or pair lock reaches the provider action. */
+/** Final owned intent precedes action even while enforcement is OFF; no lock reaches the network. */
 export async function claimUsageQuota(pool:Pool,worker:string,id:string,enforce:boolean,signal?:AbortSignal):Promise<void>{
     await transaction(pool,async db=>{
-        const found=assertOwned(await row(db,id),worker);if(!found.actor_email)throw quotaUnavailable();
-        await quotaPairLock(db,found.actor_email!,found.model_id);
-        const receipt=assertOwned(await row(db,id,true),worker,found.actor_email!,found.model_id),policy=await quotaPolicyRow(db,found.model_id,found.actor_email!);
-        if(receipt.status!=='pending'||receipt.active_lease!==true)throw quotaUnavailable();
-        if(receipt.quota_state===null){if(enforce&&policy?.enabled)throw quotaUnavailable();return;}
-        if(receipt.quota_state!=='reserved')throw quotaUnavailable();
-        if(enforce&&policy?.enabled)await checkBalance(db,policy,id,Number(receipt.quota_reserved_tokens),await clock(db));
-        await db.query("UPDATE model_usage_calls SET quota_state='dispatched' WHERE id=$1 AND worker_id=$2 AND quota_state='reserved'",[id,worker]);
+        const found=assertOwned(await row(db,id),worker);
+        if(enforce&&!found.actor_email)throw quotaUnavailable();
+        if(found.actor_email)await quotaPairLock(db,found.actor_email,found.model_id);
+        const receipt=assertOwned(await row(db,id,true),worker,found.actor_email??undefined,found.model_id);
+        if(receipt.status!=='pending'||receipt.active_lease!==true||receipt.dispatch_count!==null&&receipt.dispatch_count!==0)throw quotaUnavailable();
+        // OFF does not depend on policy storage. Existing reservations still retain their own accounting state.
+        if(enforce){
+            const account=(await db.query<{enabled:boolean}>('SELECT enabled FROM platform_users WHERE email=$1 FOR SHARE',[receipt.actor_email])).rows[0];
+            if(!account?.enabled)throw new ForbiddenException('Доступ пользователя отозван.');
+            const policy=await quotaPolicyRow(db,receipt.model_id,receipt.actor_email!);
+            if(receipt.quota_state===null){if(policy?.enabled)throw quotaUnavailable();}
+            else if(policy?.enabled)await checkBalance(db,policy,id,Number(receipt.quota_reserved_tokens),await clock(db));
+        }
+        if(receipt.quota_state!==null&&receipt.quota_state!=='reserved')throw quotaUnavailable();
+        const claimed=await db.query(`UPDATE model_usage_calls SET dispatch_count=1,dispatched_at=clock_timestamp(),
+ quota_state=CASE WHEN quota_state='reserved' THEN 'dispatched' ELSE quota_state END
+ WHERE id=$1 AND worker_id=$2 AND status='pending' AND lease_until>clock_timestamp()
+ AND (dispatch_count IS NULL OR dispatch_count=0) RETURNING id`,[id,worker]);
+        if(claimed.rowCount!==1)throw quotaUnavailable();
     },signal);
 }
 /** Only this process's proof that action() was never entered may release a dispatch claim. */

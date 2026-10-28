@@ -9,13 +9,13 @@
 
 ## 2. Политика и собственный токенный период
 
-- [ ] 2.1 Добавить policy, exact policy-write receipts и additive quota metadata существующего usage; проверка: schema verifier + own isolated PG migration/rollback, прежняя история не переписана, период больше суток сохраняется, safe duration arithmetic проверена.
-- [ ] 2.2 Добавить MainAdmin read/CAS-write/request-receipt API для canonical model+target user; проверка: unit/HTTP fixture actor/model identity, current rights, conflict, lost ACK/exact replay и404 unknown, без main DB/model вызовов.
+- [x] 2.1 Добавить policy, exact policy-write receipts и additive quota metadata существующего usage; проверка: schema verifier + own isolated PG migration/rollback, прежняя история не переписана, период больше суток сохраняется, safe duration arithmetic проверена.
+- [x] 2.2 Добавить MainAdmin read/CAS-write/request-receipt API для canonical model+target user; проверка: unit/HTTP fixture actor/model identity, current rights, conflict, lost ACK/exact replay и404 unknown, без main DB/model вызовов.
 
 ## 3. Один usage owner и физический admission
 
-- [ ] 3.1 Передавать существующий usage UUID к physical admission и атомарно check+reserve оценку; проверка: RED→GREEN для последнего остатка двух worker, repeated beforeDispatch не создаёт второй reserve, stale policy/rights/cancel/unknown COMMIT не отправляют лишний вызов.
-- [ ] 3.2 Расширить settlement/reconciliation того же receipt; проверка: known actual меньше/больше резерва, visible overrun и следующий отказ, partial/unknown usage, late ACK, duplicate settlement, pre/post-dispatch cancel и lease expiry без falsezero/refund/повторного inference; ledger locks не ломают metadata isolation.
+- [x] 3.1 Передавать существующий usage UUID к physical admission и атомарно check+reserve оценку; проверка: RED→GREEN для последнего остатка двух worker, repeated beforeDispatch не создаёт второй reserve, stale policy/rights/cancel/unknown COMMIT не отправляют лишний вызов.
+- [x] 3.2 Расширить settlement/reconciliation того же receipt; проверка: known actual меньше/больше резерва, visible overrun и следующий отказ, partial/unknown usage, late ACK, duplicate settlement, pre/post-dispatch cancel и lease expiry без falsezero/refund/повторного inference; ledger locks не ломают metadata isolation.
 - [ ] 3.3 Подключить первую сквозную server-text вертикаль remote OpenAI/Ollama и managed Ollama с версионированной estimate; проверка: controlled HTTP показывает reserve до fetch, отсутствие output cap не блокирует модель, фактическое превышение сохраняется, каждый explicit physical retry имеет отдельную связанную identity.
 - [ ] 3.4 Подключить оставшиеся managed поверхности до объявления их coverage, включая асинхронный device late receipt; проверка: связь с тем же usage UUID, private result/ACK/cancel invariants и честные partial/unknown counters. Непокрытая поверхность явно не заявляется ограниченной.
 

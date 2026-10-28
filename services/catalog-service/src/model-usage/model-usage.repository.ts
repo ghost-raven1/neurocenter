@@ -1,6 +1,7 @@
 import type { Pool, QueryConfig } from 'pg';
 import {reserveUsageQuota,claimUsageQuota,releaseUndispatchedQuota,finishQuotaUsage} from '../model-token-quotas/quota-ledger';
 import type {ModelTokenQuotaAdmission} from '../model-token-quotas/model-token-quotas.types';
+import {quotaCoverage} from '../model-token-quotas/model-token-quotas.model';
 import { ForbiddenException } from '@nestjs/common';
 import {readModelUsageReport} from './model-usage-report';
 import type { UsageFilter, UsageInsert, UsagePrivateRoom, UsageScope, UsageTerminal } from './model-usage.types';
@@ -9,9 +10,9 @@ import type { UsageFilter, UsageInsert, UsagePrivateRoom, UsageScope, UsageTermi
 export class ModelUsageRepository {
     constructor(readonly pool: Pool) {}
     async begin(value: UsageInsert): Promise<void> {
-        await this.pool.query(`INSERT INTO model_usage_calls(id,worker_id,model_id,model_name,provider,endpoint,purpose,actor_email,project_id,agent_id,turn_id,operation_id,private_project_chat_room_id,lease_until)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now()+interval '2 minutes')`, [value.id, value.workerId, value.model.id, value.model.name, value.model.runtime,
-            value.endpoint, value.purpose, value.actorEmail ?? null, value.projectId ?? null, value.agentId ?? null, value.turnId ?? null, value.operationId ?? null, value.privateProjectChatRoomId ?? null]);
+        await this.pool.query(`INSERT INTO model_usage_calls(id,worker_id,model_id,model_name,provider,endpoint,purpose,actor_email,project_id,agent_id,turn_id,operation_id,private_project_chat_room_id,lease_until,dispatch_count)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now()+interval '2 minutes',$14)`, [value.id, value.workerId, value.model.id, value.model.name, value.model.runtime,
+            value.endpoint, value.purpose, value.actorEmail ?? null, value.projectId ?? null, value.agentId ?? null, value.turnId ?? null, value.operationId ?? null, value.privateProjectChatRoomId ?? null, value.endpoint==='chat'&&quotaCoverage(value.model).managedText?0:null]);
     }
     async reserveQuota(worker:string,input:ModelTokenQuotaAdmission,signal?:AbortSignal){return reserveUsageQuota(this.pool,worker,input,signal);}
     async claimQuota(worker:string,id:string,enforce:boolean,signal?:AbortSignal){return claimUsageQuota(this.pool,worker,id,enforce,signal);}

@@ -14,6 +14,7 @@ import {MODEL_TOKEN_QUOTAS_SCHEMA_CONTRACT} from '../src/model-token-quotas/mode
 import {quotaTransaction} from '../src/model-token-quotas/quota-database';
 import {ModelUsageService} from '../src/model-usage/model-usage.service';
 import {ModelApiAdmission} from '../src/model-api-admission/model-api-admission';
+import {currentModelUsage,withModelUsage} from '../src/model-usage/model-usage.context';
 import {ModelInferenceController} from '../src/models/inference.controller';
 import {quotaHttpAdminUrl,quotaHttpFixture,quotaHttpInput,quotaHttpMain,quotaHttpOther,quotaHttpUser,quotaHttpModelId,
     quotaHttpPath,quotaHttpRemovedModel,quotaHttpRemovedUser,quotaHttpUnsupported,type QuotaHttpFixture} from './model-token-quotas-http.fixture';
@@ -139,4 +140,57 @@ describe.skipIf(!quotaHttpAdminUrl)('Quota HTTP integration with full current mi
         expect((await f.request(quotaHttpMain,path)).value.counters).toMatchObject({chargedTokens:'7000',unknownCalls:0,remainingTokens:'0',overrunTokens:'2000'});
         expect(await f.request(quotaHttpUser,inference,'POST',body)).toMatchObject({status:429,value:{code:'MODEL_TOKEN_QUOTA_EXCEEDED'}});expect(f.providerCalls).toHaveLength(1);
     });
+    it('rechecks a policy enabled after the second dispatch callback before any physical provider send',async()=>{
+        const path=quotaHttpPath(),disabled={...quotaHttpInput(10000),enabled:false};
+        expect((await f.request(quotaHttpMain,path,'PUT',disabled)).status).toBe(200);
+        let entered!:()=>void,release!:()=>void,checks=0;const atSecond=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
+        const original=f.admission.run.bind(f.admission);
+        vi.spyOn(f.admission,'run').mockImplementation((...args)=>{
+            const context=currentModelUsage();
+            return withModelUsage({...context,beforeDispatch:async()=>{await context.beforeDispatch?.();if(++checks===2){entered();await held;}}},()=>original(...args));
+        });
+        const pending=f.request(quotaHttpUser,'/api/models/'+quotaHttpModelId+'/ollama/api/chat','POST',{messages:[{role:'user',content:'held policy enable task'}],stream:false});pending.catch(()=>undefined);
+        let result:Awaited<ReturnType<typeof f.request>>|undefined;
+        try{
+            await atSecond;expect(f.providerCalls).toHaveLength(0);
+            expect((await f.request(quotaHttpMain,path,'PUT',quotaHttpInput(1,1))).status).toBe(200);
+        }finally{release();result=await pending;}
+        expect(checks).toBe(2);expect(result).toMatchObject({status:503,value:{code:'MODEL_TOKEN_QUOTA_STORE_UNAVAILABLE'}});
+        expect(f.providerCalls).toHaveLength(0);
+        expect((await f.pool.query('SELECT status,dispatch_count,quota_state FROM model_usage_calls WHERE actor_email=$1',[quotaHttpUser.email])).rows)
+            .toEqual([{status:'error',dispatch_count:0,quota_state:null}]);
+    });
+    it('blocks ON admission behind an in-flight OFF call even when optional dispatch progress never persists',async()=>{
+        const path=quotaHttpPath();expect((await f.request(quotaHttpMain,path,'PUT',quotaHttpInput(5000))).status).toBe(200);
+        const inference='/api/models/'+quotaHttpModelId+'/ollama/api/chat',body={messages:[{role:'user',content:'lost optional dispatch metadata'}],stream:false};
+        const provider=f.holdNextProvider();let entered!:()=>void,release!:()=>void,heldOnce=false;
+        const atProgress=new Promise<void>(resolve=>entered=resolve),heldProgress=new Promise<void>(resolve=>release=resolve);
+        const progress=vi.spyOn(f.usage.repository,'dispatchProgress').mockImplementation(async(...args)=>{if(args[2]>0&&args[4]===null&&!heldOnce){heldOnce=true;entered();await heldProgress;}});
+        f.setEnforcement(false);const first=f.request(quotaHttpUser,inference,'POST',body);first.catch(()=>undefined);
+        let second:ReturnType<typeof f.request>|undefined,firstResult:Awaited<ReturnType<typeof f.request>>|undefined;
+        try{
+            await Promise.all([provider.entered,atProgress]);expect(progress).toHaveBeenCalledOnce();
+            const row=(await f.pool.query('SELECT status,dispatch_count,quota_state FROM model_usage_calls WHERE actor_email=$1',[quotaHttpUser.email])).rows[0];
+            expect(row.status).toBe('pending');expect(row.quota_state).toBeNull();expect(row.dispatch_count).not.toBe(0);
+            expect((await f.request(quotaHttpMain,path,'PUT',{...quotaHttpInput(5000,1),periodMs:1})).status).toBe(200);
+            expect((await f.pool.query("SELECT clock_timestamp()>started_at+interval '1 millisecond' AS expired FROM model_usage_calls WHERE actor_email=$1 AND status='pending'",[quotaHttpUser.email])).rows[0].expired).toBe(true);
+            f.setEnforcement(true);second=f.request(quotaHttpUser,inference,'POST',body);
+            expect(await second).toMatchObject({status:409,value:{code:'MODEL_TOKEN_QUOTA_UNCERTAIN'}});expect(f.providerCalls).toHaveLength(1);
+        }finally{
+            release();provider.release();const outcomes=await Promise.allSettled(second?[first,second]:[first]);
+            if(outcomes[0].status==='fulfilled')firstResult=outcomes[0].value;else throw outcomes[0].reason;
+        }
+        expect(firstResult).toMatchObject({status:201,value:{prompt_eval_count:1000,eval_count:6000}});
+        expect((await f.request(quotaHttpMain,path,'PUT',quotaHttpInput(5000,2))).status).toBe(200);
+        expect((await f.request(quotaHttpMain,path)).value.counters).toMatchObject({chargedTokens:'7000',unknownCalls:0,remainingTokens:'0',overrunTokens:'2000'});
+    });
+    it('does not read quota policy for an OFF send while its policy table is exclusively held',async()=>{
+        f.setEnforcement(false);const lock=await f.pool.connect();
+        try{
+            await lock.query('BEGIN');await lock.query('LOCK TABLE model_user_token_quotas IN ACCESS EXCLUSIVE MODE');
+            expect(await f.request(quotaHttpUser,'/api/models/'+quotaHttpModelId+'/ollama/api/chat','POST',{messages:[{role:'user',content:'OFF without policy lookup'}],stream:false}))
+                .toMatchObject({status:201,value:{done:true}});expect(f.providerCalls).toHaveLength(1);
+        }finally{await lock.query('ROLLBACK');lock.release();}
+    });
+
 });

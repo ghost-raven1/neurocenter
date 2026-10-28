@@ -43,12 +43,13 @@ export class ModelApiAdmission {
    if(quotaEnabled){
     if(!this.usage||!estimate)throw quotaUnavailable();
     await this.usage.reserveQuota(model,estimate(),metrics,signal);quotaChecked=true;
-    await this.usage.claimQuota(metrics,true,signal);
     await context.beforeDispatch?.();
     await modelRateBeforeAttempt(beforeAttempt,signal);
    }
    // A newly enabled check cannot be bypassed by an earlier OFF snapshot.
    if(quotaEnabled&&!quotaChecked)throw quotaUnavailable();
+   // This durable possible-send claim is last: no asynchronous authority callback may stale its policy.
+   if(this.usage&&quotaCoverage(model).managedText)await this.usage.claimQuota(metrics,quotaEnabled,signal);
    signal?.throwIfAborted();
    if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
    started=performance.now();entered=true;

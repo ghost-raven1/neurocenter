@@ -130,7 +130,7 @@ export async function quotaHttpFixture(){
         class HttpFixture{}Module({controllers:[ModelTokenQuotasController,ModelInferenceController],providers:[{provide:ModelTokenQuotasService,useValue:quota},
             {provide:ModelsService,useValue:models},{provide:ModelRuntime,useValue:runtime},{provide:APP_GUARD,useClass:FeaturePolicyGuard}]})(HttpFixture);
         app=await NestFactory.create(HttpFixture,{logger:false});appOwnsModels=true;await app.listen(0,'127.0.0.1');apiUrl=await app.getUrl();
-        return {pool,service:quota,usage,providerCalls,holdNextProvider,legacyId,prefixHistory,legacyBefore,history,
+        return {pool,service:quota,usage,admission,providerCalls,holdNextProvider,legacyId,prefixHistory,legacyBefore,history,
             reset:seed,setEnforcement:(enabled:boolean)=>{flags.user_model_token_quotas=enabled;},setCatalog:(enabled:boolean)=>{flags.model_catalog=enabled;},
             legacyAfter:async()=>(await pool!.query('SELECT to_jsonb(receipt)-$2::text[] AS row FROM model_usage_calls receipt WHERE id=$1',[legacyId,quotaColumns])).rows[0].row,
             async request(actor:IAccessActor,path:string,method='GET',body?:unknown,validInternal=true){
