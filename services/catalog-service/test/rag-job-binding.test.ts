@@ -37,7 +37,7 @@ describe('Задания знаний закреплены за выбранно
     });
     it.each(['sync-rag','restore-rag'])('Создание %s сохраняет точный отпечаток папки',async kind=>{
         await expect(service.create(actor,{...input,kind})).resolves.toEqual({id:'created'});
-        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.any(String),expect.objectContaining({kind,payload:{bindingId,ragProtocol:'project-rag-generations-v1'}}),expect.any(Function));
+        expect(enqueue).toHaveBeenCalledWith(store.pool,expect.any(String),expect.objectContaining({kind,payload:{bindingId,ragProtocol:'project-rag-generations-v1'}}),expect.any(Function),undefined);
     });
     it.each([undefined,'a'.repeat(64),'не хэш'])('Смена или отсутствие выбранной папки отклоняется: %s',async expectedBindingId=>{
         await expect(service.create(actor,{...input,expectedBindingId})).rejects.toHaveProperty('status');

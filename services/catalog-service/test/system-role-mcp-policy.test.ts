@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { buildPackage } from '../src/catalog/bundle-package';
+import { assertInstallablePackage } from '../src/devices/installation-set';
 import { SystemRoleMcpPolicy } from '../src/system-role-mcp/system-role-mcp.policy';
 import { SYSTEM_ROLE_MCP_CAPABILITY, type RoleMcpTarget } from '../../shared/system-role-mcp.cjs';
 
@@ -53,7 +54,8 @@ describe('Generic MCP catalogue runtime authority', () => {
     it('accepts only a proven plugin MCP producer and exact assigned manifest', async () => {
         const f = fixture();
         await expect(f.policy.package(project, { ...f.target, manifest: 'c'.repeat(64) }, f.db as never)).rejects.toThrow('изменились');
-        const ordinary = buildPackage({ id: 'generic-tool', kind: 'plugin', name: 'OpenCodeRAG', version: 1 }, [], '', { entrypoint: 'plugin-factory.mjs' });
+        const ordinary = buildPackage({ id: 'generic-tool', kind: 'plugin', name: 'OpenCodeRAG', version: 1 }, [{ path: 'plugin-factory.mjs', content: 'export default () => ({});' }], '', { entrypoint: 'plugin-factory.mjs' });
+        expect(() => assertInstallablePackage(ordinary)).not.toThrow();
         const db = { query: async () => ({ rows: [{ asset_id: ordinary.plugin.id, asset_kind: 'plugin', asset_version: 1, asset_manifest: ordinary.manifest.sha256, pin_snapshot: { package: ordinary } }] }) };
         await expect(f.policy.package(project, { ...f.target, assetKind: 'plugin', manifest: ordinary.manifest.sha256 }, db as never)).rejects.toThrow('MCP');
     });

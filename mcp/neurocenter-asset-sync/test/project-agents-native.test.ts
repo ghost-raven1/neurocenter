@@ -9,20 +9,26 @@ import {preparedAgentsPayload} from './project-agents.fixture.js';
 import {configureProjectAgents} from '../src/features/project-agents/index.js';
 import type {ProjectAgent} from '../src/features/project-agents/contract.js';
 import {workspaceFixture} from './bridge-fixture.js';
+import {captureNativeCliJson} from './native-cli-json.fixture.js';
 
 const binary=process.env.OPENCODE_AGENT_TEST_ENGINE;
 const run=promisify(execFile);
 /** Opt-in acceptance uses a verified pinned engine, a temporary HOME and a disposable project only. */
 describe.runIf(!!binary)('Native OpenCode 1.14.48 agent acceptance',()=>{
  let fixture:Awaited<ReturnType<typeof workspaceFixture>>,env:NodeJS.ProcessEnv,bindingId:string,instanceId:string;
+ let preserveFixture=false;
  const execute=async(...args:string[])=>{
   const directories=[path.join(env.HOME!,'config/opencode'),path.join(fixture.root,'.opencode')];
   for(const directory of directories)await fs.chmod(directory,0o500);
-  try{const result=await run(binary!,args,{cwd:fixture.root,env,timeout:30000,maxBuffer:2*1024*1024});
+  try{const result=args.length===2&&args[0]==='debug'&&args[1]==='config'
+    ?await captureNativeCliJson(binary!,args,{cwd:fixture.root,env,temporary:fixture.temporary})
+    :await run(binary!,args,{cwd:fixture.root,env,timeout:30000,maxBuffer:2*1024*1024});
    expect(result.stdout.trim(),result.stderr).not.toBe('');return result.stdout;
+  }catch(error){if((error as {code?:string}).code==='NATIVE_CLI_OWNERSHIP_UNKNOWN')preserveFixture=true;throw error;
   }finally{for(const directory of directories)await fs.chmod(directory,0o700);}
  };
  beforeEach(async()=>{
+  preserveFixture=false;
   const expected=process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256;
   expect(expected).toMatch(/^[a-f0-9]{64}$/);expect(hash(await fs.readFile(binary!))).toBe(expected);
   fixture=await workspaceFixture();const home=path.join(fixture.temporary,'native-home');await fs.mkdir(home);
@@ -40,12 +46,15 @@ describe.runIf(!!binary)('Native OpenCode 1.14.48 agent acceptance',()=>{
   await fs.writeFile(path.join(home,'config/opencode/opencode.json'),JSON.stringify({mcp:{},plugin:[],enabled_providers:['provider'],provider:{provider:{npm:'@ai-sdk/openai-compatible',options:{baseURL:'https://provider.example.test/v1'},models:{model:{}}}},lsp:false,formatter:false,autoupdate:false,snapshot:false,share:'disabled',permission:{'*':'deny'}}));
   expect((await execute('--version')).trim()).toBe('1.14.48');bindingId=await projectBindingId('test-project');instanceId=await projectInstanceId('test-project');
  });
- afterEach(async()=>{vi.unstubAllEnvs();if(fixture)await fs.rm(fixture.temporary,{recursive:true,force:true});});
+ afterEach(async()=>{vi.unstubAllEnvs();if(fixture&&!preserveFixture)await fs.rm(fixture.temporary,{recursive:true,force:true});});
  it('discovers every mode and exact prompt/settings, then disables, reenables and removes managed agents',async()=>{
   const agents:ProjectAgent[]=(['primary','subagent','all'] as const).map(mode=>({id:'agent-native-'+mode,slug:'nc-native-'+mode,version:1,enabled:true,
-   description:'Native: "'+mode+'"',prompt:'Instructions for '+mode+'.\n---\nmodel: this stays in the prompt',mode,model:'provider/model',temperature:0.2,topP:0.9,steps:7,permission:{edit:'deny',bash:'ask'}}));
+   description:'Native: "'+mode+'"',prompt:'Instructions for '+mode+'.\n---\nmodel: this stays in the prompt\n'+('Native metadata fixture. '.repeat(1700))+'\nEND_'+mode,mode,model:'provider/model',temperature:0.2,topP:0.9,steps:7,permission:{edit:'deny',bash:'ask'}}));
+  expect(agents.reduce((bytes,agent)=>bytes+Buffer.byteLength(agent.prompt),0)).toBeGreaterThan(65536);
+  for(const agent of agents)expect(Buffer.byteLength(agent.prompt)).toBeLessThanOrEqual(65536);
   const apply=(revision:number,desired=agents)=>{const payload=preparedAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision,agents:desired});return configureProjectAgents(payload,async()=>undefined,async()=>undefined,async()=>payload.compilation!);};
   await apply(1);let config=JSON.parse(await execute('debug','config')) as {agent:Record<string,Record<string,unknown>>};let list=await execute('agent','list');
+  expect(Object.keys(config.agent).sort()).toEqual(agents.map(agent=>agent.slug).sort());
   for(const agent of agents){
    expect(list).toContain(agent.slug+' ('+agent.mode+')');
    expect(config.agent[agent.slug]).toMatchObject({name:agent.slug,description:agent.description,prompt:agent.prompt,mode:agent.mode,model:agent.model,temperature:0.2,top_p:0.9,steps:7,permission:{bash:'ask',edit:'deny'},disable:false});

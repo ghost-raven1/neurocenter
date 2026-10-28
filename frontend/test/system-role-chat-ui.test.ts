@@ -9,7 +9,7 @@ const h = await vi.hoisted(async () => {
     return { hooks: adminSetupHooks(), ui: modalUi(), enabled: true, owner: 'alice', values: {} as Record<string, any>, action: vi.fn(), picker: undefined as any };
 });
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), useState: h.hooks.state, useRef: h.hooks.ref, useEffect: h.hooks.effect }));
-vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => { const owner = h.owner; return { captureOwner: () => () => h.owner === owner }; } }));
+vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({ useAuthRequestOwner: () => { const owner = h.owner; return { scope: owner, captureOwner: () => () => h.owner === owner }; } }));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability', () => ({ useFeatureAvailability: () => ({ enabled: h.enabled, reason: 'Функция выключена' }) }));
 vi.mock('../src/features/SystemRoles/RoleRunContent', () => ({ RoleRunContent: () => createElement('div', null, 'Точные измерения и изменения'), rolePhaseLabel: (phase: string) => phase }));
 vi.mock('../src/features/SystemRoleChat/McpTaskPicker', () => ({ McpTaskPicker: (props: unknown) => { h.picker = props; return null; } }));
@@ -22,6 +22,7 @@ import { ServiceTurnContent } from '../src/features/SystemRoleChat/ServiceTurnCo
 import { Modal } from 'antd';
 
 const render = (projectId = 'prj-one') => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(ServiceComposer, { value: h.values as any, projectId })); h.hooks.commit(); return html; };
+const renderFixed = () => { h.hooks.begin(); h.ui.nodes = []; const html = renderToStaticMarkup(createElement(ServiceComposer, { value: h.values as any, projectId:'prj-one', fixedAgentId:'agent-coordinator', initial:{agentId:'agent-coordinator',instruction:'Проверь текущую готовность'} })); h.hooks.commit(); return html; };
 const button = (text: string) => uiNode(h.ui, 'Button', text);
 const field = (kind: string, label: string) => h.ui.nodes.find(node => node.kind === kind && node.props['aria-label'] === label)!.props;
 const fill = () => { field('Select', 'Модель сервисного чата').onChange('model-one'); field('TextArea', 'Задача сервисного чата').onChange({ target: { value: 'Проверь текущую готовность' } }); render(); };
@@ -34,6 +35,33 @@ beforeEach(() => {
     };
 });
 afterEach(() => { h.hooks.dispose(); });
+it('fixed role footer keeps a visible compact model/message and closes optional context by default',()=>{
+    renderFixed();const html=renderFixed();
+    expect(html).toContain('service-chat__composer_compact');expect(html).not.toContain('Модель для этой задачи');
+    expect(field('Select','Модель чата роли').size).toBe('small');expect(field('Select','Модель чата роли').value).toBe('model-one');
+    expect(field('TextArea','Сообщение · Координатор').autoSize).toEqual({minRows:1,maxRows:3});
+    expect(field('TextArea','Сообщение · Координатор').value).toBe('Проверь текущую готовность');
+    expect(html).toContain('<details class="service-chat__context">');expect(html).not.toContain('service-chat__task-settings');
+    expect(h.values.prepare).not.toHaveBeenCalled();expect(h.values.start).not.toHaveBeenCalled();
+});
+it('fixed role prepared footer keeps consent/send outside optional details and invalidates a retained send on edit',()=>{
+    renderFixed();renderFixed();button('Проверить контекст').onClick();
+    expect(h.values.prepare).toHaveBeenCalledExactlyOnceWith('agent-coordinator',expect.objectContaining({instruction:'Проверь текущую готовность'}),false,'model-one');
+    h.values.prepared={selection:{targets:[]},prepared:{preview:'Точный контекст'}};const html=renderFixed();
+    expect(h.ui.nodes.some(node=>node.kind==='Button'&&node.text==='Проверить контекст')).toBe(false);
+    expect(html).toContain('Состав подготовленного контекста');expect(button('Отправить').disabled).toBe(true);
+    uiNode(h.ui,'Checkbox','Разрешаю').onChange({target:{checked:true}});renderFixed();const retained=button('Отправить').onClick;
+    field('TextArea','Сообщение · Координатор').onChange({target:{value:'Изменённое сообщение'}});retained();
+    expect(h.values.start).not.toHaveBeenCalled();renderFixed();expect(field('TextArea','Сообщение · Координатор').value).toBe('Изменённое сообщение');
+});
+it('fixed role lost-ACK footer preserves the exact pending instruction without a second preparation action',()=>{
+    h.values.receipt={dialogId:'dialog-one',requestId:'original-request'};
+    h.values.pendingIntent={dialogId:'dialog-one',agentId:'agent-coordinator',input:{requestId:'original-request',modelId:'model-one',instruction:'Исходное сообщение при неизвестном ACK',mcp:[]}};
+    const html=renderFixed();expect(html).toContain('service-chat__composer_pending');
+    expect(field('TextArea','Сообщение · Координатор').value).toBe('Исходное сообщение при неизвестном ACK');
+    expect(uiNode(h.ui,'Form').disabled).toBe(true);expect(h.ui.nodes.some(node=>node.kind==='Button'&&node.text==='Проверить контекст')).toBe(false);
+    expect(h.values.prepare).not.toHaveBeenCalled();expect(h.values.start).not.toHaveBeenCalled();expect(h.picker.disabled).toBe(true);
+});
 it('defaults to Coordinator and the first eligible model while requiring exact context consent before sending', () => {
     render(); const html = render(); expect(html).toContain('до трёх системных агентов'); expect(field('Select', 'Системный агент').value).toBe('agent-coordinator'); expect(field('Select', 'Модель сервисного чата').value).toBe('model-one');
     expect(button('Проверить контекст').disabled).toBe(true); expect(h.values.start).not.toHaveBeenCalled(); fill(); button('Проверить контекст').onClick();

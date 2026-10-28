@@ -89,26 +89,54 @@ describe('Authentic eacf600 grantless accepted run compatibility', () => {
         expect(f.row.request).toEqual(request); expect(f.row.snapshot).toEqual(snapshot);
         expect(f.row.result).not.toHaveProperty('projectContext');
     });
-    it('continues the authentic old coordinator with approved child/synthesis prompts and no new RAG grant', async () => {
+    it('continues the authentic old singleton coordinator without synthesis or a new RAG grant', async () => {
         const f = fixture(legacy.coordinatorRow), snapshot = structuredClone(f.row.snapshot), request = structuredClone(f.row.request);
         f.flags.project_search = true;
         f.answers(JSON.stringify({ delegations: [{ roleId: 'agent-autoconfigurator', instruction: 'Проверь свой выбранный промпт.',
-            targetKeys: [f.row.snapshot.targets[0].key], diagnostics: [] }] }), JSON.stringify(answer), JSON.stringify(answer));
+            targetKeys: [f.row.snapshot.targets[0].key], diagnostics: [] }] }), JSON.stringify(answer));
         await f.run();
-        expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 3, result: { ...answer,
+        expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 2, result: { ...answer,
             delegations: [{ roleId: 'agent-autoconfigurator', state: 'succeeded', result: answer }] } });
-        expect(f.calls.map(call => call.endpoint)).toEqual(['chat', 'chat', 'chat']);
+        expect(f.calls.map(call => call.endpoint)).toEqual(['chat', 'chat']);
         const messages = f.calls.map(call => call.body.messages as Array<{ role: string; content: string }>);
         expect(messages[0][1].content).not.toContain('SELECTED LEGACY AGENT PROMPT');
         expect(messages[1][0].content).toBe(legacy.definitions.find(item => item.definition.id === 'agent-autoconfigurator')!.definition.prompt
             + ' Ответ должен быть коротким: максимум 4096 байт JSON.');
         expect(messages[1][1].content).toContain('SELECTED LEGACY AGENT PROMPT');
-        expect(messages[2][0].content).toBe(legacy.definitions.find(item => item.definition.id === 'agent-coordinator')!.definition.prompt
-            + ' Сохрани различие ответов и ошибок делегатов. Верни короткую сводку максимум 8192 байта JSON.');
         expect(f.capture).not.toHaveBeenCalled(); expect(f.retrieve).not.toHaveBeenCalled();
         expect(f.requests.mock.calls.some(([url]) => String(url).includes('/internal/project-rag/search'))).toBe(false);
         expect(f.row.request).toEqual(request); expect(f.row.snapshot).toEqual(snapshot);
         expect(f.row.result).not.toHaveProperty('projectContext'); expect(f.row.result!.delegations![0].result).not.toHaveProperty('projectContext');
+    });
+    it('synthesizes two successful authentic old delegates with frozen prompts and no added RAG authority', async () => {
+        const f = fixture(legacy.coordinatorRow), snapshot = structuredClone(f.row.snapshot), request = structuredClone(f.row.request);
+        f.flags.project_search = true;
+        const indexed = { ...answer, summary: 'Сохранён ответ второго исполнителя без нового поиска' };
+        f.answers(JSON.stringify({ delegations: [
+            { roleId: 'agent-autoconfigurator', instruction: 'Проверь выбранный промпт.', targetKeys: [snapshot.targets[0].key], diagnostics: [] },
+            { roleId: 'agent-indexer', instruction: 'Ответь только по задаче без дополнительных данных.', targetKeys: [], diagnostics: [] },
+        ] }), JSON.stringify(answer), JSON.stringify(indexed), JSON.stringify(answer));
+        await f.run();
+        expect(f.row).toMatchObject({ state: 'succeeded', calls_started: 4, result: { ...answer, delegations: [
+            { roleId: 'agent-autoconfigurator', state: 'succeeded', result: answer },
+            { roleId: 'agent-indexer', state: 'succeeded', result: indexed },
+        ] } });
+        expect(f.calls.map(call => call.endpoint)).toEqual(['chat', 'chat', 'chat', 'chat']);
+        const messages = f.calls.map(call => call.body.messages as Array<{ role: string; content: string }>);
+        expect(messages[0][1].content).not.toContain('SELECTED LEGACY AGENT PROMPT');
+        for (const [index, roleId] of [[1, 'agent-autoconfigurator'], [2, 'agent-indexer']] as const) {
+            expect(messages[index][0].content).toBe(legacy.definitions.find(item => item.definition.id === roleId)!.definition.prompt
+                + ' Ответ должен быть коротким: максимум 4096 байт JSON.');
+        }
+        expect(messages[1][1].content).toContain('SELECTED LEGACY AGENT PROMPT');
+        expect(messages[2][1].content).not.toContain('SELECTED LEGACY AGENT PROMPT');
+        expect(messages[3][0].content).toBe(legacy.definitions.find(item => item.definition.id === 'agent-coordinator')!.definition.prompt
+            + ' Сохрани различие ответов и ошибок делегатов. Верни короткую сводку максимум 8192 байта JSON.');
+        expect(f.capture).not.toHaveBeenCalled(); expect(f.retrieve).not.toHaveBeenCalled();
+        expect(f.requests.mock.calls.some(([url]) => String(url).includes('/internal/project-rag/search'))).toBe(false);
+        expect(f.row.request).toEqual(request); expect(f.row.snapshot).toEqual(snapshot);
+        expect(f.row.result).not.toHaveProperty('projectContext');
+        for (const child of f.row.result!.delegations!) expect(child.result).not.toHaveProperty('projectContext');
     });
     it.each(['agent-packager', 'agent-coordinator'] as const)('preserves the authentic old %s diagnosis-only result restriction', id => {
         const accepted = id === 'agent-packager' ? legacy.packagerRow : legacy.coordinatorRow, prepared = structuredClone(accepted.snapshot);

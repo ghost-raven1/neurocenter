@@ -30,7 +30,7 @@ describe('Доступ к повторному подключению папки
     it('Владелец с правами проекта проверяет изменённую служебную привязку без удаления устройства', async () => {
         await expect(jobs.create(actor, input)).resolves.toEqual({ id: 'created' });
         expect(enqueue).toHaveBeenCalledWith(store.pool, expect.any(String), expect.objectContaining({ deviceId: device.id, projectId: 'project',
-            payload: expect.objectContaining({ mode: 'new', folderName: 'проект' }) }), expect.any(Function));
+            payload: expect.objectContaining({ mode: 'new', folderName: 'проект' }) }), expect.any(Function), undefined);
     });
 
     it('Другой владелец не создаёт задание на чужом мосте', async () => {

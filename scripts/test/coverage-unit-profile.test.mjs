@@ -38,12 +38,141 @@ test('Actual SQL-mocked actor and execution suites are admitted by the real shar
  }
 });
 
-test('Eight real PostgreSQL fixtures and the runtime S3 candidate retain their infrastructure decision',async()=>{
- for(const name of ['agent-catalog','agent-jobs','agent-model-requirements','agent-source-management','agents-service-lifecycle','catalog-requests-targets','device-learning-expiry','mcp-host-access','snapshot-storage-signed-put']){
+test('Real PostgreSQL fixtures and the runtime S3 candidate retain their infrastructure decision',async()=>{
+ for(const name of ['agent-catalog','agent-jobs','agent-model-requirements','agent-source-management','agents-service-lifecycle','catalog-requests-targets','device-learning-expiry','mcp-host-access','snapshot-storage-signed-put','catalog-requests-http','chat-learning-context','project-rag-authorization']){
   assert.equal(await externalSuite(path.join(repository,'services/catalog-service/test',name+'.test.ts')),true,name);
  }
  // Existing owned fake-HTTP S3 coverage is not reclassified by a pg-type exemption.
  assert.equal(await externalSuite(path.join(repository,'services/catalog-service/test/s3-bucket-privacy.test.ts')),false);
+});
+
+/** These files are source data for static classification, never runtime imports. */
+async function helperFixture(t,files,source="import './runtime.fixture.js';\n"){
+ const f=await fixture(t,source);
+ for(const [name,content]of Object.entries(files)){
+  const file=path.join(path.dirname(f.file),name);await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,content);
+ }
+ return {...f,classify:()=>externalSuite(f.file,false,{root:f.root})};
+}
+
+test('Indirect runtime PG crosses nested verification exports and JS-to-TS aliases before worker admission',async t=>{
+ const f=await helperFixture(t,{'runtime.fixture.ts':"export * from './nested/owned.fixture.mjs';\n",'nested/owned.fixture.mts':"import {Pool} from 'pg';\nthrow Error('must never execute');\n"});
+ assert.equal(await f.classify(),true);
+ await assert.rejects(focusedSelection({root:f.root,packages:[['catalog-service','services/catalog-service']],chosen:new Set(['catalog-service']),testFiles:['test/reviewed.test.ts'],unit:true,native:false,integration:false,ownedPg:false}),/cannot select infrastructure/);
+});
+
+test('Verification-only environment gates and CommonJS runtime PG cannot hide behind fixtures',async t=>{
+ for(const content of ["export const connection=process.env.OWNED_TEST_ADMIN_PG_URL;", "const pg=require('pg');", "import type {PoolClient} from 'pg';"]){
+  const f=await helperFixture(t,{'runtime.fixture.ts':content});assert.equal(await f.classify(),true,content);
+ }
+});
+
+test('Focused live-readiness markers stay infrastructure-only through a verification helper',async t=>{
+ const f=await helperFixture(t,{'runtime.fixture.ts':'export const ready=process.env.NEUROCENTER_CATALOG_READY;'});
+ assert.equal(await f.classify(),false);assert.equal(await externalSuite(f.file,true,{root:f.root}),true);
+});
+
+test('A pure in-memory helper graph stays unit-safe in a custom root and never evaluates its sentinel',async t=>{
+ const f=await helperFixture(t,{'runtime.fixture.ts':"export * from './nested';\n",'nested/index.ts':"import {writeFileSync} from 'node:fs';\nwriteFileSync(new URL('./EXECUTED',import.meta.url),'bad');\nexport const query=()=>({rows:[]});\n"});
+ assert.equal(await f.classify(),false);
+ const selection=await focusedSelection({root:f.root,packages:[['catalog-service','services/catalog-service']],chosen:new Set(['catalog-service']),testFiles:['test/reviewed.test.ts'],unit:true,native:false,integration:false,ownedPg:false});
+ assert.deepEqual(selection.files,['test/reviewed.test.ts']);
+ await assert.rejects(fs.stat(path.join(path.dirname(f.file),'nested/EXECUTED')),{code:'ENOENT'});
+ // This classifier follows verification dependencies, not the whole production service graph.
+ const production=path.join(f.root,'services/catalog-service/src/service.ts');await fs.mkdir(path.dirname(production),{recursive:true});await fs.writeFile(production,"import {Pool} from 'pg';\n");
+ await fs.writeFile(f.file,"import '../src/service.ts';\n");assert.equal(await f.classify(),false);
+});
+
+test('Missing, ambiguous, dynamic, escaped and redirected verification imports fail closed',async t=>{
+ const cases=[
+  {files:{}},
+  {files:{'runtime.fixture.ts':'export {};','runtime.fixture.tsx':'export {};'}},
+  {source:'const helper=process.env.HELPER; import(helper);',files:{}},
+  {source:"import '../../../../foreign.fixture.ts';",files:{}},
+  {source:"import '/outside/foreign.fixture.ts';",files:{}},
+  {source:"import 'file:///outside/foreign.fixture.ts';",files:{}},
+ ];
+ for(const input of cases){const f=await helperFixture(t,input.files,input.source);assert.equal(await f.classify(),true,input.source??Object.keys(input.files).join(','));}
+ for(const ancestor of [false,true]){
+  const f=await helperFixture(t,{'actual.ts':'export {};'},ancestor?"import './linked/helper.ts';":"import './runtime.fixture.js';");
+  if(ancestor){const directory=path.join(path.dirname(f.file),'actual');await fs.mkdir(directory);await fs.writeFile(path.join(directory,'helper.ts'),'export {};');await fs.symlink(directory,path.join(path.dirname(f.file),'linked'),'dir');}
+  else await fs.symlink(path.join(path.dirname(f.file),'actual.ts'),path.join(path.dirname(f.file),'runtime.fixture.ts'));
+  assert.equal(await f.classify(),true);
+ }
+});
+
+test('A literal helper prefix with a dynamic suffix cannot masquerade as an inspected pure dependency',async t=>{
+ for(const call of ["import('./runtime.fixture.js' + suffix)","require /* gap */ ('./runtime.fixture.js' /* gap */ + suffix)"]){
+  const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},'const suffix=""; '+call+';');
+  assert.equal(await f.classify(),true,call);
+ }
+});
+
+test('Literal call closure permits whitespace/comments but rejects templates and additional arguments',async t=>{
+ for(const call of ["import( /* before */ './runtime.fixture.js' /* after */ )","require /* before */ ( './runtime.fixture.js' // after\n)","import(/* require(dynamic); from './missing.fixture' */ './runtime.fixture.js')"]){
+  const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},call+';');assert.equal(await f.classify(),false,call);
+ }
+ for(const call of ["import(`./runtime.fixture.js`)","import('./runtime.fixture.js', options)","require('./runtime.fixture.js' + '')"]){
+  const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},call+';');assert.equal(await f.classify(),true,call);
+ }
+});
+
+test('AST decoding retains the owned target of escaped literals and detects escaped PG identities',async t=>{
+ const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},String.raw`import '\u002e/runtime.fixture.js';`);assert.equal(await f.classify(),false);
+ await fs.writeFile(f.file,String.raw`import 'p\u0067';`);assert.equal(await f.classify(),true);
+ await fs.writeFile(f.file,"import runtime = require('./runtime.fixture.js');");assert.equal(await f.classify(),false);
+});
+
+test('Property import/require methods are not runtime module dependencies',async t=>{
+ const f=await helperFixture(t,{},'api.import(intent); api.require(intent); api?.import(intent);');assert.equal(await f.classify(),false);
+});
+
+test('Quoted source examples and generated template text are not runtime module dependencies',async t=>{
+ for(const source of [
+  'const example="import {value} from \'./missing.fixture\';";',
+  "// import './missing.fixture';\n/* require(unknown); */ export const value=1;",
+  "const file='owned'; const generated=`import(${JSON.stringify(file)}); require(${JSON.stringify(file)});`;",
+ ]){
+  const f=await helperFixture(t,{},source);assert.equal(await f.classify(),false,source);
+ }
+ const actual=await helperFixture(t,{},"import {value} from './missing.fixture';");assert.equal(await actual.classify(),true);
+});
+
+test('A verification helper can contain nonexecuted source text while real nested imports remain inspected',async t=>{
+ const f=await helperFixture(t,{'runtime.fixture.ts':"export const example=\"export {value} from './missing.fixture';\";"});
+ assert.equal(await f.classify(),false);
+ await fs.writeFile(path.join(path.dirname(f.file),'runtime.fixture.ts'),"export {value} from './missing.fixture';");assert.equal(await f.classify(),true);
+ await fs.writeFile(path.join(path.dirname(f.file),'runtime.fixture.ts'),"export const example=\"import {Pool} from 'pg';\";");assert.equal(await f.classify(),false);
+ await fs.writeFile(path.join(path.dirname(f.file),'runtime.fixture.ts'),"import {Pool} from 'pg';");assert.equal(await f.classify(),true);
+});
+
+test('Template expression imports and division expressions retain the opaque dependency fence',async t=>{
+ for(const source of ["const text=`value ${import('./runtime.fixture.js' + suffix)}`;","const ratio=1 / import('./runtime.fixture.js' + suffix) / 2;"]){
+  const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},source);assert.equal(await f.classify(),true,source);
+ }
+ const example=await helperFixture(t,{},"const pattern=/import\\('fake'\\)/; const example=\"from './missing.fixture'\";");assert.equal(await example.classify(),false);
+});
+
+test('Contextual identifiers, property names, postfix and TS non-null cannot hide a real dynamic import after division',async t=>{
+ for(const source of [
+  "const of=1; const ratio=of / import('./runtime.fixture.js' + suffix) / 2;",
+  "const obj={return:1}; const ratio=obj.return / import(helper) / 2;",
+  "let x=1; const ratio=x++ / import(helper) / 2;",
+  "let x=1; const ratio=x-- / import(helper) / 2;",
+  "declare const x:number; const ratio=x! / import(helper) / 2;",
+ ]){
+  const f=await helperFixture(t,{'runtime.fixture.js':'export {};'},source);assert.equal(await f.classify(),true,source);
+ }
+ const regex=await helperFixture(t,{},'const of=1; const pattern=/import(helper)/; const ratio=of / 2;');assert.equal(await regex.classify(),false);
+ const invalid=await helperFixture(t,{},"import {broken from './runtime.fixture.js';");assert.equal(await invalid.classify(),true);
+});
+
+test('Pure fixture cycles and graphs beyond the bounded inspection budget cannot silently become units',async t=>{
+ const cycle=await helperFixture(t,{'runtime.fixture.ts':"import './second.fixture.ts';",'second.fixture.ts':"import './runtime.fixture.js';"});assert.equal(await cycle.classify(),true);
+ const files=Object.fromEntries(Array.from({length:65},(_,index)=>['part'+index+'.ts',index===64?'export {};':"import './part"+(index+1)+".ts';"]));
+ const large=await helperFixture(t,files,"import './part0.ts';");assert.equal(await large.classify(),true);
+ const bytes=await helperFixture(t,{'runtime.fixture.ts':' '.repeat(2*1024*1024)});assert.equal(await bytes.classify(),true);
+ const edges=await helperFixture(t,{'runtime.fixture.ts':'export {};'},"import './runtime.fixture.js';\n".repeat(257));assert.equal(await edges.classify(),true);
 });
 
 test('Real PostgreSQL bridge and chat regressions stay outside the unit-safe profile',async()=>{

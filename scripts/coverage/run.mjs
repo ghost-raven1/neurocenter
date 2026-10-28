@@ -47,7 +47,7 @@ async function unitCoverage(context, [name, relative]) {
     const cwd = path.join(root, relative), folder = path.join(output, name);
     await mkdir(folder);
     const excluded = [], testFiles = (await files(path.join(cwd, 'test'))).filter(file => /\.test\.[cm]?[jt]sx?$/.test(file));
-    if (!options.ownedPg) for (const file of testFiles) if (await externalSuite(file)) excluded.push(path.relative(cwd, file).split(path.sep).join('/'));
+    if (!options.ownedPg) for (const file of testFiles) if (await externalSuite(file,false,{root})) excluded.push(path.relative(cwd, file).split(path.sep).join('/'));
     const excludedBySelection = selection ? testFiles.map(file => path.relative(cwd, file).split(path.sep).join('/'))
         .filter(file => !excluded.includes(file) && !selection.files.includes(file)).sort() : [];
     const reportFile = path.join(folder, 'test-results.json'), inventoryFile = path.join(folder, 'test-file-inventory.json');

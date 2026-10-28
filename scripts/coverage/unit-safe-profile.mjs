@@ -46,7 +46,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/device-job-requests.test.ts": {
-  "sha256": "ad44d99bb11d47913badc1d1cc03418cc293d2c9235ee48b792f7046b6b36174",
+  "sha256": "6dad3dc91193b099d7aae96cb59a234a5432140aa1506b0399f30a5569531df2",
   "helpers": {}
  },
  "services/catalog-service/test/device-learning.test.ts": {
@@ -66,7 +66,7 @@ export const auditedUnits=Object.freeze({
   "helpers": {}
  },
  "services/catalog-service/test/installation-set.test.ts": {
-  "sha256": "5848ed517e39cb205493aa4ce52d7f2e711a1290087e0cb8b512f872ed05aa98",
+  "sha256": "0cfe785ac6a554650bb404b25c45b583caa78899dbc40d0df1f3f515ce130578",
   "helpers": {}
  },
  "services/catalog-service/test/learning-quirks-core.test.ts": {

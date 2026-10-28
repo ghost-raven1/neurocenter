@@ -11,23 +11,26 @@ import {isolateAgentHome,preparedAgentsPayload} from './project-agents.fixture.j
 import {configureProjectAgents} from '../src/features/project-agents/index.js';
 import {LEARNING_COLLECTOR_FILE} from '../src/features/project-learning/collector-plugin.js';
 import {learningQueueRoot} from '../src/features/project-learning/observation-queue.js';
+import {captureNativeCliJson} from './native-cli-json.fixture.js';
 
 const binary=process.env.OPENCODE_AGENT_TEST_ENGINE,run=promisify(execFile);
 /** The native engine and HOME are isolated; no provider, tools, subprocess commands or user profile are used. */
 describe.runIf(!!binary)('Native project learning collector',()=>{
-    let fixture:Awaited<ReturnType<typeof workspaceFixture>>|undefined,config:string|undefined;
+    let fixture:Awaited<ReturnType<typeof workspaceFixture>>|undefined,config:string|undefined,preserveFixture=false;
     afterEach(async()=>{
         vi.unstubAllEnvs();
         if(config)await fs.chmod(config,0o700).catch(()=>undefined);
-        if(fixture){await fs.chmod(path.join(fixture.root,'.opencode'),0o700).catch(()=>undefined);await fs.rm(fixture.temporary,{recursive:true,force:true});}
+        if(fixture){await fs.chmod(path.join(fixture.root,'.opencode'),0o700).catch(()=>undefined);if(!preserveFixture)await fs.rm(fixture.temporary,{recursive:true,force:true});}
     });
     it('auto-discovers the managed plugin and runs metadata-only hooks inside pinned OpenCode',async()=>{
         expect(process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256).toMatch(/^[a-f0-9]{64}$/);
         expect(hash(await fs.readFile(binary!))).toBe(process.env.OPENCODE_AGENT_TEST_ENGINE_SHA256);
         fixture=await workspaceFixture();await isolateAgentHome(fixture.temporary);
         const root=fixture.root,bindingId=await projectBindingId('test-project'),instanceId=await projectInstanceId('test-project');
+        const prompt='Fixture prompt\n'+('Native learning metadata only.\n'.repeat(2100))+'\nEND_LEARNING_PROMPT';
+        expect(Buffer.byteLength(prompt)).toBeLessThanOrEqual(65536);
         const payload=preparedAgentsPayload({schemaVersion:2,projectId:'test-project',bindingId,instanceId,revision:1,agents:[{id:'agent-fixture',slug:'nc-fixture',version:1,
-            enabled:true,description:'Fixture',prompt:'Fixture prompt',mode:'subagent',permission:{bash:'deny'}}]});await configureProjectAgents(payload,async()=>undefined,async()=>undefined,async()=>payload.compilation!);
+            enabled:true,description:'Fixture',prompt,mode:'subagent',permission:{bash:'deny'}}]});await configureProjectAgents(payload,async()=>undefined,async()=>undefined,async()=>payload.compilation!);
         const home=path.join(fixture.temporary,'native-home'),projectConfig=path.join(root,'.opencode'),marker=path.join(fixture.temporary,'native-marker.json');
         config=path.join(home,'config/opencode');await fs.mkdir(config,{recursive:true});
         const dependencies={'@opencode-ai/plugin':'1.14.48'};
@@ -44,8 +47,12 @@ export default async input=>{const hooks=await factory(input);await hooks['tool.
             OPENCODE_DISABLE_MODELS_FETCH:'true',OPENCODE_DISABLE_AUTOUPDATE:'true',OPENCODE_DISABLE_DEFAULT_PLUGINS:'true',OPENCODE_DISABLE_LSP_DOWNLOAD:'true',OPENCODE_DISABLE_CLAUDE_CODE:'true',OPENCODE_DISABLE_EXTERNAL_SKILLS:'true',
             NPM_CONFIG_OFFLINE:'true',NPM_CONFIG_IGNORE_SCRIPTS:'true',NPM_CONFIG_REGISTRY:'http://127.0.0.1:9'};
         expect((await run(binary!,['--version'],{cwd:root,env,timeout:15000})).stdout.trim()).toBe('1.14.48');
-        const result=await run(binary!,['debug','config'],{cwd:root,env,timeout:30000,maxBuffer:2*1024*1024});
+        const result=await captureNativeCliJson(binary!,['debug','config'],{cwd:root,env,temporary:fixture.temporary})
+            .catch(error=>{if(error.code==='NATIVE_CLI_OWNERSHIP_UNKNOWN')preserveFixture=true;throw error;});
+        expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(65536);
         const native=JSON.parse(result.stdout);expect(native.plugin.some((entry:unknown)=>typeof entry==='string'&&entry.endsWith('/neurocenter-learning.js'))).toBe(true);
+        expect(Object.keys(native.agent)).toEqual(['nc-fixture']);
+        expect(native.agent['nc-fixture'].prompt).toBe(prompt);
         expect(JSON.parse(await fs.readFile(marker,'utf8'))).toEqual({hooks:['event','tool.execute.after']});
         const files=(await fs.readdir(path.join(learningQueueRoot(),bindingId))).filter(file=>file.endsWith('.json'));expect(files).toHaveLength(1);
         const observed=await fs.readFile(path.join(learningQueueRoot(),bindingId,files[0]!), 'utf8');expect(observed).not.toContain('PRIVATE');expect(JSON.parse(observed).input.outcome).toBe('unknown');

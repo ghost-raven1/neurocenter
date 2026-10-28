@@ -4,6 +4,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'jsonc-parser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {validateAsset,toToolPublication} from '@neurocenter/asset-contract';
+import supplyPaths from '../../../services/shared/tool-supply-paths.cjs';
+const {toolRuntimePath}=supplyPaths;
 
 import { install } from '../src/bridge/installer.js';
 import { inspectInstallation } from '../src/bridge/installation-inspection.js';
@@ -18,13 +21,13 @@ import { workspaceFixture } from './bridge-fixture.js';
 interface ReadyTool {
     key: string;
     publication: { name: string; kind: 'mcp' | 'plugin'; revision: string; config: Package['config']; files?: Array<{path: string; content: string}> };
-    artifacts: Array<{archivePath: string; descriptorPath: string}>;
+    artifacts: Array<{archivePath: string; descriptor: RuntimeArtifact}>;
 }
 interface ReadyCase { label: string; directory: string; tool: ReadyTool }
 const requested = process.env.NEUROCENTER_CATALOG_READY;
 const noop = async (): Promise<void> => undefined;
 
-/** Большие реальные пакеты подключаются явно; обычный unit-прогон их не собирает и не скачивает. */
+/** Canonical published asset stays intact; explicit host archives are verified during isolated installation, without downloads. */
 async function readyCases(value: string): Promise<ReadyCase[]> {
     const filenames: unknown = value.trim().startsWith('[') ? JSON.parse(value) : value.split(path.delimiter);
     if (!Array.isArray(filenames) || !filenames.length || filenames.some(filename => typeof filename !== 'string' || !filename.trim())) {
@@ -33,9 +36,11 @@ async function readyCases(value: string): Promise<ReadyCase[]> {
     const cases: ReadyCase[] = [];
     for (const filename of filenames as string[]) {
         const absolute = await fs.realpath(path.resolve(filename));
-        const manifest = JSON.parse(await fs.readFile(absolute, 'utf8')) as {schemaVersion: number; tools: ReadyTool[]};
-        if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.tools) || !manifest.tools.length) { throw new Error('Неизвестный формат ready manifest.'); }
-        cases.push(...manifest.tools.map(tool => ({ label: `${tool.key}@${tool.publication.revision}`, directory: path.dirname(absolute), tool })));
+        const asset=validateAsset(JSON.parse(await fs.readFile(absolute,'utf8')));
+        if(asset.kind!=='mcp'&&asset.kind!=='plugin')throw new Error('Нужен canonical source asset MCP/plugin.');
+        const publication=toToolPublication(asset);
+        const artifacts=asset.delivery.artifacts.map(({descriptor})=>({descriptor,archivePath:toolRuntimePath(descriptor.sha256)}));
+        cases.push({label:`${asset.id}@${asset.version}`,directory:path.dirname(absolute),tool:{key:asset.id,publication,artifacts}});
     }
     return cases;
 }
@@ -53,7 +58,7 @@ function deliveryPackage(tool: ReadyTool): Package {
 
 async function nativeArchive(item: ReadyCase, expected: RuntimeArtifact): Promise<string> {
     for (const artifact of item.tool.artifacts) {
-        const descriptor = JSON.parse(await fs.readFile(path.resolve(item.directory, artifact.descriptorPath), 'utf8')) as RuntimeArtifact;
+        const descriptor = artifact.descriptor;
         if (descriptor.target !== expected.target) { continue; }
         expect(descriptor).toEqual(expected);
         return fs.realpath(path.resolve(item.directory, artifact.archivePath));
