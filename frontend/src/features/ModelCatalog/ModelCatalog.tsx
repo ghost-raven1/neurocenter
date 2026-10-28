@@ -172,7 +172,8 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
         {projectId&&<div className="model-catalog__embedding-target">
             {embedding.error && <Alert type="warning" showIcon message="Подключение модели проекта не проверено" description={embedding.error}
                 action={<Button onClick={() => { void embedding.refresh(); }}>Обновить подключение модели</Button>} />}
-            {canManage&&<EmbeddingTargetFields target={embeddingTarget} disabled={!!busy||reindex.busy||reindex.pending}/>}
+            {canManage&&catalog?.items.some(model=>model.capability==='embedding'&&!model.archivedAt)
+                &&<EmbeddingTargetFields target={embeddingTarget} disabled={!!busy||reindex.busy||reindex.pending}/>}
             <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />
         </div>}
         {!catalog && loading ? <div role="status" aria-live="polite" className="model-catalog__loading"><Spin tip="Загружаем модели…" /></div> : catalog && (shown.length ? <Row gutter={[16, 16]} align="stretch">

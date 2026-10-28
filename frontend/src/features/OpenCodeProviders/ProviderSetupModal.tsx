@@ -8,6 +8,7 @@ import {providerKindForModel, providerModelCompatibilityReason, providerModelEli
 import type {IProviderSetupSelection, OpenCodeProviderKind} from './types';
 import {useCodexSupply} from './useCodexSupply';
 import {useProviderSetup} from './useProviderSetup';
+import {startQueryUrl} from '../../modules/Start/startQuery';
 import './ProviderSetup.less';
 
 export interface IProviderSetupModalProps {
@@ -55,6 +56,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
     const ready = !readReason && !supplyReason && operation.status?.ready === true;
     const bridgeRepair = !!bridge.device && (bridge.device.requiresReconnect || bridge.device.report.protocolVersion !== 2
         || !bridge.device.report.capabilities?.includes('opencode-providers-v1') || kind === 'ollama' && !bridge.device.report.capabilities?.includes('opencode-ollama-v1') || !!platformReason);
+    const connectComputer = canManage && bridge.devicesReady && bridge.devices.length === 0;
     const modelsUrl = `/projects/${encodeURIComponent(projectId)}?tab=store&catalogTab=models`;
     const binding = bridge.device?.report.bindings?.find(item => item.projectId === projectId && item.valid !== false);
     return <Modal open title="Настроить провайдера в OpenCode" width={640} footer={null} onCancel={onClose} className="provider-setup">
@@ -79,7 +81,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
             {operation.status && !!operation.status.missingFields.length && <Typography.Text type="secondary">Осталось заполнить в локальном мастере: {operation.status.missingFields.map(field => ({baseUrl: 'адрес API', credential: 'ключ', login: 'вход Codex'})[field]).join(', ')}.</Typography.Text>}
             {operation.job && operation.pending && <Alert role="status" showIcon type="info" message="Ожидаем подтверждения от выбранного компьютера" />}
             {readReason && <Alert type="warning" showIcon message={readReason} action={<Space wrap>
-                {bridgeRepair && <Button href="/start?step=1">Настроить мост</Button>}
+                {(bridgeRepair || connectComputer) && <Button href={startQueryUrl('', {setup: true, step: 1, project: projectId})}>{connectComputer ? 'Подключить компьютер' : 'Настроить мост'}</Button>}
                 {catalogProvider && modelReason && <Button href={modelsUrl}>Открыть модели проекта</Button>}
                 {catalogProvider && !props.catalogReady && <Button onClick={props.onReloadModels}>Обновить модели</Button>}
             </Space>} />}

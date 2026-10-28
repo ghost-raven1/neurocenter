@@ -7,6 +7,7 @@ import {errorMessage} from '../../common/utils/errorMessage';
 import {bridgeApi,type IBridgePair} from './api';
 import {waitForComputer} from './pairingProgress';
 import {FeatureAvailabilityNotice,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
+import {startQueryUrl} from '../../modules/Start/startQuery';
 
 type Phase='checking'|'review'|'approving'|'waiting'|'connected'|'error';
 
@@ -48,7 +49,10 @@ export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>
     };
     const next=():void=>{
         if(phase==='connected'){history.replace('/projects');}
-        else if(phase==='error'){history.replace('/start?step=1');}
+        else if(phase==='error'){
+            const params=new URLSearchParams(location.search);params.delete('connect');
+            history.replace(startQueryUrl(params.toString(),{setup:true,step:1},location.hash));
+        }
         else if(phase==='waiting'&&error){setAttempt(value=>value+1);}
         else{void approve();}
     };

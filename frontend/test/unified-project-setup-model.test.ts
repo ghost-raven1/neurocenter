@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {setupBinding,setupProjectAssets,unifiedSetupStep} from '../src/modules/Start/projectSetupModel';
-import {startQueryUrl,legacyStartRequested} from '../src/modules/Start/startQuery';
+import {startQueryUrl,startSetupRequested} from '../src/modules/Start/startQuery';
 import {workspaceInstallerCommand,bridgeInstallerCommand} from '../src/features/McpBridge/connectionCommands';
 import type {useBridge} from '../src/features/McpBridge/useBridge';
 import type {IProjectAsset,ISkillFile} from '../src/core/api/interfaces';
@@ -13,9 +13,15 @@ function bridge(changed:Record<string,unknown>={}){
 }
 
 describe('Unified project setup never turns navigation or a stale assignment into readiness',()=>{
-    it('makes the unified experience primary and keeps explicit legacy recovery links',()=>{
-        for(const query of ['', '?step=0','?p=prj-qa','?setup=1&step=2','?setup=1&addComputer=1'])expect(legacyStartRequested(query)).toBe(false);
-        for(const query of ['?legacy=1','?step=1','?step=2&p=prj-qa','?addComputer=1'])expect(legacyStartRequested(query)).toBe(true);
+    it('opens historical step and pairing links in the primary wizard',()=>{
+        for(const query of ['', '?p=prj-qa', '?setup=0&step=1&connect=qa-owned-pair-code'])expect(startSetupRequested(query)).toBe(false);
+        for(const query of ['?step=0','?step=1','?step=2&p=prj-qa','?legacy=1','?addComputer=1','?setup=1&step=2'])expect(startSetupRequested(query)).toBe(true);
+        expect(unifiedSetupStep('?step=2&p=prj-qa')).toBe(1);
+        expect(unifiedSetupStep('?setup=1&step=2&p=prj-qa')).toBe(2);
+    });
+    it.each(['?connect=qa-owned-pair-code','?setup=1&connect=qa-owned-pair-code','?step=1&connect=qa-owned-pair-code','?step=2&connect=qa-owned-pair-code&p=prj-qa',
+        '?step=1&connect=qa-owned-pair-code&legacy=1','?step=1&connect=qa-owned-pair-code&addComputer=1'])('uses the primary computer stage for pairing link %s',query=>{
+        expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(1);
     });
     it('keeps the selected project and unknown query context on resume',()=>{
         const url=startQueryUrl('?p=prj-qa&extension=rag',{setup:true,step:3},'#details');
@@ -24,9 +30,9 @@ describe('Unified project setup never turns navigation or a stale assignment int
         for(const query of ['?step=-1','?step=4','?step=NaN'])expect(unifiedSetupStep(query)).toBe(0);
     });
     it('routes add-computer intent into the main connection stage without a legacy step URL',()=>{
-        const query='?setup=1&addComputer=1&p=prj-qa';expect(legacyStartRequested(query)).toBe(false);expect(unifiedSetupStep(query)).toBe(1);
+        const query='?setup=1&addComputer=1&p=prj-qa';expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(1);
         expect(unifiedSetupStep(query+'&step=3')).toBe(3);
-        const closed=startQueryUrl(query,{setup:false,step:0,addComputer:false});expect(legacyStartRequested(new URL(closed,'https://qa.example.test').search)).toBe(false);
+        const closed=startQueryUrl(query,{setup:false,step:0,addComputer:false});expect(startSetupRequested(new URL(closed,'https://qa.example.test').search)).toBe(false);
         expect(new URL(closed,'https://qa.example.test').searchParams.get('p')).toBe('prj-qa');
     });
     it('requires fresh exact identity, one folder and a current owned computer',()=>{

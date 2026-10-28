@@ -30,7 +30,11 @@ beforeEach(() => { vi.clearAllMocks(); io.admin = true; io.assigned = true; io.e
 
 describe('Настройки источника вместо скрытой формы на шаге установки', () => {
     it('Показывает поле, подготовленную версию и пути к ассетам и установке; сам ничего не сохраняет', () => {
-        const html = render(); expect(html).toContain('Версии моста'); expect(html).toContain('0.9.18'); expect(html).toContain('href="/assets"'); expect(html).toContain('href="/start?step=1"');
+        const html = render(); expect(html).toContain('Версии моста'); expect(html).toContain('0.9.18'); expect(html).toContain('href="/assets"');
+        const href = html.match(/href="([^"]+)"[^>]*>«Начало работы»/); expect(href).not.toBeNull();
+        const target = new URL(href![1].replace(/&amp;/g, '&'), 'https://panel.example.test');
+        expect(target.pathname).toBe('/start'); expect(target.searchParams.get('step')).toBe('1'); expect(target.searchParams.get('setup')).toBe('1');
+        expect(target.searchParams.has('p')).toBe(false);
         expect(io.inputs[0]).toMatchObject({id: 'bridge-source-repository', value: io.url}); expect(io.saveDraft).not.toHaveBeenCalled(); expect(io.check).not.toHaveBeenCalled();
     });
     it('Конфликт сохраняет поле и требует явного решения до следующего сохранения', () => {

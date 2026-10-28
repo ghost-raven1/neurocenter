@@ -19,7 +19,7 @@ import {LocalProjectsFolder} from '../Projects/local/LocalProjectsFolder';
 import {useAvailableProjects} from '../Projects/useAvailableProjects';
 import {useProjectCatalog} from '../Store/useProjectCatalog';
 import {BridgeSetup} from './BridgeSetup';
-import {startQueryUrl} from './startQuery';
+import {startQueryUrl,startSetupRequested} from './startQuery';
 import {setupBinding,unifiedSetupStep} from './projectSetupModel';
 import {StartProjectAssets} from './StartProjectAssets';
 import {SetupProgress} from './SetupProgress';
@@ -36,7 +36,7 @@ export default function UnifiedProjectSetup(){
     const {scope}=useAuthRequestOwner(),user=useSelector((state:RootState)=>state.userBlock.user),projects=useAvailableProjects();
     const bridge=useBridge(),installer=useBridgeInstaller(),[bindingOpen,setBindingOpen]=useState<string>(),[platform,setPlatform]=useState<'posix'|'windows'>();
     const [helpOpen,setHelpOpen]=useState(false);
-    const params=new URLSearchParams(location.search),opened=params.get('setup')==='1',step=unifiedSetupStep(location.search);
+    const params=new URLSearchParams(location.search),opened=startSetupRequested(location.search),step=unifiedSetupStep(location.search);
     const requested=params.get('p'),project=projects.ready&&!projects.error?(projects.projects.find(item=>item.id===requested)??projects.projects.find(item=>item.name===requested)):undefined;
     const level=project?projectRoleLevel(user,project.id):0,isMain=!!user&&isMainAdminRole(user.activeRole);
     const binding=setupBinding(bridge,project?.id),enabled=availability.enabled;
@@ -58,7 +58,7 @@ export default function UnifiedProjectSetup(){
     return <div className="start"><PageHeading title="Начало работы" description="OpenCode, мост и окружение проекта — в одном мастере." actions={<Space><Button onClick={()=>setHelpOpen(true)}>Помощь</Button><Button onClick={()=>history.push('/projects')}>Мои проекты</Button></Space>}/>
         <Card className="start__setup"><Space direction="vertical" size={20} style={{width:'100%'}}>
             <div><Typography.Title level={2}>Установите OpenCode и подготовьте проект</Typography.Title><Typography.Paragraph>Установщик подготовит OpenCode и мост. Затем подключите компьютер, выберите папку, агентов и инструменты проекта. Ручные настройки сохраняются.</Typography.Paragraph></div>
-            {!enabled&&<Alert type="info" showIcon message={availability.reason} description="Новые действия единого мастера выключены. Состояние, история и прежние способы восстановления сохраняются."/>}
+            {!enabled&&<Alert type="info" showIcon message={availability.reason} description="Новые действия единого мастера выключены. Состояние, история и восстановление сохраняются."/>}
             <SetupProgress bridge={bridge}/>
             {!opened?<Button type="primary" size="large" icon={<RocketOutlined/>} onClick={()=>go(step)}>{enabled?'Установить OpenCode':'Посмотреть состояние и настройку'}</Button>:<>
                 <Typography.Text strong>Открыт шаг {step+1} из 4. Состояние окружения проверяется отдельно.</Typography.Text>
@@ -112,7 +112,7 @@ export default function UnifiedProjectSetup(){
         </Space></Card>
         <Modal open={helpOpen} title="Помощь с подключением" footer={null} onCancel={()=>setHelpOpen(false)} destroyOnClose>
             <Typography.Paragraph>Если установка моста прервалась, повторите только подключение. Установленный OpenCode и данные проекта сохраняются.</Typography.Paragraph>
-            <Space direction="vertical"><Button onClick={()=>{setHelpOpen(false);history.push(startQueryUrl(location.search,{setup:false,step:1},location.hash));}}>Открыть прежнее подключение моста</Button>
+            <Space direction="vertical"><Button onClick={()=>{setHelpOpen(false);go(1);}}>Открыть подключение моста</Button>
                 <Button type="link" href="/help/opencode-install">Установка и проверка в Помощи</Button></Space>
         </Modal>
         {enabled&&bindingOpen===sourceScope&&project&&<WorkspaceBindingWizard key={sourceScope} bridge={bridge} project={project} canManage={level>=2} onClose={()=>{setBindingOpen(undefined);void bridge.reload();}}/>}

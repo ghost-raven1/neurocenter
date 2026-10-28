@@ -1,44 +1,16 @@
 .start {
     display: flex; flex-direction: column; gap: 24px;
     .page-heading { margin-bottom: 0; }
-    &__hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 28px; border: 1px solid @brand-border; border-radius: 16px; background: linear-gradient(115deg, @brand-tint, #fff 80%);
-        h2.ant-typography { margin-top: 10px; max-width: 700px; font-size: 28px; letter-spacing: -.5px; line-height: 1.35; }
-        p { color: #526779; max-width: 700px; line-height: 1.7; }
-    }
-    &__eyebrow { color: @brand-primary; letter-spacing: 1.6px; font-size: 10px; font-weight: 700; }
-    &__overview { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; border-top: 1px solid @brand-border; padding-top: 16px;
-        .anticon { font-size: 20px; color: @brand-primary; }
-        strong { font-size: 24px; line-height: 1.2; color: #14283d; }
-        > span:last-child { flex-basis: 100%; color: #617387; font-size: 12px; line-height: 1.6; }
-    }
     &__setup .ant-card-body { padding: 24px; }
-    &__setup .ant-steps.ant-steps-label-vertical {
-        .ant-steps-item { flex: 1; min-width: 0; }
-        .ant-steps-item-container { display: flex; flex-direction: column; align-items: center; }
-        .ant-steps-item-container:focus-visible { outline: 2px solid @brand-focus; outline-offset: 3px; border-radius: 6px; }
-        .ant-steps-item-container > .ant-steps-item-icon { margin: 0; }
-        .ant-steps-item-content { width: 100%; }
-        .ant-steps-item-tail { left: 50%; margin-left: 0; padding-right: 20px; padding-left: 20px; }
-    }
     &__step { border-top: 1px solid #edf1f5; margin-top: 20px; padding-top: 20px; h3 { margin-bottom: 12px; } .ant-collapse { margin-top: 12px; } }
-    &__step-nav { margin-top: 16px; padding-top: 16px; border-top: 1px solid #edf1f5; width: 100%; }
     &__computer { display: grid; gap: 16px; min-width: 0; }
     &__computer-summary { display: grid; gap: 12px; padding: 16px; border: 1px solid @brand-border; border-radius: 10px; background: #f8fafc; min-width: 0; }
     &__computer-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
     &__computer-actions { flex-shrink: 0; max-width: 100%; }
     &__computer-options.ant-collapse { margin-top: 0; border-top: 1px solid #edf1f5; .ant-collapse-header { padding-left: 0; } .ant-collapse-content-box { padding: 0 0 16px; } }
-    &__project-notice { margin-bottom: 16px; }
     &__command { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 12px; padding: 16px; border-radius: 10px; background: #f1f5f8; code { overflow-wrap: anywhere; font-size: 12px; color: #244353; } }
-    &__guides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; .ant-card-body { height: 100%; display: flex; flex-direction: column; } .ant-btn { margin-top: auto; padding-left: 0; text-align: left; height: auto; white-space: normal; } }
-    &__extensions > h3.ant-typography { margin: 0 0 8px; font-size: 20px; }
-    &__extensions > .ant-typography { margin-bottom: 20px; }
-    &__extension-kind { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; font-size: 12px; .ant-tag { margin: 0; } }
-    &__guides h4.ant-typography { margin: 0 0 8px; font-size: 16px; }
 }
-.extension-instruction {
-    .ant-modal-body { max-height: 65vh; overflow-y: auto; }
-}
-@media (max-width: 767px) { .start { gap: 18px; &__hero { padding: 20px; h2.ant-typography { font-size: 24px; } } &__setup .ant-card-body { padding: 18px; } &__command { flex-direction: column; align-items: flex-start; } &__guides { grid-template-columns: 1fr; } } }
+@media (max-width: 767px) { .start { gap: 18px; &__setup .ant-card-body { padding: 18px; } &__command { flex-direction: column; align-items: flex-start; } } }
 @media (max-width: 400px) { .start__setup .ant-steps-item-title { font-size: 12px; line-height: 1.5; } }
 @media (max-width: 767px) {
     .start__computer-summary { padding: 12px; }
