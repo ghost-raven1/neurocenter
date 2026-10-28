@@ -27,10 +27,11 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
     const [draft, setDraft] = useState(0), [activeLaunch, setActiveLaunch] = useState(launch), currentLaunch = useRef(activeLaunch); currentLaunch.current = activeLaunch;
     const appliedLaunch = useRef<number | undefined>(launch?.key);
     const automaticRead = useRef<{owner: object; id: string}>(), [readRetry, setReadRetry] = useState(0);
+    const newDraftOwner = useRef<object>(); // Explicit New stays blank until history is selected or the context owner changes.
     const value = useSystemRoleChat(projectId, availability.enabled && canExecute && !historyOnly, {transport, agentId, origin: originKey, suspended: embedded && !origin,
         onAccepted: turn => {currentLaunch.current?.onAccepted?.(turn.instruction); setActiveLaunch(undefined); if (agentId) {clearRoleDraft(scope, projectId, agentId); initialTask.current = ''; setDraft(item => item + 1);}}});
     useEffect(() => {
-        if ((!embedded && !agentId) || !value.dialogs.length || value.detail || value.receipt || value.busy) return;
+        if (newDraftOwner.current === value.owner || (!embedded && !agentId) || !value.dialogs.length || value.detail || value.receipt || value.busy) return;
         const id = value.dialogs[0].id;
         if (automaticRead.current?.owner === value.owner && automaticRead.current.id === id) return;
         automaticRead.current = {owner: value.owner, id}; void value.select(id);
@@ -65,11 +66,11 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
         {value.canReplay && <Button size="small" disabled={value.busy || !replayEnabled.current} onClick={() => { if (replayEnabled.current) void value.replay(); }}>Повторить тот же запрос</Button>}</div>;
     return <div className={'service-chat' + (embedded ? ' service-chat_embedded' : '') + (roleChat ? ' service-chat_role' : '')} ref={viewport}>
         {!embedded && <div className="service-chat__heading"><div><Typography.Text strong>{agentId ? `Чат · ${roleName(agentId)}` : 'История системных задач'}</Typography.Text><Typography.Paragraph type="secondary">Личные задачи системным агентам и проверенные результаты.</Typography.Paragraph></div>
-            {!embedded && !historyOnly && <Button disabled={value.busy || !!value.receipt} onClick={() => { value.newDialog(); setDraft(item => item + 1); }}>Новый диалог</Button>}
+            {!embedded && !historyOnly && <Button disabled={value.busy || !!value.receipt} onClick={() => { newDraftOwner.current = value.owner; value.newDialog(); setDraft(item => item + 1); }}>Новый диалог</Button>}
             <Button loading={value.loading} disabled={value.busy} onClick={refresh}>Обновить</Button></div>}
         {embedded && (activeLaunch || value.pendingIntent) && <Typography.Text type="secondary">Системная задача · результат виден только вам. Продолжайте в общем поле сообщения.</Typography.Text>}
         {!embedded && <label className="service-chat__history-label">История диалогов<Select aria-label={agentId ? `История · ${roleName(agentId)}` : 'История системных задач'} value={value.detail?.dialog.id} placeholder="Выберите сохранённый диалог" loading={value.loading} disabled={value.busy} showSearch optionFilterProp="label"
-            options={dialogs.map(item => ({ value: item.id, label: (item.legacy ? 'Прежняя история · ' : '') + item.title + ' · ' + new Date(item.updatedAt).toLocaleDateString('ru-RU') }))} onChange={id => { void value.select(id); setDraft(item => item + 1); }} /></label>}
+            options={dialogs.map(item => ({ value: item.id, label: (item.legacy ? 'Прежняя история · ' : '') + item.title + ' · ' + new Date(item.updatedAt).toLocaleDateString('ru-RU') }))} onChange={id => { newDraftOwner.current = undefined; void value.select(id); setDraft(item => item + 1); }} /></label>}
         {(value.error || value.receipt) && <div className="service-chat__feedback" ref={feedback}>
             {roleChat ? <Alert type="warning" showIcon message={value.receipt ? 'Проверяем принятие отправленной задачи' : failure.summary} description={value.receipt ? <>
                 {value.error && <div>{failure.summary}{errorDetails}</div>}
