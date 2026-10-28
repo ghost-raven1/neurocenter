@@ -183,6 +183,12 @@ describe('История и файлы', () => {
         render(createElement(ChatMessages, {turns: [turn(), turn({id: 'failed', status: 'failed', answer: undefined, error: 'Провайдер недоступен'})], attachments: [], modelName: 'Модель', busy: false, blocked: false, onRetry: retry, onEdit: edit, onPreview: vi.fn()}));
         ui.buttons.get('Скопировать ответ')!.onClick!(); await Promise.resolve(); expect(writeText).toHaveBeenCalledWith('Ответ'); ui.buttons.get('Повторить запрос')!.onClick!(); ui.buttons.get('Изменить сообщение')!.onClick!(); expect(retry).toHaveBeenCalledOnce(); expect(edit).toHaveBeenCalledOnce();
     });
+    it('Сохранённый отказ квоты объясняет бюджет и сохраняет сообщение без автоматического повтора', () => {
+        const error = 'Персональный бюджет модели исчерпан с учётом расхода и резерва. Дождитесь доступного бюджета или обратитесь к главному администратору.', retry = vi.fn();
+        const html = render(createElement(ChatMessages, {turns: [turn({status: 'failed', answer: undefined, prompt: 'Сохранённый вопрос', error})], attachments: [], modelName: 'Модель', busy: false, blocked: false, onRetry: retry, onEdit: vi.fn(), onPreview: vi.fn()}));
+        expect(html).toContain(`<p role="alert">${error}</p>`); expect(html).toContain('Сохранённый вопрос'); expect(html).not.toContain('Проверьте подключение');
+        expect(retry).not.toHaveBeenCalled(); ui.buttons.get('Повторить запрос')!.onClick!(); expect(retry).toHaveBeenCalledOnce();
+    });
     it('Документ готов, ошибка загрузки и неподдерживаемое изображение имеют разные действия', () => {
         const file = {id: 'file-1', name: 'report.txt', mediaType: 'text/plain', bytes: 12, textBytes: 12, createdAt: ''};
         const html = render(createElement(ChatAttachments, {files: [file], uploads: [{id: 'bad', name: 'scan.png', bytes: 4, file: new File(['x'], 'scan.png'), state: 'failed', error: 'Нужен OCR'}], disabled: false, onPreview: vi.fn(), onRemove: vi.fn(), onRetryUpload: vi.fn(), onRemoveUpload: vi.fn()}));

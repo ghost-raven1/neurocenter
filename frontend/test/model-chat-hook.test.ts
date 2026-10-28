@@ -32,6 +32,8 @@ function deferred<T>() {let resolve!: (value: T) => void, reject!: (cause: unkno
 const ready = async () => {render(); await flush(); return render();};
 beforeEach(() => {
     hooks.dispose(); vi.clearAllMocks(); selected = model; blocked = ''; selection = undefined; owner.current = 'alice';
+    const storage = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => {storage.set(key, value);}, removeItem: (key: string) => {storage.delete(key);}});
     vi.mocked(modelChatApi.list).mockResolvedValue([]); vi.mocked(modelChatApi.create).mockResolvedValue(detail()); vi.mocked(modelChatApi.read).mockResolvedValue(detail());
     vi.mocked(modelChatApi.history).mockResolvedValue({turns: [], attachments: [], history: {hasMore: false, nextCursor: null}});
     vi.mocked(modelChatApi.send).mockImplementation(async (_saved, _model, requestId, prompt, attachmentIds) => detail({turns: [turn({requestId, prompt, attachmentIds})]}));
@@ -41,7 +43,7 @@ beforeEach(() => {
     vi.mocked(modelChatApi.upload).mockResolvedValue(detail({attachments: [{id: 'file-1', name: 'doc.txt', bytes: 4, textBytes: 4, mediaType: 'text/plain', createdAt: ''}]}));
     vi.mocked(modelChatApi.removeAttachment).mockResolvedValue(detail());
 });
-afterEach(() => {hooks.dispose(); vi.useRealTimers();});
+afterEach(() => {hooks.dispose(); vi.useRealTimers(); vi.unstubAllGlobals();});
 
 describe('Сохранённая история и безопасная отправка', () => {
     it('не отправляет одновременно research и agentTools и фиксирует grant отдельно от последующей правки клиента', async () => {
