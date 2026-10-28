@@ -7,7 +7,7 @@
 | [#46](https://github.com/ghost-raven1/neurocenter/pull/46) | Понятная причина отказа невыбранного MCP-инструмента | G: один planner,0MCP effects, причина в истории/trace после reload; независимый DB/UI mapping |
 | [#47](https://github.com/ghost-raven1/neurocenter/pull/47) | Возврат фокуса после Escape в меню пользователя | G/H2 и отдельный settled Main smoke |
 | [#48](https://github.com/ghost-raven1/neurocenter/pull/48) | Возврат фокуса к исходной кнопке модели | H2: Escape/footerEnter и trapTab/ShiftTab; отдельный Main smoke |
-| [#49](https://github.com/ghost-raven1/neurocenter/pull/49) | Завершение начального чтения после «Нового диалога» | Причинный RED→48/48GREEN, frontendTSC/Vite; Main: задержаны реальные GET, загрузка завершается, модель сохранена, новый диалог пустой |
+| [#49](https://github.com/ghost-raven1/neurocenter/pull/49) | Завершение начального чтения после «Нового диалога» | Причинный RED→48/48GREEN, frontendTSC/Vite; Main: задержаны реальные GET, загрузка завершается, модель выбрана, новый диалог пустой |
 
 G и H2 — собственные изолированные кандидаты, их свидетельства явно сопоставлены Root с объединёнными исправлениями. Они не превращаются в полную приёмку Main backend runtime. Main smoke меню/модели —1440×1000; проверка NewDialog —1280×720. Полный четырёхчастный клавиатурный F62-02 выполнен на H2 при1440×1000. В Main NewDialog проверке нет POST, business writes, inference и page errors.
 
