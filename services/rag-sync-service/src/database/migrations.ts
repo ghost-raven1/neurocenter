@@ -19,6 +19,13 @@ function verifyHistory(rows:AppliedMigration[]):void{
         if(!known||row.checksum!==null&&row.checksum!==sqlChecksum(known.sql)||row.checksum===null&&row.version!==GENERATION_MIGRATION.version)throw historyError();}
 }
 
+/** A known applied successor verifies the complete replaced object set; SQL journals remain independently frozen. */
+function physicalSchema(migration:RagMigration,rows:AppliedMigration[]):RagMigration{
+    const successors=RAG_MIGRATIONS.filter(item=>item.replacesSchemaOf?.includes(migration.version)&&rows.some(row=>row.version===item.version));
+    if(successors.length>1)throw historyError();
+    return successors[0]??migration;
+}
+
 /** Frozen quota SQL has its own ledger; both its history and actual enforcement must remain intact. */
 async function verifyQuota(db:PoolClient):Promise<boolean>{
     if(!(await db.query("SELECT to_regclass('public.neurocenter_rag_migrations') AS name")).rows[0].name)return false;
@@ -51,7 +58,7 @@ export async function migrateRag(pool:Pool,migrations:readonly RagMigration[]):P
         for(const migration of migrations){
             const applied=rows.find(row=>row.version===migration.version),checksum=sqlChecksum(migration.sql);
             if(!applied)await client.query(migration.sql);
-            await verifySchema(client,migration);
+            await verifySchema(client,physicalSchema(migration,rows));
             if(!applied)await client.query('INSERT INTO neurocenter_rag_schema_versions(version,checksum) VALUES($1,$2)',[migration.version,checksum]);
             else if(applied.checksum===null)await client.query('UPDATE neurocenter_rag_schema_versions SET checksum=$2 WHERE version=$1 AND checksum IS NULL',[migration.version,checksum]);
         }
@@ -69,7 +76,7 @@ export async function checkRagMigrations(pool:Pool,migrations:readonly RagMigrat
         const rows=(await client.query<AppliedMigration>(`SELECT version,${checksumColumn?'checksum':'NULL::text AS checksum'} FROM neurocenter_rag_schema_versions ORDER BY version`)).rows;verifyHistory(rows);
         const applied:string[]=[],pending:string[]=[];
         for(const migration of migrations){const row=rows.find(item=>item.version===migration.version);
-            if(row){await verifySchema(client,migration);(row.checksum===null?pending:applied).push(migration.version);}else pending.push(migration.version);}
+            if(row){await verifySchema(client,physicalSchema(migration,rows));(row.checksum===null?pending:applied).push(migration.version);}else pending.push(migration.version);}
         await client.query('COMMIT');return {applied,pending};
     }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
 }

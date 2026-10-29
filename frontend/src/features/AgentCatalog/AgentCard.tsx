@@ -32,6 +32,7 @@ export function AgentCard({ agent, assignment, status, projectSelected, isMain, 
         </div>
         <Typography.Paragraph type="secondary" className="agent-card__description">{effective.description}</Typography.Paragraph>
         <div className="agent-card__identity"><Tag>Шаблон v{active ? assignment.version : agent.version}</Tag>{active && <Tag color="blue">В проекте</Tag>}{agent.archivedAt && <Tag>Убран из общего каталога</Tag>}{active && Object.keys(assignment.overrides).length > 0 && <Tag>Настроен для проекта</Tag>}</div>
+        {active && <Typography.Text type="secondary">Каталог: {unavailable ? 'версия не подтверждена' : `шаблон v${agent.version}`} · Проект: шаблон v{assignment.version} · Компьютер: {!unavailable && (status?.key === 'enabled' || status?.key === 'disabled') ? `подтверждён шаблон v${assignment.version}` : 'версия не подтверждена'}</Typography.Text>}
         {status && assignment && <div className="agent-card__status" role="status" aria-live="polite"><Tag color={colors[status.key]}>{status.label}</Tag><Typography.Text type={status.key === 'error' ? 'danger' : 'secondary'}>{status.detail}</Typography.Text></div>}
         {active && readiness && <AgentTrialStatus item={readiness} checking={trialChecking} />}
         {feedback}
@@ -44,6 +45,6 @@ export function AgentCard({ agent, assignment, status, projectSelected, isMain, 
             </> : <FeatureButton features={['agents']} type="primary" disabled={busy || unavailable || !!agent.archivedAt} onClick={onAssign}>{assignment?.removed ? 'Вернуть в проект' : 'Добавить в проект'}</FeatureButton>
                 : <Typography.Text type="secondary">{!projectSelected ? 'Выберите проект для добавления' : active ? 'Настройками управляет администратор проекта' : 'Добавляет администратор проекта'}</Typography.Text>}
         </div>
-        {active && agent.version !== assignment.version && !agent.archivedAt && <div className="agent-card__update"><Typography.Text type="secondary">В каталоге доступен шаблон v{agent.version}. Проект сохраняет v{assignment.version}.</Typography.Text>{canManage && <FeatureButton features={['agents']} size="small" disabled={busy || unavailable} onClick={onUpdate}>Обновить шаблон</FeatureButton>}</div>}
+        {active && agent.version > assignment.version && !agent.archivedAt && <div className="agent-card__update"><Typography.Text type="secondary">В каталоге доступен шаблон v{agent.version}. Проект сохраняет v{assignment.version}.</Typography.Text>{canManage && <FeatureButton features={['agents']} size="small" disabled={busy || unavailable} onClick={onUpdate}>Обновить шаблон</FeatureButton>}</div>}
     </article>;
 }

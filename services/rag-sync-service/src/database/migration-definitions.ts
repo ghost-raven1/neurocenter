@@ -5,8 +5,9 @@ import {DATABASE_LIFECYCLE_SCHEMA,PROJECT_IDENTITY_SCHEMA} from './migration-sql
 import type {SchemaObjects} from './schema-inspection';
 import {PLATFORM_QUOTA_SCHEMA,PLATFORM_QUOTA_CACHE_SCHEMA} from '../rag/quota/platform-quota-schema';
 import {PROJECT_TEXT_SCHEMA,PROJECT_TEXT_OBJECTS} from '../project-text/text-schema';
+import {PROJECT_TEXT_LIMITS_SCHEMA,PROJECT_TEXT_LIMITS_OBJECTS} from '../project-text/text-limits-schema';
 
-export interface RagMigration {version:string;name:string;scope:'data'|'base'|'project';sql:string;objects:SchemaObjects;schemaSha256:string;lockTables?:readonly string[];}
+export interface RagMigration {version:string;name:string;scope:'data'|'base'|'project';sql:string;objects:SchemaObjects;schemaSha256:string;lockTables?:readonly string[];replacesSchemaOf?:readonly string[];}
 export const sqlChecksum=(sql:string):string=>createHash('sha256').update(sql).digest('hex');
 
 /** Structural digests come from these frozen SQL statements on PostgreSQL 16; physical column order is deliberately irrelevant. */
@@ -26,7 +27,11 @@ export const PLATFORM_QUOTA_CACHE_MIGRATION:RagMigration={version:'platform-quot
 export const PROJECT_TEXT_MIGRATION:RagMigration={version:'project-text-1',name:'project-text-knowledge',scope:'project',sql:PROJECT_TEXT_SCHEMA,
     objects:PROJECT_TEXT_OBJECTS,lockTables:['rag_chunks','rag_storage_budget'],
     schemaSha256:'9f7cbeee84d8b4cca72dd912a2ff1cfa60ebf342c26a1a458f453bdf2fce07ec'};
-export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION,PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION,PROJECT_TEXT_MIGRATION] as const;
+/** Measured full text object set on the owned PostgreSQL16.15 fixture; both historical SQL checksums remain verified. */
+export const PROJECT_TEXT_LIMITS_MIGRATION:RagMigration={version:'project-text-limits-1',name:'configurable-project-text-limits',scope:'project',sql:PROJECT_TEXT_LIMITS_SCHEMA,
+    objects:PROJECT_TEXT_LIMITS_OBJECTS,lockTables:['rag_chunks','rag_storage_budget'],replacesSchemaOf:[PROJECT_TEXT_MIGRATION.version],
+    schemaSha256:'9f2a2baca7b62be7e5c067e41a74073b7c1ff4da778d1ac655d84d86c55f9a3d'};
+export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION,PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION,PROJECT_TEXT_MIGRATION,PROJECT_TEXT_LIMITS_MIGRATION] as const;
 export const QUOTA_MIGRATION:RagMigration={version:RAG_QUOTA_MIGRATION,name:'rag-storage-budget',scope:'data',sql:RAG_QUOTA_SCHEMA,
     lockTables:['rag_chunks'],
     objects:{tables:['rag_storage_settings','rag_storage_budget','rag_quota_events'],

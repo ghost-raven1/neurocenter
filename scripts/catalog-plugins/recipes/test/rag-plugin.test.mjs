@@ -78,10 +78,14 @@ test('Адаптер меняет ровно одну известную ини�
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rag-plugin-patch-'));
     const file = path.join(root, 'upstream/dist/plugin.js');
     const pipelineFile = path.join(root, 'upstream/dist/indexer/pipeline.js');
-    const pipeline = `return await runIndexPassInner(options, logger);
+    const pipeline = `export async function runIndexPass(options) {
+return await runIndexPassInner(options, logger);
+if (!tempStoreWroteChunks) {
 if (!tempStoreWroteChunks) {
 await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), "utf-8");
 logger.debug(\`Could not write index lock file: \${err.message} — concurrent-pass protection disabled\`);
+await fs.unlink(lockPath);
+await fs.unlink(lockPath);
 await fs.unlink(lockPath);
 await swapStoreDirectories(tempStorePath, options.storePath);`;
     const init = 'const cfg = await getConfig(input.directory);';
@@ -96,7 +100,10 @@ await swapStoreDirectories(tempStorePath, options.storePath);`;
         }
         const source = `before\n${init}\nconst effectiveCfg = applyRuntimeOverrides(cfg, overrides);\npersistProbedDimension(configPath, vectorDimension);
 const embedder = createEmbedder(effectiveCfg);
-const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
+const liveEmbedder = createLiveEmbedder(() => refreshConfig(input.directory, effectiveCfg), (cfg) => createEmbedder(cfg), embedder);
+lastEffectiveCfg = applyRuntimeOverrides(refreshConfig(options.worktree, options.cfg), cachedOverrides);
+return applyRuntimeOverrides(loadWorkspaceConfig(options.worktree, false), cachedOverrides);
+const store = createVectorStore(effectiveCfg, storePath, vectorDimension, input.directory);
     retrieve,
 };
 output: "Search failed. The index may need to be rebuilt.",
@@ -104,7 +111,7 @@ const storePath = path.resolve(input.directory, cfg.vectorStore.path);
 notifiedUpdateDirs.clear();
     destroyAllPooledConnections();
 after`;
-        for (const changed of ['const embedder = createEmbedder(effectiveCfg);', 'const store = createVectorStore(effectiveCfg, storePath, vectorDimension);', '    retrieve,\n};']) {
+        for (const changed of ['const embedder = createEmbedder(effectiveCfg);', 'const store = createVectorStore(effectiveCfg, storePath, vectorDimension, input.directory);', '    retrieve,\n};']) {
             await fs.writeFile(file, source.replace(changed, 'changed'));
             await assert.rejects(applyManagedPluginCompatibility(root), /инициализации/);
             assert.equal(await fs.readFile(file, 'utf8'), source.replace(changed, 'changed'));
@@ -116,10 +123,10 @@ after`;
             assert.equal(await fs.readFile(file, 'utf8'), source);
         }
         await fs.writeFile(pipelineFile, pipeline);
-        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 4, file: 'upstream/dist/plugin.js', files: ['upstream/dist/plugin.js', 'upstream/dist/indexer/pipeline.js'] });
+        assert.deepEqual(await applyManagedPluginCompatibility(root), { id: 'neurocenter-opencode1-plugin-configuration', version: 5, file: 'upstream/dist/plugin.js', files: ['upstream/dist/plugin.js', 'upstream/dist/indexer/pipeline.js'] });
         const patched = await fs.readFile(file, 'utf8');
-        assert.match(patched, /^import \{ managedRagConfiguration, readProjectRagConfiguration, applyHostedRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
-        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), readProjectRagConfiguration\(findConfigFile\(input.directory\)\), input.directory\)/);
+        assert.match(patched, /^import \{ managedRagConfiguration, readWorkspaceRagConfiguration, applyHostedRagConfiguration \} from "\.\.\/\.\.\/rag-plugin-config.mjs";/);
+        assert.match(patched, /managedRagConfiguration\(await getConfig\(input.directory\), readWorkspaceRagConfiguration\(resolveConfigPaths\(input.directory\)\), input.directory\)/);
         assert.ok(!patched.includes('persistProbedDimension(configPath, vectorDimension);'));
         assert.match(patched, /protectedEmbedder\(createEmbedder/);
         assert.match(patched, /protectedNativeStore\(createVectorStore/);

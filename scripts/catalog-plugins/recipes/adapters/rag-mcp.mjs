@@ -12,7 +12,7 @@ import { enterManagedSession, leaveManagedSessions } from './rag-index-lock.mjs'
 
 const root = await fs.realpath(process.cwd());
 const config = await readRagConfiguration(root);
-const server = new McpServer({ name: 'neurocenter-opencode-rag', version: '2.4.4' });
+const server = new McpServer({ name: 'neurocenter-opencode-rag', version: '2.12.2' });
 let pendingContext;
 let indexing = false;
 let context;

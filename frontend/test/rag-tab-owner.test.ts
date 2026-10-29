@@ -1,7 +1,7 @@
 import {createElement,type ReactNode} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
-import RagTab from '../src/modules/Projects/components/RagTab';
+import RagTab from '../src/modules/Projects/components/SemanticRag';
 import bffApi from '../src/core/api/bff';
 import type {IRagSummary} from '../src/core/api/interfaces';
 

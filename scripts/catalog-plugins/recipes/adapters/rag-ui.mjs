@@ -9,6 +9,7 @@ import { destroyAllPooledConnections } from './upstream/dist/embedder/http.js';
 import { protectedEmbedder } from './rag-errors.mjs';
 import { acquireManagedIndexLock, releaseManagedIndexLock, assertNoIndexWriter } from './rag-index-lock.mjs';
 import { closeManagedUiMutations } from './rag-ui-guards.mjs';
+import { assertManagedQuirksSource } from './rag-quirks-guard.mjs';
 import { rememberUiConfig } from './rag-ui-config.mjs';
 
 /** Провайдер вызывается только по явному поиску или перестроению, а не при открытии dashboard. */
@@ -26,6 +27,7 @@ export async function runManagedRagUi({ port = 3210 } = {}) {
     const root = await fs.realpath(process.cwd());
     const config = await readRagConfiguration(root, process.env, { ui: true });
     const storePath = await checkedWorkspacePath(root, config.vectorStore.path);
+    assertManagedQuirksSource(storePath);
     await fs.mkdir(storePath, { recursive: true });
     await assertNoIndexWriter(storePath);
     const presence = path.join(storePath, 'neurocenter-ui-session.lock');

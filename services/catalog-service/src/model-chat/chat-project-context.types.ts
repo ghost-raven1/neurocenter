@@ -2,6 +2,7 @@ import type { ChatMessage } from './chat.types';
 import type { IChatContextSettings } from './chat-context';
 import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import type {PoolClient} from 'pg';
+import type {TextAdmission} from '../../../shared/project-text-knowledge.cjs';
 
 export interface ChatProjectSource {
     id: string; path: string; title?: string; startLine?: number; endLine?: number; score: number; excerpt: string;
@@ -10,7 +11,7 @@ export interface ChatProjectEvidence {
     status: 'none' | 'metadata' | 'ready' | 'empty' | 'unavailable';
     project?: { id: string; name: string; state: string; headRevision: number };
     generation?: string; snapshot?: string; sources: ChatProjectSource[]; message?: string;
-    mode?:'text';textRevision?:number;corpusHash?:string;
+    mode?:'text';textRevision?:number;corpusHash?:string;textAdmission?:TextAdmission;
 }
 export interface PreparedProjectContext {
     messages: ChatMessage[]; evidence: ChatProjectEvidence;

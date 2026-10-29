@@ -15,7 +15,7 @@ import type { OllamaClient } from '../src/models/ollama-client';
 import type { RemoteConnectionService } from '../src/models/remote-connection.service';
 import type { DeviceCodexService } from '../src/models/device-codex.service';
 import { projectEmbeddingPin } from '../src/models/project-embedding.validation';
-import { assertProjectTextContextSchema } from '../src/project-text/project-text.schema-verification';
+import { assertCurrentTextContextSchema as assertProjectTextContextSchema } from '../src/runtime-limits/runtime-limits.schema-verification';
 import { AgentRepository } from '../src/agents/agent.repository';
 import { textContextDatabase } from './project-text-context.fixture';
 

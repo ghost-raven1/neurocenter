@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-export const PREPARED_SOURCE_MAX_FILES=134;
+export const PREPARED_SOURCE_MAX_FILES=135;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'package.json','package-lock.json',
@@ -32,7 +32,7 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     ...['codex-connector-pin.json','codex-connector-source.cjs','codex-connector-source.d.cts'].map(name=>'services/shared/'+name),
     'scripts/catalog-plugins/recipes/rag-managed-pipeline.mjs','scripts/catalog-plugins/recipes/rag-web-ui.mjs','scripts/catalog-plugins/recipes/upstream.mjs',
     ...['opencode-rag.mjs','rag-context.mjs','rag-errors.mjs','rag-hosted.mjs','rag-index-lock.mjs','rag-index-profile.mjs','rag-index-corpus.mjs',
-        'rag-local-runtime.mjs','rag-mcp.mjs','rag-plugin.mjs','rag-plugin-config.mjs','rag-plugin-errors.mjs',
+        'rag-local-runtime.mjs','rag-quirks-guard.mjs','rag-mcp.mjs','rag-plugin.mjs','rag-plugin-config.mjs','rag-plugin-errors.mjs',
         'rag-reindex.mjs','rag-reindex-source.mjs','rag-ui.mjs','rag-ui-config.mjs','rag-ui-guards.mjs','snip-plugin.mjs']
         .map(name=>'scripts/catalog-plugins/recipes/adapters/'+name),
     ...['filesystem.json','memory.json','opencode-rag.json','opencode-rag-plugin.json','sequential-thinking.json']

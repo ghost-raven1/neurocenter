@@ -128,6 +128,7 @@ export class SystemRoleTargets {
                 projectName: captured.evidence.project!.name, identity: captured.identity,
                 recipients: [id, ...(id === 'agent-coordinator' ? coordinatorContext({ selection, targets, mcp }).roles.map(role => role.id) : [])],
                 ...(selection.textContext?{textContext:selection.textContext}:{}),
+                ...(captured.evidence.textAdmission?{textAdmission:captured.evidence.textAdmission}:{}),
                 ...(captured.evidence.generation ? { generation: captured.evidence.generation } : {}), ...(captured.evidence.snapshot ? { snapshot: captured.evidence.snapshot } : {}) };
         }
         if (projectContext) {

@@ -1,6 +1,7 @@
 export type CapacityResource='postgres'|'wal'|'skills'|'projects'|'backups'|'runtime-artifacts';
 export interface CapacityRequest {resource:CapacityResource;bytes:number;path?:string;}
-export class CapacityError extends Error {code:string;resource:CapacityResource;statusCode:number;}
+export class CapacityError extends Error {constructor(code:string,resource:CapacityResource);code:string;resource:CapacityResource;statusCode:number;}
+export const reserveBytes:number;
 /** Резерв до записи освобождается в finally; production требует свежий замер реальных томов. */
 export function reserveCapacity(request:CapacityRequest):Promise<()=>void>;
 export function recordCapacityQueue(name:'rag',pending:number,active:number):void;

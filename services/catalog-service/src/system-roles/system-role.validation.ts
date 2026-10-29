@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import {normalizeTextContext} from '../../../shared/project-text-knowledge.cjs';
+import {normalizeTextContext,TEXT_KNOWLEDGE_CEILINGS} from '../../../shared/project-text-knowledge.cjs';
 import {normalizeRoleMcpSelection} from '../../../shared/system-role-mcp.cjs';
 import { validateModelId } from '../models/model-validation';
 import { ROLE_BUDGET, ROLE_GUIDANCE_POLICY, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, systemRole } from './system-role.definitions';
@@ -35,7 +35,7 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
     if (new Set(targets.map(item => JSON.stringify([item.kind, item.id]))).size !== targets.length) return fail();
     let mcp:RoleSelection['mcp'];try{mcp=normalizeRoleMcpSelection(raw.mcp);}catch{return fail();}
     if(mcp?.length&&!raw.projectId)return fail();
-    let textContext:RoleSelection['textContext'];try{textContext=raw.textContext===undefined?undefined:normalizeTextContext(raw.textContext);}catch{return fail();}
+    let textContext:RoleSelection['textContext'];try{textContext=raw.textContext===undefined?undefined:normalizeTextContext(raw.textContext,TEXT_KNOWLEDGE_CEILINGS);}catch{return fail();}
     if(textContext&&!raw.projectId)return fail();
     return { projectId: raw.projectId as string | null, instruction: raw.instruction, diagnostics: raw.diagnostics as RoleSelection['diagnostics'], targets,...(mcp?.length?{mcp}:{}),...(textContext?{textContext}:{}) };
 }

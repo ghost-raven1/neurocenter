@@ -1,7 +1,7 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe,expect,it,vi} from 'vitest';
-import RagTab from '../src/modules/Projects/components/RagTab';
+import RagTab from '../src/modules/Projects/components/SemanticRag';
 import {ragSummaryState} from '../src/modules/Projects/components/ragSummaryState';
 import {currentKnowledgeJobs} from '../src/features/McpBridge/knowledgeSyncState';
 import type {IRagSummary} from '../src/core/api/interfaces';

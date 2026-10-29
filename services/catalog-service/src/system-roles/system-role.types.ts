@@ -1,4 +1,4 @@
-import type {TextContext} from '../../../shared/project-text-knowledge.cjs';
+import type {TextContext,TextAdmission} from '../../../shared/project-text-knowledge.cjs';
 import type { IModel } from '../models/model.types';
 import type {RoleMcpPreparedTarget,RoleMcpTargetSelection} from '../../../shared/system-role-mcp.cjs';
 
@@ -18,11 +18,11 @@ export interface RoleTargetSnapshot {
     modelContent: string; before: Record<string, unknown>; editable: boolean;
 }
 /** Project knowledge is a separate whole-index read grant, never a target/path write permission. */
-export interface RoleProjectGrant { scope: 'project-index'|'project-text'; projectId: string; projectName: string; identity: string; recipients: SystemRoleId[]; generation?: string; snapshot?: string;textContext?:TextContext; }
+export interface RoleProjectGrant { scope: 'project-index'|'project-text'; projectId: string; projectName: string; identity: string; recipients: SystemRoleId[]; generation?: string; snapshot?: string;textContext?:TextContext;textAdmission?:TextAdmission; }
 export interface RoleProjectEvidence {
     status: 'metadata' | 'ready' | 'empty' | 'unavailable'; project: { id: string; name: string }; generation?: string; snapshot?: string;
     sources: Array<{ id: string; path: string; title?: string; startLine?: number; endLine?: number }>; message?: string;
-    mode?:'text';textRevision?:number;corpusHash?:string;
+    mode?:'text';textRevision?:number;corpusHash?:string;textAdmission?:TextAdmission;
 }
 export interface RoleInvocation { content: string; projectContext?: RoleProjectEvidence; }
 export interface RoleGuidanceGrant {version: 1; projectId: string | null;}

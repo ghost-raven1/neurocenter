@@ -1,3 +1,9 @@
+import {GGUF_RUNTIME_SCHEMA_SQL} from '../models/gguf-runtime/gguf-runtime.schema';
+import {GGUF_RUNTIME_SCHEMA_ASSERT_SQL} from '../models/gguf-runtime/gguf-runtime.schema-verification';
+import {GGUF_IMPORT_SCHEMA_SQL} from '../models/gguf-import/gguf-import.schema';
+import {GGUF_IMPORT_SCHEMA_ASSERT_SQL} from '../models/gguf-import/gguf-import.schema-verification';
+import {RUNTIME_LIMITS_SCHEMA_SQL} from '../runtime-limits/runtime-limits.schema';
+import {RUNTIME_LIMITS_SCHEMA_ASSERT_SQL} from '../runtime-limits/runtime-limits.schema-verification';
 import {PROJECT_TEXT_CONTEXT_SCHEMA_SQL} from '../project-text/project-text.schema';
 import {PROJECT_TEXT_CONTEXT_SCHEMA_ASSERT_SQL} from '../project-text/project-text.schema-verification';
 import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
@@ -128,4 +134,7 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:45,name:'durable-project-chat-method-workflows',sql:METHOD_CHAT_WORKFLOWS_SCHEMA_SQL+'\n'+METHOD_CHAT_WORKFLOWS_SCHEMA_ASSERT_SQL},
     {version:46,name:'per-user-model-token-quotas',sql:MODEL_TOKEN_QUOTAS_SCHEMA_SQL+'\n'+MODEL_TOKEN_QUOTAS_SCHEMA_ASSERT_SQL},
     {version:47,name:'accepted-project-text-context',sql:PROJECT_TEXT_CONTEXT_SCHEMA_SQL+'\n'+PROJECT_TEXT_CONTEXT_SCHEMA_ASSERT_SQL},
+    {version:48,name:'durable-gguf-model-import',sql:GGUF_IMPORT_SCHEMA_SQL+'\n'+GGUF_IMPORT_SCHEMA_ASSERT_SQL},
+    {version:49,name:'configurable-runtime-limits',sql:RUNTIME_LIMITS_SCHEMA_SQL+'\n'+RUNTIME_LIMITS_SCHEMA_ASSERT_SQL},
+    {version:50,name:'recoverable-gguf-runtime-intents',sql:GGUF_RUNTIME_SCHEMA_SQL+'\n'+GGUF_RUNTIME_SCHEMA_ASSERT_SQL},
 ];

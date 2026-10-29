@@ -1,8 +1,9 @@
-import {ForbiddenException,ServiceUnavailableException} from '@nestjs/common';
+import {ConflictException,ForbiddenException,ServiceUnavailableException} from '@nestjs/common';
+import type {TextAdmission} from '../../../shared/project-text-knowledge.cjs';
 import type {TextActor} from './text-values';
 
 /** Fresh Catalog authorization runs inside the locked transaction, immediately before its first mutation. */
-export async function authorizeTextUpload(value:{projectId:string;actor:TextActor;requestKey:string;requestHash:string}):Promise<void>{
+export async function authorizeTextUpload(value:{projectId:string;actor:TextActor;requestKey:string;requestHash:string;admission?:TextAdmission}):Promise<void>{
     const base=(process.env.CATALOG_SERVICE_URL||'http://localhost:4100').replace(/\/+$/,'');
     let response:Response,body:unknown;
     try{
@@ -12,6 +13,7 @@ export async function authorizeTextUpload(value:{projectId:string;actor:TextActo
         body=await response.json();
     }catch{throw new ServiceUnavailableException('Каталог пока не подтвердил загрузку текстов. Повторите тот же пакет.');}
     if(response.status===403)throw new ForbiddenException('Права на загрузку текстов изменились.');
+    if(response.status===409)throw new ConflictException('Лимиты изменились во время подготовки. Обновите лимиты и повторите непринятый пакет.');
     if(!response.ok||!body||typeof body!=='object'||(body as {ok?:unknown}).ok!==true){
         throw new ServiceUnavailableException('Каталог пока не подтвердил загрузку текстов. Повторите тот же пакет.');
     }

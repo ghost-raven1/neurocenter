@@ -108,9 +108,10 @@ describe('Границы серверной сборки', () => {
         await expect(resolveNpmSource('https://www.npmjs.com.evil.test/package/package')).rejects.toThrow();
     });
     it('Известный RAG получает MCP-адаптер и исключает неподдерживаемый Intel Mac', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json({name: 'opencode-rag-plugin', version: '2.4.4'}))
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(Response.json({name: 'opencode-rag-plugin', version: '2.12.2'}))
             .mockResolvedValueOnce(Response.json({name: 'opencode-rag-plugin', version: '2.5.0'})));
         const resolved = await resolveNpmSource('opencode-rag-plugin');
+        expect(resolved.version).toBe('2.12.2');
         expect(resolved.recommendedKind).toBe('mcp');
         expect(resolved.supportedTargets).toHaveLength(7);
         expect(resolved.supportedTargets).not.toContain('darwin-x64');

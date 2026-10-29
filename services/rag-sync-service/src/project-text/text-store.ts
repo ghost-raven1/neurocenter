@@ -1,16 +1,17 @@
 import {BadRequestException,ConflictException} from '@nestjs/common';
 import type {Pool,PoolClient} from 'pg';
-import {normalizeTextUpload,normalizeTextSearch,textUploadCanonical,textBytes,TEXT_KNOWLEDGE_LIMITS} from '../../../shared/project-text-knowledge.cjs';
-import type {TextCorpusState,TextUploadReceipt,TextSearchResult} from '../../../shared/project-text-knowledge.cjs';
+import {normalizeTextUpload,normalizeTextSearch,textUploadCanonical,textBytes,TEXT_KNOWLEDGE_CEILINGS,textKnowledgeAdmission} from '../../../shared/project-text-knowledge.cjs';
+import type {TextCorpusState,TextUploadReceipt,TextSearchResult,TextAdmission} from '../../../shared/project-text-knowledge.cjs';
 import {mapRagQuotaError} from '../rag/quota/rag-quota';
 import {requireRagFeatures} from '../rag/rag-features';
 import {PROJECT_TEXT_WRITE_LOCK} from './text-schema';
 import {authorizeTextUpload} from './text-authorization';
 import {textActor,textProject,textRequestKey,textInput,textState,textHash,textExcerpt,type TextActor} from './text-values';
+import {readTextAdmission} from './text-policy';
 
 /** Atomic text owner. No operation reads or writes semantic profiles, generations, seals or vectors. */
 export class ProjectTextStore {
-    constructor(private readonly pool:Pool){}
+    constructor(private readonly pool:Pool,private readonly policy:()=>Promise<TextAdmission>=readTextAdmission){}
 
     async state(project:string):Promise<TextCorpusState>{
         const projectId=textProject(project);
@@ -31,7 +32,7 @@ export class ProjectTextStore {
 
     /** Exact committed recovery precedes flags and authorization for admission of a new write. */
     async upload(project:string,raw:unknown,requestHash:string,who:TextActor):Promise<TextUploadReceipt>{
-        const projectId=textProject(project),actor=textActor(who),input=textInput(normalizeTextUpload,raw);
+        const projectId=textProject(project),actor=textActor(who),input=textInput(value=>normalizeTextUpload(value,TEXT_KNOWLEDGE_CEILINGS),raw);
         if(textHash(textUploadCanonical(input))!==requestHash)throw new BadRequestException('Хеш загрузки не соответствует переданным текстам.');
         const client=await this.pool.connect();let discard=false;
         try{
@@ -42,9 +43,10 @@ export class ProjectTextStore {
             const saved=await this.saved(client,projectId,input.requestKey,actor.email,requestHash);
             if(saved){await client.query('COMMIT');return saved;}
             await requireRagFeatures(['project_text_knowledge']);
+            const admission=textKnowledgeAdmission(await this.policy());textInput(value=>normalizeTextUpload(value,admission.limits),input);
             const previous=textState(projectId,(await client.query('SELECT * FROM project_text_state WHERE project_key=$1 FOR UPDATE',[projectId])).rows[0]);
             if(previous.revision!==input.expectedRevision)throw new ConflictException('Текстовая база изменилась. Обновите ревизию и повторите загрузку.');
-            await authorizeTextUpload({projectId,actor,requestKey:input.requestKey,requestHash});
+            await authorizeTextUpload({projectId,actor,requestKey:input.requestKey,requestHash,admission});
             // The authorization callback immediately precedes the first mutation, including quota triggers.
             for(const document of input.documents){
                 await client.query(`INSERT INTO project_text_documents(project_key,path,id,content,content_hash,bytes)
@@ -60,7 +62,7 @@ export class ProjectTextStore {
                 VALUES($1,$2,$3,$4,$5,clock_timestamp()) ON CONFLICT(project_key) DO UPDATE SET revision=EXCLUDED.revision,
                 corpus_hash=EXCLUDED.corpus_hash,document_count=EXCLUDED.document_count,bytes=EXCLUDED.bytes,updated_at=EXCLUDED.updated_at RETURNING *`,
                 [projectId,previous.revision+1,corpusHash,documents.length,documents.reduce((sum,row)=>sum+row.bytes,0)])).rows[0];
-            const result:TextUploadReceipt={...textState(projectId,state),requestKey:input.requestKey,requestHash,acceptedAt:new Date(state.updated_at).toISOString()};
+            const result:TextUploadReceipt={...textState(projectId,state),requestKey:input.requestKey,requestHash,acceptedAt:new Date(state.updated_at).toISOString(),admission};
             await client.query(`INSERT INTO project_text_receipts(project_key,actor_email,request_key,request_hash,result,accepted_at)
                 VALUES($1,$2,$3,$4,$5::jsonb,$6)`,[projectId,actor.email,input.requestKey,requestHash,JSON.stringify(result),result.acceptedAt]);
             await client.query('COMMIT');return result;
@@ -71,9 +73,10 @@ export class ProjectTextStore {
     }
 
     /** One repeatable-read snapshot binds citations to a complete old or new corpus revision. */
-    async search(project:string,raw:unknown):Promise<TextSearchResult>{
-        const projectId=textProject(project),input=textInput(normalizeTextSearch,raw);
+    async search(project:string,raw:unknown,retained?:TextAdmission):Promise<TextSearchResult>{
+        const projectId=textProject(project),input=textInput(value=>normalizeTextSearch(value,TEXT_KNOWLEDGE_CEILINGS),raw);
         await requireRagFeatures(['project_text_knowledge']);
+        const admission=textKnowledgeAdmission(retained??await this.policy());textInput(value=>normalizeTextSearch(value,admission.limits),input);
         const client=await this.pool.connect();let discard=false;
         try{
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -84,9 +87,9 @@ export class ProjectTextStore {
                 ts_rank_cd(d.search_vector,plainto_tsquery('simple',$2),32) AS score,
                 tsvector_to_array(to_tsvector('simple',$2)) AS query_lexemes
                 FROM project_text_documents d WHERE d.project_key=$1 AND d.search_vector @@ plainto_tsquery('simple',$2)
-                ORDER BY score DESC,d.path COLLATE "C",d.id LIMIT $3`,[projectId,input.query,TEXT_KNOWLEDGE_LIMITS.sources]);
+                ORDER BY score DESC,d.path COLLATE "C",d.id LIMIT $3`,[projectId,input.query,admission.limits.sources]);
             await client.query('COMMIT');
-            return {mode:'text',projectId,revision:state.revision,corpusHash:state.corpusHash,sources:rows.map(textExcerpt).filter(source=>source.excerpt.trim())};
+            return {mode:'text',projectId,revision:state.revision,corpusHash:state.corpusHash,sources:rows.map(row=>textExcerpt(row,admission.limits)).filter(source=>source.excerpt.trim()),admission};
         }catch(error){await client.query('ROLLBACK').catch(()=>{discard=true;});throw error;}finally{client.release(discard);}
     }
 }

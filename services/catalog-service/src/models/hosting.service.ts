@@ -1,4 +1,6 @@
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
+import {GgufRuntimeService} from './gguf-runtime/gguf-runtime.service';
+import type {GgufImportPolicy} from '../../../shared/gguf-import-policy.cjs';
 import {DeviceCodexService} from './device-codex.service';
 import { BadRequestException, ConflictException, Injectable, Logger, Optional, type OnModuleInit, type BeforeApplicationShutdown } from '@nestjs/common';
 import type { PoolClient } from 'pg';
@@ -27,7 +29,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
     private stopping = false;
 
     constructor(private readonly models: ModelsService, private readonly access: AccessDb, private readonly runtime: OllamaClient,
-        @Optional() private readonly remote?: RemoteConnectionService, @Optional() private readonly bundles?: ModelBundleRuntime,@Optional()private readonly codex?:DeviceCodexService) {
+        @Optional() private readonly remote?: RemoteConnectionService, @Optional() private readonly bundles?: ModelBundleRuntime,@Optional()private readonly codex?:DeviceCodexService,@Optional()private readonly gguf?:GgufRuntimeService) {
         this.repository = new ModelHostingRepository(models.pool);
     }
 
@@ -123,6 +125,8 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         const model = await this.models.get(id);
         if (model.revision !== input.expectedRevision) { throw new ConflictException('Карточка модели изменилась. Обновите каталог.'); }
         if (model.archivedAt) throw new ConflictException('Модель убрана из общего каталога. Существующие подключения сохранены.');
+        if(model.fileImport&&!this.gguf)throw new ConflictException('Исполнитель GGUF недоступен. Проверьте настройку локального Ollama.');
+        const ggufLimits=model.fileImport?await this.gguf!.limits(model):undefined;
         if(model.runtime==='device-codex'){
             if(action!=='check')throw new BadRequestException('Codex работает на компьютере. Запустите или остановите мост на устройстве.');
             return this.status(model);
@@ -154,7 +158,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             const row = await this.repository.create(lease, id, action, actor);
             const abort = new AbortController();
             if (this.stopping) { abort.abort(new Error('Сервис перезапускается. Повторите действие после запуска.')); }
-            const work = this.execute(lease, current, row, abort).catch(() => { this.logger.error('Исполнитель хостинга завершился. Повторите действие после проверки состояния.'); });
+            const work = this.execute(lease, current, row, abort,ggufLimits).catch(() => { this.logger.error('Исполнитель хостинга завершился. Повторите действие после проверки состояния.'); });
             this.active = { abort, work };
             transferred = true;
             void work.finally(() => { if (this.active?.work === work) { this.active = undefined; } });
@@ -168,11 +172,11 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         }
     }
 
-    private async execute(lease: PoolClient, model: IModel, row: IHostingJobRow, abort: AbortController): Promise<void> {
+    private async execute(lease: PoolClient, model: IModel, row: IHostingJobRow, abort: AbortController,ggufLimits?:GgufImportPolicy): Promise<void> {
         let connectionLost = false, checkingAccess = false;
         const disconnected = () => { connectionLost = true; abort.abort(new Error('Потеряна управляющая блокировка. Повторите действие.')); };
         lease.on('error', disconnected);
-        const deadline = setTimeout(() => abort.abort(new Error('Подготовка превысила 30 минут. Повторите действие; сохранённые веса используются повторно.')), 30 * 60 * 1000);
+        const deadline = setTimeout(() => abort.abort(new Error('Истёк срок подготовки. Повторите проверку; сохранённые веса и намерение создания используются повторно.')), ggufLimits?.uploadTimeoutMs??30 * 60 * 1000);
         const watchdog = setInterval(() => {
             if (checkingAccess || abort.signal.aborted) { return; }
             checkingAccess = true;
@@ -180,7 +184,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
                 if (!claims.userRoles.includes('Главный админ')) { abort.abort(new Error('Права управления хостингом отозваны. Операция остановлена.')); }
             }).catch(() => abort.abort(new Error('Не удалось подтвердить права управления. Операция остановлена.')))
                 .finally(() => { checkingAccess = false; });
-        }, 5000);
+        }, ggufLimits?.checkIntervalMs??5000);
         let last = 0, lastStage = '';
         const progress = async (value: IHostingProgress): Promise<void> => {
             abort.signal.throwIfAborted();
@@ -204,9 +208,14 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
                     if (job?.id !== row.id || job.state !== 'running' || projectEmbeddingPin(live) !== projectEmbeddingPin(model)) throw new ConflictException('Операция или версия модели изменились. Повторите проверку.');
                     abort.signal.throwIfAborted();
                 }, abort.signal));
-            } else if (row.action === 'stop') { await this.runtime.stop(model, abort.signal); }
+            } else if (row.action === 'stop') {
+                const proof=model.fileImport?await this.gguf!.prepare(model,row.actor,progress,abort.signal,false):undefined;
+                await this.runtime.stop(proof?{...model,manifestSha256:proof.manifestSha256}:model, abort.signal);
+            }
             else {
-                if (row.action === 'start') {
+                const proof=model.fileImport?await this.gguf!.prepare(model,row.actor,progress,abort.signal,row.action==='start'):undefined;
+                const runtimeModel=proof?{...model,manifestSha256:proof.manifestSha256}:model;
+                if (row.action === 'start'&&!model.fileImport) {
                     if (!this.bundles) throw new Error('Исполнитель проверенных поставок моделей не зарегистрирован.');
                     await this.bundles.prepare(model, progress, abort.signal);
                 }
@@ -217,7 +226,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
                     if (job?.id !== row.id || job.state !== 'running' || projectEmbeddingPin(live) !== projectEmbeddingPin(model)) throw new ConflictException('Операция или версия модели изменились. Повторите проверку.');
                     abort.signal.throwIfAborted();
                 };
-                const verified = await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id, beforeInference }, () => row.action === 'start' ? this.runtime.start(model, progress, abort.signal) : this.runtime.check(model, abort.signal));
+                const verified = await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id, beforeInference }, () => row.action === 'start' ? this.runtime.start(runtimeModel, progress, abort.signal) : this.runtime.check(runtimeModel, abort.signal));
                 abort.signal.throwIfAborted();
                 await this.models.pinVerified(model, verified, row.actor, async () => {
                     abort.signal.throwIfAborted();

@@ -6,6 +6,7 @@ export interface QuirksReceipt {schemaVersion:1;status:'complete'|'partial';sour
 export interface LearningQuirksLimits {bytes:number;totalBytes:number;records:number;recordBytes:number;contentBytes:number;importedExperiences:number;receiptBytes:number}
 export const QUIRKS_LIMITS:Readonly<LearningQuirksLimits>;
 export const QUIRKS_SOURCE_SHA256:string;
+export const QUIRKS_SOURCE_SHA256S:ReadonlyArray<string>;
 export function supportsLearningQuirks(pkg:unknown):boolean;
 export function normalizeQuirksLimits(value?:unknown):LearningQuirksLimits;
 export function parseQuirksJsonl(value:unknown,limits?:Partial<LearningQuirksLimits>):QuirksSnapshot;

@@ -15,6 +15,7 @@ function body(value:unknown,allowed:string[]):Record<string,unknown>{
 export function projectEmbeddingPin(model:IModel):string {
     return createHash('sha256').update(JSON.stringify({id:model.id,runtime:model.runtime,model:model.model,
         manifestSha256:model.manifestSha256,dimension:model.dimension,capability:model.capability,
+        ...(model.fileImport?{fileSha256:model.fileImport.sha256}:{}),
         ...(model.runtime==='ollama'?{}:{modelVersion:model.modelVersion,verificationSha256:model.verificationSha256})})).digest('hex');
 }
 export function assertProjectEmbeddingModel(model:IModel,dimension:number):void {

@@ -25,10 +25,10 @@ test('Все встроенные инструменты являются рец
     assert.equal(validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag')).targets.length, 7);
     assert.equal(recipes.find(recipe => recipe.key === 'project-context').revision, '1.0.1-pack.1');
     assert.equal(recipes.find(recipe => recipe.key === 'git-context').revision, '1.0.0-pack.1');
-    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.4.4-mcp.pack.13');
+    assert.equal(recipes.find(recipe => recipe.key === 'opencode-rag').revision, '2.12.2-mcp.pack.1');
     const ragPlugin = validateRecipe(recipes.find(recipe => recipe.key === 'opencode-rag-plugin'));
     assert.equal(ragPlugin.kind, 'plugin');
-    assert.equal(ragPlugin.revision, '2.4.4-plugin.pack.13');
+    assert.equal(ragPlugin.revision, '2.12.2-plugin.pack.1');
     assert.equal(ragPlugin.targets.length, 7);
     assert.deepEqual(RAG_HOSTED_EMBEDDING,{schemaVersion:1,profileSchemaVersion:2,reindexSchemaVersion:1});
     assert.ok(!ragPlugin.targets.includes('darwin-x64'));

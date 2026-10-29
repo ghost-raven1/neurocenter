@@ -1,7 +1,7 @@
 import {BadRequestException} from '@nestjs/common';
 import {createHash} from 'node:crypto';
 import {TEXT_KNOWLEDGE_LIMITS,textBytes} from '../../../shared/project-text-knowledge.cjs';
-import type {TextCorpusState,TextSource} from '../../../shared/project-text-knowledge.cjs';
+import type {TextCorpusState,TextSource,TextKnowledgeLimits} from '../../../shared/project-text-knowledge.cjs';
 
 export interface TextActor {email:string;activeRole:string;}
 export const textHash=(value:string):string=>createHash('sha256').update(value,'utf8').digest('hex');
@@ -34,7 +34,7 @@ export function textState(projectId:string,row?:Record<string,unknown>):TextCorp
 }
 
 /** Excerpts are literal substrings; line numbers follow LF, CRLF and CR from the uploaded file. */
-export function textExcerpt(row:{id:string;path:string;content:string;score:number;query_lexemes?:string[]}):TextSource{
+export function textExcerpt(row:{id:string;path:string;content:string;score:number;query_lexemes?:string[]},limits:Readonly<TextKnowledgeLimits>=TEXT_KNOWLEDGE_LIMITS):TextSource{
     const lexemes=(row.query_lexemes??[]).map(value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
     const match=lexemes.length?new RegExp('(^|[^\\p{L}\\p{N}_])('+lexemes.join('|')+')(?=$|[^\\p{L}\\p{N}_])','iu').exec(row.content):null;
     const matched=match?match.index+match[1].length:Math.max(0,row.content.search(/\S/u));
@@ -44,10 +44,10 @@ export function textExcerpt(row:{id:string;path:string;content:string;score:numb
         consumed=match.index!+match[0].length;startLine++;
     }
     const prefix=row.content.slice(consumed,Math.max(consumed,matched));
-    const start=consumed+(textBytes(prefix)>TEXT_KNOWLEDGE_LIMITS.excerptBytes/2?prefix.length:0);
+    const start=consumed+(textBytes(prefix)>limits.excerptBytes/2?prefix.length:0);
     let excerpt='',bytes=0;
     for(const character of row.content.slice(start)){
-        const size=textBytes(character);if(bytes+size>TEXT_KNOWLEDGE_LIMITS.excerptBytes)break;
+        const size=textBytes(character);if(bytes+size>limits.excerptBytes)break;
         excerpt+=character;bytes+=size;
     }
     // A final line delimiter belongs to the preceding line, not an empty line beyond the quote.

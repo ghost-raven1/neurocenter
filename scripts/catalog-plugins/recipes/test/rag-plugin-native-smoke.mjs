@@ -89,7 +89,7 @@ async function exercisePlugin(input, options) {
         assert.equal(overridden.autoUpdate.autoInstall, false);
         const { default: plugin } = await import(options.pluginUrl);
         hooks = await plugin(input);
-        assert.deepEqual(Object.keys(hooks).sort(), ['event', 'tool', 'tool.execute.after', 'experimental.chat.system.transform', 'chat.message'].sort());
+        assert.deepEqual(Object.keys(hooks).sort(), ['event', 'tool', 'tool.execute.before', 'tool.execute.after', 'experimental.chat.system.transform', 'chat.message'].sort());
         assert.deepEqual(Object.keys(hooks.tool).sort(), ['search_semantic', 'get_file_skeleton', 'find_usages', 'describe_image',
             'recall_quirks', 'add_quirk', 'update_quirk', 'delete_quirk', 'read'].sort());
         const context = { directory: input.directory, worktree: input.directory, agent: 'build', sessionID: 'native-fixture',
@@ -101,6 +101,10 @@ async function exercisePlugin(input, options) {
         await hooks['experimental.chat.system.transform']({}, system);
         assert.ok(system.system.some(line => line.includes('search_semantic')));
         await hooks.event({ event: { type: 'session.idle', properties: {} } });
+        const shellArgs = { args: { command: 'fixture command, never executed' } };
+        await hooks['tool.execute.before']({ tool: 'bash', sessionID: context.sessionID, callID: 'fixture-shell' }, shellArgs);
+        assert.deepEqual(shellArgs, { args: { command: 'fixture command, never executed' } });
+        await hooks['tool.execute.after']({ tool: 'bash', sessionID: context.sessionID, callID: 'fixture-shell' }, { output: 'completed' });
         await hooks['tool.execute.after']({ tool: 'read', sessionID: context.sessionID }, { output: 'fixture' });
         const first = await waitFor(async () => {
             const status = await readStatus();
@@ -276,7 +280,7 @@ catch(error) { await fs.writeFile(${JSON.stringify(marker)}, JSON.stringify({err
     assert.ok(proof.automaticIndex && proof.automaticReindex && proof.configPreserved);
     assert.ok(providerCalls >= 4);
     assert.equal(registryCalls, 0);
-    evidence.checks = ['Настоящий OpenCode загрузил 5 hooks и 9 tools из готового плагина',
+    evidence.checks = ['Настоящий OpenCode загрузил 6 hooks и 9 tools из готового плагина; before/after hook выполнены без запуска shell-команды',
         'WASM skeleton и system transform выполнены внутри OpenCode', 'Автоиндексирование записало настоящий LanceDB и семантический поиск вернул исходный файл',
         'Изменение файла автоматически обновило индекс и результат поиска', 'Явный autoUpdate в проектном конфиге не запускает запросы или установку',
         'HTTP 401/503 и неверная размерность возвращают отказ без повторного embedding; настоящее отсутствие совпадений успешно',

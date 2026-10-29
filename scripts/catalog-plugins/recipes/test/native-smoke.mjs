@@ -7,8 +7,10 @@ import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-const [ragDirectory, snipDirectory, output] = process.argv.slice(2).map(value => path.resolve(value));
-if (!ragDirectory || !snipDirectory) throw new Error('Укажите каталоги подготовленных RAG и snip.');
+const arguments_ = process.argv.slice(2), ragOnly = arguments_[0] === '--rag-only';
+const supplied = (ragOnly ? arguments_.slice(1) : arguments_).map(value => path.resolve(value));
+const [ragDirectory, snipDirectory, output] = ragOnly ? [supplied[0], undefined, supplied[1]] : supplied;
+if (!ragDirectory || !ragOnly && !snipDirectory) throw new Error('Укажите каталоги подготовленных RAG и snip либо --rag-only <RAG> [report].');
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-catalog-plugins-'));
 const workspace = path.join(temporary, 'workspace');
 const home = path.join(temporary, 'home');
@@ -123,6 +125,7 @@ try {
     check('Конфигурация проекта не переписывается');
     await client.close();
     client = undefined;
+    if (snipDirectory) {
     const snipResult = await new Promise((resolve, reject) => {
         const code = `const {default:plugin}=await import(${JSON.stringify(pathToFileURL(path.join(snipDirectory, 'plugin.mjs')).href)});const hooks=await plugin();const output={args:{command:'git status'}};await hooks['tool.execute.before']({tool:'bash'},output);const complex={args:{command:'echo $(pwd)'}};await hooks['tool.execute.before']({tool:'bash'},complex);const other={args:{command:'git status'}};await hooks['tool.execute.before']({tool:'read'},other);console.log(JSON.stringify({command:output.args.command,complex:complex.args.command,other:other.args.command}));`;
         const child = spawn(process.execPath, ['--input-type=module', '-e', code], { cwd: workspace, env, shell: false });
@@ -135,6 +138,7 @@ try {
     assert.equal(snipResult.complex, 'echo $(pwd)');
     assert.equal(snipResult.other, 'git status');
     check('Native snip hook использует абсолютный CLI, сложные команды проходят без изменений');
+    }
     evidence.providerCalls = providerCalls;
     evidence.status = 'passed';
 } catch (error) {

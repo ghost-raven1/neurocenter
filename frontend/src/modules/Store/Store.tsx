@@ -54,6 +54,8 @@ import { toolCatalogSource } from './toolCatalogController';
 import { CatalogTabs } from './CatalogTabs';
 import { catalogSection, catalogSectionUrl } from './catalogSection';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
+import { projectCatalogUpdate, showProjectCatalogUpdate } from './projectCatalogUpdates';
+import { CatalogUpdateSummary } from './CatalogUpdateSummary';
 
 const { Text, Paragraph } = Typography;
 
@@ -139,11 +141,24 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     };
     const bridge=useBridge();
     const binding=bridge.device?.report.bindings?.find(item=>item.projectId===targetProject?.id&&item.valid!==false);
+    const updateScope = JSON.stringify([accessKey, targetProject?.id, bridge.device?.id, binding?.bindingId]);
+    const [updateFilter, setUpdateFilter] = useState({scope: '', enabled: false});
+    const onlyUpdates = updateFilter.scope === updateScope && updateFilter.enabled;
+    useEffect(() => { setUpdateFilter({scope: updateScope, enabled: false}); }, [updateScope]);
     const bridgeInstallError = installationBlocker(bridge.device);
     const installTarget=(app:IStoreApp)=>({deviceId:bridge.device?.id,projectId:targetProject?.id,bindingId:binding?.bindingId ?? null,assetId:app.id,assetKind:app.kind});
     const assetJobFor=(app:IStoreApp)=>latestAssetJob(bridge.jobs,installTarget(app));
     const localActionFor=(app:IStoreApp)=>{const row=currentInstallation(bridge.installations,installTarget(app));return row?pendingLocalJob(bridge.jobs,row):undefined;};
     const jobFor=(app:IStoreApp)=>{const job=assetJobFor(app);return job?.kind==='install'&&(Number(job.version)===app.version||isPending(job))?{...job,message:`Версия ${job.version}: ${job.message}`}:undefined;};
+    const receiptsReady = bridge.devicesReady && bridge.installationsReady && !bridge.device?.requiresReconnect && !!binding?.bindingId;
+    const updates = useMemo(() => new Map(catalog.map(app => [app.kind + ':' + app.id, projectCatalogUpdate(app, {
+        common: commonCatalog, assets, target: {deviceId: bridge.device?.id, projectId: targetProject?.id, bindingId: binding?.bindingId ?? null, assetId: app.id, assetKind: app.kind}, installations: bridge.installations, jobs: bridge.jobs,
+        sourceReady: catalogSources[toolCatalogSource(app.kind)].ready && !catalogSources[toolCatalogSource(app.kind)].loading && !catalogSources[toolCatalogSource(app.kind)].error,
+        projectReady: projectCatalogUsable && !projectLoading, receiptsReady,
+    })])), [catalog, commonCatalog, assets, targetProject?.id, bridge.device?.id, binding?.bindingId, bridge.installations, bridge.jobs, catalogSources, projectCatalogUsable, projectLoading, receiptsReady]);
+    const updateRows = [...updates.values()];
+    const pinScope = JSON.stringify([accessKey, targetProject?.id, canManage, projectCatalogUsable, projectLoading]);
+    const currentPinScope = useRef(pinScope); currentPinScope.current = pinScope;
     const localPlans = useInstallPlan({
         scopeKey: JSON.stringify([accessKey, targetProject?.id, bridge.device?.id, binding?.bindingId,
             canInstall, bridgeInstallError, bridge.jobsReady, bridge.installationsReady, projectCatalogUsable]),
@@ -199,7 +214,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const shown = useMemo(() => visibleStoreApps(catalog, {
         projectOnly: !!embedded || !canBrowseCommon, projectSelected: !!target,
         kind: filter, query: search, inProject: isInProject, installedOnly,
-    }), [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly ]);
+    }).filter(app => !onlyUpdates || showProjectCatalogUpdate(updates.get(app.kind + ':' + app.id))), [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly, onlyUpdates, updates ]);
 
     const switchTarget = useCallback((projectId: string | null): void => {
         try { if (projectId) { localStorage.setItem('neurocenter.install-project', projectId); } else { localStorage.removeItem('neurocenter.install-project'); } } catch { /* Хранилище браузера может быть недоступно. */ }
@@ -271,11 +286,11 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         const pendingAction=localActionFor(app);
         const pending=isPending(job)||!!pendingAction;
         const installation=currentInstallation(bridge.installations,installTarget(app));
-        const installLabel=pendingAction&&!['install','uninstall'].includes(pendingAction.kind)?'Дождитесь локального действия':pending?(job?.state==='reconciling'?'Сверяем результат':job?.kind==='uninstall'?'Удаление через мост…':job?.state==='queued'?'В очереди моста':'Устанавливается…'):installation?(installation.version===app.version?'Установить повторно':`Обновить до версии ${app.version}`):'Установить через мост';
+        const installLabel=pendingAction&&!['install','uninstall'].includes(pendingAction.kind)?'Дождитесь локального действия':pending?(job?.state==='reconciling'?'Сверяем результат':job?.kind==='uninstall'?'Удаление через мост…':job?.state==='queued'?'В очереди моста':'Устанавливается…'):installation?(installation.version===app.version&&installation.manifest===app.projectManifest?'Установить повторно':`Установить закреплённую редакцию ${app.version}`):'Установить через мост';
         return <Space direction="vertical" style={{width:'100%'}}>
             {app.pinError&&<Text type="warning">{app.pinError}</Text>}
-            {selected&&canManage&&targetProject&&commonCatalog.some(item=>item.id===app.id&&item.kind===app.kind&&(app.pinError||item.version!==app.version))&&<FeatureButton features={['tool_catalog']} size="small" block onClick={()=>{
-                const current=captureOwner();
+            {selected&&canManage&&targetProject&&commonCatalog.some(item=>item.id===app.id&&item.kind===app.kind&&(app.pinError||item.version>app.version))&&<FeatureButton features={['tool_catalog']} size="small" block disabled={projectLoading||!projectCatalogUsable||!!localBusy||pending||!catalogSources[toolCatalogSource(app.kind)].ready||catalogSources[toolCatalogSource(app.kind)].loading||!!catalogSources[toolCatalogSource(app.kind)].error} onClick={()=>{
+                const owns=captureOwner(),current=()=>owns()&&currentPinScope.current===pinScope;
                 const head=commonCatalog.find(item=>item.id===app.id&&item.kind===app.kind)!,ref=assets.find(item=>item.assetId===app.id&&item.assetKind===app.kind)!;
                 Modal.confirm({title:`Закрепить версию ${head.version} в проекте «${target}»?`,content:'Новая установка потребует одобрения этой версии. Файлы на компьютерах остаются на своих версиях.',okText:'Закрепить версию',cancelText:'Отмена',onOk:async()=>{if(!current())return;await bffApi.pinProjectAsset(targetProject.id,{assetId:ref.assetId,assetKind:ref.assetKind,version:head.version,expectedVersion:ref.version??null,expectedManifest:ref.manifest??null});if(current())await loadProject();}});
             }}>{app.pinError?'Подтвердить версию проекта':'Закрепить новую версию'}</FeatureButton>}
@@ -341,6 +356,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
             <ToolCatalogStatus sources={catalogSources} refresh={loadCatalog} />
+            {targetProject && <CatalogUpdateSummary catalogCount={updateRows.filter(item => item?.catalogNewer).length} computerCount={updateRows.filter(item => item?.computerDiffers).length}
+                incomplete={catalogIncomplete || projectLoading || !projectCatalogUsable || !receiptsReady} onlyUpdates={onlyUpdates}
+                onChange={enabled => setUpdateFilter({scope: updateScope, enabled})} />}
             <Space style={{ marginBottom: 16 }} wrap>
                 <Radio.Group
                     optionType="button"
@@ -376,12 +394,12 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             { loading
                 ? <Spin style={{ display: 'block', margin: '60px auto' }} />
                 : (shown.length === 0
-                    ? <Empty description={catalogIncomplete ? 'Каталог загружен не полностью. Повторите загрузку недоступного источника.' : search || installedOnly ? 'По этим условиям ничего не найдено' : embedded && projectCatalogUsable && assets.length === 0 ? 'В каталог проекта ещё не добавлены инструменты.' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); }}>Сбросить фильтры</Button></Empty>
+                    ? <Empty description={catalogIncomplete ? 'Каталог загружен не полностью. Повторите загрузку недоступного источника.' : onlyUpdates ? 'По этим условиям обновления не найдены. Сведения о неподтверждённых версиях доступны без фильтра.' : search || installedOnly ? 'По этим условиям ничего не найдено' : embedded && projectCatalogUsable && assets.length === 0 ? 'В каталог проекта ещё не добавлены инструменты.' : 'Здесь появятся доступные вам инструменты'}><Button onClick={() => { changeSearch(''); setInstalledOnly(false); setFilter('all'); setUpdateFilter({scope: updateScope, enabled: false}); }}>Сбросить фильтры</Button></Empty>
                     : (
                         <Row gutter={[12, 12]} align="stretch">
                             { shown.map(a => (
                                 <Col key={ a.id } xs={24} sm={12} xl={8} xxl={6}>
-                                    <AppCard app={ a } installed={ !!target && isInProject(a)} action={ renderAction(a) } onView={() => setViewApp(a)} feedback={<CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name}/>} />
+                                    <AppCard app={ a } installed={ !!target && isInProject(a)} update={updates.get(a.kind + ':' + a.id)} action={ renderAction(a) } onView={() => setViewApp(a)} feedback={<CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name}/>} />
                                 </Col>
                             )) }
                         </Row>

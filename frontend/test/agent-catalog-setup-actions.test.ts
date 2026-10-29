@@ -89,6 +89,29 @@ beforeEach(() => {
 afterEach(() => h.hooks.dispose());
 
 describe('Agent setup: actual toolbar, pinned configuration and recovery actions', () => {
+    it('summarizes newer templates and filters only the view without applying anything', () => {
+        const latest = agent({version: 2}), other = agent({id: 'other-agent', slug: 'nc-other', name: 'Другой агент'}), second = assignment({agentId: other.id, card: other});
+        const receipt = delivery(); receipt.result = {...receipt.result!, agents: [...(receipt.result!.agents as object[]), {id: other.id, slug: other.slug, version: 1, enabled: false, sha256: 'd'.repeat(64)}]};
+        h.catalog = catalog({items: [latest, other], assignments: [assignment(), second], deliveries: [receipt]});
+        expect(start()).toContain('Новые шаблоны в каталоге: 1'); expect(h.cards).toHaveLength(2);
+        uiNode(h.ui, 'Checkbox', 'Только обновления').onChange({target: {checked: true}}); render();
+        expect(h.cards.map(item => item.agent.id)).toEqual([latest.id]); expect(h.confirmations).toEqual([]); expect(h.actions.mutate).not.toHaveBeenCalled(); expect(h.actions.apply).not.toHaveBeenCalled();
+        props.bridge = {...props.bridge, device: {...props.bridge.device!, id: 'another-computer'}}; render();
+        expect(uiNode(h.ui, 'Checkbox', 'Только обновления').checked).toBe(false); expect(h.cards).toHaveLength(2);
+    });
+    it.each(['running', 'failed'])('updates filter preserves %s delivery and recovery after flag OFF', state => {
+        h.catalog = catalog({deliveries: [delivery({state, result: null})]}); h.flagsEnabled = false; start();
+        uiNode(h.ui, 'Checkbox', 'Только обновления').onChange({target: {checked: true}});
+        expect(render()).toContain('Ожидают применения: 1'); expect(h.cards).toHaveLength(1); expect(h.actions.mutate).not.toHaveBeenCalled();
+        h.error = 'Read failed'; expect(render()).toContain('Новые редакции пока не подтверждены'); expect(h.cards).toHaveLength(1);
+    });
+    it('keeps pending removal visible in updates-only project filter, then drops exact confirmed removal', () => {
+        h.catalog = catalog({items: [], assignments: [assignment({removed: true})], deliveries: [delivery({state: 'running', result: null})]}); props.embedded = true;
+        start(); expect(h.cards).toHaveLength(0); uiNode(h.ui, 'Checkbox', 'Только обновления').onChange({target: {checked: true}}); render();
+        expect(h.cards).toHaveLength(1); expect(card().assignment?.removed).toBe(true); expect(card().busy).toBe(true); expect(h.actions.mutate).not.toHaveBeenCalled();
+        h.catalog = catalog({items: [], assignments: [assignment({removed: true})], deliveries: [delivery({result: {...delivery().result!, agents: []}})]}); render();
+        expect(h.cards).toHaveLength(0);
+    });
     it('keeps project templates and service tools mounted after the agent list instead of the main toolbar',()=>{
         const html=start(),index=html.indexOf('class="agent-catalog__advanced"');expect(index).toBeGreaterThan(0);
         expect(html.slice(0,index)).not.toContain('Добавить агента');expect(html.slice(index)).toContain('Добавить агента');

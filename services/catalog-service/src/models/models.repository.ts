@@ -145,7 +145,11 @@ export class ModelsRepository {
                 throw new ConflictException('Проверенная версия или размерность отличается от закреплённой модели. Существующий pin сохранён.');
             }
             if (current.manifestSha256 !== null && current.dimension === verified.dimension) { return current; }
-            if (current.manifestSha256 === null) { throw new ConflictException('Модель не имеет SHA импортированной поставки. Сначала импортируйте проверенный ассет.'); }
+            if (current.manifestSha256 === null && !current.fileImport) { throw new ConflictException('Модель не имеет SHA импортированной поставки. Сначала импортируйте проверенный ассет.'); }
+            if(current.fileImport){
+                const proof=(await client.query<{file_sha256:string;manifest_sha256:string;upload_id:string;state:string}>('SELECT file_sha256,manifest_sha256,upload_id,state FROM model_gguf_runtime_intents WHERE model_id=$1 FOR SHARE',[current.id])).rows[0];
+                if(!proof||proof.state!=='CREATED'||proof.file_sha256!==current.fileImport.sha256||proof.upload_id!==current.fileImport.uploadId||proof.manifest_sha256!==verified.manifestSha256)throw new ConflictException('Runtime не подтвердил manifest со слоем принятого GGUF. Сначала проверьте сохранённую операцию.');
+            }
             const descriptor = {...result.rows[0].descriptor, manifestSha256: verified.manifestSha256,
                 dimension: current.capability === 'embedding' ? verified.dimension : null};
             const revision=await nextModelRevision(client,current.id,current.revision);
