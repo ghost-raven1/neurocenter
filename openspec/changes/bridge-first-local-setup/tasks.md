@@ -22,7 +22,7 @@
 
 - [x] 2.3 Подключить автоматическое observation в Start с async owner и повтором; проверить смену компьютера, lost ACK, stale result и ошибки в frontend tests.
 
-Frontend2.3: 77/77 на настоящих controller/hook/component с управляемым API, TypeScript и Vite PASS; независимое source review и 17текущих SHA сверены. Исправлена причинно воспроизведённая гонка пустого списка после terminal history. Это не реальный browser→queue→установленный мост; отдельная браузерная приёмка и поставка остаются открытыми.
+Frontend2.3:77/77, TypeScript/Vite PASS. Дополнительно приняты две реальные desktop цепочки UI→Catalog queue→candidate Native→физический --version fixture: автоматический запуск без проекта и real201/lost-delivery/reload с тем же job/key и без лишнего POST/процесса. Профили подключены обычным UI, ресурсы закрыты, независимое review41bf1a5d… CLEAR_SCOPED. Это не установленный архив/пользовательский CLI: поставка остаётся открытой. Код версии0.9.26 проверен98/98 и официальной сборкой;254JS-файла совпадают с UI-кандидатом. См. docs/reports/opencode-cli-observation-2026-10-29.md.
 
 - [ ] 2.4 Реализовать bridge-managed CLI install из проверенной платформенной поставки с атомарной публикацией и post-install version; проверить реальный архив, ручную/более новую установку, отказ SHA и сохранение config/auth.
 - [ ] 2.5 Обновить описание шага OpenCode и API/feature документацию; проверить, что normal path не требует ручного `--version` или системного npm.
